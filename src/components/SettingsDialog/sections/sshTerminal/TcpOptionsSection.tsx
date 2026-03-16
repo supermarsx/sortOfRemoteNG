@@ -5,6 +5,7 @@ import { IPProtocols } from "../../../../types/settings/settings";
 import { Network } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select, FormField } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -17,10 +18,10 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       onChange={(v) =>
         up({ tcpOptions: { ...cfg.tcpOptions, tcpNoDelay: v } })
       }
-      label={t(
+      label={<span className="flex items-center gap-1">{t(
         "settings.sshTerminal.tcpNoDelay",
         "Disable Nagle algorithm (TCP_NODELAY)",
-      )}
+      )} <InfoTooltip text="Send data immediately without waiting to batch small packets. Reduces latency at the cost of slightly more network overhead." /></span>}
       description={t(
         "settings.sshTerminal.tcpNoDelayDesc",
         "Send data immediately without buffering small packets",
@@ -31,10 +32,10 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       onChange={(v) =>
         up({ tcpOptions: { ...cfg.tcpOptions, tcpKeepAlive: v } })
       }
-      label={t(
+      label={<span className="flex items-center gap-1">{t(
         "settings.sshTerminal.tcpKeepAlive",
         "Enable TCP keepalive",
-      )}
+      )} <InfoTooltip text="Send periodic TCP keepalive probes to detect and clean up dead connections before they time out." /></span>}
       description={t(
         "settings.sshTerminal.tcpKeepAliveDesc",
         "Send TCP keepalive probes to detect dead connections",
@@ -45,10 +46,10 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       onChange={(v) =>
         up({ tcpOptions: { ...cfg.tcpOptions, soKeepAlive: v } })
       }
-      label={t(
+      label={<span className="flex items-center gap-1">{t(
         "settings.sshTerminal.soKeepAlive",
         "Enable SO_KEEPALIVE option",
-      )}
+      )} <InfoTooltip text="Enable the socket-level keepalive mechanism provided by the operating system." /></span>}
       description={t(
         "settings.sshTerminal.soKeepAliveDesc",
         "Enable socket-level keepalive mechanism",
@@ -56,7 +57,7 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--color-border)]">
-      <FormField label={t("settings.sshTerminal.ipProtocol", "IP Protocol")}>
+      <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.ipProtocol", "IP Protocol")} <InfoTooltip text="Preferred IP protocol version. Auto will try IPv4 first, then fall back to IPv6." /></span>}>
         <Select
           value={cfg.tcpOptions.ipProtocol}
           onChange={(v) =>
@@ -73,10 +74,10 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
           }))}
         />
       </FormField>
-      <FormField label={t(
+      <FormField label={<span className="flex items-center gap-1">{t(
           "settings.sshTerminal.connectionTimeout",
           "Connection Timeout (sec)",
-        )}>
+        )} <InfoTooltip text="Maximum time in seconds to wait for a TCP connection to be established before giving up." /></span>}>
         <NumberInput
           value={cfg.tcpOptions.connectionTimeout}
           onChange={(v) =>
@@ -92,10 +93,10 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
 
     {cfg.tcpOptions.tcpKeepAlive && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--color-border)]">
-        <FormField label={t(
+        <FormField label={<span className="flex items-center gap-1">{t(
             "settings.sshTerminal.keepAliveInterval",
             "Keepalive Interval (sec)",
-          )}>
+          )} <InfoTooltip text="Time in seconds between TCP keepalive probes sent to the remote server." /></span>}>
           <NumberInput
             value={cfg.tcpOptions.keepAliveInterval}
             onChange={(v) =>
@@ -107,10 +108,10 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
             max={3600}
           />
         </FormField>
-        <FormField label={t(
+        <FormField label={<span className="flex items-center gap-1">{t(
             "settings.sshTerminal.keepAliveProbes",
             "Keepalive Probes",
-          )}>
+          )} <InfoTooltip text="Number of unacknowledged keepalive probes before the connection is considered dead." /></span>}>
           <NumberInput
             value={cfg.tcpOptions.keepAliveProbes}
             onChange={(v) =>

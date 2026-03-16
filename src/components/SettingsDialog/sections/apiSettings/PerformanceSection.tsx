@@ -3,6 +3,7 @@ import { Cpu, Clock } from "lucide-react";
 import { NumberInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
@@ -17,6 +18,7 @@ export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Cpu className="w-4 h-4" />
             {mgr.t("settings.api.maxThreads", "Max Worker Threads")}
+            <InfoTooltip text="Number of worker threads allocated to handle API requests concurrently. More threads improve throughput under load." />
           </label>
           <NumberInput value={settings.restApi?.maxThreads || 4} onChange={(v: number) => mgr.updateRestApi({ maxThreads: v })} className="w-full" min={1} max={64} />
           <p className="text-xs text-[var(--color-textMuted)]">
@@ -28,6 +30,7 @@ export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Clock className="w-4 h-4" />
             {mgr.t("settings.api.requestTimeout", "Request Timeout (seconds)")}
+            <InfoTooltip text="Maximum time in seconds to wait for a single API request to complete before aborting it." />
           </label>
           <NumberInput value={settings.restApi?.requestTimeout || 30} onChange={(v: number) => mgr.updateRestApi({ requestTimeout: v })} className="w-full" min={1} max={300} />
           <p className="text-xs text-[var(--color-textMuted)]">

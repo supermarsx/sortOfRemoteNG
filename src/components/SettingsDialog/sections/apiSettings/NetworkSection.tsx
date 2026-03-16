@@ -3,6 +3,7 @@ import { Server, Globe, AlertTriangle, Shuffle } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
@@ -17,6 +18,7 @@ export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = 
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Server className="w-4 h-4" />
             {mgr.t("settings.api.port", "Port")}
+            <InfoTooltip text="TCP port number the API server listens on. Choose a port not used by other services." />
           </label>
           <div className="flex gap-2">
             <NumberInput value={settings.restApi?.port || 9876} onChange={(v: number) => mgr.updateRestApi({ port: v })} className="flex-1 disabled:opacity-50 disabled:cursor-not-allowed" min={1} max={65535} disabled={settings.restApi?.useRandomPort} />
@@ -32,8 +34,9 @@ export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = 
           </div>
           <label className="flex items-center space-x-2 cursor-pointer group mt-2">
             <Checkbox checked={settings.restApi?.useRandomPort || false} onChange={(v: boolean) => mgr.updateRestApi({ useRandomPort: v })} />
-            <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-textSecondary)]">
+            <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-textSecondary)] flex items-center gap-1">
               {mgr.t("settings.api.useRandomPort", "Use random port on each start")}
+              <InfoTooltip text="Assign a random available port each time the API server starts, instead of using a fixed port." />
             </span>
           </label>
           <p className="text-xs text-[var(--color-textMuted)]">
@@ -48,6 +51,7 @@ export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = 
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-2">
                 <Globe className="w-4 h-4 text-warning" />
                 {mgr.t("settings.api.allowRemote", "Allow Remote Connections")}
+                <InfoTooltip text="Listen on all network interfaces instead of localhost only. This exposes the API to other machines on your network." />
               </span>
               <p className="text-xs text-[var(--color-textMuted)]">
                 {mgr.t("settings.api.allowRemoteDescription", "Listen on all interfaces instead of localhost only")}

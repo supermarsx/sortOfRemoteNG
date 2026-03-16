@@ -5,6 +5,7 @@ import { SSHVersions } from "../../../../types/settings/settings";
 import { Shield } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select, FormField } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -13,7 +14,7 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     defaultOpen={false}
   >
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <FormField label={t("settings.sshTerminal.sshVersion", "SSH Version")}>
+      <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.sshVersion", "SSH Version")} <InfoTooltip text="SSH protocol version to use. Auto will negotiate the best version supported by the server." /></span>}>
         <Select
           value={cfg.sshVersion}
           onChange={(v) =>
@@ -31,10 +32,10 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       <Toggle
         checked={cfg.enableCompression}
         onChange={(v) => up({ enableCompression: v })}
-        label={t(
+        label={<span className="flex items-center gap-1">{t(
           "settings.sshTerminal.enableCompression",
           "Enable SSH compression",
-        )}
+        )} <InfoTooltip text="Compress data transmitted over the SSH connection. Reduces bandwidth usage but increases CPU load." /></span>}
         description={t(
           "settings.sshTerminal.enableCompressionDesc",
           "Compress data over the SSH connection (useful for slow links)",
@@ -42,10 +43,10 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
       {cfg.enableCompression && (
         <div className="mt-3 ml-10">
-          <FormField label={t(
+          <FormField label={<span className="flex items-center gap-1">{t(
               "settings.sshTerminal.compressionLevel",
               "Compression Level (1-9)",
-            )}>
+            )} <InfoTooltip text="Compression strength from 1 (fastest, least compression) to 9 (slowest, best compression)." /></span>}>
             <NumberInput
               value={cfg.compressionLevel}
               onChange={(v) => up({ compressionLevel: v })}

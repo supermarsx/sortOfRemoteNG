@@ -3,6 +3,7 @@ import { Shield, Key, Copy, RefreshCw } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
@@ -16,8 +17,9 @@ export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mg
         <Checkbox checked={settings.restApi?.authentication || false} onChange={(v: boolean) => mgr.updateRestApi({ authentication: v })} />
         <Key className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
         <div>
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
             {mgr.t("settings.api.requireAuth", "Require Authentication")}
+            <InfoTooltip text="Require a valid API key in the X-API-Key header for all incoming requests. Strongly recommended when remote connections are allowed." />
           </span>
           <p className="text-xs text-[var(--color-textMuted)]">
             {mgr.t("settings.api.requireAuthDescription", "Require an API key for all requests")}
@@ -30,6 +32,7 @@ export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mg
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Key className="w-4 h-4" />
             {mgr.t("settings.api.apiKey", "API Key")}
+            <InfoTooltip text="The secret key that clients must include in the X-API-Key header to authenticate API requests." />
           </label>
           <div className="flex gap-2">
             <input

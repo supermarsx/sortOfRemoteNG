@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface PerformanceSettingsProps {
   settings: GlobalSettings;
@@ -59,6 +60,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <RefreshCw className="w-4 h-4" />
                 Retry Attempts
+                <InfoTooltip text="Number of times to retry a failed connection before giving up. Set to 0 to disable retries." />
               </label>
               <NumberInput value={settings.retryAttempts} onChange={(v: number) => updateSettings({ retryAttempts: v })} className="w-full" min={0} max={10} />
             </div>
@@ -67,6 +69,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Clock className="w-4 h-4" />
                 Retry Delay (ms)
+                <InfoTooltip text="Time in milliseconds to wait between connection retry attempts." />
               </label>
               <NumberInput value={settings.retryDelay} onChange={(v: number) => updateSettings({ retryDelay: v })} className="w-full" min={1000} max={60000} step={1000} />
             </div>
@@ -85,8 +88,9 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enablePerformanceTracking} onChange={(v: boolean) => updateSettings({ enablePerformanceTracking: v })} />
             <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
               Enable Performance Tracking
+              <InfoTooltip text="Collect CPU, memory, and network latency metrics at regular intervals for monitoring dashboard display." />
             </span>
           </label>
 
@@ -97,6 +101,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Clock className="w-4 h-4" />
                 Poll Interval (seconds)
+                <InfoTooltip text="How often performance metrics are sampled. Lower values give more detail but use more resources." />
               </label>
               <NumberInput value={Math.round(settings.performancePollIntervalMs / 1000)} onChange={(v: number) => updateSettings({
                     performancePollIntervalMs:
@@ -108,6 +113,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Globe className="w-4 h-4" />
                 Latency Target Host
+                <InfoTooltip text="IP address or hostname used to measure network latency via ping or HTTP request." />
               </label>
               <input
                 type="text"
@@ -136,8 +142,9 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableStatusChecking} onChange={(v: boolean) => updateSettings({ enableStatusChecking: v })} />
             <Zap className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
               Enable Status Checking
+              <InfoTooltip text="Periodically probe connections to determine if remote hosts are reachable and update their status indicators." />
             </span>
           </label>
 
@@ -148,6 +155,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Clock className="w-4 h-4" />
                 Check Interval (seconds)
+                <InfoTooltip text="Time in seconds between status check probes sent to each connection's host." />
               </label>
               <NumberInput value={settings.statusCheckInterval} onChange={(v: number) => updateSettings({
                     statusCheckInterval: v,
@@ -158,6 +166,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)] mb-2">
                 <Radio className="w-4 h-4" />
                 Check Method
+                <InfoTooltip text="Protocol used to check if a remote host is reachable. Socket is fastest; HTTP validates web services; Ping uses ICMP." />
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {STATUS_CHECK_METHODS.map((method) => {
@@ -205,8 +214,9 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableActionLog} onChange={(v: boolean) => updateSettings({ enableActionLog: v })} />
             <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
               Enable Action Logging
+              <InfoTooltip text="Record user actions like connections, disconnections, and setting changes in an internal log." />
             </span>
           </label>
 
@@ -216,6 +226,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <FileText className="w-4 h-4" />
               Max Log Entries
+              <InfoTooltip text="Maximum number of log entries to keep in memory. Oldest entries are discarded when the limit is reached." />
             </label>
             <NumberInput value={settings.maxLogEntries} onChange={(v: number) => updateSettings({ maxLogEntries: v })} className="w-full" min={100} max={10000} step={100} />
           </div>

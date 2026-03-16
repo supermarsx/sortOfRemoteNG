@@ -4,6 +4,7 @@ import { LocalEchoModes, LineEditingModes } from "../../../../types/settings/set
 import { Keyboard } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { Select, FormField } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const LineDisciplineSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -11,7 +12,7 @@ const LineDisciplineSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     icon={<Keyboard className="w-4 h-4 text-accent" />}
   >
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <FormField label={t("settings.sshTerminal.localEcho", "Local Echo")}>
+      <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.localEcho", "Local Echo")} <InfoTooltip text="Controls whether typed characters are echoed locally. Auto lets the server decide; Force On always echoes." /></span>}>
         <Select
           value={cfg.localEcho}
           onChange={(v) =>
@@ -28,10 +29,10 @@ const LineDisciplineSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
           }))}
         />
       </FormField>
-      <FormField label={t(
+      <FormField label={<span className="flex items-center gap-1">{t(
           "settings.sshTerminal.localLineEditing",
           "Local Line Editing",
-        )}>
+        )} <InfoTooltip text="Buffer input locally and send it all at once when Enter is pressed. Auto lets the server decide." /></span>}>
         <Select
           value={cfg.localLineEditing}
           onChange={(v) =>

@@ -4,6 +4,7 @@ import { Checkbox, Select } from "../../../ui/forms";
 import { TextInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
@@ -17,8 +18,9 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
         <Checkbox checked={settings.restApi?.sslEnabled || false} onChange={(v: boolean) => mgr.updateRestApi({ sslEnabled: v })} />
         <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
         <div>
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
             {mgr.t("settings.api.enableSsl", "Enable HTTPS")}
+            <InfoTooltip text="Encrypt all API traffic with SSL/TLS. Required for secure communication, especially over public networks." />
           </span>
           <p className="text-xs text-[var(--color-textMuted)]">
             {mgr.t("settings.api.enableSslDescription", "Use SSL/TLS encryption for API connections")}
@@ -33,6 +35,7 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Shield className="w-4 h-4" />
               {mgr.t("settings.api.sslMode", "Certificate Mode")}
+              <InfoTooltip text="How the SSL certificate is obtained: provide your own, auto-generate a self-signed one, or use Let's Encrypt." />
             </label>
             <Select value={settings.restApi?.sslMode || "manual"} onChange={(v: string) => mgr.updateRestApi({ sslMode: v as "manual" | "self-signed" | "letsencrypt" })} options={[{ value: "manual", label: mgr.t("settings.api.sslManual", "Manual (Provide Certificate)") }, { value: "self-signed", label: mgr.t("settings.api.sslSelfSigned", "Auto-Generate Self-Signed") }, { value: "letsencrypt", label: mgr.t("settings.api.sslLetsEncrypt", "Let's Encrypt (Auto-Renew)") }]} className="w-full" />
           </div>
@@ -44,6 +47,7 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
                 <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                   <FileKey className="w-4 h-4" />
                   {mgr.t("settings.api.certPath", "Certificate Path")}
+                  <InfoTooltip text="File path to the PEM-encoded SSL certificate used by the API server." />
                 </label>
                 <TextInput
                   value={settings.restApi?.sslCertPath || ""}
@@ -58,6 +62,7 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
                 <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                   <Key className="w-4 h-4" />
                   {mgr.t("settings.api.keyPath", "Private Key Path")}
+                  <InfoTooltip text="File path to the PEM-encoded private key that corresponds to the SSL certificate." />
                 </label>
                 <TextInput
                   value={settings.restApi?.sslKeyPath || ""}
@@ -90,6 +95,7 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
                 <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                   <Globe className="w-4 h-4" />
                   {mgr.t("settings.api.sslDomain", "Domain Name")}
+                  <InfoTooltip text="Public domain name that points to this server. Required for Let's Encrypt certificate issuance." />
                 </label>
                 <TextInput
                   value={settings.restApi?.sslDomain || ""}
@@ -107,6 +113,7 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
                 <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                   <Key className="w-4 h-4" />
                   {mgr.t("settings.api.sslEmail", "Email for Certificate Notices")}
+                  <InfoTooltip text="Email address where Let's Encrypt sends certificate expiration and renewal notices." />
                 </label>
                 <input
                   type="email"

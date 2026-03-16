@@ -4,7 +4,7 @@ import { Checkbox } from "../../../ui/forms";
 const Toggle: React.FC<{
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label: string;
+  label: React.ReactNode;
   description?: string;
 }> = ({ checked, onChange, label, description }) => (
   <label className="flex items-start gap-3 cursor-pointer group">

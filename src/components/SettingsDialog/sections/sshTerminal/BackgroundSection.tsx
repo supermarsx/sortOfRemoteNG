@@ -3,6 +3,7 @@ import { Image, Layers, Sparkles } from "lucide-react";
 import { Select } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import Toggle from "./Toggle";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   TerminalBackgroundTypes,
   GradientDirections,
@@ -30,6 +31,7 @@ function SliderInput({
   value,
   onChange,
   label,
+  tooltip,
   min = 0,
   max = 1,
   step = 0.05,
@@ -37,6 +39,7 @@ function SliderInput({
   value: number;
   onChange: (v: number) => void;
   label: string;
+  tooltip?: string;
   min?: number;
   max?: number;
   step?: number;
@@ -44,7 +47,7 @@ function SliderInput({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <label className={labelClass}>{label}</label>
+        <label className={`${labelClass} flex items-center gap-1`}>{label}{tooltip && <InfoTooltip text={tooltip} />}</label>
         <span className="text-xs text-[var(--color-textSecondary)] tabular-nums">
           {value.toFixed(2)}
         </span>
@@ -66,16 +69,18 @@ function SelectField({
   value,
   onChange,
   label,
+  tooltip,
   options,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
+  tooltip?: string;
   options: { value: string; label: string }[];
 }) {
   return (
     <div className="space-y-1">
-      <label className={labelClass}>{label}</label>
+      <label className={`${labelClass} flex items-center gap-1`}>{label}{tooltip && <InfoTooltip text={tooltip} />}</label>
       <Select
         value={value}
         onChange={(v) => onChange(v)}
@@ -91,10 +96,12 @@ function ColorField({
   value,
   onChange,
   label,
+  tooltip,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
+  tooltip?: string;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -104,7 +111,7 @@ function ColorField({
         onChange={(e) => onChange(e.target.value)}
         className={colorInputClass}
       />
-      <label className={labelClass}>{label}</label>
+      <label className={`${labelClass} flex items-center gap-1`}>{label}{tooltip && <InfoTooltip text={tooltip} />}</label>
     </div>
   );
 }
@@ -113,6 +120,7 @@ function NumberField({
   value,
   onChange,
   label,
+  tooltip,
   min,
   max,
   step = 1,
@@ -120,13 +128,14 @@ function NumberField({
   value: number;
   onChange: (v: number) => void;
   label: string;
+  tooltip?: string;
   min?: number;
   max?: number;
   step?: number;
 }) {
   return (
     <div className="space-y-1">
-      <label className={labelClass}>{label}</label>
+      <label className={`${labelClass} flex items-center gap-1`}>{label}{tooltip && <InfoTooltip text={tooltip} />}</label>
       <input
         type="number"
         value={value}
@@ -153,8 +162,9 @@ function GradientStopsEditor({
 }) {
   return (
     <div className="space-y-2">
-      <label className={labelClass}>
+      <label className={`${labelClass} flex items-center gap-1`}>
         {t("settings.sshTerminal.bg.gradientStops", "Gradient Stops")}
+        <InfoTooltip text="Define color stops along the gradient. Each stop has a color and a position percentage." />
       </label>
       {stops.map((stop, i) => (
         <div key={i} className="flex items-center gap-2">
@@ -254,8 +264,9 @@ function OverlayEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className={labelClass}>
+        <label className={`${labelClass} flex items-center gap-1`}>
           {t("settings.sshTerminal.bg.overlays", "Overlays")}
+          <InfoTooltip text="Stack visual effects on top of the terminal background. Each overlay can be independently configured." />
         </label>
         <button
           onClick={addOverlay}
@@ -312,6 +323,7 @@ function OverlayEditor({
                   })
                 }
                 label={t("settings.sshTerminal.bg.type", "Type")}
+                tooltip="The visual effect type for this overlay layer."
                 options={OVERLAY_TYPES.map((t) => ({
                   value: t,
                   label: t.charAt(0).toUpperCase() + t.slice(1),
@@ -321,6 +333,7 @@ function OverlayEditor({
                 value={ov.opacity}
                 onChange={(v) => updateOverlay(i, { opacity: v })}
                 label={t("settings.sshTerminal.bg.opacity", "Opacity")}
+                tooltip="How transparent this overlay is. 0 is fully transparent, 1 is fully opaque."
               />
               <SelectField
                 value={ov.blendMode}
@@ -330,6 +343,7 @@ function OverlayEditor({
                   })
                 }
                 label={t("settings.sshTerminal.bg.blendMode", "Blend Mode")}
+                tooltip="CSS blend mode that controls how this overlay composites with layers beneath it."
                 options={[...OverlayBlendModes].map((m) => ({
                   value: m,
                   label: m,
@@ -340,6 +354,7 @@ function OverlayEditor({
                   value={ov.color || "#000000"}
                   onChange={(v) => updateOverlay(i, { color: v })}
                   label={t("settings.sshTerminal.bg.color", "Color")}
+                  tooltip="Base color used for this overlay effect."
                 />
               )}
               {(ov.type === "scanlines" ||
@@ -353,6 +368,7 @@ function OverlayEditor({
                     "settings.sshTerminal.bg.intensity",
                     "Intensity",
                   )}
+                  tooltip="Strength of the visual effect. Higher values produce a more pronounced appearance."
                   min={0.1}
                   max={3}
                   step={0.1}
@@ -400,10 +416,10 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
         <Toggle
           checked={bg.enabled}
           onChange={(v) => ubg({ enabled: v })}
-          label={t(
+          label={<span className="flex items-center gap-1">{t(
             "settings.sshTerminal.bg.enable",
             "Enable custom background",
-          )}
+          )} <InfoTooltip text="Render custom backgrounds, fading edges, and overlay effects behind the terminal content." /></span>}
           description={t(
             "settings.sshTerminal.bg.enableDesc",
             "Render backgrounds, fading edges, and overlay effects behind the terminal",
@@ -422,6 +438,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                 "settings.sshTerminal.bg.bgType",
                 "Background Type",
               )}
+              tooltip="Choose the kind of background: a solid color, a gradient, a static image, or an animated effect."
               options={[...TerminalBackgroundTypes].map((bt) => ({
                 value: bt,
                 label: t(
@@ -438,6 +455,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                 "settings.sshTerminal.bg.bgOpacity",
                 "Background Opacity",
               )}
+              tooltip="Overall opacity of the background layer. Lower values make the background more transparent."
             />
 
             {/* ── Solid ── */}
@@ -449,6 +467,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                   "settings.sshTerminal.bg.solidColor",
                   "Solid Color",
                 )}
+                tooltip="The single fill color used for the terminal background."
               />
             )}
 
@@ -467,6 +486,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                     "settings.sshTerminal.bg.direction",
                     "Direction",
                   )}
+                  tooltip="The direction in which the gradient transitions between color stops."
                   options={[...GradientDirections].map((d) => ({
                     value: d,
                     label: t(
@@ -492,11 +512,12 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
             {bg.type === "image" && (
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <label className={labelClass}>
+                  <label className={`${labelClass} flex items-center gap-1`}>
                     {t(
                       "settings.sshTerminal.bg.imagePath",
                       "Image Path / URL",
                     )}
+                    <InfoTooltip text="Local file path or remote URL pointing to the background image." />
                   </label>
                   <input
                     type="text"
@@ -514,6 +535,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                       "settings.sshTerminal.bg.imageOpacity",
                       "Image Opacity",
                     )}
+                    tooltip="Opacity of the background image. Lower values make the image more transparent."
                   />
                   <NumberField
                     value={bg.imageBlur ?? 0}
@@ -522,6 +544,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                       "settings.sshTerminal.bg.imageBlur",
                       "Blur (px)",
                     )}
+                    tooltip="Gaussian blur radius in pixels applied to the background image."
                     min={0}
                     max={50}
                   />
@@ -539,6 +562,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                       "settings.sshTerminal.bg.imageSize",
                       "Size Mode",
                     )}
+                    tooltip="How the image is scaled to fit the terminal area. Cover fills the area; contain fits inside it."
                     options={[
                       { value: "cover", label: "Cover" },
                       { value: "contain", label: "Contain" },
@@ -547,11 +571,12 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                     ]}
                   />
                   <div className="space-y-1">
-                    <label className={labelClass}>
+                    <label className={`${labelClass} flex items-center gap-1`}>
                       {t(
                         "settings.sshTerminal.bg.imagePosition",
                         "Position",
                       )}
+                      <InfoTooltip text="CSS background-position value controlling where the image is anchored within the terminal." />
                     </label>
                     <input
                       type="text"
@@ -582,6 +607,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                     "settings.sshTerminal.bg.effect",
                     "Effect",
                   )}
+                  tooltip="The animated visual effect rendered behind the terminal content."
                   options={[...AnimatedBackgroundEffects].map((e) => ({
                     value: e,
                     label: t(
@@ -604,6 +630,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                       "settings.sshTerminal.bg.speed",
                       "Speed",
                     )}
+                    tooltip="Playback speed multiplier for the animation. Higher values make the effect faster."
                     min={0.1}
                     max={3}
                     step={0.1}
@@ -615,6 +642,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                       "settings.sshTerminal.bg.density",
                       "Density",
                     )}
+                    tooltip="Density of animated elements on screen. Higher values produce a more populated effect."
                     min={0.1}
                     max={3}
                     step={0.1}
@@ -626,6 +654,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                       "settings.sshTerminal.bg.animColor",
                       "Color",
                     )}
+                    tooltip="Primary color used by the animated background effect."
                   />
                 </div>
               </div>
@@ -646,10 +675,10 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                   onChange={(v) =>
                     ubg({ fading: { ...fading, enabled: v } })
                   }
-                  label={t(
+                  label={<span className="flex items-center gap-1">{t(
                     "settings.sshTerminal.bg.fadingEnable",
                     "Enable edge fading",
-                  )}
+                  )} <InfoTooltip text="Gradually fade terminal edges to a transparent or colored border for a softer visual appearance." /></span>}
                   description={t(
                     "settings.sshTerminal.bg.fadingEnableDesc",
                     "Gradually fade terminal edges to a transparent/colored border",
@@ -672,6 +701,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                         "settings.sshTerminal.bg.fadingEdge",
                         "Edge",
                       )}
+                      tooltip="Which edges of the terminal to apply the fading effect to."
                       options={[...FadingEdges].map((e) => ({
                         value: e,
                         label: t(
@@ -689,6 +719,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                         "settings.sshTerminal.bg.fadingSize",
                         "Fade Size (px)",
                       )}
+                      tooltip="Width of the fading region in pixels from the terminal edge inward."
                       min={5}
                       max={200}
                     />
@@ -703,6 +734,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                         "settings.sshTerminal.bg.fadingColor",
                         "Fade Color",
                       )}
+                      tooltip="The color the terminal edges fade into. Leave empty for transparent."
                     />
                   </div>
                 )}

@@ -5,6 +5,7 @@ import { GlobalSettings, ProxyConfig } from "../../../types/settings/settings";
 import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface ProxySettingsProps {
   settings: GlobalSettings;
@@ -33,8 +34,9 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           <Checkbox checked={settings.globalProxy?.enabled || false} onChange={(v: boolean) => updateProxy({ enabled: v })} />
           <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
           <div>
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
               Enable Global Proxy
+              <InfoTooltip text="Route all outgoing connections through a proxy server. Applies to SSH, RDP, and other protocol connections." />
             </span>
             <p className="text-xs text-[var(--color-textMuted)]">
               Route all connections through a proxy server
@@ -49,7 +51,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           <div className="space-y-4">
             <h4 className="sor-section-heading">
               <Globe className="w-4 h-4 text-primary" />
-              Proxy Type
+              <span className="flex items-center gap-1">Proxy Type <InfoTooltip text="Select the proxy protocol. SOCKS5 supports authentication and UDP; HTTP/HTTPS proxies are more common in corporate environments." /></span>
             </h4>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -88,6 +90,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                   <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Server className="w-4 h-4" />
                     Proxy Host
+                    <InfoTooltip text="Hostname or IP address of the proxy server to route connections through." />
                   </label>
                   <input
                     type="text"
@@ -102,6 +105,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                   <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Hash className="w-4 h-4" />
                     Proxy Port
+                    <InfoTooltip text="TCP port number on the proxy server. Common defaults: HTTP 8080, SOCKS5 1080." />
                   </label>
                   <NumberInput value={settings.globalProxy?.port || 8080} onChange={(v: number) => updateProxy({ port: v })} className="w-full" min={1} max={65535} />
                 </div>
@@ -122,6 +126,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                   <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <User className="w-4 h-4" />
                     Username
+                    <InfoTooltip text="Username for proxy authentication. Leave blank if the proxy does not require credentials." />
                   </label>
                   <input
                     type="text"
@@ -136,6 +141,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                   <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Lock className="w-4 h-4" />
                     Password
+                    <InfoTooltip text="Password for proxy authentication. Stored encrypted in the application settings." />
                   </label>
                   <PasswordInput
                     value={settings.globalProxy?.password || ""}

@@ -4,6 +4,7 @@ import { ListVideo, Clock, AlertCircle, Hash } from "lucide-react";
 import * as macroService from "../../../utils/recording/macroService";
 import { Checkbox, NumberInput, Slider } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface MacroSettingsProps {
   settings: GlobalSettings;
@@ -40,8 +41,9 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-primary" />
             <div>
-              <span className="text-sm text-[var(--color-textSecondary)]">
+              <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
                 Default delay between steps
+                <InfoTooltip text="Time in milliseconds to wait between each step when replaying a macro. Increase for slower remote hosts." />
               </span>
               <p className="text-[10px] text-[var(--color-textMuted)]">
                 Delay in milliseconds when replaying macros
@@ -64,8 +66,9 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <AlertCircle size={14} className="text-warning" />
             <div>
-              <span className="sor-toggle-label">
+              <span className="sor-toggle-label flex items-center gap-1">
                 Confirm before replay
+                <InfoTooltip text="Show a confirmation dialog before executing a macro to prevent accidental replay." />
               </span>
               <p className="text-[10px] text-[var(--color-textMuted)]">
                 Show confirmation dialog before replaying a macro
@@ -83,8 +86,9 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Hash size={14} className="text-success" />
             <div>
-              <span className="text-sm text-[var(--color-textSecondary)]">
+              <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
                 Max steps per macro
+                <InfoTooltip text="Upper limit on the number of recorded steps in a single macro. Prevents excessively large recordings." />
               </span>
               <p className="text-[10px] text-[var(--color-textMuted)]">
                 Maximum number of steps allowed in a single macro

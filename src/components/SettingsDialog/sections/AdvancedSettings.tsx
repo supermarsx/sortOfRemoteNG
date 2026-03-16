@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Checkbox } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;
@@ -86,7 +87,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       <div className="space-y-4">
         <h4 className="sor-section-heading">
           <Layers className="w-4 h-4 text-primary" />
-          Tab Grouping
+          <span className="flex items-center gap-1">Tab Grouping <InfoTooltip text="Organize open connection tabs into groups based on a shared property." /></span>
         </h4>
 
         <div className="sor-settings-card">
@@ -122,8 +123,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
         </h4>
 
         <div className="sor-settings-card">
-          <label className="block text-sm text-[var(--color-textSecondary)] mb-3">
+          <label className="text-sm text-[var(--color-textSecondary)] mb-3 flex items-center gap-1">
             Log Level
+            <InfoTooltip text="Minimum severity of log messages to record. Debug captures everything; Error captures only failures." />
           </label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {LOG_LEVEL_CONFIG.map((level) => {
@@ -166,8 +168,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             <Checkbox checked={settings.hostnameOverride} onChange={(v: boolean) => updateSettings({ hostnameOverride: v })} />
             <Terminal className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
                 Override tab names with hostname
+                <InfoTooltip text="Display the resolved server hostname in tab titles instead of the user-defined connection name." />
               </span>
               <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
                 Display the server hostname instead of the connection name in
@@ -190,8 +193,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             <Checkbox checked={settings.detectUnexpectedClose ?? true} onChange={(v: boolean) => updateSettings({ detectUnexpectedClose: v })} />
             <ShieldAlert className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
                 Detect unexpected app close
+                <InfoTooltip text="Monitor for abnormal application exits and offer session recovery options on next launch." />
               </span>
               <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
                 Show recovery options if the app was closed unexpectedly
@@ -225,8 +229,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 })} />
             <Save className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
                 Auto-save settings
+                <InfoTooltip text="Automatically persist settings changes as you make them, with a short debounce delay." />
               </span>
               <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
                 Automatically save changes as you make them (debounced). Disable
@@ -250,8 +255,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 })} />
             <Save className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
                 Show save button
+                <InfoTooltip text="Display a manual save button in the settings header for explicit saving, useful when auto-save is disabled." />
               </span>
               <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
                 Show a manual save button in the settings header. Useful when
@@ -275,8 +281,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 })} />
             <RotateCcw className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
                 Confirm before reset
+                <InfoTooltip text="Show a confirmation dialog before resetting a settings tab back to its default values." />
               </span>
               <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
                 Show a confirmation dialog before resetting a tab's settings to

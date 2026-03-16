@@ -3,6 +3,7 @@ import { Globe, Wifi, Bookmark, RefreshCw, Trash2 } from "lucide-react";
 import { GlobalSettings } from "../../../types/settings/settings";
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -33,8 +34,9 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           {/* Enable keepalive */}
           <label className="sor-settings-tile">
             <div>
-              <span className="text-sm text-[var(--color-text)]">
+              <span className="text-sm text-[var(--color-text)] flex items-center gap-1">
                 Enable proxy health checks
+                <InfoTooltip text="Periodically verify the local authentication proxy is still alive and responsive." />
               </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                 Periodically verify the local proxy is still alive
@@ -49,8 +51,9 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           >
             <label className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-[var(--color-text)]">
+                <span className="text-sm text-[var(--color-text)] flex items-center gap-1">
                   Health-check interval
+                  <InfoTooltip text="How often, in seconds, the proxy port is probed to verify it is still responding." />
                 </span>
                 <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                   How often to probe the proxy port (seconds)
@@ -78,6 +81,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
               <span className="text-sm text-[var(--color-text)] flex items-center gap-1.5">
                 <RefreshCw size={14} className="text-success" />
                 Auto-restart dead proxies
+                <InfoTooltip text="Automatically restart the local proxy process when a health check detects it has stopped responding." />
               </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                 Automatically restart the proxy when a health check fails
@@ -92,8 +96,9 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           >
             <label className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-[var(--color-text)]">
+                <span className="text-sm text-[var(--color-text)] flex items-center gap-1">
                   Max consecutive auto-restarts
+                  <InfoTooltip text="Stop auto-restarting the proxy after this many consecutive failed attempts. Set to 0 for unlimited retries." />
                 </span>
                 <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                   Stop auto-restarting after this many attempts (0 = unlimited)
@@ -124,6 +129,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
               <span className="text-sm text-[var(--color-text)] flex items-center gap-1.5">
                 <Trash2 size={14} className="text-error" />
                 Confirm before deleting all bookmarks
+                <InfoTooltip text="Show a confirmation dialog before clearing all saved bookmarks for a web browser connection." />
               </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                 Show a confirmation dialog before clearing all bookmarks for a
