@@ -709,55 +709,78 @@ export function useRDPClient(session: ConnectionSession) {
 
   // ─── Scaled cursor builder ─────────────────────────────────────────
   // Generates a CSS cursor value with an SVG cursor scaled to match the
-  // remote desktop's proportional size on the local canvas.  A standard
-  // 32px system cursor on a 1920→960 scaled canvas would be 2× too large;
-  // we scale it down so it looks like a native remote cursor.
+  // remote desktop's proportional size on the local canvas.  Stored in a
+  // ref so event listeners always get the latest version without stale
+  // closures.  Rebuilt on canvas resize and desktop size changes.
 
-  const buildScaledCursor = useCallback((shape: 'arrow' | 'dot'): string => {
-    const canvas = canvasRef.current;
-    if (!canvas) return shape === 'dot' ? 'crosshair' : 'default';
+  const buildScaledCursorRef = useRef<(shape: 'arrow' | 'dot') => string>(() => 'default');
 
-    const rect = canvas.getBoundingClientRect();
-    // ratio = how much the canvas is scaled relative to the remote desktop
-    const ratio = rect.width / (desktopSize.width || 1920);
-    // Clamp to reasonable range
-    const scale = Math.max(0.25, Math.min(2.0, ratio));
+  // Keep the builder function up-to-date with current canvas/desktop size.
+  // Also tracks the last cursor shape so we can rebuild on resize.
+  const lastCursorShapeRef = useRef<'arrow' | 'dot' | null>(null);
 
-    if (shape === 'dot') {
-      const size = Math.round(7 * scale);
-      const r = Math.max(1.5, (size - 1) / 2);
-      const cx = size / 2;
-      const cy = size / 2;
-      const hotspot = Math.round(cx);
+  useEffect(() => {
+    const desktopW = desktopSize.width || 1920;
+
+    buildScaledCursorRef.current = (shape: 'arrow' | 'dot'): string => {
+      lastCursorShapeRef.current = shape;
+      const canvas = canvasRef.current;
+      if (!canvas) return shape === 'dot' ? 'crosshair' : 'default';
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width < 10) return shape === 'dot' ? 'crosshair' : 'default';
+      const ratio = rect.width / desktopW;
+      const scale = Math.max(0.25, Math.min(2.0, ratio));
+
+      if (shape === 'dot') {
+        const size = Math.round(7 * scale);
+        const r = Math.max(1.5, (size - 1) / 2);
+        const cx = size / 2;
+        const cy = size / 2;
+        const hotspot = Math.round(cx);
+        return (
+          'url("data:image/svg+xml,' +
+          encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" stroke="black" stroke-width="0.8"/>` +
+            '</svg>'
+          ) +
+          `") ${hotspot} ${hotspot}, auto`
+        );
+      }
+
+      const w = Math.round(20 * scale);
+      const h = Math.round(20 * scale);
+      if (w < 8 || w > 64) return 'default';
+      const hotX = Math.round(1 * scale);
+      const hotY = Math.round(1 * scale);
       return (
         'url("data:image/svg+xml,' +
         encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-          `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" stroke="black" stroke-width="0.8"/>` +
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 20 20">` +
+          '<path d="M2 1 L2 17 L6.5 12.5 L10 19 L12.5 18 L9 11.5 L15 11.5 Z" ' +
+          'fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/>' +
           '</svg>'
         ) +
-        `") ${hotspot} ${hotspot}, auto`
+        `") ${hotX} ${hotY}, auto`
       );
-    }
+    };
 
-    // Arrow cursor: scale the standard Windows arrow proportionally.
-    // Base size: 20×20 at 1:1 scale (matches ~32px system cursor at 150% DPI).
-    const w = Math.round(20 * scale);
-    const h = Math.round(20 * scale);
-    if (w < 8 || w > 64) return 'default'; // too small/large — fall back to system
-    const hotX = Math.round(1 * scale);
-    const hotY = Math.round(1 * scale);
-    return (
-      'url("data:image/svg+xml,' +
-      encodeURIComponent(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 20 20">` +
-        '<path d="M2 1 L2 17 L6.5 12.5 L10 19 L12.5 18 L9 11.5 L15 11.5 Z" ' +
-        'fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/>' +
-        '</svg>'
-      ) +
-      `") ${hotX} ${hotY}, auto`
-    );
+    // Rebuild cursor when canvas resizes (scale ratio changes)
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(() => {
+      const shape = lastCursorShapeRef.current;
+      if (shape) {
+        setPointerStyle(buildScaledCursorRef.current(shape));
+      }
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
   }, [desktopSize.width]);
+
+  // Convenience wrapper for event listeners (always reads the latest ref)
+  const buildScaledCursor = (shape: 'arrow' | 'dot') => buildScaledCursorRef.current(shape);
 
   // ─── Event listeners ───────────────────────────────────────────────
 
