@@ -341,6 +341,7 @@ const defaultSettings: GlobalSettings = {
     serverCertValidation: 'warn',
     enableServerPointer: true,
     pointerSoftwareRendering: true,
+    sspiPackageList: '',
     gatewayEnabled: false,
     gatewayHostname: '',
     gatewayPort: 443,
@@ -374,6 +375,11 @@ const defaultSettings: GlobalSettings = {
     mouseMode: 'absolute' as const,
     enableUnicodeInput: true,
     autoDetectKeyboardLayout: true,
+    inputPriority: 'realtime' as const,
+    batchIntervalMs: 16,
+    keyboardLayout: 0x0409,
+    keyboardType: 'ibm-enhanced',
+    keyboardFunctionKeys: 12,
     // Scroll / Mouse Wheel
     scrollSpeed: 1.0,
     smoothScroll: true,
@@ -405,6 +411,12 @@ const defaultSettings: GlobalSettings = {
     frameBatchIntervalMs: 33,
     fullFrameSyncInterval: 300,
     readTimeoutMs: 16,
+    // Advanced
+    sessionClosePolicy: 'disconnect' as const,
+    clientName: '',
+    clientBuild: 0,
+    maxConsecutiveErrors: 50,
+    statsIntervalSecs: 1,
     // Bitmap Codecs
     codecsEnabled: true,
     remoteFxEnabled: true,

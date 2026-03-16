@@ -52,6 +52,11 @@ export function mergeRdpSettings(
       scrollSpeed: global.scrollSpeed ?? base.input?.scrollSpeed,
       smoothScroll: global.smoothScroll ?? base.input?.smoothScroll,
       localCursor: global.localCursor ?? base.input?.localCursor,
+      inputPriority: global.inputPriority ?? base.input?.inputPriority,
+      batchIntervalMs: global.batchIntervalMs ?? base.input?.batchIntervalMs,
+      keyboardLayout: global.keyboardLayout ?? base.input?.keyboardLayout,
+      keyboardType: global.keyboardType ?? base.input?.keyboardType,
+      keyboardFunctionKeys: global.keyboardFunctionKeys ?? base.input?.keyboardFunctionKeys,
       ...conn?.input,
     },
     deviceRedirection: {
@@ -113,6 +118,7 @@ export function mergeRdpSettings(
       serverCertValidation: global.serverCertValidation ?? base.security?.serverCertValidation,
       enableServerPointer: global.enableServerPointer ?? base.security?.enableServerPointer,
       pointerSoftwareRendering: global.pointerSoftwareRendering ?? base.security?.pointerSoftwareRendering,
+      sspiPackageList: global.sspiPackageList || base.security?.sspiPackageList,
       ...conn?.security,
     },
     gateway: {
@@ -142,6 +148,11 @@ export function mergeRdpSettings(
       ...base.advanced,
       fullFrameSyncInterval: global.fullFrameSyncInterval ?? base.advanced?.fullFrameSyncInterval,
       readTimeoutMs: global.readTimeoutMs ?? base.advanced?.readTimeoutMs,
+      sessionClosePolicy: global.sessionClosePolicy ?? base.advanced?.sessionClosePolicy,
+      clientName: global.clientName || base.advanced?.clientName,
+      clientBuild: global.clientBuild ?? base.advanced?.clientBuild,
+      maxConsecutiveErrors: global.maxConsecutiveErrors ?? base.advanced?.maxConsecutiveErrors,
+      statsIntervalSecs: global.statsIntervalSecs ?? base.advanced?.statsIntervalSecs,
       ...conn?.advanced,
     },
     tcp: {

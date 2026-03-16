@@ -594,6 +594,8 @@ export interface RdpGlobalDefaultsConfig {
   enableServerPointer: boolean;
   /** Use software rendering for pointer/cursor */
   pointerSoftwareRendering: boolean;
+  /** Custom SSPI package list override (e.g. "!kerberos,!pku2u") */
+  sspiPackageList: string;
 
   // ─── Gateway defaults ──────────────────────────────────────
   /** Enable RDP Gateway by default */
@@ -670,6 +672,16 @@ export interface RdpGlobalDefaultsConfig {
   enableUnicodeInput: boolean;
   /** Auto-detect keyboard layout on connect */
   autoDetectKeyboardLayout: boolean;
+  /** Input priority mode: 'realtime' sends immediately, 'batched' groups inputs */
+  inputPriority: 'realtime' | 'batched';
+  /** Batch interval in ms when inputPriority is 'batched' */
+  batchIntervalMs: number;
+  /** Keyboard layout code (e.g. 0x0409 for US English) */
+  keyboardLayout: number;
+  /** Keyboard type identifier */
+  keyboardType: string;
+  /** Number of function keys on the keyboard */
+  keyboardFunctionKeys: number;
 
   // ─── Scroll / Mouse Wheel defaults ────────────────────────
   /** Scroll speed multiplier (0.1 – 5.0, default 1.0) */
@@ -733,6 +745,18 @@ export interface RdpGlobalDefaultsConfig {
   fullFrameSyncInterval: number;
   /** Read timeout in ms for the PDU read loop */
   readTimeoutMs: number;
+
+  // ─── Advanced defaults ─────────────────────────────────────
+  /** Action when closing an RDP session: disconnect, detach, ask, or use global policy */
+  sessionClosePolicy: 'disconnect' | 'detach' | 'ask' | 'global';
+  /** Client name advertised during RDP negotiation (empty = auto) */
+  clientName: string;
+  /** Client build number advertised during RDP negotiation (0 = auto) */
+  clientBuild: number;
+  /** Maximum consecutive PDU errors before disconnecting */
+  maxConsecutiveErrors: number;
+  /** Interval in seconds for connection statistics reporting */
+  statsIntervalSecs: number;
 
   // ─── Bitmap Codec defaults ─────────────────────────────────
   /** Enable bitmap codec negotiation (when false, only raw/RLE bitmaps) */
