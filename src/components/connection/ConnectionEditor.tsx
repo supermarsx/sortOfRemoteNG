@@ -36,6 +36,7 @@ import {
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
 import { Checkbox, NumberInput, PasswordInput, Select, Textarea} from '../ui/forms';
+import { InfoTooltip } from '../ui/InfoTooltip';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -326,7 +327,9 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
    ConnectionFields — hostname / port inputs
    ═══════════════════════════════════════════════════════════════ */
 
-const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
+const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const p = mgr.formData.protocol || '';
+  return (
   <div className="space-y-2">
     {/* Hostname + Port row */}
     <div className="grid grid-cols-[1fr_100px] gap-2">
@@ -342,7 +345,11 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
           }
           className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono"
-          placeholder="192.168.1.100"
+          placeholder={
+            p === 'http' || p === 'https' ? 'example.com'
+            : p === 'ssh' ? '192.168.1.100 or server.example.com'
+            : '192.168.1.100'
+          }
         />
       </div>
       <div>
@@ -358,8 +365,15 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     {/* Username + Password row */}
     <div className="grid grid-cols-2 gap-2">
       <div>
-        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
           Username
+          <InfoTooltip text={
+            p === 'rdp' ? 'Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).'
+            : p === 'ssh' ? 'SSH login username. Used for password or key-based authentication.'
+            : p === 'winrm' ? 'Account for WinRM Basic auth. Domain accounts use the Domain field below.'
+            : p === 'vnc' ? 'VNC authentication usually only needs a password, not a username.'
+            : 'Username for authentication with the remote service.'
+          } />
         </label>
         <input
           type="text"
@@ -368,12 +382,25 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             mgr.setFormData({ ...mgr.formData, username: e.target.value })
           }
           className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-          placeholder="admin"
+          placeholder={
+            p === 'rdp' ? 'Administrator'
+            : p === 'ssh' ? 'root'
+            : p === 'winrm' ? 'Administrator'
+            : p === 'vnc' ? '(optional)'
+            : 'admin'
+          }
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
           Password
+          <InfoTooltip text={
+            p === 'rdp' ? 'Windows account password. Sent via CredSSP/NLA during the RDP handshake.'
+            : p === 'ssh' ? 'SSH password. Leave empty if using key-based authentication.'
+            : p === 'winrm' ? 'Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security).'
+            : p === 'vnc' ? 'VNC server password. Most VNC servers only use password authentication.'
+            : 'Password for authentication with the remote service.'
+          } />
         </label>
         <PasswordInput
           value={mgr.formData.password || ""}
@@ -387,7 +414,8 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    ProtocolSections — renders all protocol-specific sub-editors
