@@ -5,12 +5,14 @@ mod frame_delivery;
 pub mod frame_store;
 pub mod input;
 mod network;
+pub mod session_poller;
 pub mod session_runner;
 pub mod settings;
 pub mod stats;
 pub mod types;
 pub mod commands;
 pub mod diagnostics;
+pub mod wake_channel;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;

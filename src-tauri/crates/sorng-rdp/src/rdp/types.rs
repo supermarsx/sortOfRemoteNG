@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use serde::{Deserialize, Serialize};
 use super::frame_channel::DynFrameChannel;
-use tokio::sync::mpsc;
+use super::wake_channel::WakeSender;
 
 use super::network::build_tls_config;
 use super::stats::RdpSessionStats;
@@ -136,7 +136,7 @@ pub enum RdpCommand {
 
 pub struct RdpActiveConnection {
     pub session: RdpSession,
-    pub cmd_tx: mpsc::UnboundedSender<RdpCommand>,
+    pub cmd_tx: WakeSender,
     pub stats: Arc<RdpSessionStats>,
     pub _handle: tokio::task::JoinHandle<()>,
     /// Cached password for automatic reconnection (CredSSP re-auth).

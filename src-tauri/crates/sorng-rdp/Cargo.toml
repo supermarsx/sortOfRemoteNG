@@ -50,6 +50,7 @@ reqwest = { workspace = true, features = ["cookies", "blocking"] }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 smallvec = "1"
+polling = "3"
 base64 = { workspace = true }
 
 # ── Heavy optional deps (backend decode / snapshot) ──────────────────

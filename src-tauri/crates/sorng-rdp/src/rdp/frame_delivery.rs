@@ -371,6 +371,18 @@ pub fn set_read_timeout_on_framed(framed: &Framed<RdpTlsStream>, timeout: Option
     let _ = tcp.set_read_timeout(timeout);
 }
 
+pub fn set_nonblocking_on_framed(framed: &Framed<RdpTlsStream>, nonblocking: bool) {
+    let (tls_stream, _) = framed.get_inner();
+    let tcp = tls_stream.get_ref();
+    let _ = tcp.set_nonblocking(nonblocking);
+}
+
+/// Get a reference to the underlying TCP stream for poll registration.
+pub fn tcp_stream_ref(framed: &Framed<RdpTlsStream>) -> &std::net::TcpStream {
+    let (tls_stream, _) = framed.get_inner();
+    tls_stream.get_ref()
+}
+
 pub fn is_timeout_error(e: &io::Error) -> bool {
     matches!(
         e.kind(),

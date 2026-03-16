@@ -181,7 +181,7 @@ pub fn run_rdp_session(
     domain: Option<String>,
     settings: ResolvedSettings,
     event_emitter: DynEventEmitter,
-    mut cmd_rx: mpsc::UnboundedReceiver<RdpCommand>,
+    mut cmd_rx: crate::rdp::wake_channel::WakeReceiver,
     stats: Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
@@ -346,7 +346,7 @@ fn run_rdp_session_auto_detect(
     domain: Option<&str>,
     settings: &ResolvedSettings,
     event_emitter: &DynEventEmitter,
-    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
@@ -598,7 +598,7 @@ fn establish_rdp_connection(
     domain: Option<&str>,
     settings: &ResolvedSettings,
     event_emitter: &DynEventEmitter,
-    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
@@ -608,7 +608,7 @@ fn establish_rdp_connection(
     let conn_start = Instant::now();
 
     // -- 0. Pre-flight shutdown check --
-    match cmd_rx.try_recv() {
+    match cmd_rx.cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown before connect (pre-flight)");
             return Err("session_shutdown: cancelled before connect".into());
@@ -668,7 +668,7 @@ fn establish_rdp_connection(
     log::info!("RDP session {session_id}: TCP connected in {tcp_ms}ms");
 
     // -- Shutdown check after TCP connect --
-    match cmd_rx.try_recv() {
+    match cmd_rx.cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown after TCP connect");
             return Err("session_shutdown: cancelled after TCP connect".into());
@@ -913,7 +913,7 @@ fn establish_rdp_connection(
     let upgraded = crate::ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
     // -- Shutdown check before CredSSP/NLA --
-    match cmd_rx.try_recv() {
+    match cmd_rx.cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown before CredSSP");
             return Err("session_shutdown: cancelled before CredSSP".into());
@@ -1079,7 +1079,7 @@ fn run_active_session_loop(
     est: &mut EstablishedSession,
     settings: &ResolvedSettings,
     event_emitter: &DynEventEmitter,
-    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
     stats: &Arc<RdpSessionStats>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
@@ -1089,13 +1089,35 @@ fn run_active_session_loop(
     let mut viewer_detached = false;
     let mut attached_channel: Option<DynFrameChannel> = None;
 
-    // Set a short read timeout so we can interleave input handling
-    set_read_timeout_on_framed(&est.tls_framed, Some(settings.read_timeout));
+    // ── Event-driven poller ─────────────────────────────────────────
+    // Instead of blocking on read_pdu() with a timeout (which adds
+    // latency to input), we set the socket to non-blocking and use
+    // polling::Poller to wait on BOTH the TCP socket and the wake
+    // pipe simultaneously.  The thread sleeps until either source
+    // has data — zero timeout polling, sub-millisecond input latency.
+
+    // Switch to non-blocking I/O for the poller.
+    set_nonblocking_on_framed(&est.tls_framed, true);
+
+    let tcp_ref = tcp_stream_ref(&est.tls_framed);
+    let mut poller = match crate::rdp::session_poller::SessionPoller::new(
+        tcp_ref,
+        &cmd_rx.wake_reader,
+    ) {
+        Ok(p) => {
+            log::info!("RDP session {session_id}: event-driven poller active");
+            Some(p)
+        }
+        Err(e) => {
+            log::warn!("RDP session {session_id}: poller creation failed ({e}), using timeout fallback");
+            set_nonblocking_on_framed(&est.tls_framed, false);
+            set_read_timeout_on_framed(&est.tls_framed, Some(Duration::from_millis(2)));
+            None
+        }
+    };
 
     let mut last_stats_emit = Instant::now();
     let stats_interval = settings.stats_interval;
-    // The authoritative consecutive-error counter is now in
-    // stats.consecutive_pdu_errors.
     let max_consecutive_errors = settings.max_consecutive_errors;
     let full_frame_sync_interval = settings.full_frame_sync_interval;
 
@@ -1110,28 +1132,43 @@ fn run_active_session_loop(
     let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
     let mut gfx_frames: Vec<crate::gfx::processor::GfxOutput> = Vec::new();
 
-    // Adaptive read timeout — controls how quickly the loop reacts to
-    // new input commands.  Lower = more responsive mouse but more CPU.
-    // The loop blocks on read_pdu() for up to this duration; input waits
-    // in the mpsc channel until the read times out or server data arrives.
-    let timeout_active = Duration::from_millis(1);   // 1ms when server is active
-    let timeout_idle = Duration::from_millis(16);    // 16ms when idle (saves CPU)
-    let idle_threshold = Duration::from_millis(200); // go idle after 200ms silence
-    let mut last_data_received = Instant::now();
-    let mut current_timeout = timeout_active;
-
-    /// Maximum input events coalesced per loop iteration.  Prevents
-    /// unbounded growth when the consumer falls behind the producer.
+    /// Maximum input events coalesced per loop iteration.
     const INPUT_BACKLOG_LIMIT: usize = 512;
 
+    // Max time to sleep in the poller (for stats/keepalive timers).
+    let poll_timeout = stats_interval.min(Duration::from_secs(5));
+
     loop {
+        // ── Phase 0: Wait for events ────────────────────────────
+        // Check if the TLS layer already has buffered plaintext
+        // (from a previous record that contained multiple PDUs).
+        let tls_has_buffered = !est.tls_framed.peek().is_empty();
+
+        if !tls_has_buffered {
+            if let Some(ref mut p) = poller {
+                // Event-driven: sleep until TCP data, wake signal, or timer.
+                match p.wait(Some(poll_timeout)) {
+                    Ok(result) => {
+                        if result.wake_ready {
+                            cmd_rx.drain_wake();
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("RDP session {session_id}: poller error: {e}");
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                }
+            }
+            // Fallback (poller=None): the socket has a 2ms read timeout
+            // so read_pdu() below acts as the timer. No explicit wait.
+        }
         // - Drain ALL pending commands (input coalescing) -
         merged_inputs.clear();
         let mut should_break = false;
         let mut should_reconnect = false;
         let mut input_dropped = 0u64;
         loop {
-            match cmd_rx.try_recv() {
+            match cmd_rx.cmd_rx.try_recv() {
                 Ok(RdpCommand::Shutdown) => {
                     log::info!("RDP session {session_id}: shutdown requested");
                     if let Ok(outputs) = est.active_stage.graceful_shutdown() {
@@ -1518,11 +1555,6 @@ fn run_active_session_loop(
                 Ok((action, payload)) => {
                     // Successful PDU — reset consecutive error counters.
                     stats.record_successful_pdu();
-                    last_data_received = Instant::now();
-                    if current_timeout != timeout_active {
-                        current_timeout = timeout_active;
-                        set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
-                    }
                     let payload_len = payload.len() as u64;
 
                     // Zero-byte PDU detection — catches broken connections
@@ -1655,13 +1687,8 @@ fn run_active_session_loop(
                     }
                 }
                 Err(e) if is_timeout_error(&e) => {
-                    if pdus_this_batch == 0
-                        && current_timeout == timeout_active
-                        && last_data_received.elapsed() >= idle_threshold
-                    {
-                        current_timeout = timeout_idle;
-                        set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
-                    }
+                    // WouldBlock — no more data in socket right now.
+                    // The poller will wake us when more arrives.
                     break;
                 }
                 Err(e) => {
@@ -1782,8 +1809,9 @@ fn run_active_session_loop(
                 }).unwrap_or_default(),
             );
 
-            // Remove read timeout for reactivation
-            set_read_timeout_on_framed(&est.tls_framed, None);
+            // Switch back to blocking mode for reactivation (it uses
+            // synchronous read_pdu calls that need to block).
+            set_nonblocking_on_framed(&est.tls_framed, false);
 
             match handle_reactivation(cas, &mut est.tls_framed, stats) {
                 Ok(new_result) => {
@@ -1818,7 +1846,8 @@ fn run_active_session_loop(
                         }).unwrap_or_default(),
                     );
 
-                    set_read_timeout_on_framed(&est.tls_framed, Some(settings.read_timeout));
+                    // Back to non-blocking for the poller.
+                    set_nonblocking_on_framed(&est.tls_framed, true);
                 }
                 Err(e) => {
                     log::error!("RDP session {session_id}: reactivation failed: {e}");
@@ -1845,7 +1874,7 @@ fn run_rdp_session_inner(
     domain: Option<&str>,
     settings: &ResolvedSettings,
     event_emitter: &DynEventEmitter,
-    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
@@ -1858,7 +1887,7 @@ fn run_rdp_session_inner(
 
     'session: loop {
         // Check for shutdown before (re)connecting
-        match cmd_rx.try_recv() {
+        match cmd_rx.cmd_rx.try_recv() {
             Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
                 return Err("session_shutdown: cancelled before connect".into());
             }
@@ -2033,14 +2062,14 @@ fn compute_backoff_delay(attempt: u32, base: Duration, max: Duration) -> Duratio
 /// Sleep for the given duration, but check for shutdown commands periodically.
 /// Returns Err if shutdown was requested during the sleep.
 fn sleep_with_shutdown_check(
-    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
     total: Duration,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let check_interval = Duration::from_millis(500);
     let start = Instant::now();
 
     while start.elapsed() < total {
-        match cmd_rx.try_recv() {
+        match cmd_rx.cmd_rx.try_recv() {
             Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
                 return Err("session_shutdown: cancelled during reconnect wait".into());
             }

@@ -10317,6 +10317,7 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "png 0.17.16",
+ "polling",
  "reqwest 0.12.28",
  "rustls 0.23.37",
  "rustls-native-certs 0.8.3",

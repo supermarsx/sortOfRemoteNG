@@ -87,7 +87,8 @@ pub async fn connect_rdp(
     }
 
     let session_id = Uuid::new_v4().to_string();
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<RdpCommand>();
+    let (cmd_tx, mut cmd_rx) = crate::rdp::wake_channel::create_wake_channel()
+        .map_err(|e| format!("Failed to create wake channel: {e}"))?;
 
     let requested_width = width.unwrap_or(1920);
     let requested_height = height.unwrap_or(1080);
