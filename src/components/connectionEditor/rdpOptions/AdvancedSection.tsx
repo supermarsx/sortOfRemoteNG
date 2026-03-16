@@ -1,6 +1,6 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
-import { Settings2 } from "lucide-react";
+import { Settings2, Info } from "lucide-react";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Slider } from "../../ui/forms";
 const CLOSE_POLICIES = [
@@ -18,8 +18,9 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     }
   >
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         On Tab Close
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="What happens when you close the tab. Background keeps the session alive; Disconnect ends it immediately." />
       </label>
       <select
         value={rdp.advanced?.sessionClosePolicy ?? "global"}
@@ -33,8 +34,9 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Client Name
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Name reported to the remote server during connection. Visible in server-side session lists (max 15 characters)." />
       </label>
       <input
         type="text"
@@ -49,8 +51,9 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Read Timeout: {rdp.advanced?.readTimeoutMs ?? 16}ms
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How long to wait for data before yielding the read loop. Lower values give faster response; higher values reduce CPU usage." />
       </label>
       <Slider value={rdp.advanced?.readTimeoutMs ?? 16} onChange={(v: number) => updateRdp("advanced", { readTimeoutMs: v })} min={1} max={100} variant="full" />
       <div className="flex justify-between text-xs text-[var(--color-textMuted)]">
@@ -60,9 +63,10 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Full-frame Sync Interval: every{" "}
         {rdp.advanced?.fullFrameSyncInterval ?? 300} frames
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Number of incremental frames between full-screen redraws. Lower values fix rendering glitches faster but use more bandwidth." />
       </label>
       <Slider value={rdp.advanced?.fullFrameSyncInterval ?? 300} onChange={(v: number) => updateRdp("advanced", {
             fullFrameSyncInterval: v,
@@ -70,8 +74,9 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Max Consecutive Errors: {rdp.advanced?.maxConsecutiveErrors ?? 50}
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Number of consecutive decode/render errors before the session is terminated. Increase if you experience intermittent disconnects." />
       </label>
       <Slider value={rdp.advanced?.maxConsecutiveErrors ?? 50} onChange={(v: number) => updateRdp("advanced", {
             maxConsecutiveErrors: v,
@@ -79,8 +84,9 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Stats Interval: {rdp.advanced?.statsIntervalSecs ?? 1}s
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How often performance statistics (FPS, bandwidth, latency) are sampled and reported in the status bar." />
       </label>
       <Slider value={rdp.advanced?.statsIntervalSecs ?? 1} onChange={(v: number) => updateRdp("advanced", {
             statsIntervalSecs: v,

@@ -1,6 +1,6 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
-import { Mouse, ScanSearch } from "lucide-react";
+import { Mouse, ScanSearch, Info } from "lucide-react";
 import { KEYBOARD_LAYOUTS, CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Select, Slider } from "../../ui/forms";
 const InputSection: React.FC<
@@ -14,8 +14,9 @@ const InputSection: React.FC<
     icon={<Mouse size={14} className="text-warning" />}
   >
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Mouse Mode
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Absolute sends real screen coordinates; Relative sends delta movement. Use Absolute unless the remote app requires raw mouse input." />
       </label>
       <Select value={rdp.input?.mouseMode ?? ""} onChange={(v: string) => updateRdp("input", {
             mouseMode: v === "" ? undefined : (v as "relative" | "absolute"),
@@ -23,12 +24,12 @@ const InputSection: React.FC<
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Auto-detect keyboard layout on connect</label>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Auto-detect keyboard layout on connect <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Detect keyboard layout from the OS on connect. Disable to manually pick a layout below." /></label>
       <Select value={rdp.input?.autoDetectLayout === undefined ? "" : rdp.input.autoDetectLayout ? "true" : "false"} onChange={(v: string) => updateRdp("input", { autoDetectLayout: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Keyboard Layout{" "}
         {rdp.input?.autoDetectLayout !== false && (
           <span className="text-primary">(overridden by auto-detect)</span>
@@ -53,8 +54,9 @@ const InputSection: React.FC<
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Keyboard Type
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Physical keyboard type reported to the server. Most modern keyboards are IBM Enhanced (101/102 key)." />
       </label>
       <Select value={rdp.input?.keyboardType ?? "ibm-enhanced"} onChange={(v: string) => updateRdp("input", {
             keyboardType: v as "ibm-enhanced",
@@ -62,8 +64,9 @@ const InputSection: React.FC<
     </div>
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Input Priority
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Realtime sends each input event immediately; Batched groups events to reduce packet count at the cost of slight latency." />
       </label>
       <Select value={rdp.input?.inputPriority ?? "realtime"} onChange={(v: string) => updateRdp("input", {
             inputPriority: v as "realtime" | "batched",
@@ -80,7 +83,7 @@ const InputSection: React.FC<
     )}
 
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Enable Unicode keyboard input</label>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Enable Unicode keyboard input <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Send characters as Unicode events instead of scancodes. Useful for non-Latin keyboards or special characters." /></label>
       <Select value={rdp.input?.enableUnicodeInput === undefined ? "" : rdp.input.enableUnicodeInput ? "true" : "false"} onChange={(v: string) => updateRdp("input", { enableUnicodeInput: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
     </div>
   </Section>

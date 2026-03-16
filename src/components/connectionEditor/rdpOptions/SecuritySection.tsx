@@ -1,6 +1,6 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
-import { Shield, ShieldAlert, Fingerprint, Trash2, Pencil, Network, Server } from "lucide-react";
+import { Shield, ShieldAlert, Fingerprint, Trash2, Pencil, Network, Server, Info } from "lucide-react";
 import { Connection, RDPConnectionSettings } from "../../../types/connection/connection";
 import { CredsspOracleRemediationPolicies, NlaModes, TlsVersions, CredsspVersions } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
@@ -70,8 +70,9 @@ const SecuritySection: React.FC<
 
       <div className="space-y-3">
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Encryption Oracle Remediation Policy
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="CVE-2018-0886 mitigation. 'Mitigated' is recommended; 'Vulnerable' allows unpatched servers but is insecure." />
           </label>
           <Select value={rdp.security?.credsspOracleRemediation ?? ""} onChange={(v: string) =>
               updateRdp("security", {
@@ -87,8 +88,9 @@ const SecuritySection: React.FC<
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             NLA Mode
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Network Level Authentication mode. Required rejects connections if NLA is unavailable; Preferred falls back to TLS." />
           </label>
           <Select value={rdp.security?.enableNla === false ? "disabled" : ""} onChange={(v: string) => {
               const mode = v as (typeof NlaModes)[number] | "";
@@ -115,8 +117,9 @@ const SecuritySection: React.FC<
         </label>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Minimum TLS Version
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Lowest TLS version accepted for the connection. Use TLS 1.2+ for modern security compliance." />
           </label>
           <Select value={rdp.security?.tlsMinVersion ?? ""} onChange={(v: string) =>
               updateRdp("security", {
@@ -164,8 +167,9 @@ const SecuritySection: React.FC<
         </label>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             CredSSP Version
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="TSRequest protocol version for CredSSP. Version 6 (latest) includes nonce for replay protection." />
           </label>
           <Select value={rdp.security?.credsspVersion?.toString() ?? ""} onChange={(v: string) =>
               updateRdp("security", {
@@ -182,8 +186,9 @@ const SecuritySection: React.FC<
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Server Certificate Validation
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How to handle untrusted server certificates. 'Validate' is most secure; 'Ignore' accepts all certificates." />
           </label>
           <Select value={rdp.security?.serverCertValidation ?? ""} onChange={(v: string) => updateRdp("security", {
                 serverCertValidation:
@@ -194,8 +199,9 @@ const SecuritySection: React.FC<
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             SSPI Package List Override
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Override the SSPI authentication package order. Prefix with '!' to exclude a package. Leave empty for automatic selection." />
           </label>
           <input
             type="text"
@@ -214,8 +220,9 @@ const SecuritySection: React.FC<
 
     {/* Trust policy */}
     <div className="pt-2">
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Server Certificate Trust Policy
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How to handle server certificate trust. TOFU trusts on first connect; Strict requires pre-approved certificates." />
       </label>
       <Select value={formData.rdpTrustPolicy ?? ""} onChange={(v: string) => setFormData({
             ...formData,

@@ -1,6 +1,6 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
-import { Zap, ToggleLeft } from "lucide-react";
+import { Zap, ToggleLeft, Info } from "lucide-react";
 import { Connection } from "../../../types/connection/connection";
 import { NegotiationStrategies } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
@@ -14,7 +14,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
     icon={<Zap size={14} className="text-warning" />}
   >
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 font-medium">Auto-detect negotiation</label>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 font-medium flex items-center gap-1">Auto-detect negotiation <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Automatically try different protocol combinations (CredSSP, TLS, plain) until a working one is found." /></label>
       <Select value={rdp.negotiation?.autoDetect === undefined ? "" : rdp.negotiation.autoDetect ? "true" : "false"} onChange={(v: string) => updateRdp("negotiation", { autoDetect: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
       <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
         Automatically try different protocol combinations (CredSSP, TLS,
@@ -25,8 +25,9 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
     {rdp.negotiation?.autoDetect === true && (
       <div className="space-y-3 mt-2">
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Negotiation Strategy
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Order in which security protocols are attempted. NLA First is most secure; Plain Only offers no encryption." />
           </label>
           <Select value={rdp.negotiation?.strategy ?? ""} onChange={(v: string) =>
               updateRdp("negotiation", {
@@ -45,8 +46,9 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Max Retries{rdp.negotiation?.maxRetries != null ? `: ${rdp.negotiation.maxRetries}` : ""}
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Maximum number of connection attempts before giving up. Each retry tries the next protocol in the strategy." />
           </label>
           <label className="flex items-center gap-2 mb-1">
             <Checkbox checked={rdp.negotiation?.maxRetries != null} onChange={(v: boolean) => updateRdp("negotiation", { maxRetries: v ? 3 : undefined })} className="CSS.checkbox" />
@@ -66,8 +68,9 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Retry Delay{rdp.negotiation?.retryDelayMs != null ? `: ${rdp.negotiation.retryDelayMs}ms` : ""}
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Milliseconds to wait between retry attempts. Increase if the server needs time to reset after a failed attempt." />
           </label>
           <label className="flex items-center gap-2 mb-1">
             <Checkbox checked={rdp.negotiation?.retryDelayMs != null} onChange={(v: boolean) => updateRdp("negotiation", { retryDelayMs: v ? 1000 : undefined })} className="CSS.checkbox" />
@@ -96,8 +99,9 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
           Load Balancing Info
+          <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Token sent during X.224 negotiation for RDP load balancers or Session Brokers to route to the correct farm." />
         </label>
         <input
           type="text"

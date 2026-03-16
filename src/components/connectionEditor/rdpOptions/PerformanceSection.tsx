@@ -1,6 +1,6 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
-import { Gauge } from "lucide-react";
+import { Gauge, Info } from "lucide-react";
 import { Connection, RDPConnectionSettings } from "../../../types/connection/connection";
 import { PERFORMANCE_PRESETS, CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, Select, Slider } from "../../ui/forms";
@@ -25,8 +25,9 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
   >
     {/* Connection speed */}
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Connection Speed
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Bandwidth profile that sets default visual experience flags. Choose the closest match to your network." />
       </label>
       <Select value={rdp.performance?.connectionSpeed ?? "broadband-high"} onChange={(v: string) => {
           const speed = v;
@@ -132,8 +133,9 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       Frame Delivery
     </div>
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
         Target FPS: {rdp.performance?.targetFps ?? 30}
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Maximum frames per second to request from the server. 0 = unlimited. Lower values reduce bandwidth and CPU usage." />
       </label>
       <Slider value={rdp.performance?.targetFps ?? 30} onChange={(v: number) => updateRdp("performance", { targetFps: v })} min={0} max={60} variant="full" step={5} />
       <div className="flex justify-between text-xs text-[var(--color-textMuted)]">
@@ -149,7 +151,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
 
     {rdp.performance?.frameBatching && (
       <div>
-        <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
           Batch Interval: {rdp.performance?.frameBatchIntervalMs ?? 33}ms (
           {Math.round(1000 / (rdp.performance?.frameBatchIntervalMs || 33))}{" "}
           fps max)

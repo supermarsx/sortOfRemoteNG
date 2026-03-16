@@ -1,6 +1,6 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
-import { Network } from "lucide-react";
+import { Network, Info } from "lucide-react";
 import { GatewayAuthMethods, GatewayCredentialSources, GatewayTransportModes } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { NumberInput, Select } from "../../ui/forms";
@@ -10,7 +10,7 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     icon={<Network size={14} className="text-info" />}
   >
     <div>
-      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 font-medium">Enable RDP Gateway</label>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 font-medium flex items-center gap-1">Enable RDP Gateway <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Tunnel the RDP session through an RD Gateway server over HTTPS. Required when the target host is not directly reachable." /></label>
       <Select value={rdp.gateway?.enabled === undefined ? "" : rdp.gateway.enabled ? "true" : "false"} onChange={(v: string) => updateRdp("gateway", { enabled: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
       <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
         Tunnel the RDP session through an RD Gateway (HTTPS transport).
@@ -20,8 +20,9 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     {rdp.gateway?.enabled === true && (
       <div className="space-y-3 mt-2">
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Gateway Hostname
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Fully qualified domain name or IP of the RD Gateway server." />
           </label>
           <input
             type="text"
@@ -35,15 +36,17 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Gateway Port: {rdp.gateway?.port ?? 443}
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="HTTPS port of the RD Gateway. Default is 443." />
           </label>
           <NumberInput value={rdp.gateway?.port ?? 443} onChange={(v: number) => updateRdp("gateway", { port: v })} className="CSS.input" min={1} max={65535} />
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Authentication Method
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How to authenticate with the gateway. Negotiate tries Kerberos first, then falls back to NTLM." />
           </label>
           <Select value={rdp.gateway?.authMethod ?? ""} onChange={(v: string) =>
               updateRdp("gateway", {
@@ -60,8 +63,9 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Credential Source
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Where to get gateway credentials. 'Same as connection' reuses the RDP login; 'Separate' lets you specify different credentials." />
           </label>
           <Select value={rdp.gateway?.credentialSource ?? "same-as-connection"} onChange={(v: string) =>
               updateRdp("gateway", {
@@ -120,8 +124,9 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         )}
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Transport Mode
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Transport protocol for the gateway tunnel. HTTP is most compatible; UDP can reduce latency on supported gateways." />
           </label>
           <Select value={rdp.gateway?.transportMode ?? ""} onChange={(v: string) =>
               updateRdp("gateway", {
@@ -130,13 +135,14 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Bypass gateway for local addresses</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Bypass gateway for local addresses <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Skip the gateway when connecting to hosts on the local network. Reduces latency for same-subnet targets." /></label>
           <Select value={rdp.gateway?.bypassForLocal === undefined ? "" : rdp.gateway.bypassForLocal ? "true" : "false"} onChange={(v: string) => updateRdp("gateway", { bypassForLocal: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
         </div>
 
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
             Access Token (optional)
+            <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="OAuth/Azure AD token for token-based gateway authentication. Leave empty for standard credential-based auth." />
           </label>
           <input
             type="text"
