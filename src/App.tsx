@@ -618,6 +618,26 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleOpenSettings = useCallback(() => {
+    // Check if a settings tab already exists — reuse it
+    const existing = state.sessions.find(s => s.protocol === 'tool:settings');
+    if (existing) {
+      setActiveSessionId(existing.id);
+      return;
+    }
+    const settingsSession: ConnectionSession = {
+      id: generateId(),
+      connectionId: 'tool-settings',
+      name: 'Settings',
+      status: 'connected',
+      startTime: new Date(),
+      protocol: 'tool:settings',
+      hostname: '',
+    };
+    dispatch({ type: 'ADD_SESSION', payload: settingsSession });
+    setActiveSessionId(settingsSession.id);
+  }, [dispatch, setActiveSessionId, state.sessions]);
+
   const handleDiagnostics = useCallback((connection: Connection) => {
     // Open diagnostics as a dedicated tab instead of a popup dialog
     const diagSession: ConnectionSession = {
@@ -1155,7 +1175,7 @@ const AppContent: React.FC = () => {
         connections={state.connections}
         setShowQuickConnect={setShowQuickConnect}
         setShowCollectionSelector={setShowCollectionSelector}
-        setShowSettings={setShowSettings}
+        setShowSettings={handleOpenSettings}
         setRdpPanelOpen={setRdpPanelOpen}
         setShowInternalProxyManager={toolShowSetters.current.internalProxy}
         setShowProxyMenu={toolShowSetters.current.proxyChain}
@@ -1322,7 +1342,7 @@ const AppContent: React.FC = () => {
         setShowCollectionSelector={setShowCollectionSelector}
         setShowConnectionEditor={setShowConnectionEditor}
         setShowQuickConnect={setShowQuickConnect}
-        setShowSettings={setShowSettings}
+        setShowSettings={handleOpenSettings}
         setShowImportExport={setShowImportExport}
         setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
         setShowActionLog={toolShowSetters.current.actionLog}

@@ -354,3 +354,39 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     </Modal>
   );
 };
+
+/* ═══════════════════════════════════════════════════════════════
+   Tab-embedded variant — renders the same settings UI but fills
+   a session tab instead of a modal overlay.
+   ═══════════════════════════════════════════════════════════════ */
+
+interface SettingsTabContentProps {
+  onClose: () => void;
+}
+
+export const SettingsTabContent: React.FC<SettingsTabContentProps> = ({ onClose }) => {
+  const mgr = useSettingsDialog(true, onClose);
+
+  if (!mgr.settings) return null;
+
+  return (
+    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex flex-1 min-h-0">
+        <Sidebar mgr={mgr} />
+        <ContentPanel mgr={mgr} />
+      </div>
+
+      <ConfirmDialog
+        isOpen={mgr.showResetConfirm}
+        message={mgr.t(
+          "settings.resetTabConfirm",
+          `Reset "${SETTINGS_TABS.find((t) => t.id === mgr.activeTab)?.labelKey}" settings to defaults?`,
+        )}
+        onConfirm={mgr.confirmReset}
+        onCancel={() => mgr.setShowResetConfirm(false)}
+      />
+
+      <BenchmarkOverlay mgr={mgr} />
+    </div>
+  );
+};

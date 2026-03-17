@@ -458,6 +458,7 @@ const defaultSettings: GlobalSettings = {
     wol: 'inherit' as const,
     windowsBackup: 'inherit' as const,
     diagnostics: 'tab' as const,
+    settings: 'tab' as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   backendConfig: {

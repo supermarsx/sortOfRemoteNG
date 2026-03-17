@@ -78,6 +78,10 @@ const ConnectionDiagnostics = dynamic(
   () => import("../connection/ConnectionDiagnostics").then((m) => m.ConnectionDiagnostics),
   { ssr: false },
 );
+const SettingsTabContent = dynamic(
+  () => import("../SettingsDialog").then((m) => m.SettingsTabContent),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -116,6 +120,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
         const conn = state.connections.find(c => c.id === session.connectionId);
         return conn ? <ConnectionDiagnostics connection={conn} onClose={onClose} /> : null;
       })()}
+      {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
     </div>
   );
 };

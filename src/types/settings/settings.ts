@@ -1061,6 +1061,7 @@ export interface ToolDisplayModes {
   wol: ToolDisplayModeOverride;
   windowsBackup: ToolDisplayModeOverride;
   diagnostics: ToolDisplayModeOverride;
+  settings: ToolDisplayModeOverride;
 }
 
 export interface SettingsDialogConfig {
