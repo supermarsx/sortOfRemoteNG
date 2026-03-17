@@ -12,6 +12,7 @@ import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import { raceWithTimeout } from "../../utils/core/raceWithTimeout";
 import { generateId } from "../../utils/core/id";
 import { ConfirmDialog } from "../../components/ui/dialogs/ConfirmDialog";
+import { recordRdpSessionHistory } from "../../utils/rdp/rdpSessionHistory";
 
 /**
  * Manages connection sessions and exposes helpers for session workflows.
@@ -451,6 +452,22 @@ export const useSessionManager = () => {
       } catch (error) {
         console.error("Failed to emit main-session-closed event:", error);
       }
+    }
+
+    // Record RDP session to history before removing
+    if (session.protocol === 'rdp') {
+      recordRdpSessionHistory({
+        connectionId: session.connectionId || '',
+        connectionName: session.name || connection?.name || session.hostname,
+        hostname: session.hostname,
+        port: connection?.port || 3389,
+        username: connection?.username || '',
+        lastConnected: new Date().toISOString(),
+        disconnectedAt: new Date().toISOString(),
+        duration: 0, // We don't have uptime here, but it's better than no entry
+        desktopWidth: 0,
+        desktopHeight: 0,
+      });
     }
 
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
