@@ -367,21 +367,19 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               }
               return null;
             })()}
-            {!isToolProtocol(session.protocol) && (
-              <>
-                <StatusIcon
-                  size={12}
-                  className={`mr-2 flex-shrink-0 ${getStatusColor(session.status)}`}
-                />
-                <button
-                  onClick={(e) => handleDetachSession(session.id, e)}
-                  className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
-                  data-tooltip="Detach"
-                >
-                  <ExternalLink size={12} />
-                </button>
-              </>
+            {!isToolProtocol(session.protocol) && !isWinmgmtProtocol(session.protocol) && (
+              <StatusIcon
+                size={12}
+                className={`mr-2 flex-shrink-0 ${getStatusColor(session.status)}`}
+              />
             )}
+            <button
+              onClick={(e) => handleDetachSession(session.id, e)}
+              className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+              data-tooltip="Detach"
+            >
+              <ExternalLink size={12} />
+            </button>
             <button
               onClick={(e) => handleCloseSession(session.id, e)}
               className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
