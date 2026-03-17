@@ -456,15 +456,21 @@ export const useSessionManager = () => {
 
     // Record RDP session to history before removing
     if (session.protocol === 'rdp') {
+      const now = new Date();
+      const durationSecs = session.startTime
+        ? Math.round((now.getTime() - new Date(session.startTime).getTime()) / 1000)
+        : 0;
       recordRdpSessionHistory({
         connectionId: session.connectionId || '',
         connectionName: session.name || connection?.name || session.hostname,
         hostname: session.hostname,
         port: connection?.port || 3389,
         username: connection?.username || '',
-        lastConnected: new Date().toISOString(),
-        disconnectedAt: new Date().toISOString(),
-        duration: 0, // We don't have uptime here, but it's better than no entry
+        lastConnected: session.startTime
+          ? new Date(session.startTime).toISOString()
+          : now.toISOString(),
+        disconnectedAt: now.toISOString(),
+        duration: durationSecs,
         desktopWidth: 0,
         desktopHeight: 0,
       });
