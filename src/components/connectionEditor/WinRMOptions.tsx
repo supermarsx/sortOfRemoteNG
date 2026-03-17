@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { CollapsibleSection } from "../ui/CollapsibleSection";
 import { Monitor } from "lucide-react";
 import { InfoTooltip } from "../ui/InfoTooltip";
+import { useSettings } from "../../contexts/SettingsContext";
 import type { Connection, WinrmConnectionSettings } from "../../types/connection/connection";
 import TransportSection from "./winrmOptions/TransportSection";
 import AuthSection from "./winrmOptions/AuthSection";
@@ -44,7 +45,9 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
 }) => {
   if (!shouldShow(formData)) return null;
 
+  const { settings } = useSettings();
   const ws: WinrmConnectionSettings = formData.winrmSettings ?? DEFAULT_WINRM;
+  const enableWinrm = formData.enableWinrmTools ?? settings.enableWinrmTools ?? true;
 
   const update = useCallback(
     (patch: Partial<WinrmConnectionSettings>) => {
@@ -66,6 +69,42 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
       defaultOpen
     >
       <div className="space-y-3">
+        {/* Enable/disable WinRM tools for this connection */}
+        <div className="flex items-center justify-between">
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
+            Enable WinRM Tools{" "}
+            <InfoTooltip text="Show Windows management tools (Services, Processes, Event Viewer, etc.) in the context menu and RDP toolbar for this connection. When disabled, the WinRM configuration below still applies to any programmatic WinRM usage." />
+          </label>
+          <div className="flex items-center gap-2">
+            {formData.enableWinrmTools === undefined && (
+              <span className="text-xs text-[var(--color-textMuted)]">
+                (global: {settings.enableWinrmTools ? "on" : "off"})
+              </span>
+            )}
+            <select
+              value={formData.enableWinrmTools === undefined ? "inherit" : formData.enableWinrmTools ? "on" : "off"}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFormData((prev) => ({
+                  ...prev,
+                  enableWinrmTools: v === "inherit" ? undefined : v === "on",
+                }));
+              }}
+              className="sor-form-input text-sm w-32"
+            >
+              <option value="inherit">Use global</option>
+              <option value="on">Enabled</option>
+              <option value="off">Disabled</option>
+            </select>
+          </div>
+        </div>
+
+        {!enableWinrm && (
+          <p className="text-xs text-warning">
+            WinRM tools are disabled for this connection. The toolbar buttons and context menu entries will be hidden.
+          </p>
+        )}
+
         {/* Domain — only show here if the parent protocol doesn't already have one */}
         {formData.protocol !== "rdp" && (
           <div>

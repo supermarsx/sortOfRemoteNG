@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { AppWindow, Link, RefreshCw, TextCursorInput } from "lucide-react";
+import { AppWindow, Link, Monitor, RefreshCw, TextCursorInput } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
   ({ s, u, t }) => (
@@ -44,6 +44,15 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
           description="Allow the browser to suggest previously entered values"
           settingKey="enableAutocomplete"
           infoTooltip="Allow the browser's built-in autocomplete to suggest previously entered values in input fields like hostnames and usernames."
+        />
+        <Toggle
+          checked={s.enableWinrmTools}
+          onChange={(v) => u({ enableWinrmTools: v })}
+          icon={<Monitor size={16} />}
+          label="Enable Windows Remote Management tools"
+          description="Show WinRM toolbar buttons and context menu entries for Windows management tools"
+          settingKey="enableWinrmTools"
+          infoTooltip="When enabled, Windows management tools (Services, Processes, Event Viewer, etc.) are available in the context menu and RDP toolbar for Windows connections. Individual connections can override this setting."
         />
       </Card>
     </div>

@@ -415,6 +415,9 @@ export interface GlobalSettings {
   /** Ask for confirmation before deleting all bookmarks */
   confirmDeleteAllBookmarks: boolean;
 
+  /** Enable Windows Remote Management tools globally */
+  enableWinrmTools: boolean;
+
   // ─── CredSSP Remediation Defaults ──────────────────────────────
   /**
    * Global default CredSSP / NLA security policy applied to new connections

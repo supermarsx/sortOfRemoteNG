@@ -13,14 +13,20 @@ interface WindowsToolsBarProps {
   hostname: string;
   /** Per-connection override for focus behavior (undefined = use global) */
   focusOnWinmgmtTool?: boolean;
+  /** Per-connection override for enabling WinRM tools (undefined = use global) */
+  enableWinrmTools?: boolean;
   onActivateSession?: (sessionId: string) => void;
 }
 
 const WindowsToolsBar: React.FC<WindowsToolsBarProps> = ({
-  connectionId, connectionName, hostname, focusOnWinmgmtTool, onActivateSession,
+  connectionId, connectionName, hostname, focusOnWinmgmtTool, enableWinrmTools, onActivateSession,
 }) => {
   const { dispatch } = useConnections();
   const { settings } = useSettings();
+
+  // Check global + per-connection toggle
+  const winrmEnabled = enableWinrmTools ?? settings.enableWinrmTools ?? true;
+  if (!winrmEnabled) return null;
 
   const openTool = useCallback((toolId: WindowsToolId) => {
     const session = createWinmgmtSession(toolId, connectionId, connectionName, hostname);

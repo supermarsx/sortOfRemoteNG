@@ -342,6 +342,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   proxyMaxAutoRestarts: 5,
   confirmDeleteAllBookmarks: true,
 
+  // Windows Remote Management Tools
+  enableWinrmTools: true,
+
   // CredSSP Remediation Defaults
   credsspDefaults: {
     oracleRemediation: 'mitigated',

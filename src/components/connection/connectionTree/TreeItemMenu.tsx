@@ -2,6 +2,7 @@
 import React from "react";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
+import { useSettings } from "../../../contexts/SettingsContext";
 import type { Connection } from "../../../types/connection/connection";
 import {
   Activity, ChevronRight, ClipboardList, Cog, Copy, Cpu, Edit,
@@ -36,7 +37,9 @@ function TreeItemMenu({
   onWindowsTool?: (c: Connection, tool: string) => void;
 }) {
   const { dispatch } = useConnections();
+  const { settings } = useSettings();
   const act = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); onClose(); };
+  const enableWinrm = connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
 
   return (
     <MenuSurface
@@ -75,7 +78,7 @@ function TreeItemMenu({
         </>
       )}
       {/* Windows Management submenu */}
-      {!connection.isGroup && (connection.osType === 'windows' || (!connection.osType && connection.protocol === 'rdp')) && (
+      {!connection.isGroup && enableWinrm && (connection.osType === 'windows' || (!connection.osType && connection.protocol === 'rdp')) && (
         <>
           <div className="sor-menu-divider" />
           <div className="sor-menu-submenu">

@@ -282,6 +282,8 @@ const defaultSettings: GlobalSettings = {
   sshTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
+  // Windows Remote Management Tools
+  enableWinrmTools: true,
   // CredSSP Remediation Defaults
   credsspDefaults: {
     oracleRemediation: 'mitigated',

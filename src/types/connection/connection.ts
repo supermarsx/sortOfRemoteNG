@@ -37,6 +37,8 @@ export interface Connection {
   focusOnConnect?: boolean;
   /** Focus tab when opening a Windows management tool: true = focus, false = background, undefined = use global */
   focusOnWinmgmtTool?: boolean;
+  /** Enable Windows Remote Management tools for this connection (undefined = use global) */
+  enableWinrmTools?: boolean;
 
   // Advanced Connection Settings
   timeout?: number;
