@@ -371,6 +371,19 @@ export const useSessionManager = () => {
     );
     const settings = settingsManager.getSettings();
 
+    // Global "confirm before closing an active tab" check —
+    // applies to any connected session regardless of protocol.
+    if (
+      settings.confirmCloseActiveTab &&
+      session.id === activeSessionId &&
+      session.status === "connected"
+    ) {
+      const confirmed = await showConfirm(
+        `Close the active session "${session.name}"?`,
+      );
+      if (!confirmed) return;
+    }
+
     // RDP sessions use their own close policy instead of the generic warnOnClose.
     // Per-connection override takes precedence over the global setting.
     if (session.protocol === "rdp") {
