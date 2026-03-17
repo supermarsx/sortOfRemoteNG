@@ -11,6 +11,10 @@ export interface RDPClientHeaderProps {
   colorDepth: number;
   perfLabel: string;
   magnifierActive: boolean;
+  magnifierZoom: number;
+  magnifierPipSize: number;
+  setMagnifierZoom: (z: number) => void;
+  setMagnifierPipSize: (s: number) => void;
   showInternals: boolean;
   showSettings: boolean;
   isFullscreen: boolean;

@@ -2,10 +2,8 @@ import React from 'react';
 import { ConnectionSession } from '../../types/connection/connection';
 import {
   Monitor,
-  Search,
   Wifi,
   WifiOff,
-  X,
 } from 'lucide-react';
 import RDPErrorScreen from './RDPErrorScreen';
 import { ConnectingSpinner } from '../ui/display';
@@ -49,23 +47,25 @@ function getStatusIcon(connectionStatus: string): React.ReactNode {
 
 const MagnifierPiP: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => {
   if (!mgr.magnifierActive || !mgr.isConnected) return null;
+
+  // Auto-reposition: if cursor is near the PiP corner, move to opposite side
+  const pipW = mgr.magnifierPipSize ?? 280;
+  const pipH = Math.round(pipW * 0.75);
+  const corner = mgr.magnifierCorner ?? 'bottom-right';
+
+  const posStyle = corner === 'bottom-right'
+    ? { bottom: 8, right: 8 }
+    : corner === 'bottom-left'
+    ? { bottom: 8, left: 8 }
+    : corner === 'top-right'
+    ? { top: 8, right: 8 }
+    : { top: 8, left: 8 };
+
   return (
     <div
-      className="absolute bottom-4 right-4 z-50 rounded-lg overflow-hidden shadow-2xl border border-[var(--color-border)]"
-      style={{ width: 280, height: 210 }}
+      className="absolute z-50 rounded-lg overflow-hidden shadow-2xl border border-[var(--color-border)]/50 pointer-events-none"
+      style={{ width: pipW, height: pipH, ...posStyle }}
     >
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-2 py-1 bg-[var(--color-surface)] border-b border-[var(--color-border)] text-xs text-[var(--color-textSecondary)]">
-        <span className="flex items-center gap-1">
-          <Search size={10} /> Magnifier {mgr.magnifierZoom}x
-        </span>
-        <div className="flex items-center gap-1">
-          <button onClick={() => mgr.setMagnifierZoom(Math.max(2, mgr.magnifierZoom - 1))} className="px-1 hover:text-[var(--color-text)]">&minus;</button>
-          <button onClick={() => mgr.setMagnifierZoom(Math.min(8, mgr.magnifierZoom + 1))} className="px-1 hover:text-[var(--color-text)]">+</button>
-          <button onClick={() => mgr.setMagnifierActive(false)} className="px-1 hover:text-error"><X size={10} /></button>
-        </div>
-      </div>
-      {/* Canvas showing magnified content */}
       <canvas
         ref={mgr.magnifierCanvasRef}
         className="w-full h-full bg-black"
@@ -185,6 +185,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
         colorDepth={mgr.colorDepth}
         perfLabel={mgr.perfLabel}
         magnifierActive={mgr.magnifierActive}
+        magnifierZoom={mgr.magnifierZoom}
+        magnifierPipSize={mgr.magnifierPipSize}
+        setMagnifierZoom={mgr.setMagnifierZoom}
+        setMagnifierPipSize={mgr.setMagnifierPipSize}
         showInternals={mgr.showInternals}
         showSettings={mgr.showSettings}
         isFullscreen={mgr.isFullscreen}

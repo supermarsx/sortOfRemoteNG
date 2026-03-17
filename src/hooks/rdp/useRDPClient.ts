@@ -108,6 +108,8 @@ export function useRDPClient(session: ConnectionSession) {
   const setMagnifierZoom = useCallback((z: number) => {
     setMagnifierZoomOverride(Math.max(2, Math.min(8, z)));
   }, []);
+  const [magnifierCorner, setMagnifierCorner] = useState<'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'>('bottom-right');
+  const [magnifierPipSize, setMagnifierPipSize] = useState(280);
 
   // Refs for values used inside stable event listeners / connection effect.
   const connectionRef = useRef(connection);
@@ -1256,8 +1258,8 @@ export function useRDPClient(session: ConnectionSession) {
       ? fb.offscreen
       : canvas;
 
-    const magW = 280;
-    const magH = 185;
+    const magW = magnifierPipSize;
+    const magH = Math.round(magnifierPipSize * 0.75);
     magCanvas.width = magW;
     magCanvas.height = magH;
 
@@ -1284,7 +1286,7 @@ export function useRDPClient(session: ConnectionSession) {
       magW,
       magH,
     );
-  }, [magnifierZoom]);
+  }, [magnifierZoom, magnifierPipSize]);
 
   // ─── Mouse / keyboard handlers ─────────────────────────────────────
 
@@ -1310,8 +1312,29 @@ export function useRDPClient(session: ConnectionSession) {
         setMagnifierPos({ x: mx, y: my });
         updateMagnifier(mx, my);
       }
+
+      // Auto-reposition PiP when cursor approaches it
+      const container = containerRef.current;
+      if (container) {
+        const cRect = container.getBoundingClientRect();
+        const relX = e.clientX - cRect.left;
+        const relY = e.clientY - cRect.top;
+        const threshold = magnifierPipSize + 40; // margin
+        const nearRight = relX > cRect.width - threshold;
+        const nearBottom = relY > cRect.height - threshold;
+        const nearLeft = relX < threshold;
+        const nearTop = relY < threshold;
+
+        setMagnifierCorner(prev => {
+          if (prev === 'bottom-right' && nearRight && nearBottom) return 'top-left';
+          if (prev === 'top-left' && nearLeft && nearTop) return 'bottom-right';
+          if (prev === 'bottom-left' && nearLeft && nearBottom) return 'top-right';
+          if (prev === 'top-right' && nearRight && nearTop) return 'bottom-left';
+          return prev;
+        });
+      }
     }
-  }, [isConnected, mouseEnabled, scaleCoords, sendInput, magnifierActive, updateMagnifier]);
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput, magnifierActive, updateMagnifier, magnifierPipSize]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected || !mouseEnabled) return;
@@ -1505,6 +1528,9 @@ export function useRDPClient(session: ConnectionSession) {
     setMagnifierActive,
     magnifierPos,
     setMagnifierZoom,
+    magnifierCorner,
+    magnifierPipSize,
+    setMagnifierPipSize,
     certFingerprint,
     certIdentity,
     trustPrompt,
