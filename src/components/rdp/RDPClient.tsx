@@ -114,7 +114,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       ref={mgr.canvasRef}
       className="border border-[var(--color-border)] max-w-full max-h-full"
       style={{
-        cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.magnifierActive ? 'crosshair' : mgr.pointerStyle,
+        cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.magnifierActive ? 'zoom-in' : mgr.pointerStyle,
         imageRendering: 'auto',
         objectFit: 'contain',
         display: mgr.connectionStatus !== 'disconnected' ? 'block' : 'none',
