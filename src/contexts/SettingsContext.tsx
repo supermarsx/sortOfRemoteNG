@@ -412,7 +412,7 @@ const defaultSettings: GlobalSettings = {
     fullFrameSyncInterval: 300,
     readTimeoutMs: 16,
     // Advanced
-    sessionClosePolicy: 'disconnect' as const,
+    sessionClosePolicy: 'detach' as const,
     clientName: '',
     clientBuild: 0,
     maxConsecutiveErrors: 50,
@@ -438,7 +438,7 @@ const defaultSettings: GlobalSettings = {
   rdpSessionThumbnailsEnabled: true,
   rdpSessionThumbnailPolicy: 'realtime' as const,
   rdpSessionThumbnailInterval: 5,
-  rdpSessionClosePolicy: 'ask' as const,
+  rdpSessionClosePolicy: 'detach' as const,
   toolDisplayModes: {
     globalDefault: 'popup' as const,
     recordingManager: 'inherit' as const,

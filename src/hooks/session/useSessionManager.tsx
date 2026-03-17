@@ -375,7 +375,7 @@ export const useSessionManager = () => {
     // Per-connection override takes precedence over the global setting.
     if (session.protocol === "rdp") {
       const perConn = connection?.rdpSettings?.advanced?.sessionClosePolicy;
-      const closePolicy = (perConn && perConn !== 'global') ? perConn : (settings.rdpSessionClosePolicy || "ask");
+      const closePolicy = (perConn && perConn !== 'global') ? perConn : (settings.rdpSessionClosePolicy || "detach");
 
       if (closePolicy === "ask") {
         // Single confirmation — OK closes tab (session stays running), Cancel aborts.
