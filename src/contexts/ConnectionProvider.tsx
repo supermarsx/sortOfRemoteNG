@@ -24,6 +24,7 @@ const initialState: ConnectionState = {
   },
   isLoading: false,
   sidebarCollapsed: false,
+  tabGroups: [],
 };
 
 const connectionReducer = (
@@ -93,6 +94,23 @@ const connectionReducer = (
       return { ...state, sidebarCollapsed: !state.sidebarCollapsed };
     case "SET_SIDEBAR_COLLAPSED":
       return { ...state, sidebarCollapsed: action.payload };
+    case "ADD_TAB_GROUP":
+      return { ...state, tabGroups: [...state.tabGroups, action.payload] };
+    case "UPDATE_TAB_GROUP":
+      return {
+        ...state,
+        tabGroups: state.tabGroups.map((g) =>
+          g.id === action.payload.id ? action.payload : g,
+        ),
+      };
+    case "REMOVE_TAB_GROUP":
+      return {
+        ...state,
+        tabGroups: state.tabGroups.filter((g) => g.id !== action.payload),
+        sessions: state.sessions.map((s) =>
+          s.tabGroupId === action.payload ? { ...s, tabGroupId: undefined } : s,
+        ),
+      };
     default:
       return state;
   }

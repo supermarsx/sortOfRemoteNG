@@ -3,6 +3,7 @@ import {
   Connection,
   ConnectionSession,
   ConnectionFilter,
+  TabGroup,
 } from "../types/connection/connection";
 
 /**
@@ -21,6 +22,8 @@ export interface ConnectionState {
   isLoading: boolean;
   /** Tracks whether the sidebar is collapsed */
   sidebarCollapsed: boolean;
+  /** Tab group definitions */
+  tabGroups: TabGroup[];
 }
 
 /**
@@ -39,7 +42,10 @@ export type ConnectionAction =
   | { type: "REORDER_SESSIONS"; payload: { fromIndex: number; toIndex: number } }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "TOGGLE_SIDEBAR" }
-  | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean };
+  | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean }
+  | { type: "ADD_TAB_GROUP"; payload: TabGroup }
+  | { type: "UPDATE_TAB_GROUP"; payload: TabGroup }
+  | { type: "REMOVE_TAB_GROUP"; payload: string };
 
 export interface ConnectionContextType {
   state: ConnectionState;

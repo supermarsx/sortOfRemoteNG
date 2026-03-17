@@ -1144,13 +1144,22 @@ export interface ConnectionSession {
   
   // Tab Grouping
   group?: string;
-  
+  /** Tab group ID (sessions with same tabGroupId are visually grouped) */
+  tabGroupId?: string;
+
   // Reconnection
   reconnectAttempts?: number;
   maxReconnectAttempts?: number;
 
   // Error detail (shown on error screens when available)
   errorMessage?: string;
+}
+
+export interface TabGroup {
+  id: string;
+  name: string;
+  color: string;
+  collapsed?: boolean;
 }
 
 export interface TabLayout {
