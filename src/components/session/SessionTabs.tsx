@@ -35,6 +35,8 @@ import {
   Settings2,
   Info,
   Maximize2,
+  Columns,
+  Rows,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
@@ -337,6 +339,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             onDrop={(e) => handleDrop(e, session.id)}
           >
             <ProtocolIcon size={14} className="mr-2 flex-shrink-0" />
+            {(session as any).pinned && <Pin size={10} className="mr-1 flex-shrink-0 text-[var(--color-textMuted)]" />}
             {renamingSessionId === session.id ? (
               <input
                 ref={renameInputRef}
@@ -443,6 +446,13 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               })} className="sor-menu-item">
                 <Info size={14} className="mr-2" /> Copy Connection Info
               </button>
+              <button onClick={() => act(() => {
+                if (targetSession?.connectionId) {
+                  window.dispatchEvent(new CustomEvent('reveal-connection', { detail: { connectionId: targetSession.connectionId } }));
+                }
+              })} className="sor-menu-item">
+                <Eye size={14} className="mr-2" /> Reveal in Sidebar
+              </button>
 
               <div className="sor-menu-divider" />
 
@@ -473,6 +483,16 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               </button>
               <button onClick={() => act(() => onSessionSelect(sessionId))} className="sor-menu-item">
                 <Maximize2 size={14} className="mr-2" /> Focus Tab
+              </button>
+              <button onClick={() => act(() => {
+                window.dispatchEvent(new CustomEvent('split-session', { detail: { sessionId, direction: 'right' } }));
+              })} className="sor-menu-item">
+                <Columns size={14} className="mr-2" /> Split Right
+              </button>
+              <button onClick={() => act(() => {
+                window.dispatchEvent(new CustomEvent('split-session', { detail: { sessionId, direction: 'down' } }));
+              })} className="sor-menu-item">
+                <Rows size={14} className="mr-2" /> Split Down
               </button>
               <button
                 onClick={() => handleMoveTab(sessionId, "left")}
