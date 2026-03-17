@@ -132,3 +132,12 @@
 .sor-selection-row:hover .sor-selection-row-hover-action {
   opacity: 1;
 }
+
+/* Connection tree reveal-and-blink animation */
+@keyframes tree-item-blink {
+  0%, 100% { background-color: transparent; }
+  25%, 75% { background-color: color-mix(in srgb, var(--color-primary) 25%, transparent); }
+}
+.sor-tree-item-blink {
+  animation: tree-item-blink 0.6s ease-in-out 3;
+}

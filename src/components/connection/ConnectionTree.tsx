@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
 import { useToastContext } from "../../contexts/ToastContext";
@@ -27,6 +27,21 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
 }) => {
   const mgr = useConnectionTree(onConnect, enableReorder);
   const { toast } = useToastContext();
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const connectionId = (e as CustomEvent).detail?.connectionId;
+      if (!connectionId) return;
+      const el = document.querySelector(`[data-connection-id="${connectionId}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('sor-tree-item-blink');
+      const timer = setTimeout(() => el.classList.remove('sor-tree-item-blink'), 2000);
+      return () => clearTimeout(timer);
+    };
+    window.addEventListener('reveal-connection', handler);
+    return () => window.removeEventListener('reveal-connection', handler);
+  }, []);
 
   const handleWindowsTool = useCallback((c: Connection, tool: string) => {
     const session = createWinmgmtSession(

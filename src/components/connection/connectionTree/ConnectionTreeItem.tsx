@@ -59,6 +59,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     <div className="relative">
       <div
         data-connection-item="true"
+        data-connection-id={connection.id}
         data-tauri-disable-drag="true"
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-[var(--color-border)]/50 transition-colors relative ${
           isSelected ? "bg-primary/20 text-primary" : "text-[var(--color-textSecondary)]"
