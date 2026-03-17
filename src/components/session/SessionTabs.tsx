@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   X,
+  XCircle,
   Monitor,
   Terminal,
   Eye,
@@ -21,10 +22,17 @@ import {
   ListVideo,
   Circle,
   Wrench,
+  Pencil,
+  RefreshCw,
+  Copy,
+  ArrowLeft,
+  ArrowRight,
+  ArrowRightFromLine,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol, getWinmgmtToolId, getWindowsToolIcon } from "../windows/WindowsToolPanel";
+import MenuSurface from "../ui/overlays/MenuSurface";
 
 const getToolIcon = (toolKey: string) => {
   switch (toolKey) {
@@ -103,6 +111,8 @@ interface SessionTabsProps {
   onSessionSelect: (sessionId: string) => void;
   onSessionClose: (sessionId: string) => void;
   onSessionDetach: (sessionId: string) => void;
+  onSessionReconnect?: (sessionId: string) => void;
+  onSessionDuplicate?: (sessionId: string) => void;
   enableReorder?: boolean;
   middleClickCloseTab?: boolean;
 }
@@ -112,6 +122,8 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   onSessionSelect,
   onSessionClose,
   onSessionDetach,
+  onSessionReconnect,
+  onSessionDuplicate,
   enableReorder = true,
   middleClickCloseTab = true,
 }) => {
@@ -119,6 +131,92 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const sessions = state.sessions.filter((session) => !session.layout?.isDetached);
   const [draggedSessionId, setDraggedSessionId] = React.useState<string | null>(null);
   const [dragOverSessionId, setDragOverSessionId] = React.useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renamingSessionId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingSessionId]);
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  const handleContextMenu = (e: React.MouseEvent, sessionId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
+  };
+
+  const handleStartRename = (sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+    setRenameValue(session.name);
+    setRenamingSessionId(sessionId);
+    closeContextMenu();
+  };
+
+  const handleCommitRename = () => {
+    if (renamingSessionId && renameValue.trim()) {
+      const session = state.sessions.find((s) => s.id === renamingSessionId);
+      if (session) {
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: { ...session, name: renameValue.trim() },
+        });
+      }
+    }
+    setRenamingSessionId(null);
+    setRenameValue("");
+  };
+
+  const handleCancelRename = () => {
+    setRenamingSessionId(null);
+    setRenameValue("");
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCommitRename();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancelRename();
+    }
+  };
+
+  const handleMoveTab = (sessionId: string, direction: "left" | "right") => {
+    const fromIndex = state.sessions.findIndex((s) => s.id === sessionId);
+    if (fromIndex === -1) return;
+    const toIndex = direction === "left" ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= state.sessions.length) return;
+    dispatch({
+      type: "REORDER_SESSIONS",
+      payload: { fromIndex, toIndex },
+    });
+    closeContextMenu();
+  };
+
+  const handleCloseOtherTabs = (sessionId: string) => {
+    sessions.forEach((session) => {
+      if (session.id !== sessionId) {
+        onSessionClose(session.id);
+      }
+    });
+    closeContextMenu();
+  };
+
+  const handleCloseTabsToRight = (sessionId: string) => {
+    const idx = sessions.findIndex((s) => s.id === sessionId);
+    if (idx === -1) return;
+    sessions.slice(idx + 1).forEach((session) => {
+      onSessionClose(session.id);
+    });
+    closeContextMenu();
+  };
 
   const handleCloseSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -225,15 +323,29 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             } transition-all`}
             onClick={() => onSessionSelect(session.id)}
             onAuxClick={(e) => handleMiddleClick(session.id, e)}
+            onContextMenu={(e) => handleContextMenu(e, session.id)}
             onDragStart={(e) => handleDragStart(e, session.id)}
             onDragOver={(e) => handleDragOver(e, session.id)}
             onDragEnd={(e) => handleDragEnd(e, session.id)}
             onDrop={(e) => handleDrop(e, session.id)}
           >
             <ProtocolIcon size={14} className="mr-2 flex-shrink-0" />
-            <span className="truncate text-sm mr-2 max-w-32">
-              {session.name}
-            </span>
+            {renamingSessionId === session.id ? (
+              <input
+                ref={renameInputRef}
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={handleRenameKeyDown}
+                onBlur={handleCommitRename}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm mr-2 max-w-32 bg-[var(--color-surface)] border border-[var(--color-borderActive)] rounded px-1 py-0 outline-none text-[var(--color-text)]"
+              />
+            ) : (
+              <span className="truncate text-sm mr-2 max-w-32">
+                {session.name}
+              </span>
+            )}
             {(() => {
               const conn = state.connections.find(c => c.id === session.connectionId);
               if (conn && (conn.protocol === 'https') && conn.httpVerifySsl === false) {
@@ -270,6 +382,102 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           </div>
         );
       })}
+
+      {/* Tab context menu */}
+      <MenuSurface
+        isOpen={contextMenu !== null}
+        onClose={closeContextMenu}
+        position={contextMenu}
+        className="min-w-[180px]"
+        dataTestId="session-tab-context-menu"
+      >
+        {contextMenu && (() => {
+          const sessionId = contextMenu.sessionId;
+          const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
+          const isFirst = sessionIndex === 0;
+          const isLast = sessionIndex === sessions.length - 1;
+          const hasTabsToRight = sessionIndex < sessions.length - 1;
+          const hasOtherTabs = sessions.length > 1;
+
+          return (
+            <>
+              <button
+                onClick={() => handleStartRename(sessionId)}
+                className="sor-menu-item"
+              >
+                <Pencil size={14} className="mr-2" />
+                Rename Tab
+              </button>
+              {onSessionReconnect && (
+                <button
+                  onClick={() => { onSessionReconnect(sessionId); closeContextMenu(); }}
+                  className="sor-menu-item"
+                >
+                  <RefreshCw size={14} className="mr-2" />
+                  Reconnect
+                </button>
+              )}
+              {onSessionDuplicate && (
+                <button
+                  onClick={() => { onSessionDuplicate(sessionId); closeContextMenu(); }}
+                  className="sor-menu-item"
+                >
+                  <Copy size={14} className="mr-2" />
+                  Duplicate Tab
+                </button>
+              )}
+              <div className="sor-menu-divider" />
+              <button
+                onClick={() => { onSessionDetach(sessionId); closeContextMenu(); }}
+                className="sor-menu-item"
+              >
+                <ExternalLink size={14} className="mr-2" />
+                Detach to Window
+              </button>
+              <button
+                onClick={() => handleMoveTab(sessionId, "left")}
+                className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={isFirst}
+              >
+                <ArrowLeft size={14} className="mr-2" />
+                Move to Left
+              </button>
+              <button
+                onClick={() => handleMoveTab(sessionId, "right")}
+                className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={isLast}
+              >
+                <ArrowRight size={14} className="mr-2" />
+                Move to Right
+              </button>
+              <div className="sor-menu-divider" />
+              <button
+                onClick={() => { onSessionClose(sessionId); closeContextMenu(); }}
+                className="sor-menu-item sor-menu-item-danger"
+              >
+                <X size={14} className="mr-2" />
+                Close Tab
+              </button>
+              <button
+                onClick={() => handleCloseOtherTabs(sessionId)}
+                className={`sor-menu-item sor-menu-item-danger ${!hasOtherTabs ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={!hasOtherTabs}
+              >
+                <XCircle size={14} className="mr-2" />
+                Close Other Tabs
+              </button>
+              <button
+                onClick={() => handleCloseTabsToRight(sessionId)}
+                className={`sor-menu-item sor-menu-item-danger ${!hasTabsToRight ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={!hasTabsToRight}
+              >
+                <ArrowRightFromLine size={14} className="mr-2" />
+                Close Tabs to Right
+              </button>
+            </>
+          );
+        })()}
+      </MenuSurface>
     </div>
   );
 };
