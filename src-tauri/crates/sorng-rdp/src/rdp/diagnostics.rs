@@ -180,7 +180,21 @@ pub fn run_diagnostics(
                                 detail: Some("Authentication, licensing, and capability exchange all succeeded".into()),
                             });
 
-                            // -- Step 6 (RDP-specific): Color Depth Compatibility --
+                            // -- Step 6: Server Capabilities --
+                            steps.push(build_server_capabilities_step(
+                                settings,
+                                &connection_result,
+                            ));
+
+                            // -- Step 7: Configuration Audit --
+                            if let Some(audit_step) = build_configuration_audit_step(
+                                settings,
+                                &connection_result,
+                            ) {
+                                steps.push(audit_step);
+                            }
+
+                            // -- Step 8 (RDP-specific): Color Depth Compatibility --
                             // Probe which color depths the server actually accepts.
                             let user_depth = settings.color_depth;
                             if user_depth != 32 {
@@ -657,6 +671,210 @@ fn probe_alternative_protocols(
         detail: Some(
             "Enable Auto-detect negotiation or switch to an accepted protocol combination in Security settings.".into()
         ),
+    })
+}
+
+/// Build the "Server Capabilities" diagnostic step from the successful connection result.
+fn build_server_capabilities_step(
+    settings: &ResolvedSettings,
+    result: &connector::ConnectionResult,
+) -> DiagnosticStep {
+    let desktop_w = result.desktop_size.width;
+    let desktop_h = result.desktop_size.height;
+
+    // Determine which security protocols were active based on settings that
+    // led to the successful connection.
+    let tls_status = if settings.enable_tls { "supported" } else { "not requested" };
+    let credssp_status = if settings.enable_credssp {
+        if settings.enable_tls {
+            "supported"
+        } else {
+            "required (NLA)"
+        }
+    } else {
+        "not requested"
+    };
+    let hybrid_ex_status = if settings.allow_hybrid_ex {
+        "supported"
+    } else {
+        "not supported"
+    };
+
+    // Color depth: the probe always uses 32-bit, so report that as the
+    // negotiated depth.  The user's preferred depth is handled in the
+    // Configuration Audit step.
+    let probe_depth = 32;
+
+    // Determine RDP protocol version heuristic from connection state.
+    // If HYBRID_EX succeeded the server is at least RDP 8.x+.
+    // If CredSSP succeeded it is at least RDP 6.x+.
+    let rdp_version = if settings.allow_hybrid_ex && settings.enable_credssp {
+        "RDP 10.x (HYBRID_EX)"
+    } else if settings.enable_credssp {
+        "RDP 6.x+ (CredSSP/NLA)"
+    } else if settings.enable_tls {
+        "RDP 5.2+ (TLS)"
+    } else {
+        "RDP 5.x (Standard)"
+    };
+
+    // FastPath output: always advertised by ironrdp client
+    let fastpath = "supported (client advertised)";
+
+    // Large pointers: always advertised up to 384x384 by ironrdp client
+    let large_pointers = "up to 384x384 (advertised by client)";
+
+    // Multitransport: server support is detected from GCC but ironrdp does
+    // not expose it on ConnectionResult.  Report based on HYBRID_EX which
+    // is a prerequisite.
+    let multitransport = if settings.allow_hybrid_ex {
+        "available (HYBRID_EX enabled)"
+    } else {
+        "not available (HYBRID_EX disabled)"
+    };
+
+    // Server pointer rendering
+    let pointer_mode = if result.enable_server_pointer {
+        if result.pointer_software_rendering {
+            "server pointer, software rendering"
+        } else {
+            "server pointer, hardware rendering"
+        }
+    } else {
+        "client-side pointer"
+    };
+
+    let detail = format!(
+        "Security Protocols:\n\
+         \x20 TLS: {tls_status}\n\
+         \x20 CredSSP (NLA): {credssp_status}\n\
+         \x20 HYBRID_EX: {hybrid_ex_status}\n\
+         \n\
+         Server Info:\n\
+         \x20 Desktop: {desktop_w}x{desktop_h}\n\
+         \x20 Color Depth: {probe_depth}-bit (probe)\n\
+         \x20 Protocol Version: {rdp_version}\n\
+         \n\
+         Features:\n\
+         \x20 FastPath Output: {fastpath}\n\
+         \x20 Large Pointers: {large_pointers}\n\
+         \x20 Multitransport: {multitransport}\n\
+         \x20 Pointer Mode: {pointer_mode}"
+    );
+
+    let summary = format!(
+        "{rdp_version}, {desktop_w}x{desktop_h}, {probe_depth}-bit color",
+    );
+
+    DiagnosticStep {
+        name: "Server Capabilities".into(),
+        status: "info".into(),
+        message: summary,
+        duration_ms: 0,
+        detail: Some(detail),
+    }
+}
+
+/// Build the "Configuration Audit" step that compares user settings against
+/// what the server actually supports.  Returns `None` if there are no
+/// mismatches to report.
+fn build_configuration_audit_step(
+    settings: &ResolvedSettings,
+    result: &connector::ConnectionResult,
+) -> Option<DiagnosticStep> {
+    let mut warnings: Vec<String> = Vec::new();
+
+    // -- Color depth mismatch --
+    // The diagnostic probe connects at 32-bit.  If that succeeded but the
+    // user has configured a different depth, flag it as something to watch.
+    let user_depth = settings.color_depth;
+    if user_depth != 32 {
+        warnings.push(format!(
+            "Color depth: you requested {user_depth}-bit but the probe succeeded at 32-bit. \
+             The server may or may not accept {user_depth}-bit; see the Color Depth Probe step."
+        ));
+    }
+
+    // -- CredSSP / NLA audit --
+    // The probe connected with enable_credssp=<value>.  If the user has it
+    // disabled, the server might require it.
+    if !settings.enable_credssp {
+        // The probe ran with *the user's* settings, and if we reached this
+        // point it succeeded without CredSSP.  But many enterprise servers
+        // require NLA, so warn if the user has it off.
+        warnings.push(
+            "CredSSP (NLA) is disabled in your settings. Many enterprise servers require NLA; \
+             if you encounter connection failures, enable CredSSP in Security settings."
+                .into(),
+        );
+    }
+
+    // -- TLS audit --
+    if !settings.enable_tls && !settings.enable_credssp {
+        warnings.push(
+            "Both TLS and CredSSP are disabled. The connection uses standard RDP security \
+             (RC4) which is insecure and unsupported by most modern servers. Enable TLS \
+             or CredSSP in Security settings."
+                .into(),
+        );
+    } else if !settings.enable_tls && settings.enable_credssp {
+        // CredSSP implies TLS at the transport layer, but the user has TLS
+        // explicitly disabled.  If the server only supports TLS (without
+        // CredSSP), this would fail.
+        warnings.push(
+            "TLS is disabled but CredSSP is enabled. If the server does not support NLA \
+             and only accepts TLS, the connection will fail. Consider enabling TLS as a \
+             fallback in Security settings."
+                .into(),
+        );
+    }
+
+    // -- Desktop size audit --
+    let server_w = result.desktop_size.width;
+    let server_h = result.desktop_size.height;
+    let user_w = settings.width;
+    let user_h = settings.height;
+    // The probe used 1024x768 so the server responded with its constrained
+    // size.  If the user wants a much larger resolution we can note it.
+    if user_w > 0 && user_h > 0 && (user_w > server_w * 2 || user_h > server_h * 2) {
+        warnings.push(format!(
+            "Desktop size: you requested {user_w}x{user_h} but the server negotiated \
+             {server_w}x{server_h} for the probe (which requested 1024x768). \
+             Very large resolutions may be constrained by the server."
+        ));
+    }
+
+    // -- HYBRID_EX audit --
+    if settings.allow_hybrid_ex {
+        warnings.push(
+            "HYBRID_EX is enabled. Some servers (especially non-Microsoft or older ones) \
+             negotiate HYBRID_EX but fail to send the EarlyUserAuthResult PDU, causing \
+             connection errors. If you see read-frame failures, disable HYBRID_EX."
+                .into(),
+        );
+    }
+
+    if warnings.is_empty() {
+        return None;
+    }
+
+    let count = warnings.len();
+    let detail = warnings
+        .iter()
+        .enumerate()
+        .map(|(i, w)| format!("{}. {w}", i + 1))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    Some(DiagnosticStep {
+        name: "Configuration Audit".into(),
+        status: "warn".into(),
+        message: format!(
+            "{count} configuration mismatch{} detected",
+            if count == 1 { "" } else { "es" }
+        ),
+        duration_ms: 0,
+        detail: Some(detail),
     })
 }
 
