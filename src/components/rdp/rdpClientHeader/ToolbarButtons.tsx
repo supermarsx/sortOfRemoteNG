@@ -4,15 +4,13 @@ import { Activity, Camera, ClipboardCopy, Copy, Save, Search, Settings } from "l
 
 const ToolbarButtons: React.FC<{ p: RDPClientHeaderProps }> = ({ p }) => (
   <>
-    {p.magnifierEnabled && (
-      <button
-        onClick={() => p.setMagnifierActive(!p.magnifierActive)}
-        className={p.magnifierActive ? btnActive : btnDefault}
-        data-tooltip="Magnifier Glass"
-      >
-        <Search size={14} />
-      </button>
-    )}
+    <button
+      onClick={() => p.setMagnifierActive(!p.magnifierActive)}
+      className={p.magnifierActive ? btnActive : btnDefault}
+      data-tooltip="Magnifier"
+    >
+      <Search size={14} />
+    </button>
     <button
       onClick={() => p.setShowInternals(!p.showInternals)}
       className={p.showInternals ? btnActive : btnDefault}

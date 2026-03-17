@@ -117,19 +117,6 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
         <Select value={rdp.display?.lossyCompression === undefined ? "" : rdp.display.lossyCompression ? "true" : "false"} onChange={(v: string) => updateRdp("display", { lossyCompression: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
       </div>
 
-      <label className={CSS.label}>
-        <Checkbox checked={rdp.display?.magnifierEnabled ?? false} onChange={(v: boolean) => updateRdp("display", { magnifierEnabled: v })} className={CSS.checkbox} />
-        <span>Enable magnifier glass</span>
-      </label>
-
-      {rdp.display?.magnifierEnabled && (
-        <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-            Magnifier Zoom: {rdp.display?.magnifierZoom ?? 3}x
-          </label>
-          <Slider value={rdp.display?.magnifierZoom ?? 3} onChange={(v: number) => updateRdp("display", { magnifierZoom: v })} min={2} max={8} variant="full" />
-        </div>
-      )}
     </Section>
   );
 };

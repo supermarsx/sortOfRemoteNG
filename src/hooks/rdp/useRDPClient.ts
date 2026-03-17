@@ -103,7 +103,11 @@ export function useRDPClient(session: ConnectionSession) {
   const { state: recState, startRecording, stopRecording, pauseRecording, resumeRecording } = useSessionRecorder(canvasRef);
 
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
-  const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
+  const [magnifierZoomOverride, setMagnifierZoomOverride] = useState<number | null>(null);
+  const magnifierZoom = magnifierZoomOverride ?? rdpSettings.display?.magnifierZoom ?? 3;
+  const setMagnifierZoom = useCallback((z: number) => {
+    setMagnifierZoomOverride(Math.max(2, Math.min(8, z)));
+  }, []);
 
   // Refs for values used inside stable event listeners / connection effect.
   const connectionRef = useRef(connection);
@@ -1252,9 +1256,10 @@ export function useRDPClient(session: ConnectionSession) {
       ? fb.offscreen
       : canvas;
 
-    const magSize = 160;
-    magCanvas.width = magSize;
-    magCanvas.height = magSize;
+    const magW = 280;
+    const magH = 185;
+    magCanvas.width = magW;
+    magCanvas.height = magH;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -1262,43 +1267,23 @@ export function useRDPClient(session: ConnectionSession) {
 
     const srcX = mouseX * scaleX;
     const srcY = mouseY * scaleY;
-    const srcSize = magSize / magnifierZoom;
+    const srcW = magW / magnifierZoom;
+    const srcH = magH / magnifierZoom;
 
     magCtx.imageSmoothingEnabled = false;
-    magCtx.clearRect(0, 0, magSize, magSize);
-
-    magCtx.save();
-    magCtx.beginPath();
-    magCtx.arc(magSize / 2, magSize / 2, magSize / 2 - 2, 0, Math.PI * 2);
-    magCtx.clip();
+    magCtx.clearRect(0, 0, magW, magH);
 
     magCtx.drawImage(
       source,
-      srcX - srcSize / 2,
-      srcY - srcSize / 2,
-      srcSize,
-      srcSize,
+      srcX - srcW / 2,
+      srcY - srcH / 2,
+      srcW,
+      srcH,
       0,
       0,
-      magSize,
-      magSize,
+      magW,
+      magH,
     );
-    magCtx.restore();
-
-    magCtx.beginPath();
-    magCtx.arc(magSize / 2, magSize / 2, magSize / 2 - 2, 0, Math.PI * 2);
-    magCtx.strokeStyle = '#3b82f6';
-    magCtx.lineWidth = 2;
-    magCtx.stroke();
-
-    magCtx.beginPath();
-    magCtx.moveTo(magSize / 2 - 8, magSize / 2);
-    magCtx.lineTo(magSize / 2 + 8, magSize / 2);
-    magCtx.moveTo(magSize / 2, magSize / 2 - 8);
-    magCtx.lineTo(magSize / 2, magSize / 2 + 8);
-    magCtx.strokeStyle = 'rgba(255,255,255,0.5)';
-    magCtx.lineWidth = 1;
-    magCtx.stroke();
   }, [magnifierZoom]);
 
   // ─── Mouse / keyboard handlers ─────────────────────────────────────
@@ -1310,7 +1295,7 @@ export function useRDPClient(session: ConnectionSession) {
       sendInput([{ type: 'MouseMove', x, y }]);
     }
 
-    if (magnifierEnabled && magnifierActive) {
+    if (magnifierActive) {
       let rect = cachedRectRef.current;
       if (!rect) {
         const canvas = canvasRef.current;
@@ -1326,7 +1311,7 @@ export function useRDPClient(session: ConnectionSession) {
         updateMagnifier(mx, my);
       }
     }
-  }, [isConnected, mouseEnabled, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput, magnifierActive, updateMagnifier]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected || !mouseEnabled) return;
@@ -1518,6 +1503,7 @@ export function useRDPClient(session: ConnectionSession) {
     magnifierActive,
     setMagnifierActive,
     magnifierPos,
+    setMagnifierZoom,
     certFingerprint,
     certIdentity,
     trustPrompt,

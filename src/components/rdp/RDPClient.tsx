@@ -2,9 +2,10 @@ import React from 'react';
 import { ConnectionSession } from '../../types/connection/connection';
 import {
   Monitor,
+  Search,
   Wifi,
   WifiOff,
-  ZoomIn,
+  X,
 } from 'lucide-react';
 import RDPErrorScreen from './RDPErrorScreen';
 import { ConnectingSpinner } from '../ui/display';
@@ -46,26 +47,33 @@ function getStatusIcon(connectionStatus: string): React.ReactNode {
 
 // ─── Sub-components ──────────────────────────────────────────────────
 
-const MagnifierOverlay: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => (
-  <>
-    <canvas
-      ref={mgr.magnifierCanvasRef}
-      className="absolute pointer-events-none border-2 border-primary rounded-full shadow-lg shadow-primary/30"
-      style={{
-        left: `${mgr.magnifierPos.x - 80}px`,
-        top: `${mgr.magnifierPos.y - 80}px`,
-        width: '160px',
-        height: '160px',
-      }}
-      width={160}
-      height={160}
-    />
-    <div className="absolute top-2 right-2 bg-primary bg-opacity-80 text-[var(--color-text)] text-xs px-2 py-1 rounded flex items-center gap-1">
-      <ZoomIn size={12} />
-      {mgr.magnifierZoom}x
+const MagnifierPiP: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => {
+  if (!mgr.magnifierActive || !mgr.isConnected) return null;
+  return (
+    <div
+      className="absolute bottom-4 right-4 z-50 rounded-lg overflow-hidden shadow-2xl border border-[var(--color-border)]"
+      style={{ width: 280, height: 210 }}
+    >
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-2 py-1 bg-[var(--color-surface)] border-b border-[var(--color-border)] text-xs text-[var(--color-textSecondary)]">
+        <span className="flex items-center gap-1">
+          <Search size={10} /> Magnifier {mgr.magnifierZoom}x
+        </span>
+        <div className="flex items-center gap-1">
+          <button onClick={() => mgr.setMagnifierZoom(Math.max(2, mgr.magnifierZoom - 1))} className="px-1 hover:text-[var(--color-text)]">&minus;</button>
+          <button onClick={() => mgr.setMagnifierZoom(Math.min(8, mgr.magnifierZoom + 1))} className="px-1 hover:text-[var(--color-text)]">+</button>
+          <button onClick={() => mgr.setMagnifierActive(false)} className="px-1 hover:text-error"><X size={10} /></button>
+        </div>
+      </div>
+      {/* Canvas showing magnified content */}
+      <canvas
+        ref={mgr.magnifierCanvasRef}
+        className="w-full h-full bg-black"
+        style={{ imageRendering: 'pixelated' }}
+      />
     </div>
-  </>
-);
+  );
+};
 
 const ConnectingOverlay: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = ({ mgr, session }) => (
   <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
@@ -123,9 +131,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       height={mgr.desktopSize.height}
     />
 
-    {mgr.magnifierEnabled && mgr.magnifierActive && mgr.isConnected && (
-      <MagnifierOverlay mgr={mgr} />
-    )}
+    <MagnifierPiP mgr={mgr} />
 
     {mgr.connectionStatus === 'connecting' && (
       <ConnectingOverlay mgr={mgr} session={session} />
@@ -156,7 +162,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
         desktopSize={mgr.desktopSize}
         colorDepth={mgr.colorDepth}
         perfLabel={mgr.perfLabel}
-        magnifierEnabled={mgr.magnifierEnabled}
         magnifierActive={mgr.magnifierActive}
         showInternals={mgr.showInternals}
         showSettings={mgr.showSettings}
@@ -224,6 +229,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
           connectionName={mgr.connection?.name || session.name}
           hostname={session.hostname}
           focusOnWinmgmtTool={mgr.connection?.focusOnWinmgmtTool}
+          enableWinrmTools={mgr.connection?.enableWinrmTools}
           onActivateSession={onActivateSession}
         />
       )}

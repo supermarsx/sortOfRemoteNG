@@ -10,7 +10,6 @@ export interface RDPClientHeaderProps {
   desktopSize: { width: number; height: number };
   colorDepth: number;
   perfLabel: string;
-  magnifierEnabled: boolean;
   magnifierActive: boolean;
   showInternals: boolean;
   showSettings: boolean;
