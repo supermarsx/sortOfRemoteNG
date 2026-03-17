@@ -17,8 +17,6 @@ import {
 import { useSSHOptions } from "../../hooks/ssh/useSSHOptions";
 import { Checkbox, NumberInput, Select } from '../ui/forms';
 
-type Mgr = ReturnType<typeof useSSHOptions>;
-
 interface SSHOptionsProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;

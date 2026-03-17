@@ -7,10 +7,6 @@ interface SSHConnectionOverridesProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }
-import OverrideToggle from "./sshOverrides/OverrideToggle";
-import AuthMethodSelector from "./sshOverrides/AuthMethodSelector";
-import CipherSelector from "./sshOverrides/CipherSelector";
-import EnvironmentEditor from "./sshOverrides/EnvironmentEditor";
 import ConnectionSection from "./sshOverrides/ConnectionSection";
 import AuthSection from "./sshOverrides/AuthSection";
 import ProtocolSection from "./sshOverrides/ProtocolSection";

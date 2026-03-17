@@ -9,8 +9,6 @@ import CopyFromPanel from "./totpOptions/CopyFromPanel";
 import ReplicateToPanel from "./totpOptions/ReplicateToPanel";
 import ImportPanel from "./totpOptions/ImportPanel";
 import QRDisplay from "./totpOptions/QRDisplay";
-import ConfigEditRow from "./totpOptions/ConfigEditRow";
-import ConfigRow from "./totpOptions/ConfigRow";
 import ConfigList from "./totpOptions/ConfigList";
 import AddForm from "./totpOptions/AddForm";
 
