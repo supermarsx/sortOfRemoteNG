@@ -39,6 +39,7 @@ import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEven
 import { AppToolbar } from "./components/app/AppToolbar";
 import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
+import { TagManagerDialog } from "./components/connection/TagManagerDialog";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 
@@ -85,6 +86,7 @@ const AppContent: React.FC = () => {
   const [showRecordingManager, setShowRecordingManager] = useState(false);
   const [showWindowsBackup, setShowWindowsBackup] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [showTagManager, setShowTagManager] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -1167,6 +1169,7 @@ const AppContent: React.FC = () => {
         handleShowPasswordDialog={handleShowPasswordDialog}
         performCloudSync={performCloudSync}
         setShowDebugPanel={setShowDebugPanel}
+        setShowTagManager={setShowTagManager}
       />
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
@@ -1354,6 +1357,11 @@ const AppContent: React.FC = () => {
         setActiveSessionId={setActiveSessionId}
         sessions={state.sessions}
         handleOpenDevtools={handleOpenDevtools}
+      />
+
+      <TagManagerDialog
+        isOpen={showTagManager}
+        onClose={() => setShowTagManager(false)}
       />
     </div>
   );

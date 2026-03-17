@@ -25,6 +25,7 @@ import {
   Disc,
   Server,
   FlaskConical,
+  Tag,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -70,6 +71,7 @@ interface AppToolbarProps {
   handleShowPasswordDialog: () => void;
   performCloudSync: (provider?: CloudSyncProvider) => Promise<void>;
   setShowDebugPanel: (v: boolean) => void;
+  setShowTagManager: (v: boolean) => void;
 }
 
 export const AppToolbar: React.FC<AppToolbarProps> = ({
@@ -107,6 +109,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   handleShowPasswordDialog,
   performCloudSync,
   setShowDebugPanel,
+  setShowTagManager,
 }) => {
   const { t } = useTranslation();
 
@@ -220,6 +223,13 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               <Settings size={14} />
             </button>
           )}
+          <button
+            onClick={() => setShowTagManager(true)}
+            className="app-bar-button p-2"
+            title="Tag Manager"
+          >
+            <Tag size={14} />
+          </button>
         </div>
 
         <div className="flex items-center space-x-1">

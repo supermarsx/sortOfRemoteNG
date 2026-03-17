@@ -2,7 +2,7 @@ import { ConnectionTreeItemProps, getConnectionIcon, getStatusColor } from "./he
 import TreeItemMenu from "./TreeItemMenu";
 import React, { useState, useRef } from "react";
 import { useConnections } from "../../../contexts/useConnections";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreVertical, Play, Power } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreVertical, Play, Power, Star } from "lucide-react";
 
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   connection, level,
@@ -112,6 +112,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             isExpanded ? <FolderOpen size={16} className="mr-2 text-warning" /> : <Folder size={16} className="mr-2 text-warning" />
           ) : (
             <ProtocolIcon size={16} className={`mr-2 ${getStatusColor(activeSession?.status)}`} />
+          )}
+          {connection.favorite && (
+            <Star size={11} className="mr-1 text-warning flex-shrink-0" fill="currentColor" />
           )}
           <span className="truncate text-sm">{connection.name}</span>
           {activeSession && (

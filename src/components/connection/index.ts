@@ -10,3 +10,4 @@ export { QuickConnect } from "./QuickConnect";
 export { Sidebar } from "./Sidebar";
 export { default as SmartFilterManager } from "./SmartFilterManager";
 export { TagManager } from "./TagManager";
+export { TagManagerDialog } from "./TagManagerDialog";
