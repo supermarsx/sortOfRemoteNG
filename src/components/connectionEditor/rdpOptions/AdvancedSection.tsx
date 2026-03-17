@@ -2,7 +2,7 @@ import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { Settings2, Info } from "lucide-react";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
-import { Slider } from "../../ui/forms";
+import { Checkbox, Slider, Select } from "../../ui/forms";
 const CLOSE_POLICIES = [
   { value: 'global', label: 'Use global setting' },
   { value: 'ask', label: 'Ask before closing' },
@@ -52,45 +52,58 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-        Read Timeout: {rdp.advanced?.readTimeoutMs ?? 16}ms
+        Read Timeout
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How long to wait for data before yielding the read loop. Lower values give faster response; higher values reduce CPU usage." />
       </label>
-      <Slider value={rdp.advanced?.readTimeoutMs ?? 16} onChange={(v: number) => updateRdp("advanced", { readTimeoutMs: v })} min={1} max={100} variant="full" />
-      <div className="flex justify-between text-xs text-[var(--color-textMuted)]">
-        <span>1ms (fast)</span>
-        <span>100ms (low CPU)</span>
-      </div>
+      <label className="flex items-center gap-2 mb-1">
+        <Checkbox checked={rdp.advanced?.readTimeoutMs != null} onChange={(v: boolean) => updateRdp("advanced", { readTimeoutMs: v ? 2 : undefined })} className={CSS.checkbox} />
+        <span className="text-xs text-[var(--color-textMuted)]">Override ({rdp.advanced?.readTimeoutMs ?? 'global default'}ms)</span>
+      </label>
+      {rdp.advanced?.readTimeoutMs != null && (
+        <Slider value={rdp.advanced.readTimeoutMs} onChange={(v: number) => updateRdp("advanced", { readTimeoutMs: v })} min={1} max={100} variant="full" />
+      )}
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-        Full-frame Sync Interval: every{" "}
-        {rdp.advanced?.fullFrameSyncInterval ?? 300} frames
+        Full-frame Sync Interval
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Number of incremental frames between full-screen redraws. Lower values fix rendering glitches faster but use more bandwidth." />
       </label>
-      <Slider value={rdp.advanced?.fullFrameSyncInterval ?? 300} onChange={(v: number) => updateRdp("advanced", {
-            fullFrameSyncInterval: v,
-          })} min={60} max={600} variant="full" step={30} />
+      <label className="flex items-center gap-2 mb-1">
+        <Checkbox checked={rdp.advanced?.fullFrameSyncInterval != null} onChange={(v: boolean) => updateRdp("advanced", { fullFrameSyncInterval: v ? 300 : undefined })} className={CSS.checkbox} />
+        <span className="text-xs text-[var(--color-textMuted)]">Override (every {rdp.advanced?.fullFrameSyncInterval ?? 'global default'} frames)</span>
+      </label>
+      {rdp.advanced?.fullFrameSyncInterval != null && (
+        <Slider value={rdp.advanced.fullFrameSyncInterval} onChange={(v: number) => updateRdp("advanced", { fullFrameSyncInterval: v })} min={30} max={600} variant="full" step={30} />
+      )}
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-        Max Consecutive Errors: {rdp.advanced?.maxConsecutiveErrors ?? 50}
+        Max Consecutive Errors
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Number of consecutive decode/render errors before the session is terminated. Increase if you experience intermittent disconnects." />
       </label>
-      <Slider value={rdp.advanced?.maxConsecutiveErrors ?? 50} onChange={(v: number) => updateRdp("advanced", {
-            maxConsecutiveErrors: v,
-          })} min={10} max={200} variant="full" step={10} />
+      <label className="flex items-center gap-2 mb-1">
+        <Checkbox checked={rdp.advanced?.maxConsecutiveErrors != null} onChange={(v: boolean) => updateRdp("advanced", { maxConsecutiveErrors: v ? 50 : undefined })} className={CSS.checkbox} />
+        <span className="text-xs text-[var(--color-textMuted)]">Override ({rdp.advanced?.maxConsecutiveErrors ?? 'global default'})</span>
+      </label>
+      {rdp.advanced?.maxConsecutiveErrors != null && (
+        <Slider value={rdp.advanced.maxConsecutiveErrors} onChange={(v: number) => updateRdp("advanced", { maxConsecutiveErrors: v })} min={5} max={200} variant="full" step={5} />
+      )}
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-        Stats Interval: {rdp.advanced?.statsIntervalSecs ?? 1}s
+        Stats Interval
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How often performance statistics (FPS, bandwidth, latency) are sampled and reported in the status bar." />
       </label>
-      <Slider value={rdp.advanced?.statsIntervalSecs ?? 1} onChange={(v: number) => updateRdp("advanced", {
-            statsIntervalSecs: v,
-          })} min={1} max={10} variant="full" />
+      <label className="flex items-center gap-2 mb-1">
+        <Checkbox checked={rdp.advanced?.statsIntervalSecs != null} onChange={(v: boolean) => updateRdp("advanced", { statsIntervalSecs: v ? 1 : undefined })} className={CSS.checkbox} />
+        <span className="text-xs text-[var(--color-textMuted)]">Override ({rdp.advanced?.statsIntervalSecs ?? 'global default'}s)</span>
+      </label>
+      {rdp.advanced?.statsIntervalSecs != null && (
+        <Slider value={rdp.advanced.statsIntervalSecs} onChange={(v: number) => updateRdp("advanced", { statsIntervalSecs: v })} min={1} max={10} variant="full" />
+      )}
     </div>
   </Section>
 );
