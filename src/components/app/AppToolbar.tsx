@@ -127,11 +127,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               {t("app.subtitle")}
             </div>
           </div>
-          {collectionManager.getCurrentCollection() && (
-            <span className="text-[10px] text-primary bg-primary/30 px-2 py-1 rounded">
-              {collectionManager.getCurrentCollection()?.name}
-            </span>
-          )}
+          {/* Collection name shown in status bar instead */}
         </div>
 
         {/* Window Controls */}
