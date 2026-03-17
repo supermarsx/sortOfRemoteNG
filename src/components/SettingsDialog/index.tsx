@@ -161,7 +161,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
       ref={mgr.contentScrollRef}
       className="flex-1 overflow-y-auto min-h-0 flex flex-col"
     >
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-6 max-w-3xl">
         {mgr.activeTab === "general" && (
           <GeneralSettings settings={s} updateSettings={u} />
         )}
@@ -307,12 +307,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       closeOnEscape={false}
-      panelClassName="max-w-4xl mx-4 h-[90vh]"
+      panelClassName="max-w-5xl mx-4 h-[85vh]"
       contentClassName="overflow-hidden"
       dataTestId="settings-dialog-modal"
     >
       <div
-        className={`bg-[var(--color-surface)] rounded-xl shadow-xl w-full h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)] ${mgr.contextSettings.backgroundGlowEnabled ? "settings-glow" : ""} relative`}
+        className={`bg-[var(--color-surface)] rounded-xl shadow-xl w-full h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)] ${mgr.contextSettings.backgroundGlowEnabled ? "settings-glow" : ""} relative`}
       >
         {/* Header bar */}
         <DialogHeader
