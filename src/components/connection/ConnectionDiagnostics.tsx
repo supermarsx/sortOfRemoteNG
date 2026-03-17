@@ -4,6 +4,7 @@ import {
   Loader2,
   Stethoscope,
   Copy,
+  FileDown,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -1176,6 +1177,66 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
               title="Copy diagnostics"
             >
               <Copy size={14} />
+            </button>
+            <button
+              onClick={() => {
+                // Build a standalone HTML document with all diagnostic data
+                // and trigger the browser's Save as PDF via print dialog.
+                const title = `Diagnostics — ${connection.name} (${connection.hostname})`;
+                const now = new Date().toLocaleString();
+                const sections: string[] = [];
+
+                // Network results
+                if (mgr.pingResult || mgr.tcpResult || mgr.dnsResult) {
+                  let s = '<h2>Network</h2>';
+                  if (mgr.dnsResult) s += `<p><b>DNS:</b> ${typeof mgr.dnsResult === 'string' ? mgr.dnsResult : JSON.stringify(mgr.dnsResult)}</p>`;
+                  if (mgr.tcpResult) s += `<p><b>TCP:</b> ${typeof mgr.tcpResult === 'string' ? mgr.tcpResult : JSON.stringify(mgr.tcpResult)}</p>`;
+                  if (mgr.pingStats) s += `<p><b>Ping:</b> min=${mgr.pingStats.min}ms avg=${mgr.pingStats.avg}ms max=${mgr.pingStats.max}ms loss=${mgr.pingStats.loss}%</p>`;
+                  sections.push(s);
+                }
+
+                // Protocol report
+                if (mgr.protocolReport) {
+                  let s = '<h2>Protocol Diagnostics</h2>';
+                  s += `<p><b>Summary:</b> ${mgr.protocolReport.summary}</p>`;
+                  if (mgr.protocolReport.rootCauseHint) s += `<p><b>Root Cause:</b> ${mgr.protocolReport.rootCauseHint}</p>`;
+                  s += '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><tr><th>Step</th><th>Status</th><th>Duration</th><th>Message</th></tr>';
+                  for (const step of mgr.protocolReport.steps) {
+                    s += `<tr><td>${step.name}</td><td>${step.status}</td><td>${step.durationMs}ms</td><td>${step.message}</td></tr>`;
+                  }
+                  s += '</table>';
+                  sections.push(s);
+                }
+
+                // Certificate
+                if (mgr.tlsResult) {
+                  let s = '<h2>Certificate / Security</h2>';
+                  s += `<p><b>Subject:</b> ${mgr.tlsResult.subject ?? 'N/A'}</p>`;
+                  s += `<p><b>Issuer:</b> ${mgr.tlsResult.issuer ?? 'N/A'}</p>`;
+                  s += `<p><b>Valid:</b> ${mgr.tlsResult.valid_from ?? '?'} — ${mgr.tlsResult.valid_to ?? '?'}</p>`;
+                  s += `<p><b>Fingerprint:</b> ${mgr.tlsResult.fingerprint}</p>`;
+                  sections.push(s);
+                }
+
+                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+                  <style>body{font-family:system-ui,sans-serif;font-size:12px;max-width:900px;margin:0 auto;padding:20px}
+                  h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin-top:16px;border-bottom:1px solid #ccc;padding-bottom:4px}
+                  table{font-size:11px}th{background:#f0f0f0;text-align:left}p{margin:4px 0}</style>
+                  </head><body><h1>${title}</h1><p style="color:#666">${now}</p>
+                  ${sections.length > 0 ? sections.join('') : '<p>No diagnostic results yet. Run diagnostics first.</p>'}
+                  </body></html>`;
+
+                const win = window.open('', '_blank');
+                if (win) {
+                  win.document.write(html);
+                  win.document.close();
+                  setTimeout(() => { win.print(); }, 300);
+                }
+              }}
+              className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
+              title="Save as PDF"
+            >
+              <FileDown size={14} />
             </button>
             <button
               onClick={onClose}
