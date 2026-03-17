@@ -695,7 +695,7 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
   display: {
     width: 1920,
     height: 1080,
-    resizeToWindow: false,
+    resizeToWindow: true,
     colorDepth: 32,
     desktopScaleFactor: 100,
     lossyCompression: true,
