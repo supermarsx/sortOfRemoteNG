@@ -40,6 +40,7 @@ import { AppToolbar } from "./components/app/AppToolbar";
 import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
 import { TagManagerDialog } from "./components/connection/TagManagerDialog";
+import { TabGroupManager } from "./components/session/TabGroupManager";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 
@@ -87,6 +88,7 @@ const AppContent: React.FC = () => {
   const [showWindowsBackup, setShowWindowsBackup] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [showTagManager, setShowTagManager] = useState(false);
+  const [showTabGroupManager, setShowTabGroupManager] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -1180,6 +1182,7 @@ const AppContent: React.FC = () => {
         performCloudSync={performCloudSync}
         setShowDebugPanel={setShowDebugPanel}
         setShowTagManager={setShowTagManager}
+        setShowTabGroupManager={setShowTabGroupManager}
       />
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
@@ -1374,6 +1377,11 @@ const AppContent: React.FC = () => {
       <TagManagerDialog
         isOpen={showTagManager}
         onClose={() => setShowTagManager(false)}
+      />
+
+      <TabGroupManager
+        isOpen={showTabGroupManager}
+        onClose={() => setShowTabGroupManager(false)}
       />
     </div>
   );

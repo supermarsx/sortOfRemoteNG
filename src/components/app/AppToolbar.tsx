@@ -26,6 +26,7 @@ import {
   Server,
   FlaskConical,
   Tag,
+  Layers,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -72,6 +73,7 @@ interface AppToolbarProps {
   performCloudSync: (provider?: CloudSyncProvider) => Promise<void>;
   setShowDebugPanel: (v: boolean) => void;
   setShowTagManager: (v: boolean) => void;
+  setShowTabGroupManager: (v: boolean) => void;
 }
 
 export const AppToolbar: React.FC<AppToolbarProps> = ({
@@ -110,6 +112,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   performCloudSync,
   setShowDebugPanel,
   setShowTagManager,
+  setShowTabGroupManager,
 }) => {
   const { t } = useTranslation();
 
@@ -229,6 +232,13 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             title="Tag Manager"
           >
             <Tag size={14} />
+          </button>
+          <button
+            onClick={() => setShowTabGroupManager(true)}
+            className="app-bar-button p-2"
+            title="Tab Group Manager"
+          >
+            <Layers size={14} />
           </button>
         </div>
 
