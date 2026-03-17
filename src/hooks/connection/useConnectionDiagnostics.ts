@@ -400,141 +400,70 @@ export function useConnectionDiagnostics(connection: Connection) {
         DEFAULT_PROTOCOL_PORTS[connection.protocol.toLowerCase()] ||
         22;
 
-      /* Group 1: Internet & Gateway (parallel) */
+      // ── MAXIMUM PARALLELISM ──────────────────────────────────────
+      // All independent diagnostic groups launch simultaneously.
+      // Results stream in as each completes — the UI updates live.
+      // Only sequential pings run one-at-a-time (by nature).
+
+      /* Thread 1: Internet & Gateway connectivity */
       const networkChecksPromise = Promise.allSettled([
         invoke<PingResult>("ping_host_detailed", {
-          host: "8.8.8.8",
-          count: 1,
-          timeoutSecs: 5,
+          host: "8.8.8.8", count: 1, timeoutSecs: 5,
         }),
         invoke<PingResult>("ping_gateway", { timeout_secs: 5 }),
       ]).then(([internetRes, gatewayRes]) => {
         setResults((prev) => ({
           ...prev,
-          internetCheck:
-            internetRes.status === "fulfilled" && internetRes.value.success
-              ? "success"
-              : "failed",
-          gatewayCheck:
-            gatewayRes.status === "fulfilled" && gatewayRes.value.success
-              ? "success"
-              : "failed",
+          internetCheck: internetRes.status === "fulfilled" && internetRes.value.success ? "success" : "failed",
+          gatewayCheck: gatewayRes.status === "fulfilled" && gatewayRes.value.success ? "success" : "failed",
         }));
       });
 
-      /* Group 2: DNS, target ping, port check (parallel) */
+      /* Thread 2: DNS + target ping + port check + IP classification */
       const targetChecksPromise = Promise.allSettled([
-        invoke<DnsResult>("dns_lookup", {
-          host: connection.hostname,
-          timeoutSecs: 5,
-        }),
-        invoke<PingResult>("ping_host_detailed", {
-          host: connection.hostname,
-          count: 1,
-          timeoutSecs: 5,
-        }),
-        invoke<PortCheckResult>("check_port", {
-          host: connection.hostname,
-          port,
-          timeoutSecs: 5,
-        }),
+        invoke<DnsResult>("dns_lookup", { host: connection.hostname, timeoutSecs: 5 }),
+        invoke<PingResult>("ping_host_detailed", { host: connection.hostname, count: 1, timeoutSecs: 5 }),
+        invoke<PortCheckResult>("check_port", { host: connection.hostname, port, timeoutSecs: 5 }),
       ]).then(async ([dnsRes, subnetRes, portRes]) => {
         if (dnsRes.status === "fulfilled") {
           const dnsResult = dnsRes.value;
           setResults((prev) => ({ ...prev, dnsResult }));
           resolvedDnsIp = dnsResult.resolved_ips[0];
-
           if (dnsResult.success && dnsResult.resolved_ips.length > 0) {
             try {
-              const classification = await invoke<IpClassification>(
-                "classify_ip",
-                { ip: dnsResult.resolved_ips[0] },
-              );
-              setResults((prev) => ({
-                ...prev,
-                ipClassification: classification,
-              }));
-            } catch {
-              /* IP classification is optional */
-            }
+              const classification = await invoke<IpClassification>("classify_ip", { ip: dnsResult.resolved_ips[0] });
+              setResults((prev) => ({ ...prev, ipClassification: classification }));
+            } catch { /* optional */ }
           }
         } else {
           try {
-            const classification = await invoke<IpClassification>(
-              "classify_ip",
-              { ip: connection.hostname },
-            );
-            setResults((prev) => ({
-              ...prev,
-              ipClassification: classification,
-            }));
-          } catch {
-            /* Not a valid IP either */
-          }
+            const classification = await invoke<IpClassification>("classify_ip", { ip: connection.hostname });
+            setResults((prev) => ({ ...prev, ipClassification: classification }));
+          } catch { /* not a valid IP */ }
         }
-
         setResults((prev) => ({
           ...prev,
-          subnetCheck:
-            subnetRes.status === "fulfilled" && subnetRes.value.success
-              ? "success"
-              : "failed",
+          subnetCheck: subnetRes.status === "fulfilled" && subnetRes.value.success ? "success" : "failed",
         }));
-
         if (portRes.status === "fulfilled") {
           setResults((prev) => ({ ...prev, portCheck: portRes.value }));
         } else {
-          setResults((prev) => ({
-            ...prev,
-            portCheck: { port, open: false, time_ms: undefined },
-          }));
+          setResults((prev) => ({ ...prev, portCheck: { port, open: false, time_ms: undefined } }));
         }
       });
 
-      /* Group 3: Traceroute */
+      /* Thread 3: Traceroute (long-running, independent) */
       const traceroutePromise = invoke<TracerouteHop[]>("traceroute", {
-        host: connection.hostname,
-        maxHops: 30,
-        timeoutSecs: 3,
-      })
-        .then((tracerouteResult) => {
-          setResults((prev) => ({ ...prev, traceroute: tracerouteResult }));
-        })
-        .catch((error) => {
-          console.warn("Traceroute failed:", error);
-        });
+        host: connection.hostname, maxHops: 30, timeoutSecs: 3,
+      }).then((r) => setResults((prev) => ({ ...prev, traceroute: r }))).catch(() => {});
 
-      await Promise.all([
-        networkChecksPromise,
-        targetChecksPromise,
-        traceroutePromise,
-      ]);
-
-      /* Group 4: Advanced diagnostics (parallel) */
-      setCurrentStep(
-        t("diagnostics.runningAdvanced", "Running advanced diagnostics..."),
-      );
-
+      /* Thread 4: Advanced diagnostics — TCP timing, ICMP, fingerprint, TLS, MTU */
       const advancedChecksPromise = Promise.allSettled([
-        invoke<TcpTimingResult>("tcp_connection_timing", {
-          host: connection.hostname,
-          port,
-          timeoutSecs: 10,
-        }),
-        invoke<IcmpBlockadeResult>("detect_icmp_blockade", {
-          host: connection.hostname,
-          port,
-        }),
-        invoke<ServiceFingerprint>("fingerprint_service", {
-          host: connection.hostname,
-          port,
-        }),
-        [443, 8443, 993, 995, 465, 636].includes(port) ||
-        connection.protocol === "https"
-          ? invoke<TlsCheckResult>("check_tls", {
-              host: connection.hostname,
-              port,
-            })
+        invoke<TcpTimingResult>("tcp_connection_timing", { host: connection.hostname, port, timeoutSecs: 10 }),
+        invoke<IcmpBlockadeResult>("detect_icmp_blockade", { host: connection.hostname, port }),
+        invoke<ServiceFingerprint>("fingerprint_service", { host: connection.hostname, port }),
+        [443, 8443, 993, 995, 465, 636].includes(port) || connection.protocol === "https"
+          ? invoke<TlsCheckResult>("check_tls", { host: connection.hostname, port })
           : Promise.resolve(null),
         invoke<MtuCheckResult>("check_mtu", { host: connection.hostname }),
       ]).then(([tcpRes, icmpRes, fingerprintRes, tlsRes, mtuRes]) => {
@@ -542,80 +471,84 @@ export function useConnectionDiagnostics(connection: Connection) {
           ...prev,
           tcpTiming: tcpRes.status === "fulfilled" ? tcpRes.value : null,
           icmpBlockade: icmpRes.status === "fulfilled" ? icmpRes.value : null,
-          serviceFingerprint:
-            fingerprintRes.status === "fulfilled" ? fingerprintRes.value : null,
+          serviceFingerprint: fingerprintRes.status === "fulfilled" ? fingerprintRes.value : null,
           tlsCheck: tlsRes.status === "fulfilled" ? tlsRes.value : null,
           mtuCheck: mtuRes.status === "fulfilled" ? mtuRes.value : null,
         }));
       });
 
-      await advancedChecksPromise;
-
-      /* Group 5: Extended diagnostics */
-      setCurrentStep(
-        t("diagnostics.runningExtended", "Running extended diagnostics..."),
-      );
-
-      const targetIp = resolvedDnsIp || connection.hostname;
-
-      const udpPorts: Record<string, number> = {
-        dns: 53,
-        ntp: 123,
-        snmp: 161,
-        tftp: 69,
-        dhcp: 67,
-      };
-      const udpPort =
-        udpPorts[connection.protocol.toLowerCase()] ||
-        ([53, 123, 161, 162, 69, 67, 68, 500].includes(port) ? port : null);
+      /* Thread 5: Extended diagnostics — routing, geo, UDP, leakage */
+      const targetIp = connection.hostname; // best-effort, DNS might not have resolved yet
+      const udpPorts: Record<string, number> = { dns: 53, ntp: 123, snmp: 161, tftp: 69, dhcp: 67 };
+      const udpPort = udpPorts[connection.protocol.toLowerCase()] || ([53, 123, 161, 162, 69, 67, 68, 500].includes(port) ? port : null);
       const configuredProxyHost = connection.security?.proxy?.host;
-      const usesProxyPath = Boolean(
-        connection.security?.proxy?.enabled ||
-          connection.proxyChainId ||
-          connection.connectionChainId,
-      );
+      const usesProxyPath = Boolean(connection.security?.proxy?.enabled || connection.proxyChainId || connection.connectionChainId);
 
       const extendedChecksPromise = Promise.allSettled([
-        invoke<AsymmetricRoutingResult>("detect_asymmetric_routing", {
-          host: connection.hostname,
-          sampleCount: 5,
-        }),
+        invoke<AsymmetricRoutingResult>("detect_asymmetric_routing", { host: connection.hostname, sampleCount: 5 }),
         invoke<IpGeoInfo>("lookup_ip_geo", { ip: targetIp }),
-        udpPort
-          ? invoke<UdpProbeResult>("probe_udp_port", {
-              host: connection.hostname,
-              port: udpPort,
-              timeoutMs: 3000,
-            })
-          : Promise.resolve(null),
-        usesProxyPath
-          ? invoke<LeakageDetectionResult>("detect_proxy_leakage", {
-              expectedExitIp: configuredProxyHost,
-            })
-          : Promise.resolve(null),
+        udpPort ? invoke<UdpProbeResult>("probe_udp_port", { host: connection.hostname, port: udpPort, timeoutMs: 3000 }) : Promise.resolve(null),
+        usesProxyPath ? invoke<LeakageDetectionResult>("detect_proxy_leakage", { expectedExitIp: configuredProxyHost }) : Promise.resolve(null),
       ]).then(([asymmetricRes, geoRes, udpRes, leakageRes]) => {
         setResults((prev) => ({
           ...prev,
-          asymmetricRouting:
-            asymmetricRes.status === "fulfilled" ? asymmetricRes.value : null,
+          asymmetricRouting: asymmetricRes.status === "fulfilled" ? asymmetricRes.value : null,
           ipGeoInfo: geoRes.status === "fulfilled" ? geoRes.value : null,
           udpProbe: udpRes.status === "fulfilled" ? udpRes.value : null,
-          leakageDetection:
-            leakageRes.status === "fulfilled" ? leakageRes.value : null,
+          leakageDetection: leakageRes.status === "fulfilled" ? leakageRes.value : null,
         }));
       });
 
-      await extendedChecksPromise;
+      /* Thread 6: Protocol-specific deep diagnostics (can run in parallel with everything) */
+      const proto = connection.protocol.toLowerCase();
+      const protocolPromise = (async () => {
+        if (!["ssh", "http", "https", "rdp"].includes(proto)) return;
+        setProtocolDiagRunning(true);
+        setProtocolDiagError(null);
+        try {
+          let report: ProtocolDiagnosticReport | null = null;
+          if (proto === "ssh") {
+            report = await invoke<ProtocolDiagnosticReport>("diagnose_ssh_connection", {
+              host: connection.hostname, port, username: connection.username || "",
+              password: connection.password || null, privateKeyPath: connection.privateKey || null,
+              privateKeyPassphrase: null, connectTimeoutSecs: 10,
+            });
+          } else if (proto === "http" || proto === "https") {
+            report = await invoke<ProtocolDiagnosticReport>("diagnose_http_connection", {
+              host: connection.hostname, port, useTls: proto === "https",
+              path: "/", method: "GET", expectedStatus: null, connectTimeoutSecs: 15, verifySsl: true,
+            });
+          } else if (proto === "rdp") {
+            report = await invoke<ProtocolDiagnosticReport>("diagnose_rdp_connection", {
+              host: connection.hostname, port, username: connection.username || "",
+              password: connection.password || "", domain: connection.domain || null, settings: null,
+            });
+          }
+          setProtocolReport(report);
+        } catch (err) {
+          setProtocolDiagError(String(err));
+        } finally {
+          setProtocolDiagRunning(false);
+        }
+      })();
 
-      /* Group 6: Sequential pings */
+      // Wait for ALL threads to complete (they run in parallel)
+      await Promise.all([
+        networkChecksPromise,
+        targetChecksPromise,
+        traceroutePromise,
+        advancedChecksPromise,
+        extendedChecksPromise,
+        protocolPromise,
+      ]);
+
+      /* Thread 7: Sequential pings (must be serial for timing accuracy) */
       setCurrentStep(t("diagnostics.runningPings", "Running ping tests..."));
       const pings: PingResult[] = [];
       for (let i = 0; i < 10; i++) {
         try {
           const pingResult = await invoke<PingResult>("ping_host_detailed", {
-            host: connection.hostname,
-            count: 1,
-            timeoutSecs: 5,
+            host: connection.hostname, count: 1, timeoutSecs: 5,
           });
           pings.push(pingResult);
           setResults((prev) => ({ ...prev, pings: [...pings] }));
@@ -626,67 +559,7 @@ export function useConnectionDiagnostics(connection: Connection) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      /* Group 7: Protocol-specific deep diagnostics */
-      const proto = connection.protocol.toLowerCase();
-      if (["ssh", "http", "https", "rdp"].includes(proto)) {
-        setCurrentStep(
-          t(
-            "diagnostics.runningProtocol",
-            "Running {{protocol}} diagnostics...",
-            { protocol: proto.toUpperCase() },
-          ),
-        );
-        setProtocolDiagRunning(true);
-        setProtocolDiagError(null);
-        try {
-          let report: ProtocolDiagnosticReport | null = null;
-          if (proto === "ssh") {
-            report = await invoke<ProtocolDiagnosticReport>(
-              "diagnose_ssh_connection",
-              {
-                host: connection.hostname,
-                port,
-                username: connection.username || "",
-                password: connection.password || null,
-                privateKeyPath: connection.privateKey || null,
-                privateKeyPassphrase: null,
-                connectTimeoutSecs: 10,
-              },
-            );
-          } else if (proto === "http" || proto === "https") {
-            report = await invoke<ProtocolDiagnosticReport>(
-              "diagnose_http_connection",
-              {
-                host: connection.hostname,
-                port,
-                useTls: proto === "https",
-                path: "/",
-                method: "GET",
-                expectedStatus: null,
-                connectTimeoutSecs: 15,
-                verifySsl: true,
-              },
-            );
-          } else if (proto === "rdp") {
-            report = await invoke<ProtocolDiagnosticReport>(
-              "diagnose_rdp_connection",
-              {
-                host: connection.hostname,
-                port,
-                username: connection.username || "",
-                password: connection.password || "",
-                domain: connection.domain || null,
-                settings: null,
-              },
-            );
-          }
-          setProtocolReport(report);
-        } catch (err) {
-          setProtocolDiagError(String(err));
-        } finally {
-          setProtocolDiagRunning(false);
-        }
-      }
+      // Protocol diagnostics already ran in parallel above (Thread 6)
     } catch (error) {
       console.error("Diagnostics failed:", error);
     } finally {
