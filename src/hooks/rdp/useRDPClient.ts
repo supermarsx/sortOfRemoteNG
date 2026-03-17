@@ -782,8 +782,6 @@ export function useRDPClient(session: ConnectionSession) {
     }
 
     if (state.type === 'bitmap') {
-      // Scale the server bitmap to match canvas-to-desktop ratio
-      console.log(`[RDP cursor applyCursor] bitmap ${state.w}x${state.h} scale=${scale.toFixed(2)}`);
       const sw = Math.max(1, Math.round(state.w * scale));
       const sh = Math.max(1, Math.round(state.h * scale));
       const shx = Math.min(Math.round(state.hx * scale), sw - 1);
@@ -916,18 +914,19 @@ export function useRDPClient(session: ConnectionSession) {
       }
     }));
 
+    // Track the last bitmap fingerprint to skip redundant cursor applies.
+    // The server sends the same cursor bitmap on every mouse move over the
+    // same element — dedup by (width, height, hotspot, first 16 bytes).
+    let lastBitmapKey = '';
+
     track(listen<RDPPointerEvent>('rdp://pointer', (event) => {
       const ptr = event.payload;
       if (ptr.session_id !== sessionIdRef.current) return;
 
-      // DEBUG: trace all pointer events
-      if (ptr.pointer_type !== 'position') {
-        console.log(`[RDP pointer] type=${ptr.pointer_type}, bitmap_w=${ptr.bitmap_width}, bitmap_h=${ptr.bitmap_height}, has_rgba=${!!ptr.bitmap_rgba}, rgba_len=${ptr.bitmap_rgba?.length ?? 0}`);
-      }
-
       const mode = rdpSettingsRef.current.input?.localCursor ?? 'local';
       switch (ptr.pointer_type) {
         case 'default':
+          lastBitmapKey = '';
           if (mode === 'local' || mode === 'dot') {
             setCursor({ type: mode === 'dot' ? 'dot' : 'arrow' });
           } else {
@@ -935,6 +934,7 @@ export function useRDPClient(session: ConnectionSession) {
           }
           break;
         case 'hidden':
+          lastBitmapKey = '';
           if (mode === 'local') {
             setCursor({ type: 'arrow' });
           } else if (mode === 'dot') {
@@ -945,6 +945,12 @@ export function useRDPClient(session: ConnectionSession) {
           break;
         case 'bitmap':
           if (ptr.bitmap_rgba && ptr.bitmap_width && ptr.bitmap_height) {
+            // Dedup: skip if this is the same cursor bitmap as last time.
+            // Key on dimensions + hotspot + first 16 chars of base64 data.
+            const bitmapKey = `${ptr.bitmap_width}x${ptr.bitmap_height}:${ptr.hotspot_x},${ptr.hotspot_y}:${ptr.bitmap_rgba.slice(0, 16)}`;
+            if (bitmapKey === lastBitmapKey) break;
+            lastBitmapKey = bitmapKey;
+
             try {
               const w = ptr.bitmap_width;
               const h = ptr.bitmap_height;
@@ -957,18 +963,15 @@ export function useRDPClient(session: ConnectionSession) {
               if (raw.length !== expectedLen) break;
 
               // Decode base64 to Uint8ClampedArray.
-              // We use Accelerated mode (pointerSoftwareRendering=false)
-              // which produces non-premultiplied alpha — no conversion needed.
+              // Accelerated mode (pointerSoftwareRendering=false) gives
+              // non-premultiplied alpha — no conversion needed.
               const rgba = new Uint8ClampedArray(expectedLen);
               for (let i = 0; i < expectedLen; i++) {
                 rgba[i] = raw.charCodeAt(i);
               }
 
-              // Store bitmap and apply with scaling via the unified system
-              console.log(`[RDP cursor] applying bitmap ${w}x${h} hotspot=(${hx},${hy}) rgba_bytes=${rgba.length} scale=${getScaleRatio().toFixed(2)}`);
               setCursor({ type: 'bitmap', rgba, w, h, hx, hy });
-            } catch (e) {
-              console.warn('[RDP cursor] Failed to decode pointer bitmap:', e);
+            } catch {
               setCursor({ type: mode === 'dot' ? 'dot' : 'arrow' });
             }
           }
