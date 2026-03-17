@@ -64,19 +64,35 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
             })} options={[{ value: "16", label: "16-bit (High Color)" }, { value: "24", label: "24-bit (True Color)" }, { value: "32", label: "32-bit (True Color + Alpha)" }]} className="selectClass" />
       </div>
 
-      <label className="flex items-center space-x-3 cursor-pointer group">
-        <Checkbox checked={rdp.smartSizing ?? true} onChange={(v: boolean) => update({ smartSizing: v })} />
-        <span className="sor-toggle-label">
-          Smart Sizing (scale remote desktop to fit window) <InfoTooltip text="Scales the remote desktop image to fit the local window without changing the remote resolution." />
-        </span>
-      </label>
-
-      <label className="flex items-center space-x-3 cursor-pointer group">
-        <Checkbox checked={rdp.resizeToWindow ?? true} onChange={(v: boolean) => update({ resizeToWindow: v })} />
-        <span className="sor-toggle-label">
-          Resize to Window (dynamically match window dimensions) <InfoTooltip text="Dynamically adjusts the remote desktop resolution to match the local window size when resized." />
-        </span>
-      </label>
+      <div>
+        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
+          Scaling Mode <InfoTooltip text="How the remote desktop fits the local window. Smart Sizing scales a fixed resolution. Resize to Window dynamically changes the remote resolution. These are mutually exclusive." />
+        </label>
+        <Select
+          value={
+            rdp.resizeToWindow
+              ? "resize"
+              : rdp.smartSizing !== false
+                ? "smart"
+                : "none"
+          }
+          onChange={(v: string) => {
+            if (v === "resize") {
+              update({ resizeToWindow: true, smartSizing: false });
+            } else if (v === "smart") {
+              update({ resizeToWindow: false, smartSizing: true });
+            } else {
+              update({ resizeToWindow: false, smartSizing: false });
+            }
+          }}
+          options={[
+            { value: "smart", label: "Smart Sizing (scale to fit)" },
+            { value: "resize", label: "Resize to Window (dynamic resolution)" },
+            { value: "none", label: "None (scrollbars if needed)" },
+          ]}
+          className={selectClass}
+        />
+      </div>
 
       <label className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={rdp.lossyCompression ?? true} onChange={(v: boolean) => update({ lossyCompression: v })} />
