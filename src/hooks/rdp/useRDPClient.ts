@@ -566,12 +566,17 @@ export function useRDPClient(session: ConnectionSession) {
       // frontend for zero-latency cursor shape changes (hand, loading,
       // text beam, etc.).  Server pointer stays enabled so we receive the
       // shape change events.
+      // In local/dot cursor mode we need:
+      //   enableServerPointer: TRUE  — so IronRDP processes pointer events at all
+      //   pointerSoftwareRendering: FALSE — so IronRDP emits PointerBitmap events
+      //     instead of painting cursors into the frame buffer
       const cursorMode = effectiveSettings.input?.localCursor ?? 'local';
       if (cursorMode === 'local' || cursorMode === 'dot') {
         effectiveSettings = {
           ...effectiveSettings,
           security: {
             ...effectiveSettings.security,
+            enableServerPointer: true,
             pointerSoftwareRendering: false,
           },
         };
@@ -778,6 +783,7 @@ export function useRDPClient(session: ConnectionSession) {
 
     if (state.type === 'bitmap') {
       // Scale the server bitmap to match canvas-to-desktop ratio
+      console.log(`[RDP cursor applyCursor] bitmap ${state.w}x${state.h} scale=${scale.toFixed(2)}`);
       const sw = Math.max(1, Math.round(state.w * scale));
       const sh = Math.max(1, Math.round(state.h * scale));
       const shx = Math.min(Math.round(state.hx * scale), sw - 1);
@@ -914,6 +920,11 @@ export function useRDPClient(session: ConnectionSession) {
       const ptr = event.payload;
       if (ptr.session_id !== sessionIdRef.current) return;
 
+      // DEBUG: trace all pointer events
+      if (ptr.pointer_type !== 'position') {
+        console.log(`[RDP pointer] type=${ptr.pointer_type}, bitmap_w=${ptr.bitmap_width}, bitmap_h=${ptr.bitmap_height}, has_rgba=${!!ptr.bitmap_rgba}, rgba_len=${ptr.bitmap_rgba?.length ?? 0}`);
+      }
+
       const mode = rdpSettingsRef.current.input?.localCursor ?? 'local';
       switch (ptr.pointer_type) {
         case 'default':
@@ -954,6 +965,7 @@ export function useRDPClient(session: ConnectionSession) {
               }
 
               // Store bitmap and apply with scaling via the unified system
+              console.log(`[RDP cursor] applying bitmap ${w}x${h} hotspot=(${hx},${hy}) rgba_bytes=${rgba.length} scale=${getScaleRatio().toFixed(2)}`);
               setCursor({ type: 'bitmap', rgba, w, h, hx, hy });
             } catch (e) {
               console.warn('[RDP cursor] Failed to decode pointer bitmap:', e);
