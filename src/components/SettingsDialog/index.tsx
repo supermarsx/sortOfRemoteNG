@@ -161,7 +161,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
       ref={mgr.contentScrollRef}
       className="flex-1 overflow-y-auto min-h-0 flex flex-col"
     >
-      <div className="flex-1 p-6 max-w-3xl">
+      <div className="flex-1 p-6 max-w-3xl mx-auto w-full">
         {mgr.activeTab === "general" && (
           <GeneralSettings settings={s} updateSettings={u} />
         )}
