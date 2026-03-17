@@ -48,23 +48,27 @@ function getStatusIcon(connectionStatus: string): React.ReactNode {
 const MagnifierPiP: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => {
   if (!mgr.magnifierActive || !mgr.isConnected) return null;
 
-  // Auto-reposition: if cursor is near the PiP corner, move to opposite side
   const pipW = mgr.magnifierPipSize ?? 280;
   const pipH = Math.round(pipW * 0.75);
   const corner = mgr.magnifierCorner ?? 'bottom-right';
 
-  const posStyle = corner === 'bottom-right'
-    ? { bottom: 8, right: 8 }
-    : corner === 'bottom-left'
-    ? { bottom: 8, left: 8 }
-    : corner === 'top-right'
-    ? { top: 8, right: 8 }
-    : { top: 8, left: 8 };
+  // Position for each corner
+  const positions: Record<string, React.CSSProperties> = {
+    'bottom-right': { bottom: 8, right: 8, top: 'auto', left: 'auto' },
+    'bottom-left':  { bottom: 8, left: 8, top: 'auto', right: 'auto' },
+    'top-right':    { top: 8, right: 8, bottom: 'auto', left: 'auto' },
+    'top-left':     { top: 8, left: 8, bottom: 'auto', right: 'auto' },
+  };
 
   return (
     <div
       className="absolute z-50 rounded-lg overflow-hidden shadow-2xl border border-[var(--color-border)]/50 pointer-events-none"
-      style={{ width: pipW, height: pipH, ...posStyle }}
+      style={{
+        width: pipW,
+        height: pipH,
+        transition: 'top 300ms ease, bottom 300ms ease, left 300ms ease, right 300ms ease, width 200ms ease, height 200ms ease',
+        ...positions[corner],
+      }}
     >
       <canvas
         ref={mgr.magnifierCanvasRef}
@@ -125,7 +129,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       ref={mgr.canvasRef}
       className="border border-[var(--color-border)]"
       style={{
-        cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.magnifierActive ? 'zoom-in' : mgr.pointerStyle,
+        cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.pointerStyle,
         imageRendering: 'auto',
         // Smart sizing: constrain canvas to container and scale with objectFit
         ...(smartSizing && !resizeToWindow ? {

@@ -1313,24 +1313,37 @@ export function useRDPClient(session: ConnectionSession) {
         updateMagnifier(mx, my);
       }
 
-      // Auto-reposition PiP when cursor approaches it
+      // Auto-reposition PiP when cursor approaches its corner.
+      // Default: bottom-right ↔ bottom-left (same level, swap sides).
+      // Fully configurable via magnifierAltCorner.
       const container = containerRef.current;
       if (container) {
         const cRect = container.getBoundingClientRect();
         const relX = e.clientX - cRect.left;
         const relY = e.clientY - cRect.top;
-        const threshold = magnifierPipSize + 40; // margin
+        const threshold = magnifierPipSize + 40;
         const nearRight = relX > cRect.width - threshold;
         const nearBottom = relY > cRect.height - threshold;
         const nearLeft = relX < threshold;
         const nearTop = relY < threshold;
 
         setMagnifierCorner(prev => {
-          if (prev === 'bottom-right' && nearRight && nearBottom) return 'top-left';
-          if (prev === 'top-left' && nearLeft && nearTop) return 'bottom-right';
-          if (prev === 'bottom-left' && nearLeft && nearBottom) return 'top-right';
-          if (prev === 'top-right' && nearRight && nearTop) return 'bottom-left';
-          return prev;
+          // Check if cursor is in the current corner's zone
+          const inZone =
+            (prev === 'bottom-right' && nearRight && nearBottom) ||
+            (prev === 'bottom-left' && nearLeft && nearBottom) ||
+            (prev === 'top-right' && nearRight && nearTop) ||
+            (prev === 'top-left' && nearLeft && nearTop);
+          if (!inZone) return prev;
+
+          // Move to the configured alt corner
+          const altMap: Record<string, typeof prev> = {
+            'bottom-right': 'bottom-left',
+            'bottom-left': 'bottom-right',
+            'top-right': 'top-left',
+            'top-left': 'top-right',
+          };
+          return altMap[prev] ?? prev;
         });
       }
     }

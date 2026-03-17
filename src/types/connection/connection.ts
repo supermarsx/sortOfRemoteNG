@@ -360,6 +360,16 @@ export interface RdpInputSettings {
    * - 'dot':    Show a small dot as local cursor for minimal distraction
    */
   localCursor?: 'local' | 'remote' | 'dot';
+
+  // ─── Magnifier ──────────────────────────────────────────────────
+  /** Default magnifier PiP corner */
+  magnifierDefaultCorner?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  /** Auto-reposition behavior when cursor approaches PiP */
+  magnifierAutoReposition?: boolean;
+  /** Default PiP window size in pixels (150-500) */
+  magnifierDefaultSize?: number;
+  /** Default magnifier zoom level (2-8) */
+  magnifierDefaultZoom?: number;
 }
 
 export interface RdpDeviceRedirection {
