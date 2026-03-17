@@ -6,14 +6,15 @@ import { useSettings } from "../../../contexts/SettingsContext";
 import type { Connection } from "../../../types/connection/connection";
 import {
   Activity, ChevronRight, ClipboardList, Cog, Copy, Cpu, Edit,
-  ExternalLink, FileDown, FileText, HardDrive, Monitor, Play,
-  Power, SlidersHorizontal, Star, Terminal, Trash2, UserX,
+  ExternalLink, FileDown, FileText, FolderOpen, HardDrive, Monitor, Play,
+  PlayCircle, Power, SlidersHorizontal, Star, Terminal, Trash2, UserX,
 } from "lucide-react";
 function TreeItemMenu({
   connection, activeSession, showMenu, menuPosition, triggerRef, onClose,
   onConnect, onDisconnect, onEdit, onDelete, onCopyHostname, onRename,
   onExport, onConnectWithOptions, onConnectWithoutCredentials,
   onExecuteScripts, onDiagnostics, onDetachSession, onDuplicate, onWindowsTool,
+  onConnectAll, onConnectAllRecursive,
 }: {
   connection: Connection;
   activeSession: { id: string; status: string } | undefined;
@@ -35,6 +36,8 @@ function TreeItemMenu({
   onDetachSession?: (sessionId: string) => void;
   onDuplicate: (c: Connection) => void;
   onWindowsTool?: (c: Connection, tool: string) => void;
+  onConnectAll?: (folder: Connection) => void;
+  onConnectAllRecursive?: (folder: Connection) => void;
 }) {
   const { dispatch } = useConnections();
   const { settings } = useSettings();
@@ -50,6 +53,25 @@ function TreeItemMenu({
       className="min-w-[140px]"
       dataTestId="connection-tree-item-menu"
     >
+      {connection.isGroup && (
+        <button
+          onClick={act(() => onConnectAll?.(connection))}
+          className="sor-menu-item"
+        >
+          <PlayCircle size={14} className="mr-2" />
+          Connect All in Folder
+        </button>
+      )}
+      {connection.isGroup && (
+        <button
+          onClick={act(() => onConnectAllRecursive?.(connection))}
+          className="sor-menu-item"
+        >
+          <FolderOpen size={14} className="mr-2" />
+          Connect All (Including Sub-folders)
+        </button>
+      )}
+      {connection.isGroup && <div className="sor-menu-divider" />}
       {!connection.isGroup && (
         <button onClick={act(() => activeSession ? onDisconnect(connection) : onConnect(connection))} className="sor-menu-item">
           {activeSession ? <Power size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}

@@ -54,6 +54,8 @@ export interface ConnectionTreeItemProps {
   onDetachSession?: (sessionId: string) => void;
   onDuplicate: (connection: Connection) => void;
   onWindowsTool?: (connection: Connection, tool: string) => void;
+  onConnectAll?: (folder: Connection) => void;
+  onConnectAllRecursive?: (folder: Connection) => void;
   enableReorder: boolean;
   isDragging: boolean;
   isDragOver: boolean;

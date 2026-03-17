@@ -43,6 +43,33 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
     return () => window.removeEventListener('reveal-connection', handler);
   }, []);
 
+  const handleConnectAll = useCallback((folder: Connection) => {
+    const children = mgr.state.connections.filter(c => c.parentId === folder.id && !c.isGroup);
+    children.forEach((conn, i) => {
+      setTimeout(() => onConnect(conn), i * 200);
+    });
+  }, [mgr.state.connections, onConnect]);
+
+  const handleConnectAllRecursive = useCallback((folder: Connection) => {
+    const collectConnections = (parentId: string): Connection[] => {
+      const result: Connection[] = [];
+      for (const conn of mgr.state.connections) {
+        if (conn.parentId === parentId) {
+          if (conn.isGroup) {
+            result.push(...collectConnections(conn.id));
+          } else {
+            result.push(conn);
+          }
+        }
+      }
+      return result;
+    };
+    const allConns = collectConnections(folder.id);
+    allConns.forEach((conn, i) => {
+      setTimeout(() => onConnect(conn), i * 200);
+    });
+  }, [mgr.state.connections, onConnect]);
+
   const handleWindowsTool = useCallback((c: Connection, tool: string) => {
     const session = createWinmgmtSession(
       tool as WindowsToolId,
@@ -79,6 +106,8 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDetachSession={onSessionDetach}
           onDuplicate={mgr.handleDuplicate}
           onWindowsTool={handleWindowsTool}
+          onConnectAll={handleConnectAll}
+          onConnectAllRecursive={handleConnectAllRecursive}
           enableReorder={enableReorder}
           isDragging={mgr.draggedId === connection.id}
           isDragOver={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id}
