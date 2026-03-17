@@ -228,45 +228,23 @@ export function useConnectionEditor(
 
   const buildConnectionData = useCallback((): Connection => {
     const now = new Date();
+    // Spread ALL formData fields so newly added settings (winrmSettings,
+    // enableWinrmTools, sshConnectionConfigOverride, etc.) are always
+    // persisted without having to enumerate them individually.
     return {
       ...(connection || {}),
+      ...formData,
       id: connection?.id || generateId(),
       name: formData.name || "New Connection",
       protocol: formData.protocol as Connection["protocol"],
       hostname: formData.hostname || "",
       port: formData.port || getDefaultPort(formData.protocol as string),
-      username: formData.username,
-      password: formData.password,
-      privateKey: formData.privateKey,
-      passphrase: formData.passphrase,
-      domain: formData.domain,
-      osType: formData.osType,
-      description: formData.description || "",
       isGroup: formData.isGroup || false,
       tags: formData.tags || [],
-      parentId: formData.parentId,
-      icon: formData.icon || undefined,
       order: connection?.order ?? Date.now(),
       createdAt: connection?.createdAt || now,
       updatedAt: now,
-      authType: formData.authType,
-      basicAuthUsername: formData.basicAuthUsername,
-      basicAuthPassword: formData.basicAuthPassword,
-      basicAuthRealm: formData.basicAuthRealm,
-      httpHeaders: formData.httpHeaders,
-      httpVerifySsl: formData.httpVerifySsl,
-      cloudProvider: formData.cloudProvider,
-      ignoreSshSecurityErrors: formData.ignoreSshSecurityErrors ?? true,
-      sshConnectTimeout: formData.sshConnectTimeout,
-      sshKeepAliveInterval: formData.sshKeepAliveInterval,
-      sshKnownHostsPath: formData.sshKnownHostsPath || undefined,
-      tlsTrustPolicy: formData.tlsTrustPolicy,
-      sshTrustPolicy: formData.sshTrustPolicy,
-      rdpTrustPolicy: formData.rdpTrustPolicy,
-      rdpSettings: formData.rdpSettings,
-      totpSecret: formData.totpSecret,
-      totpConfigs: formData.totpConfigs,
-    };
+    } as Connection;
   }, [formData, connection]);
 
   // Auto-save effect
