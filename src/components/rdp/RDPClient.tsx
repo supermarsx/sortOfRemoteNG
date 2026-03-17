@@ -108,15 +108,36 @@ const DisconnectedOverlay: React.FC = () => (
   </div>
 );
 
-const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = ({ mgr, session }) => (
-  <div ref={mgr.containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative min-h-0 overflow-hidden">
+const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = ({ mgr, session }) => {
+  // Smart sizing: scale the canvas to fit via CSS objectFit.
+  // Resize to window: canvas buffer matches container — no CSS scaling needed.
+  // Neither: fixed size, may overflow (scrollbars handled by container).
+  const smartSizing = mgr.rdpSettings?.display?.smartSizing !== false;
+  const resizeToWindow = mgr.rdpSettings?.display?.resizeToWindow === true;
+
+  return (
+  <div
+    ref={mgr.containerRef}
+    className="flex-1 flex items-center justify-center bg-black p-1 relative min-h-0"
+    style={{ overflow: smartSizing || resizeToWindow ? 'hidden' : 'auto' }}
+  >
     <canvas
       ref={mgr.canvasRef}
-      className="border border-[var(--color-border)] max-w-full max-h-full"
+      className="border border-[var(--color-border)]"
       style={{
         cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.magnifierActive ? 'zoom-in' : mgr.pointerStyle,
         imageRendering: 'auto',
-        objectFit: 'contain',
+        // Smart sizing: constrain canvas to container and scale with objectFit
+        ...(smartSizing && !resizeToWindow ? {
+          maxWidth: '100%',
+          maxHeight: '100%',
+          objectFit: 'contain' as const,
+        } : {}),
+        // Resize to window: canvas IS the container size — no scaling
+        ...(resizeToWindow ? {
+          width: '100%',
+          height: '100%',
+        } : {}),
         display: mgr.connectionStatus !== 'disconnected' ? 'block' : 'none',
       }}
       onMouseMove={mgr.handleMouseMove}
@@ -145,7 +166,8 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       <DisconnectedOverlay />
     )}
   </div>
-);
+  );
+};
 
 // ─── Root component ──────────────────────────────────────────────────
 

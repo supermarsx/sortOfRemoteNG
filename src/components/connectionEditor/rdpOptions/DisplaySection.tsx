@@ -103,13 +103,39 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
       </div>
 
       <div>
-        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Resize to window (dynamic resolution) <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Dynamically adjust the remote resolution when the local window is resized. Requires server support." /></label>
-        <Select value={rdp.display?.resizeToWindow === undefined ? "" : rdp.display.resizeToWindow ? "true" : "false"} onChange={(v: string) => updateRdp("display", { resizeToWindow: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
-      </div>
-
-      <div>
-        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Smart sizing (scale to fit) <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Scale the remote desktop image to fit the local canvas. Useful when the remote resolution differs from the window size." /></label>
-        <Select value={rdp.display?.smartSizing === undefined ? "" : rdp.display.smartSizing ? "true" : "false"} onChange={(v: string) => updateRdp("display", { smartSizing: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+          Scaling Mode
+          <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="How the remote desktop fits the local window. Smart Sizing scales a fixed resolution to fit. Resize to Window dynamically changes the remote resolution to match. These are mutually exclusive." />
+        </label>
+        <Select
+          value={
+            rdp.display?.resizeToWindow === undefined && rdp.display?.smartSizing === undefined
+              ? ""
+              : rdp.display?.resizeToWindow
+                ? "resize"
+                : rdp.display?.smartSizing !== false
+                  ? "smart"
+                  : "none"
+          }
+          onChange={(v: string) => {
+            if (v === "") {
+              updateRdp("display", { resizeToWindow: undefined, smartSizing: undefined });
+            } else if (v === "resize") {
+              updateRdp("display", { resizeToWindow: true, smartSizing: false });
+            } else if (v === "smart") {
+              updateRdp("display", { resizeToWindow: false, smartSizing: true });
+            } else {
+              updateRdp("display", { resizeToWindow: false, smartSizing: false });
+            }
+          }}
+          options={[
+            { value: "", label: "Use global default" },
+            { value: "smart", label: "Smart Sizing (scale to fit)" },
+            { value: "resize", label: "Resize to Window (dynamic resolution)" },
+            { value: "none", label: "None (scrollbars if needed)" },
+          ]}
+          className={CSS.select}
+        />
       </div>
 
       <div>

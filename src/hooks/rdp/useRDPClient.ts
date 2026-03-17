@@ -1496,6 +1496,7 @@ export function useRDPClient(session: ConnectionSession) {
     setShowSettings,
     rdpSessionId,
     desktopSize,
+    rdpSettings,
     pointerStyle,
     showInternals,
     setShowInternals,
