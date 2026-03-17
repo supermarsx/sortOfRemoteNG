@@ -7,6 +7,7 @@ import {
   defaultSSHTerminalConfig,
   defaultSSHConnectionConfig,
   defaultCloudSyncConfig,
+  defaultDiagnosticsConfig,
 } from '../../types/settings/settings';
 import { SecureStorage } from '../storage/storage';
 import { IndexedDbService } from '../storage/indexedDbService';
@@ -522,6 +523,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     windowsBackup: 'inherit' as const,
     diagnostics: 'tab' as const,
   },
+  diagnostics: defaultDiagnosticsConfig,
   backendConfig: {
     logLevel: 'info' as const,
     maxConcurrentRdpSessions: 10,

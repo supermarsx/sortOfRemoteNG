@@ -28,6 +28,7 @@ import RDPDefaultSettings from "./sections/RDPDefaultSettings";
 import BackendSettings from "./sections/BackendSettings";
 import RecordingSettings from "./sections/RecordingSettings";
 import MacroSettings from "./sections/MacroSettings";
+import DiagnosticsSettings from "./sections/DiagnosticsSettings";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
@@ -219,6 +220,9 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         )}
         {mgr.activeTab === "api" && (
           <ApiSettings settings={s} updateSettings={u} />
+        )}
+        {mgr.activeTab === "diagnostics" && (
+          <DiagnosticsSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "advanced" && (
           <AdvancedSettings settings={s} updateSettings={u} />

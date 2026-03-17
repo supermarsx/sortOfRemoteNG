@@ -467,6 +467,9 @@ export interface GlobalSettings {
   /** How each tool/manager opens: 'popup' (modal overlay) or 'tab' (connection tab) */
   toolDisplayModes: ToolDisplayModes;
 
+  // ─── Diagnostics ─────────────────────────────────────────────
+  diagnostics: DiagnosticsConfig;
+
   // ─── Backend / Tauri Runtime Settings ────────────────────────
   backendConfig: BackendConfig;
 }
@@ -927,6 +930,82 @@ export interface BackendConfig {
   internalApiRateLimit: number;
   internalApiSsl: boolean;
 }
+
+export interface DiagnosticsConfig {
+  // Network
+  pingCount: number;
+  pingTimeoutSecs: number;
+  pingIntervalMs: number;
+  tracerouteMaxHops: number;
+  tracerouteTimeoutSecs: number;
+  portCheckTimeoutSecs: number;
+
+  // Advanced
+  tcpTimingTimeoutSecs: number;
+  mtuCheckEnabled: boolean;
+  icmpBlockadeEnabled: boolean;
+  serviceFingerprintEnabled: boolean;
+  asymmetricRoutingEnabled: boolean;
+  asymmetricRoutingSamples: number;
+
+  // TLS
+  tlsCheckEnabled: boolean;
+
+  // Extended
+  ipGeoEnabled: boolean;
+  udpProbeEnabled: boolean;
+  udpProbeTimeoutMs: number;
+  leakageDetectionEnabled: boolean;
+
+  // Protocol
+  protocolDiagEnabled: boolean;
+  protocolDiagTimeoutSecs: number;
+
+  // Auto-run
+  autoRunOnOpen: boolean;
+
+  // Display
+  showDetailedResults: boolean;
+  expandFailedSteps: boolean;
+}
+
+export const defaultDiagnosticsConfig: DiagnosticsConfig = {
+  // Network
+  pingCount: 10,
+  pingTimeoutSecs: 5,
+  pingIntervalMs: 500,
+  tracerouteMaxHops: 30,
+  tracerouteTimeoutSecs: 3,
+  portCheckTimeoutSecs: 5,
+
+  // Advanced
+  tcpTimingTimeoutSecs: 10,
+  mtuCheckEnabled: true,
+  icmpBlockadeEnabled: true,
+  serviceFingerprintEnabled: true,
+  asymmetricRoutingEnabled: true,
+  asymmetricRoutingSamples: 5,
+
+  // TLS
+  tlsCheckEnabled: true,
+
+  // Extended
+  ipGeoEnabled: true,
+  udpProbeEnabled: true,
+  udpProbeTimeoutMs: 3000,
+  leakageDetectionEnabled: true,
+
+  // Protocol
+  protocolDiagEnabled: true,
+  protocolDiagTimeoutSecs: 15,
+
+  // Auto-run
+  autoRunOnOpen: true,
+
+  // Display
+  showDetailedResults: true,
+  expandFailedSteps: true,
+};
 
 export interface ThemeConfig {
   name: string;

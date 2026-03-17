@@ -19,9 +19,10 @@ import {
   Circle,
   ListVideo,
   RotateCcw,
+  Activity,
   LucideIcon,
 } from "lucide-react";
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig } from "../../types/settings/settings";
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig } from "../../types/settings/settings";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition
@@ -55,6 +56,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
   { id: "backend", labelKey: "Backend", icon: Cpu },
   { id: "api", labelKey: "API Server", icon: Server },
+  { id: "diagnostics", labelKey: "Diagnostics", icon: Activity },
   { id: "advanced", labelKey: "settings.advanced", icon: Code },
   { id: "recovery", labelKey: "Recovery", icon: RotateCcw },
 ];
@@ -246,6 +248,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "showRecordingManagerIcon",
   ],
   macros: ["macros"],
+  diagnostics: ["diagnostics"],
   backend: ["backendConfig"],
   sshTerminal: ["sshTerminal"],
   webBrowser: [
@@ -430,4 +433,5 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     reconnectMaxDelaySecs: 30,
     reconnectOnNetworkLoss: true,
   } as GlobalSettings['rdpDefaults'],
+  diagnostics: defaultDiagnosticsConfig,
 };
