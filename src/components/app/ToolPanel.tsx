@@ -2,6 +2,7 @@
 import React from "react";
 import dynamic from "next/dynamic";
 import { ConnectionSession } from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
 import {
   getToolKeyFromProtocol,
   ToolKey,
@@ -73,6 +74,10 @@ const WindowsBackupPanel = dynamic(
   () => import("../sync/WindowsBackupPanel"),
   { ssr: false },
 );
+const ConnectionDiagnostics = dynamic(
+  () => import("../connection/ConnectionDiagnostics").then((m) => m.ConnectionDiagnostics),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -84,6 +89,7 @@ interface ToolTabViewerProps {
  * Used by SessionViewer when the session protocol starts with "tool:".
  */
 export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }) => {
+  const { state } = useConnections();
   const toolKey = getToolKeyFromProtocol(session.protocol);
   if (!toolKey) return null;
 
@@ -106,6 +112,10 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
       {toolKey === 'macroManager' && <MacroManager isOpen onClose={onClose} />}
       {toolKey === 'recordingManager' && <RecordingManager isOpen onClose={onClose} />}
       {toolKey === 'windowsBackup' && <WindowsBackupPanel isOpen onClose={onClose} />}
+      {toolKey === 'diagnostics' && (() => {
+        const conn = state.connections.find(c => c.id === session.connectionId);
+        return conn ? <ConnectionDiagnostics connection={conn} onClose={onClose} /> : null;
+      })()}
     </div>
   );
 };

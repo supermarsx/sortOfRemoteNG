@@ -520,6 +520,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     proxyChain: 'inherit' as const,
     wol: 'inherit' as const,
     windowsBackup: 'inherit' as const,
+    diagnostics: 'tab' as const,
   },
   backendConfig: {
     logLevel: 'info' as const,

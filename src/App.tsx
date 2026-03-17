@@ -617,9 +617,19 @@ const AppContent: React.FC = () => {
   };
 
   const handleDiagnostics = useCallback((connection: Connection) => {
-    setDiagnosticsConnection(connection);
-    setShowDiagnostics(true);
-  }, []);
+    // Open diagnostics as a dedicated tab instead of a popup dialog
+    const diagSession: ConnectionSession = {
+      id: generateId(),
+      connectionId: connection.id,
+      name: `Diagnostics — ${connection.name}`,
+      status: 'connected',
+      startTime: new Date(),
+      protocol: 'tool:diagnostics',
+      hostname: connection.hostname,
+    };
+    dispatch({ type: 'ADD_SESSION', payload: diagSession });
+    setActiveSessionId(diagSession.id);
+  }, [dispatch, setActiveSessionId]);
 
   const handleDisconnectConnection = useCallback(
     async (connection: Connection) => {

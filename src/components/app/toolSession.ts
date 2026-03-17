@@ -21,6 +21,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   macroManager: "Macros",
   recordingManager: "Recording Manager",
   windowsBackup: "Windows Backup",
+  diagnostics: "Diagnostics",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>
