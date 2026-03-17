@@ -1226,22 +1226,29 @@ fn run_active_session_loop(
                 }
                 Ok(RdpCommand::AttachViewer(new_channel)) => {
                     log::info!("RDP session {session_id}: viewer attached (new frame channel)");
-                    // Send the full current framebuffer so the reattached viewer
-                    // immediately sees the screen
+                    // Send the LIVE framebuffer from est.image (not the
+                    // potentially stale frame_store) so the reattached
+                    // viewer sees the current screen state immediately.
                     {
+                        let w = est.desktop_width;
+                        let h = est.desktop_height;
+                        let img_data = est.image.data();
+                        let total = 8 + img_data.len();
+                        let mut payload = Vec::with_capacity(total);
+                        payload.extend_from_slice(&0u16.to_le_bytes()); // x=0
+                        payload.extend_from_slice(&0u16.to_le_bytes()); // y=0
+                        payload.extend_from_slice(&w.to_le_bytes());
+                        payload.extend_from_slice(&h.to_le_bytes());
+                        payload.extend_from_slice(img_data);
+                        let _ = new_channel.send_raw(payload);
+                        // Also sync the frame_store with the live image
+                        // so future reattaches use fresh data too.
                         let slots = frame_store.slots.read().unwrap();
                         if let Some(slot_arc) = slots.get(session_id) {
-                            let slot = slot_arc.inner.read().unwrap();
-                            let w = slot.width;
-                            let h = slot.height;
-                            let total = 8 + slot.data.len();
-                            let mut payload = Vec::with_capacity(total);
-                            payload.extend_from_slice(&0u16.to_le_bytes());
-                            payload.extend_from_slice(&0u16.to_le_bytes());
-                            payload.extend_from_slice(&w.to_le_bytes());
-                            payload.extend_from_slice(&h.to_le_bytes());
-                            payload.extend_from_slice(&slot.data);
-                            let _ = new_channel.send_raw(payload);
+                            let mut slot = slot_arc.inner.write().unwrap();
+                            if slot.data.len() == img_data.len() {
+                                slot.data.copy_from_slice(img_data);
+                            }
                         }
                     }
                     attached_channel = Some(new_channel);
