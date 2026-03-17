@@ -14,7 +14,7 @@ import {
   RotateCcw,
   ExternalLink,
   ScrollText,
-  PanelRightClose,
+  X,
   AlertCircle,
 } from 'lucide-react';
 import { ErrorBanner, EmptyState } from '../ui/display';
@@ -65,8 +65,8 @@ const PanelHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({ mgr, onClose
       <button onClick={mgr.handleRefresh} className={`p-1.5 hover:bg-[var(--color-surface)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? 'animate-spin' : ''}`} data-tooltip="Refresh">
         <RefreshCw size={12} />
       </button>
-      <button onClick={onClose} className="p-1.5 hover:bg-[var(--color-surface)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]" data-tooltip="Close panel">
-        <PanelRightClose size={14} />
+      <button onClick={onClose} className="p-1.5 hover:bg-error/20 rounded transition-colors text-[var(--color-textSecondary)] hover:text-error" data-tooltip="Close panel">
+        <X size={14} />
       </button>
     </div>
   </div>
