@@ -161,6 +161,7 @@ interface AppDialogsProps {
   handleCollectionSelect: (id: string) => Promise<void>;
   handleReattachRdpSession: (sessionId: string) => void;
   handleSessionDetach: (sessionId: string) => void;
+  handleConnect?: (connection: Connection) => void;
   sessions: ConnectionSession[];
   connections: Connection[];
   activeRdpBackendIds: string[];
@@ -244,6 +245,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     handleCollectionSelect,
     handleReattachRdpSession,
     handleSessionDetach,
+    handleConnect,
     sessions,
     connections,
     activeRdpBackendIds,
@@ -392,6 +394,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
                   handleSessionDetach(frontendSession.id);
                 }
               }}
+              onReconnect={handleConnect}
               thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
               thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
               thumbnailInterval={appSettings.rdpSessionThumbnailInterval}

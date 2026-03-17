@@ -1259,6 +1259,7 @@ const AppContent: React.FC = () => {
                   handleSessionDetach(frontendSession.id);
                 }
               }}
+              onReconnect={handleConnect}
               thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
               thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
               thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
@@ -1343,6 +1344,7 @@ const AppContent: React.FC = () => {
         handleCollectionSelect={handleCollectionSelect}
         handleReattachRdpSession={handleReattachRdpSession}
         handleSessionDetach={handleSessionDetach}
+        handleConnect={handleConnect}
         sessions={state.sessions}
         connections={state.connections}
         activeRdpBackendIds={activeRdpBackendIds}

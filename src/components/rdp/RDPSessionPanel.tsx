@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   RefreshCw,
   Activity,
@@ -16,6 +16,10 @@ import {
   ScrollText,
   X,
   AlertCircle,
+  History,
+  Trash2,
+  Search,
+  User,
 } from 'lucide-react';
 import { ErrorBanner, EmptyState } from '../ui/display';
 import { Connection } from '../../types/connection/connection';
@@ -24,6 +28,7 @@ import { RDPLogViewer } from './RDPLogViewer';
 import {
   useRDPSessionPanel,
   RDPSessionInfo,
+  RDPSessionHistoryEntry,
   RDPStats,
   formatUptime,
   formatBytes,
@@ -37,6 +42,7 @@ interface RDPSessionPanelProps {
   onClose: () => void;
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
+  onReconnect?: (connection: Connection) => void;
   thumbnailsEnabled?: boolean;
   thumbnailPolicy?: 'realtime' | 'on-blur' | 'on-detach' | 'manual';
   thumbnailInterval?: number;
@@ -80,10 +86,164 @@ const PanelTabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <button onClick={() => mgr.setActiveTab('logs')} className={`px-4 py-2 text-xs font-medium transition-colors ${mgr.activeTab === 'logs' ? 'text-[var(--color-text)] border-b-2 border-accent' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-textSecondary)]'}`}>
       Logs
     </button>
+    <button onClick={() => mgr.setActiveTab('history')} className={`px-4 py-2 text-xs font-medium transition-colors flex items-center gap-1 ${mgr.activeTab === 'history' ? 'text-[var(--color-text)] border-b-2 border-accent' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-textSecondary)]'}`}>
+      History
+      {mgr.sessionHistory.length > 0 && (
+        <span className="text-[9px] bg-[var(--color-border)] rounded-full px-1 min-w-[16px] text-center">{mgr.sessionHistory.length}</span>
+      )}
+    </button>
   </div>
 );
 
 
+
+function formatRelativeTime(isoDate: string): string {
+  const now = Date.now();
+  const then = new Date(isoDate).getTime();
+  const diffSecs = Math.floor((now - then) / 1000);
+
+  if (diffSecs < 60) return 'just now';
+  if (diffSecs < 3600) {
+    const m = Math.floor(diffSecs / 60);
+    return `${m}m ago`;
+  }
+  if (diffSecs < 86400) {
+    const h = Math.floor(diffSecs / 3600);
+    return `${h}h ago`;
+  }
+  if (diffSecs < 604800) {
+    const d = Math.floor(diffSecs / 86400);
+    return `${d}d ago`;
+  }
+  return new Date(isoDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const HistoryEntry: React.FC<{
+  entry: RDPSessionHistoryEntry;
+  canReconnect: boolean;
+  onReconnect: () => void;
+}> = ({ entry, canReconnect, onReconnect }) => (
+  <div className="bg-[var(--color-surface)]/60 border border-[var(--color-border)] rounded-lg p-2.5 overflow-hidden">
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-[var(--color-textMuted)]" />
+          <span className="text-xs font-medium text-[var(--color-text)] truncate">{entry.connectionName}</span>
+        </div>
+        <div className="text-[10px] text-[var(--color-textMuted)] mt-0.5 truncate">{entry.hostname}:{entry.port}</div>
+      </div>
+      {canReconnect && (
+        <button
+          onClick={onReconnect}
+          className="flex-shrink-0 p-1.5 hover:bg-accent/20 rounded text-[var(--color-textSecondary)] hover:text-accent transition-colors"
+          data-tooltip="Reconnect"
+        >
+          <RefreshCw size={12} />
+        </button>
+      )}
+    </div>
+    <div className="grid grid-cols-2 gap-1 mt-1.5 text-[10px]">
+      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
+        <span className="text-[var(--color-textMuted)]">When </span>
+        <span className="text-[var(--color-textSecondary)]" title={new Date(entry.disconnectedAt).toLocaleString()}>{formatRelativeTime(entry.disconnectedAt)}</span>
+      </div>
+      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
+        <span className="text-[var(--color-textMuted)]">Dur </span>
+        <span className="text-[var(--color-textSecondary)] font-mono">{formatUptime(entry.duration)}</span>
+      </div>
+      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
+        <span className="text-[var(--color-textMuted)]">Res </span>
+        <span className="text-[var(--color-textSecondary)] font-mono">{entry.desktopWidth}&times;{entry.desktopHeight}</span>
+      </div>
+      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5 flex items-center gap-0.5">
+        <User size={8} className="text-[var(--color-textMuted)] flex-shrink-0" />
+        <span className="text-[var(--color-textSecondary)] truncate">{entry.username || 'n/a'}</span>
+      </div>
+    </div>
+    {!canReconnect && (
+      <div className="mt-1 text-[9px] text-[var(--color-textMuted)] italic">Connection no longer available</div>
+    )}
+  </div>
+);
+
+const HistoryTab: React.FC<{
+  mgr: Mgr;
+  onReconnect?: (connection: Connection) => void;
+}> = ({ mgr, onReconnect }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredHistory = useMemo(() => {
+    if (!searchQuery.trim()) return mgr.sessionHistory;
+    const q = searchQuery.toLowerCase();
+    return mgr.sessionHistory.filter(
+      (e) =>
+        e.connectionName.toLowerCase().includes(q) ||
+        e.hostname.toLowerCase().includes(q) ||
+        e.username.toLowerCase().includes(q),
+    );
+  }, [mgr.sessionHistory, searchQuery]);
+
+  if (mgr.sessionHistory.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto p-3">
+        <EmptyState
+          icon={History}
+          message="No session history yet"
+          hint="Past RDP sessions will appear here after disconnecting"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] flex-shrink-0">
+        <div className="relative flex-1">
+          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter by name, host, user..."
+            className="w-full pl-6 pr-2 py-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:border-accent"
+          />
+        </div>
+        <button
+          onClick={mgr.clearHistory}
+          className="flex items-center gap-1 px-2 py-1 bg-error/20 hover:bg-error/30 border border-error/50 rounded text-error text-[10px] transition-colors flex-shrink-0"
+          data-tooltip="Clear all history"
+        >
+          <Trash2 size={10} />
+          Clear
+        </button>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {filteredHistory.length === 0 ? (
+          <div className="text-center py-8 text-[var(--color-textMuted)] text-xs">
+            No matches for &ldquo;{searchQuery}&rdquo;
+          </div>
+        ) : (
+          filteredHistory.map((entry, idx) => {
+            const conn = mgr.reconnectFromHistory(entry);
+            return (
+              <HistoryEntry
+                key={`${entry.disconnectedAt}-${idx}`}
+                entry={entry}
+                canReconnect={!!conn && !!onReconnect}
+                onReconnect={() => {
+                  if (conn && onReconnect) onReconnect(conn);
+                }}
+              />
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
 
 const SessionThumbnail: React.FC<{ mgr: Mgr; session: RDPSessionInfo; thumbnailsEnabled: boolean }> = ({ mgr, session, thumbnailsEnabled }) => {
   if (!thumbnailsEnabled) return null;
@@ -207,6 +367,7 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
   onClose,
   onReattachSession,
   onDetachToWindow,
+  onReconnect,
   thumbnailsEnabled = true,
   thumbnailPolicy = 'realtime',
   thumbnailInterval = 5,
@@ -246,6 +407,8 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
             </div>
             <PanelFooter mgr={mgr} />
           </>
+        ) : mgr.activeTab === 'history' ? (
+          <HistoryTab mgr={mgr} onReconnect={onReconnect} />
         ) : (
           <RDPLogViewer isVisible={mgr.activeTab === 'logs'} sessionFilter={mgr.logSessionFilter} />
         )}
