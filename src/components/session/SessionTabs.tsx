@@ -28,6 +28,13 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowRightFromLine,
+  ArrowLeftFromLine,
+  ClipboardCopy,
+  Pin,
+  PinOff,
+  Settings2,
+  Info,
+  Maximize2,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
@@ -394,85 +401,123 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         {contextMenu && (() => {
           const sessionId = contextMenu.sessionId;
           const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
+          const targetSession = sessions[sessionIndex];
           const isFirst = sessionIndex === 0;
           const isLast = sessionIndex === sessions.length - 1;
           const hasTabsToRight = sessionIndex < sessions.length - 1;
+          const hasTabsToLeft = sessionIndex > 0;
           const hasOtherTabs = sessions.length > 1;
+          const conn = targetSession ? state.connections.find(c => c.id === targetSession.connectionId) : null;
+          const isPinned = targetSession?.pinned ?? false;
+
+          const act = (fn: () => void) => { fn(); closeContextMenu(); };
 
           return (
             <>
-              <button
-                onClick={() => handleStartRename(sessionId)}
-                className="sor-menu-item"
-              >
-                <Pencil size={14} className="mr-2" />
-                Rename Tab
+              {/* ── Session info (non-interactive) ────────── */}
+              <div className="px-3 py-1.5 text-[10px] text-[var(--color-textMuted)] border-b border-[var(--color-border)] select-text">
+                <div className="font-medium text-[var(--color-textSecondary)]">{targetSession?.name}</div>
+                {targetSession?.hostname && <div className="font-mono">{targetSession.hostname}{conn?.port ? `:${conn.port}` : ''}</div>}
+                {targetSession?.status && <div>Status: {targetSession.status}</div>}
+              </div>
+
+              {/* ── Edit actions ────────────────────────────── */}
+              <button onClick={() => handleStartRename(sessionId)} className="sor-menu-item">
+                <Pencil size={14} className="mr-2" /> Rename Tab
               </button>
+              <button onClick={() => act(() => {
+                if (targetSession?.hostname) {
+                  navigator.clipboard.writeText(targetSession.hostname).catch(() => {});
+                }
+              })} className="sor-menu-item">
+                <ClipboardCopy size={14} className="mr-2" /> Copy Hostname
+              </button>
+              <button onClick={() => act(() => {
+                const info = [
+                  targetSession?.name,
+                  `${targetSession?.protocol ?? ''}://${targetSession?.hostname ?? ''}${conn?.port ? ':' + conn.port : ''}`,
+                  `Status: ${targetSession?.status ?? 'unknown'}`,
+                  conn?.username ? `User: ${conn.username}` : '',
+                ].filter(Boolean).join('\n');
+                navigator.clipboard.writeText(info).catch(() => {});
+              })} className="sor-menu-item">
+                <Info size={14} className="mr-2" /> Copy Connection Info
+              </button>
+
+              <div className="sor-menu-divider" />
+
+              {/* ── Session actions ─────────────────────────── */}
               {onSessionReconnect && (
-                <button
-                  onClick={() => { onSessionReconnect(sessionId); closeContextMenu(); }}
-                  className="sor-menu-item"
-                >
-                  <RefreshCw size={14} className="mr-2" />
-                  Reconnect
+                <button onClick={() => act(() => onSessionReconnect(sessionId))} className="sor-menu-item">
+                  <RefreshCw size={14} className="mr-2" /> Reconnect
                 </button>
               )}
               {onSessionDuplicate && (
-                <button
-                  onClick={() => { onSessionDuplicate(sessionId); closeContextMenu(); }}
-                  className="sor-menu-item"
-                >
-                  <Copy size={14} className="mr-2" />
-                  Duplicate Tab
+                <button onClick={() => act(() => onSessionDuplicate(sessionId))} className="sor-menu-item">
+                  <Copy size={14} className="mr-2" /> Duplicate Tab
                 </button>
               )}
+              <button onClick={() => act(() => {
+                dispatch({ type: 'UPDATE_SESSION', payload: { ...targetSession!, pinned: !isPinned } });
+              })} className="sor-menu-item">
+                {isPinned
+                  ? <><PinOff size={14} className="mr-2" /> Unpin Tab</>
+                  : <><Pin size={14} className="mr-2" /> Pin Tab</>}
+              </button>
+
               <div className="sor-menu-divider" />
-              <button
-                onClick={() => { onSessionDetach(sessionId); closeContextMenu(); }}
-                className="sor-menu-item"
-              >
-                <ExternalLink size={14} className="mr-2" />
-                Detach to Window
+
+              {/* ── Window / layout ─────────────────────────── */}
+              <button onClick={() => act(() => onSessionDetach(sessionId))} className="sor-menu-item">
+                <ExternalLink size={14} className="mr-2" /> Detach to Window
+              </button>
+              <button onClick={() => act(() => onSessionSelect(sessionId))} className="sor-menu-item">
+                <Maximize2 size={14} className="mr-2" /> Focus Tab
               </button>
               <button
                 onClick={() => handleMoveTab(sessionId, "left")}
                 className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
                 disabled={isFirst}
               >
-                <ArrowLeft size={14} className="mr-2" />
-                Move to Left
+                <ArrowLeft size={14} className="mr-2" /> Move to Left
               </button>
               <button
                 onClick={() => handleMoveTab(sessionId, "right")}
                 className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`}
                 disabled={isLast}
               >
-                <ArrowRight size={14} className="mr-2" />
-                Move to Right
+                <ArrowRight size={14} className="mr-2" /> Move to Right
               </button>
+
               <div className="sor-menu-divider" />
-              <button
-                onClick={() => { onSessionClose(sessionId); closeContextMenu(); }}
-                className="sor-menu-item sor-menu-item-danger"
-              >
-                <X size={14} className="mr-2" />
-                Close Tab
+
+              {/* ── Close actions ───────────────────────────── */}
+              <button onClick={() => act(() => onSessionClose(sessionId))} className="sor-menu-item sor-menu-item-danger">
+                <X size={14} className="mr-2" /> Close Tab
               </button>
               <button
                 onClick={() => handleCloseOtherTabs(sessionId)}
                 className={`sor-menu-item sor-menu-item-danger ${!hasOtherTabs ? "opacity-40 pointer-events-none" : ""}`}
                 disabled={!hasOtherTabs}
               >
-                <XCircle size={14} className="mr-2" />
-                Close Other Tabs
+                <XCircle size={14} className="mr-2" /> Close Other Tabs
               </button>
               <button
                 onClick={() => handleCloseTabsToRight(sessionId)}
                 className={`sor-menu-item sor-menu-item-danger ${!hasTabsToRight ? "opacity-40 pointer-events-none" : ""}`}
                 disabled={!hasTabsToRight}
               >
-                <ArrowRightFromLine size={14} className="mr-2" />
-                Close Tabs to Right
+                <ArrowRightFromLine size={14} className="mr-2" /> Close Tabs to Right
+              </button>
+              <button
+                onClick={() => {
+                  sessions.slice(0, sessionIndex).forEach(s => onSessionClose(s.id));
+                  closeContextMenu();
+                }}
+                className={`sor-menu-item sor-menu-item-danger ${!hasTabsToLeft ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={!hasTabsToLeft}
+              >
+                <ArrowLeftFromLine size={14} className="mr-2" /> Close Tabs to Left
               </button>
             </>
           );
