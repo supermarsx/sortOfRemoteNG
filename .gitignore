@@ -38,3 +38,4 @@ tsconfig.tsbuildinfo
 timings_err.txt
 BUILDLOG*.log
 cargo-check*.log
+users.json
