@@ -638,6 +638,10 @@ export class SettingsManager {
             ...DEFAULT_SETTINGS.networkDiscovery,
             ...(stored.networkDiscovery ?? {}),
           },
+          toolDisplayModes: {
+            ...DEFAULT_SETTINGS.toolDisplayModes,
+            ...(stored.toolDisplayModes ?? {}),
+          },
         };
       }
       return this.settings;
