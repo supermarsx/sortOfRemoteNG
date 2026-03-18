@@ -362,8 +362,10 @@ const DetachedSessionContent: React.FC<{
     return () => window.removeEventListener("settings-updated", handleSettingsUpdate);
   }, [applyTransparency]);
 
+  // Find by URL sessionId first, fall back to first session in state
+  // (after a cross-window swap the new session has a different ID)
   const activeSession = useMemo(
-    () => state.sessions.find((session) => session.id === sessionId),
+    () => state.sessions.find((s) => s.id === sessionId) ?? state.sessions[0] ?? null,
     [state.sessions, sessionId],
   );
 
