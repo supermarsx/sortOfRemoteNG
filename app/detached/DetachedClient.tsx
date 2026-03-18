@@ -16,8 +16,22 @@ import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { CornerUpLeft, Minus, Monitor, Pin, Square, X } from "lucide-react";
+import { CornerUpLeft, Eye, Globe, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
+
+/** Protocol → Icon mapping matching main window SessionTabs. */
+const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
+  const p = protocol.replace(/^tool:/, "");
+  switch (p) {
+    case "rdp": return <Monitor size={14} className="mr-2 flex-shrink-0" />;
+    case "ssh": return <Terminal size={14} className="mr-2 flex-shrink-0" />;
+    case "vnc": return <Eye size={14} className="mr-2 flex-shrink-0" />;
+    case "http": case "https": return <Globe size={14} className="mr-2 flex-shrink-0" />;
+    case "telnet": case "rlogin": return <Phone size={14} className="mr-2 flex-shrink-0" />;
+    case "winrm": return <Server size={14} className="mr-2 flex-shrink-0" />;
+    default: return <Monitor size={14} className="mr-2 flex-shrink-0" />;
+  }
+};
 
 const reviveSession = (session: ConnectionSession): ConnectionSession => ({
   ...session,
@@ -353,78 +367,52 @@ const DetachedSessionContent: React.FC<{
           isTransparent ? "app-transparent" : "bg-gray-900"
         }`}
       >
+      {/* ── Title bar — matches main window AppToolbar ── */}
       <div
-        className="h-10 app-bar border-b flex items-center justify-between px-3 select-none"
+        className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-2">
-          <Monitor size={14} className="text-blue-400" />
-          <div className="text-xs text-gray-200 truncate max-w-[60vw]">
-            {activeSession.name || "Detached Session"}
+        <div className="flex items-center gap-3">
+          <Monitor size={18} className="text-primary" />
+          <div className="leading-tight">
+            <div className="text-sm font-semibold tracking-tight text-[var(--color-text)]">sortOfRemoteNG</div>
+            <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Remote Connection Manager</div>
           </div>
         </div>
         <div className="flex items-center space-x-1">
-          <button
-            onClick={async () => {
-              if (!isTauri) return;
-              const currentWindow = getCurrentWindow();
-              const nextValue = !isAlwaysOnTop;
-              await currentWindow.setAlwaysOnTop(nextValue);
-              setIsAlwaysOnTop(nextValue);
-            }}
-            className="app-bar-button p-1.5"
-            data-tooltip={isAlwaysOnTop ? "Unpin window" : "Pin window"}
-          >
-            <Pin size={12} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
+          <button onClick={async () => { if (!isTauri) return; const w = getCurrentWindow(); const v = !isAlwaysOnTop; await w.setAlwaysOnTop(v); setIsAlwaysOnTop(v); }} className="app-bar-button p-2" data-tooltip={isAlwaysOnTop ? "Unpin window" : "Pin window"}>
+            <Pin size={14} className={isAlwaysOnTop ? "rotate-45 text-primary" : ""} />
           </button>
-          <button
-            onClick={handleReattach}
-            className="app-bar-button p-1.5"
-            data-tooltip="Reattach"
-          >
-            <CornerUpLeft size={12} />
-          </button>
-          <button
-            onClick={async () => {
-              if (!isTauri) return;
-              const currentWindow = getCurrentWindow();
-              await currentWindow.minimize();
-            }}
-            className="app-bar-button p-1.5"
-            data-tooltip="Minimize"
-          >
-            <Minus size={12} />
-          </button>
-          <button
-            onClick={async () => {
-              if (!isTauri) return;
-              const currentWindow = getCurrentWindow();
-              const isMaximized = await currentWindow.isMaximized();
-              if (isMaximized) {
-                await currentWindow.unmaximize();
-                return;
-              }
-              await currentWindow.maximize();
-            }}
-            className="app-bar-button p-1.5"
-            data-tooltip="Maximize"
-          >
-            <Square size={10} />
-          </button>
-          <button
-            onClick={async () => {
-              if (!isTauri) return;
-              // Just request close - the onCloseRequested handler will handle confirmation
-              const currentWindow = getCurrentWindow();
-              await currentWindow.close();
-            }}
-            className="app-bar-button app-bar-button-danger p-1.5"
-            data-tooltip="Close"
-          >
-            <X size={12} />
-          </button>
+          <button onClick={async () => { if (isTauri) await getCurrentWindow().minimize(); }} className="app-bar-button p-2" data-tooltip="Minimize"><Minus size={14} /></button>
+          <button onClick={async () => { if (!isTauri) return; const w = getCurrentWindow(); (await w.isMaximized()) ? await w.unmaximize() : await w.maximize(); }} className="app-bar-button p-2" data-tooltip="Maximize"><Square size={12} /></button>
+          <button onClick={async () => { if (isTauri) await getCurrentWindow().close(); }} className="app-bar-button app-bar-button-danger p-2" data-tooltip="Close"><X size={14} /></button>
         </div>
       </div>
+
+      {/* ── Tab bar — matches main window SessionTabs style ── */}
+      <div className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center overflow-x-auto" data-tauri-disable-drag="true">
+        <div
+          draggable
+          data-tauri-disable-drag="true"
+          className="relative flex items-center h-full px-3 cursor-grab active:cursor-grabbing bg-[var(--color-border)] text-[var(--color-text)] border-r border-[var(--color-border)] min-w-0 transition-all"
+          data-tooltip="Drag outside window to reattach"
+          onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-detached-session", activeSession.id); }}
+          onDragEnd={(e) => { const { clientX, clientY } = e; if (clientX <= 0 || clientY <= 0 || clientX >= window.innerWidth || clientY >= window.innerHeight) handleReattach(); }}
+        >
+          <SessionIcon protocol={activeSession.protocol} />
+          <span className="truncate text-sm mr-2 max-w-[40vw]">{activeSession.name || "Detached Session"}</span>
+          {!activeSession.protocol.startsWith("tool:") && !activeSession.protocol.startsWith("winmgmt:") && (
+            <>
+              {activeSession.status === "connected" && <div className="w-2 h-2 rounded-full bg-success mr-2 flex-shrink-0" />}
+              {activeSession.status === "connecting" && <div className="w-2 h-2 rounded-full bg-warning mr-2 flex-shrink-0" />}
+              {activeSession.status === "error" && <div className="w-2 h-2 rounded-full bg-error mr-2 flex-shrink-0" />}
+            </>
+          )}
+          <button onClick={handleReattach} className="flex-shrink-0 p-1 hover:bg-[var(--color-surface)] rounded transition-colors" data-tooltip="Reattach to main window"><CornerUpLeft size={12} /></button>
+          <button onClick={async () => { if (isTauri) await getCurrentWindow().close(); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Close"><X size={12} /></button>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-hidden min-h-0 h-full">
         <SessionViewer session={activeSession} />
       </div>
