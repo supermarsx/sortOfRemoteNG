@@ -231,6 +231,9 @@ const AppContent: React.FC = () => {
     macroManager: setShowMacroManager,
     recordingManager: setShowRecordingManager,
     windowsBackup: setShowWindowsBackup,
+    diagnostics: setShowDiagnostics,
+    settings: (() => {}) as React.Dispatch<React.SetStateAction<boolean>>,
+    rdpSessions: setRdpPanelOpen,
   }).current;
 
   /**
