@@ -751,16 +751,20 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           const conn = targetSession ? state.connections.find(c => c.id === targetSession.connectionId) : null;
           const isPinned = (targetSession as any)?.pinned ?? false;
           const isInGroup = !!targetSession?.tabGroupId;
+          const isTool = targetSession ? isToolProtocol(targetSession.protocol) : false;
+          const isWinTool = targetSession ? isWinmgmtProtocol(targetSession.protocol) : false;
+          const isRealConnection = !isTool && !isWinTool;
 
           const act = (fn: () => void) => { fn(); closeContextMenu(); };
 
           return (
             <>
-              {/* ── Session info (non-interactive) ────────── */}
+              {/* ── Tab info (non-interactive) ────────── */}
               <div className="px-3 py-1.5 text-[10px] text-[var(--color-textMuted)] border-b border-[var(--color-border)] select-text">
                 <div className="font-medium text-[var(--color-textSecondary)]">{targetSession?.name}</div>
-                {targetSession?.hostname && <div className="font-mono">{targetSession.hostname}{conn?.port ? `:${conn.port}` : ''}</div>}
-                {targetSession?.status && <div>Status: {targetSession.status}</div>}
+                {isRealConnection && targetSession?.hostname && <div className="font-mono">{targetSession.hostname}{conn?.port ? `:${conn.port}` : ''}</div>}
+                {isRealConnection && targetSession?.status && <div>Status: {targetSession.status}</div>}
+                {!isRealConnection && <div>{isTool ? "Tool" : "Windows Management"}</div>}
               </div>
 
               {/* ── Tab group actions ──────────────────────── */}
@@ -815,41 +819,45 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               <button onClick={() => handleStartRename(sessionId)} className="sor-menu-item">
                 <Pencil size={14} className="mr-2" /> Rename Tab
               </button>
-              <button onClick={() => act(() => {
-                if (targetSession?.hostname) {
-                  navigator.clipboard.writeText(targetSession.hostname).catch(() => {});
-                }
-              })} className="sor-menu-item">
-                <ClipboardCopy size={14} className="mr-2" /> Copy Hostname
-              </button>
-              <button onClick={() => act(() => {
-                const info = [
-                  targetSession?.name,
-                  `${targetSession?.protocol ?? ''}://${targetSession?.hostname ?? ''}${conn?.port ? ':' + conn.port : ''}`,
-                  `Status: ${targetSession?.status ?? 'unknown'}`,
-                  conn?.username ? `User: ${conn.username}` : '',
-                ].filter(Boolean).join('\n');
-                navigator.clipboard.writeText(info).catch(() => {});
-              })} className="sor-menu-item">
-                <Info size={14} className="mr-2" /> Copy Connection Info
-              </button>
-              <button onClick={() => act(() => {
-                if (targetSession?.connectionId) {
-                  window.dispatchEvent(new CustomEvent('reveal-connection', { detail: { connectionId: targetSession.connectionId } }));
-                }
-              })} className="sor-menu-item">
-                <Eye size={14} className="mr-2" /> Reveal in Sidebar
-              </button>
+              {isRealConnection && (
+                <>
+                  <button onClick={() => act(() => {
+                    if (targetSession?.hostname) {
+                      navigator.clipboard.writeText(targetSession.hostname).catch(() => {});
+                    }
+                  })} className="sor-menu-item">
+                    <ClipboardCopy size={14} className="mr-2" /> Copy Hostname
+                  </button>
+                  <button onClick={() => act(() => {
+                    const info = [
+                      targetSession?.name,
+                      `${targetSession?.protocol ?? ''}://${targetSession?.hostname ?? ''}${conn?.port ? ':' + conn.port : ''}`,
+                      `Status: ${targetSession?.status ?? 'unknown'}`,
+                      conn?.username ? `User: ${conn.username}` : '',
+                    ].filter(Boolean).join('\n');
+                    navigator.clipboard.writeText(info).catch(() => {});
+                  })} className="sor-menu-item">
+                    <Info size={14} className="mr-2" /> Copy Connection Info
+                  </button>
+                  <button onClick={() => act(() => {
+                    if (targetSession?.connectionId) {
+                      window.dispatchEvent(new CustomEvent('reveal-connection', { detail: { connectionId: targetSession.connectionId } }));
+                    }
+                  })} className="sor-menu-item">
+                    <Eye size={14} className="mr-2" /> Reveal in Sidebar
+                  </button>
+                </>
+              )}
 
               <div className="sor-menu-divider" />
 
-              {/* ── Session actions ─────────────────────────── */}
-              {onSessionReconnect && (
+              {/* ── Session actions (connections only) ────────── */}
+              {isRealConnection && onSessionReconnect && (
                 <button onClick={() => act(() => onSessionReconnect(sessionId))} className="sor-menu-item">
                   <RefreshCw size={14} className="mr-2" /> Reconnect
                 </button>
               )}
-              {onSessionDuplicate && (
+              {isRealConnection && onSessionDuplicate && (
                 <button onClick={() => act(() => onSessionDuplicate(sessionId))} className="sor-menu-item">
                   <Copy size={14} className="mr-2" /> Duplicate Tab
                 </button>
