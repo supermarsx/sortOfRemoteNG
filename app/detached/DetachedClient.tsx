@@ -16,7 +16,7 @@ import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { AlertCircle, CornerUpLeft, Eye, Globe, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
+import { AlertCircle, CornerUpLeft, Eye, Globe, Loader2, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
@@ -59,6 +59,7 @@ const DetachedSessionContent: React.FC<{
   const [isTransparent, setIsTransparent] = useState(false);
   const [warnOnDetachClose, setWarnOnDetachClose] = useState(true);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const isTauri =
     typeof window !== "undefined" &&
     Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
@@ -151,6 +152,14 @@ const DetachedSessionContent: React.FC<{
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // 30-second loading timeout — if session never loads, show recovery options
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setLoadingTimedOut(true);
+    }, 30000);
+    return () => clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -476,10 +485,43 @@ const DetachedSessionContent: React.FC<{
 
   if (!activeSession) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-900 text-gray-200">
-        <div className="text-center">
-          <Monitor className="mx-auto mb-4 h-10 w-10 text-blue-400" />
-          <p className="text-sm">Loading detached session...</p>
+      <div className="flex h-screen items-center justify-center bg-[var(--color-background,#111827)]">
+        <div className="text-center max-w-sm px-6">
+          {loadingTimedOut ? (
+            <>
+              <div className="w-12 h-12 rounded-xl bg-warning/15 border border-warning/25 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={24} className="text-warning" />
+              </div>
+              <h3 className="text-sm font-semibold text-[var(--color-text,#f9fafb)] mb-1">Loading Timed Out</h3>
+              <p className="text-xs text-[var(--color-textSecondary,#9ca3af)] mb-5">
+                The detached session failed to load within 30 seconds. The session data may be missing or corrupted.
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => { hasLoadedRef.current = false; setLoadingTimedOut(false); setError(""); window.location.reload(); }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
+                >
+                  <CornerUpLeft size={12} />
+                  Retry
+                </button>
+                <button
+                  onClick={async () => { if (isTauri) await getCurrentWindow().close(); else window.close(); }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface,#1f2937)] text-[var(--color-textSecondary,#9ca3af)] border border-[var(--color-border,#374151)] hover:text-[var(--color-text,#f9fafb)] transition-colors"
+                >
+                  <X size={12} />
+                  Close Window
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-12 h-12 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center mx-auto mb-4">
+                <Loader2 size={22} className="text-primary animate-spin" />
+              </div>
+              <h3 className="text-sm font-semibold text-[var(--color-text,#f9fafb)] mb-1">Loading Session</h3>
+              <p className="text-xs text-[var(--color-textSecondary,#9ca3af)]">Preparing detached session...</p>
+            </>
+          )}
         </div>
       </div>
     );
