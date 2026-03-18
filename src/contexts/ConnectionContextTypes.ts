@@ -16,6 +16,8 @@ export interface ConnectionState {
   sessions: ConnectionSession[];
   /** Currently selected connection in the UI */
   selectedConnection: Connection | null;
+  /** IDs of all selected connections (for multi-select via Ctrl/Shift) */
+  selectedConnectionIds: Set<string>;
   /** Applied filter options for the connection list */
   filter: ConnectionFilter;
   /** Indicates whether connection data is being loaded */
@@ -35,6 +37,8 @@ export type ConnectionAction =
   | { type: "UPDATE_CONNECTION"; payload: Connection }
   | { type: "DELETE_CONNECTION"; payload: string }
   | { type: "SELECT_CONNECTION"; payload: Connection | null }
+  | { type: "TOGGLE_SELECT_CONNECTION"; payload: { id: string; ctrl: boolean; shift: boolean } }
+  | { type: "CLEAR_SELECTION" }
   | { type: "SET_FILTER"; payload: Partial<ConnectionFilter> }
   | { type: "ADD_SESSION"; payload: ConnectionSession }
   | { type: "UPDATE_SESSION"; payload: ConnectionSession }

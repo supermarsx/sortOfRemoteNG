@@ -1,5 +1,6 @@
 import { ConnectionTreeItemProps, getConnectionIcon, getStatusColor } from "./helpers";
 import TreeItemMenu from "./TreeItemMenu";
+import MultiSelectMenu from "./MultiSelectMenu";
 import React, { useState, useRef } from "react";
 import { useConnections } from "../../../contexts/useConnections";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreVertical, Play, Power, Star } from "lucide-react";
@@ -16,12 +17,14 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 }) => {
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
+  const [showMultiMenu, setShowMultiMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
 
   const ProtocolIcon = getConnectionIcon(connection);
-  const isSelected = state.selectedConnection?.id === connection.id;
+  const isSelected = state.selectedConnectionIds.has(connection.id);
+  const isMultiSelected = state.selectedConnectionIds.size > 1;
   const activeSession = state.sessions.find((s) => s.connectionId === connection.id);
 
   const handleToggleExpand = () => {
@@ -31,7 +34,14 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     }
   };
 
-  const handleSelect = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      dispatch({
+        type: "TOGGLE_SELECT_CONNECTION",
+        payload: { id: connection.id, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey },
+      });
+      return;
+    }
     dispatch({ type: "SELECT_CONNECTION", payload: connection });
     if (!connection.isGroup) {
       if (activeSession && singleClickDisconnect) onDisconnect(connection);
@@ -43,6 +53,28 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     if (connection.isGroup) return;
     if (doubleClickRename) onRename(connection);
     else onConnect(connection);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // If right-clicking on an item that's part of a multi-selection, keep the multi-select
+    if (isMultiSelected && isSelected) {
+      setMenuPosition({ x: e.clientX, y: e.clientY });
+      setShowMultiMenu(true);
+      return;
+    }
+    // Otherwise, select this item and show normal menu
+    if (e.ctrlKey || e.metaKey) {
+      dispatch({
+        type: "TOGGLE_SELECT_CONNECTION",
+        payload: { id: connection.id, ctrl: true, shift: false },
+      });
+    } else {
+      dispatch({ type: "SELECT_CONNECTION", payload: connection });
+    }
+    setMenuPosition({ x: e.clientX, y: e.clientY });
+    setShowMenu(true);
   };
 
   const calcDropPosition = (clientY: number, rect: DOMRect): "before" | "after" | "inside" => {
@@ -68,9 +100,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
           isDragOver && dropPosition === "inside" ? "bg-primary/20 ring-2 ring-primary/50 ring-inset" : ""
         }`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
-        onClick={handleSelect}
+        onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenuPosition({ x: e.clientX, y: e.clientY }); setShowMenu(true); }}
+        onContextMenu={handleContextMenu}
         draggable={enableReorder}
         onDragStart={(e) => {
           if (!enableReorder) return;
@@ -140,7 +172,11 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               e.stopPropagation();
               const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
               setMenuPosition({ x: Math.max(8, rect.right - 140), y: rect.bottom + 6 });
-              setShowMenu((prev) => !prev);
+              if (isMultiSelected && isSelected) {
+                setShowMultiMenu((prev) => !prev);
+              } else {
+                setShowMenu((prev) => !prev);
+              }
             }}
             className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
           >
@@ -172,6 +208,18 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             onWindowsTool={onWindowsTool}
             onConnectAll={onConnectAll}
             onConnectAllRecursive={onConnectAllRecursive}
+          />
+        )}
+        {showMultiMenu && (
+          <MultiSelectMenu
+            showMenu={showMultiMenu}
+            menuPosition={menuPosition}
+            triggerRef={triggerRef}
+            onClose={() => setShowMultiMenu(false)}
+            onConnect={onConnect}
+            onDisconnect={onDisconnect}
+            onDelete={onDelete}
+            onExport={onExport}
           />
         )}
       </div>
