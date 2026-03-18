@@ -20,27 +20,27 @@ export function useAppStatusBar({
 
   const collection = collectionManager.getCurrentCollection();
 
+  // Only count real remote connections — exclude tools, settings, diagnostics, etc.
+  const realSessions = useMemo(
+    () => sessions.filter((s) => !s.protocol.startsWith("tool:") && !s.protocol.startsWith("winmgmt:")),
+    [sessions],
+  );
+
   const sessionsByStatus = useMemo(() => {
-    const connected = sessions.filter(
-      (s) => s.status === "connected",
-    ).length;
-    const connecting = sessions.filter(
-      (s) => s.status === "connecting",
-    ).length;
-    const errored = sessions.filter(
-      (s) => s.status === "error" || s.status === "disconnected",
-    ).length;
-    return { connected, connecting, errored, total: sessions.length };
-  }, [sessions]);
+    const connected = realSessions.filter((s) => s.status === "connected").length;
+    const connecting = realSessions.filter((s) => s.status === "connecting").length;
+    const errored = realSessions.filter((s) => s.status === "error" || s.status === "disconnected").length;
+    return { connected, connecting, errored, total: realSessions.length };
+  }, [realSessions]);
 
   const protocolCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const s of sessions) {
+    for (const s of realSessions) {
       const p = (s.protocol || "unknown").toUpperCase();
       counts[p] = (counts[p] || 0) + 1;
     }
     return counts;
-  }, [sessions]);
+  }, [realSessions]);
 
   return {
     t,
