@@ -1325,39 +1325,6 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        {/* RDP Sessions Panel (right side) - only in panel mode */}
-        {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'panel' && (
-          <div
-            className="relative flex-shrink-0 z-10 h-full overflow-hidden"
-            style={{ width: `${rdpPanelWidth}px` }}
-          >
-            <RDPSessionPanel
-              isVisible={rdpPanelOpen}
-              connections={state.connections}
-              activeBackendSessionIds={activeRdpBackendIds}
-              onClose={() => setRdpPanelOpen(false)}
-              onReattachSession={handleReattachRdpSession}
-              onDetachToWindow={(sessionId) => {
-                const frontendSession = state.sessions.find(
-                  s => s.backendSessionId === sessionId || s.id === sessionId
-                );
-                if (frontendSession) {
-                  handleSessionDetach(frontendSession.id);
-                }
-              }}
-              onReconnect={handleConnect}
-              thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
-              thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
-              thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
-            />
-            {/* Resize handle on left edge */}
-            <div
-              className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:w-1.5 bg-[var(--color-border)]/30 hover:bg-primary/60 transition-all duration-150"
-              onMouseDown={handleRdpPanelMouseDown}
-            />
-          </div>
-        )}
-
         {renderSidebar("right")}
       </div>
 

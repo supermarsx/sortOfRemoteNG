@@ -369,40 +369,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         />
       )}
 
-      {rdpPanelOpen && appSettings.rdpSessionDisplayMode === "popup" && (
-        <Modal
-          isOpen={rdpPanelOpen}
-          onClose={() => setRdpPanelOpen(false)}
-          closeOnEscape={false}
-          backdropClassName="bg-black/60 backdrop-blur-sm p-4"
-          panelClassName="max-w-3xl mx-4 h-[90vh]"
-          contentClassName="overflow-hidden"
-          dataTestId="rdp-session-panel-modal"
-        >
-          <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full h-[90vh] flex flex-col overflow-hidden">
-            <RDPSessionPanel
-              isVisible={rdpPanelOpen}
-              connections={connections}
-              activeBackendSessionIds={activeRdpBackendIds}
-              onClose={() => setRdpPanelOpen(false)}
-              onReattachSession={handleReattachRdpSession}
-              onDetachToWindow={(sessionId) => {
-                const frontendSession = sessions.find(
-                  (s) => s.backendSessionId === sessionId || s.id === sessionId,
-                );
-                if (frontendSession) {
-                  handleSessionDetach(frontendSession.id);
-                }
-              }}
-              onReconnect={handleConnect}
-              thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
-              thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
-              thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
-            />
-          </div>
-        </Modal>
-      )}
-
       {getToolMode(appSettings, "wol") === "popup" && (
         <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
       )}

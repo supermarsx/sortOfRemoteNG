@@ -3,6 +3,7 @@ import React from "react";
 import dynamic from "next/dynamic";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
+import { useSettings } from "../../contexts/SettingsContext";
 import {
   getToolKeyFromProtocol,
   ToolKey,
@@ -98,6 +99,7 @@ interface ToolTabViewerProps {
  */
 export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }) => {
   const { state } = useConnections();
+  const { settings } = useSettings();
   const toolKey = getToolKeyFromProtocol(session.protocol);
   if (!toolKey) return null;
 
@@ -130,6 +132,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
           isVisible
           connections={state.connections}
           onClose={onClose}
+          thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
+          thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
+          thumbnailInterval={settings.rdpSessionThumbnailInterval}
         />
       )}
     </div>
