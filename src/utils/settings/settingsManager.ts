@@ -535,6 +535,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   rdpSessionThumbnailPolicy: 'realtime' as const,
   rdpSessionThumbnailInterval: 5,
   rdpSessionClosePolicy: 'detach' as const,
+  rdpSessionHistoryMax: 1000,
   toolDisplayModes: {
     globalDefault: 'popup' as const,
     recordingManager: 'inherit' as const,

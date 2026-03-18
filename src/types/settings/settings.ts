@@ -468,6 +468,8 @@ export interface GlobalSettings {
   rdpSessionThumbnailInterval: number;
   /** What happens when an RDP tab is closed: 'disconnect' fully ends the session, 'detach' keeps it running in background */
   rdpSessionClosePolicy: 'disconnect' | 'detach' | 'ask';
+  /** Maximum number of RDP session history entries to retain */
+  rdpSessionHistoryMax: number;
 
   // ─── Tool Display Modes ─────────────────────────────────────
   /** How each tool/manager opens: 'popup' (modal overlay) or 'tab' (connection tab) */

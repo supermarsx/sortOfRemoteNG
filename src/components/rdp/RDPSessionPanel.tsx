@@ -123,45 +123,29 @@ const HistoryEntry: React.FC<{
   canReconnect: boolean;
   onReconnect: () => void;
 }> = ({ entry, canReconnect, onReconnect }) => (
-  <div className="bg-[var(--color-surface)]/60 border border-[var(--color-border)] rounded-lg p-2.5 overflow-hidden">
-    <div className="flex items-start justify-between gap-2">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-[var(--color-textMuted)]" />
-          <span className="text-xs font-medium text-[var(--color-text)] truncate">{entry.connectionName}</span>
-        </div>
-        <div className="text-[10px] text-[var(--color-textMuted)] mt-0.5 truncate">{entry.hostname}:{entry.port}</div>
+  <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--color-border)] hover:bg-[var(--color-surface)]/40 transition-colors group">
+    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--color-textMuted)]" />
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-[var(--color-text)] truncate">{entry.connectionName}</span>
+        <span className="text-[10px] text-[var(--color-textMuted)] truncate hidden sm:inline">{entry.hostname}:{entry.port}</span>
       </div>
-      {canReconnect && (
-        <button
-          onClick={onReconnect}
-          className="flex-shrink-0 p-1.5 hover:bg-accent/20 rounded text-[var(--color-textSecondary)] hover:text-accent transition-colors"
-          data-tooltip="Reconnect"
-        >
-          <RefreshCw size={12} />
-        </button>
-      )}
-    </div>
-    <div className="grid grid-cols-2 gap-1 mt-1.5 text-[10px]">
-      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
-        <span className="text-[var(--color-textMuted)]">When </span>
-        <span className="text-[var(--color-textSecondary)]" title={new Date(entry.disconnectedAt).toLocaleString()}>{formatRelativeTime(entry.disconnectedAt)}</span>
-      </div>
-      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
-        <span className="text-[var(--color-textMuted)]">Dur </span>
-        <span className="text-[var(--color-textSecondary)] font-mono">{formatUptime(entry.duration)}</span>
-      </div>
-      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
-        <span className="text-[var(--color-textMuted)]">Res </span>
-        <span className="text-[var(--color-textSecondary)] font-mono">{entry.desktopWidth}&times;{entry.desktopHeight}</span>
-      </div>
-      <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5 flex items-center gap-0.5">
-        <User size={8} className="text-[var(--color-textMuted)] flex-shrink-0" />
-        <span className="text-[var(--color-textSecondary)] truncate">{entry.username || 'n/a'}</span>
+      <div className="flex flex-wrap gap-x-3 text-[10px] text-[var(--color-textMuted)]">
+        <span title={new Date(entry.disconnectedAt).toLocaleString()}>{formatRelativeTime(entry.disconnectedAt)}</span>
+        <span className="font-mono text-[var(--color-textSecondary)]">{formatUptime(entry.duration)}</span>
+        <span className="font-mono text-[var(--color-textSecondary)]">{entry.desktopWidth}&times;{entry.desktopHeight}</span>
+        {entry.username && <span className="truncate"><User size={8} className="inline mr-0.5" />{entry.username}</span>}
+        {!canReconnect && <span className="italic text-[var(--color-textMuted)]">unavailable</span>}
       </div>
     </div>
-    {!canReconnect && (
-      <div className="mt-1 text-[9px] text-[var(--color-textMuted)] italic">Connection no longer available</div>
+    {canReconnect && (
+      <button
+        onClick={onReconnect}
+        className="flex-shrink-0 p-1 opacity-0 group-hover:opacity-100 hover:bg-accent/20 rounded text-[var(--color-textSecondary)] hover:text-accent transition-all"
+        data-tooltip="Reconnect"
+      >
+        <RefreshCw size={11} />
+      </button>
     )}
   </div>
 );
@@ -209,6 +193,7 @@ const HistoryTab: React.FC<{
             className="w-full pl-6 pr-2 py-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:border-accent"
           />
         </div>
+        <span className="text-[9px] text-[var(--color-textMuted)] flex-shrink-0">{filteredHistory.length} entries</span>
         <button
           onClick={mgr.clearHistory}
           className="flex items-center gap-1 px-2 py-1 bg-error/20 hover:bg-error/30 border border-error/50 rounded text-error text-[10px] transition-colors flex-shrink-0"
@@ -220,7 +205,7 @@ const HistoryTab: React.FC<{
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+      <div className="flex-1 overflow-y-auto">
         {filteredHistory.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-textMuted)] text-xs">
             No matches for &ldquo;{searchQuery}&rdquo;
@@ -282,24 +267,16 @@ const SessionActions: React.FC<{
   </div>
 );
 
-const SessionInfoGrid: React.FC<{ session: RDPSessionInfo; stats?: RDPStats; displayName: string }> = ({ session, stats, displayName }) => (
-  <div className="grid grid-cols-2 gap-1 mt-1.5 text-[10px]">
-    <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
-      <span className="text-[var(--color-textMuted)]">Res </span>
-      <span className="text-[var(--color-textSecondary)] font-mono">{session.desktop_width}&times;{session.desktop_height}</span>
-    </div>
-    <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5" title={session.id}>
-      <span className="text-[var(--color-textMuted)]">ID </span>
-      <span className="text-[var(--color-textSecondary)] font-mono truncate">{displayName !== `${session.host}:${session.port}` ? displayName : session.id.slice(0, 8)}</span>
-    </div>
+const SessionInfoGrid: React.FC<{ session: RDPSessionInfo; stats?: RDPStats; displayName: string }> = ({ session, stats }) => (
+  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-[var(--color-textMuted)]">
+    <span><span className="text-[var(--color-textSecondary)] font-mono">{session.desktop_width}&times;{session.desktop_height}</span></span>
     {stats && (
       <>
-        <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5"><span className="text-[var(--color-textMuted)]">Up </span><span className="text-[var(--color-textSecondary)] font-mono">{formatUptime(stats.uptime_secs)}</span></div>
-        <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5"><span className="text-[var(--color-textMuted)]">FPS </span><span className="text-[var(--color-textSecondary)] font-mono">{stats.fps.toFixed(1)}</span></div>
-        <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5"><span className="text-[var(--color-textMuted)]">Rx </span><span className="text-[var(--color-textSecondary)] font-mono">{formatBytes(stats.bytes_received)}</span></div>
-        <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5"><span className="text-[var(--color-textMuted)]">Tx </span><span className="text-[var(--color-textSecondary)] font-mono">{formatBytes(stats.bytes_sent)}</span></div>
-        <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5"><span className="text-[var(--color-textMuted)]">Frames </span><span className="text-[var(--color-textSecondary)] font-mono">{stats.frame_count.toLocaleString()}</span></div>
-        <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5"><span className={`font-mono ${stats.phase === 'active' ? 'text-success' : 'text-warning'}`}>{stats.phase}</span></div>
+        <span>Up <span className="text-[var(--color-textSecondary)] font-mono">{formatUptime(stats.uptime_secs)}</span></span>
+        <span><span className="text-[var(--color-textSecondary)] font-mono">{stats.fps.toFixed(0)}</span> fps</span>
+        <span>&darr;<span className="text-[var(--color-textSecondary)] font-mono">{formatBytes(stats.bytes_received)}</span></span>
+        <span>&uarr;<span className="text-[var(--color-textSecondary)] font-mono">{formatBytes(stats.bytes_sent)}</span></span>
+        <span className={`font-mono ${stats.phase === 'active' ? 'text-success' : 'text-warning'}`}>{stats.phase}</span>
       </>
     )}
   </div>
@@ -317,22 +294,22 @@ const SessionCard: React.FC<{
   const isDetached = mgr.isSessionDetached(session);
 
   return (
-    <div className="bg-[var(--color-surface)]/60 border border-[var(--color-border)] rounded-lg p-2.5 overflow-hidden">
-      <div className="flex gap-2.5">
+    <div className="border-b border-[var(--color-border)] px-3 py-2 hover:bg-[var(--color-surface)]/40 transition-colors">
+      <div className="flex gap-2">
         <SessionThumbnail mgr={mgr} session={session} thumbnailsEnabled={thumbnailsEnabled} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-1.5 min-w-0">
-            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${session.connected ? (isDetached ? 'bg-warning' : 'bg-success') : 'bg-error'}`} />
-            <div className="min-w-0">
-              <span className="text-xs font-medium text-[var(--color-text)] block truncate">{display.name}</span>
-              {display.subtitle && <span className="text-[10px] text-[var(--color-textMuted)] block truncate">{display.subtitle}</span>}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center space-x-1.5 min-w-0">
+              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${session.connected ? (isDetached ? 'bg-warning' : 'bg-success') : 'bg-error'}`} />
+              <span className="text-xs font-medium text-[var(--color-text)] truncate">{display.name}</span>
+              {display.subtitle && <span className="text-[10px] text-[var(--color-textMuted)] truncate hidden sm:inline">{display.subtitle}</span>}
             </div>
+            <SessionActions mgr={mgr} session={session} isDetached={isDetached} onReattachSession={onReattachSession} onDetachToWindow={onDetachToWindow} />
           </div>
-          <SessionActions mgr={mgr} session={session} isDetached={isDetached} onReattachSession={onReattachSession} onDetachToWindow={onDetachToWindow} />
           <SessionInfoGrid session={session} stats={stats} displayName={display.name} />
           {stats?.last_error && (
-            <div className="mt-1 px-1.5 py-0.5 bg-error/20 border border-error/50 rounded text-[10px] text-error flex items-center gap-1">
-              <AlertCircle size={10} />
+            <div className="mt-0.5 text-[10px] text-error flex items-center gap-1 truncate">
+              <AlertCircle size={9} className="flex-shrink-0" />
               <span className="truncate">{stats.last_error}</span>
             </div>
           )}
@@ -392,7 +369,7 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
 
         {mgr.activeTab === 'sessions' ? (
           <>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+            <div className="flex-1 overflow-y-auto">
               {mgr.sessions.length === 0 ? (
                 <EmptyState
                   icon={Server}

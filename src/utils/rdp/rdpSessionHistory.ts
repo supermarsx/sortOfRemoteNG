@@ -1,5 +1,16 @@
+import { SettingsManager } from '../settings/settingsManager';
+
 const STORAGE_KEY = 'rdp-session-history';
-const MAX_ENTRIES = 50;
+const DEFAULT_MAX_ENTRIES = 1000;
+
+function getMaxEntries(): number {
+  try {
+    const settings = SettingsManager.getInstance().getSettings();
+    return (settings as any).rdpSessionHistoryMax ?? DEFAULT_MAX_ENTRIES;
+  } catch {
+    return DEFAULT_MAX_ENTRIES;
+  }
+}
 
 export interface RDPSessionHistoryEntry {
   connectionId: string;
@@ -25,7 +36,8 @@ export function loadSessionHistory(): RDPSessionHistoryEntry[] {
 
 export function saveSessionHistory(entries: RDPSessionHistoryEntry[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
+    const max = getMaxEntries();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, max)));
   } catch { /* ignore */ }
 }
 
