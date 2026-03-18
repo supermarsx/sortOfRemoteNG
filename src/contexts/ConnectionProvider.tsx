@@ -7,11 +7,13 @@ import {
   ConnectionAction,
   ConnectionContext
 } from "./ConnectionContextTypes";
+import { Connection } from "../types/connection/connection";
 
 const initialState: ConnectionState = {
   connections: [],
   sessions: [],
   selectedConnection: null,
+  selectedConnectionIds: new Set(),
   filter: {
     searchTerm: "",
     protocols: [],
@@ -26,6 +28,22 @@ const initialState: ConnectionState = {
   sidebarCollapsed: false,
   tabGroups: [],
 };
+
+/** Flatten the connection tree into an ordered list of IDs for range-select. */
+function flattenConnectionIds(connections: Connection[]): string[] {
+  const result: string[] = [];
+  const roots = connections.filter((c) => !c.parentId);
+  const childrenOf = (parentId: string) =>
+    connections.filter((c) => c.parentId === parentId);
+  const walk = (items: Connection[]) => {
+    for (const item of items) {
+      result.push(item.id);
+      if (item.isGroup) walk(childrenOf(item.id));
+    }
+  };
+  walk(roots);
+  return result;
+}
 
 const connectionReducer = (
   state: ConnectionState,
@@ -55,8 +73,58 @@ const connectionReducer = (
         ),
       };
     case "SELECT_CONNECTION":
-      // Track the currently selected connection
-      return { ...state, selectedConnection: action.payload };
+      // Track the currently selected connection (clears multi-select)
+      return {
+        ...state,
+        selectedConnection: action.payload,
+        selectedConnectionIds: action.payload
+          ? new Set([action.payload.id])
+          : new Set(),
+      };
+    case "TOGGLE_SELECT_CONNECTION": {
+      const { id, ctrl, shift } = action.payload;
+      const conn = state.connections.find((c) => c.id === id) ?? null;
+      if (shift && state.selectedConnection) {
+        // Range select: select all connections between the anchor and target
+        // Build a flat ordered list of visible connection IDs
+        const flatIds = flattenConnectionIds(state.connections);
+        const anchorIdx = flatIds.indexOf(state.selectedConnection.id);
+        const targetIdx = flatIds.indexOf(id);
+        if (anchorIdx !== -1 && targetIdx !== -1) {
+          const start = Math.min(anchorIdx, targetIdx);
+          const end = Math.max(anchorIdx, targetIdx);
+          const rangeIds = new Set(flatIds.slice(start, end + 1));
+          // Merge with existing selection if Ctrl is also held
+          const merged = ctrl
+            ? new Set([...state.selectedConnectionIds, ...rangeIds])
+            : rangeIds;
+          return { ...state, selectedConnectionIds: merged };
+        }
+        return state;
+      }
+      if (ctrl) {
+        // Toggle individual
+        const next = new Set(state.selectedConnectionIds);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return {
+          ...state,
+          selectedConnection: conn,
+          selectedConnectionIds: next,
+        };
+      }
+      // Plain click — single select
+      return {
+        ...state,
+        selectedConnection: conn,
+        selectedConnectionIds: conn ? new Set([conn.id]) : new Set(),
+      };
+    }
+    case "CLEAR_SELECTION":
+      return { ...state, selectedConnection: null, selectedConnectionIds: new Set() };
     case "SET_FILTER":
       // Update connection list filters
       return { ...state, filter: { ...state.filter, ...action.payload } };
@@ -196,10 +264,14 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     baseDispatch(action);
   }, [settingsManager]);
 
+  // Use a ref so saveData has a stable identity and doesn't cause effect re-runs
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
+
   const saveData = useCallback(async () => {
     try {
       const data: StorageData = {
-        connections: state.connections,
+        connections: connectionsRef.current,
         settings: {},
         timestamp: Date.now(),
       };
@@ -209,7 +281,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error("Failed to save data:", error);
       throw error;
     }
-  }, [state.connections, collectionManager]);
+  }, [collectionManager]);
 
   const loadData = useCallback(async () => {
     try {
@@ -239,13 +311,14 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       isInitialMountRef.current = false;
       return;
     }
-    
+
     // Only save if we've loaded data first and have a collection selected
     if (hasLoadedRef.current && collectionManager.getCurrentCollection()) {
-      // Persist updated connections to storage
       saveData().catch(console.error);
     }
-  }, [state.connections, collectionManager, saveData]);
+  // saveData is stable (depends only on collectionManager) — safe to omit from lint
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.connections, collectionManager]);
 
   return (
     <ConnectionContext.Provider value={{ state, dispatch, saveData, loadData }}>

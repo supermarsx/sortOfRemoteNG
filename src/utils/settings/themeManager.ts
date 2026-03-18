@@ -360,6 +360,34 @@ export class ThemeManager {
   }
 
   /**
+   * Apply a theme received from another window — does NOT emit the
+   * theme-changed event back, preventing infinite echo loops.
+   */
+  applyThemeFromSync(
+    themeName: Theme,
+    colorScheme: ColorScheme,
+    customAccent?: string,
+  ): void {
+    this.currentTheme = themeName;
+    this.currentColorScheme = colorScheme;
+
+    if (this.systemThemeStop) {
+      this.systemThemeStop();
+      this.systemThemeStop = undefined;
+    }
+
+    if (themeName === "auto") {
+      const systemTheme = this.detectSystemTheme();
+      this.applyResolvedTheme(systemTheme, colorScheme, customAccent);
+      this.systemThemeStop = this.watchSystemTheme((theme) => {
+        this.applyResolvedTheme(theme, colorScheme, customAccent);
+      });
+    } else {
+      this.applyResolvedTheme(themeName, colorScheme, customAccent);
+    }
+  }
+
+  /**
    * Emit theme change event to all windows (including detached ones)
    */
   private async emitThemeChange(

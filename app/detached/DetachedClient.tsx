@@ -54,6 +54,7 @@ const DetachedSessionContent: React.FC<{
   const reattachRef = useRef(false);
   const closeResolverRef = useRef<((value: boolean) => void) | null>(null);
 
+  const isTauriRef = useRef(isTauri);
   const applyTransparency = useCallback(
     (enabled: boolean, opacity?: number) => {
       const targetOpacity = enabled ? Math.min(1, Math.max(0, opacity ?? 1)) : 1;
@@ -71,7 +72,7 @@ const DetachedSessionContent: React.FC<{
       root.style.setProperty("--app-slate-700", `rgba(51, 65, 85, ${alpha})`);
       document.documentElement.style.backgroundColor = enabled ? "transparent" : "";
       document.body.style.backgroundColor = enabled ? "transparent" : "";
-      if (isTauri) {
+      if (isTauriRef.current) {
         const currentWindow = getCurrentWindow();
         const setBackgroundColor = currentWindow.setBackgroundColor;
         if (typeof setBackgroundColor === "function") {
@@ -80,7 +81,7 @@ const DetachedSessionContent: React.FC<{
         }
       }
     },
-    [isTauri],
+    [], // stable — isTauri read from ref
   );
 
   const requestCloseConfirmation = useCallback(() => {
@@ -128,16 +129,13 @@ const DetachedSessionContent: React.FC<{
         dispatch({ type: "SET_CONNECTIONS", payload: [revivedConnection] });
       }
 
-      if (!state.sessions.some((session) => session.id === revivedSession.id)) {
-        dispatch({ type: "ADD_SESSION", payload: revivedSession });
-      } else {
-        dispatch({ type: "UPDATE_SESSION", payload: revivedSession });
-      }
+      dispatch({ type: "ADD_SESSION", payload: revivedSession });
     } catch (err) {
       console.error("Failed to load detached session:", err);
       setError("Unable to load detached session data.");
     }
-  }, [dispatch, sessionId, state.sessions]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -159,8 +157,8 @@ const DetachedSessionContent: React.FC<{
           settings.windowTransparencyOpacity,
         );
         setWarnOnDetachClose(settings.warnOnDetachClose);
-        // Apply the same theme as main window
-        themeManager.applyTheme(
+        // Apply theme without emitting back to other windows
+        themeManager.applyThemeFromSync(
           settings.theme,
           settings.colorScheme,
           settings.useCustomAccent ? settings.primaryAccentColor : undefined,
@@ -180,13 +178,13 @@ const DetachedSessionContent: React.FC<{
       colorScheme: string;
       primaryAccentColor?: string;
     }>("theme-changed", (event) => {
-      const themeManager = ThemeManager.getInstance();
-      themeManager.applyTheme(
+      // Use applyThemeFromSync — does NOT re-emit theme-changed,
+      // preventing the infinite loop between windows.
+      ThemeManager.getInstance().applyThemeFromSync(
         event.payload.theme as any,
         event.payload.colorScheme as any,
         event.payload.primaryAccentColor,
       );
-      // Dispatch settings-updated event so WebTerminal can sync xterm theme
       window.dispatchEvent(new CustomEvent("settings-updated"));
     });
 
@@ -243,15 +241,26 @@ const DetachedSessionContent: React.FC<{
     [state.sessions, sessionId],
   );
 
+  // ── Ref-based access for callbacks to avoid dependency cascades ──
+  // activeSession changes on every state.sessions update (new object ref).
+  // If callbacks depend on it directly, the entire close-handler chain
+  // recreates → parent re-renders → DetachedWindowLifecycle re-registers
+  // onCloseRequested → Tauri listener leak. Using a ref breaks the chain.
+  const activeSessionRef = useRef(activeSession);
+  activeSessionRef.current = activeSession;
+  const warnRef = useRef(warnOnDetachClose);
+  warnRef.current = warnOnDetachClose;
+
   const disconnectActiveSession = useCallback(async () => {
-    if (!activeSession || closingRef.current) return;
+    const s = activeSessionRef.current;
+    if (!s || closingRef.current) return;
     closingRef.current = true;
     try {
-      if (activeSession.protocol === "ssh" && activeSession.backendSessionId) {
-        await invoke("disconnect_ssh", { sessionId: activeSession.backendSessionId });
+      if (s.protocol === "ssh" && s.backendSessionId) {
+        await invoke("disconnect_ssh", { sessionId: s.backendSessionId });
       }
       if (isTauri) {
-        await emit("detached-session-closed", { sessionId: activeSession.id });
+        await emit("detached-session-closed", { sessionId: s.id });
       }
       if (sessionId) {
         localStorage.removeItem(`detached-session-${sessionId}`);
@@ -259,97 +268,58 @@ const DetachedSessionContent: React.FC<{
     } catch (err) {
       console.error("Failed to disconnect detached session:", err);
     }
-  }, [activeSession, isTauri, sessionId]);
+  }, [isTauri, sessionId]);
 
   const handleReattach = useCallback(async () => {
-    if (!activeSession) return;
+    const s = activeSessionRef.current;
+    if (!s) return;
     try {
       reattachRef.current = true;
       skipNextConfirmRef.current = true;
-      
-      // Get terminal buffer before reattaching
+
       let terminalBuffer = "";
-      
-      // For SSH sessions, get buffer directly from Rust backend (most reliable)
-      if (activeSession.protocol === "ssh" && activeSession.backendSessionId) {
+      if (s.protocol === "ssh" && s.backendSessionId) {
         try {
-          terminalBuffer = await invoke<string>("get_terminal_buffer", { 
-            sessionId: activeSession.backendSessionId 
+          terminalBuffer = await invoke<string>("get_terminal_buffer", {
+            sessionId: s.backendSessionId,
           });
-          console.log("Got buffer from Rust backend:", terminalBuffer?.length || 0, "chars");
-        } catch (err) {
-          console.warn("Failed to get buffer from backend:", err);
-        }
+        } catch { /* ignore */ }
       }
-      
-      // Fallback to event-based buffer request if backend didn't return anything
       if (!terminalBuffer) {
         try {
           const bufferPromise = new Promise<string>((resolve) => {
-            const timeout = setTimeout(() => {
-              console.log("Buffer request timed out");
-              resolve("");
-            }, 1000);
-            
+            const timeout = setTimeout(() => resolve(""), 1000);
             listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
-              if (event.payload.sessionId === activeSession.id) {
+              if (event.payload.sessionId === s.id) {
                 clearTimeout(timeout);
-                console.log("Received buffer response:", event.payload.buffer?.length || 0, "chars");
                 resolve(event.payload.buffer);
               }
-            }).then(unlisten => {
-              setTimeout(() => unlisten(), 1200);
-            });
+            }).then((unlisten) => { setTimeout(() => unlisten(), 1200); });
           });
-          
-          console.log("Requesting terminal buffer for session:", activeSession.id);
-          await emit("request-terminal-buffer", { sessionId: activeSession.id });
+          await emit("request-terminal-buffer", { sessionId: s.id });
           terminalBuffer = await bufferPromise;
-          console.log("Got terminal buffer via event:", terminalBuffer?.length || 0, "chars");
-        } catch (error) {
-          console.warn("Failed to get terminal buffer:", error);
-        }
+        } catch { /* ignore */ }
       }
-      
-      await emit("detached-session-reattach", { 
-        sessionId: activeSession.id,
-        terminalBuffer,
-      });
-      if (sessionId) {
-        localStorage.removeItem(`detached-session-${sessionId}`);
-      }
-      if (isTauri) {
-        const currentWindow = getCurrentWindow();
-        await currentWindow.close();
-      }
+      await emit("detached-session-reattach", { sessionId: s.id, terminalBuffer });
+      if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
+      if (isTauri) await getCurrentWindow().close();
     } catch (err) {
       console.error("Failed to reattach detached session:", err);
     }
-  }, [activeSession, isTauri, sessionId]);
+  }, [isTauri, sessionId]);
 
   const handleCloseRequest = useCallback(async () => {
-    // Skip confirmation if reattaching
-    if (reattachRef.current) {
-      reattachRef.current = false;
-      return true;
-    }
-    
-    // Show confirmation dialog if warning is enabled and not already confirmed
-    if (warnOnDetachClose && !skipNextConfirmRef.current) {
+    if (reattachRef.current) { reattachRef.current = false; return true; }
+    if (warnRef.current && !skipNextConfirmRef.current) {
       const confirmed = await requestCloseConfirmation();
-      if (!confirmed) {
-        return false;
-      }
+      if (!confirmed) return false;
     }
-    
-    // Reset the skip flag
     skipNextConfirmRef.current = false;
-    
-    // Disconnect and close
     await disconnectActiveSession();
     return true;
-  }, [disconnectActiveSession, requestCloseConfirmation, warnOnDetachClose]);
+  }, [disconnectActiveSession, requestCloseConfirmation]);
 
+  // Register close handler ONCE — stable because all deps are stable
   useEffect(() => {
     onRegisterDisconnect(handleCloseRequest);
   }, [handleCloseRequest, onRegisterDisconnect]);
@@ -472,6 +442,11 @@ const DetachedSessionContent: React.FC<{
 const DetachedWindowLifecycle: React.FC<{
   onBeforeClose: () => Promise<boolean>;
 }> = ({ onBeforeClose }) => {
+  // Use a ref so the effect registers onCloseRequested ONCE and the
+  // handler always calls the latest onBeforeClose without re-registering.
+  const handlerRef = useRef(onBeforeClose);
+  handlerRef.current = onBeforeClose;
+
   useEffect(() => {
     const isTauri =
       typeof window !== "undefined" &&
@@ -484,7 +459,7 @@ const DetachedWindowLifecycle: React.FC<{
       if (isClosing) return;
       event.preventDefault();
       isClosing = true;
-      const shouldClose = await onBeforeClose();
+      const shouldClose = await handlerRef.current();
       if (!shouldClose) {
         isClosing = false;
         return;
@@ -495,7 +470,8 @@ const DetachedWindowLifecycle: React.FC<{
     return () => {
       unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
     };
-  }, [onBeforeClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return null;
 };

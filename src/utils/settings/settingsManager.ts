@@ -8,10 +8,35 @@ import {
   defaultSSHConnectionConfig,
   defaultCloudSyncConfig,
   defaultDiagnosticsConfig,
+  defaultMemoryWatchdogSettings,
 } from '../../types/settings/settings';
 import { SecureStorage } from '../storage/storage';
 import { IndexedDbService } from '../storage/indexedDbService';
 import { generateId } from '../core/id';
+
+/** Unique label for this window — used to ignore our own sync events. */
+let _windowLabel: string | null = null;
+async function getWindowLabel(): Promise<string> {
+  if (_windowLabel) return _windowLabel;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    _windowLabel = getCurrentWindow().label;
+  } catch {
+    _windowLabel = 'main';
+  }
+  return _windowLabel;
+}
+
+/** Broadcast settings to all other Tauri windows. */
+async function emitSettingsSync(settings: GlobalSettings): Promise<void> {
+  try {
+    const { emit } = await import('@tauri-apps/api/event');
+    const source = await getWindowLabel();
+    await emit('settings-sync', { settings, source });
+  } catch {
+    // Not in Tauri environment — ignore
+  }
+}
 
 /**
  * Default global application settings. These values are used when no user
@@ -243,6 +268,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   enableTabReorder: true,
   enableConnectionReorder: true,
   colorTags: {},
+  defaultTabColor: undefined,
+  tabColorPresets: [
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#a855f7',
+  ],
 
   enableStatusChecking: true,
   statusCheckInterval: 30,
@@ -525,6 +555,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     settings: 'tab' as const,
   },
   diagnostics: defaultDiagnosticsConfig,
+  memoryWatchdog: defaultMemoryWatchdogSettings,
   backendConfig: {
     logLevel: 'info' as const,
     maxConcurrentRdpSessions: 10,
@@ -633,6 +664,8 @@ export class SettingsManager {
           new CustomEvent('settings-updated', { detail: this.settings }),
         );
       }
+      // Broadcast to other Tauri windows
+      emitSettingsSync(this.settings);
     } catch (error) {
       console.error('Failed to save settings:', error);
       throw error;
@@ -646,6 +679,37 @@ export class SettingsManager {
    */
   applyInMemory(settings: Partial<GlobalSettings>): void {
     this.settings = { ...this.settings, ...settings };
+  }
+
+  /**
+   * Apply a full settings snapshot received from another window.
+   * Updates in-memory state and IndexedDB but does NOT re-emit the
+   * Tauri sync event (to avoid echo loops).
+   */
+  async applySyncedSettings(settings: GlobalSettings): Promise<void> {
+    const prev = this.settings;
+    this.settings = settings;
+    await IndexedDbService.setItem('mremote-settings', this.settings);
+    // Only dispatch the DOM event if something visual might have changed
+    // (theme, transparency, etc.) — skip if the object is identical.
+    const visualChanged =
+      prev.theme !== settings.theme ||
+      prev.colorScheme !== settings.colorScheme ||
+      prev.primaryAccentColor !== settings.primaryAccentColor ||
+      prev.useCustomAccent !== settings.useCustomAccent ||
+      prev.windowTransparencyEnabled !== settings.windowTransparencyEnabled ||
+      prev.windowTransparencyOpacity !== settings.windowTransparencyOpacity ||
+      prev.warnOnDetachClose !== settings.warnOnDetachClose;
+    if (typeof window !== 'undefined' && visualChanged) {
+      window.dispatchEvent(
+        new CustomEvent('settings-updated', { detail: this.settings }),
+      );
+    }
+  }
+
+  /** Returns the window label helper for source-filtering sync events. */
+  async getWindowLabel(): Promise<string> {
+    return getWindowLabel();
   }
 
   /**

@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig, defaultDiagnosticsConfig } from '../types/settings/settings';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig, defaultDiagnosticsConfig, defaultMemoryWatchdogSettings } from '../types/settings/settings';
 import { SettingsManager } from '../utils/settings/settingsManager';
 
 interface SettingsContextType {
@@ -210,6 +210,11 @@ const defaultSettings: GlobalSettings = {
   enableTabReorder: true,
   enableConnectionReorder: true,
   colorTags: {},
+  defaultTabColor: undefined,
+  tabColorPresets: [
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#a855f7',
+  ],
   enableStatusChecking: true,
   statusCheckInterval: 60000,
   statusCheckMethod: 'ping',
@@ -461,6 +466,7 @@ const defaultSettings: GlobalSettings = {
     settings: 'tab' as const,
   },
   diagnostics: defaultDiagnosticsConfig,
+  memoryWatchdog: defaultMemoryWatchdogSettings,
   backendConfig: {
     logLevel: 'info' as const,
     maxConcurrentRdpSessions: 10,
@@ -495,19 +501,23 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings(loadedSettings);
   }, [settingsManager]);
 
+  // Use a ref so updateSettings has a stable identity
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
   const updateSettings = useCallback(async (updates: Partial<GlobalSettings>) => {
-    const newSettings = { ...settings, ...updates };
+    const current = settingsRef.current;
+    const newSettings = { ...current, ...updates };
     setSettings(newSettings);
     await settingsManager.saveSettings(newSettings);
-    
+
     // Log each changed setting
     const changedKeys = Object.keys(updates) as (keyof GlobalSettings)[];
     if (changedKeys.length > 0) {
       const settingDetails = changedKeys
         .map(key => {
-          const oldVal = settings[key];
+          const oldVal = current[key];
           const newVal = updates[key];
-          // Format the value for display
           const formatVal = (v: unknown): string => {
             if (v === null || v === undefined) return 'null';
             if (typeof v === 'object') return JSON.stringify(v);
@@ -516,7 +526,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return `${key}: ${formatVal(oldVal)} → ${formatVal(newVal)}`;
         })
         .join(', ');
-      
+
       settingsManager.logAction(
         'info',
         'Settings changed',
@@ -524,11 +534,62 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         settingDetails
       );
     }
-  }, [settings, settingsManager]);
+  }, [settingsManager]);
 
   useEffect(() => {
     reloadSettings();
   }, [reloadSettings]);
+
+  // Listen for settings-sync Tauri events from other windows.
+  // ONLY enabled in the main window — detached windows don't need live
+  // settings sync (they load once on mount) and the listener + JSON
+  // comparison overhead causes unnecessary CPU/memory pressure.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const label = getCurrentWindow().label;
+        // Skip sync listener in detached windows
+        if (label !== 'main') return;
+
+        const { listen } = await import('@tauri-apps/api/event');
+
+        const unlistenFn = await listen<{ settings: GlobalSettings; source: string }>(
+          'settings-sync',
+          async (event) => {
+            if (event.payload.source === label) return;
+            const incoming = event.payload.settings;
+            const current = settingsRef.current;
+            let changed = false;
+            try {
+              changed = JSON.stringify(current) !== JSON.stringify(incoming);
+            } catch {
+              changed = true;
+            }
+            await settingsManager.applySyncedSettings(incoming);
+            if (mounted && changed) {
+              setSettings(incoming);
+            }
+          },
+        );
+        if (mounted) {
+          unlisten = unlistenFn;
+        } else {
+          unlistenFn();
+        }
+      } catch {
+        // Not in Tauri environment
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [settingsManager]);
 
   return (
     <SettingsContext.Provider value={{ settings, updateSettings, reloadSettings }}>
