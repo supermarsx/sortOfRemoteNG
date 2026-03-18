@@ -1113,6 +1113,7 @@ export interface ToolDisplayModes {
   windowsBackup: ToolDisplayModeOverride;
   diagnostics: ToolDisplayModeOverride;
   settings: ToolDisplayModeOverride;
+  rdpSessions: ToolDisplayModeOverride;
 }
 
 export interface SettingsDialogConfig {

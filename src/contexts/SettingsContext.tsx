@@ -465,6 +465,7 @@ const defaultSettings: GlobalSettings = {
     windowsBackup: 'inherit' as const,
     diagnostics: 'tab' as const,
     settings: 'tab' as const,
+    rdpSessions: 'tab' as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,

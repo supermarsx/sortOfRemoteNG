@@ -1217,14 +1217,14 @@ const AppContent: React.FC = () => {
       <AppToolbar
         appSettings={appSettings}
         isAlwaysOnTop={isAlwaysOnTop}
-        rdpPanelOpen={rdpPanelOpen}
+        rdpPanelOpen={false}
         showErrorLog={showErrorLog}
         collectionManager={collectionManager}
         connections={state.connections}
         setShowQuickConnect={setShowQuickConnect}
         setShowCollectionSelector={setShowCollectionSelector}
         setShowSettings={handleOpenSettings}
-        setRdpPanelOpen={setRdpPanelOpen}
+        setRdpPanelOpen={toolShowSetters.current.rdpSessions}
         setShowInternalProxyManager={toolShowSetters.current.internalProxy}
         setShowProxyMenu={toolShowSetters.current.proxyChain}
         setShowShortcutManager={toolShowSetters.current.shortcutManager}
@@ -1386,7 +1386,7 @@ const AppContent: React.FC = () => {
         showRecordingManager={showRecordingManager}
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
-        rdpPanelOpen={rdpPanelOpen}
+        rdpPanelOpen={false}
         setShowCollectionSelector={setShowCollectionSelector}
         setShowConnectionEditor={setShowConnectionEditor}
         setShowQuickConnect={setShowQuickConnect}
@@ -1407,7 +1407,7 @@ const AppContent: React.FC = () => {
         setShowRecordingManager={toolShowSetters.current.recordingManager}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
-        setRdpPanelOpen={setRdpPanelOpen}
+        setRdpPanelOpen={toolShowSetters.current.rdpSessions}
         editingConnection={editingConnection}
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}

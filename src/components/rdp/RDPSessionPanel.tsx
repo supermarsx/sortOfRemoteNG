@@ -52,15 +52,15 @@ type Mgr = ReturnType<typeof useRDPSessionPanel>;
 
 /* ── Sub-components ──────────────────────────────────────────────── */
 
-const PanelHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({ mgr, onClose }) => (
-  <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] flex-shrink-0">
-    <div className="flex items-center space-x-2.5">
-      <div className="w-7 h-7 rounded-lg bg-accent/20 flex items-center justify-center">
-        <Monitor size={14} className="text-accent" />
-      </div>
+const PanelHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({ mgr, onClose }) => {
+  const remoteCount = mgr.sessions.filter(s => s.connected).length;
+  return (
+  <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border)] flex-shrink-0">
+    <div className="flex items-center space-x-2">
+      <Monitor size={14} className="text-accent" />
       <div>
         <h2 className="text-sm font-semibold text-[var(--color-text)] leading-tight">RDP Sessions</h2>
-        <p className="text-[10px] text-[var(--color-textMuted)]">{mgr.sessions.length} active session{mgr.sessions.length !== 1 ? 's' : ''}</p>
+        <p className="text-[10px] text-[var(--color-textMuted)]">{remoteCount} connected{mgr.sessions.length > remoteCount ? `, ${mgr.sessions.length - remoteCount} detached` : ''}</p>
       </div>
     </div>
     <div className="flex items-center space-x-1">
@@ -76,7 +76,8 @@ const PanelHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({ mgr, onClose
       </button>
     </div>
   </div>
-);
+  );
+};
 
 const PanelTabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex border-b border-[var(--color-border)] flex-shrink-0">
@@ -362,7 +363,7 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
 
   return (
     <>
-      <div className="flex flex-col h-full bg-[var(--color-background)] border-l border-[var(--color-border)] overflow-hidden">
+      <div className="flex flex-col h-full bg-[var(--color-background)] overflow-hidden">
         <PanelHeader mgr={mgr} onClose={onClose} />
         <PanelTabBar mgr={mgr} />
         <ErrorBanner error={mgr.error} onClear={() => mgr.setError('')} compact />

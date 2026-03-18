@@ -23,6 +23,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   windowsBackup: "Windows Backup",
   diagnostics: "Diagnostics",
   settings: "Settings",
+  rdpSessions: "RDP Sessions",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>

@@ -82,6 +82,10 @@ const SettingsTabContent = dynamic(
   () => import("../SettingsDialog/index").then((m) => m.SettingsTabContent),
   { ssr: false },
 );
+const RDPSessionPanelTab = dynamic(
+  () => import("../rdp/RDPSessionPanel").then((m) => m.RDPSessionPanel),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -121,6 +125,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
         return conn ? <ConnectionDiagnostics connection={conn} onClose={onClose} /> : null;
       })()}
       {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
+      {toolKey === 'rdpSessions' && (
+        <RDPSessionPanelTab
+          isVisible
+          connections={state.connections}
+          onClose={onClose}
+        />
+      )}
     </div>
   );
 };
