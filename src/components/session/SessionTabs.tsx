@@ -45,6 +45,7 @@ import {
   Layers,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
+import { useSettings } from "../../contexts/SettingsContext";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol, getWinmgmtToolId, getWindowsToolIcon } from "../windows/WindowsToolPanel";
 import MenuSurface from "../ui/overlays/MenuSurface";
@@ -155,6 +156,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   middleClickCloseTab = true,
 }) => {
   const { state, dispatch } = useConnections();
+  const { settings: appSettings } = useSettings();
   const sessions = state.sessions.filter((session) => !session.layout?.isDetached);
   const tabGroups = state.tabGroups;
   const [draggedSessionId, setDraggedSessionId] = React.useState<string | null>(null);
@@ -533,10 +535,23 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   };
 
   // ── Render a single tab ──
+  /** Resolve the tab tint color: connection → parent folder → global default */
+  const resolveTabColor = (session: ConnectionSession): string | undefined => {
+    const conn = state.connections.find(c => c.id === session.connectionId);
+    if (conn?.tabColor) return conn.tabColor;
+    // Walk up to parent folder
+    if (conn?.parentId) {
+      const parent = state.connections.find(c => c.id === conn.parentId);
+      if (parent?.tabColor) return parent.tabColor;
+    }
+    return appSettings.defaultTabColor || undefined;
+  };
+
   const renderTab = (session: ConnectionSession, groupColor?: string) => {
     const ProtocolIcon = getProtocolIcon(session.protocol);
     const StatusIcon = getStatusIcon(session.status);
     const isActive = session.id === activeSessionId;
+    const tabTint = resolveTabColor(session);
 
     return (
       <div
@@ -554,6 +569,14 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             ? "border-l-2 border-primary"
             : ""
         } transition-all`}
+        style={tabTint ? {
+          backgroundColor: isActive
+            ? `color-mix(in srgb, ${tabTint} 18%, var(--color-border))`
+            : undefined,
+          backgroundImage: !isActive
+            ? `linear-gradient(to right, color-mix(in srgb, ${tabTint} 10%, transparent), color-mix(in srgb, ${tabTint} 10%, transparent))`
+            : undefined,
+        } : undefined}
         onClick={() => onSessionSelect(session.id)}
         onAuxClick={(e) => handleMiddleClick(session.id, e)}
         onContextMenu={(e) => handleContextMenu(e, session.id)}
@@ -562,6 +585,13 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         onDragEnd={(e) => handleDragEnd(e, session.id)}
         onDrop={(e) => handleDrop(e, session.id)}
       >
+        {/* Tab tint indicator — left edge bar */}
+        {tabTint && (
+          <div
+            className="absolute left-0 top-0 bottom-0 w-[3px]"
+            style={{ backgroundColor: tabTint }}
+          />
+        )}
         {/* Group color indicator bar at bottom */}
         {groupColor && (
           <div

@@ -12,6 +12,7 @@ import {
   X,
   Zap,
   Skull,
+  RotateCcw,
 } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
 import { ConnectionAction } from '../../contexts/ConnectionContextTypes';
@@ -179,6 +180,12 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({
               <Trash2 size={11} /> Clean Debug ({mgr.debugSessionCount})
             </button>
           )}
+          <button
+            className="sor-btn sor-btn-sm sor-btn-warning"
+            onClick={() => window.location.reload()}
+          >
+            <RotateCcw size={11} /> Restart Frontend
+          </button>
         </div>
 
         {/* Accordion body */}

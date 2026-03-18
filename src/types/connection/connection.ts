@@ -24,6 +24,8 @@ export interface Connection {
   icon?: string;
   tags?: string[];
   colorTag?: string; // Color classification
+  /** Tab tint color — applies a subtle color overlay to the session tab */
+  tabColor?: string;
   favorite?: boolean;
   order?: number;
   createdAt: Date;
