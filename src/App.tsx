@@ -288,7 +288,9 @@ const AppContent: React.FC = () => {
   if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
-      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer', 'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
+      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
+      'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
+      'diagnostics', 'settings', 'rdpSessions',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
