@@ -58,6 +58,42 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
+  // ── Cross-window settings sync ──────────────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const myLabel = await settingsManager.getWindowLabel();
+
+        const unlistenFn = await listen<{
+          settings: GlobalSettings;
+          source: string;
+        }>("settings-sync", (event) => {
+          if (event.payload.source === myLabel) return;
+          if (mounted) {
+            setSettings(event.payload.settings);
+          }
+        });
+        if (mounted) {
+          unlisten = unlistenFn;
+        } else {
+          unlistenFn();
+        }
+      } catch {
+        // Not in Tauri environment
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [isOpen, settingsManager]);
+
   // ── Reset scroll-to-bottom on tab change ──────────────────────
   useEffect(() => {
     setHasScrolledToBottom(false);
