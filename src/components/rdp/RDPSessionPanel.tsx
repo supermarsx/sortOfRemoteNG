@@ -364,6 +364,7 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
   return (
     <>
       <div className="flex flex-col h-full bg-[var(--color-background)] overflow-hidden">
+        <div className="max-w-4xl mx-auto w-full flex flex-col flex-1 min-h-0">
         <PanelHeader mgr={mgr} onClose={onClose} />
         <PanelTabBar mgr={mgr} />
         <ErrorBanner error={mgr.error} onClear={() => mgr.setError('')} compact />
@@ -390,6 +391,7 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
         ) : (
           <RDPLogViewer isVisible={mgr.activeTab === 'logs'} sessionFilter={mgr.logSessionFilter} />
         )}
+        </div>
       </div>
 
       <ConfirmDialog
