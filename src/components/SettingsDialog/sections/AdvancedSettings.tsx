@@ -14,10 +14,12 @@ import {
   Settings,
   Save,
   RotateCcw,
+  Cpu,
 } from "lucide-react";
-import { Checkbox } from '../../ui/forms';
+import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 import { InfoTooltip } from '../../ui/InfoTooltip';
+import { defaultMemoryWatchdogSettings, MemoryWatchdogSettings } from '../../../types/settings/settings';
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;
@@ -205,6 +207,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
         </div>
       </div>
 
+      {/* Memory Watchdog Section */}
+      <MemoryWatchdogSection settings={settings} updateSettings={updateSettings} />
+
       {/* Settings Dialog Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
@@ -292,6 +297,128 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             </div>
           </label>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Memory Watchdog sub-section ─────────────────────────────
+
+const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({ settings, updateSettings }) => {
+  const mw = settings.memoryWatchdog ?? defaultMemoryWatchdogSettings;
+
+  const update = (patch: Partial<MemoryWatchdogSettings>) => {
+    updateSettings({ memoryWatchdog: { ...mw, ...patch } });
+  };
+  const updateDetached = (patch: Partial<MemoryWatchdogSettings["detached"]>) => {
+    updateSettings({
+      memoryWatchdog: {
+        ...mw,
+        detached: { ...mw.detached, ...patch },
+      },
+    });
+  };
+
+  const inputCls = "sor-form-input text-sm w-24";
+
+  return (
+    <div className="space-y-4">
+      <h4 className="sor-section-heading">
+        <Cpu className="w-4 h-4 text-error" />
+        <span className="flex items-center gap-1">
+          Memory Watchdog
+          <InfoTooltip text="Monitors JS heap and system RAM usage. Automatically tears down the page if thresholds are exceeded to protect your system from freezing." />
+        </span>
+      </h4>
+
+      <div className="sor-settings-card space-y-4">
+        {/* Enable toggle */}
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <Checkbox
+            checked={mw.enabled}
+            onChange={(v: boolean) => update({ enabled: v })}
+          />
+          <span className="sor-toggle-label">
+            Enable memory watchdog
+            <InfoTooltip text="When disabled, no memory monitoring runs. The application will not be protected from runaway memory usage." />
+          </span>
+        </label>
+
+        {mw.enabled && (
+          <>
+            {/* Polling interval */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
+                  Poll Interval (ms) <InfoTooltip text="How often the watchdog checks memory usage. Lower values detect leaks faster but use slightly more CPU." />
+                </label>
+                <NumberInput value={mw.intervalMs} onChange={(v: number) => update({ intervalMs: v })} className={inputCls} min={1000} max={30000} />
+              </div>
+            </div>
+
+            {/* JS Heap thresholds */}
+            <div>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
+                JS Heap Thresholds (Main Window)
+                <InfoTooltip text="Memory thresholds for the main application window's JavaScript heap. Warning logs to console, Critical shows an overlay, Kill tears down the page." />
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Warning (MB)</label>
+                  <NumberInput value={mw.heapWarningMb} onChange={(v: number) => update({ heapWarningMb: v })} className={inputCls} min={64} max={8192} />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Critical (MB)</label>
+                  <NumberInput value={mw.heapCriticalMb} onChange={(v: number) => update({ heapCriticalMb: v })} className={inputCls} min={128} max={8192} />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Kill (MB)</label>
+                  <NumberInput value={mw.heapKillMb} onChange={(v: number) => update({ heapKillMb: v })} className={inputCls} min={256} max={16384} />
+                </div>
+              </div>
+            </div>
+
+            {/* Detached window thresholds */}
+            <div>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
+                JS Heap Thresholds (Detached Windows)
+                <InfoTooltip text="Separate, typically lower thresholds for detached session windows since they should be lightweight." />
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Warning (MB)</label>
+                  <NumberInput value={mw.detached.heapWarningMb} onChange={(v: number) => updateDetached({ heapWarningMb: v })} className={inputCls} min={64} max={8192} />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Critical (MB)</label>
+                  <NumberInput value={mw.detached.heapCriticalMb} onChange={(v: number) => updateDetached({ heapCriticalMb: v })} className={inputCls} min={128} max={8192} />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Kill (MB)</label>
+                  <NumberInput value={mw.detached.heapKillMb} onChange={(v: number) => updateDetached({ heapKillMb: v })} className={inputCls} min={256} max={16384} />
+                </div>
+              </div>
+            </div>
+
+            {/* System RAM thresholds */}
+            <div>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
+                System RAM Thresholds (%)
+                <InfoTooltip text="OS-level physical memory thresholds. When system RAM exceeds the kill percentage, the window is torn down to prevent the entire system from freezing. Requires a Tauri backend command." />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Warning (%)</label>
+                  <NumberInput value={mw.systemWarningPct} onChange={(v: number) => update({ systemWarningPct: v })} className={inputCls} min={50} max={99} />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--color-textMuted)] mb-1">Kill (%)</label>
+                  <NumberInput value={mw.systemKillPct} onChange={(v: number) => update({ systemKillPct: v })} className={inputCls} min={60} max={99} />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -317,6 +317,12 @@ export interface GlobalSettings {
     };
   };
 
+  // Tab Tint Colors
+  /** Default tab tint color applied to all tabs unless overridden per-connection/folder */
+  defaultTabColor?: string;
+  /** Preset palette for quick tab color assignment */
+  tabColorPresets: string[];
+
   // Status Checking
   enableStatusChecking: boolean;
   statusCheckInterval: number;
@@ -469,6 +475,9 @@ export interface GlobalSettings {
 
   // ─── Diagnostics ─────────────────────────────────────────────
   diagnostics: DiagnosticsConfig;
+
+  // ─── Memory Watchdog ───────────────────────────────────────
+  memoryWatchdog: MemoryWatchdogSettings;
 
   // ─── Backend / Tauri Runtime Settings ────────────────────────
   backendConfig: BackendConfig;
@@ -1005,6 +1014,46 @@ export const defaultDiagnosticsConfig: DiagnosticsConfig = {
   // Display
   showDetailedResults: true,
   expandFailedSteps: true,
+};
+
+// ─── Memory Watchdog ──────────────────────────────────────────
+
+export interface MemoryWatchdogSettings {
+  /** Enable the memory watchdog (default: true) */
+  enabled: boolean;
+  /** Polling interval in milliseconds */
+  intervalMs: number;
+  /** JS heap warning threshold in MB — logs a console warning */
+  heapWarningMb: number;
+  /** JS heap critical threshold in MB — shows an overlay widget */
+  heapCriticalMb: number;
+  /** JS heap kill threshold in MB — tears down the page */
+  heapKillMb: number;
+  /** System RAM warning threshold as percentage (0–100) */
+  systemWarningPct: number;
+  /** System RAM kill threshold as percentage — tears down the page */
+  systemKillPct: number;
+  /** Override thresholds for detached windows */
+  detached: {
+    heapWarningMb: number;
+    heapCriticalMb: number;
+    heapKillMb: number;
+  };
+}
+
+export const defaultMemoryWatchdogSettings: MemoryWatchdogSettings = {
+  enabled: true,
+  intervalMs: 5000,
+  heapWarningMb: 512,
+  heapCriticalMb: 1024,
+  heapKillMb: 1800,
+  systemWarningPct: 85,
+  systemKillPct: 95,
+  detached: {
+    heapWarningMb: 300,
+    heapCriticalMb: 600,
+    heapKillMb: 1200,
+  },
 };
 
 export interface ThemeConfig {
