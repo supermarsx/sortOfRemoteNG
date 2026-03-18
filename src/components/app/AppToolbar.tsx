@@ -245,8 +245,8 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
         <div className="flex items-center space-x-1">
           {appSettings.showRdpSessionsIcon && (
             <button
-              onClick={() => setRdpPanelOpen(prev => !prev)}
-              className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-accent' : ''}`}
+              onClick={() => setRdpPanelOpen(true)}
+              className="app-bar-button p-2"
               title="RDP Sessions"
             >
               <Cpu size={14} />
