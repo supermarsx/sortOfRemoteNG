@@ -28,6 +28,8 @@ import { SessionViewer } from "./components/session/SessionViewer";
 import { TabLayoutManager } from "./components/session/TabLayoutManager";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { SplashScreen } from "./components/app/SplashScreen";
+import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
+import { startMemoryWatchdog } from "./utils/debug/memoryWatchdog";
 import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
 import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/toolSession";
 import { generateId } from "./utils/core/id";
@@ -143,13 +145,28 @@ const AppContent: React.FC = () => {
     confirmDialog,
   } = useSessionManager();
 
-  const { isInitialized, initProgress, initStatus } = useAppLifecycle({
+  const { isInitialized, initProgress, initStatus, criticalError } = useAppLifecycle({
     handleConnect,
     restoreSession,
     setShowCollectionSelector,
     setShowPasswordDialog,
     setPasswordDialogMode,
   });
+
+  // Start memory watchdog once settings are available
+  useEffect(() => {
+    const mw = appSettings.memoryWatchdog;
+    if (!mw?.enabled) return;
+    startMemoryWatchdog({
+      intervalMs: mw.intervalMs,
+      warningMb: mw.heapWarningMb,
+      criticalMb: mw.heapCriticalMb,
+      killMb: mw.heapKillMb,
+      systemWarningPct: mw.systemWarningPct,
+      systemKillPct: mw.systemKillPct,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Extracted hooks
   const {
@@ -178,6 +195,17 @@ const AppContent: React.FC = () => {
   const sessionsRef = useRef(state.sessions);
   useEffect(() => { toolModeRef.current = appSettings.toolDisplayModes; }, [appSettings.toolDisplayModes]);
   useEffect(() => { sessionsRef.current = state.sessions; }, [state.sessions]);
+
+  /** Focus a detached Tauri window by its label. */
+  const focusDetachedWindow = useCallback((windowId: string) => {
+    getAllWindows().then(windows => {
+      const win = windows.find(w => w.label === windowId);
+      if (win) {
+        win.setFocus().catch(() => undefined);
+        win.unminimize().catch(() => undefined);
+      }
+    }).catch(() => undefined);
+  }, []);
 
   /** Resolve effective display mode for a tool (inherit → global default). */
   const resolveToolMode = useCallback((toolKey: ToolKey): 'popup' | 'tab' => {
@@ -224,6 +252,14 @@ const AppContent: React.FC = () => {
       }
       // Tab mode: find or create a session tab
       const protocol = getToolProtocol(toolKey);
+      // Check for detached instance first — focus its window instead of creating a duplicate
+      const detached = sessionsRef.current.find(
+        s => s.protocol === protocol && s.layout?.isDetached,
+      );
+      if (detached?.layout?.windowId) {
+        focusDetachedWindow(detached.layout.windowId);
+        return;
+      }
       const existing = sessionsRef.current.find(
         s => s.protocol === protocol && !s.layout?.isDetached,
       );
@@ -622,6 +658,11 @@ const AppContent: React.FC = () => {
     // Check if a settings tab already exists — reuse it
     const existing = state.sessions.find(s => s.protocol === 'tool:settings');
     if (existing) {
+      // If detached, focus the external window instead of the tab
+      if (existing.layout?.isDetached && existing.layout?.windowId) {
+        focusDetachedWindow(existing.layout.windowId);
+        return;
+      }
       setActiveSessionId(existing.id);
       return;
     }
@@ -1157,8 +1198,15 @@ const AppContent: React.FC = () => {
         } as React.CSSProperties
       }
     >
+      {/* Critical Error BSOD */}
+      {criticalError && (
+        <CriticalErrorScreen
+          title={criticalError.title}
+          detail={criticalError.detail}
+        />
+      )}
       {/* Splash Screen */}
-      {showSplash && (
+      {!criticalError && showSplash && (
         <SplashScreen
           isLoading={!isInitialized}
           progress={initProgress}

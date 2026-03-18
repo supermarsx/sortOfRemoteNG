@@ -10,8 +10,23 @@ import { Connection, ConnectionSession } from "../../types/connection/connection
 import i18n, { loadLanguage } from "../../i18n";
 import { IndexedDbService } from "../../utils/storage/indexedDbService";
 
+import { SAFE_MODE_KEY } from "../../components/app/CriticalErrorScreen";
+
 const CLEAN_EXIT_KEY = "mremote-clean-exit";
 const LAST_SESSION_KEY = "mremote-last-session-time";
+
+/** Read and consume the safe-mode flag set by the BSOD recovery screen. */
+function consumeSafeMode(): "once" | "permanent" | null {
+  const raw = localStorage.getItem(SAFE_MODE_KEY);
+  if (!raw) return null;
+  if (raw === "once") {
+    localStorage.removeItem(SAFE_MODE_KEY);
+    return "once";
+  }
+  if (raw === "permanent") return "permanent";
+  localStorage.removeItem(SAFE_MODE_KEY);
+  return null;
+}
 
 /**
  * Options for {@link useAppLifecycle}.
@@ -76,13 +91,26 @@ export const useAppLifecycle = ({
   const [initProgress, setInitProgress] = useState(0);
   const [initStatus, setInitStatus] = useState("Initializing...");
   const [didUnexpectedClose, setDidUnexpectedClose] = useState(false);
+  const [criticalError, setCriticalError] = useState<{ title: string; detail: string } | null>(null);
   const hasReconnected = useRef(false);
   const initStarted = useRef(false);
+  const initializedRef = useRef(false);
+  const safeModeRef = useRef<"once" | "permanent" | null>(null);
   const reconnectingSessions = useRef<Set<string>>(new Set());
+
+  /** Maximum time (ms) allowed for initialization before BSOD. */
+  const INIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
   const initializeApp = useCallback(async () => {
     if (initStarted.current) return;
     initStarted.current = true;
+
+    const safeMode = consumeSafeMode();
+    safeModeRef.current = safeMode;
+    if (safeMode) {
+      console.warn(`Safe mode active: ${safeMode}`);
+    }
+
     try {
       // Phase 1: Settings (must come first — everything else depends on it)
       setInitStatus("Loading settings...");
@@ -130,8 +158,8 @@ export const useAppLifecycle = ({
         );
       }
 
-      // Unexpected close detection (IndexedDB reads/writes)
-      if (settings.detectUnexpectedClose) {
+      // Unexpected close detection (IndexedDB reads/writes) — skipped in safe mode
+      if (settings.detectUnexpectedClose && !safeMode) {
         parallelTasks.push(
           (async () => {
             const localCleanExit = localStorage.getItem(CLEAN_EXIT_KEY) === "true";
@@ -163,9 +191,12 @@ export const useAppLifecycle = ({
       await Promise.all(parallelTasks);
       setInitProgress(60);
 
-      // Phase 3: Collection loading
+      // Phase 3: Collection loading — skipped in safe mode (show collection selector instead)
       setInitStatus("Loading connections...");
-      if (settings.autoOpenLastCollection && settings.lastOpenedCollectionId) {
+      if (safeMode) {
+        console.log("Safe mode: skipping auto-open collection");
+        setShowCollectionSelector(true);
+      } else if (settings.autoOpenLastCollection && settings.lastOpenedCollectionId) {
         try {
           const collections = await collectionManager.getAllCollections();
           const lastCollection = collections.find(c => c.id === settings.lastOpenedCollectionId);
@@ -197,6 +228,7 @@ export const useAppLifecycle = ({
       setInitProgress(100);
       setInitStatus("Ready!");
 
+      initializedRef.current = true;
       setIsInitialized(true);
       console.log("App initialized successfully");
       settingsManager.logAction(
@@ -207,14 +239,16 @@ export const useAppLifecycle = ({
       );
     } catch (error) {
       console.error("Failed to initialize application:", error);
-      setInitProgress(100);
-      setInitStatus("Ready!");
-      setIsInitialized(true);
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      setCriticalError({
+        title: "INITIALIZATION_FAILURE",
+        detail: `The application failed to initialize.\n\n${msg}${error instanceof Error && error.stack ? `\n\n${error.stack}` : ""}`,
+      });
       settingsManager.logAction(
         "error",
         "Application initialization failed",
         undefined,
-        error instanceof Error ? error.message : "Unknown error",
+        msg,
       );
     }
   }, [settingsManager, themeManager, i18n, loadData, setShowCollectionSelector, collectionManager]);
@@ -249,6 +283,25 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     initializeApp();
+
+    // BSOD timeout — if init hasn't completed in 5 minutes, something is fatally wrong
+    const timeout = setTimeout(() => {
+      // Already initialized or never started — nothing to do
+      if (initializedRef.current || !initStarted.current) return;
+      setCriticalError((prev) => {
+        if (prev) return prev;
+        return {
+          title: "INITIALIZATION_TIMEOUT",
+          detail:
+            "The application failed to initialize within the expected time (5 minutes).\n\n" +
+            "This may indicate a corrupted database, a deadlocked background process, " +
+            "or missing system resources.\n\nTry restarting the application. If the problem " +
+            "persists, clear the application data or reinstall.",
+        };
+      });
+    }, INIT_TIMEOUT_MS);
+
+    return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -256,7 +309,7 @@ export const useAppLifecycle = ({
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     const settings = settingsManager.getSettings();
-    const singleWindowInterval = settings.singleWindowMode
+    const singleWindowInterval = settings.singleWindowMode && !safeModeRef.current
       ? setInterval(checkSingleWindow, 5000)
       : null;
 
@@ -299,6 +352,7 @@ export const useAppLifecycle = ({
     const settings = settingsManager.getSettings();
     if (
       settings.reconnectOnReload &&
+      !safeModeRef.current &&
       isInitialized &&
       state.connections.length > 0
     ) {
@@ -393,5 +447,5 @@ export const useAppLifecycle = ({
     }
   }, [state.sessions, settingsManager]);
 
-  return { isInitialized, initProgress, initStatus, didUnexpectedClose, dismissUnexpectedClose: () => setDidUnexpectedClose(false) };
+  return { isInitialized, initProgress, initStatus, didUnexpectedClose, dismissUnexpectedClose: () => setDidUnexpectedClose(false), criticalError };
 };
