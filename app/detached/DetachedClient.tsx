@@ -66,6 +66,7 @@ const DetachedSessionContent: React.FC<{
   const hasLoadedRef = useRef(false);
   const skipNextConfirmRef = useRef(false);
   const reattachRef = useRef(false);
+  const handleReattachRef = useRef<(() => void) | null>(null);
   const closeResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   const isTauriRef = useRef(isTauri);
@@ -159,6 +160,41 @@ const DetachedSessionContent: React.FC<{
       .then(setIsAlwaysOnTop)
       .catch(() => undefined);
   }, [isTauri]);
+
+  // Listen for tabs dragged from other detached windows onto this one
+  useEffect(() => {
+    if (!isTauri || !sessionId) return;
+    const unlistenPromise = listen<{
+      sessionId: string;
+      sourceWindow: string;
+      screenX: number;
+      screenY: number;
+    }>("detached-tab-dropped-outside", async (event) => {
+      const { sourceWindow, screenX, screenY } = event.payload;
+      const myWin = getCurrentWindow();
+      // Ignore our own drag events
+      if (sourceWindow === myWin.label) return;
+      try {
+        const [pos, size] = await Promise.all([
+          myWin.outerPosition(),
+          myWin.outerSize(),
+        ]);
+        // Check if the drop landed within our window bounds
+        if (
+          screenX >= pos.x && screenX <= pos.x + size.width &&
+          screenY >= pos.y && screenY <= pos.y + size.height
+        ) {
+          // Claimed! Both windows reattach to main — merging sessions
+          // Reattach our own session first
+          handleReattachRef.current?.();
+          // The source window's 300ms fallback timeout will reattach it too
+        }
+      } catch { /* ignore */ }
+    });
+    return () => {
+      unlistenPromise.then((fn) => fn()).catch(() => {});
+    };
+  }, [isTauri, sessionId]);
 
   useEffect(() => {
     const manager = SettingsManager.getInstance();
@@ -322,6 +358,9 @@ const DetachedSessionContent: React.FC<{
     }
   }, [isTauri, sessionId]);
 
+  // Keep ref in sync for the cross-window drop listener
+  handleReattachRef.current = handleReattach;
+
   const handleCloseRequest = useCallback(async () => {
     if (reattachRef.current) { reattachRef.current = false; return true; }
     if (warnRef.current && !skipNextConfirmRef.current) {
@@ -397,7 +436,31 @@ const DetachedSessionContent: React.FC<{
           className="relative flex items-center h-full px-3 cursor-grab active:cursor-grabbing bg-[var(--color-border)] text-[var(--color-text)] border-r border-[var(--color-border)] min-w-0 transition-all"
           data-tooltip="Drag outside window to reattach"
           onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-detached-session", activeSession.id); }}
-          onDragEnd={(e) => { const { clientX, clientY } = e; if (clientX <= 0 || clientY <= 0 || clientX >= window.innerWidth || clientY >= window.innerHeight) handleReattach(); }}
+          onDragEnd={async (e) => {
+            const { clientX, clientY } = e;
+            if (clientX <= 0 || clientY <= 0 || clientX >= window.innerWidth || clientY >= window.innerHeight) {
+              // Dropped outside — check if another detached window is at that screen position
+              try {
+                const myWin = getCurrentWindow();
+                const myPos = await myWin.outerPosition();
+                const screenX = myPos.x + clientX;
+                const screenY = myPos.y + clientY;
+                // Emit event so other detached windows can check if cursor landed on them
+                await emit("detached-tab-dropped-outside", {
+                  sessionId: activeSession.id,
+                  sourceWindow: myWin.label,
+                  screenX,
+                  screenY,
+                });
+                // Give other windows a moment to claim it, then fall back to reattach to main
+                setTimeout(() => {
+                  if (!closingRef.current) handleReattach();
+                }, 300);
+              } catch {
+                handleReattach();
+              }
+            }
+          }}
         >
           <SessionIcon protocol={activeSession.protocol} />
           <span className="truncate text-sm mr-2 max-w-[40vw]">{activeSession.name || "Detached Session"}</span>
