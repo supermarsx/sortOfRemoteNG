@@ -16,7 +16,7 @@ import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { CornerUpLeft, Eye, Globe, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
+import { AlertCircle, CornerUpLeft, Eye, Globe, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
@@ -446,10 +446,29 @@ const DetachedSessionContent: React.FC<{
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-900 text-gray-200">
-        <div className="text-center">
-          <Monitor className="mx-auto mb-4 h-10 w-10 text-red-400" />
-          <p className="text-sm">{error}</p>
+      <div className="flex h-screen items-center justify-center bg-[var(--color-background,#111827)]">
+        <div className="text-center max-w-sm px-6">
+          <div className="w-12 h-12 rounded-xl bg-error/15 border border-error/25 flex items-center justify-center mx-auto mb-4">
+            <AlertCircle size={24} className="text-error" />
+          </div>
+          <h3 className="text-sm font-semibold text-[var(--color-text,#f9fafb)] mb-1">Session Error</h3>
+          <p className="text-xs text-[var(--color-textSecondary,#9ca3af)] mb-5">{error}</p>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => { hasLoadedRef.current = false; setError(""); window.location.reload(); }}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
+            >
+              <CornerUpLeft size={12} />
+              Reload
+            </button>
+            <button
+              onClick={async () => { if (isTauri) await getCurrentWindow().close(); else window.close(); }}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface,#1f2937)] text-[var(--color-textSecondary,#9ca3af)] border border-[var(--color-border,#374151)] hover:text-[var(--color-text,#f9fafb)] transition-colors"
+            >
+              <X size={12} />
+              Close Window
+            </button>
+          </div>
         </div>
       </div>
     );
