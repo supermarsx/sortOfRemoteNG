@@ -246,7 +246,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <CustomGridPopover mgr={mgr} sessionCount={sessions.length} />
         </div>
         <div className="text-[var(--color-textSecondary)] text-sm">
-          {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+          {sessions.filter(s => !s.protocol.startsWith("tool:") && !s.protocol.startsWith("winmgmt:")).length} session{sessions.filter(s => !s.protocol.startsWith("tool:") && !s.protocol.startsWith("winmgmt:")).length !== 1 ? "s" : ""}
         </div>
       </div>
 
