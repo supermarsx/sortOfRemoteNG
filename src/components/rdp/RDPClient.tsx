@@ -119,12 +119,95 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
   const smartSizing = mgr.rdpSettings?.display?.smartSizing !== false;
   const resizeToWindow = mgr.rdpSettings?.display?.resizeToWindow === true;
 
+  // File drag-drop state
+  const [dragOver, setDragOver] = React.useState(false);
+  const [dropStatus, setDropStatus] = React.useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Resolve whether file drag-drop is enabled (per-connection → global)
+  const fileDragDropEnabled =
+    mgr.rdpSettings?.deviceRedirection?.fileDragDrop ??
+    mgr.settings?.enableFileDragDropToRdp ??
+    true;
+
+  const handleDragOver = React.useCallback((e: React.DragEvent) => {
+    if (!fileDragDropEnabled || !mgr.isConnected) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDragOver(true);
+  }, [fileDragDropEnabled, mgr.isConnected]);
+
+  const handleDragLeave = React.useCallback(() => setDragOver(false), []);
+
+  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (!fileDragDropEnabled || !mgr.isConnected) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    const fileNames = files.map(f => f.name).join(', ');
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    const sizeMB = (totalSize / (1024 * 1024)).toFixed(1);
+
+    // Check if clipboard redirection is available
+    const clipboardEnabled = mgr.rdpSettings?.deviceRedirection?.clipboard !== false;
+
+    if (clipboardEnabled) {
+      // Copy file paths to clipboard so user can paste in remote
+      try {
+        const paths = files.map(f => f.name).join('\n');
+        await navigator.clipboard.writeText(paths);
+        setDropStatus({
+          message: `${files.length} file${files.length > 1 ? 's' : ''} (${sizeMB}MB) — file name${files.length > 1 ? 's' : ''} copied to clipboard. Use Ctrl+V to paste in remote session.`,
+          type: 'info',
+        });
+      } catch {
+        setDropStatus({
+          message: `Received ${files.length} file${files.length > 1 ? 's' : ''} (${sizeMB}MB) but clipboard access failed.`,
+          type: 'error',
+        });
+      }
+    } else {
+      setDropStatus({
+        message: `File drop received (${fileNames}) but file transfer requires clipboard or drive redirection to be enabled.`,
+        type: 'error',
+      });
+    }
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => setDropStatus(null), 5000);
+  }, [fileDragDropEnabled, mgr.isConnected, mgr.rdpSettings?.deviceRedirection?.clipboard]);
+
   return (
   <div
     ref={mgr.containerRef}
     className="flex-1 flex items-center justify-center bg-black p-1 relative min-h-0"
     style={{ overflow: smartSizing || resizeToWindow ? 'hidden' : 'auto' }}
+    onDragOver={handleDragOver}
+    onDragLeave={handleDragLeave}
+    onDrop={handleDrop}
   >
+    {/* Drop overlay */}
+    {dragOver && fileDragDropEnabled && (
+      <div className="absolute inset-0 z-40 flex items-center justify-center bg-primary/20 border-2 border-dashed border-primary rounded-lg pointer-events-none">
+        <div className="bg-[var(--color-surface)] px-6 py-4 rounded-xl shadow-2xl border border-primary/50 text-center">
+          <div className="text-lg font-semibold text-primary mb-1">Drop files here</div>
+          <div className="text-xs text-[var(--color-textSecondary)]">File names will be copied to clipboard for pasting in remote session</div>
+        </div>
+      </div>
+    )}
+
+    {/* Drop status toast */}
+    {dropStatus && (
+      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md px-4 py-2.5 rounded-lg shadow-xl border text-xs ${
+        dropStatus.type === 'success' ? 'bg-success/20 border-success/50 text-success' :
+        dropStatus.type === 'error' ? 'bg-error/20 border-error/50 text-error' :
+        'bg-primary/20 border-primary/50 text-primary'
+      }`}>
+        {dropStatus.message}
+      </div>
+    )}
     <canvas
       ref={mgr.canvasRef}
       className="border border-[var(--color-border)]"
