@@ -333,45 +333,37 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      panelClassName="max-w-2xl mx-4 max-h-[90vh]"
-      dataTestId="tab-group-manager-dialog"
-    >
-      <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-h-[90vh] overflow-hidden">
-        <ModalHeader
-          onClose={onClose}
-          className="p-6 border-b border-[var(--color-border)]"
-          title={
-            <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center space-x-2">
-              <Layers size={20} className="text-primary" />
-              <span>Tab Group Manager</span>
-            </h2>
-          }
-        />
+  if (!isOpen) return null;
 
-        <ModalBody className="p-0 max-h-[calc(90vh-200px)]">
-          {/* Search bar */}
-          <div className="px-4 pt-4 pb-2">
-            <div className="relative">
-              <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]"
-              />
-              <input
-                type="text"
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="sor-form-input pl-9 text-sm"
-                placeholder="Search groups..."
-              />
-            </div>
+  return (
+    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-3xl mx-auto w-full p-6 space-y-6">
+          {/* Heading */}
+          <div>
+            <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+              <Layers className="w-5 h-5 text-primary" />
+              Tab Group Manager
+            </h3>
+            <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+              Organize open session tabs into color-coded groups.
+            </p>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="sor-form-input pl-9 text-sm w-full"
+              placeholder="Search groups..."
+            />
           </div>
 
           {/* Content */}
-          <div className="px-4 pb-4 overflow-y-auto max-h-[calc(90vh-340px)]">
+          <div>
             {filteredGroups.length === 0 && tabGroups.length === 0 ? (
               <EmptyState
                 icon={Layers}
@@ -655,10 +647,9 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
               </div>
             )}
           </div>
-        </ModalBody>
 
-        {/* Footer */}
-        <ModalFooter className="p-4 border-t border-[var(--color-border)]">
+          {/* Footer */}
+        <div className="pt-4 border-t border-[var(--color-border)]">
           <div className="flex items-center justify-between w-full">
             {/* Stats */}
             <div className="text-xs text-[var(--color-textMuted)]">
@@ -734,9 +725,10 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
               </button>
             )}
           </div>
-        </ModalFooter>
+        </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 };
 

@@ -191,102 +191,98 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      panelClassName="max-w-2xl mx-4 max-h-[90vh]"
-      dataTestId="tag-manager-dialog"
-    >
-      <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-h-[90vh] overflow-hidden">
-        <ModalHeader
-          onClose={onClose}
-          className="p-6 border-b border-[var(--color-border)]"
-          title={
-            <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center space-x-2">
-              <Tag size={20} className="text-primary" />
-              <span>Tag Manager</span>
-            </h2>
-          }
-        />
-
-        <ModalBody className="p-0 max-h-[calc(90vh-200px)]">
-          {/* Tabs */}
-          <div className="flex border-b border-[var(--color-border)]">
-            <button
-              onClick={() => { setActiveTab("text"); setSearchFilter(""); }}
-              className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "text"
-                  ? "text-primary border-b-2 border-primary"
-                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              }`}
-            >
-              <Tag size={14} className="inline mr-1.5 -mt-0.5" />
-              Text Tags ({textTagsWithCounts.length})
-            </button>
-            <button
-              onClick={() => { setActiveTab("color"); setSearchFilter(""); }}
-              className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === "color"
-                  ? "text-primary border-b-2 border-primary"
-                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              }`}
-            >
-              <Palette size={14} className="inline mr-1.5 -mt-0.5" />
-              Color Tags ({colorTagsWithCounts.length})
-            </button>
+  const content = (
+    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-3xl mx-auto w-full p-6 space-y-6">
+          {/* Heading */}
+          <div>
+            <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+              <Tag className="w-5 h-5 text-primary" />
+              Tag Manager
+            </h3>
+            <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+              Manage text tags and color tags for organizing connections.
+            </p>
           </div>
 
-          {/* Search bar */}
-          <div className="px-4 pt-4 pb-2">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
-              <input
-                type="text"
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="sor-form-input pl-9 text-sm"
-                placeholder={`Search ${activeTab === "text" ? "text" : "color"} tags...`}
-              />
-            </div>
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-[var(--color-border)]">
+            {[
+              { id: "text" as const, label: "Text Tags", icon: Tag, count: textTagsWithCounts.length },
+              { id: "color" as const, label: "Color Tags", icon: Palette, count: colorTagsWithCounts.length },
+            ].map(tab => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => { setActiveTab(tab.id); setSearchFilter(""); }}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors relative ${
+                    active ? "text-[var(--color-text)]" : "text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"
+                  }`}
+                >
+                  <Icon size={13} />
+                  {tab.label}
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none ${
+                    active ? "bg-primary/20 text-primary" : "bg-[var(--color-border)] text-[var(--color-textMuted)]"
+                  }`}>{tab.count}</span>
+                  {active && <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-primary rounded-full" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="sor-form-input pl-9 text-sm w-full"
+              placeholder={`Search ${activeTab === "text" ? "text" : "color"} tags...`}
+            />
           </div>
 
           {/* Content */}
-          <div className="px-4 pb-4 overflow-y-auto max-h-[calc(90vh-340px)]">
-            {activeTab === "text" ? (
-              <TextTagsSection
-                filteredTags={filteredTextTags}
-                newTextTag={newTextTag}
-                setNewTextTag={setNewTextTag}
-                onCreateTag={handleCreateTextTag}
-                editingTag={editingTextTag}
-                editingTagValue={editingTextTagValue}
-                setEditingTag={setEditingTextTag}
-                setEditingTagValue={setEditingTextTagValue}
-                onRenameTag={handleRenameTextTag}
-                onDeleteTag={handleDeleteTextTag}
-              />
-            ) : (
-              <ColorTagsSection
-                filteredTags={filteredColorTags}
-                showAddForm={showAddColorForm}
-                setShowAddForm={setShowAddColorForm}
-                newTag={newColorTag}
-                setNewTag={setNewColorTag}
-                onAddTag={handleAddColorTag}
-                editingTagId={editingColorTagId}
-                editingTag={editingColorTag}
-                setEditingTagId={setEditingColorTagId}
-                setEditingTag={setEditingColorTag}
-                onUpdateTag={handleUpdateColorTag}
-                onDeleteTag={handleDeleteColorTag}
-              />
-            )}
-          </div>
-        </ModalBody>
+          {activeTab === "text" ? (
+            <TextTagsSection
+              filteredTags={filteredTextTags}
+              newTextTag={newTextTag}
+              setNewTextTag={setNewTextTag}
+              onCreateTag={handleCreateTextTag}
+              editingTag={editingTextTag}
+              editingTagValue={editingTextTagValue}
+              setEditingTag={setEditingTextTag}
+              setEditingTagValue={setEditingTextTagValue}
+              onRenameTag={handleRenameTextTag}
+              onDeleteTag={handleDeleteTextTag}
+            />
+          ) : (
+            <ColorTagsSection
+              filteredTags={filteredColorTags}
+              showAddForm={showAddColorForm}
+              setShowAddForm={setShowAddColorForm}
+              newTag={newColorTag}
+              setNewTag={setNewColorTag}
+              onAddTag={handleAddColorTag}
+              editingTagId={editingColorTagId}
+              editingTag={editingColorTag}
+              setEditingTagId={setEditingColorTagId}
+              setEditingTag={setEditingColorTag}
+              onUpdateTag={handleUpdateColorTag}
+              onDeleteTag={handleDeleteColorTag}
+            />
+          )}
+        </div>
       </div>
-    </Modal>
+    </div>
   );
+
+  if (!isOpen) return null;
+
+  return content;
 };
 
 // ─── Text Tags Section ──────────────────────────────────────────
