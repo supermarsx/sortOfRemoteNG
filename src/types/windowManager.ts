@@ -1,4 +1,4 @@
-import { Connection, ConnectionSession } from "./connection/connection";
+import { Connection, ConnectionSession, TabGroup } from "./connection/connection";
 
 /** Identifies which window a session lives in. */
 export type WindowId = "main" | `detached-${string}`;
@@ -42,5 +42,6 @@ export interface WindowSessionSync {
   windowId: WindowId;
   sessions: ConnectionSession[];
   connections: Connection[];
+  tabGroups: TabGroup[];
   activeSessionId?: string;
 }

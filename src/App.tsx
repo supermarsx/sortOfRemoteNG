@@ -186,6 +186,7 @@ const AppContent: React.FC = () => {
   const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } = useWindowManager({
     sessions: state.sessions,
     connections: state.connections,
+    tabGroups: state.tabGroups,
     dispatch,
     setActiveSessionId,
     handleSessionClose,

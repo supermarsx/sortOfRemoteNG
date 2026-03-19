@@ -50,7 +50,8 @@ export type ConnectionAction =
   | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean }
   | { type: "ADD_TAB_GROUP"; payload: TabGroup }
   | { type: "UPDATE_TAB_GROUP"; payload: TabGroup }
-  | { type: "REMOVE_TAB_GROUP"; payload: string };
+  | { type: "REMOVE_TAB_GROUP"; payload: string }
+  | { type: "SET_TAB_GROUPS"; payload: TabGroup[] };
 
 export interface ConnectionContextType {
   state: ConnectionState;

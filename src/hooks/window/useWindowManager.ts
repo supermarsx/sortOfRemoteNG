@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { ConnectionSession, Connection } from "../../types/connection/connection";
+import { ConnectionSession, Connection, TabGroup } from "../../types/connection/connection";
 import { ConnectionAction } from "../../contexts/ConnectionContextTypes";
 import {
   WindowId,
@@ -21,6 +21,7 @@ import {
 interface UseWindowManagerParams {
   sessions: ConnectionSession[];
   connections: Connection[];
+  tabGroups: TabGroup[];
   dispatch: React.Dispatch<ConnectionAction>;
   setActiveSessionId: (id: string | undefined) => void;
   handleSessionClose: (sessionId: string) => Promise<void>;
@@ -31,6 +32,7 @@ interface UseWindowManagerParams {
 export function useWindowManager({
   sessions,
   connections,
+  tabGroups,
   dispatch,
   setActiveSessionId,
   handleSessionClose,
@@ -40,6 +42,8 @@ export function useWindowManager({
   sessionsRef.current = sessions;
   const connectionsRef = useRef(connections);
   connectionsRef.current = connections;
+  const tabGroupsRef = useRef(tabGroups);
+  tabGroupsRef.current = tabGroups;
   const detachRef = useRef(handleSessionDetach);
   detachRef.current = handleSessionDetach;
 
@@ -98,10 +102,15 @@ export function useWindowManager({
         neededConnIds.has(c.id),
       );
 
+      // Include tab groups that are relevant to this window's sessions
+      const windowGroupIds = new Set(windowSessions.map((s) => s.tabGroupId).filter(Boolean));
+      const windowTabGroups = tabGroupsRef.current.filter((g) => windowGroupIds.has(g.id));
+
       const payload: WindowSessionSync = {
         windowId,
         sessions: windowSessions,
         connections: windowConns,
+        tabGroups: windowTabGroups,
         activeSessionId: entry.activeSessionId,
       };
 

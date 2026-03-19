@@ -182,6 +182,8 @@ const connectionReducer = (
           s.tabGroupId === action.payload ? { ...s, tabGroupId: undefined } : s,
         ),
       };
+    case "SET_TAB_GROUPS":
+      return { ...state, tabGroups: action.payload };
     default:
       return state;
   }
