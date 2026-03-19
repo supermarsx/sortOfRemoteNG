@@ -204,9 +204,9 @@ const DetachedSessionContent: React.FC<{
           const newSession = reviveSession(draggedPayload.session);
           const newConn = draggedPayload.connection ? reviveConnection(draggedPayload.connection) : null;
 
-          // Add the session to our local state
-          if (newConn) dispatch({ type: "SET_CONNECTIONS", payload: [...state.connections.filter(c => c.id !== newConn.id), newConn] });
-          if (!state.sessions.some(s => s.id === newSession.id)) {
+          // Add the session to our local state (use refs for current values)
+          if (newConn) dispatch({ type: "SET_CONNECTIONS", payload: [...connectionsRef.current.filter(c => c.id !== newConn.id), newConn] });
+          if (!sessionsRef.current.some(s => s.id === newSession.id)) {
             dispatch({ type: "ADD_SESSION", payload: newSession });
           }
           setActiveTabId(newSession.id);
@@ -229,7 +229,7 @@ const DetachedSessionContent: React.FC<{
         // Cancel the reattach fallback (the per-tab onDragEnd handles it)
         closingRef.current = true;
         // If we only had one tab, close the window
-        if (state.sessions.length <= 1) {
+        if (sessionsRef.current.length <= 1) {
           skipNextConfirmRef.current = true;
           const s = activeSessionRef.current;
           if (s) await emit("detached-session-closed", { sessionId: s.id });
@@ -350,6 +350,12 @@ const DetachedSessionContent: React.FC<{
   useEffect(() => {
     if (!activeTabId && activeSession) setActiveTabId(activeSession.id);
   }, [activeTabId, activeSession]);
+
+  // Refs for state accessed inside stable-deps effects
+  const sessionsRef = useRef(state.sessions);
+  sessionsRef.current = state.sessions;
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
 
   // ── Ref-based access for callbacks to avoid dependency cascades ──
   // activeSession changes on every state.sessions update (new object ref).
