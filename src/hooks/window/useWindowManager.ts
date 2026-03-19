@@ -436,6 +436,52 @@ export function useWindowManager({
     };
   }, []);
 
+  // ── Listen for "connect in window" events ────────────────────────────
+  // These are emitted by the connection tree context menu when the user
+  // chooses "Connect in New Window" or "Connect in Window > X".
+
+  useEffect(() => {
+    const cleanups: Array<() => void> = [];
+    let mounted = true;
+
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      // Connect in new window: find the session by connectionId, then detach
+      listen<{ connectionId: string }>("connect-in-new-window", (event) => {
+        const { connectionId } = event.payload;
+        // Wait for session to appear in state
+        const check = () => {
+          const session = sessionsRef.current.find(s => s.connectionId === connectionId && !s.layout?.isDetached);
+          if (session && detachRef.current) {
+            detachRef.current(session.id);
+          } else {
+            // Retry briefly
+            setTimeout(check, 200);
+          }
+        };
+        setTimeout(check, 100);
+      }).then(fn => { if (mounted) cleanups.push(fn); else fn(); });
+
+      // Connect in specific window: find session, then move it
+      listen<{ connectionId: string; targetWindow: string }>("connect-in-window", (event) => {
+        const { connectionId, targetWindow } = event.payload;
+        const check = () => {
+          const session = sessionsRef.current.find(s => s.connectionId === connectionId && !s.layout?.isDetached);
+          if (session) {
+            handleMoveSession(session.id, targetWindow as WindowId);
+          } else {
+            setTimeout(check, 200);
+          }
+        };
+        setTimeout(check, 100);
+      }).then(fn => { if (mounted) cleanups.push(fn); else fn(); });
+    }).catch(() => {});
+
+    return () => {
+      mounted = false;
+      cleanups.forEach(fn => fn());
+    };
+  }, [handleMoveSession]);
+
   // ── Periodic orphan detection ──────────────────────────────────────
 
   useEffect(() => {

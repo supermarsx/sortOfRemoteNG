@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
@@ -7,7 +7,7 @@ import type { Connection } from "../../../types/connection/connection";
 import {
   Activity, ChevronRight, ClipboardList, Cog, Copy, Cpu, Edit,
   ExternalLink, FileDown, FileText, FolderOpen, HardDrive, Monitor, Play,
-  PlayCircle, Power, SlidersHorizontal, Star, Terminal, Trash2, UserX,
+  PlayCircle, Power, Send, SlidersHorizontal, Star, Terminal, Trash2, UserX,
 } from "lucide-react";
 function TreeItemMenu({
   connection, activeSession, showMenu, menuPosition, triggerRef, onClose,
@@ -43,6 +43,25 @@ function TreeItemMenu({
   const { settings } = useSettings();
   const act = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); onClose(); };
   const enableWinrm = connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
+  const [connectInWindowOpen, setConnectInWindowOpen] = useState(false);
+  const [detachedWindows, setDetachedWindows] = useState<Array<{ label: string; title: string }>>([]);
+
+  // Fetch detached windows when menu opens
+  useEffect(() => {
+    if (!showMenu) return;
+    import("@tauri-apps/api/window").then(({ getAllWindows }) =>
+      getAllWindows().then(async (wins) => {
+        const detached = wins.filter(w => w.label !== "main" && w.label.startsWith("detached-"));
+        const entries = await Promise.all(
+          detached.map(async (w) => {
+            const title = await w.title().catch(() => w.label);
+            return { label: w.label, title: title || w.label };
+          })
+        );
+        setDetachedWindows(entries);
+      })
+    ).catch(() => setDetachedWindows([]));
+  }, [showMenu]);
 
   return (
     <MenuSurface
@@ -77,6 +96,56 @@ function TreeItemMenu({
           {activeSession ? <Power size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}
           {activeSession ? "Disconnect" : "Connect"}
         </button>
+      )}
+      {!connection.isGroup && !activeSession && (
+        <>
+          <button onClick={act(() => {
+            // Connect then immediately detach to a new window
+            onConnect(connection);
+            // Defer detach to let the session be created first
+            setTimeout(() => {
+              import("@tauri-apps/api/event").then(({ emit }) => {
+                emit("connect-in-new-window", { connectionId: connection.id });
+              });
+            }, 500);
+          })} className="sor-menu-item">
+            <ExternalLink size={14} className="mr-2" />Connect in New Window
+          </button>
+          {detachedWindows.length > 0 && (
+            <div
+              className="sor-menu-submenu"
+              onMouseEnter={() => setConnectInWindowOpen(true)}
+              onMouseLeave={() => setConnectInWindowOpen(false)}
+            >
+              <button className="sor-menu-submenu-trigger">
+                <Send size={14} className="mr-2" />
+                Connect in Window
+                <ChevronRight size={12} className="ml-auto opacity-50" />
+              </button>
+              {connectInWindowOpen && (
+                <div className="sor-menu-submenu-panel">
+                  {detachedWindows.map(w => (
+                    <button
+                      key={w.label}
+                      onClick={act(() => {
+                        onConnect(connection);
+                        setTimeout(() => {
+                          import("@tauri-apps/api/event").then(({ emit }) => {
+                            emit("connect-in-window", { connectionId: connection.id, targetWindow: w.label });
+                          });
+                        }, 500);
+                      })}
+                      className="sor-menu-item"
+                    >
+                      <Monitor size={14} className="mr-2" />
+                      {w.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
       {!connection.isGroup && (
         <>
