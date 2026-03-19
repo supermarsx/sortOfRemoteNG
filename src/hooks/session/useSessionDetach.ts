@@ -6,6 +6,7 @@ import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 import { Connection, ConnectionSession } from '../../types/connection/connection';
 import { isWinmgmtProtocol } from '../../components/windows/WindowsToolPanel';
 import { generateId } from '../../utils/core/id';
+import type { WindowId } from '../../types/windowManager';
 
 export function useSessionDetach(
   sessions: ConnectionSession[],
@@ -14,6 +15,7 @@ export function useSessionDetach(
   activeSessionId: string | undefined,
   dispatch: React.Dispatch<any>,
   setActiveSessionId: (id: string | undefined) => void,
+  registerWindow?: (windowId: WindowId, sessionIds: string[]) => void,
 ) {
   const handleSessionDetach = useCallback(
     async (sessionId: string) => {
@@ -119,6 +121,9 @@ export function useSessionDetach(
             } catch {
               // Fallback to defaults
             }
+            // Pre-register window in the centralized WindowManager
+            registerWindow?.(windowLabel as WindowId, [session.id]);
+
             const newWindow = new WebviewWindow(windowLabel, {
               url,
               title: windowTitle,

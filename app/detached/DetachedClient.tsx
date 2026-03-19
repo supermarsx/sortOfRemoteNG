@@ -18,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { AlertCircle, CornerUpLeft, Eye, Globe, Loader2, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
+import type { WindowSessionSync, WindowCommand } from "../../src/types/windowManager";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
 const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
@@ -114,43 +115,61 @@ const DetachedSessionContent: React.FC<{
     setShowCloseConfirm(false);
   }, []);
 
+  // ── Bootstrap: request sessions from main window via WindowManager ──
+  // Emits WINDOW_READY → main pushes wm:sync with our assigned sessions.
+  // Falls back to localStorage after 2 seconds for backward compatibility.
   useEffect(() => {
-    if (hasLoadedRef.current) return;
-    if (!sessionId) {
-      setError("Missing detached session id.");
+    if (hasLoadedRef.current || !sessionId) {
+      if (!sessionId) setError("Missing detached session id.");
       return;
     }
 
-    hasLoadedRef.current = true;
-    try {
-      const raw = localStorage.getItem(`detached-session-${sessionId}`);
-      if (!raw) {
-        setError("Detached session data not found.");
-        return;
+    const myWindowId = getCurrentWindow().label;
+    let mounted = true;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Listen for wm:sync from main window
+    const unlistenPromise = listen<WindowSessionSync>("wm:sync", (event) => {
+      if (!mounted || event.payload.windowId !== myWindowId) return;
+      hasLoadedRef.current = true;
+      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+
+      const sessions = event.payload.sessions.map(reviveSession);
+      const conns = event.payload.connections.map(reviveConnection);
+
+      dispatch({ type: "SET_CONNECTIONS", payload: conns });
+      dispatch({ type: "SET_SESSIONS", payload: sessions });
+      if (event.payload.activeSessionId) setActiveTabId(event.payload.activeSessionId);
+    });
+
+    // Request data from main
+    const cmd: WindowCommand = { type: "WINDOW_READY", windowId: myWindowId as any };
+    emit("wm:command", cmd).catch(() => {});
+
+    // Fallback: if main doesn't respond in 2s, try localStorage
+    fallbackTimer = setTimeout(() => {
+      if (!mounted || hasLoadedRef.current) return;
+      try {
+        const raw = localStorage.getItem(`detached-session-${sessionId}`);
+        if (!raw) { setError("Detached session data not found."); return; }
+        const payload = JSON.parse(raw) as { session: ConnectionSession; connection?: Connection | null };
+        if (!payload.session) { setError("Detached session payload is invalid."); return; }
+        hasLoadedRef.current = true;
+        const s = reviveSession(payload.session);
+        const c = payload.connection ? reviveConnection(payload.connection) : null;
+        if (c) dispatch({ type: "SET_CONNECTIONS", payload: [c] });
+        dispatch({ type: "ADD_SESSION", payload: s });
+      } catch (err) {
+        console.error("Failed to load detached session:", err);
+        setError("Unable to load detached session data.");
       }
+    }, 2000);
 
-      const payload = JSON.parse(raw) as {
-        session: ConnectionSession;
-        connection?: Connection | null;
-      };
-
-      if (!payload.session) {
-        setError("Detached session payload is invalid.");
-        return;
-      }
-
-      const revivedSession = reviveSession(payload.session);
-      const revivedConnection = payload.connection ? reviveConnection(payload.connection) : null;
-
-      if (revivedConnection) {
-        dispatch({ type: "SET_CONNECTIONS", payload: [revivedConnection] });
-      }
-
-      dispatch({ type: "ADD_SESSION", payload: revivedSession });
-    } catch (err) {
-      console.error("Failed to load detached session:", err);
-      setError("Unable to load detached session data.");
-    }
+    return () => {
+      mounted = false;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      unlistenPromise.then(fn => fn()).catch(() => {});
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -171,81 +190,27 @@ const DetachedSessionContent: React.FC<{
       .catch(() => undefined);
   }, [isTauri]);
 
-  // Listen for tabs dragged from other detached windows onto this one.
-  // When claimed, we absorb the incoming session into our tab bar.
-  // The source window closes after we claim it.
+  // wm:sync listener — main window pushes updated session data after
+  // any tab operation (move, close, reorder). Keeps this window in sync.
   useEffect(() => {
-    if (!isTauri || !sessionId) return;
-    const cleanups: Array<() => void> = [];
-
-    // Another window dropped its tab on us — absorb it
-    const p1 = listen<{
-      sessionId: string;
-      sourceWindow: string;
-      screenX: number;
-      screenY: number;
-    }>("detached-tab-dropped-outside", async (event) => {
-      const { sessionId: draggedSessionId, sourceWindow, screenX, screenY } = event.payload;
-      const myWin = getCurrentWindow();
-      if (sourceWindow === myWin.label) return;
-      try {
-        const [pos, size] = await Promise.all([
-          myWin.outerPosition(),
-          myWin.outerSize(),
-        ]);
-        if (
-          screenX >= pos.x && screenX <= pos.x + size.width &&
-          screenY >= pos.y && screenY <= pos.y + size.height
-        ) {
-          // Read the dragged session from localStorage
-          const draggedRaw = localStorage.getItem(`detached-session-${draggedSessionId}`);
-          if (!draggedRaw) return;
-          const draggedPayload = JSON.parse(draggedRaw);
-          const newSession = reviveSession(draggedPayload.session);
-          const newConn = draggedPayload.connection ? reviveConnection(draggedPayload.connection) : null;
-
-          // Add the session to our local state (use refs for current values)
-          if (newConn) dispatch({ type: "SET_CONNECTIONS", payload: [...connectionsRef.current.filter(c => c.id !== newConn.id), newConn] });
-          if (!sessionsRef.current.some(s => s.id === newSession.id)) {
-            dispatch({ type: "ADD_SESSION", payload: newSession });
-          }
-          setActiveTabId(newSession.id);
-
-          // Tell the source window we claimed it — it should close
-          await emit("detached-tab-claimed", { sourceWindow });
-          // Clean up the localStorage entry
-          localStorage.removeItem(`detached-session-${draggedSessionId}`);
-        }
-      } catch { /* ignore */ }
+    if (!isTauri) return;
+    const myWindowId = getCurrentWindow().label;
+    const unlistenPromise = listen<WindowSessionSync>("wm:sync", (event) => {
+      if (event.payload.windowId !== myWindowId) return;
+      const sessions = event.payload.sessions.map(reviveSession);
+      const conns = event.payload.connections.map(reviveConnection);
+      dispatch({ type: "SET_CONNECTIONS", payload: conns });
+      dispatch({ type: "SET_SESSIONS", payload: sessions });
+      if (event.payload.activeSessionId) setActiveTabId(event.payload.activeSessionId);
+      // If main pushed zero sessions, window should close
+      if (sessions.length === 0) {
+        skipNextConfirmRef.current = true;
+        getCurrentWindow().close().catch(() => {});
+      }
     });
-    p1.then(fn => cleanups.push(fn)).catch(() => {});
-
-    // Our drag was claimed by another window — remove the tab or close
-    const p2 = listen<{ sourceWindow: string }>(
-      "detached-tab-claimed",
-      async (event) => {
-        const myWin = getCurrentWindow();
-        if (event.payload.sourceWindow !== myWin.label) return;
-        // Cancel the reattach fallback (the per-tab onDragEnd handles it)
-        closingRef.current = true;
-        // If we only had one tab, close the window
-        if (sessionsRef.current.length <= 1) {
-          skipNextConfirmRef.current = true;
-          const s = activeSessionRef.current;
-          if (s) await emit("detached-session-closed", { sessionId: s.id });
-          if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
-          await getCurrentWindow().close();
-        } else {
-          // Multi-tab: the per-tab onDragEnd already removed it
-          closingRef.current = false;
-        }
-      },
-    );
-    p2.then(fn => cleanups.push(fn)).catch(() => {});
-
-    return () => { cleanups.forEach(fn => fn()); };
+    return () => { unlistenPromise.then(fn => fn()).catch(() => {}); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTauri, sessionId]);
+  }, [isTauri]);
 
   useEffect(() => {
     const manager = SettingsManager.getInstance();
@@ -570,11 +535,18 @@ const DetachedSessionContent: React.FC<{
           const target = (e.target as HTMLElement).closest<HTMLElement>("[data-session-id]");
           const targetId = target?.dataset.sessionId;
           if (!targetId || targetId === draggedId) return;
-          // Reorder: move dragged session to target position
+          // Reorder locally, then notify main
           const fromIdx = state.sessions.findIndex(s => s.id === draggedId);
           const toIdx = state.sessions.findIndex(s => s.id === targetId);
           if (fromIdx !== -1 && toIdx !== -1) {
             dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: fromIdx, toIndex: toIdx } });
+            // Notify main of new order
+            const myWindowId = getCurrentWindow().label;
+            const reordered = [...state.sessions.map(s => s.id)];
+            const [moved] = reordered.splice(fromIdx, 1);
+            reordered.splice(toIdx, 0, moved);
+            const cmd: WindowCommand = { type: "REORDER_SESSIONS", windowId: myWindowId as any, sessionIds: reordered };
+            emit("wm:command", cmd).catch(() => {});
           }
         }}
       >
@@ -598,37 +570,22 @@ const DetachedSessionContent: React.FC<{
               onDragEnd={async (e) => {
                 const { clientX, clientY } = e;
                 if (clientX <= 0 || clientY <= 0 || clientX >= window.innerWidth || clientY >= window.innerHeight) {
-                  // Dragged outside window — emit for other windows to claim,
-                  // or fall back to reattaching just this tab to main
-                  const dragClaimedRef = { claimed: false };
+                  // Dragged outside — let main's WindowManager decide the target
                   try {
                     const myWin = getCurrentWindow();
                     const myPos = await myWin.outerPosition();
-                    // Listen briefly for a claim before falling back
-                    const claimUnsub = await listen<{ sourceWindow: string }>("detached-tab-claimed", (ev) => {
-                      if (ev.payload.sourceWindow === myWin.label) dragClaimedRef.claimed = true;
-                    });
-                    await emit("detached-tab-dropped-outside", {
+                    const cmd: WindowCommand = {
+                      type: "DROP_ON_WINDOW",
                       sessionId: sess.id,
-                      sourceWindow: myWin.label,
+                      sourceWindow: myWin.label as any,
                       screenX: myPos.x + clientX,
                       screenY: myPos.y + clientY,
-                    });
-                    setTimeout(() => {
-                      claimUnsub();
-                      if (!dragClaimedRef.claimed && !closingRef.current) {
-                        // Not claimed — reattach just this one tab to main
-                        if (state.sessions.length <= 1) {
-                          handleReattach();
-                        } else {
-                          // Multi-tab: remove this tab and reattach it individually
-                          dispatch({ type: "REMOVE_SESSION", payload: sess.id });
-                          emit("detached-session-reattach", { sessionId: sess.id, terminalBuffer: "" }).catch(() => {});
-                        }
-                      }
-                    }, 400);
+                    };
+                    await emit("wm:command", cmd);
                   } catch {
-                    handleReattach();
+                    // Fallback: reattach to main
+                    const cmd: WindowCommand = { type: "REATTACH_SESSION", sessionId: sess.id };
+                    emit("wm:command", cmd).catch(() => {});
                   }
                 }
               }}
@@ -642,8 +599,8 @@ const DetachedSessionContent: React.FC<{
                   {sess.status === "error" && <div className="w-2 h-2 rounded-full bg-error mr-1 flex-shrink-0" />}
                 </>
               )}
-              <button onClick={(e) => { e.stopPropagation(); handleReattach(); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-surface)] rounded transition-colors opacity-0 group-hover:opacity-100" data-tooltip="Reattach"><CornerUpLeft size={11} /></button>
-              <button onClick={async (e) => { e.stopPropagation(); if (state.sessions.length <= 1) { if (isTauri) await getCurrentWindow().close(); } else { dispatch({ type: "REMOVE_SESSION", payload: sess.id }); } }} className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Close"><X size={11} /></button>
+              <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "REATTACH_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-surface)] rounded transition-colors opacity-0 group-hover:opacity-100" data-tooltip="Reattach"><CornerUpLeft size={11} /></button>
+              <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "CLOSE_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Close"><X size={11} /></button>
             </div>
           );
         })}

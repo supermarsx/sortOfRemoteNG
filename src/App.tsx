@@ -475,7 +475,7 @@ const AppContent: React.FC = () => {
 
   const { handleSessionDetach, handleReattachRdpSession } = useSessionDetach(
     state.sessions, state.connections, visibleSessions,
-    activeSessionId, dispatch, setActiveSessionId,
+    activeSessionId, dispatch, setActiveSessionId, wmRegisterWindow,
   );
 
   /** Backend RDP session IDs that have an active frontend viewer tab. */
