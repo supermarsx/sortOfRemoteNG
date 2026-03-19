@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  X,
   RefreshCw,
   Trash2,
   Activity,
@@ -14,10 +13,7 @@ import {
   User,
   ScrollText,
   BarChart3,
-  XCircle,
 } from "lucide-react";
-import { Modal } from "../ui/overlays/Modal";
-import { DialogHeader } from '../ui/overlays/DialogHeader';
 import { ErrorBanner } from '../ui/display';
 import {
   useInternalProxyManager,
@@ -39,72 +35,6 @@ interface InternalProxyManagerProps {
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
-
-const ManagerHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
-  mgr,
-  onClose,
-}) => (
-  <DialogHeader
-    icon={ArrowUpDown}
-    iconColor="text-info"
-    iconBg="bg-info/20"
-    title="Internal Proxy Manager"
-    subtitle={`${mgr.sessions.length} active session${mgr.sessions.length !== 1 ? 's' : ''} \u00b7 ${mgr.totalRequests} request${mgr.totalRequests !== 1 ? 's' : ''} proxied`}
-    onClose={onClose}
-    actions={
-      <>
-        <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
-          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-info w-3.5 h-3.5" />
-          <span>Auto-refresh</span>
-        </label>
-        <button
-          onClick={mgr.handleRefresh}
-          className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? 'animate-spin' : ''}`}
-          title="Refresh"
-        >
-          <RefreshCw size={14} />
-        </button>
-      </>
-    }
-  />
-);
-
-
-
-const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  const tabs: { id: ManagerTab; label: string; icon: React.ElementType }[] = [
-    { id: "sessions", label: "Sessions", icon: Activity },
-    { id: "logs", label: "Request Log", icon: ScrollText },
-    { id: "stats", label: "Statistics", icon: BarChart3 },
-  ];
-
-  return (
-    <div className="px-5 pt-3 flex space-x-1 border-b border-[var(--color-border)]">
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        return (
-          <button
-            key={tab.id}
-            onClick={() => mgr.setActiveTab(tab.id)}
-            className={`sor-tab-trigger ${
-              mgr.activeTab === tab.id
-                ? "sor-tab-trigger-active border-info"
-                : ""
-            }`}
-          >
-            <Icon size={14} />
-            <span>{tab.label}</span>
-            {tab.id === "logs" && mgr.requestLog.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-[var(--color-border)] rounded text-xs text-[var(--color-textSecondary)]">
-                {mgr.requestLog.length}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
 
 const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3">
@@ -282,7 +212,7 @@ const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     {/* Summary cards */}
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div className="sor-surface-card p-4 text-center">
         <Activity size={20} className="mx-auto mb-2 text-info" />
         <p className="text-2xl font-bold text-[var(--color-text)]">
@@ -413,6 +343,16 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 );
 
 /* ------------------------------------------------------------------ */
+/*  Tab bar                                                            */
+/* ------------------------------------------------------------------ */
+
+const tabs: { id: ManagerTab; label: string; icon: React.ElementType; countKey?: 'sessions' | 'logs' }[] = [
+  { id: "sessions", label: "Sessions", icon: Activity, countKey: "sessions" },
+  { id: "logs", label: "Request Log", icon: ScrollText, countKey: "logs" },
+  { id: "stats", label: "Statistics", icon: BarChart3 },
+];
+
+/* ------------------------------------------------------------------ */
 /*  Root component                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -425,24 +365,72 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      backdropClassName="bg-black/60 backdrop-blur-sm p-4"
-      panelClassName="max-w-4xl h-[90vh] rounded-xl border border-[var(--color-border)] overflow-hidden"
-      contentClassName="bg-[var(--color-background)]"
-    >
-      <div className="flex flex-1 min-h-0 flex-col">
-        <ManagerHeader mgr={mgr} onClose={onClose} />
-        <ErrorBanner error={mgr.error} onClear={() => mgr.setError("")} />
-        <TabBar mgr={mgr} />
+    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-3xl mx-auto w-full p-6 space-y-6">
+          {/* Heading */}
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+                <ArrowUpDown className="w-5 h-5 text-info" />
+                Internal Proxy Manager
+              </h3>
+              <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+                {mgr.sessions.length} active session{mgr.sessions.length !== 1 ? 's' : ''} &middot; {mgr.totalRequests} request{mgr.totalRequests !== 1 ? 's' : ''} proxied
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
+                <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-info w-3.5 h-3.5" />
+                <span>Auto-refresh</span>
+              </label>
+              <button
+                onClick={mgr.handleRefresh}
+                className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? 'animate-spin' : ''}`}
+                title="Refresh"
+              >
+                <RefreshCw size={14} />
+              </button>
+            </div>
+          </div>
 
-        <div className="flex-1 overflow-auto p-5">
+          <ErrorBanner error={mgr.error} onClear={() => mgr.setError("")} />
+
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-[var(--color-border)]">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = mgr.activeTab === tab.id;
+              const count = tab.countKey === 'sessions' ? mgr.sessions.length
+                : tab.countKey === 'logs' ? mgr.requestLog.length
+                : undefined;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => mgr.setActiveTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors relative ${
+                    active ? "text-[var(--color-text)]" : "text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"
+                  }`}
+                >
+                  <Icon size={13} />
+                  {tab.label}
+                  {count !== undefined && count > 0 && (
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none ${
+                      active ? "bg-info/20 text-info" : "bg-[var(--color-border)] text-[var(--color-textMuted)]"
+                    }`}>{count}</span>
+                  )}
+                  {active && <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-info rounded-full" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tab content */}
           {mgr.activeTab === "sessions" && <SessionsTab mgr={mgr} />}
           {mgr.activeTab === "logs" && <LogsTab mgr={mgr} />}
           {mgr.activeTab === "stats" && <StatsTab mgr={mgr} />}
         </div>
       </div>
-    </Modal>
+    </div>
   );
 };

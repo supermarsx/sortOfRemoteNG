@@ -97,27 +97,16 @@ describe("InternalProxyManager", () => {
     });
   });
 
-  it("closes on backdrop click", async () => {
-    const onClose = vi.fn();
+  it("renders as flat tab content without modal wrapper", async () => {
     const { container } = render(
-      <InternalProxyManager isOpen onClose={onClose} />,
+      <InternalProxyManager isOpen onClose={() => {}} />,
     );
 
     await screen.findByText("Internal Proxy Manager");
-    const backdrop = container.querySelector(".sor-modal-backdrop");
-    expect(backdrop).toBeTruthy();
-    if (backdrop) fireEvent.click(backdrop);
-
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  it("closes on Escape key", async () => {
-    const onClose = vi.fn();
-    render(<InternalProxyManager isOpen onClose={onClose} />);
-
-    await screen.findByText("Internal Proxy Manager");
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    expect(onClose).toHaveBeenCalled();
+    // No modal backdrop — component renders directly as tab content
+    expect(container.querySelector(".sor-modal-backdrop")).toBeNull();
+    // Root element uses tab-friendly layout
+    const root = container.firstElementChild;
+    expect(root?.className).toContain("h-full");
   });
 });
