@@ -17,10 +17,14 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
-  AlertCircle, ArrowLeft, ArrowRight, ChevronRight, CornerUpLeft, Eye, ExternalLink,
-  Globe, Loader2, Minus, Monitor, Pencil, Phone, Pin, PinOff, Send, Server,
-  Square, Terminal, X, XCircle,
+  AlertCircle, ArrowLeft, ArrowLeftFromLine, ArrowRight, ArrowRightFromLine,
+  ChevronRight, ClipboardCopy, Copy, CornerUpLeft, Eye, ExternalLink,
+  FolderMinus, FolderPlus, Globe, Info, Layers, Loader2, Minus, Monitor,
+  Palette, Pencil, Phone, Pin, PinOff, RefreshCw, Send, Server, Square,
+  Terminal, X, XCircle,
 } from "lucide-react";
+import { useSettings } from "../../src/contexts/SettingsContext";
+import { generateId } from "../../src/utils/core/id";
 import MenuSurface from "../../src/components/ui/overlays/MenuSurface";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { WindowSessionSync, WindowCommand } from "../../src/types/windowManager";
@@ -73,6 +77,12 @@ const DetachedSessionContent: React.FC<{
   const [sendToSubmenuOpen, setSendToSubmenuOpen] = useState(false);
   const [otherWindows, setOtherWindows] = useState<Array<{ label: string; title: string }>>([]);
   const [tabCloseConfirm, setTabCloseConfirm] = useState<{ sessionId: string; name: string } | null>(null);
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
+
+  const { settings: appSettings } = useSettings();
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const isTauri =
@@ -374,6 +384,38 @@ const DetachedSessionContent: React.FC<{
     }
   }, [handleTabClose]);
 
+  /** Start inline rename for a tab. */
+  const handleStartRename = useCallback((sid: string) => {
+    const sess = sessionsRef.current.find(s => s.id === sid);
+    if (sess) { setRenamingTabId(sid); setRenameValue(sess.name); requestAnimationFrame(() => renameInputRef.current?.select()); }
+  }, []);
+
+  const handleCommitRename = useCallback(() => {
+    if (renamingTabId && renameValue.trim()) {
+      emit("wm:command", { type: "RENAME_SESSION", sessionId: renamingTabId, name: renameValue.trim() } as WindowCommand).catch(() => {});
+      // Also update locally for immediate feedback
+      const sess = sessionsRef.current.find(s => s.id === renamingTabId);
+      if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, name: renameValue.trim() } });
+    }
+    setRenamingTabId(null);
+  }, [renamingTabId, renameValue, dispatch]);
+
+  const handleRenameKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleCommitRename();
+    if (e.key === "Escape") setRenamingTabId(null);
+  }, [handleCommitRename]);
+
+  /** Resolve tab tint color: connection → parent folder → global default. */
+  const resolveTabColor = useCallback((sess: ConnectionSession): string | undefined => {
+    const conn = connectionsRef.current.find(c => c.id === sess.connectionId);
+    if (conn?.tabColor) return conn.tabColor;
+    if (conn?.parentId) {
+      const parent = connectionsRef.current.find(c => c.id === conn.parentId);
+      if (parent?.tabColor) return parent.tabColor;
+    }
+    return appSettings?.defaultTabColor || undefined;
+  }, [appSettings?.defaultTabColor]);
+
   // Derive window title: "sortOfRemoteNG - ActiveTabName" (or custom override)
   const windowTitle = windowTitleOverride ?? (activeSession ? `sortOfRemoteNG - ${activeSession.name}` : "sortOfRemoteNG");
 
@@ -629,11 +671,13 @@ const DetachedSessionContent: React.FC<{
           }
         }}
       >
-        {/* Render tabs with group color indicators */}
+        {/* Render tabs with group color, tint, pin, rename */}
         {state.sessions.map((sess) => {
           const isActive = sess.id === activeSession?.id;
           const isReal = !sess.protocol.startsWith("tool:") && !sess.protocol.startsWith("winmgmt:");
           const group = sess.tabGroupId ? state.tabGroups.find(g => g.id === sess.tabGroupId) : null;
+          const tabTint = resolveTabColor(sess);
+          const isPinned = (sess as any).pinned ?? false;
           return (
             <div
               key={sess.id}
@@ -645,6 +689,10 @@ const DetachedSessionContent: React.FC<{
                   ? "bg-[var(--color-border)] text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
               }`}
+              style={tabTint ? {
+                backgroundColor: isActive ? `color-mix(in srgb, ${tabTint} 18%, var(--color-border))` : undefined,
+                backgroundImage: !isActive ? `linear-gradient(to right, color-mix(in srgb, ${tabTint} 10%, transparent), color-mix(in srgb, ${tabTint} 10%, transparent))` : undefined,
+              } : undefined}
               onClick={() => setActiveTabId(sess.id)}
               onAuxClick={(e) => handleMiddleClick(sess.id, e)}
               onContextMenu={(e) => {
@@ -692,8 +740,24 @@ const DetachedSessionContent: React.FC<{
                 }
               }}
             >
+              {/* Tint left-edge bar */}
+              {tabTint && <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: tabTint }} />}
               <SessionIcon protocol={sess.protocol} />
-              <span className="truncate text-sm mr-2 max-w-[30vw]">{sess.name || "Session"}</span>
+              {isPinned && <Pin size={10} className="mr-1 flex-shrink-0 text-[var(--color-textMuted)]" />}
+              {renamingTabId === sess.id ? (
+                <input
+                  ref={renameInputRef}
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={handleCommitRename}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm mr-2 max-w-32 bg-[var(--color-surface)] border border-[var(--color-borderActive)] rounded px-1 py-0 outline-none text-[var(--color-text)]"
+                />
+              ) : (
+                <span className="truncate text-sm mr-2 max-w-[30vw]">{sess.name || "Session"}</span>
+              )}
               {isReal && (
                 <>
                   {sess.status === "connected" && <div className="w-2 h-2 rounded-full bg-success mr-1 flex-shrink-0" />}
@@ -721,28 +785,69 @@ const DetachedSessionContent: React.FC<{
           const sid = tabContextMenu.sessionId;
           const sess = state.sessions.find(s => s.id === sid);
           const idx = state.sessions.findIndex(s => s.id === sid);
+          const conn = sess ? connectionsRef.current.find(c => c.id === sess.connectionId) : null;
           const isFirst = idx === 0;
           const isLast = idx === state.sessions.length - 1;
           const hasOthers = state.sessions.length > 1;
+          const hasTabsToRight = idx < state.sessions.length - 1;
+          const hasTabsToLeft = idx > 0;
           const isReal = sess && !sess.protocol.startsWith("tool:") && !sess.protocol.startsWith("winmgmt:");
+          const isPinned = (sess as any)?.pinned ?? false;
+          const isInGroup = !!sess?.tabGroupId;
           const act = (fn: () => void) => { fn(); setTabContextMenu(null); };
 
           return (
             <>
-              {/* Info */}
+              {/* ── Info header ── */}
               <div className="px-3 py-1.5 text-[10px] text-[var(--color-textMuted)] border-b border-[var(--color-border)] select-text">
                 <div className="font-medium text-[var(--color-textSecondary)]">{sess?.name}</div>
-                {isReal && sess?.hostname && <div className="font-mono">{sess.hostname}</div>}
+                {isReal && sess?.hostname && <div className="font-mono">{sess.hostname}{conn?.port ? `:${conn.port}` : ''}</div>}
                 {isReal && sess?.status && <div>Status: {sess.status}</div>}
                 {!isReal && <div>Tool</div>}
               </div>
 
-              {/* Reattach to main */}
+              {/* ── Tab group actions ── */}
+              <div
+                className="sor-menu-item relative"
+                onMouseEnter={() => setGroupSubmenuOpen(true)}
+                onMouseLeave={() => setGroupSubmenuOpen(false)}
+              >
+                <Layers size={14} className="mr-2" />
+                <span className="flex-1">Add to Group</span>
+                <ChevronRight size={12} className="ml-2" />
+                {groupSubmenuOpen && (
+                  <div className="sor-menu-surface absolute left-full top-0 min-w-[160px] z-[10000]" onClick={(e) => e.stopPropagation()}>
+                    {state.tabGroups.map(g => (
+                      <button key={g.id} onClick={() => act(() => {
+                        if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, tabGroupId: g.id } });
+                      })} className="sor-menu-item">
+                        <span className="w-3 h-3 rounded-full flex-shrink-0 mr-2" style={{ backgroundColor: g.color }} />
+                        {g.name}
+                      </button>
+                    ))}
+                    {state.tabGroups.length > 0 && <div className="sor-menu-divider" />}
+                    <button onClick={() => act(() => {
+                      const newGroup = { id: generateId(), name: `Group ${state.tabGroups.length + 1}`, color: '#3b82f6', collapsed: false };
+                      dispatch({ type: "ADD_TAB_GROUP", payload: newGroup });
+                      if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, tabGroupId: newGroup.id } });
+                    })} className="sor-menu-item">
+                      <FolderPlus size={14} className="mr-2" /> New Group...
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isInGroup && (
+                <button onClick={() => act(() => { if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, tabGroupId: undefined } }); })} className="sor-menu-item">
+                  <FolderMinus size={14} className="mr-2" /> Remove from Group
+                </button>
+              )}
+
+              <div className="sor-menu-divider" />
+
+              {/* ── Window actions ── */}
               <button onClick={() => act(() => { emit("wm:command", { type: "REATTACH_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item">
                 <CornerUpLeft size={14} className="mr-2" /> Reattach to Main
               </button>
-
-              {/* Send to another window */}
               {otherWindows.length > 0 && (
                 <div
                   className="sor-menu-item relative"
@@ -755,15 +860,10 @@ const DetachedSessionContent: React.FC<{
                   {sendToSubmenuOpen && (
                     <div className="sor-menu-surface absolute left-full top-0 min-w-[160px] z-[10000]" onClick={(e) => e.stopPropagation()}>
                       {otherWindows.map(w => (
-                        <button
-                          key={w.label}
-                          onClick={() => act(() => {
-                            emit("wm:command", { type: "MOVE_SESSION", sessionId: sid, targetWindow: w.label } as WindowCommand).catch(() => {});
-                          })}
-                          className="sor-menu-item"
-                        >
-                          <Monitor size={14} className="mr-2" />
-                          {w.title}
+                        <button key={w.label} onClick={() => act(() => {
+                          emit("wm:command", { type: "MOVE_SESSION", sessionId: sid, targetWindow: w.label } as WindowCommand).catch(() => {});
+                        })} className="sor-menu-item">
+                          <Monitor size={14} className="mr-2" />{w.title}
                         </button>
                       ))}
                     </div>
@@ -771,50 +871,87 @@ const DetachedSessionContent: React.FC<{
                 </div>
               )}
 
-              {/* Pin */}
+              <div className="sor-menu-divider" />
+
+              {/* ── Edit actions ── */}
+              <button onClick={() => act(() => handleStartRename(sid))} className="sor-menu-item">
+                <Pencil size={14} className="mr-2" /> Rename Tab
+              </button>
+              {isReal && (
+                <>
+                  <button onClick={() => act(() => {
+                    if (sess?.hostname) navigator.clipboard.writeText(sess.hostname).catch(() => {});
+                  })} className="sor-menu-item">
+                    <ClipboardCopy size={14} className="mr-2" /> Copy Hostname
+                  </button>
+                  <button onClick={() => act(() => {
+                    const info = [sess?.name, `${sess?.protocol ?? ''}://${sess?.hostname ?? ''}${conn?.port ? ':' + conn.port : ''}`, `Status: ${sess?.status ?? 'unknown'}`, conn?.username ? `User: ${conn.username}` : ''].filter(Boolean).join('\n');
+                    navigator.clipboard.writeText(info).catch(() => {});
+                  })} className="sor-menu-item">
+                    <Info size={14} className="mr-2" /> Copy Connection Info
+                  </button>
+                  <button onClick={() => act(() => {
+                    if (sess?.connectionId) emit("wm:command", { type: "REVEAL_IN_SIDEBAR", connectionId: sess.connectionId } as WindowCommand).catch(() => {});
+                  })} className="sor-menu-item">
+                    <Eye size={14} className="mr-2" /> Reveal in Sidebar
+                  </button>
+                </>
+              )}
+
+              <div className="sor-menu-divider" />
+
+              {/* ── Session actions (connections only) ── */}
+              {isReal && (
+                <>
+                  <button onClick={() => act(() => { emit("wm:command", { type: "RECONNECT_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item">
+                    <RefreshCw size={14} className="mr-2" /> Reconnect
+                  </button>
+                  <button onClick={() => act(() => { emit("wm:command", { type: "DUPLICATE_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item">
+                    <Copy size={14} className="mr-2" /> Duplicate Tab
+                  </button>
+                </>
+              )}
               <button onClick={() => act(() => {
-                if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, pinned: !(sess as any).pinned } as any });
+                if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, pinned: !isPinned } as any });
               })} className="sor-menu-item">
-                {(sess as any)?.pinned
-                  ? <><PinOff size={14} className="mr-2" /> Unpin Tab</>
-                  : <><Pin size={14} className="mr-2" /> Pin Tab</>}
+                {isPinned ? <><PinOff size={14} className="mr-2" /> Unpin Tab</> : <><Pin size={14} className="mr-2" /> Pin Tab</>}
               </button>
 
               <div className="sor-menu-divider" />
 
-              {/* Move */}
-              <button
-                onClick={() => act(() => {
-                  if (idx > 0) dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: idx, toIndex: idx - 1 } });
-                })}
-                className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
-                disabled={isFirst}
-              >
+              {/* ── Move ── */}
+              <button onClick={() => act(() => { if (idx > 0) dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: idx, toIndex: idx - 1 } }); })} className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`} disabled={isFirst}>
                 <ArrowLeft size={14} className="mr-2" /> Move Left
               </button>
-              <button
-                onClick={() => act(() => {
-                  if (idx < state.sessions.length - 1) dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: idx, toIndex: idx + 1 } });
-                })}
-                className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`}
-                disabled={isLast}
-              >
+              <button onClick={() => act(() => { if (!isLast) dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: idx, toIndex: idx + 1 } }); })} className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`} disabled={isLast}>
                 <ArrowRight size={14} className="mr-2" /> Move Right
               </button>
 
               <div className="sor-menu-divider" />
 
-              {/* Close actions */}
+              {/* ── Close actions ── */}
               <button onClick={() => act(() => handleTabClose(sid))} className="sor-menu-item sor-menu-item-danger">
                 <X size={14} className="mr-2" /> Close Tab
               </button>
               {hasOthers && (
                 <button onClick={() => act(() => {
-                  state.sessions.filter(s => s.id !== sid).forEach(s => {
-                    emit("wm:command", { type: "CLOSE_SESSION", sessionId: s.id } as WindowCommand).catch(() => {});
-                  });
+                  state.sessions.filter(s => s.id !== sid).forEach(s => { emit("wm:command", { type: "CLOSE_SESSION", sessionId: s.id } as WindowCommand).catch(() => {}); });
                 })} className="sor-menu-item sor-menu-item-danger">
                   <XCircle size={14} className="mr-2" /> Close Other Tabs
+                </button>
+              )}
+              {hasTabsToRight && (
+                <button onClick={() => act(() => {
+                  state.sessions.slice(idx + 1).forEach(s => { emit("wm:command", { type: "CLOSE_SESSION", sessionId: s.id } as WindowCommand).catch(() => {}); });
+                })} className="sor-menu-item sor-menu-item-danger">
+                  <ArrowRightFromLine size={14} className="mr-2" /> Close Tabs to Right
+                </button>
+              )}
+              {hasTabsToLeft && (
+                <button onClick={() => act(() => {
+                  state.sessions.slice(0, idx).forEach(s => { emit("wm:command", { type: "CLOSE_SESSION", sessionId: s.id } as WindowCommand).catch(() => {}); });
+                })} className="sor-menu-item sor-menu-item-danger">
+                  <ArrowLeftFromLine size={14} className="mr-2" /> Close Tabs to Left
                 </button>
               )}
             </>
