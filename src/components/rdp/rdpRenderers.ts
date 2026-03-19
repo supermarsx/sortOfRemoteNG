@@ -29,7 +29,7 @@
 // This helper normalizes to a DataView regardless of input type.
 
 function toDataView(data: ArrayBuffer | ArrayBufferView): DataView {
-  if (data instanceof ArrayBuffer) return toDataView(data);
+  if (data instanceof ArrayBuffer) return new DataView(data);
   return new DataView(data.buffer, data.byteOffset, data.byteLength);
 }
 
