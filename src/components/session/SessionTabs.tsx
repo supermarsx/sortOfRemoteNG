@@ -43,6 +43,7 @@ import {
   FolderMinus,
   Palette,
   Layers,
+  Send,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -181,6 +182,8 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   // Group submenu hover state
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
+  const [sendToSubmenuOpen, setSendToSubmenuOpen] = useState(false);
+  const [detachedWindows, setDetachedWindows] = useState<Array<{ label: string; title: string }>>([]);
 
   useEffect(() => {
     if (renamingSessionId && renameInputRef.current) {
@@ -228,7 +231,18 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setGroupContextMenu(null);
+    setSendToSubmenuOpen(false);
     setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
+    // Fetch list of detached windows for "Send to" submenu
+    import("@tauri-apps/api/window").then(({ getAllWindows }) =>
+      getAllWindows().then((wins) => {
+        setDetachedWindows(
+          wins
+            .filter(w => w.label !== "main" && w.label.startsWith("detached-"))
+            .map(w => ({ label: w.label, title: w.label.replace("detached-", "").slice(0, 8) }))
+        );
+      })
+    ).catch(() => setDetachedWindows([]));
   };
 
   const handleGroupContextMenu = (e: React.MouseEvent, groupId: string) => {
@@ -892,8 +906,37 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
               {/* ── Window / layout ─────────────────────────── */}
               <button onClick={() => act(() => onSessionDetach(sessionId))} className="sor-menu-item">
-                <ExternalLink size={14} className="mr-2" /> Detach to Window
+                <ExternalLink size={14} className="mr-2" /> Detach to New Window
               </button>
+              {detachedWindows.length > 0 && (
+                <div
+                  className="sor-menu-item relative"
+                  onMouseEnter={() => setSendToSubmenuOpen(true)}
+                  onMouseLeave={() => setSendToSubmenuOpen(false)}
+                >
+                  <Send size={14} className="mr-2" />
+                  <span className="flex-1">Send to Window</span>
+                  <ChevronRight size={12} className="ml-2" />
+                  {sendToSubmenuOpen && (
+                    <div className="sor-menu-surface absolute left-full top-0 min-w-[160px] z-[10000]" onClick={(e) => e.stopPropagation()}>
+                      {detachedWindows.map(w => (
+                        <button
+                          key={w.label}
+                          onClick={() => act(() => {
+                            import("@tauri-apps/api/event").then(({ emit }) => {
+                              emit("wm:command", { type: "MOVE_SESSION", sessionId, targetWindow: w.label });
+                            });
+                          })}
+                          className="sor-menu-item"
+                        >
+                          <Monitor size={14} className="mr-2" />
+                          {w.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <button onClick={() => act(() => onSessionSelect(sessionId))} className="sor-menu-item">
                 <Maximize2 size={14} className="mr-2" /> Focus Tab
               </button>
