@@ -352,7 +352,25 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
       clientY >= windowHeight;
 
     if (outsideWindow && draggedSessionId) {
-      onSessionDetach(sessionId);
+      // Let the WindowManager decide: drop onto existing detached window
+      // or create a new one. It checks screen coords against all windows.
+      import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+        const win = getCurrentWindow();
+        win.outerPosition().then((pos) => {
+          import("@tauri-apps/api/event").then(({ emit }) => {
+            emit("wm:command", {
+              type: "DROP_ON_WINDOW",
+              sessionId,
+              sourceWindow: "main",
+              screenX: pos.x + clientX,
+              screenY: pos.y + clientY,
+            });
+          });
+        });
+      }).catch(() => {
+        // Fallback: create new detached window
+        onSessionDetach(sessionId);
+      });
     }
 
     setDraggedSessionId(null);
