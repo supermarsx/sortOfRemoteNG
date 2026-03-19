@@ -42,8 +42,6 @@ import { useWindowManager } from "./hooks/window/useWindowManager";
 import { AppToolbar } from "./components/app/AppToolbar";
 import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
-import { TagManagerDialog } from "./components/connection/TagManagerDialog";
-import { TabGroupManager } from "./components/session/TabGroupManager";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 
@@ -68,30 +66,13 @@ const AppContent: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
-  const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
-  const [showActionLog, setShowActionLog] = useState(false);
   const [showImportExport, setShowImportExport] = useState(false);
   const [importExportInitialTab, setImportExportInitialTab] = useState<'export' | 'import'>('export');
-  const [showShortcutManager, setShowShortcutManager] = useState(false);
-  const [showProxyMenu, setShowProxyMenu] = useState(false);
-  const [showInternalProxyManager, setShowInternalProxyManager] = useState(false);
-  const [rdpPanelOpen, setRdpPanelOpen] = useState(false);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
   // isRdpPanelResizing is in useResizeHandlers hook
-  const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [showBulkSSH, setShowBulkSSH] = useState(false);
-  const [showServerStats, setShowServerStats] = useState(false);
-  const [showOpkssh, setShowOpkssh] = useState(false);
-  const [showMcpServer, setShowMcpServer] = useState(false);
-  const [showScriptManager, setShowScriptManager] = useState(false);
-  const [showMacroManager, setShowMacroManager] = useState(false);
-  const [showRecordingManager, setShowRecordingManager] = useState(false);
-  const [showWindowsBackup, setShowWindowsBackup] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const [showTagManager, setShowTagManager] = useState(false);
-  const [showTabGroupManager, setShowTabGroupManager] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -196,13 +177,9 @@ const AppContent: React.FC = () => {
   );
 
   // ─── Tool Tab Mode ──────────────────────────────────────────────
-  // Use a ref for the latest settings + sessions so the callbacks below
-  // never need to be re-created when those values change.  This avoids
-  // the circular-dependency / referential-identity issues that broke
-  // the previous useMemo/useCallback chain.
-  const toolModeRef = useRef(appSettings.toolDisplayModes);
+  // All tools open as session tabs. Use a ref for the latest sessions
+  // so the callback never needs to be re-created.
   const sessionsRef = useRef(state.sessions);
-  useEffect(() => { toolModeRef.current = appSettings.toolDisplayModes; }, [appSettings.toolDisplayModes]);
   useEffect(() => { sessionsRef.current = state.sessions; }, [state.sessions]);
 
   /** Focus a detached Tauri window by its label. */
@@ -216,55 +193,13 @@ const AppContent: React.FC = () => {
     }).catch(() => undefined);
   }, []);
 
-  /** Resolve effective display mode for a tool (inherit → global default). */
-  const resolveToolMode = useCallback((toolKey: ToolKey): 'popup' | 'tab' => {
-    const modes = toolModeRef.current;
-    const raw = modes?.[toolKey] ?? 'inherit';
-    if (raw === 'inherit') return modes?.globalDefault ?? 'popup';
-    return raw;
-  }, []);
-
-  /** Map of tool key → raw popup setter (stable — useState setters never change). */
-  const toolPopupSetters = useRef<Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>>({
-    performanceMonitor: setShowPerformanceMonitor,
-    actionLog: setShowActionLog,
-    shortcutManager: setShowShortcutManager,
-    proxyChain: setShowProxyMenu,
-    internalProxy: setShowInternalProxyManager,
-    wol: setShowWol,
-    bulkSsh: setShowBulkSSH,
-    serverStats: setShowServerStats,
-    opkssh: setShowOpkssh,
-    mcpServer: setShowMcpServer,
-    scriptManager: setShowScriptManager,
-    macroManager: setShowMacroManager,
-    recordingManager: setShowRecordingManager,
-    windowsBackup: setShowWindowsBackup,
-    diagnostics: setShowDiagnostics,
-    settings: (() => {}) as React.Dispatch<React.SetStateAction<boolean>>,
-    rdpSessions: setRdpPanelOpen,
-    tagManager: setShowTagManager,
-    tabGroupManager: setShowTabGroupManager,
-  }).current;
-
   /**
-   * Wrapped setter for each tool.  When the tool is in 'tab' mode and
-   * the caller sets it to `true`, we open/focus a session tab instead
-   * of the popup.  All other calls go straight to the popup setter.
+   * Creates a setter that opens/focuses a tool as a session tab.
+   * Passing `true` opens or focuses the tab; any other value is a no-op.
    */
   const makeToolSetter = useCallback((toolKey: ToolKey): React.Dispatch<React.SetStateAction<boolean>> => {
     return ((v: boolean | ((prev: boolean) => boolean)) => {
-      if (v !== true) {
-        // close / toggle — always forward to the popup setter
-        toolPopupSetters[toolKey](v as boolean);
-        return;
-      }
-      // v === true — opening the tool
-      if (resolveToolMode(toolKey) !== 'tab') {
-        toolPopupSetters[toolKey](true);
-        return;
-      }
-      // Tab mode: find or create a session tab
+      if (v !== true) return;
       const protocol = getToolProtocol(toolKey);
       // Check for detached instance first — focus its window instead of creating a duplicate
       const detached = sessionsRef.current.find(
@@ -282,16 +217,10 @@ const AppContent: React.FC = () => {
       } else {
         const session = createToolSession(toolKey);
         dispatch({ type: 'ADD_SESSION', payload: session });
-        // Use requestAnimationFrame to let React flush the dispatch
-        // before we switch the active tab.
         requestAnimationFrame(() => setActiveSessionId(session.id));
       }
-      // Ensure popup is closed
-      toolPopupSetters[toolKey](false);
     }) as React.Dispatch<React.SetStateAction<boolean>>;
-  // dispatch and setActiveSessionId are stable (from useReducer / useState)
-  // toolPopupSetters is a stable ref-derived object (never re-created)
-  }, [dispatch, setActiveSessionId, resolveToolMode, toolPopupSetters]);
+  }, [dispatch, setActiveSessionId, focusDetachedWindow]);
 
   // Build wrapped setters once — they're stable because makeToolSetter
   // only depends on stable refs and dispatch.
@@ -1356,43 +1285,15 @@ const AppContent: React.FC = () => {
         showPasswordDialog={showPasswordDialog}
         showSettings={showSettings}
         showImportExport={showImportExport}
-        showPerformanceMonitor={showPerformanceMonitor}
-        showActionLog={showActionLog}
-        showShortcutManager={showShortcutManager}
-        showProxyMenu={showProxyMenu}
-        showInternalProxyManager={showInternalProxyManager}
-        showWol={showWol}
-        showBulkSSH={showBulkSSH}
-        showServerStats={showServerStats}
-        showOpkssh={showOpkssh}
-        showMcpServer={showMcpServer}
-        showScriptManager={showScriptManager}
-        showMacroManager={showMacroManager}
-        showRecordingManager={showRecordingManager}
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
-        rdpPanelOpen={false}
         setShowCollectionSelector={setShowCollectionSelector}
         setShowConnectionEditor={setShowConnectionEditor}
         setShowQuickConnect={setShowQuickConnect}
         setShowSettings={handleOpenSettings}
         setShowImportExport={setShowImportExport}
-        setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
-        setShowActionLog={toolShowSetters.current.actionLog}
-        setShowShortcutManager={toolShowSetters.current.shortcutManager}
-        setShowProxyMenu={toolShowSetters.current.proxyChain}
-        setShowInternalProxyManager={toolShowSetters.current.internalProxy}
-        setShowWol={toolShowSetters.current.wol}
-        setShowBulkSSH={toolShowSetters.current.bulkSsh}
-        setShowServerStats={toolShowSetters.current.serverStats}
-        setShowOpkssh={toolShowSetters.current.opkssh}
-        setShowMcpServer={toolShowSetters.current.mcpServer}
-        setShowScriptManager={toolShowSetters.current.scriptManager}
-        setShowMacroManager={toolShowSetters.current.macroManager}
-        setShowRecordingManager={toolShowSetters.current.recordingManager}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
-        setRdpPanelOpen={toolShowSetters.current.rdpSessions}
         editingConnection={editingConnection}
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}
@@ -1408,12 +1309,7 @@ const AppContent: React.FC = () => {
         handleQuickConnectWithHistory={handleQuickConnectWithHistory}
         clearQuickConnectHistory={clearQuickConnectHistory}
         handleCollectionSelect={handleCollectionSelect}
-        handleReattachRdpSession={handleReattachRdpSession}
-        handleSessionDetach={handleSessionDetach}
         handleConnect={handleConnect}
-        sessions={state.sessions}
-        connections={state.connections}
-        activeRdpBackendIds={activeRdpBackendIds}
         settingsManager={settingsManager}
         collectionManager={collectionManager}
       />
@@ -1427,15 +1323,6 @@ const AppContent: React.FC = () => {
         handleOpenDevtools={handleOpenDevtools}
       />
 
-      <TagManagerDialog
-        isOpen={showTagManager}
-        onClose={() => setShowTagManager(false)}
-      />
-
-      <TabGroupManager
-        isOpen={showTabGroupManager}
-        onClose={() => setShowTabGroupManager(false)}
-      />
     </div>
   );
 };
