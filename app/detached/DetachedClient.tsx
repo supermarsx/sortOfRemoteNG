@@ -16,7 +16,12 @@ import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { AlertCircle, CornerUpLeft, Eye, Globe, Loader2, Minus, Monitor, Pencil, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
+import {
+  AlertCircle, ArrowLeft, ArrowRight, CornerUpLeft, Eye, ExternalLink, Globe,
+  Loader2, Minus, Monitor, Pencil, Phone, Pin, PinOff, Server, Square,
+  Terminal, X, XCircle,
+} from "lucide-react";
+import MenuSurface from "../../src/components/ui/overlays/MenuSurface";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { WindowSessionSync, WindowCommand } from "../../src/types/windowManager";
 
@@ -64,6 +69,7 @@ const DetachedSessionContent: React.FC<{
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [windowTitleOverride, setWindowTitleOverride] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const isTauri =
@@ -606,6 +612,7 @@ const DetachedSessionContent: React.FC<{
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
               }`}
               onClick={() => setActiveTabId(sess.id)}
+              onContextMenu={(e) => { e.preventDefault(); setActiveTabId(sess.id); setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: sess.id }); }}
               onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-detached-session", sess.id); }}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onDragEnd={async (e) => {
@@ -646,6 +653,89 @@ const DetachedSessionContent: React.FC<{
           );
         })}
       </div>
+
+      {/* ── Tab context menu ── */}
+      <MenuSurface
+        isOpen={tabContextMenu !== null}
+        onClose={() => setTabContextMenu(null)}
+        position={tabContextMenu}
+        className="min-w-[180px]"
+      >
+        {tabContextMenu && (() => {
+          const sid = tabContextMenu.sessionId;
+          const sess = state.sessions.find(s => s.id === sid);
+          const idx = state.sessions.findIndex(s => s.id === sid);
+          const isFirst = idx === 0;
+          const isLast = idx === state.sessions.length - 1;
+          const hasOthers = state.sessions.length > 1;
+          const isReal = sess && !sess.protocol.startsWith("tool:") && !sess.protocol.startsWith("winmgmt:");
+          const act = (fn: () => void) => { fn(); setTabContextMenu(null); };
+
+          return (
+            <>
+              {/* Info */}
+              <div className="px-3 py-1.5 text-[10px] text-[var(--color-textMuted)] border-b border-[var(--color-border)] select-text">
+                <div className="font-medium text-[var(--color-textSecondary)]">{sess?.name}</div>
+                {isReal && sess?.hostname && <div className="font-mono">{sess.hostname}</div>}
+                {isReal && sess?.status && <div>Status: {sess.status}</div>}
+                {!isReal && <div>Tool</div>}
+              </div>
+
+              {/* Reattach to main */}
+              <button onClick={() => act(() => { emit("wm:command", { type: "REATTACH_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item">
+                <CornerUpLeft size={14} className="mr-2" /> Reattach to Main
+              </button>
+
+              {/* Pin */}
+              <button onClick={() => act(() => {
+                if (sess) dispatch({ type: "UPDATE_SESSION", payload: { ...sess, pinned: !(sess as any).pinned } as any });
+              })} className="sor-menu-item">
+                {(sess as any)?.pinned
+                  ? <><PinOff size={14} className="mr-2" /> Unpin Tab</>
+                  : <><Pin size={14} className="mr-2" /> Pin Tab</>}
+              </button>
+
+              <div className="sor-menu-divider" />
+
+              {/* Move */}
+              <button
+                onClick={() => act(() => {
+                  if (idx > 0) dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: idx, toIndex: idx - 1 } });
+                })}
+                className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={isFirst}
+              >
+                <ArrowLeft size={14} className="mr-2" /> Move Left
+              </button>
+              <button
+                onClick={() => act(() => {
+                  if (idx < state.sessions.length - 1) dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: idx, toIndex: idx + 1 } });
+                })}
+                className={`sor-menu-item ${isLast ? "opacity-40 pointer-events-none" : ""}`}
+                disabled={isLast}
+              >
+                <ArrowRight size={14} className="mr-2" /> Move Right
+              </button>
+
+              <div className="sor-menu-divider" />
+
+              {/* Close actions */}
+              <button onClick={() => act(() => { emit("wm:command", { type: "CLOSE_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item sor-menu-item-danger">
+                <X size={14} className="mr-2" /> Close Tab
+              </button>
+              {hasOthers && (
+                <button onClick={() => act(() => {
+                  state.sessions.filter(s => s.id !== sid).forEach(s => {
+                    emit("wm:command", { type: "CLOSE_SESSION", sessionId: s.id } as WindowCommand).catch(() => {});
+                  });
+                })} className="sor-menu-item sor-menu-item-danger">
+                  <XCircle size={14} className="mr-2" /> Close Other Tabs
+                </button>
+              )}
+            </>
+          );
+        })()}
+      </MenuSurface>
 
       <div className="flex-1 overflow-hidden min-h-0 h-full">
         <SessionViewer session={activeSession} />
