@@ -519,8 +519,8 @@ const DetachedSessionContent: React.FC<{
         className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
-          <Monitor size={18} className="text-primary flex-shrink-0" />
+        <div className="group/bar flex items-center gap-2 min-w-0 max-w-[60%]" data-tauri-disable-drag="true">
+          <Monitor size={16} className="text-primary flex-shrink-0" />
           {editingTitle ? (
             <input
               ref={titleInputRef}
@@ -528,34 +528,27 @@ const DetachedSessionContent: React.FC<{
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const trimmed = titleDraft.trim();
-                  setWindowTitleOverride(trimmed || null);
-                  setEditingTitle(false);
-                }
+                if (e.key === "Enter") { setWindowTitleOverride(titleDraft.trim() || null); setEditingTitle(false); }
                 if (e.key === "Escape") setEditingTitle(false);
               }}
-              onBlur={() => {
-                const trimmed = titleDraft.trim();
-                setWindowTitleOverride(trimmed || null);
-                setEditingTitle(false);
-              }}
-              className="text-sm font-semibold bg-[var(--color-surface)] border border-[var(--color-borderActive,var(--color-border))] rounded px-1.5 py-0.5 outline-none text-[var(--color-text)] min-w-0 max-w-[50vw]"
-              data-tauri-disable-drag="true"
+              onBlur={() => { setWindowTitleOverride(titleDraft.trim() || null); setEditingTitle(false); }}
+              className="text-sm font-semibold bg-[var(--color-surface)] border border-[var(--color-borderActive,var(--color-border))] rounded px-1.5 py-0.5 outline-none text-[var(--color-text)] min-w-[120px] max-w-[40vw]"
             />
           ) : (
-            <div className="leading-tight min-w-0 truncate">
-              <div className="text-sm font-semibold tracking-tight text-[var(--color-text)] truncate">{windowTitle}</div>
-            </div>
+            <span
+              className="text-sm font-semibold tracking-tight text-[var(--color-text)] truncate cursor-default"
+              onDoubleClick={() => { setTitleDraft(windowTitleOverride ?? ""); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
+            >
+              {windowTitle}
+            </span>
           )}
           {!editingTitle && (
             <button
               onClick={() => { setTitleDraft(windowTitleOverride ?? ""); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
-              className="app-bar-button p-1.5 flex-shrink-0"
+              className="p-1 rounded text-[var(--color-textMuted)] hover:text-[var(--color-text)] opacity-0 group-hover/bar:opacity-100 transition-opacity flex-shrink-0"
               data-tooltip="Rename window"
-              data-tauri-disable-drag="true"
             >
-              <Pencil size={11} />
+              <Pencil size={10} />
             </button>
           )}
         </div>
