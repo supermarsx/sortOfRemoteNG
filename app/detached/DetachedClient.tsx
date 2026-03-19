@@ -532,7 +532,8 @@ const DetachedSessionContent: React.FC<{
                 if (e.key === "Escape") setEditingTitle(false);
               }}
               onBlur={() => { const t = titleDraft.trim() || null; setWindowTitleOverride(t); setEditingTitle(false); if (isTauri && t) getCurrentWindow().setTitle(t).catch(() => {}); }}
-              className="text-sm font-semibold bg-[var(--color-surface)] border border-[var(--color-borderActive,var(--color-border))] rounded px-1.5 py-0.5 outline-none text-[var(--color-text)] min-w-[120px] max-w-[40vw]"
+              style={{ width: `${Math.max(10, titleDraft.length + 2)}ch` }}
+              className="text-sm font-semibold bg-[var(--color-surface)] border border-[var(--color-borderActive,var(--color-border))] rounded px-1.5 py-0.5 outline-none text-[var(--color-text)] min-w-[80px] max-w-[50vw]"
             />
           ) : (
             <span
