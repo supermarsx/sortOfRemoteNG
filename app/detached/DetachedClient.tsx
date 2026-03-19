@@ -16,7 +16,7 @@ import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { AlertCircle, CornerUpLeft, Eye, Globe, Loader2, Minus, Monitor, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
+import { AlertCircle, CornerUpLeft, Eye, Globe, Loader2, Minus, Monitor, Pencil, Phone, Pin, Server, Square, Terminal, X } from "lucide-react";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { WindowSessionSync, WindowCommand } from "../../src/types/windowManager";
 
@@ -62,6 +62,10 @@ const DetachedSessionContent: React.FC<{
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [windowTitle, setWindowTitle] = useState("sortOfRemoteNG");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const isTauri =
     typeof window !== "undefined" &&
     Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
@@ -500,17 +504,53 @@ const DetachedSessionContent: React.FC<{
           isTransparent ? "app-transparent" : "bg-gray-900"
         }`}
       >
-      {/* ── Title bar — matches main window AppToolbar ── */}
+      {/* ── Title bar — editable window title ── */}
       <div
         className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-3">
-          <Monitor size={18} className="text-primary" />
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight text-[var(--color-text)]">sortOfRemoteNG</div>
-            <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Remote Connection Manager</div>
-          </div>
+        <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
+          <Monitor size={18} className="text-primary flex-shrink-0" />
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const trimmed = titleDraft.trim();
+                  if (trimmed) {
+                    setWindowTitle(trimmed);
+                    if (isTauri) getCurrentWindow().setTitle(trimmed).catch(() => {});
+                  }
+                  setEditingTitle(false);
+                }
+                if (e.key === "Escape") setEditingTitle(false);
+              }}
+              onBlur={() => {
+                const trimmed = titleDraft.trim();
+                if (trimmed) {
+                  setWindowTitle(trimmed);
+                  if (isTauri) getCurrentWindow().setTitle(trimmed).catch(() => {});
+                }
+                setEditingTitle(false);
+              }}
+              className="text-sm font-semibold bg-[var(--color-surface)] border border-[var(--color-borderActive,var(--color-border))] rounded px-1.5 py-0.5 outline-none text-[var(--color-text)] min-w-0 max-w-[50vw]"
+              data-tauri-disable-drag="true"
+            />
+          ) : (
+            <div
+              className="leading-tight min-w-0 group/title cursor-pointer"
+              onDoubleClick={() => { setTitleDraft(windowTitle); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
+            >
+              <div className="text-sm font-semibold tracking-tight text-[var(--color-text)] truncate flex items-center gap-1.5">
+                {windowTitle}
+                <Pencil size={10} className="text-[var(--color-textMuted)] opacity-0 group-hover/title:opacity-100 transition-opacity flex-shrink-0" />
+              </div>
+              <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Remote Connection Manager</div>
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-1">
           <button onClick={async () => { if (!isTauri) return; const w = getCurrentWindow(); const v = !isAlwaysOnTop; await w.setAlwaysOnTop(v); setIsAlwaysOnTop(v); }} className="app-bar-button p-2" data-tooltip={isAlwaysOnTop ? "Unpin window" : "Pin window"}>
