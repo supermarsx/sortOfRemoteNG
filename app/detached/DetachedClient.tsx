@@ -417,11 +417,19 @@ const DetachedSessionContent: React.FC<{
         } catch { /* ignore */ }
       }
       await emit("detached-session-reattach", { sessionId: s.id, terminalBuffer });
-      // Clean up localStorage for both the original URL sessionId and the actual session ID
-      // (they may differ after a cross-window swap)
-      if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
-      if (s.id !== sessionId) localStorage.removeItem(`detached-session-${s.id}`);
-      if (isTauri) await getCurrentWindow().close();
+      // Clean up localStorage
+      localStorage.removeItem(`detached-session-${s.id}`);
+      if (s.id !== sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
+
+      // Only close window if this was the last tab
+      if (sessionsRef.current.length <= 1) {
+        if (isTauri) await getCurrentWindow().close();
+      } else {
+        // Remove just this tab, keep the window open
+        dispatch({ type: "REMOVE_SESSION", payload: s.id });
+        reattachRef.current = false;
+        skipNextConfirmRef.current = false;
+      }
     } catch (err) {
       console.error("Failed to reattach detached session:", err);
     }
