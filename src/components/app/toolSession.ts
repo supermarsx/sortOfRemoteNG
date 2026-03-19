@@ -2,7 +2,7 @@ import { ConnectionSession } from "../../types/connection/connection";
 import { ToolDisplayModes } from "../../types/settings/settings";
 import { generateId } from "../../utils/core/id";
 
-export type ToolKey = Exclude<keyof ToolDisplayModes, "globalDefault">;
+export type ToolKey = keyof ToolDisplayModes;
 
 export const TOOL_PROTOCOL_PREFIX = "tool:";
 

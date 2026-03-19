@@ -8,7 +8,6 @@ interface BehaviorSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
-import TOOL_ENTRIES from "./behavior/TOOL_ENTRIES";
 import ClickActions from "./behavior/ClickActions";
 import TabBehavior from "./behavior/TabBehavior";
 import FocusNavigation from "./behavior/FocusNavigation";
@@ -20,7 +19,6 @@ import NotificationsSection from "./behavior/NotificationsSection";
 import ConfirmationDialogs from "./behavior/ConfirmationDialogs";
 import DragDropSection from "./behavior/DragDropSection";
 import ScrollInputSection from "./behavior/ScrollInputSection";
-import ToolDisplayModesSection from "./behavior/ToolDisplayModesSection";
 
 const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
   settings,
@@ -43,7 +41,6 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
       <ConfirmationDialogs s={settings} u={updateSettings} />
       <DragDropSection s={settings} u={updateSettings} />
       <ScrollInputSection s={settings} u={updateSettings} />
-      <ToolDisplayModesSection s={settings} u={updateSettings} />
     </div>
   );
 };

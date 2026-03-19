@@ -1092,32 +1092,28 @@ export interface MacroConfig {
   maxMacroSteps: number;
 }
 
-export type ToolDisplayMode = 'popup' | 'tab';
-/** Per-tool override: concrete mode or 'inherit' from global default */
-export type ToolDisplayModeOverride = ToolDisplayMode | 'inherit';
-
+/** Tools always open as tabs. This interface lists every tool that can be
+ *  opened as a session tab so that ToolKey can be derived from it. */
 export interface ToolDisplayModes {
-  /** Global default applied to tools set to 'inherit' */
-  globalDefault: ToolDisplayMode;
-  recordingManager: ToolDisplayModeOverride;
-  macroManager: ToolDisplayModeOverride;
-  scriptManager: ToolDisplayModeOverride;
-  performanceMonitor: ToolDisplayModeOverride;
-  actionLog: ToolDisplayModeOverride;
-  shortcutManager: ToolDisplayModeOverride;
-  bulkSsh: ToolDisplayModeOverride;
-  serverStats: ToolDisplayModeOverride;
-  opkssh: ToolDisplayModeOverride;
-  mcpServer: ToolDisplayModeOverride;
-  internalProxy: ToolDisplayModeOverride;
-  proxyChain: ToolDisplayModeOverride;
-  wol: ToolDisplayModeOverride;
-  windowsBackup: ToolDisplayModeOverride;
-  diagnostics: ToolDisplayModeOverride;
-  settings: ToolDisplayModeOverride;
-  rdpSessions: ToolDisplayModeOverride;
-  tagManager: ToolDisplayModeOverride;
-  tabGroupManager: ToolDisplayModeOverride;
+  recordingManager: 'tab';
+  macroManager: 'tab';
+  scriptManager: 'tab';
+  performanceMonitor: 'tab';
+  actionLog: 'tab';
+  shortcutManager: 'tab';
+  bulkSsh: 'tab';
+  serverStats: 'tab';
+  opkssh: 'tab';
+  mcpServer: 'tab';
+  internalProxy: 'tab';
+  proxyChain: 'tab';
+  wol: 'tab';
+  windowsBackup: 'tab';
+  diagnostics: 'tab';
+  settings: 'tab';
+  rdpSessions: 'tab';
+  tagManager: 'tab';
+  tabGroupManager: 'tab';
 }
 
 export interface SettingsDialogConfig {

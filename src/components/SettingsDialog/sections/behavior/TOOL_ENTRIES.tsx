@@ -1,7 +1,7 @@
 import { ScrollText, Gauge, Keyboard, Network, Server, Radio, TerminalSquare, FileCode, ListVideo, Circle, HardDrive } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ToolDisplayModes } from "../../../../types/settings/settings";
-type ToolEntryKey = Exclude<keyof ToolDisplayModes, "globalDefault">;
+type ToolEntryKey = keyof ToolDisplayModes;
 
 const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [
   { key: "recordingManager", label: "Recording Manager", icon: Circle },
@@ -16,23 +16,5 @@ const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [
   { key: "wol", label: "Wake-on-LAN", icon: Radio },
   { key: "windowsBackup", label: "Windows Backup", icon: HardDrive },
 ];
-
-export const defaultToolDisplayModes: ToolDisplayModes = {
-  globalDefault: "popup",
-  recordingManager: "inherit",
-  macroManager: "inherit",
-  scriptManager: "inherit",
-  performanceMonitor: "inherit",
-  actionLog: "inherit",
-  shortcutManager: "inherit",
-  bulkSsh: "inherit",
-  serverStats: "inherit",
-  opkssh: "inherit",
-  mcpServer: "inherit",
-  internalProxy: "inherit",
-  proxyChain: "inherit",
-  wol: "inherit",
-  windowsBackup: "inherit",
-};
 
 export default TOOL_ENTRIES;
