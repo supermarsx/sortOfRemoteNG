@@ -24,6 +24,25 @@
  * ```
  */
 
+// ─── ArrayBuffer normalization ─────────────────────────────────────────────
+// Tauri channels may deliver typed arrays (Uint8Array) instead of raw ArrayBuffer.
+// This helper normalizes to a DataView regardless of input type.
+
+function toDataView(data: ArrayBuffer | ArrayBufferView): DataView {
+  if (data instanceof ArrayBuffer) return toDataView(data);
+  return new DataView(data.buffer, data.byteOffset, data.byteLength);
+}
+
+function toByteLength(data: ArrayBuffer | ArrayBufferView): number {
+  return data instanceof ArrayBuffer ? data.byteLength : data.byteLength;
+}
+
+function toUint8Array(data: ArrayBuffer | ArrayBufferView, offset?: number): Uint8Array {
+  if (data instanceof ArrayBuffer) return new Uint8Array(data, offset ?? 0);
+  const base = data.byteOffset + (offset ?? 0);
+  return new Uint8Array(data.buffer, base);
+}
+
 // ─── Public Types ──────────────────────────────────────────────────────────
 
 /** Identifiers for the available frontend renderers. */
@@ -713,7 +732,7 @@ function createPaintWorkerBlob(): Blob {
         for (let i = 0; i < buffers.length; i++) {
           const data = buffers[i];
           if (data.byteLength < 8) continue;
-          const view = new DataView(data);
+          const view = toDataView(data);
           const x = view.getUint16(0, true);
           const y = view.getUint16(2, true);
           const rw = view.getUint16(4, true);
@@ -809,14 +828,13 @@ const NAL_MAGIC = 0x4E414C48;
 const NAL_HEADER_SIZE = 16;
 
 /** Check if an ArrayBuffer starts with the NAL magic prefix. */
-export function isNalPayload(data: ArrayBuffer): boolean {
-  if (data.byteLength < NAL_HEADER_SIZE) return false;
-  const view = new DataView(data);
-  return view.getUint32(0, true) === NAL_MAGIC;
+export function isNalPayload(data: ArrayBuffer | ArrayBufferView): boolean {
+  if (toByteLength(data) < NAL_HEADER_SIZE) return false;
+  return toDataView(data).getUint32(0, true) === NAL_MAGIC;
 }
 
 /** Parse NAL header fields from an ArrayBuffer. */
-export function parseNalHeader(data: ArrayBuffer): {
+export function parseNalHeader(data: ArrayBuffer | ArrayBufferView): {
   surfaceId: number;
   screenX: number;
   screenY: number;
@@ -824,14 +842,14 @@ export function parseNalHeader(data: ArrayBuffer): {
   destH: number;
   nalData: Uint8Array;
 } {
-  const view = new DataView(data);
+  const view = toDataView(data);
   return {
     surfaceId: view.getUint16(4, true),
     screenX: view.getUint16(6, true),
     screenY: view.getUint16(8, true),
     destW: view.getUint16(10, true),
     destH: view.getUint16(12, true),
-    nalData: new Uint8Array(data, NAL_HEADER_SIZE),
+    nalData: toUint8Array(data, NAL_HEADER_SIZE),
   };
 }
 
@@ -974,7 +992,7 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
     let rgbaImgCache = null;
 
     function paintRgbaRect(data) {
-      const view = new DataView(data);
+      const view = toDataView(data);
       let offset = 0;
       while (offset + 8 <= data.byteLength) {
         const x = view.getUint16(offset, true);
@@ -1045,10 +1063,10 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
         const data = msg.data; // ArrayBuffer
         if (data.byteLength < 4) return;
 
-        const magic = new DataView(data).getUint32(0, true);
+        const magic = toDataView(data).getUint32(0, true);
         if (magic === NAL_MAGIC && decoder) {
           // H.264 NAL passthrough
-          const view = new DataView(data);
+          const view = toDataView(data);
           const destW = view.getUint16(10, true);
           const destH = view.getUint16(12, true);
           const nalData = new Uint8Array(data, 16);
@@ -1076,9 +1094,9 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
         for (let i = 0; i < buffers.length; i++) {
           const data = buffers[i];
           if (data.byteLength < 4) continue;
-          const magic = new DataView(data).getUint32(0, true);
+          const magic = toDataView(data).getUint32(0, true);
           if (magic === NAL_MAGIC && decoder) {
-            const view = new DataView(data);
+            const view = toDataView(data);
             const destW = view.getUint16(10, true);
             const destH = view.getUint16(12, true);
             const nalData = new Uint8Array(data, 16);

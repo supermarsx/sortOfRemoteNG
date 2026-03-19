@@ -410,16 +410,20 @@ export class RdpFramePipeline {
           // renderers, but skip gracefully if the backend sends one)
           if (isNalPayload(data)) continue;
 
-          const view = new DataView(data);
+          // Normalize: data may be a typed array from Tauri channel
+          const buf = data instanceof ArrayBuffer ? data : (data as any).buffer ?? data;
+          const baseOff = data instanceof ArrayBuffer ? 0 : (data as any).byteOffset ?? 0;
+          const byteLen = data instanceof ArrayBuffer ? data.byteLength : (data as any).byteLength ?? 0;
+          const view = new DataView(buf, baseOff, byteLen);
           let offset = 0;
-          while (offset + 8 <= data.byteLength) {
+          while (offset + 8 <= byteLen) {
             const x = view.getUint16(offset, true);
             const y = view.getUint16(offset + 2, true);
             const w = view.getUint16(offset + 4, true);
             const h = view.getUint16(offset + 6, true);
             const pixelBytes = w * h * 4;
-            if (offset + 8 + pixelBytes > data.byteLength) break;
-            const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+            if (offset + 8 + pixelBytes > byteLen) break;
+            const rgba = new Uint8ClampedArray(buf, baseOff + offset + 8, pixelBytes);
             renderer.paintRegion(x, y, w, h, rgba);
             if (offCtx && w > 0 && h > 0) {
               let cache = this.offImgCache;
@@ -443,16 +447,19 @@ export class RdpFramePipeline {
       if (ctx) {
         for (let i = 0; i < queue.length; i++) {
           const data = queue[i];
-          const view = new DataView(data);
+          const _buf = data instanceof ArrayBuffer ? data : (data as any).buffer ?? data;
+          const _off = data instanceof ArrayBuffer ? 0 : (data as any).byteOffset ?? 0;
+          const _len = data instanceof ArrayBuffer ? data.byteLength : (data as any).byteLength ?? 0;
+          const view = new DataView(_buf, _off, _len);
           let offset = 0;
-          while (offset + 8 <= data.byteLength) {
+          while (offset + 8 <= _len) {
             const x = view.getUint16(offset, true);
             const y = view.getUint16(offset + 2, true);
             const w = view.getUint16(offset + 4, true);
             const h = view.getUint16(offset + 6, true);
             const pixelBytes = w * h * 4;
-            if (offset + 8 + pixelBytes > data.byteLength) break;
-            const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+            if (offset + 8 + pixelBytes > _len) break;
+            const rgba = new Uint8ClampedArray(_buf, _off + offset + 8, pixelBytes);
             fb.paintDirect(ctx, x, y, w, h, rgba);
             offset += 8 + pixelBytes;
           }
