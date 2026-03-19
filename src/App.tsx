@@ -38,6 +38,7 @@ import { useWindowControls } from "./hooks/window/useWindowControls";
 import { useWindowTheme } from "./hooks/window/useWindowTheme";
 import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
 import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
+import { useWindowManager } from "./hooks/window/useWindowManager";
 import { AppToolbar } from "./components/app/AppToolbar";
 import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
@@ -182,6 +183,13 @@ const AppContent: React.FC = () => {
     state.sidebarCollapsed, dispatch,
   );
   useDetachedSessionEvents(handleSessionClose, state.sessions, dispatch, setActiveSessionId);
+  const { registerWindow: wmRegisterWindow, syncWindow: wmSyncWindow } = useWindowManager({
+    sessions: state.sessions,
+    connections: state.connections,
+    dispatch,
+    setActiveSessionId,
+    handleSessionClose,
+  });
   const { handleMouseDown, handleRdpPanelMouseDown } = useResizeHandlers(
     sidebarPosition, setSidebarWidth, setRdpPanelWidth, layoutRef,
   );

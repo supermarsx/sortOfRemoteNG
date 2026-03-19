@@ -147,6 +147,9 @@ const connectionReducer = (
           (session) => session.id !== action.payload,
         ),
       };
+    case "SET_SESSIONS":
+      // Replace the entire sessions array (used by detached windows receiving wm:sync)
+      return { ...state, sessions: action.payload };
     case "REORDER_SESSIONS":
       // Reorder sessions by moving from one index to another
       const { fromIndex, toIndex } = action.payload;
