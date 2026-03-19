@@ -24,6 +24,8 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   diagnostics: "Diagnostics",
   settings: "Settings",
   rdpSessions: "RDP Sessions",
+  tagManager: "Tag Manager",
+  tabGroupManager: "Tab Groups",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>

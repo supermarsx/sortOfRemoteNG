@@ -243,6 +243,8 @@ const AppContent: React.FC = () => {
     diagnostics: setShowDiagnostics,
     settings: (() => {}) as React.Dispatch<React.SetStateAction<boolean>>,
     rdpSessions: setRdpPanelOpen,
+    tagManager: setShowTagManager,
+    tabGroupManager: setShowTabGroupManager,
   }).current;
 
   /**
@@ -299,7 +301,7 @@ const AppContent: React.FC = () => {
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
       'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
       'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
-      'diagnostics', 'settings', 'rdpSessions',
+      'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
@@ -1265,8 +1267,8 @@ const AppContent: React.FC = () => {
         handleShowPasswordDialog={handleShowPasswordDialog}
         performCloudSync={performCloudSync}
         setShowDebugPanel={setShowDebugPanel}
-        setShowTagManager={setShowTagManager}
-        setShowTabGroupManager={setShowTabGroupManager}
+        setShowTagManager={toolShowSetters.current.tagManager}
+        setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
       />
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>

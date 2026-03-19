@@ -87,6 +87,14 @@ const RDPSessionPanelTab = dynamic(
   () => import("../rdp/RDPSessionPanel").then((m) => m.RDPSessionPanel),
   { ssr: false },
 );
+const TagManagerDialog = dynamic(
+  () => import("../connection/TagManagerDialog").then((m) => m.TagManagerDialog),
+  { ssr: false },
+);
+const TabGroupManager = dynamic(
+  () => import("../session/TabGroupManager").then((m) => m.TabGroupManager),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -127,6 +135,8 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
         return conn ? <ConnectionDiagnostics connection={conn} onClose={onClose} /> : null;
       })()}
       {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
+      {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
+      {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
       {toolKey === 'rdpSessions' && (
         <RDPSessionPanelTab
           isVisible

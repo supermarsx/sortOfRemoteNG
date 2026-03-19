@@ -1116,6 +1116,8 @@ export interface ToolDisplayModes {
   diagnostics: ToolDisplayModeOverride;
   settings: ToolDisplayModeOverride;
   rdpSessions: ToolDisplayModeOverride;
+  tagManager: ToolDisplayModeOverride;
+  tabGroupManager: ToolDisplayModeOverride;
 }
 
 export interface SettingsDialogConfig {
