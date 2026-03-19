@@ -220,22 +220,25 @@ const DetachedSessionContent: React.FC<{
     });
     p1.then(fn => cleanups.push(fn)).catch(() => {});
 
-    // Our drag was claimed by another window — close this window
+    // Our drag was claimed by another window — remove the tab or close
     const p2 = listen<{ sourceWindow: string }>(
       "detached-tab-claimed",
       async (event) => {
         const myWin = getCurrentWindow();
         if (event.payload.sourceWindow !== myWin.label) return;
-        // Cancel the 300ms reattach fallback
+        // Cancel the reattach fallback (the per-tab onDragEnd handles it)
         closingRef.current = true;
-        skipNextConfirmRef.current = true;
-        // Notify main window this session was moved (not reattached)
-        const s = activeSessionRef.current;
-        if (s) {
-          await emit("detached-session-closed", { sessionId: s.id });
+        // If we only had one tab, close the window
+        if (state.sessions.length <= 1) {
+          skipNextConfirmRef.current = true;
+          const s = activeSessionRef.current;
+          if (s) await emit("detached-session-closed", { sessionId: s.id });
+          if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
+          await getCurrentWindow().close();
+        } else {
+          // Multi-tab: the per-tab onDragEnd already removed it
+          closingRef.current = false;
         }
-        if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
-        await getCurrentWindow().close();
       },
     );
     p2.then(fn => cleanups.push(fn)).catch(() => {});
@@ -540,29 +543,57 @@ const DetachedSessionContent: React.FC<{
         </div>
       </div>
 
-      {/* ── Tab bar — renders all sessions in this detached window ── */}
-      <div className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center overflow-x-auto" data-tauri-disable-drag="true">
+      {/* ── Tab bar — renders all sessions, supports drag reorder ── */}
+      <div
+        className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center overflow-x-auto"
+        data-tauri-disable-drag="true"
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const draggedId = e.dataTransfer.getData("application/x-detached-session");
+          if (!draggedId) return;
+          // Find drop target tab
+          const target = (e.target as HTMLElement).closest<HTMLElement>("[data-session-id]");
+          const targetId = target?.dataset.sessionId;
+          if (!targetId || targetId === draggedId) return;
+          // Reorder: move dragged session to target position
+          const fromIdx = state.sessions.findIndex(s => s.id === draggedId);
+          const toIdx = state.sessions.findIndex(s => s.id === targetId);
+          if (fromIdx !== -1 && toIdx !== -1) {
+            dispatch({ type: "REORDER_SESSIONS", payload: { fromIndex: fromIdx, toIndex: toIdx } });
+          }
+        }}
+      >
         {state.sessions.map((sess) => {
-          const isActive = sess.id === activeSession.id;
+          const isActive = sess.id === activeSession?.id;
           const isReal = !sess.protocol.startsWith("tool:") && !sess.protocol.startsWith("winmgmt:");
           return (
             <div
               key={sess.id}
+              data-session-id={sess.id}
               draggable
               data-tauri-disable-drag="true"
-              className={`relative flex items-center h-full px-3 cursor-grab active:cursor-grabbing border-r border-[var(--color-border)] min-w-0 transition-all ${
+              className={`group relative flex items-center h-full px-3 cursor-pointer border-r border-[var(--color-border)] min-w-0 transition-all ${
                 isActive
                   ? "bg-[var(--color-border)] text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
               }`}
               onClick={() => setActiveTabId(sess.id)}
               onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-detached-session", sess.id); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onDragEnd={async (e) => {
                 const { clientX, clientY } = e;
                 if (clientX <= 0 || clientY <= 0 || clientX >= window.innerWidth || clientY >= window.innerHeight) {
+                  // Dragged outside window — emit for other windows to claim,
+                  // or fall back to reattaching just this tab to main
+                  const dragClaimedRef = { claimed: false };
                   try {
                     const myWin = getCurrentWindow();
                     const myPos = await myWin.outerPosition();
+                    // Listen briefly for a claim before falling back
+                    const claimUnsub = await listen<{ sourceWindow: string }>("detached-tab-claimed", (ev) => {
+                      if (ev.payload.sourceWindow === myWin.label) dragClaimedRef.claimed = true;
+                    });
                     await emit("detached-tab-dropped-outside", {
                       sessionId: sess.id,
                       sourceWindow: myWin.label,
@@ -570,8 +601,18 @@ const DetachedSessionContent: React.FC<{
                       screenY: myPos.y + clientY,
                     });
                     setTimeout(() => {
-                      if (!closingRef.current) handleReattach();
-                    }, 300);
+                      claimUnsub();
+                      if (!dragClaimedRef.claimed && !closingRef.current) {
+                        // Not claimed — reattach just this one tab to main
+                        if (state.sessions.length <= 1) {
+                          handleReattach();
+                        } else {
+                          // Multi-tab: remove this tab and reattach it individually
+                          dispatch({ type: "REMOVE_SESSION", payload: sess.id });
+                          emit("detached-session-reattach", { sessionId: sess.id, terminalBuffer: "" }).catch(() => {});
+                        }
+                      }
+                    }, 400);
                   } catch {
                     handleReattach();
                   }
