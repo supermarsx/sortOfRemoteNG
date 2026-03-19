@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../../types/connection/connection";
 
@@ -8,60 +8,60 @@ export function useDetachedSessionEvents(
   dispatch: React.Dispatch<any>,
   setActiveSessionId: (id: string) => void
 ) {
+  // Use a ref so the reattach listener always reads current sessions
+  // without needing sessions in the dependency array (which would cause
+  // constant re-registration and missed events during the gap).
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+
+  const handleCloseRef = useRef(handleSessionClose);
+  handleCloseRef.current = handleSessionClose;
+
+  // Listen for detached session closed
   useEffect(() => {
     const isTauri =
       typeof window !== "undefined" &&
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (!isTauri) return;
 
-    let isCancelled = false;
-    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
 
     listen<{ sessionId?: string }>("detached-session-closed", (event) => {
       const sessionId = event.payload?.sessionId;
       if (!sessionId) return;
-      handleSessionClose(sessionId).catch(console.error);
+      handleCloseRef.current(sessionId).catch(console.error);
     })
-      .then((stop) => {
-        if (typeof stop === "function") {
-          if (isCancelled) {
-            try {
-              Promise.resolve(stop()).catch(() => {});
-            } catch {
-              /* ignore */
-            }
-          } else {
-            unlistenFn = stop;
-          }
-        }
+      .then((fn) => {
+        if (cancelled) { fn(); } else { unlisten = fn; }
       })
       .catch(console.error);
 
     return () => {
-      isCancelled = true;
-      try {
-        Promise.resolve(unlistenFn?.()).catch(() => {});
-      } catch {
-        /* ignore */
-      }
+      cancelled = true;
+      unlisten?.();
     };
-  }, [handleSessionClose]);
+  // Register once — handleCloseRef keeps it current
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Listen for detached session reattach
   useEffect(() => {
     const isTauri =
       typeof window !== "undefined" &&
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (!isTauri) return;
 
-    let isCancelled = false;
-    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
 
     listen<{ sessionId?: string; terminalBuffer?: string }>(
       "detached-session-reattach",
       (event) => {
         const sessionId = event.payload?.sessionId;
         if (!sessionId) return;
-        const session = sessions.find((item) => item.id === sessionId);
+        // Read current sessions from ref — always up to date
+        const session = sessionsRef.current.find((s) => s.id === sessionId);
         if (!session) return;
         dispatch({
           type: "UPDATE_SESSION",
@@ -76,35 +76,23 @@ export function useDetachedSessionEvents(
               height: session.layout?.height ?? 600,
               zIndex: session.layout?.zIndex ?? 1,
               isDetached: false,
-              windowId: session.layout?.windowId,
+              windowId: undefined, // Clear — no longer in a detached window
             },
           },
         });
         setActiveSessionId(sessionId);
       }
     )
-      .then((stop) => {
-        if (typeof stop === "function") {
-          if (isCancelled) {
-            try {
-              Promise.resolve(stop()).catch(() => {});
-            } catch {
-              /* ignore */
-            }
-          } else {
-            unlistenFn = stop;
-          }
-        }
+      .then((fn) => {
+        if (cancelled) { fn(); } else { unlisten = fn; }
       })
       .catch(console.error);
 
     return () => {
-      isCancelled = true;
-      try {
-        Promise.resolve(unlistenFn?.()).catch(() => {});
-      } catch {
-        /* ignore */
-      }
+      cancelled = true;
+      unlisten?.();
     };
-  }, [dispatch, setActiveSessionId, sessions]);
+  // Register once — sessionsRef keeps it current
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, setActiveSessionId]);
 }

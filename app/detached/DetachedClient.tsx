@@ -429,7 +429,10 @@ const DetachedSessionContent: React.FC<{
         } catch { /* ignore */ }
       }
       await emit("detached-session-reattach", { sessionId: s.id, terminalBuffer });
+      // Clean up localStorage for both the original URL sessionId and the actual session ID
+      // (they may differ after a cross-window swap)
       if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
+      if (s.id !== sessionId) localStorage.removeItem(`detached-session-${s.id}`);
       if (isTauri) await getCurrentWindow().close();
     } catch (err) {
       console.error("Failed to reattach detached session:", err);
