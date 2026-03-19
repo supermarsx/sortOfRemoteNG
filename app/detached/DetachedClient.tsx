@@ -171,20 +171,20 @@ const DetachedSessionContent: React.FC<{
   }, [isTauri]);
 
   // Listen for tabs dragged from other detached windows onto this one.
-  // When claimed, we swap sessions: this window takes the dragged session,
-  // and the source window takes ours.
+  // When another window's tab lands on us, BOTH windows reattach their
+  // sessions to the main window — merging them into the main tab bar.
   useEffect(() => {
     if (!isTauri || !sessionId) return;
     const cleanups: Array<() => void> = [];
 
-    // 1. Another window dropped its tab — check if it landed on us
+    // Another window dropped its tab on us — both reattach to main
     const p1 = listen<{
       sessionId: string;
       sourceWindow: string;
       screenX: number;
       screenY: number;
     }>("detached-tab-dropped-outside", async (event) => {
-      const { sessionId: draggedSessionId, sourceWindow, screenX, screenY } = event.payload;
+      const { sourceWindow, screenX, screenY } = event.payload;
       const myWin = getCurrentWindow();
       if (sourceWindow === myWin.label) return;
       try {
@@ -196,81 +196,36 @@ const DetachedSessionContent: React.FC<{
           screenX >= pos.x && screenX <= pos.x + size.width &&
           screenY >= pos.y && screenY <= pos.y + size.height
         ) {
-          // Claimed! Read the dragged session from localStorage
-          const draggedRaw = localStorage.getItem(`detached-session-${draggedSessionId}`);
-          if (!draggedRaw) return;
-
-          // Save our current session data for the source window to pick up
-          const mySession = activeSessionRef.current;
-          if (mySession) {
-            const myConn = state.connections.find(c => c.id === mySession.connectionId);
-            localStorage.setItem(`detached-session-${mySession.id}`, JSON.stringify({
-              session: mySession,
-              connection: myConn || null,
-              savedAt: Date.now(),
-            }));
-          }
-
-          // Tell source window we claimed it, sending our session for the swap
-          await emit("detached-tab-claimed", {
-            claimedSessionId: draggedSessionId,
-            sourceWindow,
-            targetWindow: myWin.label,
-            swapSessionId: mySession?.id || null,
-          });
-
-          // Load the dragged session into this window
-          const draggedPayload = JSON.parse(draggedRaw);
-          const newSession = reviveSession(draggedPayload.session);
-          const newConn = draggedPayload.connection ? reviveConnection(draggedPayload.connection) : null;
-          if (newConn) dispatch({ type: "SET_CONNECTIONS", payload: [newConn] });
-          // Replace our session
-          if (mySession) dispatch({ type: "REMOVE_SESSION", payload: mySession.id });
-          dispatch({ type: "ADD_SESSION", payload: newSession });
+          // Tell the source window we claimed it — it should NOT
+          // fall back to its own reattach (we'll both reattach).
+          await emit("detached-tab-claimed", { sourceWindow });
+          // Reattach our own session to main
+          handleReattachRef.current?.();
         }
       } catch { /* ignore */ }
     });
     p1.then(fn => cleanups.push(fn)).catch(() => {});
 
-    // 2. Our drag was claimed by another window — load their session (swap)
-    const p2 = listen<{
-      claimedSessionId: string;
-      sourceWindow: string;
-      targetWindow: string;
-      swapSessionId: string | null;
-    }>("detached-tab-claimed", async (event) => {
-      const { claimedSessionId, sourceWindow, swapSessionId } = event.payload;
-      const myWin = getCurrentWindow();
-      // Only react if WE are the source
-      if (sourceWindow !== myWin.label) return;
-      // Cancel the reattach fallback
-      closingRef.current = true;
-
-      if (swapSessionId) {
-        // Load the other window's session
-        const swapRaw = localStorage.getItem(`detached-session-${swapSessionId}`);
-        if (swapRaw) {
-          const swapPayload = JSON.parse(swapRaw);
-          const newSession = reviveSession(swapPayload.session);
-          const newConn = swapPayload.connection ? reviveConnection(swapPayload.connection) : null;
-          if (newConn) dispatch({ type: "SET_CONNECTIONS", payload: [newConn] });
-          const mySession = activeSessionRef.current;
-          if (mySession) dispatch({ type: "REMOVE_SESSION", payload: mySession.id });
-          dispatch({ type: "ADD_SESSION", payload: newSession });
-          // Clean up old localStorage entry
-          localStorage.removeItem(`detached-session-${claimedSessionId}`);
+    // Our drag was claimed — reattach us too (source side)
+    const p2 = listen<{ sourceWindow: string }>(
+      "detached-tab-claimed",
+      async (event) => {
+        const myWin = getCurrentWindow();
+        if (event.payload.sourceWindow !== myWin.label) return;
+        // Cancel the 300ms fallback timeout
+        closingRef.current = true;
+        // Small delay so the target window's reattach event arrives
+        // at the main window first — both tabs appear in order.
+        setTimeout(() => {
           closingRef.current = false;
-        }
-      } else {
-        // No swap — other window didn't have a session, just close us
-        closingRef.current = false;
-        handleReattachRef.current?.();
-      }
-    });
+          handleReattachRef.current?.();
+        }, 150);
+      },
+    );
     p2.then(fn => cleanups.push(fn)).catch(() => {});
 
     return () => { cleanups.forEach(fn => fn()); };
-  }, [isTauri, sessionId, dispatch, state.connections]);
+  }, [isTauri, sessionId]);
 
   useEffect(() => {
     const manager = SettingsManager.getInstance();
