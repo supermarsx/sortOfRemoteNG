@@ -431,6 +431,23 @@ interface ColorTagsSectionProps {
   onDeleteTag: (id: string) => void;
 }
 
+/** Reusable color swatch picker */
+const ColorSwatchPicker: React.FC<{ selected: string; onChange: (c: string) => void; size?: "sm" | "md" }> = ({ selected, onChange, size = "md" }) => (
+  <div className="flex flex-wrap gap-1.5">
+    {PREDEFINED_COLORS.map((color) => (
+      <button
+        key={color}
+        onClick={() => onChange(color)}
+        className={`rounded-full transition-all ring-offset-1 ring-offset-[var(--color-surface)] ${
+          selected === color ? "ring-2 ring-primary scale-110" : "ring-1 ring-[var(--color-border)] hover:scale-105"
+        } ${size === "sm" ? "w-4 h-4" : "w-6 h-6"}`}
+        style={{ backgroundColor: color }}
+        data-tooltip={color}
+      />
+    ))}
+  </div>
+);
+
 const ColorTagsSection: React.FC<ColorTagsSectionProps> = ({
   filteredTags,
   showAddForm,
@@ -445,59 +462,46 @@ const ColorTagsSection: React.FC<ColorTagsSectionProps> = ({
   onUpdateTag,
   onDeleteTag,
 }) => (
-  <div className="space-y-3">
+  <div className="space-y-4">
     {/* Add color tag button / form */}
     {showAddForm ? (
-      <div className="bg-[var(--color-border)]/50 rounded-lg p-4 space-y-3">
-        <h4 className="text-sm font-medium text-[var(--color-text)]">Add New Color Tag</h4>
+      <div className="sor-settings-card space-y-4">
+        <h4 className="sor-section-heading">
+          <Palette className="w-4 h-4 text-accent" />
+          New Color Tag
+        </h4>
         <div>
-          <label className="sor-form-label">Name</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Name</label>
           <input
             type="text"
             value={newTag.name}
             onChange={(e) => setNewTag({ ...newTag, name: e.target.value })}
             onKeyDown={(e) => e.key === "Enter" && onAddTag()}
-            className="sor-form-input text-sm"
+            className="sor-form-input text-sm w-full"
             placeholder="Tag name"
             autoFocus
           />
         </div>
         <div>
-          <label className="sor-form-label">Color</label>
-          <div className="flex items-center space-x-3">
-            <input
-              type="color"
-              value={newTag.color}
-              onChange={(e) => setNewTag({ ...newTag, color: e.target.value })}
-              className="w-10 h-8 rounded border border-[var(--color-border)] cursor-pointer"
-            />
-            <div className="flex flex-wrap gap-1.5">
-              {PREDEFINED_COLORS.map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setNewTag({ ...newTag, color })}
-                  className={`w-5 h-5 rounded border-2 transition-all ${
-                    newTag.color === color ? "border-white scale-110" : "border-transparent"
-                  }`}
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-            </div>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-2">Color</label>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg border border-[var(--color-border)] flex-shrink-0" style={{ backgroundColor: newTag.color }} />
+            <ColorSwatchPicker selected={newTag.color} onChange={(c) => setNewTag({ ...newTag, color: c })} />
           </div>
         </div>
-        <div className="flex justify-end space-x-2">
-          <button onClick={() => setShowAddForm(false)} className="sor-btn-secondary">
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={() => setShowAddForm(false)} className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-surface)] text-[var(--color-textSecondary)] border border-[var(--color-border)] hover:text-[var(--color-text)] transition-colors">
             Cancel
           </button>
-          <button onClick={onAddTag} disabled={!newTag.name.trim()} className="sor-btn-primary">
+          <button onClick={onAddTag} disabled={!newTag.name.trim()} className="px-3 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors">
             Add Tag
           </button>
         </div>
       </div>
     ) : (
-      <button onClick={() => setShowAddForm(true)} className="sor-btn-primary-sm">
-        <Plus size={14} />
-        <span>Add Color Tag</span>
+      <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 border border-primary/30 transition-colors">
+        <Plus size={13} />
+        Add Color Tag
       </button>
     )}
 
@@ -515,80 +519,60 @@ const ColorTagsSection: React.FC<ColorTagsSectionProps> = ({
         {filteredTags.map((ct) => (
           <div
             key={ct.id}
-            className="flex items-center justify-between p-2.5 bg-[var(--color-border)]/50 rounded-lg group"
+            className="flex items-center justify-between px-3 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg group hover:bg-[var(--color-surface)]/80 transition-colors"
           >
             {editingTagId === ct.id ? (
-              <div className="flex items-center space-x-2 flex-1 mr-2">
-                <input
-                  type="color"
-                  value={editingTag.color}
-                  onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })}
-                  className="w-8 h-7 rounded border border-[var(--color-border)] cursor-pointer flex-shrink-0"
-                />
-                <input
-                  type="text"
-                  value={editingTag.name}
-                  onChange={(e) => setEditingTag({ ...editingTag, name: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") onUpdateTag();
-                    if (e.key === "Escape") setEditingTagId(null);
-                  }}
-                  className="sor-form-input flex-1 text-sm"
-                  autoFocus
-                />
-                <div className="flex flex-wrap gap-1 max-w-[160px]">
-                  {PREDEFINED_COLORS.slice(0, 10).map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setEditingTag({ ...editingTag, color })}
-                      className={`w-4 h-4 rounded border transition-all ${
-                        editingTag.color === color ? "border-white scale-110" : "border-transparent"
-                      }`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
+              <div className="flex-1 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg flex-shrink-0 border border-[var(--color-border)]" style={{ backgroundColor: editingTag.color }} />
+                  <input
+                    type="text"
+                    value={editingTag.name}
+                    onChange={(e) => setEditingTag({ ...editingTag, name: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") onUpdateTag();
+                      if (e.key === "Escape") setEditingTagId(null);
+                    }}
+                    className="sor-form-input flex-1 text-sm"
+                    autoFocus
+                  />
+                  <button onClick={onUpdateTag} className="p-1.5 rounded-md bg-success/15 text-success hover:bg-success/25 transition-colors" title="Save">
+                    <Check size={13} />
+                  </button>
+                  <button onClick={() => setEditingTagId(null)} className="p-1.5 rounded-md hover:bg-[var(--color-border)] text-[var(--color-textMuted)] transition-colors" title="Cancel">
+                    <X size={13} />
+                  </button>
                 </div>
-                <button onClick={onUpdateTag} className="sor-icon-btn-sm text-success" title="Save">
-                  <Check size={14} />
-                </button>
-                <button onClick={() => setEditingTagId(null)} className="sor-icon-btn-sm" title="Cancel">
-                  <X size={14} />
-                </button>
+                <ColorSwatchPicker selected={editingTag.color} onChange={(c) => setEditingTag({ ...editingTag, color: c })} size="sm" />
               </div>
             ) : (
               <>
-                <div className="flex items-center space-x-2.5 min-w-0">
-                  <div
-                    className="w-5 h-5 rounded border border-[var(--color-border)] flex-shrink-0"
-                    style={{ backgroundColor: ct.color }}
-                  />
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-5 h-5 rounded-md flex-shrink-0" style={{ backgroundColor: ct.color }} />
                   <span className="text-[var(--color-text)] text-sm truncate">{ct.name}</span>
                   {ct.global && (
-                    <span className="text-[10px] text-primary bg-primary/20 px-1.5 py-0.5 rounded flex-shrink-0">
+                    <span className="text-[10px] text-primary bg-primary/15 px-1.5 py-0.5 rounded-md flex-shrink-0 font-medium">
                       Global
                     </span>
                   )}
-                  <span className="text-xs text-[var(--color-textSecondary)] bg-[var(--color-border)] px-1.5 py-0.5 rounded flex-shrink-0">
-                    {ct.count} {ct.count === 1 ? "connection" : "connections"}
+                  <span className="text-[10px] text-[var(--color-textMuted)] bg-[var(--color-border)]/60 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                    {ct.count} {ct.count === 1 ? "conn" : "conns"}
                   </span>
                 </div>
-                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
-                    onClick={() => {
-                      setEditingTagId(ct.id);
-                      setEditingTag({ name: ct.name, color: ct.color });
-                    }}
-                    className="sor-icon-btn-sm"
+                    onClick={() => { setEditingTagId(ct.id); setEditingTag({ name: ct.name, color: ct.color }); }}
+                    className="p-1.5 rounded-md hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                     title="Edit"
                   >
-                    <Edit size={14} />
+                    <Edit size={13} />
                   </button>
                   <button
                     onClick={() => onDeleteTag(ct.id)}
-                    className="sor-icon-btn-danger"
+                    className="p-1.5 rounded-md hover:bg-error/15 text-[var(--color-textSecondary)] hover:text-error transition-colors"
                     title="Delete"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </>
