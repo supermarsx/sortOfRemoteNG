@@ -87,7 +87,7 @@ export function useSessionDetach(
       }
 
       const url = `/detached?sessionId=${session.id}`;
-      const windowTitle = session.name || "Detached Session";
+      const windowTitle = `sortOfRemoteNG - ${session.name || "Detached Session"}`;
       const isTauri =
         typeof window !== "undefined" &&
         Boolean(
