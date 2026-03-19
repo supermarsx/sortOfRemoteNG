@@ -17,9 +17,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
-  AlertCircle, ArrowLeft, ArrowRight, CornerUpLeft, Eye, ExternalLink, Globe,
-  Loader2, Minus, Monitor, Pencil, Phone, Pin, PinOff, Server, Square,
-  Terminal, X, XCircle,
+  AlertCircle, ArrowLeft, ArrowRight, ChevronRight, CornerUpLeft, Eye, ExternalLink,
+  Globe, Loader2, Minus, Monitor, Pencil, Phone, Pin, PinOff, Send, Server,
+  Square, Terminal, X, XCircle,
 } from "lucide-react";
 import MenuSurface from "../../src/components/ui/overlays/MenuSurface";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
@@ -70,6 +70,8 @@ const DetachedSessionContent: React.FC<{
   const [windowTitleOverride, setWindowTitleOverride] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+  const [sendToSubmenuOpen, setSendToSubmenuOpen] = useState(false);
+  const [otherWindows, setOtherWindows] = useState<Array<{ label: string; title: string }>>([]);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const isTauri =
@@ -612,7 +614,23 @@ const DetachedSessionContent: React.FC<{
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
               }`}
               onClick={() => setActiveTabId(sess.id)}
-              onContextMenu={(e) => { e.preventDefault(); setActiveTabId(sess.id); setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: sess.id }); }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setActiveTabId(sess.id);
+                setSendToSubmenuOpen(false);
+                setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: sess.id });
+                const myLabel = getCurrentWindow().label;
+                import("@tauri-apps/api/window").then(({ getAllWindows }) =>
+                  getAllWindows().then((wins) => {
+                    setOtherWindows(
+                      wins.filter(w => w.label !== myLabel).map(w => ({
+                        label: w.label,
+                        title: w.label === "main" ? "Main Window" : w.label.replace("detached-", "").slice(0, 8),
+                      }))
+                    );
+                  })
+                ).catch(() => setOtherWindows([]));
+              }}
               onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("application/x-detached-session", sess.id); }}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onDragEnd={async (e) => {
@@ -685,6 +703,35 @@ const DetachedSessionContent: React.FC<{
               <button onClick={() => act(() => { emit("wm:command", { type: "REATTACH_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item">
                 <CornerUpLeft size={14} className="mr-2" /> Reattach to Main
               </button>
+
+              {/* Send to another window */}
+              {otherWindows.length > 0 && (
+                <div
+                  className="sor-menu-item relative"
+                  onMouseEnter={() => setSendToSubmenuOpen(true)}
+                  onMouseLeave={() => setSendToSubmenuOpen(false)}
+                >
+                  <Send size={14} className="mr-2" />
+                  <span className="flex-1">Send to Window</span>
+                  <ChevronRight size={12} className="ml-2" />
+                  {sendToSubmenuOpen && (
+                    <div className="sor-menu-surface absolute left-full top-0 min-w-[160px] z-[10000]" onClick={(e) => e.stopPropagation()}>
+                      {otherWindows.map(w => (
+                        <button
+                          key={w.label}
+                          onClick={() => act(() => {
+                            emit("wm:command", { type: "MOVE_SESSION", sessionId: sid, targetWindow: w.label } as WindowCommand).catch(() => {});
+                          })}
+                          className="sor-menu-item"
+                        >
+                          <Monitor size={14} className="mr-2" />
+                          {w.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Pin */}
               <button onClick={() => act(() => {
