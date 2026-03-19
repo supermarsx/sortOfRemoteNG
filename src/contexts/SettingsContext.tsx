@@ -93,6 +93,7 @@ const defaultSettings: GlobalSettings = {
 
   // Drag & Drop
   enableFileDragDropToTerminal: true,
+  enableFileDragDropToRdp: true,
   dragSensitivityPx: 5,
   showDropPreview: true,
 

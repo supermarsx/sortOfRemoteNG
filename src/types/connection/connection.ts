@@ -393,6 +393,8 @@ export interface RdpDeviceRedirection {
   usbDevices?: boolean;
   /** Audio input (microphone) device redirection */
   audioInput?: boolean;
+  /** Enable drag-and-drop file transfer to this RDP session (undefined = inherit from global) */
+  fileDragDrop?: boolean;
 }
 
 export interface RdpDriveRedirection {

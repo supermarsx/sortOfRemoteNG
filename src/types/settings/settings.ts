@@ -197,6 +197,8 @@ export interface GlobalSettings {
   // ─── Drag & Drop ────────────────────────────────────────────
   /** Enable drag-and-drop file transfer to terminals */
   enableFileDragDropToTerminal: boolean;
+  /** Enable drag-and-drop file transfer to RDP sessions */
+  enableFileDragDropToRdp: boolean;
   /** Drag start sensitivity in pixels */
   dragSensitivityPx: number;
   /** Show drop preview overlay when dragging connections */
