@@ -24,6 +24,8 @@ interface UseWindowManagerParams {
   dispatch: React.Dispatch<ConnectionAction>;
   setActiveSessionId: (id: string | undefined) => void;
   handleSessionClose: (sessionId: string) => Promise<void>;
+  /** Called when a drop from main lands on empty space — should create a new detached window. */
+  handleSessionDetach?: (sessionId: string) => void;
 }
 
 export function useWindowManager({
@@ -32,11 +34,14 @@ export function useWindowManager({
   dispatch,
   setActiveSessionId,
   handleSessionClose,
+  handleSessionDetach,
 }: UseWindowManagerParams) {
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const connectionsRef = useRef(connections);
   connectionsRef.current = connections;
+  const detachRef = useRef(handleSessionDetach);
+  detachRef.current = handleSessionDetach;
 
   const registry = useRef<WindowRegistry>({
     windows: new Map<WindowId, WindowEntry>([
@@ -312,8 +317,16 @@ export function useWindowManager({
             return;
           }
         }
-        // No window found — reattach to main
-        handleReattachSession(sessionId);
+        // No window found at drop location
+        if (sourceWindow === "main" && detachRef.current) {
+          // From main to empty space → create new detached window
+          detachRef.current(sessionId);
+        } else if (sourceWindow === "main") {
+          // No detach handler — do nothing (session stays in main)
+        } else {
+          // From detached to empty space → reattach to main
+          handleReattachSession(sessionId);
+        }
       } catch {
         handleReattachSession(sessionId);
       }
@@ -440,5 +453,5 @@ export function useWindowManager({
     return () => clearInterval(interval);
   }, [handleReattachSession]);
 
-  return { registry, registerWindow, syncWindow };
+  return { registry, registerWindow, syncWindow, detachRef };
 }

@@ -183,7 +183,7 @@ const AppContent: React.FC = () => {
     state.sidebarCollapsed, dispatch,
   );
   useDetachedSessionEvents(handleSessionClose, state.sessions, dispatch, setActiveSessionId);
-  const { registerWindow: wmRegisterWindow, syncWindow: wmSyncWindow } = useWindowManager({
+  const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } = useWindowManager({
     sessions: state.sessions,
     connections: state.connections,
     dispatch,
@@ -477,6 +477,8 @@ const AppContent: React.FC = () => {
     state.sessions, state.connections, visibleSessions,
     activeSessionId, dispatch, setActiveSessionId, wmRegisterWindow,
   );
+  // Wire handleSessionDetach into WindowManager (ref avoids circular dependency)
+  wmDetachRef.current = handleSessionDetach;
 
   /** Backend RDP session IDs that have an active frontend viewer tab. */
   const activeRdpBackendIds = useMemo(
