@@ -62,7 +62,7 @@ const DetachedSessionContent: React.FC<{
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [windowTitle, setWindowTitle] = useState("sortOfRemoteNG");
+  const [windowTitleOverride, setWindowTitleOverride] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -336,6 +336,16 @@ const DetachedSessionContent: React.FC<{
   const warnRef = useRef(warnOnDetachClose);
   warnRef.current = warnOnDetachClose;
 
+  // Derive window title: "sortOfRemoteNG - ActiveTabName" (or custom override)
+  const windowTitle = windowTitleOverride ?? (activeSession ? `sortOfRemoteNG - ${activeSession.name}` : "sortOfRemoteNG");
+
+  // Sync to OS window title for taskbar
+  useEffect(() => {
+    if (isTauri && windowTitle) {
+      getCurrentWindow().setTitle(windowTitle).catch(() => {});
+    }
+  }, [isTauri, windowTitle]);
+
   const disconnectActiveSession = useCallback(async () => {
     const s = activeSessionRef.current;
     if (!s || closingRef.current) return;
@@ -504,7 +514,7 @@ const DetachedSessionContent: React.FC<{
           isTransparent ? "app-transparent" : "bg-gray-900"
         }`}
       >
-      {/* ── Title bar — editable window title ── */}
+      {/* ── Title bar ── */}
       <div
         className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
         data-tauri-drag-region
@@ -520,36 +530,33 @@ const DetachedSessionContent: React.FC<{
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   const trimmed = titleDraft.trim();
-                  if (trimmed) {
-                    setWindowTitle(trimmed);
-                    if (isTauri) getCurrentWindow().setTitle(trimmed).catch(() => {});
-                  }
+                  setWindowTitleOverride(trimmed || null);
                   setEditingTitle(false);
                 }
                 if (e.key === "Escape") setEditingTitle(false);
               }}
               onBlur={() => {
                 const trimmed = titleDraft.trim();
-                if (trimmed) {
-                  setWindowTitle(trimmed);
-                  if (isTauri) getCurrentWindow().setTitle(trimmed).catch(() => {});
-                }
+                setWindowTitleOverride(trimmed || null);
                 setEditingTitle(false);
               }}
               className="text-sm font-semibold bg-[var(--color-surface)] border border-[var(--color-borderActive,var(--color-border))] rounded px-1.5 py-0.5 outline-none text-[var(--color-text)] min-w-0 max-w-[50vw]"
               data-tauri-disable-drag="true"
             />
           ) : (
-            <div
-              className="leading-tight min-w-0 group/title cursor-pointer"
-              onDoubleClick={() => { setTitleDraft(windowTitle); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
-            >
-              <div className="text-sm font-semibold tracking-tight text-[var(--color-text)] truncate flex items-center gap-1.5">
-                {windowTitle}
-                <Pencil size={10} className="text-[var(--color-textMuted)] opacity-0 group-hover/title:opacity-100 transition-opacity flex-shrink-0" />
-              </div>
-              <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Remote Connection Manager</div>
+            <div className="leading-tight min-w-0 truncate">
+              <div className="text-sm font-semibold tracking-tight text-[var(--color-text)] truncate">{windowTitle}</div>
             </div>
+          )}
+          {!editingTitle && (
+            <button
+              onClick={() => { setTitleDraft(windowTitleOverride ?? ""); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
+              className="app-bar-button p-1.5 flex-shrink-0"
+              data-tooltip="Rename window"
+              data-tauri-disable-drag="true"
+            >
+              <Pencil size={11} />
+            </button>
           )}
         </div>
         <div className="flex items-center space-x-1">
