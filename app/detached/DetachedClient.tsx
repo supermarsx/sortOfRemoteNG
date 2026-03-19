@@ -72,6 +72,7 @@ const DetachedSessionContent: React.FC<{
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
   const [sendToSubmenuOpen, setSendToSubmenuOpen] = useState(false);
   const [otherWindows, setOtherWindows] = useState<Array<{ label: string; title: string }>>([]);
+  const [tabCloseConfirm, setTabCloseConfirm] = useState<{ sessionId: string; name: string } | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const isTauri =
@@ -346,6 +347,33 @@ const DetachedSessionContent: React.FC<{
   const warnRef = useRef(warnOnDetachClose);
   warnRef.current = warnOnDetachClose;
 
+  /** Close a tab with confirmation if the setting requires it. */
+  const handleTabClose = useCallback((sessionId: string) => {
+    const sess = sessionsRef.current.find(s => s.id === sessionId);
+    if (!sess) return;
+    const settings = SettingsManager.getInstance().getSettings();
+    // Show confirm if this is the active tab, it's connected, and the setting is on
+    if (
+      settings.confirmCloseActiveTab &&
+      sessionId === activeSessionRef.current?.id &&
+      sess.status === "connected"
+    ) {
+      setTabCloseConfirm({ sessionId, name: sess.name });
+      return;
+    }
+    emit("wm:command", { type: "CLOSE_SESSION", sessionId } as WindowCommand).catch(() => {});
+  }, []);
+
+  /** Middle-click close handler. */
+  const handleMiddleClick = useCallback((sessionId: string, e: React.MouseEvent) => {
+    const settings = SettingsManager.getInstance().getSettings();
+    if (e.button === 1 && settings.middleClickCloseTab) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleTabClose(sessionId);
+    }
+  }, [handleTabClose]);
+
   // Derive window title: "sortOfRemoteNG - ActiveTabName" (or custom override)
   const windowTitle = windowTitleOverride ?? (activeSession ? `sortOfRemoteNG - ${activeSession.name}` : "sortOfRemoteNG");
 
@@ -618,6 +646,7 @@ const DetachedSessionContent: React.FC<{
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
               }`}
               onClick={() => setActiveTabId(sess.id)}
+              onAuxClick={(e) => handleMiddleClick(sess.id, e)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setActiveTabId(sess.id);
@@ -673,7 +702,7 @@ const DetachedSessionContent: React.FC<{
                 </>
               )}
               <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "REATTACH_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-surface)] rounded transition-colors opacity-0 group-hover:opacity-100" data-tooltip="Reattach"><CornerUpLeft size={11} /></button>
-              <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "CLOSE_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Close"><X size={11} /></button>
+              <button onClick={(e) => { e.stopPropagation(); handleTabClose(sess.id); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Close"><X size={11} /></button>
               {/* Group color bar at bottom */}
               {group && <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: group.color }} />}
             </div>
@@ -776,7 +805,7 @@ const DetachedSessionContent: React.FC<{
               <div className="sor-menu-divider" />
 
               {/* Close actions */}
-              <button onClick={() => act(() => { emit("wm:command", { type: "CLOSE_SESSION", sessionId: sid } as WindowCommand).catch(() => {}); })} className="sor-menu-item sor-menu-item-danger">
+              <button onClick={() => act(() => handleTabClose(sid))} className="sor-menu-item sor-menu-item-danger">
                 <X size={14} className="mr-2" /> Close Tab
               </button>
               {hasOthers && (
@@ -802,6 +831,15 @@ const DetachedSessionContent: React.FC<{
         message={t("dialogs.confirmCloseDetached") || "Close detached window?"}
         onConfirm={() => resolveCloseConfirmation(true)}
         onCancel={() => resolveCloseConfirmation(false)}
+      />
+      <ConfirmDialog
+        isOpen={tabCloseConfirm !== null}
+        message={`Close the active session "${tabCloseConfirm?.name}"?`}
+        onConfirm={() => {
+          if (tabCloseConfirm) emit("wm:command", { type: "CLOSE_SESSION", sessionId: tabCloseConfirm.sessionId } as WindowCommand).catch(() => {});
+          setTabCloseConfirm(null);
+        }}
+        onCancel={() => setTabCloseConfirm(null)}
       />
     </>
   );
