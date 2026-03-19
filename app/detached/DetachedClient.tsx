@@ -537,14 +537,14 @@ const DetachedSessionContent: React.FC<{
           ) : (
             <span
               className="text-sm font-semibold tracking-tight text-[var(--color-text)] truncate cursor-default"
-              onDoubleClick={() => { setTitleDraft(windowTitleOverride ?? ""); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
+              onDoubleClick={() => { setTitleDraft(windowTitle); setEditingTitle(true); requestAnimationFrame(() => { const el = titleInputRef.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); }}
             >
               {windowTitle}
             </span>
           )}
           {!editingTitle && (
             <button
-              onClick={() => { setTitleDraft(windowTitleOverride ?? ""); setEditingTitle(true); requestAnimationFrame(() => titleInputRef.current?.select()); }}
+              onClick={() => { setTitleDraft(windowTitle); setEditingTitle(true); requestAnimationFrame(() => { const el = titleInputRef.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }); }}
               className="p-1 rounded text-[var(--color-textMuted)] hover:text-[var(--color-text)] opacity-0 group-hover/bar:opacity-100 transition-opacity flex-shrink-0"
               data-tooltip="Rename window"
             >
