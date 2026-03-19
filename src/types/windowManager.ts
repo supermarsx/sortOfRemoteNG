@@ -29,6 +29,10 @@ export type WindowCommand =
   | { type: "WINDOW_READY"; windowId: WindowId }
   | { type: "WINDOW_CLOSING"; windowId: WindowId }
   | { type: "SET_ACTIVE_SESSION"; windowId: WindowId; sessionId: string }
+  | { type: "RENAME_SESSION"; sessionId: string; name: string }
+  | { type: "RECONNECT_SESSION"; sessionId: string }
+  | { type: "DUPLICATE_SESSION"; sessionId: string }
+  | { type: "REVEAL_IN_SIDEBAR"; connectionId: string }
   | {
       type: "DROP_ON_WINDOW";
       sessionId: string;

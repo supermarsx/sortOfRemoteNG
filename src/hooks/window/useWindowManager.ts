@@ -400,6 +400,34 @@ export function useWindowManager({
             cmd.screenY,
           );
           break;
+        case "RENAME_SESSION": {
+          const session = sessionsRef.current.find((s) => s.id === cmd.sessionId);
+          if (session) dispatch({ type: "UPDATE_SESSION", payload: { ...session, name: cmd.name } });
+          break;
+        }
+        case "RECONNECT_SESSION": {
+          // Close then reconnect via detach handler
+          const session = sessionsRef.current.find((s) => s.id === cmd.sessionId);
+          if (session) {
+            await handleSessionClose(cmd.sessionId);
+            const conn = connectionsRef.current.find((c) => c.id === session.connectionId);
+            if (conn) {
+              // Dispatch a custom event that App.tsx listens for
+              window.dispatchEvent(new CustomEvent("wm-reconnect", { detail: { connectionId: conn.id } }));
+            }
+          }
+          break;
+        }
+        case "DUPLICATE_SESSION": {
+          const session = sessionsRef.current.find((s) => s.id === cmd.sessionId);
+          if (session) {
+            window.dispatchEvent(new CustomEvent("wm-duplicate-session", { detail: { sessionId: cmd.sessionId } }));
+          }
+          break;
+        }
+        case "REVEAL_IN_SIDEBAR":
+          window.dispatchEvent(new CustomEvent("reveal-connection", { detail: { connectionId: cmd.connectionId } }));
+          break;
       }
     },
     [
