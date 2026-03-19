@@ -233,14 +233,17 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     setGroupContextMenu(null);
     setSendToSubmenuOpen(false);
     setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
-    // Fetch list of detached windows for "Send to" submenu
+    // Fetch list of detached windows with their actual titles
     import("@tauri-apps/api/window").then(({ getAllWindows }) =>
-      getAllWindows().then((wins) => {
-        setDetachedWindows(
-          wins
-            .filter(w => w.label !== "main" && w.label.startsWith("detached-"))
-            .map(w => ({ label: w.label, title: w.label.replace("detached-", "").slice(0, 8) }))
+      getAllWindows().then(async (wins) => {
+        const detached = wins.filter(w => w.label !== "main" && w.label.startsWith("detached-"));
+        const entries = await Promise.all(
+          detached.map(async (w) => {
+            const title = await w.title().catch(() => w.label);
+            return { label: w.label, title: title || w.label };
+          })
         );
+        setDetachedWindows(entries);
       })
     ).catch(() => setDetachedWindows([]));
   };

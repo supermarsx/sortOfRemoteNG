@@ -151,6 +151,7 @@ const DetachedSessionContent: React.FC<{
 
       dispatch({ type: "SET_CONNECTIONS", payload: conns });
       dispatch({ type: "SET_SESSIONS", payload: sessions });
+      if (event.payload.tabGroups) dispatch({ type: "SET_TAB_GROUPS", payload: event.payload.tabGroups });
       if (event.payload.activeSessionId) setActiveTabId(event.payload.activeSessionId);
     });
 
@@ -213,6 +214,7 @@ const DetachedSessionContent: React.FC<{
       const conns = event.payload.connections.map(reviveConnection);
       dispatch({ type: "SET_CONNECTIONS", payload: conns });
       dispatch({ type: "SET_SESSIONS", payload: sessions });
+      if (event.payload.tabGroups) dispatch({ type: "SET_TAB_GROUPS", payload: event.payload.tabGroups });
       if (event.payload.activeSessionId) setActiveTabId(event.payload.activeSessionId);
       // If main pushed zero sessions, window should close
       if (sessions.length === 0) {
@@ -599,9 +601,11 @@ const DetachedSessionContent: React.FC<{
           }
         }}
       >
+        {/* Render tabs with group color indicators */}
         {state.sessions.map((sess) => {
           const isActive = sess.id === activeSession?.id;
           const isReal = !sess.protocol.startsWith("tool:") && !sess.protocol.startsWith("winmgmt:");
+          const group = sess.tabGroupId ? state.tabGroups.find(g => g.id === sess.tabGroupId) : null;
           return (
             <div
               key={sess.id}
@@ -621,13 +625,16 @@ const DetachedSessionContent: React.FC<{
                 setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: sess.id });
                 const myLabel = getCurrentWindow().label;
                 import("@tauri-apps/api/window").then(({ getAllWindows }) =>
-                  getAllWindows().then((wins) => {
-                    setOtherWindows(
-                      wins.filter(w => w.label !== myLabel).map(w => ({
-                        label: w.label,
-                        title: w.label === "main" ? "Main Window" : w.label.replace("detached-", "").slice(0, 8),
-                      }))
+                  getAllWindows().then(async (wins) => {
+                    const others = wins.filter(w => w.label !== myLabel);
+                    const entries = await Promise.all(
+                      others.map(async (w) => {
+                        if (w.label === "main") return { label: w.label, title: "Main Window" };
+                        const title = await w.title().catch(() => w.label);
+                        return { label: w.label, title: title || w.label };
+                      })
                     );
+                    setOtherWindows(entries);
                   })
                 ).catch(() => setOtherWindows([]));
               }}
@@ -667,6 +674,8 @@ const DetachedSessionContent: React.FC<{
               )}
               <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "REATTACH_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-surface)] rounded transition-colors opacity-0 group-hover:opacity-100" data-tooltip="Reattach"><CornerUpLeft size={11} /></button>
               <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "CLOSE_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Close"><X size={11} /></button>
+              {/* Group color bar at bottom */}
+              {group && <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: group.color }} />}
             </div>
           );
         })}
