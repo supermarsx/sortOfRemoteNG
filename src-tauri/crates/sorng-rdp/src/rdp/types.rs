@@ -157,6 +157,8 @@ pub struct ClipboardFileEntry {
     pub name: String,
     pub size: u64,
     pub path: String,
+    #[serde(default)]
+    pub is_directory: bool,
 }
 
 pub struct RdpActiveConnection {

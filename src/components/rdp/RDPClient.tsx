@@ -172,41 +172,114 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
     setDragOver(false);
     if (!fileDragDropEnabled || !mgr.isConnected || !mgr.rdpSessionId) return;
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
+    type DropEntry = { name: string; size: number; path: string; isDirectory: boolean };
 
-    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-    const sizeStr = totalSize < 1024 ? `${totalSize}B`
-      : totalSize < 1024 * 1024 ? `${(totalSize / 1024).toFixed(1)}KB`
-      : totalSize < 1024 * 1024 * 1024 ? `${(totalSize / (1024 * 1024)).toFixed(1)}MB`
-      : `${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB`;
+    /** Recursively walk a FileSystemEntry tree and stage files to disk. */
+    async function walkEntry(
+      entry: FileSystemEntry,
+      prefix: string,
+      transferDir: string,
+    ): Promise<DropEntry[]> {
+      const out: DropEntry[] = [];
+      const clipName = prefix ? `${prefix}\\${entry.name}` : entry.name;
+
+      if (entry.isDirectory) {
+        out.push({ name: clipName, size: 0, path: '', isDirectory: true });
+
+        const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+        const children = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+          const all: FileSystemEntry[] = [];
+          const readBatch = () => {
+            dirReader.readEntries((batch) => {
+              if (batch.length === 0) { resolve(all); return; }
+              all.push(...batch);
+              readBatch();
+            }, reject);
+          };
+          readBatch();
+        });
+
+        for (const child of children) {
+          out.push(...await walkEntry(child, clipName, transferDir));
+        }
+      } else {
+        const file = await new Promise<File>((resolve, reject) => {
+          (entry as FileSystemFileEntry).file(resolve, reject);
+        });
+        const relDir = prefix.replace(/\\/g, '/');
+        if (relDir) {
+          const sub = await join(transferDir, relDir);
+          if (!(await exists(sub))) await mkdir(sub, { recursive: true });
+        }
+        const dest = await join(transferDir, clipName.replace(/\\/g, '/'));
+        await writeFile(dest, new Uint8Array(await file.arrayBuffer()));
+        out.push({ name: clipName, size: file.size, path: dest, isDirectory: false });
+      }
+      return out;
+    }
 
     try {
-      setDropStatus({ message: `Staging ${files.length} file(s) (${sizeStr})...`, type: 'info' });
+      setDropStatus({ message: 'Scanning dropped items...', type: 'info' });
 
-      // Stage files to a local transfer directory so the backend can read them
       const base = await appDataDir();
       const transferDir = await join(base, 'rdp-transfers');
       if (!(await exists(transferDir))) {
         await mkdir(transferDir, { recursive: true });
       }
 
-      const fileEntries: { name: string; size: number; path: string }[] = [];
-      for (const file of files) {
-        const buf = await file.arrayBuffer();
-        const dest = await join(transferDir, file.name);
-        await writeFile(dest, new Uint8Array(buf));
-        fileEntries.push({ name: file.name, size: file.size, path: dest });
+      let allEntries: DropEntry[] = [];
+
+      // Try webkitGetAsEntry for directory support; fall back to flat files
+      const items = e.dataTransfer.items;
+      let usedEntryApi = false;
+      if (items?.length) {
+        const topEntries: FileSystemEntry[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const entry = items[i].webkitGetAsEntry?.();
+          if (entry) topEntries.push(entry);
+        }
+        if (topEntries.length > 0) {
+          usedEntryApi = true;
+          for (const entry of topEntries) {
+            allEntries.push(...await walkEntry(entry, '', transferDir));
+          }
+        }
       }
 
-      // Send to backend for CLIPRDR file transfer via FileGroupDescriptorW
+      // Fallback: plain File objects (no directory support)
+      if (!usedEntryApi) {
+        const files = Array.from(e.dataTransfer.files);
+        for (const file of files) {
+          const dest = await join(transferDir, file.name);
+          await writeFile(dest, new Uint8Array(await file.arrayBuffer()));
+          allEntries.push({ name: file.name, size: file.size, path: dest, isDirectory: false });
+        }
+      }
+
+      if (allEntries.length === 0) return;
+
+      const fileCount = allEntries.filter(e => !e.isDirectory).length;
+      const dirCount = allEntries.filter(e => e.isDirectory).length;
+      const totalSize = allEntries.reduce((s, e) => s + e.size, 0);
+      const sizeStr = totalSize < 1024 ? `${totalSize}B`
+        : totalSize < 1024 * 1024 ? `${(totalSize / 1024).toFixed(1)}KB`
+        : totalSize < 1024 * 1024 * 1024 ? `${(totalSize / (1024 * 1024)).toFixed(1)}MB`
+        : `${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB`;
+
+      const countStr = [
+        fileCount > 0 ? `${fileCount} file${fileCount > 1 ? 's' : ''}` : '',
+        dirCount > 0 ? `${dirCount} folder${dirCount > 1 ? 's' : ''}` : '',
+      ].filter(Boolean).join(', ');
+
+      setDropStatus({ message: `Staging ${countStr} (${sizeStr})...`, type: 'info' });
+
       await invoke('rdp_clipboard_copy_files', {
         sessionId: mgr.rdpSessionId,
-        files: fileEntries,
+        files: allEntries,
       });
 
       setDropStatus({
-        message: `${files.length} file(s) (${sizeStr}) sent to remote clipboard — use Ctrl+V on remote to paste`,
+        message: `${countStr} (${sizeStr}) sent to remote clipboard — use Ctrl+V on remote to paste`,
         type: 'info',
       });
     } catch (err) {
@@ -234,7 +307,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       <div className="absolute inset-0 z-40 flex items-center justify-center bg-primary/20 border-2 border-dashed border-primary rounded-lg pointer-events-none">
         <div className="bg-[var(--color-surface)] px-6 py-4 rounded-xl shadow-2xl border border-primary/50 text-center">
           <div className="text-lg font-semibold text-primary mb-1">Drop files here</div>
-          <div className="text-xs text-[var(--color-textSecondary)]">Files will be transferred to remote clipboard</div>
+          <div className="text-xs text-[var(--color-textSecondary)]">Files and folders will be transferred to remote clipboard</div>
         </div>
       </div>
     )}

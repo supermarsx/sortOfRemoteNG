@@ -6,6 +6,8 @@ pub struct ClipboardFilePayload {
     pub name: String,
     pub size: f64,
     pub path: String,
+    #[serde(default)]
+    pub is_directory: bool,
 }
 
 /// Detect the current Windows keyboard layout and return the HKL (low 16 bits
@@ -624,6 +626,7 @@ pub async fn rdp_clipboard_copy_files(
             name: f.name,
             size: f.size as u64,
             path: f.path,
+            is_directory: f.is_directory,
         }).collect();
         conn.cmd_tx
             .send(RdpCommand::ClipboardCopyFiles(entries))

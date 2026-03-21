@@ -1388,6 +1388,7 @@ fn run_active_session_loop(
                                 name: e.name.clone(),
                                 size: e.size,
                                 path: e.path.clone(),
+                                is_directory: e.is_directory,
                             }).collect();
                             state.file_bytes_transferred = 0;
                         }
@@ -1872,6 +1873,11 @@ fn run_active_session_loop(
                         let response = if request.flags.contains(FileContentsFlags::SIZE) {
                             crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_size_response(
                                 request.stream_id, file.size,
+                            )
+                        } else if file.is_directory {
+                            // Directory entries have no data
+                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
+                                request.stream_id, Vec::<u8>::new(),
                             )
                         } else {
                             match std::fs::File::open(&file.path) {

@@ -27,12 +27,14 @@ pub const FILEGROUPDESCRIPTORW_ID: u32 = 0xC0A0;
 /// A file staged for CLIPRDR file transfer.
 #[derive(Debug, Clone)]
 pub struct StagedFile {
-    /// File name (max 259 chars for CLIPRDR).
+    /// File name (max 259 chars for CLIPRDR), may contain backslash path separators.
     pub name: String,
-    /// File size in bytes.
+    /// File size in bytes (0 for directories).
     pub size: u64,
-    /// Local filesystem path for reading file content.
+    /// Local filesystem path for reading file content (empty for directories).
     pub path: String,
+    /// Whether this entry is a directory.
+    pub is_directory: bool,
 }
 
 /// Shared clipboard state accessible from both the backend callbacks (called
@@ -267,7 +269,11 @@ pub fn encode_utf16le(text: &str) -> Vec<u8> {
 /// Build a PackedFileList from staged files.
 pub fn build_file_list(files: &[StagedFile]) -> PackedFileList {
     let descriptors: Vec<FileDescriptor> = files.iter().map(|f| FileDescriptor {
-        attributes: Some(ClipboardFileAttributes::ARCHIVE),
+        attributes: Some(if f.is_directory {
+            ClipboardFileAttributes::DIRECTORY
+        } else {
+            ClipboardFileAttributes::ARCHIVE
+        }),
         last_write_time: None,
         file_size: Some(f.size),
         name: f.name.clone(),
