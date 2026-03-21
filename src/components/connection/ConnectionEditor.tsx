@@ -26,7 +26,6 @@ import TOTPOptions from "../connectionEditor/TOTPOptions";
 import BackupCodesSection from "../connectionEditor/BackupCodesSection";
 import SecurityQuestionsSection from "../connectionEditor/SecurityQuestionsSection";
 import RecoveryInfoSection from "../connectionEditor/RecoveryInfoSection";
-import { Modal } from "../ui/overlays/Modal";
 import {
   useConnectionEditor,
   PROTOCOL_OPTIONS,
@@ -624,51 +623,37 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   if (!isOpen) return null;
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      dataTestId="connection-editor-modal"
-      backdropClassName="bg-black/60 backdrop-blur-sm"
-      panelClassName="relative max-w-2xl rounded-2xl border border-[var(--color-border)] shadow-2xl overflow-hidden"
-      contentClassName="relative bg-[var(--color-surface)] backdrop-blur-xl"
-    >
-      {/* Subtle glow effect */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0">
-        <div
-          className={`w-[500px] h-[400px] rounded-full blur-[100px] animate-pulse ${
-            mgr.isNewConnection ? "bg-success/15" : "bg-primary/15"
-          }`}
-        />
-      </div>
+    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-2xl mx-auto w-full p-6">
+          <form
+            onSubmit={mgr.handleSubmit}
+            className="flex flex-col gap-3"
+          >
+            <EditorHeader mgr={mgr} onClose={onClose} />
 
-      <form
-        onSubmit={mgr.handleSubmit}
-        className="relative z-10 flex flex-col flex-1 min-h-0"
-      >
-        <EditorHeader mgr={mgr} onClose={onClose} />
+            <QuickToggles mgr={mgr} />
+            <NameInput mgr={mgr} />
+            <ParentSelector mgr={mgr} />
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          <QuickToggles mgr={mgr} />
-          <NameInput mgr={mgr} />
-          <ParentSelector mgr={mgr} />
+            {!mgr.formData.isGroup && (
+              <>
+                <ProtocolGrid mgr={mgr} />
+                <ConnectionFields mgr={mgr} />
+                <ProtocolSections mgr={mgr} />
+              </>
+            )}
 
-          {!mgr.formData.isGroup && (
-            <>
-              <ProtocolGrid mgr={mgr} />
-              <ConnectionFields mgr={mgr} />
-              <ProtocolSections mgr={mgr} />
-            </>
-          )}
+            {!mgr.formData.isGroup && <BehaviorSection mgr={mgr} />}
 
-          {!mgr.formData.isGroup && <BehaviorSection mgr={mgr} />}
+            <IconPicker mgr={mgr} />
+            <TagsSection mgr={mgr} />
+            <DescriptionSection mgr={mgr} />
 
-          <IconPicker mgr={mgr} />
-          <TagsSection mgr={mgr} />
-          <DescriptionSection mgr={mgr} />
+            <EditorFooter mgr={mgr} />
+          </form>
         </div>
-
-        <EditorFooter mgr={mgr} />
-      </form>
-    </Modal>
+      </div>
+    </div>
   );
 };
