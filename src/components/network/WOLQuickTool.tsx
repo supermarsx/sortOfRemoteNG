@@ -1,12 +1,10 @@
 import React from 'react';
 import {
-  X, Power, Clock, Search, RefreshCw, Send,
+  Power, Clock, Search, RefreshCw, Send,
   AlertCircle, CheckCircle, Cpu, Globe, Building2,
   Database, Loader2, CheckSquare, Square, Zap, Calendar,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from '../ui/overlays/Modal';
-import { DialogHeader } from '../ui/overlays/DialogHeader';
 import { WakeScheduleManager } from './WakeScheduleManager';
 import { useWOLQuickTool, type WOLQuickToolMgr } from '../../hooks/network/useWOLQuickTool';
 import { Checkbox, NumberInput } from '../ui/forms';
@@ -52,25 +50,25 @@ function getVendorSourceIcon(source: string | null | undefined) {
 function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader
-      icon={Power}
-      iconColor="text-success"
-      iconBg="bg-success/20"
-      title={t('wake.quickTool', 'Wake-on-LAN')}
-      subtitle="Send magic packets to wake network devices"
-      onClose={mgr.onClose}
-      className="relative z-10 bg-[var(--color-surface)]"
-      actions={
-        <button
-          onClick={() => mgr.setShowScheduleManager(true)}
-          className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] btn-animate"
-          title={t('wake.scheduleWake', 'Schedule Wake')}
-        >
-          <Calendar size={16} />
-          <span className="text-sm">{t('wake.schedules', 'Schedules')}</span>
-        </button>
-      }
-    />
+    <div className="flex items-start justify-between">
+      <div>
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+          <Power className="w-5 h-5 text-success" />
+          {t('wake.quickTool', 'Wake-on-LAN')}
+        </h3>
+        <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+          Send magic packets to wake network devices
+        </p>
+      </div>
+      <button
+        onClick={() => mgr.setShowScheduleManager(true)}
+        className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] btn-animate"
+        title={t('wake.scheduleWake', 'Schedule Wake')}
+      >
+        <Calendar size={16} />
+        <span className="text-sm">{t('wake.schedules', 'Schedules')}</span>
+      </button>
+    </div>
   );
 }
 
@@ -388,33 +386,18 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
 
   return (
     <>
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        backdropClassName="bg-black/50 backdrop-blur-sm"
-        panelClassName="relative max-w-2xl rounded-xl overflow-hidden border border-[var(--color-border)] shadow-2xl resize-y min-h-[400px] h-[85vh]"
-        contentClassName="relative bg-[var(--color-surface)] modal-content-animate"
-      >
-        {/* Scattered glow effect */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute w-[250px] h-[180px] bg-success/8 rounded-full blur-[100px] top-[20%] left-[15%]" />
-          <div className="absolute w-[200px] h-[200px] bg-success/6 rounded-full blur-[120px] top-[45%] left-[40%]" />
-          <div className="absolute w-[220px] h-[150px] bg-teal-500/6 rounded-full blur-[90px] top-[65%] right-[20%]" />
+      <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="max-w-2xl mx-auto w-full p-6 space-y-5">
+            <WOLHeader mgr={mgr} />
+            <QuickWakeSection mgr={mgr} />
+            <AdvancedOptions mgr={mgr} />
+            <StatusMessage mgr={mgr} />
+            <RecentMacs mgr={mgr} />
+            <DeviceList mgr={mgr} />
+          </div>
         </div>
-
-        <WOLHeader mgr={mgr} />
-
-        <div
-          className="relative z-10 p-5 space-y-5 overflow-y-auto flex flex-col bg-[var(--color-surface)]"
-          style={{ height: 'calc(100% - 80px)' }}
-        >
-          <QuickWakeSection mgr={mgr} />
-          <AdvancedOptions mgr={mgr} />
-          <StatusMessage mgr={mgr} />
-          <RecentMacs mgr={mgr} />
-          <DeviceList mgr={mgr} />
-        </div>
-      </Modal>
+      </div>
 
       <WakeScheduleManager
         isOpen={mgr.showScheduleManager}
