@@ -55,7 +55,6 @@ describe("AppDialogs", () => {
           } as any
         }
         showCollectionSelector={false}
-        showConnectionEditor={false}
         showQuickConnect={false}
         showPasswordDialog={false}
         showSettings={false}
@@ -63,13 +62,11 @@ describe("AppDialogs", () => {
         showDiagnostics={false}
         showErrorLog={false}
         setShowCollectionSelector={() => {}}
-        setShowConnectionEditor={() => {}}
         setShowQuickConnect={() => {}}
         setShowSettings={() => {}}
         setShowImportExport={() => {}}
         setShowDiagnostics={() => {}}
         setShowErrorLog={() => {}}
-        editingConnection={undefined}
         passwordDialogMode="unlock"
         passwordError=""
         importExportInitialTab="import"

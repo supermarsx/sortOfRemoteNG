@@ -468,6 +468,7 @@ const defaultSettings: GlobalSettings = {
     rdpSessions: 'tab' as const,
     tagManager: 'tab' as const,
     tabGroupManager: 'tab' as const,
+    connectionEditor: 'tab' as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,

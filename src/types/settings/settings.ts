@@ -1114,6 +1114,7 @@ export interface ToolDisplayModes {
   rdpSessions: 'tab';
   tagManager: 'tab';
   tabGroupManager: 'tab';
+  connectionEditor: 'tab';
 }
 
 export interface SettingsDialogConfig {

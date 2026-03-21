@@ -58,10 +58,6 @@ const AppContent: React.FC = () => {
   const { t } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
   const settingsManager = SettingsManager.getInstance();
-  const [editingConnection, setEditingConnection] = useState<
-    Connection | undefined
-  >(undefined); // connection currently being edited
-  const [showConnectionEditor, setShowConnectionEditor] = useState(false); // connection editor visibility
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
@@ -231,6 +227,7 @@ const AppContent: React.FC = () => {
       'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
       'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
       'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
+      'connectionEditor',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
@@ -562,13 +559,27 @@ const AppContent: React.FC = () => {
 
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
-    setEditingConnection(undefined);
-    setShowConnectionEditor(true);
+    const session = createToolSession('connectionEditor', { name: 'New Connection' });
+    dispatch({ type: 'ADD_SESSION', payload: session });
+    requestAnimationFrame(() => setActiveSessionId(session.id));
   };
 
   const handleEditConnection = (connection: Connection) => {
-    setEditingConnection(connection);
-    setShowConnectionEditor(true);
+    // Check if an editor tab for this connection already exists
+    const protocol = getToolProtocol('connectionEditor');
+    const existing = state.sessions.find(
+      s => s.protocol === protocol && s.connectionId === connection.id && !s.layout?.isDetached,
+    );
+    if (existing) {
+      setActiveSessionId(existing.id);
+      return;
+    }
+    const session = createToolSession('connectionEditor', {
+      connectionId: connection.id,
+      name: `Edit: ${connection.name}`,
+    });
+    dispatch({ type: 'ADD_SESSION', payload: session });
+    requestAnimationFrame(() => setActiveSessionId(session.id));
   };
 
   const handleDeleteConnection = (connection: Connection) => {
@@ -1224,7 +1235,7 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} />}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} />}
                 showTabBar={false}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
@@ -1280,7 +1291,6 @@ const AppContent: React.FC = () => {
       <AppDialogs
         appSettings={appSettings}
         showCollectionSelector={showCollectionSelector}
-        showConnectionEditor={showConnectionEditor}
         showQuickConnect={showQuickConnect}
         showPasswordDialog={showPasswordDialog}
         showSettings={showSettings}
@@ -1288,13 +1298,11 @@ const AppContent: React.FC = () => {
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
         setShowCollectionSelector={setShowCollectionSelector}
-        setShowConnectionEditor={setShowConnectionEditor}
         setShowQuickConnect={setShowQuickConnect}
         setShowSettings={handleOpenSettings}
         setShowImportExport={setShowImportExport}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
-        editingConnection={editingConnection}
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}
         importExportInitialTab={importExportInitialTab}

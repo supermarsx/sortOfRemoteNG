@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React from "react";
+import React, { useMemo } from "react";
 import dynamic from "next/dynamic";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
@@ -95,20 +95,37 @@ const TabGroupManager = dynamic(
   () => import("../session/TabGroupManager").then((m) => m.TabGroupManager),
   { ssr: false },
 );
+const ConnectionEditor = dynamic(
+  () => import("../connection/ConnectionEditor").then((m) => m.ConnectionEditor),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
   onClose: () => void;
+  /** RDP panel extras — provided by SessionViewer from App-level hooks */
+  onReattachSession?: (sessionId: string, connectionId?: string) => void;
+  onDetachToWindow?: (sessionId: string) => void;
+  onReconnect?: (connection: import("../../types/connection/connection").Connection) => void;
 }
 
 /**
  * Renders the appropriate tool component inside a session tab.
  * Used by SessionViewer when the session protocol starts with "tool:".
  */
-export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }) => {
+export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect }) => {
   const { state } = useConnections();
   const { settings } = useSettings();
   const toolKey = getToolKeyFromProtocol(session.protocol);
+
+  const activeRdpBackendIds = useMemo(
+    () => state.sessions
+      .filter((s) => s.protocol === 'rdp')
+      .map((s) => s.backendSessionId || s.connectionId)
+      .filter(Boolean) as string[],
+    [state.sessions],
+  );
+
   if (!toolKey) return null;
 
   // Tools render as modal dialogs (fixed inset-0 + backdrop). Inside a tab,
@@ -137,11 +154,22 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
       {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
       {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
       {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
+      {toolKey === 'connectionEditor' && (
+        <ConnectionEditor
+          connection={state.connections.find(c => c.id === session.connectionId)}
+          isOpen
+          onClose={onClose}
+        />
+      )}
       {toolKey === 'rdpSessions' && (
         <RDPSessionPanelTab
           isVisible
           connections={state.connections}
+          activeBackendSessionIds={activeRdpBackendIds}
           onClose={onClose}
+          onReattachSession={onReattachSession}
+          onDetachToWindow={onDetachToWindow}
+          onReconnect={onReconnect}
           thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
           thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
           thumbnailInterval={settings.rdpSessionThumbnailInterval}

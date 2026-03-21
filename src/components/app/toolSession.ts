@@ -26,6 +26,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   rdpSessions: "RDP Sessions",
   tagManager: "Tag Manager",
   tabGroupManager: "Tab Groups",
+  connectionEditor: "Connection Editor",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>
@@ -42,10 +43,10 @@ export const getToolKeyFromProtocol = (protocol: string): ToolKey | null => {
 export const getToolProtocol = (toolKey: ToolKey): string =>
   `${TOOL_PROTOCOL_PREFIX}${toolKey}`;
 
-export const createToolSession = (toolKey: ToolKey): ConnectionSession => ({
+export const createToolSession = (toolKey: ToolKey, opts?: { connectionId?: string; name?: string }): ConnectionSession => ({
   id: generateId(),
-  connectionId: `tool-${toolKey}`,
-  name: TOOL_LABELS[toolKey],
+  connectionId: opts?.connectionId ?? `tool-${toolKey}`,
+  name: opts?.name ?? TOOL_LABELS[toolKey],
   status: "connected",
   startTime: new Date(),
   protocol: getToolProtocol(toolKey),

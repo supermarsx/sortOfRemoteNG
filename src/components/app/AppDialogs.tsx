@@ -15,10 +15,6 @@ const CollectionSelector = dynamic(
   () => import("../connection/CollectionSelector").then((module) => module.CollectionSelector),
   { ssr: false },
 );
-const ConnectionEditor = dynamic(
-  () => import("../connection/ConnectionEditor").then((module) => module.ConnectionEditor),
-  { ssr: false },
-);
 const QuickConnect = dynamic(
   () => import("../connection/QuickConnect").then((module) => module.QuickConnect),
   { ssr: false },
@@ -43,7 +39,6 @@ const ConnectionDiagnostics = dynamic(
 interface AppDialogsProps {
   appSettings: GlobalSettings;
   showCollectionSelector: boolean;
-  showConnectionEditor: boolean;
   showQuickConnect: boolean;
   showPasswordDialog: boolean;
   showSettings: boolean;
@@ -51,13 +46,11 @@ interface AppDialogsProps {
   showDiagnostics: boolean;
   showErrorLog: boolean;
   setShowCollectionSelector: (v: boolean) => void;
-  setShowConnectionEditor: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
   setShowSettings: (v: boolean) => void;
   setShowImportExport: (v: boolean) => void;
   setShowDiagnostics: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
-  editingConnection: Connection | undefined;
   passwordDialogMode: "setup" | "unlock";
   passwordError: string;
   importExportInitialTab: "import" | "export";
@@ -86,7 +79,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
   const {
     appSettings,
     showCollectionSelector,
-    showConnectionEditor,
     showQuickConnect,
     showPasswordDialog,
     showSettings,
@@ -94,13 +86,11 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     showDiagnostics,
     showErrorLog,
     setShowCollectionSelector,
-    setShowConnectionEditor,
     setShowQuickConnect,
     setShowSettings,
     setShowImportExport,
     setShowDiagnostics,
     setShowErrorLog,
-    editingConnection,
     passwordDialogMode,
     passwordError,
     importExportInitialTab,
@@ -145,12 +135,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         isOpen={showCollectionSelector}
         onCollectionSelect={handleCollectionSelect}
         onClose={() => setShowCollectionSelector(false)}
-      />
-
-      <ConnectionEditor
-        connection={editingConnection}
-        isOpen={showConnectionEditor}
-        onClose={() => setShowConnectionEditor(false)}
       />
 
       <QuickConnect
