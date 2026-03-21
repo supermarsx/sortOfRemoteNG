@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   RefreshCw, Monitor, Power, PowerOff, Server, ArrowDownToLine, Unplug,
   PlugZap, LogOut, RotateCcw, ExternalLink, ScrollText, X, AlertCircle,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ErrorBanner, EmptyState } from '../ui/display';
 import { Connection } from '../../types/connection/connection';
+import { useConnections } from '../../contexts/useConnections';
 import { ConfirmDialog } from '../ui/dialogs/ConfirmDialog';
 import { RDPLogViewer } from './RDPLogViewer';
 import {
@@ -134,7 +135,8 @@ const SessionCard: React.FC<{
   thumbnailsEnabled: boolean;
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
-}> = ({ mgr, session, thumbnailsEnabled, onReattachSession, onDetachToWindow }) => {
+  onViewerDetach?: (backendSessionId: string) => void;
+}> = ({ mgr, session, thumbnailsEnabled, onReattachSession, onDetachToWindow, onViewerDetach }) => {
   const stats = mgr.statsMap[session.id];
   const display = mgr.getSessionDisplayName(session);
   const isDetached = mgr.isSessionDetached(session);
@@ -198,7 +200,7 @@ const SessionCard: React.FC<{
             {onDetachToWindow && (
               <button onClick={() => onDetachToWindow(session.id)} className="sor-icon-btn-xs" data-tooltip="Detach to window"><ExternalLink size={12} /></button>
             )}
-            <button onClick={() => mgr.handleDetach(session.id)} className="sor-icon-btn-xs" data-tooltip="Detach viewer"><Unplug size={12} /></button>
+            <button onClick={() => { mgr.handleDetach(session.id); onViewerDetach?.(session.id); }} className="sor-icon-btn-xs" data-tooltip="Detach viewer"><Unplug size={12} /></button>
             <button onClick={() => mgr.handleSignOut(session.id)} className="sor-icon-btn-xs" data-tooltip="Sign out"><LogOut size={12} /></button>
             <button onClick={() => { mgr.setLogSessionFilter(session.id); mgr.setActiveTab('logs'); }} className="sor-icon-btn-xs" data-tooltip="View logs"><ScrollText size={12} /></button>
             <div className="w-px h-3 bg-[var(--color-border)] mx-0.5" />
@@ -357,10 +359,21 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
   onReattachSession, onDetachToWindow, onReconnect,
   thumbnailsEnabled = true, thumbnailPolicy = 'realtime', thumbnailInterval = 5,
 }) => {
+  const { state, dispatch } = useConnections();
   const mgr = useRDPSessionPanel({
     isVisible, connections, activeBackendSessionIds,
     thumbnailsEnabled, thumbnailPolicy, thumbnailInterval,
   });
+
+  /** Mark the frontend session tab as disconnected when the viewer is detached. */
+  const handleViewerDetach = useCallback((backendSessionId: string) => {
+    const frontendSession = state.sessions.find(
+      s => s.protocol === 'rdp' && (s.backendSessionId === backendSessionId || s.connectionId === backendSessionId),
+    );
+    if (frontendSession) {
+      dispatch({ type: 'UPDATE_SESSION', payload: { ...frontendSession, status: 'disconnected' } });
+    }
+  }, [state.sessions, dispatch]);
 
   if (!isVisible) return null;
 
@@ -386,7 +399,7 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
                 ) : (
                   <div className="divide-y divide-[var(--color-border)]">
                     {mgr.sessions.map((session) => (
-                      <SessionCard key={session.id} mgr={mgr} session={session} thumbnailsEnabled={thumbnailsEnabled} onReattachSession={onReattachSession} onDetachToWindow={onDetachToWindow} />
+                      <SessionCard key={session.id} mgr={mgr} session={session} thumbnailsEnabled={thumbnailsEnabled} onReattachSession={onReattachSession} onDetachToWindow={onDetachToWindow} onViewerDetach={handleViewerDetach} />
                     ))}
                   </div>
                 )}
@@ -394,9 +407,13 @@ export const RDPSessionPanel: React.FC<RDPSessionPanelProps> = ({
               <PanelFooter mgr={mgr} />
             </>
           ) : mgr.activeTab === 'history' ? (
-            <HistoryTab mgr={mgr} onReconnect={onReconnect} />
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <HistoryTab mgr={mgr} onReconnect={onReconnect} />
+            </div>
           ) : (
-            <RDPLogViewer isVisible={mgr.activeTab === 'logs'} sessionFilter={mgr.logSessionFilter} />
+            <div className="flex-1 min-h-0">
+              <RDPLogViewer isVisible={mgr.activeTab === 'logs'} sessionFilter={mgr.logSessionFilter} />
+            </div>
           )}
         </div>
       </div>
