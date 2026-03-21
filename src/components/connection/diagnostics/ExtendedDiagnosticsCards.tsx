@@ -105,7 +105,7 @@ const ExtendedDiagnosticsCards = ({
               <div className="text-[10px] text-[var(--color-textMuted)]">
                 {t("diagnostics.pathStability", "Stability")}:{" "}
                 {results.asymmetricRouting.path_stability}
-                {results.asymmetricRouting.latency_variance !== undefined &&
+                {results.asymmetricRouting.latency_variance != null &&
                   ` (±${results.asymmetricRouting.latency_variance.toFixed(1)}ms)`}
               </div>
               {results.asymmetricRouting.ttl_analysis.received_ttl && (

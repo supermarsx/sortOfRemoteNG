@@ -933,7 +933,7 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
           detail={[
             `Confidence: ${results.asymmetricRouting.confidence}`,
             `Path Stability: ${results.asymmetricRouting.path_stability}`,
-            results.asymmetricRouting.latency_variance !== undefined ? `Latency Variance: +/-${results.asymmetricRouting.latency_variance.toFixed(2)}ms` : null,
+            results.asymmetricRouting.latency_variance != null ? `Latency Variance: +/-${results.asymmetricRouting.latency_variance.toFixed(2)}ms` : null,
             results.asymmetricRouting.ttl_analysis.received_ttl ? `TTL: ${results.asymmetricRouting.ttl_analysis.received_ttl}${results.asymmetricRouting.ttl_analysis.estimated_hops ? ` (~${results.asymmetricRouting.ttl_analysis.estimated_hops} hops)` : ""}` : null,
             ...results.asymmetricRouting.notes,
           ].filter(Boolean).join("\n")}

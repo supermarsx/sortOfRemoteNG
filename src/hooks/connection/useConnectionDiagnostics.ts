@@ -258,7 +258,7 @@ export function useConnectionDiagnostics(connection: Connection) {
       lines.push(
         `Path Stability: ${results.asymmetricRouting.path_stability}`,
       );
-      if (results.asymmetricRouting.latency_variance !== undefined)
+      if (results.asymmetricRouting.latency_variance != null)
         lines.push(
           `Latency Variance: ${results.asymmetricRouting.latency_variance.toFixed(2)}ms`,
         );
