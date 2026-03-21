@@ -190,13 +190,17 @@ export function useSessionDetach(
           (connectionId && s.connectionId === connectionId && s.protocol === 'rdp')
       );
       if (existing) {
+        // Re-activate and ensure it's marked as connecting so the RDP client re-initialises
+        if (existing.status === 'disconnected') {
+          dispatch({ type: 'UPDATE_SESSION', payload: { ...existing, status: 'connecting' } });
+        }
         setActiveSessionId(existing.id);
         return;
       }
 
       const newSession: ConnectionSession = {
         id: generateId(),
-        connectionId: connectionId || backendSessionId,
+        connectionId: connection?.id || connectionId || backendSessionId,
         backendSessionId,
         name: connection?.name || connectionId || backendSessionId.slice(0, 8),
         status: 'connecting',
@@ -204,7 +208,7 @@ export function useSessionDetach(
         protocol: 'rdp',
         hostname: connection?.hostname || '',
         reconnectAttempts: 0,
-        maxReconnectAttempts: 3,
+        maxReconnectAttempts: connection?.retryAttempts || 3,
       };
 
       dispatch({ type: 'ADD_SESSION', payload: newSession });
