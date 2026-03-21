@@ -147,6 +147,16 @@ pub enum RdpCommand {
     ClipboardCopy(String),
     /// Request clipboard text from the remote server.
     ClipboardPaste,
+    /// Stage local files for CLIPRDR file transfer and advertise FileGroupDescriptorW.
+    ClipboardCopyFiles(Vec<ClipboardFileEntry>),
+}
+
+/// File entry for clipboard file transfer.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClipboardFileEntry {
+    pub name: String,
+    pub size: u64,
+    pub path: String,
 }
 
 pub struct RdpActiveConnection {

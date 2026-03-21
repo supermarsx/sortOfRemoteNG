@@ -76,6 +76,7 @@ pub fn is_command(command: &str) -> bool {
             | "rdp_get_thumbnail"
             | "rdp_save_screenshot"
             | "rdp_clipboard_copy"
+            | "rdp_clipboard_copy_files"
             | "rdp_clipboard_paste"
             | "get_rdp_logs"
             | "connect_vnc"
@@ -604,6 +605,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         rdp_commands::rdp_get_thumbnail,
         rdp_commands::rdp_save_screenshot,
         rdp_commands::rdp_clipboard_copy,
+        rdp_commands::rdp_clipboard_copy_files,
         rdp_commands::rdp_clipboard_paste,
         rdp_commands::get_rdp_logs,
         vnc_commands::connect_vnc,

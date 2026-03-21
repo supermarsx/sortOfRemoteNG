@@ -5,6 +5,9 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { writeFile, mkdir, exists } from '@tauri-apps/plugin-fs';
+import { appDataDir, join } from '@tauri-apps/api/path';
 import RDPErrorScreen from './RDPErrorScreen';
 import { ConnectingSpinner } from '../ui/display';
 import { TrustWarningDialog } from '../security/TrustWarningDialog';
@@ -122,6 +125,32 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
   // File drag-drop state
   const [dragOver, setDragOver] = React.useState(false);
   const [dropStatus, setDropStatus] = React.useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [transferProgress, setTransferProgress] = React.useState<{ transferred: number; total: number; fileName: string } | null>(null);
+  const dropDismissRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Listen for file transfer progress events from backend
+  React.useEffect(() => {
+    if (!mgr.rdpSessionId) return;
+    let unlisten: (() => void) | undefined;
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen<{ session_id: string; file_name: string; transferred: number; total: number }>(
+        'rdp://file-transfer-progress',
+        (event) => {
+          if (event.payload.session_id !== mgr.rdpSessionId) return;
+          setTransferProgress({
+            transferred: event.payload.transferred,
+            total: event.payload.total,
+            fileName: event.payload.file_name,
+          });
+          // Clear progress when complete
+          if (event.payload.transferred >= event.payload.total) {
+            setTimeout(() => setTransferProgress(null), 2000);
+          }
+        },
+      ).then((fn) => { unlisten = fn; });
+    });
+    return () => { unlisten?.(); };
+  }, [mgr.rdpSessionId]);
 
   // Resolve whether file drag-drop is enabled (per-connection → global)
   const fileDragDropEnabled =
@@ -141,43 +170,55 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
   const handleDrop = React.useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    if (!fileDragDropEnabled || !mgr.isConnected) return;
+    if (!fileDragDropEnabled || !mgr.isConnected || !mgr.rdpSessionId) return;
 
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
-    const fileNames = files.map(f => f.name).join(', ');
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-    const sizeMB = (totalSize / (1024 * 1024)).toFixed(1);
+    const sizeStr = totalSize < 1024 ? `${totalSize}B`
+      : totalSize < 1024 * 1024 ? `${(totalSize / 1024).toFixed(1)}KB`
+      : totalSize < 1024 * 1024 * 1024 ? `${(totalSize / (1024 * 1024)).toFixed(1)}MB`
+      : `${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB`;
 
-    // Check if clipboard redirection is available
-    const clipboardEnabled = mgr.rdpSettings?.deviceRedirection?.clipboard !== false;
+    try {
+      setDropStatus({ message: `Staging ${files.length} file(s) (${sizeStr})...`, type: 'info' });
 
-    if (clipboardEnabled) {
-      // Copy file paths to clipboard so user can paste in remote
-      try {
-        const paths = files.map(f => f.name).join('\n');
-        await navigator.clipboard.writeText(paths);
-        setDropStatus({
-          message: `${files.length} file${files.length > 1 ? 's' : ''} (${sizeMB}MB) — file name${files.length > 1 ? 's' : ''} copied to clipboard. Use Ctrl+V to paste in remote session.`,
-          type: 'info',
-        });
-      } catch {
-        setDropStatus({
-          message: `Received ${files.length} file${files.length > 1 ? 's' : ''} (${sizeMB}MB) but clipboard access failed.`,
-          type: 'error',
-        });
+      // Stage files to a local transfer directory so the backend can read them
+      const base = await appDataDir();
+      const transferDir = await join(base, 'rdp-transfers');
+      if (!(await exists(transferDir))) {
+        await mkdir(transferDir, { recursive: true });
       }
-    } else {
+
+      const fileEntries: { name: string; size: number; path: string }[] = [];
+      for (const file of files) {
+        const buf = await file.arrayBuffer();
+        const dest = await join(transferDir, file.name);
+        await writeFile(dest, new Uint8Array(buf));
+        fileEntries.push({ name: file.name, size: file.size, path: dest });
+      }
+
+      // Send to backend for CLIPRDR file transfer via FileGroupDescriptorW
+      await invoke('rdp_clipboard_copy_files', {
+        sessionId: mgr.rdpSessionId,
+        files: fileEntries,
+      });
+
       setDropStatus({
-        message: `File drop received (${fileNames}) but file transfer requires clipboard or drive redirection to be enabled.`,
+        message: `${files.length} file(s) (${sizeStr}) sent to remote clipboard — use Ctrl+V on remote to paste`,
+        type: 'info',
+      });
+    } catch (err) {
+      setDropStatus({
+        message: `File transfer failed: ${err instanceof Error ? err.message : String(err)}`,
         type: 'error',
       });
     }
 
-    // Auto-dismiss after 5 seconds
-    setTimeout(() => setDropStatus(null), 5000);
-  }, [fileDragDropEnabled, mgr.isConnected, mgr.rdpSettings?.deviceRedirection?.clipboard]);
+    if (dropDismissRef.current) clearTimeout(dropDismissRef.current);
+    dropDismissRef.current = setTimeout(() => setDropStatus(null), 8000);
+  }, [fileDragDropEnabled, mgr.isConnected, mgr.rdpSessionId]);
 
   return (
   <div
@@ -193,19 +234,40 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       <div className="absolute inset-0 z-40 flex items-center justify-center bg-primary/20 border-2 border-dashed border-primary rounded-lg pointer-events-none">
         <div className="bg-[var(--color-surface)] px-6 py-4 rounded-xl shadow-2xl border border-primary/50 text-center">
           <div className="text-lg font-semibold text-primary mb-1">Drop files here</div>
-          <div className="text-xs text-[var(--color-textSecondary)]">File names will be copied to clipboard for pasting in remote session</div>
+          <div className="text-xs text-[var(--color-textSecondary)]">Files will be transferred to remote clipboard</div>
         </div>
       </div>
     )}
 
-    {/* Drop status toast */}
-    {dropStatus && (
-      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md px-4 py-2.5 rounded-lg shadow-xl border text-xs ${
-        dropStatus.type === 'success' ? 'bg-success/20 border-success/50 text-success' :
-        dropStatus.type === 'error' ? 'bg-error/20 border-error/50 text-error' :
-        'bg-primary/20 border-primary/50 text-primary'
+    {/* Drop status toast + progress bar */}
+    {(dropStatus || transferProgress) && (
+      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-80 rounded-lg shadow-xl border overflow-hidden ${
+        dropStatus?.type === 'error' ? 'bg-error/20 border-error/50' :
+        'bg-[var(--color-surface)] border-primary/50'
       }`}>
-        {dropStatus.message}
+        {dropStatus && (
+          <div className={`px-4 py-2.5 text-xs ${
+            dropStatus.type === 'success' ? 'text-success' :
+            dropStatus.type === 'error' ? 'text-error' :
+            'text-primary'
+          }`}>
+            {dropStatus.message}
+          </div>
+        )}
+        {transferProgress && transferProgress.total > 0 && (
+          <div className="px-4 pb-3 pt-1">
+            <div className="flex items-center justify-between text-[10px] text-[var(--color-textSecondary)] mb-1.5">
+              <span className="truncate max-w-[60%]">{transferProgress.fileName}</span>
+              <span>{Math.round((transferProgress.transferred / transferProgress.total) * 100)}%</span>
+            </div>
+            <div className="h-1.5 bg-[var(--color-border)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-200"
+                style={{ width: `${Math.min(100, (transferProgress.transferred / transferProgress.total) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     )}
     <canvas

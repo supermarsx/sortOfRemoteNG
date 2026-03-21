@@ -1380,6 +1380,36 @@ fn run_active_session_loop(
                         }
                     }
                 }
+                Ok(RdpCommand::ClipboardCopyFiles(entries)) => {
+                    if let Some(ref clip_state) = est.clipboard_state {
+                        // Store staged files and reset progress
+                        if let Ok(mut state) = clip_state.lock() {
+                            state.staged_files = entries.iter().map(|e| clipboard::StagedFile {
+                                name: e.name.clone(),
+                                size: e.size,
+                                path: e.path.clone(),
+                            }).collect();
+                            state.file_bytes_transferred = 0;
+                        }
+                        // Advertise FileGroupDescriptorW format to server
+                        if let Some(cliprdr) = est.active_stage
+                            .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
+                        {
+                            let format = crate::ironrdp_cliprdr::pdu::ClipboardFormat::new(
+                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::FILEGROUPDESCRIPTORW_ID),
+                            ).with_name(crate::ironrdp_cliprdr::pdu::ClipboardFormatName::FILE_LIST);
+                            match cliprdr.initiate_copy(&[format]) {
+                                Ok(messages) => {
+                                    match est.active_stage.process_svc_processor_messages(messages) {
+                                        Ok(data) => { let _ = est.tls_framed.write_all(&data); }
+                                        Err(e) => log::warn!("CLIPRDR file copy encode error: {e}"),
+                                    }
+                                }
+                                Err(e) => log::warn!("CLIPRDR initiate_copy (files) error: {e}"),
+                            }
+                        }
+                    }
+                }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     log::info!("RDP session {session_id}: command channel closed");
@@ -1793,12 +1823,19 @@ fn run_active_session_loop(
                 let mut state = clip_state.lock().unwrap();
                 state.pending_data_request.take()
             };
-            if let Some(_request) = pending {
-                let local_text = clip_state.lock().unwrap().local_text.clone();
+            if let Some(request) = pending {
+                let is_file_list = request.format == crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::FILEGROUPDESCRIPTORW_ID);
+                let (local_text, staged_files) = {
+                    let state = clip_state.lock().unwrap();
+                    (state.local_text.clone(), state.staged_files.clone())
+                };
+
                 if let Some(cliprdr) = est.active_stage
                     .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                 {
-                    let response = if let Some(ref text) = local_text {
+                    let response = if is_file_list && !staged_files.is_empty() {
+                        clipboard::encode_file_list_response(&staged_files)
+                    } else if let Some(ref text) = local_text {
                         crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_data(
                             clipboard::encode_utf16le(text),
                         )
@@ -1816,6 +1853,77 @@ fn run_active_session_loop(
                         }
                         Err(e) => log::warn!("CLIPRDR submit_format_data error: {e}"),
                     }
+                }
+            }
+
+            // -- Fulfil pending CLIPRDR file contents requests --
+            let pending_fcr = {
+                let mut state = clip_state.lock().unwrap();
+                state.pending_file_contents_request.take()
+            };
+            if let Some(request) = pending_fcr {
+                let staged_files = clip_state.lock().unwrap().staged_files.clone();
+                if let Some(file) = staged_files.get(request.index as usize) {
+                    if let Some(cliprdr) = est.active_stage
+                        .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
+                    {
+                        use crate::ironrdp_cliprdr::pdu::FileContentsFlags;
+
+                        let response = if request.flags.contains(FileContentsFlags::SIZE) {
+                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_size_response(
+                                request.stream_id, file.size,
+                            )
+                        } else {
+                            match std::fs::File::open(&file.path) {
+                                Ok(mut f) => {
+                                    use std::io::{Read, Seek, SeekFrom};
+                                    let _ = f.seek(SeekFrom::Start(request.position));
+                                    let mut buf = vec![0u8; request.requested_size as usize];
+                                    let n = f.read(&mut buf).unwrap_or(0);
+                                    buf.truncate(n);
+
+                                    // Update progress and emit event
+                                    let (transferred, total_size) = {
+                                        let mut state = clip_state.lock().unwrap();
+                                        state.file_bytes_transferred += n as u64;
+                                        let total: u64 = state.staged_files.iter().map(|f| f.size).sum();
+                                        (state.file_bytes_transferred, total)
+                                    };
+                                    let _ = event_emitter.emit_event(
+                                        "rdp://file-transfer-progress",
+                                        serde_json::json!({
+                                            "session_id": session_id,
+                                            "file_index": request.index,
+                                            "file_name": file.name,
+                                            "transferred": transferred,
+                                            "total": total_size,
+                                        }),
+                                    );
+
+                                    crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
+                                        request.stream_id, buf,
+                                    )
+                                }
+                                Err(e) => {
+                                    log::error!("CLIPRDR file read error for '{}': {e}", file.path);
+                                    crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(request.stream_id)
+                                }
+                            }
+                        };
+                        match cliprdr.submit_file_contents(response) {
+                            Ok(messages) => {
+                                match est.active_stage.process_svc_processor_messages(messages) {
+                                    Ok(data) => {
+                                        let _ = est.tls_framed.write_all(&data);
+                                    }
+                                    Err(e) => log::warn!("CLIPRDR submit_file_contents encode error: {e}"),
+                                }
+                            }
+                            Err(e) => log::warn!("CLIPRDR submit_file_contents error: {e}"),
+                        }
+                    }
+                } else {
+                    log::warn!("CLIPRDR file contents request for invalid index {}", request.index);
                 }
             }
         }

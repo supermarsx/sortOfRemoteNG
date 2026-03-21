@@ -28,8 +28,8 @@ pub use frame_store::{SharedFrameStore, SharedFrameStoreState};
 pub use settings::RdpSettingsPayload;
 pub use stats::ConnectionPhase;
 pub use types::{
-    RdpActiveConnection, RdpCommand, RdpInputAction, RdpLogEntry, RdpPointerEvent, RdpService,
-    RdpSession, RdpStatsEvent, RdpStatusEvent,
+    ClipboardFileEntry, RdpActiveConnection, RdpCommand, RdpInputAction, RdpLogEntry,
+    RdpPointerEvent, RdpService, RdpSession, RdpStatsEvent, RdpStatusEvent,
 };
 
 // Re-export shared diagnostics types so the frontend API stays unchanged.

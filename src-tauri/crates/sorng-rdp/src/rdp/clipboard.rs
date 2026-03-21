@@ -1,8 +1,8 @@
 //! CLIPRDR clipboard backend for Tauri-based RDP sessions.
 //!
 //! Bridges the ironrdp-cliprdr static virtual channel to the frontend via
-//! Tauri events and a shared state object.  Text clipboard (CF_UNICODETEXT)
-//! is the primary supported format.
+//! Tauri events and a shared state object.  Supports both text clipboard
+//! (CF_UNICODETEXT) and file transfer (FileGroupDescriptorW / FileContents).
 
 use std::sync::{Arc, Mutex};
 use std::fmt;
@@ -11,12 +11,29 @@ use crate::ironrdp_cliprdr::backend::CliprdrBackend;
 use crate::ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FileContentsRequest,
     FileContentsResponse, FormatDataRequest, FormatDataResponse, LockDataId,
+    PackedFileList, FileDescriptor, ClipboardFileAttributes, OwnedFormatDataResponse,
 };
 use crate::ironrdp_core::impl_as_any;
 use sorng_core::events::DynEventEmitter;
 
 /// Standard Windows CF_UNICODETEXT format ID.
 pub const CF_UNICODETEXT: u32 = 13;
+
+/// Registered format ID used to advertise a file list (FileGroupDescriptorW).
+/// This is a client-chosen ID in the registered range; the server uses whatever
+/// ID we advertise in the format list.
+pub const FILEGROUPDESCRIPTORW_ID: u32 = 0xC0A0;
+
+/// A file staged for CLIPRDR file transfer.
+#[derive(Debug, Clone)]
+pub struct StagedFile {
+    /// File name (max 259 chars for CLIPRDR).
+    pub name: String,
+    /// File size in bytes.
+    pub size: u64,
+    /// Local filesystem path for reading file content.
+    pub path: String,
+}
 
 /// Shared clipboard state accessible from both the backend callbacks (called
 /// on the session thread during `ActiveStage::process()`) and the command
@@ -34,6 +51,13 @@ pub struct ClipboardState {
     pub pending_data_request: Option<FormatDataRequest>,
     /// Text received from the remote via `FormatDataResponse` (UTF-8).
     pub remote_text: Option<String>,
+    /// Files staged for CLIPRDR file transfer.
+    pub staged_files: Vec<StagedFile>,
+    /// Pending `FileContentsRequest` from the server (needs response via
+    /// `submit_file_contents` on the next loop iteration).
+    pub pending_file_contents_request: Option<FileContentsRequest>,
+    /// Total bytes transferred so far across all staged files.
+    pub file_bytes_transferred: u64,
 }
 
 impl ClipboardState {
@@ -44,6 +68,9 @@ impl ClipboardState {
             ready: false,
             pending_data_request: None,
             remote_text: None,
+            staged_files: Vec::new(),
+            pending_file_contents_request: None,
+            file_bytes_transferred: 0,
         }
     }
 }
@@ -55,6 +82,7 @@ pub struct AppCliprdrBackend {
     session_id: String,
     emitter: DynEventEmitter,
     state: SharedClipboardState,
+    temp_dir: String,
 }
 
 impl fmt::Debug for AppCliprdrBackend {
@@ -69,22 +97,30 @@ impl_as_any!(AppCliprdrBackend);
 
 impl AppCliprdrBackend {
     pub fn new(session_id: String, emitter: DynEventEmitter, state: SharedClipboardState) -> Self {
+        let temp_dir = std::env::temp_dir()
+            .join("sorng-cliprdr")
+            .to_string_lossy()
+            .into_owned();
+        // Ensure the directory exists
+        let _ = std::fs::create_dir_all(&temp_dir);
         Self {
             session_id,
             emitter,
             state,
+            temp_dir,
         }
     }
 }
 
 impl CliprdrBackend for AppCliprdrBackend {
     fn temporary_directory(&self) -> &str {
-        // Not used for text-only clipboard; provide a dummy path.
-        "."
+        &self.temp_dir
     }
 
     fn client_capabilities(&self) -> ClipboardGeneralCapabilityFlags {
-        ClipboardGeneralCapabilityFlags::empty()
+        ClipboardGeneralCapabilityFlags::STREAM_FILECLIP_ENABLED
+            | ClipboardGeneralCapabilityFlags::FILECLIP_NO_FILE_PATHS
+            | ClipboardGeneralCapabilityFlags::HUGE_FILE_SUPPORT_ENABLED
     }
 
     fn on_ready(&mut self) {
@@ -186,12 +222,18 @@ impl CliprdrBackend for AppCliprdrBackend {
         );
     }
 
-    fn on_file_contents_request(&mut self, _request: FileContentsRequest) {
-        // Not implemented — text-only clipboard
+    fn on_file_contents_request(&mut self, request: FileContentsRequest) {
+        log::info!(
+            "CLIPRDR session {}: file contents request idx={} flags={:?} pos={} size={}",
+            self.session_id, request.index, request.flags, request.position, request.requested_size
+        );
+        if let Ok(mut state) = self.state.lock() {
+            state.pending_file_contents_request = Some(request);
+        }
     }
 
     fn on_file_contents_response(&mut self, _response: FileContentsResponse<'_>) {
-        // Not implemented — text-only clipboard
+        // Not used — we only send files, not receive them via CLIPRDR
     }
 
     fn on_lock(&mut self, _data_id: LockDataId) {}
@@ -220,4 +262,27 @@ pub fn encode_utf16le(text: &str) -> Vec<u8> {
     out.push(0);
     out.push(0);
     out
+}
+
+/// Build a PackedFileList from staged files.
+pub fn build_file_list(files: &[StagedFile]) -> PackedFileList {
+    let descriptors: Vec<FileDescriptor> = files.iter().map(|f| FileDescriptor {
+        attributes: Some(ClipboardFileAttributes::ARCHIVE),
+        last_write_time: None,
+        file_size: Some(f.size),
+        name: f.name.clone(),
+    }).collect();
+    PackedFileList { files: descriptors }
+}
+
+/// Encode staged files into an OwnedFormatDataResponse containing a CLIPRDR_FILELIST.
+pub fn encode_file_list_response(files: &[StagedFile]) -> OwnedFormatDataResponse {
+    let list = build_file_list(files);
+    match OwnedFormatDataResponse::new_file_list(&list) {
+        Ok(resp) => resp,
+        Err(e) => {
+            log::error!("Failed to encode file list: {e}");
+            OwnedFormatDataResponse::new_error()
+        }
+    }
 }

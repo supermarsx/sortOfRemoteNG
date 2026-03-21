@@ -1,5 +1,13 @@
 use super::commands::*;
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardFilePayload {
+    pub name: String,
+    pub size: f64,
+    pub path: String,
+}
+
 /// Detect the current Windows keyboard layout and return the HKL (low 16 bits
 /// = keyboard layout ID which is the value IronRDP's `keyboard_layout` expects).
 #[tauri::command]
@@ -594,6 +602,31 @@ pub async fn rdp_clipboard_copy(
     if let Some(conn) = service.connections.get(&session_id) {
         conn.cmd_tx
             .send(RdpCommand::ClipboardCopy(text))
+            .map_err(|_| "Session command channel closed".to_string())?;
+        Ok(())
+    } else {
+        Err(format!("RDP session {session_id} not found"))
+    }
+}
+
+/// Stage local files for CLIPRDR file transfer to the remote RDP session.
+/// Files are read from disk by the session runner when the server requests
+/// their contents via the FileContentsRequest/Response protocol.
+#[tauri::command]
+pub async fn rdp_clipboard_copy_files(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    files: Vec<ClipboardFilePayload>,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    if let Some(conn) = service.connections.get(&session_id) {
+        let entries: Vec<ClipboardFileEntry> = files.into_iter().map(|f| ClipboardFileEntry {
+            name: f.name,
+            size: f.size as u64,
+            path: f.path,
+        }).collect();
+        conn.cmd_tx
+            .send(RdpCommand::ClipboardCopyFiles(entries))
             .map_err(|_| "Session command channel closed".to_string())?;
         Ok(())
     } else {
