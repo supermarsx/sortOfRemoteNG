@@ -675,7 +675,13 @@ fn create_gcc_blocks<'a>(
     };
 
     let channels = static_channels
-        .map(ironrdp_svc::make_channel_definition)
+        .map(|svc| {
+            let mut def = ironrdp_svc::make_channel_definition(svc);
+            // MS-RDPBCGR 2.2.1.3.4.1: CHANNEL_OPTION_INITIALIZED (0x80000000) MUST be set
+            // on every channel, otherwise the server SHOULD ignore the channel entry.
+            def.options |= ironrdp_pdu::gcc::ChannelOptions::INITIALIZED;
+            def
+        })
         .collect::<Vec<_>>();
 
     Ok(ClientGccBlocks {
