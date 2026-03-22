@@ -71,6 +71,7 @@ pub struct RdpInputPayload {
 #[serde(rename_all = "camelCase")]
 pub struct RdpDeviceRedirectionPayload {
     pub clipboard: Option<bool>,
+    pub drive_redirection: Option<bool>,
     pub printers: Option<bool>,
     pub ports: Option<bool>,
     pub smart_cards: Option<bool>,
@@ -78,6 +79,16 @@ pub struct RdpDeviceRedirectionPayload {
     pub video_capture: Option<bool>,
     pub usb_devices: Option<bool>,
     pub audio_input: Option<bool>,
+    pub drives: Option<Vec<DriveRedirectionPayload>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveRedirectionPayload {
+    pub name: String,
+    pub path: String,
+    pub read_only: Option<bool>,
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -372,6 +383,19 @@ pub struct ResolvedSettings {
     pub reconnect_on_network_loss: bool,
     // Device redirection
     pub clipboard_enabled: bool,
+    pub drive_redirection_enabled: bool,
+    pub printers_enabled: bool,
+    pub ports_enabled: bool,
+    pub smart_cards_enabled: bool,
+    pub drive_redirections: Vec<DriveRedirectionConfig>,
+}
+
+/// Resolved drive redirection configuration.
+#[derive(Debug, Clone)]
+pub struct DriveRedirectionConfig {
+    pub name: String,
+    pub path: String,
+    pub read_only: bool,
 }
 
 impl ResolvedSettings {
@@ -568,6 +592,40 @@ impl ResolvedSettings {
                 .as_ref()
                 .and_then(|d| d.clipboard)
                 .unwrap_or(true),
+            drive_redirection_enabled: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.drive_redirection)
+                .unwrap_or(false),
+            printers_enabled: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.printers)
+                .unwrap_or(false),
+            ports_enabled: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.ports)
+                .unwrap_or(false),
+            smart_cards_enabled: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.smart_cards)
+                .unwrap_or(false),
+            drive_redirections: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.drives.as_ref())
+                .map(|drives| {
+                    drives.iter()
+                        .filter(|d| d.enabled.unwrap_or(true))
+                        .map(|d| DriveRedirectionConfig {
+                            name: d.name.clone(),
+                            path: d.path.clone(),
+                            read_only: d.read_only.unwrap_or(false),
+                        }).collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }

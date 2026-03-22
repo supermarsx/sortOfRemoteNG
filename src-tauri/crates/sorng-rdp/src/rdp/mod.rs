@@ -1,5 +1,6 @@
 pub mod clipboard;
 pub mod errors;
+pub mod rdpdr;
 pub mod frame_channel;
 mod frame_delivery;
 pub mod frame_store;
