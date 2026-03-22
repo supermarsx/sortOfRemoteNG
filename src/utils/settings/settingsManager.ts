@@ -647,6 +647,10 @@ export class SettingsManager {
             ...DEFAULT_SETTINGS.toolDisplayModes,
             ...(stored.toolDisplayModes ?? {}),
           },
+          rdpDefaults: {
+            ...DEFAULT_SETTINGS.rdpDefaults,
+            ...(stored.rdpDefaults ?? {}),
+          },
         };
       }
       return this.settings;

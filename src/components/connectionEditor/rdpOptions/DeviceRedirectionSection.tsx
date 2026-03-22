@@ -3,7 +3,7 @@ import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { HardDrive, Info, Plus, Trash2, FolderOpen, Lock, Power, PowerOff, Pencil, Check } from "lucide-react";
 import { RDPConnectionSettings, RdpDriveRedirection } from "../../../types/connection/connection";
-import { useSettings } from "../../../contexts/SettingsContext";
+import { SettingsManager } from "../../../utils/settings/settingsManager";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Select } from "../../ui/forms";
 
@@ -154,8 +154,8 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
   rdp,
   updateRdp,
 }) => {
-  const { settings } = useSettings();
-  const globalDrives: RdpDriveRedirection[] = settings.rdpDefaults?.driveRedirections ?? [];
+  const settings = SettingsManager.getInstance().getSettings();
+  const globalDrives: RdpDriveRedirection[] = (settings.rdpDefaults?.driveRedirections as RdpDriveRedirection[] | undefined) ?? [];
   const localDrives: RdpDriveRedirection[] = rdp.deviceRedirection?.drives ?? [];
   const inheritGlobal = rdp.deviceRedirection?.inheritGlobalDrives !== false;
   const excludedGlobals: Set<string> = new Set(rdp.deviceRedirection?.excludedGlobalDrives ?? []);

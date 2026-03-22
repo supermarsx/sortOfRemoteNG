@@ -733,7 +733,7 @@ export interface RdpGlobalDefaultsConfig {
   /** Enable drive/folder redirection by default */
   driveRedirection: boolean;
   /** Default drive mappings for new RDP connections */
-  driveRedirections?: RdpDriveRedirection[];
+  driveRedirections?: { name: string; path: string; readOnly?: boolean; enabled?: boolean }[];
 
   // ─── Performance / Visual Experience defaults ─────────────
   /** Default connection speed preset */
