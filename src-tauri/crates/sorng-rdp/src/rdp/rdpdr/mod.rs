@@ -201,7 +201,7 @@ impl RdpdrClient {
         self.state = RdpdrState::Ready;
 
         // Register filesystem drives and build announce PDU
-        let mut drive_ids: Vec<(u32, String)> = Vec::new();
+        let mut drive_entries: Vec<(u32, String, String)> = Vec::new();
         for drive_cfg in &self.drives {
             let device_id = self.next_device_id;
             self.next_device_id += 1;
@@ -211,7 +211,7 @@ impl RdpdrClient {
                 drive_cfg.read_only,
             );
             self.fs_devices.insert(device_id, fs_device);
-            drive_ids.push((device_id, drive_cfg.name.clone()));
+            drive_entries.push((device_id, drive_cfg.name.clone(), drive_cfg.path.clone()));
             log::info!(
                 "RDPDR session {}: announcing drive '{}' → {:?} (read_only={})",
                 self.session_id, drive_cfg.name, drive_cfg.path, drive_cfg.read_only
@@ -220,18 +220,19 @@ impl RdpdrClient {
 
         let mut buf = Vec::with_capacity(64);
         write_header(&mut buf, RDPDR_CTYP_CORE, PAKID_CORE_DEVICELIST_ANNOUNCE);
-        buf.extend_from_slice(&(drive_ids.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&(drive_entries.len() as u32).to_le_bytes());
 
-        for (device_id, name) in &drive_ids {
-            let device_data = encode_utf16le(name);
+        for (device_id, name, path) in &drive_entries {
+            // DeviceData: full shared directory path as null-terminated Unicode (MS-RDPEFS 2.2.2.9)
+            let device_data = encode_utf16le(path);
 
             buf.extend_from_slice(&RDPDR_DTYP_FILESYSTEM.to_le_bytes());
             buf.extend_from_slice(&device_id.to_le_bytes());
-            // preferredDosName: 8 bytes, null-padded ASCII
+            // PreferredDosName: 8 bytes, must be "X:" format for filesystem devices (MS-RDPEFS 2.2.2.9)
             let mut dos_name = [0u8; 8];
-            let name_bytes = name.as_bytes();
-            let copy_len = name_bytes.len().min(7);
-            dos_name[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
+            let dos_str = format!("{}:", &name[..name.len().min(6)]);
+            let dos_bytes = dos_str.as_bytes();
+            dos_name[..dos_bytes.len().min(7)].copy_from_slice(&dos_bytes[..dos_bytes.len().min(7)]);
             buf.extend_from_slice(&dos_name);
             buf.extend_from_slice(&(device_data.len() as u32).to_le_bytes());
             buf.extend_from_slice(&device_data);
