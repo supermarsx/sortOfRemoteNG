@@ -815,6 +815,33 @@ fn establish_rdp_connection(
         None
     };
 
+    // -- Register RDPDR SVC (device/drive redirection) --
+    let has_rdpdr_devices = (settings.drive_redirection_enabled && !settings.drive_redirections.is_empty())
+        || settings.printers_enabled
+        || settings.ports_enabled
+        || settings.smart_cards_enabled;
+
+    if has_rdpdr_devices {
+        let rdpdr_client = super::rdpdr::RdpdrClient::new(
+            session_id.to_string(),
+            event_emitter.clone(),
+            if settings.drive_redirection_enabled { settings.drive_redirections.clone() } else { Vec::new() },
+            super::rdpdr::DeviceFlags {
+                printers: settings.printers_enabled,
+                ports: settings.ports_enabled,
+                smart_cards: settings.smart_cards_enabled,
+            },
+        );
+        connector.attach_static_channel(rdpdr_client);
+        log::info!(
+            "RDP session {session_id}: RDPDR SVC registered ({} drives, printers={}, ports={}, smartcards={})",
+            settings.drive_redirections.len(),
+            settings.printers_enabled,
+            settings.ports_enabled,
+            settings.smart_cards_enabled,
+        );
+    }
+
     // Log gateway / Hyper-V / negotiation settings
     if settings.gateway_enabled {
         log::info!(
@@ -1352,6 +1379,7 @@ fn run_active_session_loop(
                                 Ok(messages) => {
                                     match est.active_stage.process_svc_processor_messages(messages) {
                                         Ok(data) => {
+                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
                                             let _ = est.tls_framed.write_all(&data);
                                         }
                                         Err(e) => log::warn!("CLIPRDR copy encode error: {e}"),
@@ -1371,6 +1399,7 @@ fn run_active_session_loop(
                             Ok(messages) => {
                                 match est.active_stage.process_svc_processor_messages(messages) {
                                     Ok(data) => {
+                                        stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
                                         let _ = est.tls_framed.write_all(&data);
                                     }
                                     Err(e) => log::warn!("CLIPRDR paste encode error: {e}"),
@@ -1402,7 +1431,10 @@ fn run_active_session_loop(
                             match cliprdr.initiate_copy(&[format]) {
                                 Ok(messages) => {
                                     match est.active_stage.process_svc_processor_messages(messages) {
-                                        Ok(data) => { let _ = est.tls_framed.write_all(&data); }
+                                        Ok(data) => {
+                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                            let _ = est.tls_framed.write_all(&data);
+                                        }
                                         Err(e) => log::warn!("CLIPRDR file copy encode error: {e}"),
                                     }
                                 }
@@ -1847,6 +1879,7 @@ fn run_active_session_loop(
                         Ok(messages) => {
                             match est.active_stage.process_svc_processor_messages(messages) {
                                 Ok(data) => {
+                                    stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
                                     let _ = est.tls_framed.write_all(&data);
                                 }
                                 Err(e) => log::warn!("CLIPRDR submit_format_data encode error: {e}"),
@@ -1889,11 +1922,15 @@ fn run_active_session_loop(
                                     buf.truncate(n);
 
                                     // Update progress and emit event
-                                    let (transferred, total_size) = {
+                                    let (transferred, total_size, file_count, files_done) = {
                                         let mut state = clip_state.lock().unwrap();
                                         state.file_bytes_transferred += n as u64;
                                         let total: u64 = state.staged_files.iter().map(|f| f.size).sum();
-                                        (state.file_bytes_transferred, total)
+                                        let count = state.staged_files.iter().filter(|f| !f.is_directory).count();
+                                        // A file is "done" when we've read past its end
+                                        let done = state.staged_files.iter().take(request.index as usize)
+                                            .filter(|f| !f.is_directory).count();
+                                        (state.file_bytes_transferred, total, count, done)
                                     };
                                     let _ = event_emitter.emit_event(
                                         "rdp://file-transfer-progress",
@@ -1903,6 +1940,8 @@ fn run_active_session_loop(
                                             "file_name": file.name,
                                             "transferred": transferred,
                                             "total": total_size,
+                                            "file_count": file_count,
+                                            "files_done": files_done,
                                         }),
                                     );
 
@@ -1920,6 +1959,7 @@ fn run_active_session_loop(
                             Ok(messages) => {
                                 match est.active_stage.process_svc_processor_messages(messages) {
                                     Ok(data) => {
+                                        stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
                                         let _ = est.tls_framed.write_all(&data);
                                     }
                                     Err(e) => log::warn!("CLIPRDR submit_file_contents encode error: {e}"),
