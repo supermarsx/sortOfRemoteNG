@@ -1679,7 +1679,7 @@ fn run_active_session_loop(
 
                     // Log X224 PDUs to trace SVC channel activity
                     if matches!(action, crate::ironrdp::pdu::Action::X224) {
-                        log::debug!("RDP session {session_id}: X224 PDU received ({payload_len} bytes)")
+                        log::info!("RDP session {session_id}: X224 PDU received ({payload_len} bytes)");
                     }
 
                     // Zero-byte PDU detection — catches broken connections
