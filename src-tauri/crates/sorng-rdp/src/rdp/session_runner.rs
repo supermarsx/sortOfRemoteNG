@@ -781,6 +781,12 @@ fn establish_rdp_connection(
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
     let mut connector = ClientConnector::new(config, server_socket_addr);
 
+    // Check if RDPDR devices are configured (used for both SVC and DVC registration)
+    let has_rdpdr_devices = !settings.drive_redirections.is_empty()
+        || settings.printers_enabled
+        || settings.ports_enabled
+        || settings.smart_cards_enabled;
+
     // -- Register RDPGFX Dynamic Virtual Channel (H.264 hardware decode) --
     let gfx_frame_rx = if settings.gfx_enabled {
         let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxOutput>();
@@ -789,13 +795,46 @@ fn establish_rdp_connection(
             gfx_tx,
             settings.nal_passthrough,
         );
-        let drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
+        let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
+
+        // Register RDPDR DVC processor (modern Windows servers route RDPDR through DVC)
+        if has_rdpdr_devices {
+            let rdpdr_dvc = super::rdpdr::RdpdrDvcProcessor::new(
+                session_id.to_string(),
+                event_emitter.clone(),
+                if settings.drive_redirection_enabled { settings.drive_redirections.clone() } else { settings.drive_redirections.clone() },
+                super::rdpdr::DeviceFlags {
+                    printers: settings.printers_enabled,
+                    ports: settings.ports_enabled,
+                    smart_cards: settings.smart_cards_enabled,
+                },
+            );
+            drdynvc = drdynvc.with_dynamic_channel(rdpdr_dvc);
+            log::info!("RDP session {session_id}: RDPDR DVC processor registered");
+        }
+
         connector.attach_static_channel(drdynvc);
         log::info!(
             "RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled, nal_passthrough={})",
             settings.nal_passthrough
         );
         Some(gfx_rx)
+    } else if has_rdpdr_devices {
+        // No GFX but have RDPDR devices — create DRDYNVC just for RDPDR
+        let rdpdr_dvc = super::rdpdr::RdpdrDvcProcessor::new(
+            session_id.to_string(),
+            event_emitter.clone(),
+            settings.drive_redirections.clone(),
+            super::rdpdr::DeviceFlags {
+                printers: settings.printers_enabled,
+                ports: settings.ports_enabled,
+                smart_cards: settings.smart_cards_enabled,
+            },
+        );
+        let drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(rdpdr_dvc);
+        connector.attach_static_channel(drdynvc);
+        log::info!("RDP session {session_id}: RDPDR DVC processor registered (no GFX)");
+        None
     } else {
         None
     };
@@ -816,13 +855,7 @@ fn establish_rdp_connection(
         None
     };
 
-    // -- Register RDPDR SVC (device/drive redirection) --
-    // Register if drives are configured (presence implies intent) or any device flag is on
-    let has_rdpdr_devices = !settings.drive_redirections.is_empty()
-        || settings.printers_enabled
-        || settings.ports_enabled
-        || settings.smart_cards_enabled;
-
+    // -- Register RDPDR SVC (legacy static channel, for older servers) --
     if has_rdpdr_devices {
         let rdpdr_client = super::rdpdr::RdpdrClient::new(
             session_id.to_string(),
