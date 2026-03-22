@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { GripVertical, Eye, FileUp } from "lucide-react";
+import { GripVertical, Eye, FileUp, FolderInput } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -17,6 +17,15 @@ const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
         description="Drop files onto an SSH session to upload via SCP/SFTP"
         settingKey="enableFileDragDropToTerminal"
         infoTooltip="Allow dragging files from your desktop onto an SSH terminal session to upload them via SCP or SFTP. Disable if you find this triggers accidentally."
+      />
+      <Toggle
+        checked={s.enableFileDragDropToRdp}
+        onChange={(v) => u({ enableFileDragDropToRdp: v })}
+        icon={<FolderInput size={16} />}
+        label="Enable file drag-and-drop to RDP"
+        description="Drop files and folders onto an RDP session to transfer via clipboard"
+        settingKey="enableFileDragDropToRdp"
+        infoTooltip="Allow dragging files and folders from your desktop onto an RDP session to transfer them to the remote clipboard via the CLIPRDR protocol. The remote user can then paste them. Disable if this triggers accidentally."
       />
       <Toggle
         checked={s.showDropPreview}

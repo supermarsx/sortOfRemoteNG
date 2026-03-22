@@ -14,6 +14,8 @@ import {
   MicOff,
   Cable,
   ShieldCheck,
+  FolderInput,
+  HardDrive,
   type LucideIcon,
 } from 'lucide-react';
 import { formatBytes } from '../../utils/rdp/rdpFormatters';
@@ -56,6 +58,8 @@ const REDIRECTIONS: RedirectionItem[] = [
   { key: 'usbDevices', label: 'USB Devices', icon: Usb },
   { key: 'videoCapture', label: 'Video Capture', icon: Video },
   { key: 'webAuthn', label: 'WebAuthn', icon: ShieldCheck },
+  { key: 'fileDragDrop', label: 'File Drag & Drop', icon: FolderInput },
+  { key: 'driveRedirection', label: 'Drive Redirection', icon: HardDrive },
 ];
 
 const ToggleButton: React.FC<{
