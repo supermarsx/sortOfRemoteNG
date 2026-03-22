@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  X,
   Save,
   Check,
   Plus,
@@ -14,6 +13,7 @@ import {
   Settings2,
   FileText,
   Tag,
+  RotateCcw,
 } from "lucide-react";
 import { Connection } from "../../types/connection/connection";
 import { TagManager } from "./TagManager";
@@ -107,6 +107,21 @@ const EditorHeader: React.FC<{
             )}
           </div>
         )}
+        {!mgr.isNewConnection && (
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.")) {
+                mgr.handleResetToDefaults();
+              }
+            }}
+            className="px-3 py-2 rounded-lg font-medium transition-all flex items-center gap-2 border border-[var(--color-border)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+            title="Reset to Defaults"
+          >
+            <RotateCcw size={16} />
+            Reset
+          </button>
+        )}
         <button
           type="submit"
           className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
@@ -117,14 +132,6 @@ const EditorHeader: React.FC<{
         >
           <Save size={16} />
           {mgr.isNewConnection ? "Create" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
-        >
-          <X size={18} />
         </button>
       </div>
     </div>
@@ -624,14 +631,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <EditorHeader mgr={mgr} onClose={onClose} />
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-2xl mx-auto w-full p-6">
           <form
             onSubmit={mgr.handleSubmit}
             className="flex flex-col gap-3"
           >
-            <EditorHeader mgr={mgr} onClose={onClose} />
-
             <QuickToggles mgr={mgr} />
             <NameInput mgr={mgr} />
             <ParentSelector mgr={mgr} />

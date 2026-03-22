@@ -309,6 +309,17 @@ export function useConnectionEditor(
     }));
   }, []);
 
+  const handleResetToDefaults = useCallback(() => {
+    setFormData((prev) => ({
+      ...DEFAULT_FORM,
+      id: prev.id,
+      name: prev.name,
+      createdAt: prev.createdAt,
+      protocol: prev.protocol,
+      port: getDefaultPort(prev.protocol as string),
+    }));
+  }, []);
+
   const toggleSection = useCallback(
     (section: keyof typeof expandedSections) => {
       setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -330,6 +341,7 @@ export function useConnectionEditor(
     handleSubmit,
     handleTagsChange,
     handleProtocolChange,
+    handleResetToDefaults,
     toggleSection,
   };
 }
