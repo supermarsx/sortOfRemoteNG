@@ -677,9 +677,13 @@ fn create_gcc_blocks<'a>(
     let channels = static_channels
         .map(|svc| {
             let mut def = ironrdp_svc::make_channel_definition(svc);
-            // MS-RDPBCGR 2.2.1.3.4.1: CHANNEL_OPTION_INITIALIZED (0x80000000) MUST be set
-            // on every channel, otherwise the server SHOULD ignore the channel entry.
-            def.options |= gcc::ChannelOptions::INITIALIZED;
+            // Match mstsc: INITIALIZED + ENCRYPT_RDP + COMPRESS_RDP
+            // INITIALIZED is required per MS-RDPBCGR 2.2.1.3.4.1.
+            // ENCRYPT_RDP ensures the server processes the channel data.
+            // Some Windows servers won't initiate RDPDR without these flags.
+            def.options |= gcc::ChannelOptions::INITIALIZED
+                | gcc::ChannelOptions::ENCRYPT_RDP
+                | gcc::ChannelOptions::COMPRESS_RDP;
             def
         })
         .collect::<Vec<_>>();
