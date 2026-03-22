@@ -444,3 +444,4 @@ strip = true
 ironrdp-connector = { path = "patches/ironrdp-connector" }
 ironrdp-blocking = { path = "patches/ironrdp-blocking" }
 ironrdp-session = { path = "patches/ironrdp-session" }
+ironrdp-dvc = { path = "patches/ironrdp-dvc" }
