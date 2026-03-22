@@ -94,7 +94,14 @@ impl RdpdrClient {
 
     fn make_messages(&self, pdus: Vec<Vec<u8>>) -> Vec<SvcMessage> {
         pdus.into_iter()
-            .map(|data| SvcMessage::from(RdpdrPdu(data)).with_flags(ChannelFlags::SHOW_PROTOCOL))
+            .map(|data| {
+                log::info!("RDPDR session {}: sending {} bytes (component=0x{:04X} packetId=0x{:04X})",
+                    self.session_id, data.len(),
+                    if data.len() >= 2 { read_u16(&data, 0) } else { 0 },
+                    if data.len() >= 4 { read_u16(&data, 2) } else { 0 },
+                );
+                SvcMessage::from(RdpdrPdu(data)).with_flags(ChannelFlags::SHOW_PROTOCOL)
+            })
             .collect()
     }
 }
@@ -133,6 +140,11 @@ impl SvcProcessor for RdpdrClient {
         let component = read_u16(payload, 0);
         let packet_id = read_u16(payload, 2);
         let body = &payload[4..];
+
+        log::info!(
+            "RDPDR session {}: recv component=0x{:04X} packetId=0x{:04X} body_len={} state={:?}",
+            self.session_id, component, packet_id, body.len(), self.state
+        );
 
         if component != RDPDR_CTYP_CORE {
             log::debug!("RDPDR: ignoring non-core component 0x{:04X}", component);
