@@ -408,6 +408,8 @@ export interface RdpDriveRedirection {
   path: string;
   readOnly?: boolean;
   enabled?: boolean;
+  /** Preferred drive letter on remote server (A-Z), or undefined for auto-assign */
+  preferredLetter?: string;
 }
 
 export interface RdpPerformanceSettings {

@@ -200,9 +200,13 @@ impl RdpdrClient {
         log::info!("RDPDR session {}: Client ID confirmed: {}", self.session_id, self.client_id);
         self.state = RdpdrState::Ready;
 
-        // Register filesystem drives and build announce PDU
-        let mut drive_entries: Vec<(u32, String, String)> = Vec::new();
-        for drive_cfg in &self.drives {
+        // Resolve drive letters with collision avoidance
+        let letter_assignments = resolve_drive_letters(&self.drives);
+
+        // Register filesystem devices and build announce PDU
+        let mut announced: Vec<(u32, char)> = Vec::new();
+        for (drive_idx, letter) in &letter_assignments {
+            let drive_cfg = &self.drives[*drive_idx];
             let device_id = self.next_device_id;
             self.next_device_id += 1;
             let fs_device = FileSystemDevice::new(
@@ -211,28 +215,27 @@ impl RdpdrClient {
                 drive_cfg.read_only,
             );
             self.fs_devices.insert(device_id, fs_device);
-            drive_entries.push((device_id, drive_cfg.name.clone(), drive_cfg.path.clone()));
+            announced.push((device_id, *letter));
             log::info!(
-                "RDPDR session {}: announcing drive '{}' → {:?} (read_only={})",
-                self.session_id, drive_cfg.name, drive_cfg.path, drive_cfg.read_only
+                "RDPDR session {}: drive '{}' as {}:\\ → {:?} (read_only={})",
+                self.session_id, drive_cfg.name, letter, drive_cfg.path, drive_cfg.read_only
             );
         }
 
         let mut buf = Vec::with_capacity(64);
         write_header(&mut buf, RDPDR_CTYP_CORE, PAKID_CORE_DEVICELIST_ANNOUNCE);
-        buf.extend_from_slice(&(drive_entries.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&(announced.len() as u32).to_le_bytes());
 
-        for (device_id, name, path) in &drive_entries {
-            // DeviceData: full shared directory path as null-terminated Unicode (MS-RDPEFS 2.2.2.9)
-            let device_data = encode_utf16le(path);
+        for (idx, (device_id, letter)) in announced.iter().enumerate() {
+            let drive_cfg = &self.drives[letter_assignments[idx].0];
+            let device_data = encode_utf16le(&drive_cfg.path);
 
             buf.extend_from_slice(&RDPDR_DTYP_FILESYSTEM.to_le_bytes());
             buf.extend_from_slice(&device_id.to_le_bytes());
-            // PreferredDosName: 8 bytes, must be "X:" format for filesystem devices (MS-RDPEFS 2.2.2.9)
+            // PreferredDosName: "X:" format, 8 bytes null-padded (MS-RDPEFS 2.2.2.9)
             let mut dos_name = [0u8; 8];
-            let dos_str = format!("{}:", &name[..name.len().min(6)]);
-            let dos_bytes = dos_str.as_bytes();
-            dos_name[..dos_bytes.len().min(7)].copy_from_slice(&dos_bytes[..dos_bytes.len().min(7)]);
+            dos_name[0] = *letter as u8;
+            dos_name[1] = b':';
             buf.extend_from_slice(&dos_name);
             buf.extend_from_slice(&(device_data.len() as u32).to_le_bytes());
             buf.extend_from_slice(&device_data);
@@ -242,7 +245,7 @@ impl RdpdrClient {
             "rdp://rdpdr-ready",
             serde_json::json!({
                 "session_id": self.session_id,
-                "drives": self.drives.len(),
+                "drives": announced.len(),
             }),
         );
 
@@ -287,5 +290,133 @@ impl RdpdrClient {
 
         let response = fs_device.handle_irp(major_function, minor_function, completion_id, file_id, irp_data);
         Ok(self.make_messages(vec![response]))
+    }
+}
+
+/// Resolve drive letters for all configured drives, avoiding collisions.
+/// Returns Vec of (config_index, assigned_letter).
+/// Auto-assigns from Z downward to avoid common Windows drive letters.
+fn resolve_drive_letters(drives: &[DriveRedirectionConfig]) -> Vec<(usize, char)> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut used: HashSet<char> = HashSet::new();
+    let mut assignments: Vec<(usize, Option<char>)> = Vec::with_capacity(drives.len());
+
+    // Phase 1: count preferences to detect conflicts
+    let mut letter_counts: HashMap<char, usize> = HashMap::new();
+    for drive in drives {
+        if let Some(letter) = drive.preferred_letter {
+            *letter_counts.entry(letter).or_insert(0) += 1;
+        }
+    }
+
+    // Phase 2: assign unique preferences
+    for (i, drive) in drives.iter().enumerate() {
+        match drive.preferred_letter {
+            Some(letter) if *letter_counts.get(&letter).unwrap_or(&0) == 1 => {
+                used.insert(letter);
+                assignments.push((i, Some(letter)));
+            }
+            _ => {
+                assignments.push((i, None));
+            }
+        }
+    }
+
+    // Phase 3: resolve conflicts (first occurrence wins) + auto-assign from Z downward
+    let mut seen_conflicts: HashSet<char> = HashSet::new();
+    let mut auto_cursor = b'Z';
+
+    for entry in assignments.iter_mut() {
+        if entry.1.is_some() {
+            continue;
+        }
+
+        let drive = &drives[entry.0];
+
+        // Conflicting preference: first occurrence keeps the letter
+        if let Some(letter) = drive.preferred_letter {
+            if !seen_conflicts.contains(&letter) && !used.contains(&letter) {
+                seen_conflicts.insert(letter);
+                used.insert(letter);
+                entry.1 = Some(letter);
+                continue;
+            }
+        }
+
+        // Auto-assign from Z downward
+        while auto_cursor >= b'A' {
+            let candidate = auto_cursor as char;
+            auto_cursor -= 1;
+            if !used.contains(&candidate) {
+                used.insert(candidate);
+                entry.1 = Some(candidate);
+                break;
+            }
+        }
+
+        if entry.1.is_none() {
+            log::warn!("RDPDR: all 26 drive letters exhausted, skipping drive '{}'", drive.name);
+        }
+    }
+
+    assignments.into_iter()
+        .filter_map(|(i, letter)| letter.map(|l| (i, l)))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(name: &str, letter: Option<char>) -> DriveRedirectionConfig {
+        DriveRedirectionConfig {
+            name: name.to_string(),
+            path: format!("C:\\{}", name),
+            read_only: false,
+            preferred_letter: letter,
+        }
+    }
+
+    #[test]
+    fn all_auto_assigns_z_downward() {
+        let drives = vec![cfg("A", None), cfg("B", None), cfg("C", None)];
+        let result = resolve_drive_letters(&drives);
+        assert_eq!(result, vec![(0, 'Z'), (1, 'Y'), (2, 'X')]);
+    }
+
+    #[test]
+    fn unique_preferences_honored() {
+        let drives = vec![cfg("A", Some('D')), cfg("B", Some('E')), cfg("C", Some('F'))];
+        let result = resolve_drive_letters(&drives);
+        assert_eq!(result, vec![(0, 'D'), (1, 'E'), (2, 'F')]);
+    }
+
+    #[test]
+    fn duplicate_preferences_first_wins() {
+        let drives = vec![cfg("A", Some('D')), cfg("B", Some('D')), cfg("C", None)];
+        let result = resolve_drive_letters(&drives);
+        assert_eq!(result[0], (0, 'D'));
+        assert_ne!(result[1].1, 'D');
+        // All three get unique letters
+        let letters: std::collections::HashSet<char> = result.iter().map(|(_, l)| *l).collect();
+        assert_eq!(letters.len(), 3);
+    }
+
+    #[test]
+    fn mixed_preferences_and_auto() {
+        let drives = vec![cfg("A", Some('Z')), cfg("B", None), cfg("C", Some('X'))];
+        let result = resolve_drive_letters(&drives);
+        assert_eq!(result[0], (0, 'Z'));
+        assert_eq!(result[2], (2, 'X'));
+        // Auto gets Y (next from Z, but Z is taken)
+        assert_eq!(result[1], (1, 'Y'));
+    }
+
+    #[test]
+    fn preferred_common_letters_honored() {
+        let drives = vec![cfg("A", Some('C')), cfg("B", Some('D'))];
+        let result = resolve_drive_letters(&drives);
+        assert_eq!(result, vec![(0, 'C'), (1, 'D')]);
     }
 }

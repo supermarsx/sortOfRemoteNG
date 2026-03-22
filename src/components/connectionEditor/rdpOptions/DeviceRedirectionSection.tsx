@@ -111,6 +111,19 @@ export const DriveMappingEditor: React.FC<{
                   </>
                 )}
 
+                {/* Preferred letter */}
+                <select
+                  value={d.preferredLetter || ""}
+                  onChange={(e) => update(i, { preferredLetter: e.target.value || undefined })}
+                  className={`${selectClass} w-14 text-[10px] py-0.5 px-1`}
+                  data-tooltip="Preferred drive letter on remote (Auto = server assigns)"
+                >
+                  <option value="">Auto</option>
+                  {Array.from({ length: 26 }, (_, j) => String.fromCharCode(65 + j)).map(l => (
+                    <option key={l} value={l}>{l}:</option>
+                  ))}
+                </select>
+
                 {/* Read-only toggle */}
                 <button type="button" onClick={() => update(i, { readOnly: !d.readOnly })}
                   className={`p-0.5 rounded transition-colors ${d.readOnly ? 'text-warning' : 'text-[var(--color-textMuted)] opacity-40'}`}
@@ -234,6 +247,7 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
                       />
                       <span className="font-medium text-[var(--color-text)] min-w-[50px]">{gd.name}</span>
                       <span className="text-[var(--color-textMuted)] truncate flex-1" title={gd.path}>{gd.path}</span>
+                      {gd.preferredLetter && <span className="text-[9px] text-accent font-mono flex-shrink-0">{gd.preferredLetter}:</span>}
                       {gd.readOnly && <Lock size={11} className="text-warning flex-shrink-0" data-tooltip="Read-only" />}
                       {globalDisabled && <span className="text-[9px] text-error italic flex-shrink-0">disabled globally</span>}
                       <span className="text-[9px] text-[var(--color-textMuted)] italic flex-shrink-0">global</span>

@@ -89,6 +89,7 @@ pub struct DriveRedirectionPayload {
     pub path: String,
     pub read_only: Option<bool>,
     pub enabled: Option<bool>,
+    pub preferred_letter: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -396,6 +397,7 @@ pub struct DriveRedirectionConfig {
     pub name: String,
     pub path: String,
     pub read_only: bool,
+    pub preferred_letter: Option<char>,
 }
 
 impl ResolvedSettings {
@@ -623,6 +625,9 @@ impl ResolvedSettings {
                             name: d.name.clone(),
                             path: d.path.clone(),
                             read_only: d.read_only.unwrap_or(false),
+                            preferred_letter: d.preferred_letter.as_deref()
+                                .and_then(|s| s.chars().next())
+                                .filter(|c| c.is_ascii_uppercase()),
                         }).collect()
                 })
                 .unwrap_or_default(),
