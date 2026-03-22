@@ -4,10 +4,12 @@ import {
   Monitor,
   Wifi,
   WifiOff,
+  Loader2,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { writeFile, mkdir, exists } from '@tauri-apps/plugin-fs';
 import { appDataDir, join } from '@tauri-apps/api/path';
+import { formatBytes } from '../../utils/rdp/rdpFormatters';
 import RDPErrorScreen from './RDPErrorScreen';
 import { ConnectingSpinner } from '../ui/display';
 import { TrustWarningDialog } from '../security/TrustWarningDialog';
@@ -124,8 +126,11 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
 
   // File drag-drop state
   const [dragOver, setDragOver] = React.useState(false);
-  const [dropStatus, setDropStatus] = React.useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
-  const [transferProgress, setTransferProgress] = React.useState<{ transferred: number; total: number; fileName: string } | null>(null);
+  const [dropStatus, setDropStatus] = React.useState<{ message: string; type: 'success' | 'info' | 'error'; spinning?: boolean } | null>(null);
+  const [transferProgress, setTransferProgress] = React.useState<{
+    transferred: number; total: number; fileName: string;
+    fileCount: number; filesDone: number;
+  } | null>(null);
   const dropDismissRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Listen for file transfer progress events from backend
@@ -133,7 +138,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
     if (!mgr.rdpSessionId) return;
     let unlisten: (() => void) | undefined;
     import('@tauri-apps/api/event').then(({ listen }) => {
-      listen<{ session_id: string; file_name: string; transferred: number; total: number }>(
+      listen<{ session_id: string; file_name: string; transferred: number; total: number; file_count: number; files_done: number }>(
         'rdp://file-transfer-progress',
         (event) => {
           if (event.payload.session_id !== mgr.rdpSessionId) return;
@@ -141,6 +146,8 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
             transferred: event.payload.transferred,
             total: event.payload.total,
             fileName: event.payload.file_name,
+            fileCount: event.payload.file_count,
+            filesDone: event.payload.files_done,
           });
           // Clear progress when complete
           if (event.payload.transferred >= event.payload.total) {
@@ -159,10 +166,10 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
     true;
 
   const handleDragOver = React.useCallback((e: React.DragEvent) => {
-    if (!fileDragDropEnabled || !mgr.isConnected) return;
+    if (!mgr.isConnected) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    setDragOver(true);
+    e.dataTransfer.dropEffect = fileDragDropEnabled ? 'copy' : 'none';
+    if (fileDragDropEnabled) setDragOver(true);
   }, [fileDragDropEnabled, mgr.isConnected]);
 
   const handleDragLeave = React.useCallback(() => setDragOver(false), []);
@@ -170,9 +177,34 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
   const handleDrop = React.useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    if (!fileDragDropEnabled || !mgr.isConnected || !mgr.rdpSessionId) return;
+    if (!mgr.isConnected || !mgr.rdpSessionId) return;
+
+    if (!fileDragDropEnabled) {
+      setDropStatus({ message: 'File drag & drop is disabled — enable it in the status bar or connection settings', type: 'error' });
+      if (dropDismissRef.current) clearTimeout(dropDismissRef.current);
+      dropDismissRef.current = setTimeout(() => setDropStatus(null), 5000);
+      return;
+    }
 
     type DropEntry = { name: string; size: number; path: string; isDirectory: boolean };
+
+    // Live scan progress counters (mutated during walk, read by status updates)
+    const scan = { files: 0, dirs: 0, bytes: 0, current: '', lastYield: Date.now() };
+    /** Yield to the browser so React can paint status updates (throttled to avoid excessive delays). */
+    const yieldToBrowser = async () => {
+      const now = Date.now();
+      if (now - scan.lastYield >= 80) {
+        scan.lastYield = now;
+        await new Promise<void>(r => setTimeout(r, 0));
+      }
+    };
+    const scanMsg = () => {
+      const parts = [
+        scan.files > 0 ? `${scan.files} file${scan.files > 1 ? 's' : ''}` : '',
+        scan.dirs > 0 ? `${scan.dirs} folder${scan.dirs > 1 ? 's' : ''}` : '',
+      ].filter(Boolean).join(', ');
+      return `Scanning: ${parts || '...'}${scan.bytes > 0 ? ` (${formatBytes(scan.bytes)})` : ''}${scan.current ? ` — ${scan.current}` : ''}`;
+    };
 
     /** Recursively walk a FileSystemEntry tree and stage files to disk. */
     async function walkEntry(
@@ -184,6 +216,10 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       const clipName = prefix ? `${prefix}\\${entry.name}` : entry.name;
 
       if (entry.isDirectory) {
+        scan.dirs++;
+        scan.current = entry.name;
+        setDropStatus({ message: scanMsg(), type: 'info', spinning: true });
+        await yieldToBrowser();
         out.push({ name: clipName, size: 0, path: '', isDirectory: true });
 
         const dirReader = (entry as FileSystemDirectoryEntry).createReader();
@@ -213,13 +249,34 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
         }
         const dest = await join(transferDir, clipName.replace(/\\/g, '/'));
         await writeFile(dest, new Uint8Array(await file.arrayBuffer()));
+        scan.files++;
+        scan.bytes += file.size;
+        scan.current = file.name;
+        setDropStatus({ message: scanMsg(), type: 'info', spinning: true });
+        await yieldToBrowser();
         out.push({ name: clipName, size: file.size, path: dest, isDirectory: false });
       }
       return out;
     }
 
+    // Capture entries synchronously — browser clears DataTransfer after the event handler returns
+    const topEntries: FileSystemEntry[] = [];
+    const fallbackFiles: File[] = [];
+    const items = e.dataTransfer.items;
+    if (items?.length) {
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.();
+        if (entry) topEntries.push(entry);
+      }
+    }
+    if (topEntries.length === 0) {
+      fallbackFiles.push(...Array.from(e.dataTransfer.files));
+    }
+    if (topEntries.length === 0 && fallbackFiles.length === 0) return;
+
     try {
-      setDropStatus({ message: 'Scanning dropped items...', type: 'info' });
+      setDropStatus({ message: 'Scanning dropped items...', type: 'info', spinning: true });
+      await yieldToBrowser();
 
       const base = await appDataDir();
       const transferDir = await join(base, 'rdp-transfers');
@@ -229,49 +286,32 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
 
       let allEntries: DropEntry[] = [];
 
-      // Try webkitGetAsEntry for directory support; fall back to flat files
-      const items = e.dataTransfer.items;
-      let usedEntryApi = false;
-      if (items?.length) {
-        const topEntries: FileSystemEntry[] = [];
-        for (let i = 0; i < items.length; i++) {
-          const entry = items[i].webkitGetAsEntry?.();
-          if (entry) topEntries.push(entry);
+      if (topEntries.length > 0) {
+        for (const entry of topEntries) {
+          allEntries.push(...await walkEntry(entry, '', transferDir));
         }
-        if (topEntries.length > 0) {
-          usedEntryApi = true;
-          for (const entry of topEntries) {
-            allEntries.push(...await walkEntry(entry, '', transferDir));
-          }
-        }
-      }
-
-      // Fallback: plain File objects (no directory support)
-      if (!usedEntryApi) {
-        const files = Array.from(e.dataTransfer.files);
-        for (const file of files) {
+      } else {
+        // Fallback: plain File objects (no directory support)
+        for (const file of fallbackFiles) {
           const dest = await join(transferDir, file.name);
           await writeFile(dest, new Uint8Array(await file.arrayBuffer()));
+          scan.files++;
+          scan.bytes += file.size;
+          setDropStatus({ message: scanMsg(), type: 'info', spinning: true });
+          await yieldToBrowser();
           allEntries.push({ name: file.name, size: file.size, path: dest, isDirectory: false });
         }
       }
 
       if (allEntries.length === 0) return;
 
-      const fileCount = allEntries.filter(e => !e.isDirectory).length;
-      const dirCount = allEntries.filter(e => e.isDirectory).length;
-      const totalSize = allEntries.reduce((s, e) => s + e.size, 0);
-      const sizeStr = totalSize < 1024 ? `${totalSize}B`
-        : totalSize < 1024 * 1024 ? `${(totalSize / 1024).toFixed(1)}KB`
-        : totalSize < 1024 * 1024 * 1024 ? `${(totalSize / (1024 * 1024)).toFixed(1)}MB`
-        : `${(totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB`;
-
       const countStr = [
-        fileCount > 0 ? `${fileCount} file${fileCount > 1 ? 's' : ''}` : '',
-        dirCount > 0 ? `${dirCount} folder${dirCount > 1 ? 's' : ''}` : '',
+        scan.files > 0 ? `${scan.files} file${scan.files > 1 ? 's' : ''}` : '',
+        scan.dirs > 0 ? `${scan.dirs} folder${scan.dirs > 1 ? 's' : ''}` : '',
       ].filter(Boolean).join(', ');
+      const sizeStr = formatBytes(scan.bytes);
 
-      setDropStatus({ message: `Staging ${countStr} (${sizeStr})...`, type: 'info' });
+      setDropStatus({ message: `Sending ${countStr} (${sizeStr})...`, type: 'info', spinning: true });
 
       await invoke('rdp_clipboard_copy_files', {
         sessionId: mgr.rdpSessionId,
@@ -319,25 +359,32 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
         'bg-[var(--color-surface)] border-primary/50'
       }`}>
         {dropStatus && (
-          <div className={`px-4 py-2.5 text-xs ${
+          <div className={`px-4 py-2.5 text-xs flex items-center gap-2 ${
             dropStatus.type === 'success' ? 'text-success' :
             dropStatus.type === 'error' ? 'text-error' :
             'text-primary'
           }`}>
-            {dropStatus.message}
+            {dropStatus.spinning && <Loader2 size={12} className="animate-spin flex-shrink-0" />}
+            <span className="min-w-0 truncate">{dropStatus.message}</span>
           </div>
         )}
         {transferProgress && transferProgress.total > 0 && (
-          <div className="px-4 pb-3 pt-1">
-            <div className="flex items-center justify-between text-[10px] text-[var(--color-textSecondary)] mb-1.5">
-              <span className="truncate max-w-[60%]">{transferProgress.fileName}</span>
-              <span>{Math.round((transferProgress.transferred / transferProgress.total) * 100)}%</span>
+          <div className="px-4 pb-3 pt-1 space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] text-[var(--color-textSecondary)]">
+              <span className="truncate max-w-[55%]" title={transferProgress.fileName}>{transferProgress.fileName}</span>
+              <span className="text-[var(--color-textMuted)] flex-shrink-0">
+                {transferProgress.filesDone + 1}/{transferProgress.fileCount} files
+              </span>
             </div>
             <div className="h-1.5 bg-[var(--color-border)] rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all duration-200"
                 style={{ width: `${Math.min(100, (transferProgress.transferred / transferProgress.total) * 100)}%` }}
               />
+            </div>
+            <div className="flex items-center justify-between text-[9px] text-[var(--color-textMuted)]">
+              <span>{formatBytes(transferProgress.transferred)} / {formatBytes(transferProgress.total)}</span>
+              <span>{Math.round((transferProgress.transferred / transferProgress.total) * 100)}%</span>
             </div>
           </div>
         )}
