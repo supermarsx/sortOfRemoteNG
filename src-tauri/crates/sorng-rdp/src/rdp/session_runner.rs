@@ -1056,6 +1056,19 @@ fn establish_rdp_connection(
     let cr_io_channel_id = connection_result.io_channel_id;
     let cr_user_channel_id = connection_result.user_channel_id;
 
+    // Log registered channels with their IDs
+    let channel_count = connection_result.static_channels.iter().count();
+    log::info!(
+        "RDP session {session_id}: {channel_count} static channels registered (io={cr_io_channel_id}, user={cr_user_channel_id})"
+    );
+    for (type_id, svc) in connection_result.static_channels.iter() {
+        let cid = connection_result.static_channels.get_channel_id_by_type_id(type_id);
+        log::info!(
+            "RDP session {session_id}: SVC '{:?}' channel_id={:?}",
+            svc.channel_name(), cid,
+        );
+    }
+
     log::info!(
         "RDP session {session_id}: pointer config — server: enable={}, software={} | requested: enable={}, software={}",
         cr_enable_server_pointer, cr_pointer_software_rendering,
