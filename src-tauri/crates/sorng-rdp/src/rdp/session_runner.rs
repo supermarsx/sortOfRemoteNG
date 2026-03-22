@@ -826,7 +826,7 @@ fn establish_rdp_connection(
         let rdpdr_client = super::rdpdr::RdpdrClient::new(
             session_id.to_string(),
             event_emitter.clone(),
-            if settings.drive_redirection_enabled { settings.drive_redirections.clone() } else { Vec::new() },
+            settings.drive_redirections.clone(),
             super::rdpdr::DeviceFlags {
                 printers: settings.printers_enabled,
                 ports: settings.ports_enabled,

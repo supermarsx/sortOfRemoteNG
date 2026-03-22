@@ -51,7 +51,13 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       </h5>
       <DriveMappingEditor
         drives={((rdp as Record<string, unknown>).driveRedirections as RdpDriveRedirection[] | undefined) ?? []}
-        onChange={(drives) => update({ driveRedirections: drives } as any)}
+        onChange={(drives) => {
+          const patch: Record<string, unknown> = { driveRedirections: drives };
+          if (drives.length > 0 && !rdp.driveRedirection) {
+            patch.driveRedirection = true;
+          }
+          update(patch as any);
+        }}
         selectClass="sor-form-input"
       />
     </div>
