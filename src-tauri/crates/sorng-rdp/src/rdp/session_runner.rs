@@ -1677,9 +1677,12 @@ fn run_active_session_loop(
                     stats.record_successful_pdu();
                     let payload_len = payload.len() as u64;
 
-                    // Log X224 PDUs to trace SVC channel activity
-                    if matches!(action, crate::ironrdp::pdu::Action::X224) {
-                        log::info!("RDP session {session_id}: X224 PDU received ({payload_len} bytes)");
+                    // Log X224 PDUs with channel ID to trace SVC dispatch
+                    if matches!(action, crate::ironrdp::pdu::Action::X224) && payload_len > 7 {
+                        // MCS SendDataIndication: the channel_id is at offset 6 (after TPKT+X224+MCS headers)
+                        // For X224 data, try to extract channel ID from the MCS envelope
+                        let first_bytes: Vec<u8> = payload.iter().take(20).cloned().collect();
+                        log::info!("RDP session {session_id}: X224 PDU ({payload_len}B) first_bytes={first_bytes:02x?}");
                     }
 
                     // Zero-byte PDU detection — catches broken connections

@@ -107,12 +107,15 @@ impl Processor {
         let channel_id = data_ctx.channel_id;
 
         if channel_id == self.io_channel_id {
+            tracing::info!(channel_id, "x224: dispatch to IO channel");
             self.process_io_channel(data_ctx)
         } else if let Some(svc) = self.static_channels.get_by_channel_id_mut(channel_id) {
+            tracing::info!(channel_id, "x224: dispatch to SVC");
             let response_pdus = svc.process(data_ctx.user_data).map_err(SessionError::pdu)?;
             process_svc_messages(response_pdus, channel_id, data_ctx.initiator_id)
                 .map(|data| vec![ProcessorOutput::ResponseFrame(data)])
         } else {
+            tracing::warn!(channel_id, "x224: UNKNOWN channel - no SVC registered");
             Err(reason_err!("X224", "unexpected channel received: ID {channel_id}"))
         }
     }
