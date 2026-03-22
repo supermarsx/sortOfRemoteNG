@@ -443,3 +443,4 @@ strip = true
 [patch.crates-io]
 ironrdp-connector = { path = "patches/ironrdp-connector" }
 ironrdp-blocking = { path = "patches/ironrdp-blocking" }
+ironrdp-session = { path = "patches/ironrdp-session" }

@@ -60,6 +60,7 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
     mut cas: Box<crate::ironrdp::connector::connection_activation::ConnectionActivationSequence>,
     tls_framed: &mut Framed<S>,
     stats: &RdpSessionStats,
+    preserved_channels: Option<crate::ironrdp_svc::StaticChannelSet>,
 ) -> Result<ConnectionResult, Box<dyn std::error::Error + Send + Sync>> {
     let mut buf = WriteBuf::new();
 
@@ -121,7 +122,7 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
             Ok(ConnectionResult {
                 io_channel_id,
                 user_channel_id,
-                static_channels: crate::ironrdp_svc::StaticChannelSet::new(),
+                static_channels: preserved_channels.unwrap_or_else(crate::ironrdp_svc::StaticChannelSet::new),
                 desktop_size,
                 enable_server_pointer,
                 pointer_software_rendering,
@@ -2034,7 +2035,12 @@ fn run_active_session_loop(
             // synchronous read_pdu calls that need to block).
             set_nonblocking_on_framed(&est.tls_framed, false);
 
-            match handle_reactivation(cas, &mut est.tls_framed, stats) {
+            // Preserve static channels (SVCs) across reactivation — the
+            // server does NOT re-negotiate channels, so the existing CLIPRDR,
+            // DRDYNVC, RDPDR processors must survive into the new ActiveStage.
+            let preserved_channels = est.active_stage.take_static_channels();
+
+            match handle_reactivation(cas, &mut est.tls_framed, stats, Some(preserved_channels)) {
                 Ok(new_result) => {
                     est.desktop_width = new_result.desktop_size.width;
                     est.desktop_height = new_result.desktop_size.height;
