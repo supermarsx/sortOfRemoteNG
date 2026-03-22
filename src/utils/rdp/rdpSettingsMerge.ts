@@ -83,7 +83,20 @@ export function mergeRdpSettings(
       videoCapture: g.videoCaptureRedirection ?? base.deviceRedirection?.videoCapture,
       usbDevices: g.usbRedirection ?? base.deviceRedirection?.usbDevices,
       audioInput: g.audioInputRedirection ?? base.deviceRedirection?.audioInput,
-      ...defined(conn?.deviceRedirection),
+      driveRedirection: g.driveRedirection ?? base.deviceRedirection?.driveRedirection,
+      drives: (() => {
+        const globalDrives = g.driveRedirections ?? base.deviceRedirection?.drives ?? [];
+        const connDrives = conn?.deviceRedirection?.drives ?? [];
+        if (conn?.deviceRedirection?.inheritGlobalDrives === false) return connDrives;
+        const excluded = new Set(conn?.deviceRedirection?.excludedGlobalDrives ?? []);
+        const inherited = globalDrives.filter(d => !excluded.has(`${d.name}:${d.path}`));
+        return [...inherited, ...connDrives];
+      })(),
+      ...(() => {
+        const { drives: _d, excludedGlobalDrives: _e, inheritGlobalDrives: _i, ...rest } =
+          defined(conn?.deviceRedirection) as Record<string, unknown>;
+        return rest;
+      })(),
     },
     performance: {
       ...base.performance,

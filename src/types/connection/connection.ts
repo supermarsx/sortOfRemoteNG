@@ -377,8 +377,14 @@ export interface RdpInputSettings {
 export interface RdpDeviceRedirection {
   /** Clipboard redirection */
   clipboard?: boolean;
+  /** Enable drive/folder redirection */
+  driveRedirection?: boolean;
   /** Drive/folder redirection (list of local paths to share) */
   drives?: RdpDriveRedirection[];
+  /** Whether to inherit global drive mappings (undefined = true) */
+  inheritGlobalDrives?: boolean;
+  /** Global drive mapping keys excluded from this connection (name:path) */
+  excludedGlobalDrives?: string[];
   /** Printer redirection */
   printers?: boolean;
   /** Serial/COM port redirection */
@@ -401,6 +407,7 @@ export interface RdpDriveRedirection {
   name: string;
   path: string;
   readOnly?: boolean;
+  enabled?: boolean;
 }
 
 export interface RdpPerformanceSettings {
@@ -740,6 +747,7 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
   },
   deviceRedirection: {
     clipboard: true,
+    driveRedirection: false,
     drives: [],
     printers: false,
     ports: false,

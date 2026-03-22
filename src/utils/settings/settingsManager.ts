@@ -492,6 +492,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     videoCaptureRedirection: false,
     usbRedirection: false,
     audioInputRedirection: false,
+    driveRedirection: false,
+    driveRedirections: [],
     // Performance visual
     connectionSpeed: 'broadband-high' as const,
     disableWallpaper: true,

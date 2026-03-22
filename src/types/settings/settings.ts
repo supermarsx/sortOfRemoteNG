@@ -730,6 +730,10 @@ export interface RdpGlobalDefaultsConfig {
   usbRedirection: boolean;
   /** Enable audio input (microphone) redirection by default */
   audioInputRedirection: boolean;
+  /** Enable drive/folder redirection by default */
+  driveRedirection: boolean;
+  /** Default drive mappings for new RDP connections */
+  driveRedirections?: RdpDriveRedirection[];
 
   // ─── Performance / Visual Experience defaults ─────────────
   /** Default connection speed preset */
