@@ -816,7 +816,8 @@ fn establish_rdp_connection(
     };
 
     // -- Register RDPDR SVC (device/drive redirection) --
-    let has_rdpdr_devices = (settings.drive_redirection_enabled && !settings.drive_redirections.is_empty())
+    // Register if drives are configured (presence implies intent) or any device flag is on
+    let has_rdpdr_devices = !settings.drive_redirections.is_empty()
         || settings.printers_enabled
         || settings.ports_enabled
         || settings.smart_cards_enabled;

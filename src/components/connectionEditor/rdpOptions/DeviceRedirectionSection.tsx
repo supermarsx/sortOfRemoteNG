@@ -253,7 +253,14 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
         )}
         <DriveMappingEditor
           drives={localDrives}
-          onChange={(updated) => updateRdp("deviceRedirection", { drives: updated })}
+          onChange={(updated) => {
+            const patch: Record<string, unknown> = { drives: updated };
+            // Auto-enable drive redirection when drives are added
+            if (updated.length > 0 && rdp.deviceRedirection?.driveRedirection !== true) {
+              patch.driveRedirection = true;
+            }
+            updateRdp("deviceRedirection", patch as any);
+          }}
           selectClass={CSS.select}
         />
       </div>
