@@ -198,7 +198,8 @@ pub fn build_client_name(computer_name: &str) -> Vec<u8> {
 
 /// Build Client Core Capability Response.
 pub fn build_client_capabilities(printers: bool, ports: bool, smart_cards: bool, has_drives: bool) -> Vec<u8> {
-    let mut caps: Vec<(u16, Vec<u8>)> = Vec::new();
+    // (cap_type, version, body)
+    let mut caps: Vec<(u16, u32, Vec<u8>)> = Vec::new();
 
     // General capability set (always included)
     {
@@ -214,24 +215,21 @@ pub fn build_client_capabilities(printers: bool, ports: bool, smart_cards: bool,
         body.extend_from_slice(&1u32.to_le_bytes()); // extraFlags1 (ENABLE_ASYNCIO)
         body.extend_from_slice(&0u32.to_le_bytes()); // extraFlags2
         body.extend_from_slice(&0u32.to_le_bytes()); // specialTypeDeviceCap (reserved)
-        caps.push((CAP_GENERAL_TYPE, body));
+        caps.push((CAP_GENERAL_TYPE, 2, body)); // GENERAL_CAPABILITY_VERSION_02
     }
 
     // Drive capability (if drives configured)
     if has_drives {
-        caps.push((CAP_DRIVE_TYPE, Vec::new()));
+        caps.push((CAP_DRIVE_TYPE, 2, Vec::new())); // DRIVE_CAPABILITY_VERSION_02
     }
-    // Printer capability
     if printers {
-        caps.push((CAP_PRINTER_TYPE, Vec::new()));
+        caps.push((CAP_PRINTER_TYPE, 1, Vec::new()));
     }
-    // Port capability
     if ports {
-        caps.push((CAP_PORT_TYPE, Vec::new()));
+        caps.push((CAP_PORT_TYPE, 1, Vec::new()));
     }
-    // Smart card capability
     if smart_cards {
-        caps.push((CAP_SMARTCARD_TYPE, Vec::new()));
+        caps.push((CAP_SMARTCARD_TYPE, 1, Vec::new()));
     }
 
     let mut buf = Vec::with_capacity(64);
@@ -239,11 +237,11 @@ pub fn build_client_capabilities(printers: bool, ports: bool, smart_cards: bool,
     buf.extend_from_slice(&(caps.len() as u16).to_le_bytes()); // numCapabilities
     buf.extend_from_slice(&0u16.to_le_bytes()); // padding
 
-    for (cap_type, body) in &caps {
-        let cap_len = (4 + 4 + body.len()) as u16; // header(2) + length(2) + version(4) + body
+    for (cap_type, version, body) in &caps {
+        let cap_len = (4 + 4 + body.len()) as u16; // capType(2) + capLen(2) + version(4) + body
         buf.extend_from_slice(&cap_type.to_le_bytes());
         buf.extend_from_slice(&cap_len.to_le_bytes());
-        buf.extend_from_slice(&1u32.to_le_bytes()); // version
+        buf.extend_from_slice(&version.to_le_bytes());
         buf.extend_from_slice(body);
     }
 

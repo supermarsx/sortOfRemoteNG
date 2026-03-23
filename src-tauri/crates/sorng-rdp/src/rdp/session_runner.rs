@@ -868,6 +868,9 @@ fn establish_rdp_connection(
             },
         );
         connector.attach_static_channel(rdpdr_client);
+        // FreeRDP always registers rdpsnd alongside rdpdr — some servers
+        // require its presence for RDPDR to activate.
+        connector.attach_static_channel(super::rdpdr::RdpsndStub);
         log::info!(
             "RDP session {session_id}: RDPDR SVC registered ({} drives, printers={}, ports={}, smartcards={})",
             settings.drive_redirections.len(),

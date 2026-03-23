@@ -265,6 +265,35 @@ impl SvcProcessor for RdpdrClient {
     }
 }
 
+// ── RDPSND stub SVC ──────────────────────────────────────────────────
+// FreeRDP always loads an rdpsnd channel when RDPDR is active.
+// Some Windows servers require rdpsnd to be present for RDPDR to work.
+
+/// Minimal rdpsnd static virtual channel stub. Accepts incoming PDUs
+/// but does not produce audio — its mere presence triggers the server
+/// to activate device redirection.
+#[derive(Debug)]
+pub struct RdpsndStub;
+
+impl_as_any!(RdpsndStub);
+impl SvcClientProcessor for RdpsndStub {}
+
+impl SvcProcessor for RdpsndStub {
+    fn channel_name(&self) -> ChannelName {
+        ChannelName::from_static(b"rdpsnd\0\0")
+    }
+
+    fn start(&mut self) -> PduResult<Vec<SvcMessage>> {
+        log::info!("RDPSND stub: channel started");
+        Ok(Vec::new())
+    }
+
+    fn process(&mut self, payload: &[u8]) -> PduResult<Vec<SvcMessage>> {
+        log::debug!("RDPSND stub: received {} bytes (ignored)", payload.len());
+        Ok(Vec::new())
+    }
+}
+
 /// Resolve drive letters for all configured drives, avoiding collisions.
 /// Returns Vec of (config_index, assigned_letter).
 /// Auto-assigns from Z downward to avoid common Windows drive letters.
