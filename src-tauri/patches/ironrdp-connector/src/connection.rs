@@ -749,8 +749,11 @@ fn create_gcc_blocks<'a>(
         } else {
             Some(ClientNetworkData { channels })
         },
-        // TODO(#139): support for Some(ClientClusterData { flags: RedirectionFlags::REDIRECTION_SUPPORTED, redirection_version: RedirectionVersion::V4, redirected_session_id: 0, }),
-        cluster: None,
+        cluster: Some(gcc::ClientClusterData {
+            flags: gcc::RedirectionFlags::REDIRECTION_SUPPORTED,
+            redirection_version: gcc::RedirectionVersion::V4,
+            redirected_session_id: 0,
+        }),
         monitor: None,
         // TODO(#140): support for Client Message Channel Data (https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f50e791c-de03-4b25-b17e-e914c9020bc3)
         message_channel: None,
