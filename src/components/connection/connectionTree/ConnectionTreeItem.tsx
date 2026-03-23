@@ -3,6 +3,7 @@ import TreeItemMenu from "./TreeItemMenu";
 import MultiSelectMenu from "./MultiSelectMenu";
 import React, { useState, useRef } from "react";
 import { useConnections } from "../../../contexts/useConnections";
+import { isToolProtocol } from "../../app/toolSession";
 import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreVertical, Play, Power, Star } from "lucide-react";
 
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
@@ -25,7 +26,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   const ProtocolIcon = getConnectionIcon(connection);
   const isSelected = state.selectedConnectionIds.has(connection.id);
   const isMultiSelected = state.selectedConnectionIds.size > 1;
-  const activeSession = state.sessions.find((s) => s.connectionId === connection.id);
+  const activeSession = state.sessions.find((s) => s.connectionId === connection.id && !isToolProtocol(s.protocol));
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
