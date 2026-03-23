@@ -22,6 +22,7 @@ import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
+import { SettingsProvider } from "./contexts/SettingsContext";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
 import { SessionViewer } from "./components/session/SessionViewer";
@@ -1337,11 +1338,13 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => (
   <ToastProvider>
-    <ConnectionProvider>
-      <ErrorBoundary>
-        <AppContent />
-      </ErrorBoundary>
-    </ConnectionProvider>
+    <SettingsProvider>
+      <ConnectionProvider>
+        <ErrorBoundary>
+          <AppContent />
+        </ErrorBoundary>
+      </ConnectionProvider>
+    </SettingsProvider>
   </ToastProvider>
 );
 
