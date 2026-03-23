@@ -3813,8 +3813,6 @@ dependencies = [
 [[package]]
 name = "ironrdp-dvc"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdf251c27aed3f73d4f25e86b1bee1c9d82145ec665de8317edbf2da7c42ebe8"
 dependencies = [
  "ironrdp-core",
  "ironrdp-pdu",
@@ -3884,8 +3882,6 @@ dependencies = [
 [[package]]
 name = "ironrdp-session"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "997627ed3bdcd706fe44b8fdd958763b188336c4fc29b6443121867514069ac4"
 dependencies = [
  "ironrdp-connector",
  "ironrdp-core",

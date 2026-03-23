@@ -868,9 +868,9 @@ fn establish_rdp_connection(
             },
         );
         connector.attach_static_channel(rdpdr_client);
-        // FreeRDP always registers rdpsnd alongside rdpdr — some servers
-        // require its presence for RDPDR to activate.
-        connector.attach_static_channel(super::rdpdr::RdpsndStub);
+        // Windows Server requires rdpsnd to complete format negotiation
+        // before it sends the RDPDR Server Core Capability Request.
+        connector.attach_static_channel(super::rdpdr::RdpsndClient::new());
         log::info!(
             "RDP session {session_id}: RDPDR SVC registered ({} drives, printers={}, ports={}, smartcards={})",
             settings.drive_redirections.len(),
@@ -878,6 +878,12 @@ fn establish_rdp_connection(
             settings.ports_enabled,
             settings.smart_cards_enabled,
         );
+        for (i, d) in settings.drive_redirections.iter().enumerate() {
+            log::info!(
+                "RDP session {session_id}: drive[{i}] name='{}' path='{}' readOnly={} preferredLetter={:?}",
+                d.name, d.path, d.read_only, d.preferred_letter,
+            );
+        }
     }
 
     // Log gateway / Hyper-V / negotiation settings
@@ -1750,6 +1756,10 @@ fn run_active_session_loop(
                             for output in outputs {
                                 match output {
                                     ActiveStageOutput::ResponseFrame(data) => {
+                                        log::debug!(
+                                            "RDP session {session_id}: writing ResponseFrame ({} bytes) to TLS",
+                                            data.len()
+                                        );
                                         stats
                                             .bytes_sent
                                             .fetch_add(data.len() as u64, Ordering::Relaxed);

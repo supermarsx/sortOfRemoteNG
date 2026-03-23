@@ -12,7 +12,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use crate::ironrdp_core::impl_as_any;
-use crate::ironrdp_svc::{SvcClientProcessor, SvcProcessor, SvcMessage, ChannelFlags, SvcEncode};
+use crate::ironrdp_svc::{SvcClientProcessor, SvcProcessor, SvcMessage, SvcEncode};
 use crate::ironrdp::pdu::gcc::ChannelName;
 use crate::ironrdp::pdu::PduResult;
 use sorng_core::events::DynEventEmitter;
@@ -101,7 +101,7 @@ impl RdpdrClient {
                     if data.len() >= 2 { read_u16(&data, 0) } else { 0 },
                     if data.len() >= 4 { read_u16(&data, 2) } else { 0 },
                 );
-                SvcMessage::from(RdpdrPdu(data)).with_flags(ChannelFlags::SHOW_PROTOCOL)
+                SvcMessage::from(RdpdrPdu(data))
             })
             .collect()
     }
@@ -120,7 +120,7 @@ impl RdpdrClient {
         let body = &payload[4..];
 
         log::info!(
-            "RDPDR session {} (DVC): recv component=0x{:04X} packetId=0x{:04X} body_len={} state={:?}",
+            "RDPDR session {}: recv component=0x{:04X} packetId=0x{:04X} body_len={} state={:?}",
             self.session_id, component, packet_id, body.len(), self.state
         );
 
@@ -139,7 +139,7 @@ impl RdpdrClient {
                     self.server_version_major = read_u16(body, 0);
                     self.server_version_minor = read_u16(body, 2);
                     self.client_id = read_u32(body, 4);
-                    log::info!("RDPDR session {} (DVC): Server Announce v{}.{} clientId={} (state was {:?})", self.session_id, self.server_version_major, self.server_version_minor, self.client_id, self.state);
+                    log::info!("RDPDR session {}: Server Announce v{}.{} clientId={} (state was {:?})", self.session_id, self.server_version_major, self.server_version_minor, self.client_id, self.state);
                 }
                 // Reset state — server can re-announce at any time (e.g., after reactivation)
                 self.fs_devices.clear();
@@ -161,7 +161,7 @@ impl RdpdrClient {
                 if body.len() >= 8 {
                     self.client_id = read_u32(body, 4);
                 }
-                log::info!("RDPDR session {} (DVC): Client ID confirmed", self.session_id);
+                log::info!("RDPDR session {}: Client ID confirmed", self.session_id);
                 self.state = RdpdrState::Ready;
 
                 // Resolve drive letters and register devices
@@ -174,7 +174,7 @@ impl RdpdrClient {
                     let fs_device = FileSystemDevice::new(device_id, PathBuf::from(&drive_cfg.path), drive_cfg.read_only);
                     self.fs_devices.insert(device_id, fs_device);
                     announced.push((device_id, *letter));
-                    log::info!("RDPDR session {} (DVC): drive '{}' as {}:\\", self.session_id, drive_cfg.name, letter);
+                    log::info!("RDPDR session {}: drive '{}' as {}:\\", self.session_id, drive_cfg.name, letter);
                 }
 
                 let mut buf = Vec::with_capacity(64);
@@ -182,15 +182,23 @@ impl RdpdrClient {
                 buf.extend_from_slice(&(announced.len() as u32).to_le_bytes());
                 for (idx, (device_id, letter)) in announced.iter().enumerate() {
                     let drive_cfg = &self.drives[letter_assignments[idx].0];
-                    let device_data = encode_utf16le(&drive_cfg.path);
+                    // DeviceData: display name shown on remote (not the local path)
+                    let display_name = format!("{}:\\", letter);
+                    let device_data = encode_utf16le(&display_name);
                     buf.extend_from_slice(&RDPDR_DTYP_FILESYSTEM.to_le_bytes());
                     buf.extend_from_slice(&device_id.to_le_bytes());
+                    // PreferredDosName: 8-byte ASCII, determines drive letter on remote
                     let mut dos_name = [0u8; 8];
-                    dos_name[0] = *letter as u8;
-                    dos_name[1] = b':';
+                    let name_str = format!("{}:", letter);
+                    let name_bytes = name_str.as_bytes();
+                    dos_name[..name_bytes.len().min(7)].copy_from_slice(&name_bytes[..name_bytes.len().min(7)]);
                     buf.extend_from_slice(&dos_name);
                     buf.extend_from_slice(&(device_data.len() as u32).to_le_bytes());
                     buf.extend_from_slice(&device_data);
+                    log::info!(
+                        "RDPDR session {}: announced device_id={} dos_name='{}' display='{}' -> local '{}'",
+                        self.session_id, device_id, name_str, display_name, drive_cfg.path
+                    );
                 }
                 vec![buf]
             }
@@ -215,9 +223,26 @@ impl RdpdrClient {
                     let major_function = read_u32(body, 12);
                     let minor_function = read_u32(body, 16);
                     let irp_data = &body[20..];
+                    log::info!(
+                        "RDPDR session {}: IRP dev={} file={} comp={} major=0x{:X} minor=0x{:X} data_len={}",
+                        self.session_id, device_id, file_id, completion_id,
+                        major_function, minor_function, irp_data.len()
+                    );
                     if let Some(fs_device) = self.fs_devices.get_mut(&device_id) {
-                        let response = fs_device.handle_irp(major_function, minor_function, completion_id, file_id, irp_data);
-                        vec![response]
+                        match fs_device.handle_irp(major_function, minor_function, completion_id, file_id, irp_data) {
+                            Some(response) => {
+                                log::info!(
+                                    "RDPDR session {}: IRP response {} bytes, status=0x{:08X}",
+                                    self.session_id, response.len(),
+                                    if response.len() >= 16 { read_u32(&response, 12) } else { 0 }
+                                );
+                                vec![response]
+                            }
+                            None => {
+                                log::debug!("RDPDR session {}: IRP discarded (no response)", self.session_id);
+                                Vec::new()
+                            }
+                        }
                     } else {
                         vec![build_io_completion(device_id, completion_id, STATUS_NOT_SUPPORTED, &[])]
                     }
@@ -226,7 +251,7 @@ impl RdpdrClient {
                 }
             }
             PAKID_CORE_USER_LOGGEDON => {
-                log::info!("RDPDR session {} (DVC): user logged on", self.session_id);
+                log::info!("RDPDR session {}: user logged on", self.session_id);
                 Vec::new()
             }
             _ => Vec::new(),
@@ -262,38 +287,189 @@ impl SvcProcessor for RdpdrClient {
     }
 
     fn process(&mut self, payload: &[u8]) -> PduResult<Vec<SvcMessage>> {
-        // Delegate to raw processor, wrap results as SVC messages
+        log::info!("RDPDR SVC session {}: received {} bytes on static channel", self.session_id, payload.len());
         let raw_response = self.process_rdpdr_payload(payload);
-        Ok(self.make_messages(raw_response))
+        let messages = self.make_messages(raw_response);
+        log::info!("RDPDR SVC session {}: returning {} SVC messages", self.session_id, messages.len());
+        Ok(messages)
     }
 }
 
-// ── RDPSND stub SVC ──────────────────────────────────────────────────
+// ── RDPSND SVC ───────────────────────────────────────────────────────
 // FreeRDP always loads an rdpsnd channel when RDPDR is active.
-// Some Windows servers require rdpsnd to be present for RDPDR to work.
+// Windows Server requires rdpsnd to complete format negotiation before
+// it proceeds with the RDPDR handshake (Server Core Capability Request).
 
-/// Minimal rdpsnd static virtual channel stub. Accepts incoming PDUs
-/// but does not produce audio — its mere presence triggers the server
-/// to activate device redirection.
+// rdpsnd PDU message types (MS-RDPEA 2.2.1)
+const SNDC_CLOSE: u8 = 0x01;
+const SNDC_TRAINING: u8 = 0x06;
+const SNDC_FORMATS: u8 = 0x07;
+const SNDC_QUALITYMODE: u8 = 0x0C;
+
+// Audio format tags
+const WAVE_FORMAT_PCM: u16 = 0x0001;
+
+/// Rdpsnd static virtual channel. Performs audio format negotiation with
+/// the server (required for RDPDR to work on Windows Server) but does
+/// not actually play audio.
 #[derive(Debug)]
-pub struct RdpsndStub;
+pub struct RdpsndClient {
+    negotiated: bool,
+}
 
-impl_as_any!(RdpsndStub);
-impl SvcClientProcessor for RdpsndStub {}
+impl RdpsndClient {
+    pub fn new() -> Self {
+        Self { negotiated: false }
+    }
 
-impl SvcProcessor for RdpsndStub {
+    /// Build the rdpsnd PDU header (4 bytes).
+    fn build_header(msg_type: u8, body_size: u16) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(4 + body_size as usize);
+        buf.push(msg_type);
+        buf.push(0); // bPad
+        buf.extend_from_slice(&body_size.to_le_bytes());
+        buf
+    }
+
+    /// Build Client Audio Formats and Version PDU (SNDC_FORMATS response).
+    fn build_formats_reply(&self, server_version: u16) -> Vec<u8> {
+        // Offer one PCM format: 44100 Hz, 16-bit, stereo
+        let pcm_format = Self::build_pcm_format(2, 44100, 16);
+        let body_size: u16 = 4 + 4 + 4 + 2 + 2 + 1 + 2 + 1 + pcm_format.len() as u16;
+        let mut buf = Self::build_header(SNDC_FORMATS, body_size);
+        buf.extend_from_slice(&0u32.to_le_bytes()); // dwFlags
+        buf.extend_from_slice(&0xFFFFu32.to_le_bytes()); // dwVolume (max)
+        buf.extend_from_slice(&0u32.to_le_bytes()); // dwPitch
+        buf.extend_from_slice(&0u16.to_le_bytes()); // wDGramPort
+        buf.extend_from_slice(&1u16.to_le_bytes()); // wNumberOfFormats = 1
+        buf.push(0); // cLastBlockConfirmed
+        buf.extend_from_slice(&server_version.min(0x0006).to_le_bytes()); // wVersion (cap at 6)
+        buf.push(0); // bPad
+        buf.extend_from_slice(&pcm_format);
+        buf
+    }
+
+    fn build_pcm_format(channels: u16, sample_rate: u32, bits: u16) -> Vec<u8> {
+        let block_align = channels * (bits / 8);
+        let avg_bytes = sample_rate * block_align as u32;
+        let mut buf = Vec::with_capacity(18);
+        buf.extend_from_slice(&WAVE_FORMAT_PCM.to_le_bytes()); // wFormatTag
+        buf.extend_from_slice(&channels.to_le_bytes()); // nChannels
+        buf.extend_from_slice(&sample_rate.to_le_bytes()); // nSamplesPerSec
+        buf.extend_from_slice(&avg_bytes.to_le_bytes()); // nAvgBytesPerSec
+        buf.extend_from_slice(&block_align.to_le_bytes()); // nBlockAlign
+        buf.extend_from_slice(&bits.to_le_bytes()); // wBitsPerSample
+        buf.extend_from_slice(&0u16.to_le_bytes()); // cbSize = 0
+        buf
+    }
+
+    /// Build Training Confirm PDU (echoes server's timestamp + pack size).
+    fn build_training_confirm(timestamp: u16, pack_size: u16) -> Vec<u8> {
+        let body_size: u16 = 4;
+        let mut buf = Self::build_header(SNDC_TRAINING, body_size);
+        buf.extend_from_slice(&timestamp.to_le_bytes());
+        buf.extend_from_slice(&pack_size.to_le_bytes());
+        buf
+    }
+
+    /// Build Quality Mode PDU response.
+    fn build_quality_mode() -> Vec<u8> {
+        let body_size: u16 = 2;
+        let mut buf = Self::build_header(SNDC_QUALITYMODE, body_size);
+        buf.extend_from_slice(&0x0001u16.to_le_bytes()); // DYNAMIC quality
+        buf
+    }
+}
+
+/// Wrapper for rdpsnd raw bytes as SVC message.
+struct RdpsndPdu(Vec<u8>);
+
+impl crate::ironrdp_core::Encode for RdpsndPdu {
+    fn encode(&self, dst: &mut crate::ironrdp_core::WriteCursor<'_>) -> crate::ironrdp_core::EncodeResult<()> {
+        crate::ironrdp_core::ensure_size!(in: dst, size: self.0.len());
+        dst.write_slice(&self.0);
+        Ok(())
+    }
+    fn name(&self) -> &'static str { "RdpsndPdu" }
+    fn size(&self) -> usize { self.0.len() }
+}
+
+impl SvcEncode for RdpsndPdu {}
+
+impl_as_any!(RdpsndClient);
+impl SvcClientProcessor for RdpsndClient {}
+
+impl SvcProcessor for RdpsndClient {
     fn channel_name(&self) -> ChannelName {
         ChannelName::from_static(b"rdpsnd\0\0")
     }
 
     fn start(&mut self) -> PduResult<Vec<SvcMessage>> {
-        log::info!("RDPSND stub: channel started");
+        log::info!("RDPSND: channel started, waiting for server formats");
         Ok(Vec::new())
     }
 
     fn process(&mut self, payload: &[u8]) -> PduResult<Vec<SvcMessage>> {
-        log::debug!("RDPSND stub: received {} bytes (ignored)", payload.len());
-        Ok(Vec::new())
+        if payload.len() < 4 {
+            log::warn!("RDPSND: payload too short ({} bytes)", payload.len());
+            return Ok(Vec::new());
+        }
+
+        let msg_type = payload[0];
+        let _body_size = u16::from_le_bytes([payload[2], payload[3]]);
+        let body = &payload[4..];
+
+        match msg_type {
+            SNDC_FORMATS => {
+                if body.len() < 20 {
+                    log::warn!("RDPSND: FORMATS body too short ({} bytes)", body.len());
+                    return Ok(Vec::new());
+                }
+                let num_formats = u16::from_le_bytes([body[12], body[13]]);
+                let server_version = u16::from_le_bytes([body[15], body[16]]);
+                log::info!(
+                    "RDPSND: Server Audio Formats v{} ({} formats offered)",
+                    server_version, num_formats
+                );
+
+                let reply = self.build_formats_reply(server_version);
+                log::info!("RDPSND: sending Client Audio Formats ({} bytes, 1 PCM format)", reply.len());
+                self.negotiated = true;
+
+                Ok(vec![
+                    SvcMessage::from(RdpsndPdu(reply)),
+                ])
+            }
+            SNDC_TRAINING => {
+                if body.len() >= 4 {
+                    let timestamp = u16::from_le_bytes([body[0], body[1]]);
+                    let pack_size = u16::from_le_bytes([body[2], body[3]]);
+                    log::info!("RDPSND: Training request (ts={}, size={}), sending confirm", timestamp, pack_size);
+                    let confirm = Self::build_training_confirm(timestamp, pack_size);
+                    Ok(vec![
+                        SvcMessage::from(RdpsndPdu(confirm)),
+                    ])
+                } else {
+                    log::warn!("RDPSND: Training body too short");
+                    Ok(Vec::new())
+                }
+            }
+            SNDC_QUALITYMODE => {
+                log::info!("RDPSND: Quality Mode request, sending DYNAMIC quality");
+                let reply = Self::build_quality_mode();
+                Ok(vec![
+                    SvcMessage::from(RdpsndPdu(reply)),
+                ])
+            }
+            SNDC_CLOSE => {
+                log::info!("RDPSND: Close received");
+                Ok(Vec::new())
+            }
+            _ => {
+                log::debug!("RDPSND: msgType=0x{:02X} ({} bytes body), ignoring", msg_type, body.len());
+                Ok(Vec::new())
+            }
+        }
     }
 }
 
@@ -428,10 +604,15 @@ impl crate::ironrdp_dvc::DvcProcessor for RdpdrDvcProcessor {
     }
 
     fn process(&mut self, _channel_id: u32, payload: &[u8]) -> PduResult<Vec<crate::ironrdp_dvc::DvcMessage>> {
+        log::info!("RDPDR DVC session {}: received {} bytes on dynamic channel", self.inner.session_id, payload.len());
         let raw_pdus = self.inner.process_rdpdr_payload(payload);
         let dvc_messages: Vec<crate::ironrdp_dvc::DvcMessage> = raw_pdus.into_iter()
-            .map(|data| Box::new(RdpdrDvcPdu(data)) as crate::ironrdp_dvc::DvcMessage)
+            .map(|data| {
+                log::info!("RDPDR DVC session {}: sending {} bytes response", self.inner.session_id, data.len());
+                Box::new(RdpdrDvcPdu(data)) as crate::ironrdp_dvc::DvcMessage
+            })
             .collect();
+        log::info!("RDPDR DVC session {}: returning {} DVC messages", self.inner.session_id, dvc_messages.len());
         Ok(dvc_messages)
     }
 
