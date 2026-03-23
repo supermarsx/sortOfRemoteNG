@@ -605,7 +605,12 @@ export function useRDPClient(session: ConnectionSession) {
         frameChannel,
       };
 
+      const mergedDrives = effectiveSettings.deviceRedirection?.drives ?? [];
       console.log(`[RDP init gen=${gen}] creating NEW connection to ${connectionDetails.host}:${connectionDetails.port}`);
+      console.log(`[RDP init] drives being sent to backend (${mergedDrives.length}):`, JSON.stringify(mergedDrives));
+      console.log(`[RDP init] global rdpDefaults.driveRedirections:`, JSON.stringify((settings.rdpDefaults as any)?.driveRedirections));
+      console.log(`[RDP init] conn deviceRedirection.drives:`, JSON.stringify(conn.rdpSettings?.deviceRedirection?.drives));
+      console.log(`[RDP init] conn inheritGlobalDrives:`, conn.rdpSettings?.deviceRedirection?.inheritGlobalDrives);
 
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
 
