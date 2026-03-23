@@ -139,8 +139,11 @@ impl RdpdrClient {
                     self.server_version_major = read_u16(body, 0);
                     self.server_version_minor = read_u16(body, 2);
                     self.client_id = read_u32(body, 4);
-                    log::info!("RDPDR session {} (DVC): Server Announce v{}.{} clientId={}", self.session_id, self.server_version_major, self.server_version_minor, self.client_id);
+                    log::info!("RDPDR session {} (DVC): Server Announce v{}.{} clientId={} (state was {:?})", self.session_id, self.server_version_major, self.server_version_minor, self.client_id, self.state);
                 }
+                // Reset state — server can re-announce at any time (e.g., after reactivation)
+                self.fs_devices.clear();
+                self.next_device_id = 1;
                 let reply = build_client_announce_reply(1, 12, self.client_id);
                 let name = build_client_name("SORNG");
                 self.state = RdpdrState::WaitingCapabilities;
