@@ -279,18 +279,19 @@ export function useConnectionEditor(
       if (connection) {
         if (!hasChanges) {
           toast.info("No changes to save");
-          onClose();
           return;
         }
         const connectionData = buildConnectionData();
         dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
         toast.success(`"${connectionData.name}" saved`);
+        // Update the baseline so subsequent saves detect new changes correctly
+        originalDataRef.current = JSON.stringify(formData);
       } else {
         const connectionData = buildConnectionData();
         dispatch({ type: "ADD_CONNECTION", payload: connectionData });
         toast.success(`"${connectionData.name}" created`);
+        onClose();
       }
-      onClose();
     },
     [buildConnectionData, connection, dispatch, onClose, formData, toast],
   );

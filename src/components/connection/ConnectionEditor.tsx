@@ -630,14 +630,14 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+    <form
+      onSubmit={mgr.handleSubmit}
+      className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden"
+    >
       <EditorHeader mgr={mgr} onClose={onClose} />
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-2xl mx-auto w-full p-6">
-          <form
-            onSubmit={mgr.handleSubmit}
-            className="flex flex-col gap-3"
-          >
+          <div className="flex flex-col gap-3">
             <QuickToggles mgr={mgr} />
             <NameInput mgr={mgr} />
             <ParentSelector mgr={mgr} />
@@ -657,9 +657,9 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             <DescriptionSection mgr={mgr} />
 
             <EditorFooter mgr={mgr} />
-          </form>
+          </div>
         </div>
       </div>
-    </div>
+    </form>
   );
 };
