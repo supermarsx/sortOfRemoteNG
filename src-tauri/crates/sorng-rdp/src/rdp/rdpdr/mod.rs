@@ -135,14 +135,14 @@ impl RdpdrClient {
 
         let result = match packet_id {
             PAKID_CORE_SERVER_ANNOUNCE => {
-                let reply = build_client_announce_reply(1, 12, self.client_id);
-                let name = build_client_name("SORNG");
                 if body.len() >= 8 {
                     self.server_version_major = read_u16(body, 0);
                     self.server_version_minor = read_u16(body, 2);
                     self.client_id = read_u32(body, 4);
-                    log::info!("RDPDR session {} (DVC): Server Announce v{}.{}", self.session_id, self.server_version_major, self.server_version_minor);
+                    log::info!("RDPDR session {} (DVC): Server Announce v{}.{} clientId={}", self.session_id, self.server_version_major, self.server_version_minor, self.client_id);
                 }
+                let reply = build_client_announce_reply(1, 12, self.client_id);
+                let name = build_client_name("SORNG");
                 self.state = RdpdrState::WaitingCapabilities;
                 vec![reply, name]
             }
