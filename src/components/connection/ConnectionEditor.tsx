@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Save,
   Check,
@@ -14,6 +14,8 @@ import {
   FileText,
   Tag,
   RotateCcw,
+  Search,
+  X,
 } from "lucide-react";
 import { Connection } from "../../types/connection/connection";
 import { TagManager } from "./TagManager";
@@ -48,13 +50,184 @@ interface ConnectionEditorProps {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   Settings Search — highlights matching labels and counts results
+   ═══════════════════════════════════════════════════════════════ */
+
+const SKIP_TAGS = new Set(["INPUT", "TEXTAREA", "SCRIPT", "STYLE", "SELECT", "OPTION"]);
+
+function clearAllMarks(container: HTMLElement) {
+  const marks = container.querySelectorAll("mark[data-sh]");
+  marks.forEach((mark) => {
+    const text = document.createTextNode(mark.textContent || "");
+    mark.parentNode?.replaceChild(text, mark);
+  });
+  container.normalize();
+}
+
+function applyHighlights(container: HTMLElement, q: string): number {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => {
+      const p = node.parentElement;
+      if (!p) return NodeFilter.FILTER_REJECT;
+      if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+      if (p.closest("[data-search-bar]")) return NodeFilter.FILTER_REJECT;
+      if (p.hasAttribute("data-sh")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const nodes: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) nodes.push(n as Text);
+
+  let count = 0;
+  for (const tn of nodes) {
+    const text = tn.textContent || "";
+    const idx = text.toLowerCase().indexOf(q);
+    if (idx === -1) continue;
+    count++;
+
+    const frag = document.createDocumentFragment();
+    if (idx > 0) frag.appendChild(document.createTextNode(text.slice(0, idx)));
+    const mark = document.createElement("mark");
+    mark.setAttribute("data-sh", "1");
+    mark.className = "bg-warning/40 text-[var(--color-text)] rounded-sm px-0.5";
+    mark.textContent = text.slice(idx, idx + q.length);
+    frag.appendChild(mark);
+    if (idx + q.length < text.length) frag.appendChild(document.createTextNode(text.slice(idx + q.length)));
+    tn.parentNode!.replaceChild(frag, tn);
+  }
+  return count;
+}
+
+function focusMatch(container: HTMLElement, index: number) {
+  const marks = container.querySelectorAll("mark[data-sh]");
+  marks.forEach((m, i) => {
+    if (i === index) {
+      m.className = "bg-warning text-[var(--color-text)] rounded-sm px-0.5 ring-1 ring-warning";
+      // Scroll the overflow-y-auto parent, not the viewport
+      const scroller = container.parentElement;
+      if (scroller) {
+        const markRect = (m as HTMLElement).getBoundingClientRect();
+        const scrollerRect = scroller.getBoundingClientRect();
+        const offset = markRect.top - scrollerRect.top - scroller.clientHeight / 2 + markRect.height / 2;
+        scroller.scrollBy({ top: offset, behavior: "smooth" });
+      }
+    } else {
+      m.className = "bg-warning/30 text-[var(--color-text)] rounded-sm px-0.5";
+    }
+  });
+}
+
+function useSettingsSearch(containerRef: React.RefObject<HTMLElement | null>) {
+  const [query, setQuery] = useState("");
+  const [matchCount, setMatchCount] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    clearAllMarks(el);
+
+    const q = query.trim().toLowerCase();
+    if (!q) { setMatchCount(0); setCurrentIndex(0); return; }
+
+    const count = applyHighlights(el, q);
+    setMatchCount(count);
+    setCurrentIndex(count > 0 ? 0 : -1);
+
+    if (count > 0) focusMatch(el, 0);
+  }, [query, containerRef]);
+
+  const goNext = useCallback(() => {
+    if (matchCount <= 0) return;
+    const next = (currentIndex + 1) % matchCount;
+    setCurrentIndex(next);
+    if (containerRef.current) focusMatch(containerRef.current, next);
+  }, [currentIndex, matchCount, containerRef]);
+
+  const goPrev = useCallback(() => {
+    if (matchCount <= 0) return;
+    const prev = (currentIndex - 1 + matchCount) % matchCount;
+    setCurrentIndex(prev);
+    if (containerRef.current) focusMatch(containerRef.current, prev);
+  }, [currentIndex, matchCount, containerRef]);
+
+  return { query, setQuery, matchCount, currentIndex, goNext, goPrev };
+}
+
+const SearchBar: React.FC<{
+  query: string;
+  setQuery: (q: string) => void;
+  matchCount: number;
+  currentIndex: number;
+  goNext: () => void;
+  goPrev: () => void;
+}> = ({ query, setQuery, matchCount, currentIndex, goNext, goPrev }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div data-search-bar className="flex items-center gap-1 bg-[var(--color-border)]/60 rounded-lg px-2 py-1 min-w-[180px] max-w-[300px]">
+      <Search size={13} className="text-[var(--color-textMuted)] flex-shrink-0" />
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { setQuery(""); inputRef.current?.blur(); }
+          if (e.key === "Enter" && matchCount > 0) { e.shiftKey ? goPrev() : goNext(); e.preventDefault(); }
+          if (e.key === "F3" || (e.key === "g" && (e.ctrlKey || e.metaKey))) { e.shiftKey ? goPrev() : goNext(); e.preventDefault(); }
+        }}
+        placeholder="Search settings..."
+        className="bg-transparent border-none outline-none text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)] w-full min-w-0"
+      />
+      {query && (
+        <>
+          <span className="text-[10px] font-medium text-[var(--color-textSecondary)] whitespace-nowrap tabular-nums">
+            {matchCount > 0 ? `${currentIndex + 1}/${matchCount}` : "0"}
+          </span>
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={matchCount === 0}
+            className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] disabled:opacity-30 transition-colors flex-shrink-0"
+            title="Previous (Shift+Enter)"
+          >
+            <ChevronUp size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={matchCount === 0}
+            className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] disabled:opacity-30 transition-colors flex-shrink-0"
+            title="Next (Enter)"
+          >
+            <ChevronDown size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setQuery(""); inputRef.current?.focus(); }}
+            className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors flex-shrink-0"
+          >
+            <X size={12} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════
    EditorHeader
    ═══════════════════════════════════════════════════════════════ */
 
 const EditorHeader: React.FC<{
   mgr: ConnectionEditorMgr;
   onClose: () => void;
-}> = ({ mgr, onClose }) => (
+  searchBar: React.ReactNode;
+}> = ({ mgr, onClose, searchBar }) => (
   <div
     className="relative border-b border-[var(--color-border)] px-5 py-3"
     style={{
@@ -91,6 +264,7 @@ const EditorHeader: React.FC<{
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {searchBar}
         {mgr.connection && mgr.settings.autoSaveEnabled && (
           <div className="flex items-center gap-1.5 text-xs mr-2">
             {mgr.autoSaveStatus === "pending" && (
@@ -626,6 +800,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onClose,
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose);
+  const formContentRef = useRef<HTMLDivElement>(null);
+  const { query, setQuery, matchCount, currentIndex, goNext, goPrev } = useSettingsSearch(formContentRef);
 
   if (!isOpen) return null;
 
@@ -634,9 +810,19 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       onSubmit={mgr.handleSubmit}
       className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden"
     >
-      <EditorHeader mgr={mgr} onClose={onClose} />
+      <EditorHeader
+        mgr={mgr}
+        onClose={onClose}
+        searchBar={
+          <SearchBar
+            query={query} setQuery={setQuery}
+            matchCount={matchCount} currentIndex={currentIndex}
+            goNext={goNext} goPrev={goPrev}
+          />
+        }
+      />
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-2xl mx-auto w-full p-6">
+        <div ref={formContentRef} className="max-w-2xl mx-auto w-full p-6">
           <div className="flex flex-col gap-3">
             <QuickToggles mgr={mgr} />
             <NameInput mgr={mgr} />
