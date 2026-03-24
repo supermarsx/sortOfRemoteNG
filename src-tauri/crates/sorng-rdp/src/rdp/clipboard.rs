@@ -60,6 +60,8 @@ pub struct ClipboardState {
     pub pending_file_contents_request: Option<FileContentsRequest>,
     /// Total bytes transferred so far across all staged files.
     pub file_bytes_transferred: u64,
+    /// When true, clipboard operations are suppressed (runtime toggle).
+    pub disabled: bool,
 }
 
 impl ClipboardState {
@@ -73,6 +75,7 @@ impl ClipboardState {
             staged_files: Vec::new(),
             pending_file_contents_request: None,
             file_bytes_transferred: 0,
+            disabled: false,
         }
     }
 }

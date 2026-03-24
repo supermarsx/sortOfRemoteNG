@@ -813,6 +813,13 @@ fn establish_rdp_connection(
             log::info!("RDP session {session_id}: RDPDR DVC processor registered");
         }
 
+        // Register AUDIN DVC processor for audio input (microphone)
+        if settings.enable_audio_recording {
+            let audin = super::audin::AudinDvcProcessor::new(session_id.to_string(), true);
+            drdynvc = drdynvc.with_dynamic_channel(audin);
+            log::info!("RDP session {session_id}: AUDIN DVC processor registered (audio input)");
+        }
+
         connector.attach_static_channel(drdynvc);
         log::info!(
             "RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled, nal_passthrough={})",
@@ -831,7 +838,12 @@ fn establish_rdp_connection(
                 smart_cards: settings.smart_cards_enabled,
             },
         );
-        let drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(rdpdr_dvc);
+        let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(rdpdr_dvc);
+        if settings.enable_audio_recording {
+            let audin = super::audin::AudinDvcProcessor::new(session_id.to_string(), true);
+            drdynvc = drdynvc.with_dynamic_channel(audin);
+            log::info!("RDP session {session_id}: AUDIN DVC processor registered (no GFX)");
+        }
         connector.attach_static_channel(drdynvc);
         log::info!("RDP session {session_id}: RDPDR DVC processor registered (no GFX)");
         None
@@ -870,7 +882,11 @@ fn establish_rdp_connection(
         connector.attach_static_channel(rdpdr_client);
         // Windows Server requires rdpsnd to complete format negotiation
         // before it sends the RDPDR Server Core Capability Request.
-        connector.attach_static_channel(super::rdpdr::RdpsndClient::new());
+        connector.attach_static_channel(super::rdpdr::RdpsndClient::new(
+            session_id.to_string(),
+            event_emitter.clone(),
+            settings.enable_audio_playback,
+        ));
         log::info!(
             "RDP session {session_id}: RDPDR SVC registered ({} drives, printers={}, ports={}, smartcards={})",
             settings.drive_redirections.len(),
@@ -1498,6 +1514,31 @@ fn run_active_session_loop(
                                 Err(e) => log::warn!("CLIPRDR initiate_copy (files) error: {e}"),
                             }
                         }
+                    }
+                }
+                Ok(RdpCommand::ToggleFeature { feature, enabled }) => {
+                    log::info!("RDP session {session_id}: toggle '{feature}' = {enabled}");
+                    match feature.as_str() {
+                        "audio" => {
+                            if let Some(snd) = est.active_stage
+                                .get_svc_processor_mut::<super::rdpdr::RdpsndClient>()
+                            {
+                                snd.set_enabled(enabled);
+                            }
+                        }
+                        "clipboard" => {
+                            if let Some(ref clip_state) = est.clipboard_state {
+                                if let Ok(mut state) = clip_state.lock() {
+                                    state.disabled = !enabled;
+                                }
+                            }
+                        }
+                        "audioInput" => {
+                            // AUDIN is a DVC — no mutable accessor available at runtime.
+                            // The setting controls registration at connect time.
+                            log::info!("RDP session {session_id}: audioInput toggle requires reconnect to take effect");
+                        }
+                        _ => log::warn!("RDP session {session_id}: unknown feature toggle '{feature}'"),
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,

@@ -1073,9 +1073,80 @@ export function useRDPClient(session: ConnectionSession) {
       }
     }));
 
+    // ─── Audio playback via WebAudio ──────────────────────────────────
+    let audioCtx: AudioContext | null = null;
+    let audioNextTime = 0;
+
+    track(listen<{
+      sessionId: string;
+      pcmBase64: string;
+      channels: number;
+      sampleRate: number;
+      bitsPerSample: number;
+    }>('rdp://audio-data', (event) => {
+      const d = event.payload;
+      if (d.sessionId !== sessionIdRef.current) return;
+
+      if (!audioCtx) {
+        audioCtx = new AudioContext({ sampleRate: d.sampleRate });
+        audioNextTime = 0;
+      }
+
+      // Decode base64 PCM
+      const raw = atob(d.pcmBase64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+      const channels = d.channels || 2;
+      const bitsPerSample = d.bitsPerSample || 16;
+      const bytesPerSample = bitsPerSample / 8;
+      const frameCount = Math.floor(bytes.length / (channels * bytesPerSample));
+      if (frameCount === 0) return;
+
+      const buffer = audioCtx.createBuffer(channels, frameCount, d.sampleRate);
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+      for (let ch = 0; ch < channels; ch++) {
+        const channelData = buffer.getChannelData(ch);
+        for (let i = 0; i < frameCount; i++) {
+          const offset = (i * channels + ch) * bytesPerSample;
+          if (offset + 1 >= bytes.length) break;
+          // 16-bit signed LE PCM → float [-1, 1]
+          const sample = view.getInt16(offset, true);
+          channelData[i] = sample / 32768;
+        }
+      }
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+
+      // Schedule seamlessly after previous buffer
+      const now = audioCtx.currentTime;
+      if (audioNextTime < now) audioNextTime = now;
+      source.start(audioNextTime);
+      audioNextTime += buffer.duration;
+    }));
+
+    track(listen<{ sessionId: string; left: number; right: number }>('rdp://audio-volume', (event) => {
+      if (event.payload.sessionId !== sessionIdRef.current) return;
+      // WebAudio doesn't have per-channel volume easily; just log
+      debugLog(`RDP audio volume: L=${(event.payload.left * 100).toFixed(0)}% R=${(event.payload.right * 100).toFixed(0)}%`);
+    }));
+
+    track(listen<{ sessionId: string }>('rdp://audio-close', (event) => {
+      if (event.payload.sessionId !== sessionIdRef.current) return;
+      if (audioCtx) {
+        audioCtx.close().catch(() => {});
+        audioCtx = null;
+        audioNextTime = 0;
+      }
+    }));
+
     return () => {
       cleaned = true;
       unlisteners.forEach(fn => fn());
+      if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
     };
   }, []);
 
@@ -1502,6 +1573,11 @@ export function useRDPClient(session: ConnectionSession) {
           },
         },
       });
+      // Send live toggle to running session for supported features
+      const sid = sessionIdRef.current;
+      if (sid && key === 'clipboard') {
+        invoke('rdp_toggle_feature', { sessionId: sid, feature: 'clipboard', enabled: value }).catch(() => {});
+      }
     }
   }, [connection, dispatch]);
 
@@ -1520,6 +1596,11 @@ export function useRDPClient(session: ConnectionSession) {
           },
         },
       });
+      // Send live toggle to running session
+      const sid = sessionIdRef.current;
+      if (sid) {
+        invoke('rdp_toggle_feature', { sessionId: sid, feature: 'audio', enabled }).catch(() => {});
+      }
     }
   }, [connection, dispatch]);
 

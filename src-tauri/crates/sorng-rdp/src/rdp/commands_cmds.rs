@@ -654,3 +654,22 @@ pub async fn rdp_clipboard_paste(
         Err(format!("RDP session {session_id} not found"))
     }
 }
+
+/// Toggle a session feature (audio, clipboard) on/off at runtime.
+#[tauri::command]
+pub async fn rdp_toggle_feature(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    feature: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    if let Some(conn) = service.connections.get(&session_id) {
+        conn.cmd_tx
+            .send(RdpCommand::ToggleFeature { feature, enabled })
+            .map_err(|_| "Session command channel closed".to_string())?;
+        Ok(())
+    } else {
+        Err(format!("RDP session {session_id} not found"))
+    }
+}

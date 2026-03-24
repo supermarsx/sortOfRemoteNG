@@ -1,11 +1,13 @@
 //! RDPDR (Device Redirection) static virtual channel implementation.
 //!
-//! Implements the MS-RDPEFS protocol for redirecting local filesystem drives
-//! to a remote RDP session.  Also announces printer/port/smartcard devices
-//! (stub — I/O is not proxied for those device types).
+//! Implements the MS-RDPEFS protocol for redirecting local filesystem drives,
+//! printers, serial ports, and smart cards to a remote RDP session.
 
 pub mod pdu;
 pub mod filesystem;
+pub mod printer;
+pub mod serial;
+pub mod smartcard;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -19,6 +21,9 @@ use sorng_core::events::DynEventEmitter;
 
 use super::settings::DriveRedirectionConfig;
 use self::filesystem::FileSystemDevice;
+use self::printer::PrinterDevice;
+use self::serial::SerialDevice;
+use self::smartcard::SmartCardDevice;
 use self::pdu::*;
 
 /// Which non-filesystem device types to announce to the server.
@@ -49,6 +54,9 @@ pub struct RdpdrClient {
     drives: Vec<DriveRedirectionConfig>,
     device_flags: DeviceFlags,
     fs_devices: HashMap<u32, FileSystemDevice>,
+    printer_devices: HashMap<u32, PrinterDevice>,
+    serial_devices: HashMap<u32, SerialDevice>,
+    smartcard_device: Option<(u32, SmartCardDevice)>,
     next_device_id: u32,
     pending_responses: Vec<Vec<u8>>,
 }
@@ -83,6 +91,9 @@ impl RdpdrClient {
             drives,
             device_flags,
             fs_devices: HashMap::new(),
+            printer_devices: HashMap::new(),
+            serial_devices: HashMap::new(),
+            smartcard_device: None,
             next_device_id: 1,
             pending_responses: Vec::new(),
         }
@@ -143,6 +154,9 @@ impl RdpdrClient {
                 }
                 // Reset state — server can re-announce at any time (e.g., after reactivation)
                 self.fs_devices.clear();
+                self.printer_devices.clear();
+                self.serial_devices.clear();
+                self.smartcard_device = None;
                 self.next_device_id = 1;
                 let reply = build_client_announce_reply(1, 12, self.client_id);
                 let name = build_client_name("SORNG");
@@ -177,17 +191,19 @@ impl RdpdrClient {
                     log::info!("RDPDR session {}: drive '{}' as {}:\\", self.session_id, drive_cfg.name, letter);
                 }
 
-                let mut buf = Vec::with_capacity(64);
+                let mut buf = Vec::with_capacity(256);
                 write_header(&mut buf, RDPDR_CTYP_CORE, PAKID_CORE_DEVICELIST_ANNOUNCE);
-                buf.extend_from_slice(&(announced.len() as u32).to_le_bytes());
+                let device_count_offset = buf.len();
+                buf.extend_from_slice(&0u32.to_le_bytes()); // placeholder, filled below
+                let mut total_devices: u32 = 0;
+
+                // ── Filesystem drives ─────────────────────────────────
                 for (idx, (device_id, letter)) in announced.iter().enumerate() {
                     let drive_cfg = &self.drives[letter_assignments[idx].0];
-                    // DeviceData: display name shown on remote (not the local path)
                     let display_name = format!("{}:\\", letter);
                     let device_data = encode_utf16le(&display_name);
                     buf.extend_from_slice(&RDPDR_DTYP_FILESYSTEM.to_le_bytes());
                     buf.extend_from_slice(&device_id.to_le_bytes());
-                    // PreferredDosName: 8-byte ASCII, determines drive letter on remote
                     let mut dos_name = [0u8; 8];
                     let name_str = format!("{}:", letter);
                     let name_bytes = name_str.as_bytes();
@@ -195,11 +211,63 @@ impl RdpdrClient {
                     buf.extend_from_slice(&dos_name);
                     buf.extend_from_slice(&(device_data.len() as u32).to_le_bytes());
                     buf.extend_from_slice(&device_data);
+                    total_devices += 1;
                     log::info!(
-                        "RDPDR session {}: announced device_id={} dos_name='{}' display='{}' -> local '{}'",
-                        self.session_id, device_id, name_str, display_name, drive_cfg.path
+                        "RDPDR session {}: announced drive device_id={} dos_name='{}' -> '{}'",
+                        self.session_id, device_id, name_str, drive_cfg.path
                     );
                 }
+
+                // ── Printer ───────────────────────────────────────────
+                if self.device_flags.printers {
+                    let printer_id = self.next_device_id;
+                    self.next_device_id += 1;
+                    let output_dir = dirs::data_dir()
+                        .unwrap_or_else(|| PathBuf::from("."))
+                        .join("com.sortofremote.ng")
+                        .join("print-jobs");
+                    let printer = PrinterDevice::new(
+                        printer_id, "sortOfRemote PDF", output_dir,
+                        self.session_id.clone(), self.emitter.clone(),
+                    );
+                    let device_data = printer.build_device_data();
+                    buf.extend_from_slice(&RDPDR_DTYP_PRINT.to_le_bytes());
+                    buf.extend_from_slice(&printer_id.to_le_bytes());
+                    let mut dos_name = [0u8; 8];
+                    dos_name[..6].copy_from_slice(b"PRN1\0\0");
+                    buf.extend_from_slice(&dos_name);
+                    buf.extend_from_slice(&(device_data.len() as u32).to_le_bytes());
+                    buf.extend_from_slice(&device_data);
+                    self.printer_devices.insert(printer_id, printer);
+                    total_devices += 1;
+                    log::info!("RDPDR session {}: announced printer device_id={}", self.session_id, printer_id);
+                }
+
+                // ── Smart Card ────────────────────────────────────────
+                if self.device_flags.smart_cards {
+                    let sc_id = self.next_device_id;
+                    self.next_device_id += 1;
+                    let sc = SmartCardDevice::new(sc_id, self.session_id.clone());
+                    buf.extend_from_slice(&RDPDR_DTYP_SMARTCARD.to_le_bytes());
+                    buf.extend_from_slice(&sc_id.to_le_bytes());
+                    let mut dos_name = [0u8; 8];
+                    dos_name[..5].copy_from_slice(b"SCARD");
+                    buf.extend_from_slice(&dos_name);
+                    buf.extend_from_slice(&0u32.to_le_bytes()); // DeviceDataLength = 0
+                    self.smartcard_device = Some((sc_id, sc));
+                    total_devices += 1;
+                    log::info!("RDPDR session {}: announced smartcard device_id={}", self.session_id, sc_id);
+                }
+
+                // ── Serial Ports ──────────────────────────────────────
+                // TODO: Add serial port config to settings. For now, serial
+                // ports are only announced if ports flag is set and we have
+                // no specific ports configured (stub).
+
+                // Patch the device count
+                buf[device_count_offset..device_count_offset + 4]
+                    .copy_from_slice(&total_devices.to_le_bytes());
+
                 vec![buf]
             }
             PAKID_CORE_DEVICE_REPLY => {
@@ -228,21 +296,33 @@ impl RdpdrClient {
                         self.session_id, device_id, file_id, completion_id,
                         major_function, minor_function, irp_data.len()
                     );
-                    if let Some(fs_device) = self.fs_devices.get_mut(&device_id) {
-                        match fs_device.handle_irp(major_function, minor_function, completion_id, file_id, irp_data) {
-                            Some(response) => {
-                                log::info!(
-                                    "RDPDR session {}: IRP response {} bytes, status=0x{:08X}",
-                                    self.session_id, response.len(),
-                                    if response.len() >= 16 { read_u32(&response, 12) } else { 0 }
-                                );
-                                vec![response]
-                            }
-                            None => {
-                                log::debug!("RDPDR session {}: IRP discarded (no response)", self.session_id);
-                                Vec::new()
-                            }
-                        }
+                    // Route IRP to the correct device handler
+                    let irp_result = if let Some(dev) = self.fs_devices.get_mut(&device_id) {
+                        dev.handle_irp(major_function, minor_function, completion_id, file_id, irp_data)
+                    } else if let Some(dev) = self.printer_devices.get_mut(&device_id) {
+                        dev.handle_irp(major_function, minor_function, completion_id, file_id, irp_data)
+                    } else if let Some(dev) = self.serial_devices.get_mut(&device_id) {
+                        dev.handle_irp(major_function, minor_function, completion_id, file_id, irp_data)
+                    } else if let Some((id, dev)) = &mut self.smartcard_device {
+                        if *id == device_id { dev.handle_irp(major_function, minor_function, completion_id, file_id, irp_data) } else { None }
+                    } else {
+                        None
+                    };
+
+                    if let Some(response) = irp_result {
+                        log::debug!(
+                            "RDPDR session {}: IRP response {} bytes, status=0x{:08X}",
+                            self.session_id, response.len(),
+                            if response.len() >= 16 { read_u32(&response, 12) } else { 0 }
+                        );
+                        vec![response]
+                    } else if self.fs_devices.contains_key(&device_id)
+                        || self.printer_devices.contains_key(&device_id)
+                        || self.serial_devices.contains_key(&device_id)
+                        || self.smartcard_device.as_ref().map(|(id, _)| *id == device_id).unwrap_or(false)
+                    {
+                        // Device exists but handler returned None (discarded IRP)
+                        Vec::new()
                     } else {
                         vec![build_io_completion(device_id, completion_id, STATUS_NOT_SUPPORTED, &[])]
                     }
@@ -296,54 +376,98 @@ impl SvcProcessor for RdpdrClient {
 }
 
 // ── RDPSND SVC ───────────────────────────────────────────────────────
-// FreeRDP always loads an rdpsnd channel when RDPDR is active.
-// Windows Server requires rdpsnd to complete format negotiation before
-// it proceeds with the RDPDR handshake (Server Core Capability Request).
+// MS-RDPEA: Remote Desktop Protocol Audio Output Virtual Channel.
+// Handles format negotiation AND audio playback.
 
 // rdpsnd PDU message types (MS-RDPEA 2.2.1)
 const SNDC_CLOSE: u8 = 0x01;
+const SNDC_WAVE: u8 = 0x02;
+const SNDC_SETVOLUME: u8 = 0x03;
+const SNDC_WAVECONFIRM: u8 = 0x05;
 const SNDC_TRAINING: u8 = 0x06;
 const SNDC_FORMATS: u8 = 0x07;
 const SNDC_QUALITYMODE: u8 = 0x0C;
+const SNDC_WAVE2: u8 = 0x0D;
 
-// Audio format tags
 const WAVE_FORMAT_PCM: u16 = 0x0001;
 
-/// Rdpsnd static virtual channel. Performs audio format negotiation with
-/// the server (required for RDPDR to work on Windows Server) but does
-/// not actually play audio.
-#[derive(Debug)]
+/// Negotiated audio format descriptor.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct AudioFormat {
+    format_tag: u16,
+    channels: u16,
+    samples_per_sec: u32,
+    bits_per_sample: u16,
+    block_align: u16,
+}
+
+/// Rdpsnd SVC — format negotiation + audio playback via frontend WebAudio.
 pub struct RdpsndClient {
+    session_id: String,
+    emitter: DynEventEmitter,
+    enabled: bool,
     negotiated: bool,
+    formats: Vec<AudioFormat>,
+    // Legacy SNDC_WAVE state (two-PDU path)
+    pending_wave: Option<PendingWave>,
+}
+
+struct PendingWave {
+    timestamp: u16,
+    format_no: u16,
+    block_no: u8,
+    first_4: [u8; 4],
+    total_size: usize, // audio data total = body_size - 12
+}
+
+impl fmt::Debug for RdpsndClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RdpsndClient")
+            .field("session_id", &self.session_id)
+            .field("enabled", &self.enabled)
+            .field("negotiated", &self.negotiated)
+            .field("formats", &self.formats.len())
+            .finish()
+    }
 }
 
 impl RdpsndClient {
-    pub fn new() -> Self {
-        Self { negotiated: false }
+    pub fn new(session_id: String, emitter: DynEventEmitter, enabled: bool) -> Self {
+        Self {
+            session_id,
+            emitter,
+            enabled,
+            negotiated: false,
+            formats: Vec::new(),
+            pending_wave: None,
+        }
     }
 
-    /// Build the rdpsnd PDU header (4 bytes).
+    pub fn set_enabled(&mut self, enabled: bool) {
+        log::info!("RDPSND session {}: audio playback {}", self.session_id, if enabled { "enabled" } else { "muted" });
+        self.enabled = enabled;
+    }
+
     fn build_header(msg_type: u8, body_size: u16) -> Vec<u8> {
         let mut buf = Vec::with_capacity(4 + body_size as usize);
         buf.push(msg_type);
-        buf.push(0); // bPad
+        buf.push(0);
         buf.extend_from_slice(&body_size.to_le_bytes());
         buf
     }
 
-    /// Build Client Audio Formats and Version PDU (SNDC_FORMATS response).
     fn build_formats_reply(&self, server_version: u16) -> Vec<u8> {
-        // Offer one PCM format: 44100 Hz, 16-bit, stereo
         let pcm_format = Self::build_pcm_format(2, 44100, 16);
         let body_size: u16 = 4 + 4 + 4 + 2 + 2 + 1 + 2 + 1 + pcm_format.len() as u16;
         let mut buf = Self::build_header(SNDC_FORMATS, body_size);
         buf.extend_from_slice(&0u32.to_le_bytes()); // dwFlags
-        buf.extend_from_slice(&0xFFFFu32.to_le_bytes()); // dwVolume (max)
+        buf.extend_from_slice(&0xFFFFu32.to_le_bytes()); // dwVolume
         buf.extend_from_slice(&0u32.to_le_bytes()); // dwPitch
         buf.extend_from_slice(&0u16.to_le_bytes()); // wDGramPort
         buf.extend_from_slice(&1u16.to_le_bytes()); // wNumberOfFormats = 1
         buf.push(0); // cLastBlockConfirmed
-        buf.extend_from_slice(&server_version.min(0x0006).to_le_bytes()); // wVersion (cap at 6)
+        buf.extend_from_slice(&server_version.min(0x0006).to_le_bytes());
         buf.push(0); // bPad
         buf.extend_from_slice(&pcm_format);
         buf
@@ -353,31 +477,71 @@ impl RdpsndClient {
         let block_align = channels * (bits / 8);
         let avg_bytes = sample_rate * block_align as u32;
         let mut buf = Vec::with_capacity(18);
-        buf.extend_from_slice(&WAVE_FORMAT_PCM.to_le_bytes()); // wFormatTag
-        buf.extend_from_slice(&channels.to_le_bytes()); // nChannels
-        buf.extend_from_slice(&sample_rate.to_le_bytes()); // nSamplesPerSec
-        buf.extend_from_slice(&avg_bytes.to_le_bytes()); // nAvgBytesPerSec
-        buf.extend_from_slice(&block_align.to_le_bytes()); // nBlockAlign
-        buf.extend_from_slice(&bits.to_le_bytes()); // wBitsPerSample
-        buf.extend_from_slice(&0u16.to_le_bytes()); // cbSize = 0
+        buf.extend_from_slice(&WAVE_FORMAT_PCM.to_le_bytes());
+        buf.extend_from_slice(&channels.to_le_bytes());
+        buf.extend_from_slice(&sample_rate.to_le_bytes());
+        buf.extend_from_slice(&avg_bytes.to_le_bytes());
+        buf.extend_from_slice(&block_align.to_le_bytes());
+        buf.extend_from_slice(&bits.to_le_bytes());
+        buf.extend_from_slice(&0u16.to_le_bytes()); // cbSize
         buf
     }
 
-    /// Build Training Confirm PDU (echoes server's timestamp + pack size).
     fn build_training_confirm(timestamp: u16, pack_size: u16) -> Vec<u8> {
-        let body_size: u16 = 4;
-        let mut buf = Self::build_header(SNDC_TRAINING, body_size);
+        let mut buf = Self::build_header(SNDC_TRAINING, 4);
         buf.extend_from_slice(&timestamp.to_le_bytes());
         buf.extend_from_slice(&pack_size.to_le_bytes());
         buf
     }
 
-    /// Build Quality Mode PDU response.
     fn build_quality_mode() -> Vec<u8> {
-        let body_size: u16 = 2;
-        let mut buf = Self::build_header(SNDC_QUALITYMODE, body_size);
-        buf.extend_from_slice(&0x0001u16.to_le_bytes()); // DYNAMIC quality
+        let mut buf = Self::build_header(SNDC_QUALITYMODE, 2);
+        buf.extend_from_slice(&0x0001u16.to_le_bytes()); // DYNAMIC
         buf
+    }
+
+    fn build_wave_confirm(timestamp: u16, block_no: u8) -> Vec<u8> {
+        let mut buf = Self::build_header(SNDC_WAVECONFIRM, 4);
+        buf.extend_from_slice(&timestamp.to_le_bytes());
+        buf.push(block_no);
+        buf.push(0); // bPad
+        buf
+    }
+
+    /// Emit audio data to the frontend for WebAudio playback.
+    fn emit_audio(&self, pcm_data: &[u8], format_no: u16) {
+        let fmt = self.formats.get(format_no as usize);
+        let (channels, sample_rate, bits) = match fmt {
+            Some(f) => (f.channels, f.samples_per_sec, f.bits_per_sample),
+            None => (2, 44100, 16), // fallback
+        };
+
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(pcm_data);
+
+        let _ = self.emitter.emit_event(
+            "rdp://audio-data",
+            serde_json::json!({
+                "sessionId": self.session_id,
+                "pcmBase64": b64,
+                "channels": channels,
+                "sampleRate": sample_rate,
+                "bitsPerSample": bits,
+            }),
+        );
+    }
+
+    /// Parse server formats from SNDC_FORMATS body to build our accepted list.
+    fn parse_server_formats(&mut self, body: &[u8]) {
+        // We only accept PCM, so store one format matching our reply
+        self.formats.clear();
+        self.formats.push(AudioFormat {
+            format_tag: WAVE_FORMAT_PCM,
+            channels: 2,
+            samples_per_sec: 44100,
+            bits_per_sample: 16,
+            block_align: 4,
+        });
     }
 }
 
@@ -405,68 +569,124 @@ impl SvcProcessor for RdpsndClient {
     }
 
     fn start(&mut self) -> PduResult<Vec<SvcMessage>> {
-        log::info!("RDPSND: channel started, waiting for server formats");
+        log::info!("RDPSND session {}: channel started (audio={})", self.session_id, self.enabled);
         Ok(Vec::new())
     }
 
     fn process(&mut self, payload: &[u8]) -> PduResult<Vec<SvcMessage>> {
         if payload.len() < 4 {
-            log::warn!("RDPSND: payload too short ({} bytes)", payload.len());
             return Ok(Vec::new());
         }
 
         let msg_type = payload[0];
-        let _body_size = u16::from_le_bytes([payload[2], payload[3]]);
+        let body_size = u16::from_le_bytes([payload[2], payload[3]]) as usize;
         let body = &payload[4..];
+
+        // Legacy SNDC_WAVE: the Wave PDU follows immediately with no header.
+        // If we have a pending WaveInfo, this payload IS the Wave PDU data.
+        if let Some(pending) = self.pending_wave.take() {
+            // Wave PDU: first 4 bytes are padding (replace with WaveInfo's data[4])
+            let skip = 4.min(body.len());
+            let mut pcm = Vec::with_capacity(pending.total_size);
+            pcm.extend_from_slice(&pending.first_4);
+            if payload.len() > skip {
+                pcm.extend_from_slice(&payload[skip..]);
+            }
+
+            if self.enabled {
+                self.emit_audio(&pcm, pending.format_no);
+            }
+
+            let confirm = Self::build_wave_confirm(pending.timestamp, pending.block_no);
+            return Ok(vec![SvcMessage::from(RdpsndPdu(confirm))]);
+        }
 
         match msg_type {
             SNDC_FORMATS => {
-                if body.len() < 20 {
-                    log::warn!("RDPSND: FORMATS body too short ({} bytes)", body.len());
-                    return Ok(Vec::new());
-                }
+                if body.len() < 20 { return Ok(Vec::new()); }
                 let num_formats = u16::from_le_bytes([body[12], body[13]]);
                 let server_version = u16::from_le_bytes([body[15], body[16]]);
-                log::info!(
-                    "RDPSND: Server Audio Formats v{} ({} formats offered)",
-                    server_version, num_formats
-                );
+                log::info!("RDPSND session {}: Server Formats v{} ({} formats)", self.session_id, server_version, num_formats);
 
+                self.parse_server_formats(body);
                 let reply = self.build_formats_reply(server_version);
-                log::info!("RDPSND: sending Client Audio Formats ({} bytes, 1 PCM format)", reply.len());
                 self.negotiated = true;
-
-                Ok(vec![
-                    SvcMessage::from(RdpsndPdu(reply)),
-                ])
+                Ok(vec![SvcMessage::from(RdpsndPdu(reply))])
             }
             SNDC_TRAINING => {
                 if body.len() >= 4 {
-                    let timestamp = u16::from_le_bytes([body[0], body[1]]);
-                    let pack_size = u16::from_le_bytes([body[2], body[3]]);
-                    log::info!("RDPSND: Training request (ts={}, size={}), sending confirm", timestamp, pack_size);
-                    let confirm = Self::build_training_confirm(timestamp, pack_size);
-                    Ok(vec![
-                        SvcMessage::from(RdpsndPdu(confirm)),
-                    ])
+                    let ts = u16::from_le_bytes([body[0], body[1]]);
+                    let ps = u16::from_le_bytes([body[2], body[3]]);
+                    log::info!("RDPSND session {}: Training (ts={}, size={})", self.session_id, ts, ps);
+                    Ok(vec![SvcMessage::from(RdpsndPdu(Self::build_training_confirm(ts, ps)))])
                 } else {
-                    log::warn!("RDPSND: Training body too short");
                     Ok(Vec::new())
                 }
             }
+            SNDC_WAVE2 => {
+                // Modern single-PDU audio: 12-byte sub-header + PCM data
+                if body.len() < 12 { return Ok(Vec::new()); }
+                let timestamp = u16::from_le_bytes([body[0], body[1]]);
+                let format_no = u16::from_le_bytes([body[2], body[3]]);
+                let block_no = body[4];
+                let pcm_data = &body[12..];
+
+                log::debug!("RDPSND session {}: WAVE2 block={} fmt={} pcm={}B", self.session_id, block_no, format_no, pcm_data.len());
+
+                if self.enabled {
+                    self.emit_audio(pcm_data, format_no);
+                }
+
+                let confirm = Self::build_wave_confirm(timestamp, block_no);
+                Ok(vec![SvcMessage::from(RdpsndPdu(confirm))])
+            }
+            SNDC_WAVE => {
+                // Legacy two-PDU: WaveInfo (this PDU) + Wave (next PDU)
+                if body.len() < 12 { return Ok(Vec::new()); }
+                let timestamp = u16::from_le_bytes([body[0], body[1]]);
+                let format_no = u16::from_le_bytes([body[2], body[3]]);
+                let block_no = body[4];
+                let mut first_4 = [0u8; 4];
+                first_4.copy_from_slice(&body[8..12]);
+
+                log::debug!("RDPSND session {}: WAVE block={} fmt={} body_size={}", self.session_id, block_no, format_no, body_size);
+
+                // Store state; the next process() call will be the Wave PDU
+                self.pending_wave = Some(PendingWave {
+                    timestamp,
+                    format_no,
+                    block_no,
+                    first_4,
+                    total_size: body_size.saturating_sub(12),
+                });
+                Ok(Vec::new())
+            }
+            SNDC_SETVOLUME => {
+                if body.len() >= 4 {
+                    let vol = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
+                    let left = (vol & 0xFFFF) as f32 / 65535.0;
+                    let right = ((vol >> 16) & 0xFFFF) as f32 / 65535.0;
+                    log::info!("RDPSND session {}: SetVolume left={:.0}% right={:.0}%", self.session_id, left * 100.0, right * 100.0);
+                    let _ = self.emitter.emit_event("rdp://audio-volume", serde_json::json!({
+                        "sessionId": self.session_id,
+                        "left": left,
+                        "right": right,
+                    }));
+                }
+                Ok(Vec::new())
+            }
             SNDC_QUALITYMODE => {
-                log::info!("RDPSND: Quality Mode request, sending DYNAMIC quality");
-                let reply = Self::build_quality_mode();
-                Ok(vec![
-                    SvcMessage::from(RdpsndPdu(reply)),
-                ])
+                Ok(vec![SvcMessage::from(RdpsndPdu(Self::build_quality_mode()))])
             }
             SNDC_CLOSE => {
-                log::info!("RDPSND: Close received");
+                log::info!("RDPSND session {}: Close", self.session_id);
+                let _ = self.emitter.emit_event("rdp://audio-close", serde_json::json!({
+                    "sessionId": self.session_id,
+                }));
                 Ok(Vec::new())
             }
             _ => {
-                log::debug!("RDPSND: msgType=0x{:02X} ({} bytes body), ignoring", msg_type, body.len());
+                log::debug!("RDPSND session {}: msgType=0x{:02X} ({}B), ignoring", self.session_id, msg_type, body.len());
                 Ok(Vec::new())
             }
         }

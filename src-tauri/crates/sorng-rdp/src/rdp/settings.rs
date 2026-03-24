@@ -314,6 +314,7 @@ pub struct ResolvedSettings {
     pub use_credssp: bool,
     pub autologon: bool,
     pub enable_audio_playback: bool,
+    pub enable_audio_recording: bool,
     pub keyboard_type: crate::ironrdp::pdu::gcc::KeyboardType,
     pub keyboard_layout: u32,
     pub keyboard_subtype: u32,
@@ -444,6 +445,12 @@ impl ResolvedSettings {
                 .and_then(|a| a.playback_mode.as_deref())
                 .map(|m| m != "disabled")
                 .unwrap_or(true),
+            enable_audio_recording: payload
+                .audio
+                .as_ref()
+                .and_then(|a| a.recording_mode.as_deref())
+                .map(|m| m == "enabled")
+                .unwrap_or(false),
             keyboard_type: input
                 .and_then(|i| i.keyboard_type.as_deref())
                 .map(parse_keyboard_type)

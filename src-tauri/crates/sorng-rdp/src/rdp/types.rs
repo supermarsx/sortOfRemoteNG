@@ -149,6 +149,8 @@ pub enum RdpCommand {
     ClipboardPaste,
     /// Stage local files for CLIPRDR file transfer and advertise FileGroupDescriptorW.
     ClipboardCopyFiles(Vec<ClipboardFileEntry>),
+    /// Toggle a session feature on/off at runtime.
+    ToggleFeature { feature: String, enabled: bool },
 }
 
 /// File entry for clipboard file transfer.
