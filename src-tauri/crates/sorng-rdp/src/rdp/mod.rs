@@ -11,6 +11,7 @@ pub mod session_runner;
 pub mod settings;
 pub mod stats;
 pub mod types;
+pub mod audin;
 pub mod commands;
 pub mod diagnostics;
 pub mod wake_channel;

@@ -52,6 +52,8 @@ rustls-native-certs = { workspace = true }
 smallvec = "1"
 polling = "3"
 base64 = { workspace = true }
+cpal = { workspace = true }
+dirs = { workspace = true }
 
 # ── Heavy optional deps (backend decode / snapshot) ──────────────────
 png = { version = "0.17", optional = true }

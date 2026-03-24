@@ -250,6 +250,7 @@ log = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.21"
+cpal = "0.15"
 rand = "0.8"
 dirs = "=6.0.0"
 regex = "1.10"
