@@ -31,6 +31,8 @@ pub enum SessionEvent {
         command: String,
         option: String,
     },
+    /// Raw bytes that should be written back to the socket (e.g. negotiation responses).
+    WriteBack(Vec<u8>),
 }
 
 /// Commands sent *to* a session's write-loop.
@@ -330,32 +332,14 @@ async fn read_loop(
                     };
 
                     if !response.is_empty() {
-                        // We can't write directly on reader – send raw via cmd channel.
-                        // But we don't have cmd_tx here. Instead we use a shared write-back.
-                        // For simplicity we emit a special event that the service layer
-                        // routes to the write side. However, a cleaner approach is to
-                        // give the read loop its own write-back channel. We use a simple
-                        // channel captured via closure.
-
-                        // Actually, let's create a write-back inside the reader.
-                        // We'll refactor to pass a sender. For now, log a warning.
-                        // The negotiation response is critical – let's send it as a
-                        // special data-less SessionEvent that the service routes.
                         log::debug!(
                             "[telnet:{}] negotiation response: {} bytes",
                             session_id,
                             response.len()
                         );
-                        // We encode the response bytes into the event.
-                        let _ = event_tx.send(SessionEvent::Data(String::new())).await;
-                        // HACK: use the error channel to piggyback the raw bytes.
-                        // TODO: Add a proper WriteBack variant to SessionEvent.
-                        // For now, we'll write directly using a shared writer
-                        // approach (see below – we actually give the read loop a
-                        // writer handle).
-                        //
-                        // Since this is a first pass, let's keep it simple and
-                        // accumulate negotiation responses.
+                        // Send the raw negotiation response back via the WriteBack event
+                        // so the service layer can route it to the write side.
+                        let _ = event_tx.send(SessionEvent::WriteBack(response.clone())).await;
                         let _ = event_tx
                             .send(SessionEvent::Negotiation {
                                 direction: "sent_raw".into(),
@@ -384,6 +368,7 @@ async fn read_loop(
                     );
 
                     if !response.is_empty() {
+                        let _ = event_tx.send(SessionEvent::WriteBack(response.clone())).await;
                         let _ = event_tx
                             .send(SessionEvent::Negotiation {
                                 direction: "sent_raw".into(),

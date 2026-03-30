@@ -74,9 +74,39 @@ pub fn build_flush_ruleset_args() -> Vec<String> {
 }
 
 /// Parse nft list tables output.
-pub fn parse_tables_output(_output: &str) -> Vec<NftTable> {
-    // TODO: implement
-    Vec::new()
+///
+/// Each line of `nft list tables` looks like:
+///   table inet filter
+///   table ip nat
+pub fn parse_tables_output(output: &str) -> Vec<NftTable> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed.strip_prefix("table ")?;
+            let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if parts.len() < 2 {
+                return None;
+            }
+            let family = match parts[0] {
+                "ip" => NftFamily::Ip,
+                "ip6" => NftFamily::Ip6,
+                "inet" => NftFamily::Inet,
+                "arp" => NftFamily::Arp,
+                "bridge" => NftFamily::Bridge,
+                "netdev" => NftFamily::Netdev,
+                _ => return None,
+            };
+            let name = parts[1].to_string();
+            Some(NftTable {
+                name,
+                family,
+                handle: 0,
+                chains: Vec::new(),
+                sets: Vec::new(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

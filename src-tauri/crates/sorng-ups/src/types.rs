@@ -318,3 +318,40 @@ pub struct UpsVariable {
     pub maximum: Option<String>,
     pub enum_values: Vec<String>,
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Output
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputInfo {
+    pub voltage: Option<f64>,
+    pub voltage_nominal: Option<f64>,
+    pub frequency: Option<f64>,
+    pub frequency_nominal: Option<f64>,
+    pub current: Option<f64>,
+    pub power: Option<f64>,
+    pub power_percent: Option<f64>,
+    pub phases: Option<u32>,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Input
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputInfo {
+    pub voltage: Option<f64>,
+    pub voltage_nominal: Option<f64>,
+    pub voltage_max: Option<f64>,
+    pub voltage_min: Option<f64>,
+    pub frequency: Option<f64>,
+    pub frequency_nominal: Option<f64>,
+    pub current: Option<f64>,
+    pub power: Option<f64>,
+    pub sensitivity: Option<String>,
+    pub transfer_high: Option<f64>,
+    pub transfer_low: Option<f64>,
+    pub phases: Option<u32>,
+    pub quality: Option<String>,
+}

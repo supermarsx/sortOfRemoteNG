@@ -487,9 +487,10 @@ impl SshScriptEngine {
         conn_meta.insert("session_id".to_string(), session_id.to_string());
 
         // Evaluate local conditions
+        let session_state = self.sessions.get(session_id);
         let condition_ctx = crate::conditions::ConditionContext {
-            os_type: None, // TODO: detect OS
-            session_started_at: self.sessions.get(session_id).map(|s| s.connected_at),
+            os_type: session_state.and_then(|s| s.os_type.clone()),
+            session_started_at: session_state.map(|s| s.connected_at),
             variables: HashMap::new(),
             connection_id: connection_id.map(String::from),
             host: host.map(String::from),
@@ -503,8 +504,11 @@ impl SshScriptEngine {
             }
         }
 
-        // Resolve variables
-        let previous_outputs = HashMap::new(); // TODO: wire up chain outputs
+        // Resolve variables — build previous_outputs from execution history
+        // so PreviousOutput variable sources can reference prior script results.
+        let previous_outputs: HashMap<String, String> = self
+            .history
+            .latest_outputs_by_script(session_id);
         let (mut resolved_vars, pending_vars) =
             resolve_variables(script, variable_overrides, &conn_meta, &previous_outputs);
 

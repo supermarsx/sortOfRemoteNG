@@ -50,18 +50,107 @@ pub async fn disable_linger(host: &SystemdHost, user: &str) -> Result<(), System
     Ok(())
 }
 
-fn parse_sessions(_output: &str) -> Vec<LoginctlSession> {
-    // TODO: parse loginctl list-sessions
-    Vec::new()
+fn parse_sessions(output: &str) -> Vec<LoginctlSession> {
+    // loginctl list-sessions --no-legend columns: SESSION UID USER SEAT TTY
+    let mut entries = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let session_id = parts[0].to_string();
+        let uid: u32 = parts[1].parse().unwrap_or(0);
+        let user = parts[2].to_string();
+        let seat = parts.get(3).and_then(|s| {
+            if s.is_empty() || *s == "-" {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        });
+        let tty = parts.get(4).and_then(|s| {
+            if s.is_empty() || *s == "-" {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        });
+
+        entries.push(LoginctlSession {
+            session_id,
+            uid,
+            user,
+            seat,
+            tty,
+            state: "active".to_string(),
+            idle: false,
+            since: None,
+            class: "user".to_string(),
+            scope: String::new(),
+            service: None,
+            remote: false,
+            remote_host: None,
+        });
+    }
+    entries
 }
 
-fn parse_users(_output: &str) -> Vec<LoginctlUser> {
-    // TODO: parse loginctl list-users
-    Vec::new()
+fn parse_users(output: &str) -> Vec<LoginctlUser> {
+    // loginctl list-users --no-legend columns: UID USER
+    let mut entries = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
+        }
+
+        let uid: u32 = parts[0].parse().unwrap_or(0);
+        let name = parts[1].to_string();
+
+        entries.push(LoginctlUser {
+            uid,
+            name,
+            state: "active".to_string(),
+            linger: false,
+            sessions: Vec::new(),
+        });
+    }
+    entries
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_module_loads() {}
+    fn test_parse_sessions() {
+        let output = "  c1 1000 user1 seat0 tty1\n  42 1000 user1 - pts/0\n";
+        let sessions = parse_sessions(output);
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0].session_id, "c1");
+        assert_eq!(sessions[0].uid, 1000);
+        assert_eq!(sessions[0].user, "user1");
+        assert_eq!(sessions[0].seat.as_deref(), Some("seat0"));
+        assert_eq!(sessions[1].seat, None);
+        assert_eq!(sessions[1].tty.as_deref(), Some("pts/0"));
+    }
+
+    #[test]
+    fn test_parse_users() {
+        let output = " 1000 user1\n 1001 user2\n";
+        let users = parse_users(output);
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].uid, 1000);
+        assert_eq!(users[0].name, "user1");
+        assert_eq!(users[1].uid, 1001);
+    }
 }

@@ -260,10 +260,30 @@ impl ContainerManager {
             .await
     }
 
-    /// Export a container as a tar archive (returns bytes, or we return the text length for now).
-    pub async fn export_info(client: &DockerClient, id: &str) -> DockerResult<String> {
-        // Note: actual export returns a tar stream; here we just validate the endpoint exists.
-        client.get_text(&format!("/containers/{}/export", id)).await
+    /// Export a container's filesystem as a tar archive, streaming it to a file.
+    pub async fn export(
+        client: &DockerClient,
+        id: &str,
+        output_path: &std::path::Path,
+    ) -> DockerResult<()> {
+        use tokio::io::AsyncWriteExt;
+
+        let url = format!(
+            "{}/{}/containers/{}/export",
+            client.base_url, client.api_version, id
+        );
+        let mut resp = client.http.get(&url).send().await?;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(crate::error::DockerError::api(status, &body));
+        }
+        let mut file = tokio::fs::File::create(output_path).await?;
+        while let Some(chunk) = resp.chunk().await? {
+            file.write_all(&chunk).await?;
+        }
+        file.flush().await?;
+        Ok(())
     }
 
     /// Prune stopped containers.

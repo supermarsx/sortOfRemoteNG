@@ -51,11 +51,63 @@ impl ProcmailClient {
 
     pub async fn exec_ssh(&self, command: &str) -> ProcmailResult<SshOutput> {
         debug!("PROCMAIL SSH [{}]: {}", self.config.host, command);
-        // Stub: actual implementation would use the SSH subsystem
-        Err(ProcmailError::ssh(format!(
-            "SSH execution not connected to {}. Command: {}",
-            self.config.host, command
-        )))
+
+        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
+        let port = self.config.port.unwrap_or(22);
+        let timeout = self.config.timeout_secs.unwrap_or(30);
+
+        let mut ssh_args = vec![
+            "-o".to_string(),
+            "StrictHostKeyChecking=accept-new".to_string(),
+            "-o".to_string(),
+            format!("ConnectTimeout={}", timeout),
+            "-p".to_string(),
+            port.to_string(),
+        ];
+
+        if let Some(ref key) = self.config.ssh_key {
+            ssh_args.push("-i".to_string());
+            ssh_args.push(key.clone());
+        }
+
+        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
+            ssh_args.push("-o".to_string());
+            ssh_args.push("BatchMode=yes".to_string());
+        }
+
+        let target = format!("{}@{}", ssh_user, self.config.host);
+        ssh_args.push(target);
+        ssh_args.push(command.to_string());
+
+        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
+
+        let mut cmd = if use_sshpass {
+            let mut c = tokio::process::Command::new("sshpass");
+            c.arg("-e").arg("ssh");
+            c.args(&ssh_args);
+            if let Some(ref pw) = self.config.ssh_password {
+                c.env("SSHPASS", pw);
+            }
+            c
+        } else {
+            let mut c = tokio::process::Command::new("ssh");
+            c.args(&ssh_args);
+            c
+        };
+
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| ProcmailError::ssh(format!("Failed to execute ssh: {}", e)))?;
+
+        Ok(SshOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
     }
 
     pub async fn read_remote_file(&self, path: &str) -> ProcmailResult<String> {

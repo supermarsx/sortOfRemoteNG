@@ -5,7 +5,52 @@
 
 use crate::types::*;
 use crate::wire;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+
+// ── Connection Pool ──────────────────────────────────────────────────
+
+/// Idle timeout for pooled connections (60 seconds).
+const POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+
+struct PooledConnection {
+    stream: TcpStream,
+    created_at: std::time::Instant,
+}
+
+/// A simple per-server DoT connection pool.
+/// Keyed by "address:port" and holds at most one idle connection per server.
+static DOT_POOL: std::sync::LazyLock<Arc<Mutex<HashMap<String, PooledConnection>>>> =
+    std::sync::LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// Try to take an idle connection from the pool for the given key.
+async fn pool_take(key: &str) -> Option<TcpStream> {
+    let mut pool = DOT_POOL.lock().await;
+    if let Some(conn) = pool.remove(key) {
+        if conn.created_at.elapsed().as_secs() < POOL_IDLE_TIMEOUT_SECS {
+            return Some(conn.stream);
+        }
+        // Connection expired — drop it
+    }
+    None
+}
+
+/// Return a connection to the pool for reuse.
+async fn pool_return(key: String, stream: TcpStream) {
+    let mut pool = DOT_POOL.lock().await;
+    // Evict stale entries while we're here
+    pool.retain(|_, c| c.created_at.elapsed().as_secs() < POOL_IDLE_TIMEOUT_SECS);
+    pool.insert(
+        key,
+        PooledConnection {
+            stream,
+            created_at: std::time::Instant::now(),
+        },
+    );
+}
 
 /// Execute a DoT query.
 pub async fn execute_dot_query(
@@ -75,19 +120,71 @@ pub async fn execute_dot_query(
         .ok_or_else(|| "Failed to parse DoT wire-format response".to_string())
 }
 
-/// Execute a DoT query with connection pooling hints.
+/// Execute a DoT query with connection pooling.
 ///
 /// DoT connections can be reused per RFC 7858 §3.4. This function
-/// represents a single query on a fresh connection. A production
-/// implementation would maintain a connection pool.
+/// reuses idle connections from a per-server pool, falling back to
+/// a fresh connection when none are available.
 pub async fn execute_dot_query_pooled(
     query: &DnsQuery,
     server: &DnsServer,
     config: &DnsResolverConfig,
 ) -> Result<DnsResponse, String> {
-    // For now, delegate to single-connection version.
-    // TODO: Implement connection pool with idle timeout and pipelining.
-    execute_dot_query(query, server, config).await
+    let start = std::time::Instant::now();
+
+    let id: u16 = rand::random();
+    let wire_query = wire::build_query(query, id, config.edns0, config.edns0_payload_size);
+
+    let address = &server.address;
+    let port = server.effective_port(DnsProtocol::DoT);
+    let timeout = std::time::Duration::from_millis(config.timeout_ms);
+    let pool_key = format!("{}:{}", address, port);
+
+    // Try to reuse a pooled connection, fall back to a new one
+    let mut stream = if let Some(s) = pool_take(&pool_key).await {
+        log::debug!("DoT pool hit for {}", pool_key);
+        s
+    } else {
+        let tcp_addr = format!("{}:{}", address, port);
+        tokio::time::timeout(timeout, TcpStream::connect(&tcp_addr))
+            .await
+            .map_err(|_| format!("DoT connection to {} timed out", tcp_addr))?
+            .map_err(|e| format!("DoT TCP connection failed: {}", e))?
+    };
+
+    // DNS-over-TCP framing: 2-byte length prefix (RFC 1035 §4.2.2)
+    let len = wire_query.len() as u16;
+    let mut framed_query = Vec::with_capacity(2 + wire_query.len());
+    framed_query.extend_from_slice(&len.to_be_bytes());
+    framed_query.extend_from_slice(&wire_query);
+
+    if let Err(e) = stream.write_all(&framed_query).await {
+        return Err(format!("DoT write failed: {}", e));
+    }
+
+    // Read response length prefix
+    let mut len_buf = [0u8; 2];
+    if let Err(e) = stream.read_exact(&mut len_buf).await {
+        return Err(format!("DoT read length failed: {}", e));
+    }
+
+    let resp_len = u16::from_be_bytes(len_buf) as usize;
+    if resp_len > 65535 {
+        return Err("DoT response too large".to_string());
+    }
+
+    let mut resp_buf = vec![0u8; resp_len];
+    if let Err(e) = stream.read_exact(&mut resp_buf).await {
+        return Err(format!("DoT read response failed: {}", e));
+    }
+
+    // Return connection to pool for reuse
+    pool_return(pool_key, stream).await;
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    wire::parse_response(&resp_buf, &server.address, DnsProtocol::DoT, duration_ms)
+        .ok_or_else(|| "Failed to parse DoT wire-format response".to_string())
 }
 
 /// Check if a DoT server is reachable on port 853.

@@ -7,7 +7,7 @@ pub async fn check_updates(host: &PkgHost) -> Result<Vec<PackageUpdate>, PkgErro
         PkgBackend::Apt => crate::apt::list_upgradable(host).await,
         PkgBackend::Dnf | PkgBackend::Yum => crate::dnf::list_updates(host).await,
         PkgBackend::Pacman => crate::pacman::list_updates(host).await,
-        PkgBackend::Zypper => Ok(Vec::new()), // TODO
+        PkgBackend::Zypper => crate::zypper::list_updates(host).await,
     }
 }
 

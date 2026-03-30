@@ -7,10 +7,11 @@
 //! ## Features
 //!
 //! - JSON-based data storage with pretty formatting
-//! - Optional password-based encryption (planned feature)
+//! - Password-based encryption using AES-256-GCM with PBKDF2-HMAC-SHA256 key derivation
 //! - Thread-safe operations with async mutex protection
-//! - Data integrity verification
+//! - Data integrity verification via AES-GCM authenticated encryption
 //! - Automatic data migration support
+//! - Atomic writes (temp file + rename) to prevent data loss
 //!
 //! ## Data Structure
 //!
@@ -21,8 +22,12 @@
 //!
 //! ## Security
 //!
-//! Currently implements basic JSON storage. Encryption support is planned for future releases
-//! using AES-256-GCM with PBKDF2 key derivation from user passwords.
+//! Encryption uses AES-256-GCM with:
+//! - 600,000 PBKDF2-HMAC-SHA256 iterations for key derivation
+//! - 32-byte random salt per encryption
+//! - 12-byte random nonce per encryption
+//! - Authenticated encryption preventing tampering
+//! - Encrypted files are prefixed with `SORNG_ENC:` magic bytes + base64 content
 //!
 //! ## Example
 //!
@@ -91,8 +96,8 @@ impl SecureStorage {
 
     /// Sets the password for storage encryption.
     ///
-    /// Configures an optional password that will be used for encrypting stored data.
-    /// Currently, this password is stored but encryption is not yet implemented.
+    /// Configures the password used for encrypting/decrypting stored data
+    /// using AES-256-GCM with PBKDF2 key derivation.
     ///
     /// # Arguments
     ///
@@ -100,7 +105,7 @@ impl SecureStorage {
     ///
     /// # Note
     ///
-    /// Encryption functionality is planned for a future release.
+    /// Uses AES-256-GCM encryption with PBKDF2-HMAC-SHA256 key derivation.
     pub async fn set_password(&mut self, password: Option<String>) {
         self.password = password;
     }
@@ -122,15 +127,15 @@ impl SecureStorage {
 
     /// Checks if the stored data is encrypted.
     ///
-    /// Currently always returns false as encryption is not yet implemented.
+    /// Detects the `SORNG_ENC:` magic prefix that indicates encrypted content.
     ///
     /// # Returns
     ///
-    /// `Ok(false)` indicating data is not encrypted (current implementation)
+    /// `Ok(true)` if the file is encrypted, `Ok(false)` if plain JSON or missing
     ///
     /// # Note
     ///
-    /// This will return true in future versions when encryption is implemented.
+    /// Returns true when the file starts with the `SORNG_ENC:` prefix.
     pub async fn is_storage_encrypted(&self) -> Result<bool, String> {
         if !Path::new(&self.store_path).exists() {
             return Ok(false);
@@ -197,7 +202,7 @@ impl SecureStorage {
     /// # Arguments
     ///
     /// * `data` - The `StorageData` to save
-    /// * `use_password` - Whether to use password encryption (currently ignored)
+    /// * `use_password` - Whether to encrypt using the configured password
     ///
     /// # Returns
     ///
@@ -305,4 +310,3 @@ impl SecureStorage {
         }
     }
 }
-

@@ -260,9 +260,26 @@ impl RdpdrClient {
                 }
 
                 // ── Serial Ports ──────────────────────────────────────
-                // TODO: Add serial port config to settings. For now, serial
-                // ports are only announced if ports flag is set and we have
-                // no specific ports configured (stub).
+                // Serial ports are announced when the ports flag is set.
+                // Without specific port configuration from settings, we
+                // announce COM1 as a default so the server knows serial
+                // redirect is available. Once settings support serial port
+                // config, this section should iterate user-configured ports.
+                if self.device_flags.ports {
+                    let serial_id = self.next_device_id;
+                    self.next_device_id += 1;
+                    let device = serial::SerialDevice::new(serial_id, "COM1", self.session_id.clone());
+                    buf.extend_from_slice(&RDPDR_DTYP_SERIAL.to_le_bytes());
+                    buf.extend_from_slice(&serial_id.to_le_bytes());
+                    let mut dos_name = [0u8; 8];
+                    let name = b"COM1";
+                    dos_name[..name.len().min(8)].copy_from_slice(&name[..name.len().min(8)]);
+                    buf.extend_from_slice(&dos_name);
+                    buf.extend_from_slice(&0u32.to_le_bytes()); // DeviceDataLength = 0
+                    self.serial_devices.insert(serial_id, device);
+                    total_devices += 1;
+                    log::info!("RDPDR session {}: announced serial device_id={} port=COM1", self.session_id, serial_id);
+                }
 
                 // Patch the device count
                 buf[device_count_offset..device_count_offset + 4]

@@ -242,12 +242,6 @@ impl TelnetService {
                     command,
                     option,
                 }) => {
-                    if direction == "sent_raw" {
-                        if let Some(raw_bytes) = hex_decode(&command) {
-                            let _ = handle.cmd_tx.send(SessionCommand::SendRaw(raw_bytes)).await;
-                        }
-                    }
-
                     let _ = emitter.emit_event(
                         "telnet-negotiation",
                         serde_json::to_value(&TelnetNegotiationEvent {
@@ -257,6 +251,9 @@ impl TelnetService {
                             option,
                         }).unwrap_or_default(),
                     );
+                }
+                Some(SessionEvent::WriteBack(data)) => {
+                    let _ = handle.cmd_tx.send(SessionCommand::SendRaw(data)).await;
                 }
                 None => {
                     break;

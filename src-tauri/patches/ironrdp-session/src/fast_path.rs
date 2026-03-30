@@ -67,7 +67,8 @@ impl Processor {
         let header = decode_cursor::<FastPathHeader>(&mut input).map_err(SessionError::decode)?;
         trace!(fast_path_header = ?header, "Received Fast-Path packet");
 
-        let update_pdu = decode_cursor::<FastPathUpdatePdu<'_>>(&mut input).map_err(SessionError::decode)?;
+        let update_pdu =
+            decode_cursor::<FastPathUpdatePdu<'_>>(&mut input).map_err(SessionError::decode)?;
         trace!(fast_path_update_fragmentation = ?update_pdu.fragmentation);
 
         let processed_complete_data = self
@@ -84,8 +85,12 @@ impl Processor {
 
         match update {
             Ok(FastPathUpdate::SurfaceCommands(surface_commands)) => {
-                trace!("Received Surface Commands: {} pieces", surface_commands.len());
-                let update_region = self.process_surface_commands(image, output, surface_commands)?;
+                trace!(
+                    "Received Surface Commands: {} pieces",
+                    surface_commands.len()
+                );
+                let update_region =
+                    self.process_surface_commands(image, output, surface_commands)?;
                 processor_updates.push(UpdateKind::Region(update_region));
             }
             Ok(FastPathUpdate::Bitmap(bitmap_update)) => {
@@ -127,7 +132,10 @@ impl Processor {
                             // Compressed bitmaps not in 32 bpp format are compressed using Interleaved
                             // RLE and encapsulated in an RLE Compressed Bitmap Stream structure (section
                             // 2.2.9.1.1.3.1.2.4).
-                            debug!(bpp = update.bits_per_pixel, "Non-32 bpp compressed RLE_BITMAP_STREAM",);
+                            debug!(
+                                bpp = update.bits_per_pixel,
+                                "Non-32 bpp compressed RLE_BITMAP_STREAM",
+                            );
 
                             match ironrdp_graphics::rle::decompress(
                                 update.bitmap_data,
@@ -136,12 +144,17 @@ impl Processor {
                                 usize::from(update.height),
                                 usize::from(update.bits_per_pixel),
                             ) {
-                                Ok(RlePixelFormat::Rgb16) => image.apply_rgb16_bitmap(&buf, &update.rectangle)?,
-
-                                // TODO: support other pixel formats…
-                                Ok(format @ (RlePixelFormat::Rgb8 | RlePixelFormat::Rgb15 | RlePixelFormat::Rgb24)) => {
-                                    warn!("Received RLE-compressed bitmap with unsupported color depth: {format:?}");
-                                    update.rectangle.clone()
+                                Ok(RlePixelFormat::Rgb16) => {
+                                    image.apply_rgb16_bitmap(&buf, &update.rectangle)?
+                                }
+                                Ok(RlePixelFormat::Rgb15) => {
+                                    image.apply_rgb15_bitmap(&buf, &update.rectangle)?
+                                }
+                                Ok(RlePixelFormat::Rgb24) => {
+                                    image.apply_bgr24_bitmap(&buf, &update.rectangle)?
+                                }
+                                Ok(RlePixelFormat::Rgb8) => {
+                                    image.apply_rgb8_bitmap(&buf, &update.rectangle)?
                                 }
 
                                 Err(e) => {
@@ -157,10 +170,18 @@ impl Processor {
                         trace!("Uncompressed raw bitmap");
 
                         match update.bits_per_pixel {
-                            16 => image.apply_rgb16_bitmap(update.bitmap_data, &update.rectangle)?,
-                            // TODO: support other pixel formats…
+                            8 => image.apply_rgb8_bitmap(update.bitmap_data, &update.rectangle)?,
+                            15 => {
+                                image.apply_rgb15_bitmap(update.bitmap_data, &update.rectangle)?
+                            }
+                            16 => {
+                                image.apply_rgb16_bitmap(update.bitmap_data, &update.rectangle)?
+                            }
+                            24 => {
+                                image.apply_bgr24_bitmap(update.bitmap_data, &update.rectangle)?
+                            }
                             unsupported => {
-                                warn!("Invalid raw bitmap with {unsupported} bytes per pixels");
+                                warn!("Unsupported raw bitmap with {unsupported} bits per pixel");
                                 update.rectangle.clone()
                             }
                         }
@@ -221,7 +242,12 @@ impl Processor {
 
                         let decoded_pointer = Arc::new(
                             DecodedPointer::decode_color_pointer_attribute(&pointer, bitmap_target)
-                                .map_err(|e| SessionError::custom("failed to decode color pointer attribute", e))?,
+                                .map_err(|e| {
+                                    SessionError::custom(
+                                        "failed to decode color pointer attribute",
+                                        e,
+                                    )
+                                })?,
                         );
 
                         let _ = self
@@ -229,7 +255,8 @@ impl Processor {
                             .insert(usize::from(cache_index), Arc::clone(&decoded_pointer));
 
                         if !self.pointer_software_rendering {
-                            processor_updates.push(UpdateKind::PointerBitmap(Arc::clone(&decoded_pointer)));
+                            processor_updates
+                                .push(UpdateKind::PointerBitmap(Arc::clone(&decoded_pointer)));
                         } else if let Some(rect) = image.update_pointer(decoded_pointer)? {
                             processor_updates.push(UpdateKind::Region(rect));
                         }
@@ -237,13 +264,16 @@ impl Processor {
                     PointerUpdateData::Cached(cached) => {
                         let cache_index = cached.cache_index;
 
-                        if let Some(cached_pointer) = self.pointer_cache.get(usize::from(cache_index)) {
+                        if let Some(cached_pointer) =
+                            self.pointer_cache.get(usize::from(cache_index))
+                        {
                             // Disable system pointer
                             processor_updates.push(UpdateKind::PointerHidden);
                             self.use_system_pointer = false;
                             // Send graphics update
                             if !self.pointer_software_rendering {
-                                processor_updates.push(UpdateKind::PointerBitmap(Arc::clone(&cached_pointer)));
+                                processor_updates
+                                    .push(UpdateKind::PointerBitmap(Arc::clone(&cached_pointer)));
                             } else if let Some(rect) = image.update_pointer(cached_pointer)? {
                                 processor_updates.push(UpdateKind::Region(rect));
                             } else {
@@ -261,7 +291,9 @@ impl Processor {
 
                         let decoded_pointer = Arc::new(
                             DecodedPointer::decode_pointer_attribute(&pointer, bitmap_target)
-                                .map_err(|e| SessionError::custom("failed to decode pointer attribute", e))?,
+                                .map_err(|e| {
+                                    SessionError::custom("failed to decode pointer attribute", e)
+                                })?,
                         );
 
                         let _ = self
@@ -269,7 +301,8 @@ impl Processor {
                             .insert(usize::from(cache_index), Arc::clone(&decoded_pointer));
 
                         if !self.pointer_software_rendering {
-                            processor_updates.push(UpdateKind::PointerBitmap(Arc::clone(&decoded_pointer)));
+                            processor_updates
+                                .push(UpdateKind::PointerBitmap(Arc::clone(&decoded_pointer)));
                         } else if let Some(rect) = image.update_pointer(decoded_pointer)? {
                             processor_updates.push(UpdateKind::Region(rect));
                         }
@@ -279,7 +312,12 @@ impl Processor {
 
                         let decoded_pointer: Arc<DecodedPointer> = Arc::new(
                             DecodedPointer::decode_large_pointer_attribute(&pointer, bitmap_target)
-                                .map_err(|e| SessionError::custom("failed to decode large pointer attribute", e))?,
+                                .map_err(|e| {
+                                    SessionError::custom(
+                                        "failed to decode large pointer attribute",
+                                        e,
+                                    )
+                                })?,
                         );
 
                         let _ = self
@@ -287,7 +325,8 @@ impl Processor {
                             .insert(usize::from(cache_index), Arc::clone(&decoded_pointer));
 
                         if !self.pointer_software_rendering {
-                            processor_updates.push(UpdateKind::PointerBitmap(Arc::clone(&decoded_pointer)));
+                            processor_updates
+                                .push(UpdateKind::PointerBitmap(Arc::clone(&decoded_pointer)));
                         } else if let Some(rect) = image.update_pointer(decoded_pointer)? {
                             processor_updates.push(UpdateKind::Region(rect));
                         }
@@ -321,13 +360,14 @@ impl Processor {
         for command in surface_commands {
             match command {
                 SurfaceCommand::SetSurfaceBits(bits) | SurfaceCommand::StreamSurfaceBits(bits) => {
-                    let codec_id = CodecId::from_u8(bits.extended_bitmap_data.codec_id).ok_or_else(|| {
-                        reason_err!(
-                            "Fast-Path",
-                            "unexpected codec ID: {:x}",
-                            bits.extended_bitmap_data.codec_id
-                        )
-                    })?;
+                    let codec_id = CodecId::from_u8(bits.extended_bitmap_data.codec_id)
+                        .ok_or_else(|| {
+                            reason_err!(
+                                "Fast-Path",
+                                "unexpected codec ID: {:x}",
+                                bits.extended_bitmap_data.codec_id
+                            )
+                        })?;
 
                     trace!(?codec_id, "Surface bits");
 
@@ -347,8 +387,11 @@ impl Processor {
                             let ext_data = bits.extended_bitmap_data;
                             match ext_data.bpp {
                                 32 => {
-                                    let rectangle =
-                                        image.apply_rgb32_bitmap(ext_data.data, PixelFormat::BgrX32, &destination)?;
+                                    let rectangle = image.apply_rgb32_bitmap(
+                                        ext_data.data,
+                                        PixelFormat::BgrX32,
+                                        &destination,
+                                    )?;
                                     update_rectangle = update_rectangle
                                         .map(|rect: InclusiveRectangle| rect.union(&rectangle))
                                         .or(Some(rectangle));
@@ -361,7 +404,8 @@ impl Processor {
                         CODEC_ID_REMOTEFX => {
                             let mut data = ReadCursor::new(bits.extended_bitmap_data.data);
                             while !data.is_empty() {
-                                let (_frame_id, rectangle) = self.rfx_handler.decode(image, &destination, &mut data)?;
+                                let (_frame_id, rectangle) =
+                                    self.rfx_handler.decode(image, &destination, &mut data)?;
                                 update_rectangle = update_rectangle
                                     .map(|rect: InclusiveRectangle| rect.union(&rectangle))
                                     .or(Some(rectangle));
@@ -383,7 +427,8 @@ impl Processor {
                             let mut data = vec![0; compressed.len() * 4];
                             let mut pos = 0;
                             loop {
-                                let mut output = zstd_safe::OutBuffer::around_pos(data.as_mut_slice(), pos);
+                                let mut output =
+                                    zstd_safe::OutBuffer::around_pos(data.as_mut_slice(), pos);
                                 self.zdctx
                                     .decompress_stream(&mut output, &mut input)
                                     .map_err(zstd_safe::get_error_name)
@@ -399,7 +444,10 @@ impl Processor {
                             qoi_apply(image, destination, &data, &mut update_rectangle)?;
                         }
                         _ => {
-                            warn!("Unsupported codec ID: {}", bits.extended_bitmap_data.codec_id);
+                            warn!(
+                                "Unsupported codec ID: {}",
+                                bits.extended_bitmap_data.codec_id
+                            );
                         }
                     }
                 }
@@ -425,7 +473,8 @@ fn qoi_apply(
     data: &[u8],
     update_rectangle: &mut Option<InclusiveRectangle>,
 ) -> SessionResult<()> {
-    let (header, decoded) = qoi::decode_to_vec(data).map_err(|e| reason_err!("QOI decode", "{}", e))?;
+    let (header, decoded) =
+        qoi::decode_to_vec(data).map_err(|e| reason_err!("QOI decode", "{}", e))?;
     match header.channels {
         qoi::Channels::Rgb => {
             let rectangle = image.apply_rgb24(&decoded, &destination, false)?;
@@ -478,7 +527,9 @@ struct CompleteData {
 
 impl CompleteData {
     fn new() -> Self {
-        Self { fragmented_data: None }
+        Self {
+            fragmented_data: None,
+        }
     }
 
     fn process_data(&mut self, data: &[u8], fragmentation: Fragmentation) -> Option<Vec<u8>> {

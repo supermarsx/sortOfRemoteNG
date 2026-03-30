@@ -35,6 +35,160 @@ pub struct ScriptService {
     ssh_service: SshServiceState,
 }
 
+/// Strips TypeScript-specific syntax to produce runnable JavaScript.
+/// Handles common patterns: type annotations, interfaces, enums, generics,
+/// access modifiers, type assertions, and declaration keywords.
+fn strip_typescript_syntax(code: &str) -> String {
+    let mut result = remove_ts_block_declarations(code);
+    result = remove_ts_inline_syntax(&result);
+    result
+}
+
+/// Removes block-level TypeScript declarations: interface, enum, declare, and type aliases.
+fn remove_ts_block_declarations(code: &str) -> String {
+    let mut output_lines: Vec<&str> = Vec::new();
+    let lines: Vec<&str> = code.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        let stripped = trimmed
+            .strip_prefix("export ")
+            .map(|s| s.trim_start())
+            .unwrap_or(trimmed);
+
+        // type Alias = ...; on a single line
+        if (stripped.starts_with("type ") && stripped.contains('=') && stripped.ends_with(';'))
+            || stripped.starts_with("declare ")
+        {
+            // If a declare block has an opening brace, skip until matched
+            if stripped.contains('{') {
+                let mut depth = brace_delta(trimmed);
+                while depth > 0 && i + 1 < lines.len() {
+                    i += 1;
+                    depth += brace_delta(lines[i]);
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        // interface / enum blocks
+        if stripped.starts_with("interface ")
+            || stripped.starts_with("enum ")
+            || stripped.starts_with("const enum ")
+        {
+            if trimmed.contains('{') {
+                let mut depth = brace_delta(trimmed);
+                while depth > 0 && i + 1 < lines.len() {
+                    i += 1;
+                    depth += brace_delta(lines[i]);
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        output_lines.push(lines[i]);
+        i += 1;
+    }
+
+    output_lines.join("\n")
+}
+
+/// Counts net brace depth change in a line, respecting string literals.
+fn brace_delta(line: &str) -> i32 {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut quote_char = ' ';
+    let mut escaped = false;
+
+    for ch in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escaped = true;
+            continue;
+        }
+        if in_string {
+            if ch == quote_char {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' | '`' => {
+                in_string = true;
+                quote_char = ch;
+            }
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            '/' => { /* TODO: skip comments for robustness */ }
+            _ => {}
+        }
+    }
+    depth
+}
+
+/// Removes inline TypeScript syntax using regex replacements.
+fn remove_ts_inline_syntax(code: &str) -> String {
+    use regex::Regex;
+    lazy_static::lazy_static! {
+        // Generic type params after function/class name: function foo<T>( → function foo(
+        static ref RE_FUNC_GENERIC: Regex =
+            Regex::new(r"(function\s+\w+)\s*<[^>]+>").unwrap();
+        static ref RE_CLASS_GENERIC: Regex =
+            Regex::new(r"(class\s+\w+)\s*<[^>]+>").unwrap();
+
+        // Return type annotation: ): SomeType { or ): SomeType =>
+        static ref RE_RETURN_TYPE: Regex =
+            Regex::new(r"\)\s*:\s*[\w<>\[\]|&\s,\.]+(?=\s*(?:\{|=>))").unwrap();
+
+        // Variable type annotation: let/const/var x: Type =
+        static ref RE_VAR_TYPE: Regex =
+            Regex::new(r"((?:let|const|var)\s+\w+)\s*:\s*[\w<>\[\]|&\s,\.]+(\s*=)").unwrap();
+
+        // Optional param: foo?: Type  →  foo
+        static ref RE_OPTIONAL_PARAM: Regex =
+            Regex::new(r"(\w+)\s*\?\s*:\s*[\w<>\[\]|&\s\.]+(?=[,\)])").unwrap();
+
+        // Param type annotation: foo: Type  →  foo
+        static ref RE_PARAM_TYPE: Regex =
+            Regex::new(r"(\w+)\s*:\s*[\w<>\[\]|&\s\.]+(?=[,\)])").unwrap();
+
+        // 'as Type' assertions
+        static ref RE_AS_CAST: Regex =
+            Regex::new(r"\s+as\s+[\w<>\[\]|&]+").unwrap();
+
+        // Access modifiers & readonly
+        static ref RE_MODIFIERS: Regex =
+            Regex::new(r"\b(?:public|private|protected|readonly)\s+").unwrap();
+
+        // Non-null assertion operator:  expr!.member  →  expr.member
+        static ref RE_NON_NULL: Regex =
+            Regex::new(r"(\w)!\.([\w(])").unwrap();
+
+        // Standalone `: void` return annotation at end of line (no body)
+        static ref RE_VOID_RETURN: Regex =
+            Regex::new(r"\)\s*:\s*void\s*;").unwrap();
+    }
+
+    let mut r = code.to_string();
+    r = RE_FUNC_GENERIC.replace_all(&r, "$1").to_string();
+    r = RE_CLASS_GENERIC.replace_all(&r, "$1").to_string();
+    r = RE_RETURN_TYPE.replace_all(&r, ")").to_string();
+    r = RE_VAR_TYPE.replace_all(&r, "$1$2").to_string();
+    r = RE_OPTIONAL_PARAM.replace_all(&r, "$1").to_string();
+    r = RE_PARAM_TYPE.replace_all(&r, "$1").to_string();
+    r = RE_AS_CAST.replace_all(&r, "").to_string();
+    r = RE_MODIFIERS.replace_all(&r, "").to_string();
+    r = RE_NON_NULL.replace_all(&r, "$1.$2").to_string();
+    r = RE_VOID_RETURN.replace_all(&r, ");").to_string();
+    r
+}
+
 impl ScriptService {
     pub fn new(ssh_service: SshServiceState) -> ScriptServiceState {
         Arc::new(Mutex::new(ScriptService { ssh_service }))
@@ -211,7 +365,11 @@ impl ScriptService {
                     Err(e) => Err(format!("Script thread panicked or cancelled: {}", e)),
                 }
             }
-            "typescript" => Err("TypeScript execution not yet implemented".to_string()),
+            "typescript" => {
+                let js_code = strip_typescript_syntax(&code);
+                self.execute_script(js_code, "javascript".to_string(), _context)
+                    .await
+            }
             _ => Err(format!("Unsupported script type: {}", script_type)),
         }
     }

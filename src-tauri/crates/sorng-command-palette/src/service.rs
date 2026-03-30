@@ -112,6 +112,18 @@ impl CommandPaletteService {
         let (total_history, unique_commands, top_commands, commands_by_host) = self.history.stats();
         let (total_snippets, builtin_snippets, custom_snippets, top_snippets) =
             self.snippets.stats();
+
+        // Compute most active sessions by counting commands per session_id.
+        let mut session_counts: HashMap<String, usize> = HashMap::new();
+        for entry in self.history.entries() {
+            if !entry.session_id.is_empty() {
+                *session_counts.entry(entry.session_id.clone()).or_insert(0) += 1;
+            }
+        }
+        let mut most_active: Vec<(String, usize)> = session_counts.into_iter().collect();
+        most_active.sort_by(|a, b| b.1.cmp(&a.1));
+        most_active.truncate(20);
+
         PaletteStats {
             total_history_entries: total_history,
             unique_commands,
@@ -122,7 +134,7 @@ impl CommandPaletteService {
             top_commands,
             top_snippets,
             commands_by_host,
-            most_active_sessions: Vec::new(), // TODO: track session activity
+            most_active_sessions: most_active,
         }
     }
 

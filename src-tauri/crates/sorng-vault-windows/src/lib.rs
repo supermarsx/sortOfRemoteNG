@@ -92,6 +92,46 @@ pub fn backend_name() -> &'static str {
     "Windows Credential Manager + DPAPI"
 }
 
+/// Count stored credentials whose target name starts with `{service}/`.
+#[cfg(target_os = "windows")]
+pub fn count_entries(service: &str) -> Result<usize, String> {
+    use windows::core::HSTRING;
+    use windows::Win32::Security::Credentials::{
+        CredEnumerateW, CredFree, CREDENTIALW, CRED_ENUMERATE_FLAGS,
+    };
+
+    let filter = format!("{service}/*");
+    let filter_h = HSTRING::from(&filter);
+
+    unsafe {
+        let mut count: u32 = 0;
+        let mut pcreds: *mut *mut CREDENTIALW = std::ptr::null_mut();
+
+        let result = CredEnumerateW(
+            windows::core::PCWSTR(filter_h.as_ptr()),
+            Some(CRED_ENUMERATE_FLAGS(0)),
+            &mut count,
+            &mut pcreds,
+        );
+
+        match result {
+            Ok(()) => {
+                CredFree(pcreds as *const _ as *const std::ffi::c_void);
+                Ok(count as usize)
+            }
+            Err(e) => {
+                // ERROR_NOT_FOUND (1168) means no matching credentials — that's 0 entries
+                let code = e.code().0 as u32;
+                if code == 0x8007_0490 || code == 1168 {
+                    Ok(0)
+                } else {
+                    Err(format!("CredEnumerateW failed: {e}"))
+                }
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::LocalFree;

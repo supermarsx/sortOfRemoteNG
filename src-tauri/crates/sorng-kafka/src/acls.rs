@@ -24,11 +24,14 @@ pub async fn delete_acls(
     if filters.is_empty() {
         return Ok(Vec::new());
     }
+    let mut deleted = Vec::new();
     for filter in filters {
+        // Capture existing entries before deletion so we can report what was removed.
+        let existing = admin.describe_acls(filter).await.unwrap_or_default();
         admin.delete_acls(filter).await?;
+        deleted.extend(existing);
     }
-    // rdkafka stub does not return deleted entries
-    Ok(Vec::new())
+    Ok(deleted)
 }
 
 /// List all ACL entries matching the given filter.

@@ -65,9 +65,15 @@ pub fn build_hotspot_args(ssid: &str, password: &str, interface: Option<&str>) -
 }
 
 /// Parse Wi-Fi scan results into `WifiAccessPoint` entries.
-pub fn parse_wifi_scan(_output: &str) -> Vec<WifiAccessPoint> {
-    // TODO: implement
-    Vec::new()
+///
+/// Expects terse nmcli output from `nmcli --terse --fields all device wifi list`.
+/// Delegates per-line parsing to `crate::nmcli::parse_wifi_ap_line`.
+pub fn parse_wifi_scan(output: &str) -> Vec<WifiAccessPoint> {
+    output
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(crate::nmcli::parse_wifi_ap_line)
+        .collect()
 }
 
 #[cfg(test)]

@@ -36,11 +36,15 @@ pub fn export_session(player: &ReplayPlayer, options: ExportOptions) -> ReplayRe
             Ok(srt.into_bytes())
         }
         ExportFormat::Gif => Err(ReplayError::ExportError(
-            "GIF export requires an external encoder and is not yet implemented in the core crate"
+            "GIF export requires an external encoder (e.g. ffmpeg or gifski) which is not \
+             bundled with the application. Use JSON or asciicast export, then convert \
+             externally with: ffmpeg -i recording.json output.gif"
                 .into(),
         )),
         ExportFormat::WebM => Err(ReplayError::ExportError(
-            "WebM export requires an external encoder and is not yet implemented in the core crate"
+            "WebM export requires an external encoder (e.g. ffmpeg) which is not bundled \
+             with the application. Use JSON or asciicast export, then convert externally \
+             with: ffmpeg -i recording.json -c:v libvpx-vp9 output.webm"
                 .into(),
         )),
     }

@@ -4,6 +4,7 @@
 //! inspection, TLS certificate info, and redirect following.
 
 use crate::types::*;
+use std::collections::HashMap;
 
 /// Build curl arguments for HTTP timing.
 pub fn build_timing_args(url: &str, follow_redirects: bool, insecure: bool) -> Vec<String> {
@@ -41,9 +42,41 @@ pub fn build_tls_info_args(url: &str) -> Vec<String> {
 }
 
 /// Parse curl timing JSON output into `HttpTiming`.
-pub fn parse_timing_json(_json: &str) -> Option<HttpTiming> {
-    // TODO: implement
-    None
+pub fn parse_timing_json(json: &str) -> Option<HttpTiming> {
+    let root: serde_json::Value = serde_json::from_str(json).ok()?;
+
+    // curl outputs times in seconds; multiply by 1000 for ms
+    let dns_lookup_ms = root.get("dns_lookup_ms")?.as_f64()? * 1000.0;
+    let tcp_connect_ms = root.get("tcp_connect_ms")?.as_f64()? * 1000.0;
+    let tls_handshake_ms = root.get("tls_handshake_ms")?.as_f64()? * 1000.0;
+    let ttfb_ms = root.get("ttfb_ms")?.as_f64()? * 1000.0;
+    let total_ms = root.get("total_ms")?.as_f64()? * 1000.0;
+    let http_code = root.get("http_code")?.as_u64()? as u16;
+    let size_download = root.get("size_download")?.as_u64()?;
+    let speed_download = root.get("speed_download")?.as_f64()?;
+
+    Some(HttpTiming {
+        url: String::new(),
+        http_code,
+        dns_lookup_ms,
+        tcp_connect_ms,
+        tls_handshake_ms,
+        time_to_first_byte_ms: ttfb_ms,
+        total_time_ms: total_ms,
+        redirect_time_ms: 0.0,
+        redirect_count: 0,
+        download_size_bytes: size_download,
+        upload_size_bytes: 0,
+        speed_download_bps: speed_download,
+        speed_upload_bps: 0.0,
+        ssl_verify_result: None,
+        effective_url: String::new(),
+        content_type: None,
+        ip_address: None,
+        port: None,
+        tls_version: None,
+        headers: HashMap::new(),
+    })
 }
 
 #[cfg(test)]

@@ -102,6 +102,29 @@ fn plat_backend_name() -> &'static str {
     }
 }
 
+/// Count vault entries for the given service name.
+fn plat_count(service: &str) -> usize {
+    #[cfg(target_os = "windows")]
+    {
+        sorng_vault_windows::count_entries(service).unwrap_or(0)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = service;
+        0 // macOS Keychain enumeration requires Security framework queries
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = service;
+        0 // Linux Secret Service enumeration requires libsecret collection listing
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = service;
+        0
+    }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Public API
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -165,10 +188,13 @@ pub fn backend_name() -> &'static str {
 pub async fn status() -> VaultResult<VaultStatus> {
     let available = is_available();
     let backend = backend_name().to_string();
+    let entry_count = tokio::task::spawn_blocking(|| plat_count(SERVICE_NAME))
+        .await
+        .map_err(|e| VaultError::internal(format!("spawn_blocking: {e}")))?;
     Ok(VaultStatus {
         available,
         backend,
-        entry_count: 0, // TODO: platform-specific enumeration
+        entry_count,
         biometric_enabled: sorng_biometrics::availability::is_available().await,
         message: if available {
             Some("Vault is ready".into())

@@ -55,9 +55,74 @@ pub fn build_route_print_args() -> Vec<String> {
 }
 
 /// Parse `ip -j route show` JSON output into `RouteEntry` structs.
-pub fn parse_route_json(_json: &str) -> Vec<RouteEntry> {
-    // TODO: implement
-    Vec::new()
+pub fn parse_route_json(json: &str) -> Vec<RouteEntry> {
+    let entries: Vec<serde_json::Value> = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    entries
+        .iter()
+        .filter_map(|obj| {
+            let destination = obj.get("dst")?.as_str()?.to_string();
+            let interface = obj
+                .get("dev")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let gateway = obj
+                .get("gateway")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let protocol = obj
+                .get("protocol")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let scope = obj.get("scope").and_then(|v| v.as_str()).map(String::from);
+            let route_type = obj.get("type").and_then(|v| v.as_str()).map(String::from);
+            let metric = obj
+                .get("metric")
+                .and_then(|v| v.as_u64().map(|n| n as u32))
+                .unwrap_or(0);
+
+            let prefix_len = if destination.contains('/') {
+                destination
+                    .split('/')
+                    .nth(1)
+                    .and_then(|s| s.parse::<u8>().ok())
+            } else {
+                None
+            };
+
+            let flags = obj
+                .get("flags")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|f| f.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let mtu = obj.get("mtu").and_then(|v| v.as_u64().map(|n| n as u32));
+            let table_id = obj.get("table").and_then(|v| v.as_u64().map(|n| n as u32));
+
+            Some(RouteEntry {
+                destination,
+                gateway,
+                netmask: None,
+                prefix_len,
+                interface,
+                metric,
+                protocol,
+                scope,
+                route_type,
+                flags,
+                mtu,
+                table_id,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

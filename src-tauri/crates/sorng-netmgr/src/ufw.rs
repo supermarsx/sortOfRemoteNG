@@ -68,15 +68,200 @@ pub fn build_toggle_args(action: &str) -> Vec<String> {
 }
 
 /// Parse `ufw status verbose` output.
-pub fn parse_status_output(_output: &str) -> Option<UfwStatus> {
-    // TODO: implement
-    None
+///
+/// Example header:
+/// ```text
+/// Status: active
+/// Logging: on (low)
+/// Default: deny (incoming), allow (outgoing), disabled (routed)
+/// New profiles: skip
+///
+/// To                         Action      From
+/// --                         ------      ----
+/// 22/tcp                     ALLOW IN    Anywhere
+/// ```
+pub fn parse_status_output(output: &str) -> Option<UfwStatus> {
+    if output.trim().is_empty() {
+        return None;
+    }
+
+    let mut enabled = false;
+    let mut default_incoming = FirewallVerdict::Drop;
+    let mut default_outgoing = FirewallVerdict::Accept;
+    let mut default_routed = FirewallVerdict::Drop;
+    let mut logging = UfwLogLevel::Off;
+    let mut rules = Vec::new();
+    let mut in_rules_section = false;
+    let mut rule_number: u32 = 0;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_lowercase();
+
+        if lower.starts_with("status:") {
+            enabled = lower.contains("active") && !lower.contains("inactive");
+        } else if lower.starts_with("logging:") {
+            let val = lower
+                .split_once(':')
+                .map(|(_, v)| v.trim().to_string())
+                .unwrap_or_default();
+            logging = if val.contains("full") {
+                UfwLogLevel::Full
+            } else if val.contains("high") {
+                UfwLogLevel::High
+            } else if val.contains("medium") {
+                UfwLogLevel::Medium
+            } else if val.contains("low") || val.starts_with("on") {
+                UfwLogLevel::Low
+            } else {
+                UfwLogLevel::Off
+            };
+        } else if lower.starts_with("default:") {
+            let val = lower
+                .split_once(':')
+                .map(|(_, v)| v.to_string())
+                .unwrap_or_default();
+            for segment in val.split(',') {
+                let seg = segment.trim();
+                if seg.contains("incoming") {
+                    default_incoming = parse_ufw_verdict(seg);
+                } else if seg.contains("outgoing") {
+                    default_outgoing = parse_ufw_verdict(seg);
+                } else if seg.contains("routed") {
+                    default_routed = parse_ufw_verdict(seg);
+                }
+            }
+        } else if trimmed.starts_with("--") {
+            in_rules_section = true;
+        } else if in_rules_section && !trimmed.is_empty() {
+            if let Some(rule) = parse_ufw_rule_line(trimmed, &mut rule_number) {
+                rules.push(rule);
+            }
+        }
+    }
+
+    Some(UfwStatus {
+        enabled,
+        default_incoming,
+        default_outgoing,
+        default_routed,
+        logging,
+        rules,
+    })
+}
+
+fn parse_ufw_verdict(s: &str) -> FirewallVerdict {
+    if s.contains("allow") {
+        FirewallVerdict::Accept
+    } else if s.contains("reject") {
+        FirewallVerdict::Reject
+    } else if s.contains("limit") {
+        FirewallVerdict::Limit
+    } else {
+        FirewallVerdict::Drop
+    }
+}
+
+fn parse_ufw_rule_line(line: &str, counter: &mut u32) -> Option<UfwRule> {
+    // Format: "22/tcp                     ALLOW IN    Anywhere"
+    //     or: "Anywhere                   DENY OUT    22/tcp"
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    *counter += 1;
+    let v6 = line.contains("(v6)");
+
+    // Find action position (ALLOW, DENY, REJECT, LIMIT)
+    let (action_idx, action) =
+        parts
+            .iter()
+            .enumerate()
+            .find_map(|(i, p)| match p.to_uppercase().as_str() {
+                "ALLOW" => Some((i, FirewallVerdict::Accept)),
+                "DENY" => Some((i, FirewallVerdict::Drop)),
+                "REJECT" => Some((i, FirewallVerdict::Reject)),
+                "LIMIT" => Some((i, FirewallVerdict::Limit)),
+                _ => None,
+            })?;
+
+    // Direction comes after action
+    let direction = parts
+        .get(action_idx + 1)
+        .and_then(|d| match d.to_uppercase().as_str() {
+            "IN" => Some(RuleDirection::Inbound),
+            "OUT" => Some(RuleDirection::Outbound),
+            "FWD" => Some(RuleDirection::Forward),
+            _ => None,
+        })
+        .unwrap_or(RuleDirection::Inbound);
+
+    let to_part = parts[..action_idx].join(" ");
+    let from_start = if parts
+        .get(action_idx + 1)
+        .map(|d| ["IN", "OUT", "FWD"].contains(&d.to_uppercase().as_str()))
+        .unwrap_or(false)
+    {
+        action_idx + 2
+    } else {
+        action_idx + 1
+    };
+    let from_part = parts[from_start..]
+        .join(" ")
+        .replace("(v6)", "")
+        .trim()
+        .to_string();
+
+    // Extract port/protocol from "to" field
+    let (port, protocol) = if to_part.contains('/') {
+        let mut sp = to_part.splitn(2, '/');
+        let port = sp.next().map(|s| s.to_string());
+        let proto = sp.next().map(|s| s.to_string());
+        (port, proto)
+    } else {
+        (None, None)
+    };
+
+    Some(UfwRule {
+        number: *counter,
+        action,
+        direction,
+        from: from_part,
+        to: to_part,
+        port,
+        protocol,
+        interface: None,
+        comment: None,
+        v6,
+    })
 }
 
 /// Parse `ufw app list` output.
-pub fn parse_app_list_output(_output: &str) -> Vec<UfwAppProfile> {
-    // TODO: implement
-    Vec::new()
+///
+/// Example:
+/// ```text
+/// Available applications:
+///   Apache
+///   Apache Full
+///   OpenSSH
+/// ```
+pub fn parse_app_list_output(output: &str) -> Vec<UfwAppProfile> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.to_lowercase().starts_with("available") {
+                return None;
+            }
+            Some(UfwAppProfile {
+                name: trimmed.to_string(),
+                title: trimmed.to_string(),
+                description: String::new(),
+                ports: String::new(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

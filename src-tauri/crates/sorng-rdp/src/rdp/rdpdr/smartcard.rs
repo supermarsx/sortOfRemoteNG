@@ -95,24 +95,33 @@ impl SmartCardDevice {
                 self.ioctl_success_response(&[])
             }
             SCARD_IOCTL_ESTABLISH_CONTEXT => {
-                // TODO: Call SCardEstablishContext and return handle
-                // For now return a dummy context
+                // Establish a local PC/SC context.
+                // Currently returns a synthetic handle. Real SCard calls
+                // require the `Win32_Security_Credentials` windows feature.
+                log::info!(
+                    "RDPDR smartcard {}: establishing context (synthetic — real PC/SC requires Win32_Security_Credentials feature)",
+                    self.session_id
+                );
                 let mut out = Vec::new();
-                out.extend_from_slice(&0u32.to_le_bytes()); // ReturnCode = SUCCESS
+                out.extend_from_slice(&SCARD_S_SUCCESS.to_le_bytes());
                 out.extend_from_slice(&4u32.to_le_bytes()); // cbContext
-                out.extend_from_slice(&1u32.to_le_bytes()); // hContext (dummy)
+                out.extend_from_slice(&1u32.to_le_bytes()); // hContext (synthetic)
                 self.ioctl_success_response(&out)
             }
             SCARD_IOCTL_RELEASE_CONTEXT | SCARD_IOCTL_IS_VALID_CONTEXT => {
                 let mut out = Vec::new();
-                out.extend_from_slice(&0u32.to_le_bytes()); // ReturnCode = SUCCESS
+                out.extend_from_slice(&SCARD_S_SUCCESS.to_le_bytes());
                 self.ioctl_success_response(&out)
             }
             SCARD_IOCTL_LIST_READERS_A | SCARD_IOCTL_LIST_READERS_W => {
-                // TODO: Call SCardListReaders and return reader list
-                // For now return empty reader list
+                // Return empty reader list. Real enumeration requires the
+                // `Win32_Security_Credentials` feature to call SCardListReaders.
+                log::debug!(
+                    "RDPDR smartcard {}: listing readers (empty — no PC/SC backend linked)",
+                    self.session_id
+                );
                 let mut out = Vec::new();
-                out.extend_from_slice(&0u32.to_le_bytes()); // ReturnCode = SUCCESS
+                out.extend_from_slice(&SCARD_S_SUCCESS.to_le_bytes());
                 out.extend_from_slice(&0u32.to_le_bytes()); // cReaders = 0
                 self.ioctl_success_response(&out)
             }
@@ -126,7 +135,13 @@ impl SmartCardDevice {
             | SCARD_IOCTL_BEGIN_TRANSACTION | SCARD_IOCTL_END_TRANSACTION
             | SCARD_IOCTL_TRANSMIT | SCARD_IOCTL_STATUS_A | SCARD_IOCTL_STATUS_W
             | SCARD_IOCTL_CANCEL => {
-                // TODO: Implement full SCARD proxy
+                // Full SCARD proxy (connect, transmit, transaction) requires
+                // real PC/SC handle management. Return SCARD_E_NO_SERVICE to
+                // signal the server that we can't service card I/O.
+                log::debug!(
+                    "RDPDR smartcard {}: unimplemented card I/O IOCTL 0x{:08X} — returning NO_SERVICE",
+                    self.session_id, ioctl_code
+                );
                 let mut out = Vec::new();
                 out.extend_from_slice(&SCARD_E_NO_SERVICE.to_le_bytes());
                 self.ioctl_success_response(&out)

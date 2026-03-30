@@ -91,15 +91,230 @@ pub fn build_set_profile_state_args(profile: &str, enabled: bool) -> Vec<String>
 }
 
 /// Parse `netsh advfirewall firewall show rule` output.
-pub fn parse_rules_output(_output: &str) -> Vec<WinFwRule> {
-    // TODO: implement
-    Vec::new()
+///
+/// Each rule block is separated by blank lines, with key-value pairs:
+/// ```text
+/// Rule Name:                            Allow HTTP
+/// Enabled:                              Yes
+/// Direction:                            In
+/// Profiles:                             Domain,Private
+/// Action:                               Allow
+/// Protocol:                             TCP
+/// LocalPort:                            80
+/// ```
+pub fn parse_rules_output(output: &str) -> Vec<WinFwRule> {
+    let mut rules = Vec::new();
+    let mut current: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("---") {
+            if !current.is_empty() {
+                if let Some(rule) = build_win_fw_rule(&current) {
+                    rules.push(rule);
+                }
+                current.clear();
+            }
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once(':') {
+            current.insert(
+                key.trim().to_lowercase().replace(' ', ""),
+                value.trim().to_string(),
+            );
+        }
+    }
+    if !current.is_empty() {
+        if let Some(rule) = build_win_fw_rule(&current) {
+            rules.push(rule);
+        }
+    }
+
+    rules
+}
+
+fn build_win_fw_rule(m: &std::collections::HashMap<String, String>) -> Option<WinFwRule> {
+    let name = m.get("rulename")?.clone();
+    let direction = match m.get("direction").map(|s| s.to_lowercase()).as_deref() {
+        Some("in") => RuleDirection::Inbound,
+        Some("out") => RuleDirection::Outbound,
+        _ => RuleDirection::Inbound,
+    };
+    let action = match m.get("action").map(|s| s.to_lowercase()).as_deref() {
+        Some("allow") => FirewallVerdict::Accept,
+        Some("block") => FirewallVerdict::Drop,
+        _ => FirewallVerdict::Drop,
+    };
+    let enabled = m
+        .get("enabled")
+        .map(|s| s.to_lowercase() == "yes")
+        .unwrap_or(false);
+    let profiles: Vec<WinFwProfile> = m
+        .get("profiles")
+        .map(|s| {
+            s.split(',')
+                .filter_map(|p| match p.trim().to_lowercase().as_str() {
+                    "domain" => Some(WinFwProfile::Domain),
+                    "private" => Some(WinFwProfile::Private),
+                    "public" => Some(WinFwProfile::Public),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(WinFwRule {
+        name: name.clone(),
+        display_name: m
+            .get("displayname")
+            .cloned()
+            .unwrap_or_else(|| name.clone()),
+        description: m.get("description").cloned(),
+        direction,
+        action,
+        enabled,
+        profiles,
+        program: m.get("program").cloned().filter(|s| s != "Any"),
+        service: m.get("service").cloned().filter(|s| s != "Any"),
+        protocol: m.get("protocol").cloned().filter(|s| s != "Any"),
+        local_port: m.get("localport").cloned().filter(|s| s != "Any"),
+        remote_port: m.get("remoteport").cloned().filter(|s| s != "Any"),
+        local_address: m.get("localip").cloned().filter(|s| s != "Any"),
+        remote_address: m.get("remoteip").cloned().filter(|s| s != "Any"),
+        icmp_type: None,
+        group: m.get("grouping").cloned().filter(|s| !s.is_empty()),
+        interface_types: m
+            .get("interfacetypes")
+            .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+            .unwrap_or_default(),
+        edge_traversal: m
+            .get("edgetraversal")
+            .map(|s| s.to_lowercase() == "yes")
+            .unwrap_or(false),
+    })
 }
 
 /// Parse `netsh advfirewall show allprofiles` output.
-pub fn parse_profiles_output(_output: &str) -> Vec<WinFwProfileStatus> {
-    // TODO: implement
-    Vec::new()
+///
+/// Output contains blocks per profile:
+/// ```text
+/// Domain Profile Settings:
+/// State                                 ON
+/// Firewall Policy                       BlockInbound,AllowOutbound
+/// ...
+/// Private Profile Settings:
+/// ...
+/// Public Profile Settings:
+/// ...
+/// ```
+pub fn parse_profiles_output(output: &str) -> Vec<WinFwProfileStatus> {
+    let mut profiles = Vec::new();
+    let mut current_profile: Option<WinFwProfile> = None;
+    let mut fields: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_lowercase();
+
+        // Detect profile header
+        if lower.contains("profile settings") {
+            // Flush previous profile
+            if let Some(profile) = current_profile.take() {
+                profiles.push(build_win_fw_profile(profile, &fields));
+                fields.clear();
+            }
+            if lower.starts_with("domain") {
+                current_profile = Some(WinFwProfile::Domain);
+            } else if lower.starts_with("private") {
+                current_profile = Some(WinFwProfile::Private);
+            } else if lower.starts_with("public") {
+                current_profile = Some(WinFwProfile::Public);
+            }
+            continue;
+        }
+
+        if trimmed.is_empty() || trimmed.starts_with("---") {
+            continue;
+        }
+
+        if current_profile.is_some() {
+            // Fields are often aligned with spaces: "State                ON"
+            let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
+            if parts.len() == 2 {
+                fields.insert(parts[0].trim().to_lowercase(), parts[1].trim().to_string());
+            } else if let Some((k, v)) = trimmed.split_once(':') {
+                fields.insert(k.trim().to_lowercase(), v.trim().to_string());
+            }
+        }
+    }
+
+    if let Some(profile) = current_profile {
+        profiles.push(build_win_fw_profile(profile, &fields));
+    }
+
+    profiles
+}
+
+fn build_win_fw_profile(
+    profile: WinFwProfile,
+    fields: &std::collections::HashMap<String, String>,
+) -> WinFwProfileStatus {
+    let enabled = fields
+        .get("state")
+        .map(|s| s.to_lowercase().contains("on"))
+        .unwrap_or(false);
+
+    let policy = fields
+        .get("firewallpolicy")
+        .or_else(|| fields.get("firewall"))
+        .cloned()
+        .unwrap_or_default()
+        .to_lowercase();
+
+    let default_inbound = if policy.contains("allowinbound") {
+        FirewallVerdict::Accept
+    } else {
+        FirewallVerdict::Drop
+    };
+    let default_outbound = if policy.contains("blockoutbound") {
+        FirewallVerdict::Drop
+    } else {
+        FirewallVerdict::Accept
+    };
+
+    let log_allowed = fields
+        .get("logallowedconnections")
+        .map(|s| s.to_lowercase().contains("enable"))
+        .unwrap_or(false);
+    let log_dropped = fields
+        .get("logdroppedconnections")
+        .map(|s| s.to_lowercase().contains("enable"))
+        .unwrap_or(false);
+    let log_file = fields.get("filename").cloned();
+    let log_max_size_kb = fields
+        .get("maxfilesize")
+        .and_then(|s| s.parse::<u32>().ok());
+    let notification = fields
+        .get("inboundusernotification")
+        .map(|s| s.to_lowercase().contains("enable"))
+        .unwrap_or(false);
+    let unicast_response = fields
+        .get("unicastresponsetomulticast")
+        .map(|s| s.to_lowercase().contains("enable"))
+        .unwrap_or(true);
+
+    WinFwProfileStatus {
+        profile,
+        enabled,
+        default_inbound,
+        default_outbound,
+        log_allowed,
+        log_dropped,
+        log_file,
+        log_max_size_kb,
+        notification,
+        unicast_response,
+    }
 }
 
 #[cfg(test)]

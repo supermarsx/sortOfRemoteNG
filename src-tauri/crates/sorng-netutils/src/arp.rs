@@ -32,9 +32,60 @@ pub fn build_arping_args(target: &str, interface: &str, count: u32) -> Vec<Strin
 }
 
 /// Parse `ip -j neigh show` JSON output into `ArpEntry` structs.
-pub fn parse_neigh_json(_json: &str) -> Vec<ArpEntry> {
-    // TODO: implement
-    Vec::new()
+pub fn parse_neigh_json(json: &str) -> Vec<ArpEntry> {
+    let entries: Vec<serde_json::Value> = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let ip = entry.get("dst")?.as_str()?.to_string();
+            let mac = entry
+                .get("lladdr")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let interface = entry
+                .get("dev")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let state = entry
+                .get("state")
+                .and_then(|v| {
+                    // state can be an array of strings or a single string
+                    if let Some(arr) = v.as_array() {
+                        arr.first().and_then(|s| s.as_str())
+                    } else {
+                        v.as_str()
+                    }
+                })
+                .map(|s| match s.to_uppercase().as_str() {
+                    "REACHABLE" => ArpState::Reachable,
+                    "STALE" => ArpState::Stale,
+                    "DELAY" => ArpState::Delay,
+                    "PROBE" => ArpState::Probe,
+                    "FAILED" => ArpState::Failed,
+                    "NOARP" => ArpState::Noarp,
+                    "INCOMPLETE" => ArpState::Incomplete,
+                    "PERMANENT" => ArpState::Permanent,
+                    _ => ArpState::Stale,
+                })
+                .unwrap_or(ArpState::Stale);
+
+            Some(ArpEntry {
+                ip,
+                mac,
+                interface,
+                state,
+                hw_type: None,
+                flags: None,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

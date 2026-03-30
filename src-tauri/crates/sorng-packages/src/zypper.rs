@@ -19,6 +19,41 @@ pub async fn update(host: &PkgHost) -> Result<String, PkgError> {
 pub async fn upgrade(host: &PkgHost) -> Result<String, PkgError> {
     client::exec_ok(host, "zypper", &["update", "-y"]).await
 }
+
+/// List available package updates.
+///
+/// Executes `zypper list-updates` and parses the tabular output.
+/// Output format:
+/// ```text
+/// S | Repository         | Name           | Current Version | Available Version | Arch
+/// --+--------------------+----------------+-----------------+-------------------+-------
+/// v | repo-oss           | bash           | 5.2-1.1         | 5.2.15-1.3        | x86_64
+/// ```
+pub async fn list_updates(host: &PkgHost) -> Result<Vec<PackageUpdate>, PkgError> {
+    let stdout = client::exec_ok(host, "zypper", &["--non-interactive", "list-updates"]).await?;
+    Ok(stdout
+        .lines()
+        .filter(|l| {
+            let trimmed = l.trim_start();
+            // Lines starting with "v" indicate an available version update
+            trimmed.starts_with("v ") || trimmed.starts_with("v|")
+        })
+        .filter_map(|l| {
+            let parts: Vec<&str> = l.split('|').collect();
+            if parts.len() < 5 {
+                return None;
+            }
+            Some(PackageUpdate {
+                name: parts[2].trim().into(),
+                current_version: parts[3].trim().into(),
+                new_version: parts[4].trim().into(),
+                repo: Some(parts[1].trim().into()),
+                security: false,
+            })
+        })
+        .collect())
+}
+
 pub async fn list_installed(host: &PkgHost) -> Result<Vec<Package>, PkgError> {
     let stdout = client::exec_ok(
         host,

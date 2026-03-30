@@ -34,10 +34,63 @@ impl AmavisClient {
     /// Execute a command via SSH and return the output.
     pub async fn ssh_exec(&self, command: &str) -> AmavisResult<SshOutput> {
         debug!("AMAVIS SSH [{}]: {}", self.config.host, command);
-        Err(AmavisError::ssh(format!(
-            "SSH execution not connected to {}. Command: {}",
-            self.config.host, command
-        )))
+
+        let ssh_user = self.config.username.as_str();
+        let port = self.config.port;
+        let timeout = self.config.timeout_secs.unwrap_or(30);
+
+        let mut ssh_args = vec![
+            "-o".to_string(),
+            "StrictHostKeyChecking=accept-new".to_string(),
+            "-o".to_string(),
+            format!("ConnectTimeout={}", timeout),
+            "-p".to_string(),
+            port.to_string(),
+        ];
+
+        if let Some(ref key) = self.config.private_key {
+            ssh_args.push("-i".to_string());
+            ssh_args.push(key.clone());
+        }
+
+        if self.config.private_key.is_none() && self.config.password.is_none() {
+            ssh_args.push("-o".to_string());
+            ssh_args.push("BatchMode=yes".to_string());
+        }
+
+        let target = format!("{}@{}", ssh_user, self.config.host);
+        ssh_args.push(target);
+        ssh_args.push(command.to_string());
+
+        let use_sshpass = self.config.password.is_some() && self.config.private_key.is_none();
+
+        let mut cmd = if use_sshpass {
+            let mut c = tokio::process::Command::new("sshpass");
+            c.arg("-e").arg("ssh");
+            c.args(&ssh_args);
+            if let Some(ref pw) = self.config.password {
+                c.env("SSHPASS", pw);
+            }
+            c
+        } else {
+            let mut c = tokio::process::Command::new("ssh");
+            c.args(&ssh_args);
+            c
+        };
+
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| AmavisError::ssh(format!("Failed to execute ssh: {}", e)))?;
+
+        Ok(SshOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
     }
 
     /// Read a remote file's contents via SSH.

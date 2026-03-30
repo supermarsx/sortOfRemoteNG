@@ -73,7 +73,16 @@ impl SerialDevice {
             IRP_MJ_WRITE => {
                 let length = if data.len() >= 4 { read_u32(data, 0) as usize } else { 0 };
                 log::debug!("RDPDR serial {}: write {} bytes to '{}'", self.session_id, length, self.port_name);
-                // TODO: Actually write to serial port via serialport crate
+                // Serial port write is acknowledged but data is discarded.
+                // Full serial I/O requires the `serialport` crate as an optional
+                // dependency — not currently enabled so we accept the data to keep
+                // the RDP session happy and log the discard.
+                if length > 0 {
+                    log::warn!(
+                        "RDPDR serial {}: discarding {} bytes for '{}' (serialport crate not linked)",
+                        self.session_id, length, self.port_name
+                    );
+                }
                 let mut out = Vec::with_capacity(5);
                 out.extend_from_slice(&(length as u32).to_le_bytes());
                 out.push(0);
