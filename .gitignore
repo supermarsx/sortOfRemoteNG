@@ -40,3 +40,4 @@ BUILDLOG*.log
 cargo-check*.log
 users.json
 coverage/
+coverage-output2.txt
