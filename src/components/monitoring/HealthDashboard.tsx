@@ -337,6 +337,11 @@ interface ConfigPanelProps {
 
 const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onUpdate, onClose }) => {
   const { t } = useTranslation();
+  const [showThresholds, setShowThresholds] = useState(false);
+  const [latencyMs, setLatencyMs] = useState(100);
+  const [cpuPercent, setCpuPercent] = useState(80);
+  const [memoryPercent, setMemoryPercent] = useState(80);
+
   return (
     <div className="sor-dash-config-overlay">
       <div className="sor-dash-config-panel">
@@ -369,6 +374,66 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onUpdate, onClose }) 
               onChange={(e) => onUpdate({ parallelChecks: Number(e.target.value) })}
             />
           </label>
+          <button
+            className="sor-dash-btn"
+            onClick={() => setShowThresholds((v) => !v)}
+          >
+            <IconGear className="inline mr-1" />
+            {t("dashboard.thresholdConfig", "Alert Thresholds")}
+          </button>
+          {showThresholds && (
+            <div className="sor-dash-config-thresholds" role="group" aria-label="Alert threshold configuration">
+              <label className="sor-dash-config-field">
+                <span>{t("dashboard.latencyTarget", "Latency target (ms)")}</span>
+                <input
+                  className="sor-dash-input"
+                  type="number"
+                  min={1}
+                  aria-label="Latency threshold in milliseconds"
+                  value={latencyMs}
+                  onChange={(e) => setLatencyMs(Number(e.target.value))}
+                />
+              </label>
+              <label className="sor-dash-config-field">
+                <span>{t("dashboard.cpuThreshold", "CPU threshold (%)")}</span>
+                <input
+                  className="sor-dash-input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  aria-label="CPU usage threshold percentage"
+                  value={cpuPercent}
+                  onChange={(e) => setCpuPercent(Number(e.target.value))}
+                />
+              </label>
+              <label className="sor-dash-config-field">
+                <span>{t("dashboard.memoryThreshold", "Memory threshold (%)")}</span>
+                <input
+                  className="sor-dash-input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  aria-label="Memory usage threshold percentage"
+                  value={memoryPercent}
+                  onChange={(e) => setMemoryPercent(Number(e.target.value))}
+                />
+              </label>
+              <div className="flex gap-2 mt-2">
+                <button
+                  className="sor-dash-btn sor-dash-btn--primary"
+                  onClick={() => {
+                    onUpdate({ _thresholds: { latencyMs, cpuPercent, memoryPercent } } as any);
+                    setShowThresholds(false);
+                  }}
+                >
+                  {t("common.save", "Save")}
+                </button>
+                <button className="sor-dash-btn" onClick={() => setShowThresholds(false)}>
+                  {t("common.cancel", "Cancel")}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -603,7 +668,15 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({ isOpen, onClos
       {showConfig && (
         <ConfigPanel
           config={dash.config}
-          onUpdate={(partial) => dash.updateConfig(partial)}
+          onUpdate={(partial) => {
+            const { _thresholds, ...rest } = partial as any;
+            if (_thresholds) {
+              dash.setThresholds(_thresholds);
+            }
+            if (Object.keys(rest).length > 0) {
+              dash.updateConfig(rest);
+            }
+          }}
           onClose={() => setShowConfig(false)}
         />
       )}

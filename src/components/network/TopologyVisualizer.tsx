@@ -108,6 +108,8 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
   const [pathSource, setPathSource] = useState<string | null>(null);
   const [pathTarget, setPathTarget] = useState<string | null>(null);
   const [showBottlenecks, setShowBottlenecks] = useState(false);
+  const [focusedNodeIndex, setFocusedNodeIndex] = useState<number>(-1);
+  const [srAnnouncement, setSrAnnouncement] = useState("");
 
   /* ---- data loading ---- */
   useEffect(() => {
@@ -203,6 +205,69 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
   const zoomIn = () => setCamera((c) => ({ ...c, zoom: Math.min(5, c.zoom * 1.25) }));
   const zoomOut = () => setCamera((c) => ({ ...c, zoom: Math.max(0.1, c.zoom * 0.8) }));
+
+  /* ---- keyboard handler ---- */
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const PAN = 20;
+      switch (e.key) {
+        case "ArrowUp":
+          e.preventDefault();
+          setCamera((c) => ({ ...c, y: c.y - PAN / c.zoom }));
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          setCamera((c) => ({ ...c, y: c.y + PAN / c.zoom }));
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          setCamera((c) => ({ ...c, x: c.x - PAN / c.zoom }));
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          setCamera((c) => ({ ...c, x: c.x + PAN / c.zoom }));
+          break;
+        case "+":
+        case "=":
+          e.preventDefault();
+          zoomIn();
+          break;
+        case "-":
+          e.preventDefault();
+          zoomOut();
+          break;
+        case "Tab":
+          if (nodes.length === 0) break;
+          e.preventDefault();
+          setFocusedNodeIndex((prev) => {
+            const next = e.shiftKey
+              ? (prev <= 0 ? nodes.length - 1 : prev - 1)
+              : (prev + 1) % nodes.length;
+            const node = nodes[next];
+            topo.setSelectedNode(node.id);
+            setSrAnnouncement(`Selected node: ${node.label}`);
+            return next;
+          });
+          break;
+        case "Enter":
+          if (focusedNodeIndex >= 0 && focusedNodeIndex < nodes.length) {
+            e.preventDefault();
+            const node = nodes[focusedNodeIndex];
+            topo.setSelectedNode(node.id);
+            topo.getBlastRadius(node.id);
+            setSrAnnouncement(`Activated node: ${node.label}`);
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          topo.setSelectedNode(null as unknown as string);
+          setFocusedNodeIndex(-1);
+          setSrAnnouncement("Selection cleared");
+          break;
+      }
+    },
+    [nodes, focusedNodeIndex, topo, zoomIn, zoomOut],
+  );
 
   const fitToView = useCallback(() => {
     if (!nodes.length) return;
@@ -488,7 +553,14 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       {/* ---- Main area ---- */}
       <div className="sor-topology-body flex flex-1 min-h-0">
         {/* Canvas */}
-        <div ref={containerRef} className="sor-topology-canvas-wrap relative flex-1 min-w-0">
+        <div
+          ref={containerRef}
+          className="sor-topology-canvas-wrap relative flex-1 min-w-0 focus:outline-2 focus:outline-[var(--color-accent,#3b82f6)] focus:outline-offset-[-2px]"
+          role="application"
+          aria-label="Network topology visualization"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+        >
           <canvas
             ref={canvasRef}
             className="sor-topology-canvas block w-full h-full cursor-crosshair"
@@ -498,6 +570,9 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
             onMouseLeave={handleMouseUp}
             onWheel={handleWheel}
           />
+          <div className="sr-only" role="status" aria-live="assertive">
+            {srAnnouncement}
+          </div>
 
           {/* Minimap */}
           <canvas

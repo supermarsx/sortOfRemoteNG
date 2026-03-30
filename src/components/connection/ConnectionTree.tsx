@@ -122,7 +122,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDrop={mgr.handleItemDrop}
         />
         {connection.isGroup && connection.expanded && (
-          <div>{renderTree(mgr.buildTree(mgr.state.connections, connection.id), level + 1)}</div>
+          <div role="group">{renderTree(mgr.buildTree(mgr.state.connections, connection.id), level + 1)}</div>
         )}
       </div>
     ));
@@ -133,6 +133,8 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       <div
         className={`flex-1 overflow-y-auto ${mgr.draggedId ? "min-h-[100px]" : ""}`}
         data-tauri-disable-drag="true"
+        role="tree"
+        aria-label="Connection tree"
         onContextMenu={mgr.handlePanelContextMenu}
         onDragOver={mgr.handlePanelDragOver}
         onDrop={mgr.handlePanelDrop}

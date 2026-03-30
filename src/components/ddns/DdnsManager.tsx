@@ -40,6 +40,7 @@ import {
 import { EmptyState, StatusBadge, ErrorBanner } from "../ui/display";
 import { PasswordInput, Select } from "../ui/forms";
 import { useDdnsManager } from "../../hooks/ddns/useDdnsManager";
+import { useToastContext } from "../../contexts/ToastContext";
 import type {
   DdnsProfile,
   DdnsProvider,
@@ -162,6 +163,34 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   t,
 }) => {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { toast } = useToastContext();
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedIds(new Set(mgr.profiles.map((p: DdnsProfile) => p.id)));
+  const deselectAll = () => setSelectedIds(new Set());
+
+  const bulkEnable = async () => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) await mgr.enableProfile(id);
+    toast.success(`${ids.length} profile${ids.length === 1 ? "" : "s"} enabled`);
+    setSelectedIds(new Set());
+  };
+
+  const bulkDisable = async () => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) await mgr.disableProfile(id);
+    toast.success(`${ids.length} profile${ids.length === 1 ? "" : "s"} disabled`);
+    setSelectedIds(new Set());
+  };
 
   useEffect(() => {
     mgr.listProfiles();
@@ -179,11 +208,36 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 
   return (
     <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <button onClick={selectAll} className="px-2 py-1 rounded bg-surfaceHover hover:bg-[var(--color-border)] text-xs">
+          {t("ddns.profiles.selectAll", "Select All")}
+        </button>
+        <button onClick={deselectAll} className="px-2 py-1 rounded bg-surfaceHover hover:bg-[var(--color-border)] text-xs">
+          {t("ddns.profiles.deselectAll", "Deselect All")}
+        </button>
+        {selectedIds.size > 0 && (
+          <>
+            <button onClick={bulkEnable} className="px-2 py-1 rounded bg-success/20 hover:bg-success/30 text-success text-xs">
+              {t("ddns.profiles.enableSelected", "Enable Selected")}
+            </button>
+            <button onClick={bulkDisable} className="px-2 py-1 rounded bg-error/20 hover:bg-error/30 text-error text-xs">
+              {t("ddns.profiles.disableSelected", "Disable Selected")}
+            </button>
+          </>
+        )}
+      </div>
       {mgr.profiles.map((p: DdnsProfile) => (
         <div
           key={p.id}
           className="flex items-center gap-3 p-3 rounded bg-surface/50 hover:bg-surfaceHover transition-colors"
         >
+          <input
+            type="checkbox"
+            aria-label={`Select ${p.name}`}
+            checked={selectedIds.has(p.id)}
+            onChange={() => toggleSelected(p.id)}
+            className="accent-primary w-4 h-4 flex-shrink-0"
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="font-medium text-sm truncate">{p.name}</span>

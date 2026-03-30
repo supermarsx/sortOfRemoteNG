@@ -3,6 +3,7 @@ import {
   Search, RefreshCw, Loader2, AlertCircle, Play, Square,
   ToggleLeft, ToggleRight, Clock,
 } from "lucide-react";
+import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
 import type { ScheduledTask, ScheduledTaskState } from "../../../types/windows/winmgmt";
 
@@ -36,6 +37,7 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
   const [filter, setFilter] = useState<FilterMode>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState<ScheduledTask | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -151,14 +153,14 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
               />
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <table className="w-full text-xs" aria-label="Scheduled tasks list">
               <thead className="sticky top-0 bg-[var(--color-surface)] z-10">
                 <tr className="text-left text-[var(--color-textSecondary)]">
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium w-20">Status</th>
-                  <th className="px-3 py-2 font-medium">Last Run</th>
-                  <th className="px-3 py-2 font-medium">Next Run</th>
-                  <th className="px-3 py-2 font-medium w-24">Actions</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Name</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-20">Status</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Last Run</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Next Run</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-24">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,13 +235,19 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                doAction("disable", task);
+                                setConfirmDisable(task);
                               }}
                               disabled={actionLoading === key}
+                              aria-label={`Disable task ${task.taskName}`}
+                              aria-busy={actionLoading === key}
                               className="p-1 rounded hover:bg-yellow-500/20 text-yellow-400"
                               title="Disable"
                             >
-                              <ToggleLeft size={12} />
+                              {actionLoading === key ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <ToggleLeft size={12} />
+                              )}
                             </button>
                           ) : (
                             <button
@@ -248,10 +256,16 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                                 doAction("enable", task);
                               }}
                               disabled={actionLoading === key}
+                              aria-label={`Enable task ${task.taskName}`}
+                              aria-busy={actionLoading === key}
                               className="p-1 rounded hover:bg-green-500/20 text-green-400"
                               title="Enable"
                             >
-                              <ToggleRight size={12} />
+                              {actionLoading === key ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <ToggleRight size={12} />
+                              )}
                             </button>
                           )}
                         </div>
@@ -363,6 +377,21 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDisable !== null}
+        title="Disable Task"
+        message={`Are you sure you want to disable "${confirmDisable?.taskName ?? ""}"?`}
+        confirmText="Disable"
+        variant="warning"
+        onConfirm={() => {
+          if (confirmDisable) {
+            doAction("disable", confirmDisable);
+          }
+          setConfirmDisable(null);
+        }}
+        onCancel={() => setConfirmDisable(null)}
+      />
     </div>
   );
 };

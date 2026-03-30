@@ -30,6 +30,14 @@ const AnyDeskClient = dynamic(
   () => import('../protocol/AnyDeskClient').then((module) => module.AnyDeskClient),
   { ssr: false },
 );
+const VNCClient = dynamic(
+  () => import('../protocol/VNCClient').then((module) => module.VNCClient),
+  { ssr: false },
+);
+const RustDeskClient = dynamic(
+  () => import('../protocol/RustDeskClient').then((module) => module.RustDeskClient),
+  { ssr: false },
+);
 const RDPErrorScreen = dynamic(
   () => import('../rdp/RDPErrorScreen'),
   { ssr: false },
@@ -215,26 +223,10 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
             );
 
           case 'vnc':
-            return (
-              <div className="flex flex-col items-center justify-center h-full text-primary">
-                <Monitor size={48} className="mb-4" />
-                <h3 className="text-lg font-medium mb-2">VNC Connected</h3>
-                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
-                  VNC connection to {session.hostname} is active
-                </p>
-                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
-                  <p className="text-xs text-[var(--color-textMuted)] mb-2">Connection Details:</p>
-                  <div className="space-y-1 text-sm">
-                    <div>Host: <span className="text-[var(--color-text)]">{session.hostname}</span></div>
-                    <div>Protocol: <span className="text-[var(--color-text)]">VNC</span></div>
-                    <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
-                  </div>
-                  <div className="mt-3 p-2 bg-primary/20 border border-primary rounded text-xs text-primary">
-                    <p>Note: Full VNC client functionality would require additional browser plugins or native applications.</p>
-                  </div>
-                </div>
-              </div>
-            );
+            return <VNCClient session={session} />;
+
+          case 'rustdesk':
+            return <RustDeskClient session={session} />;
 
           default:
             return (

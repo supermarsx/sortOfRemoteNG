@@ -12,6 +12,7 @@ function PanelContextMenu({ mgr, onOpenImport }: { mgr: ConnectionTreeMgr; onOpe
       position={mgr.panelMenuPosition}
       className="min-w-[160px] rounded-lg py-1"
       dataTestId="connection-tree-panel-menu"
+      ariaLabel="Connection tree context menu"
     >
       <button
         onClick={() => { onOpenImport(); mgr.setPanelMenuPosition(null); }}

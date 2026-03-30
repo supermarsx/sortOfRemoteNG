@@ -81,6 +81,8 @@ export function useDetachedSessionEvents(
           },
         });
         setActiveSessionId(sessionId);
+        // Clean up localStorage entry for reattached session
+        try { localStorage.removeItem(`detached-session-${sessionId}`); } catch { /* ignore */ }
       }
     )
       .then((fn) => {
@@ -95,4 +97,18 @@ export function useDetachedSessionEvents(
   // Register once — sessionsRef keeps it current
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, setActiveSessionId]);
+
+  // Clean stale detached-session localStorage entries on app exit
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const current = sessionsRef.current;
+      current.forEach((session) => {
+        if (!session.layout?.isDetached) {
+          localStorage.removeItem(`detached-session-${session.id}`);
+        }
+      });
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 }

@@ -218,6 +218,14 @@ export function useDashboard() {
     }
   }, [config]);
 
+  const setThresholds = useCallback(async (thresholds: { latencyMs: number; cpuPercent: number; memoryPercent: number }) => {
+    try {
+      await invoke("dash_set_thresholds", { thresholds });
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   const loadLayout = useCallback(async () => {
     try {
       const l = await invoke<DashboardLayout>("dash_get_layout");
@@ -253,6 +261,6 @@ export function useDashboard() {
     acknowledgeAlert, fetchConnectionHealth, fetchAllHealth, fetchUnhealthy,
     fetchSparkline, fetchHeatmap, fetchRecent, fetchTopLatency,
     startMonitoring, stopMonitoring, forceRefresh, checkConnection,
-    loadConfig, updateConfig, loadLayout, updateLayout,
+    loadConfig, updateConfig, loadLayout, updateLayout, setThresholds,
   };
 }

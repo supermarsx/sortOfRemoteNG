@@ -443,9 +443,45 @@ export const DockerPanel: React.FC<DockerPanelProps> = ({ isOpen, onClose, conne
                       <td colSpan={5} className="bg-[var(--color-bg-secondary)] px-4 py-3">
                         {renderContainerActions(c)}
                         {docker.selectedContainerId === c.id && docker.containerLogs && (
-                          <pre className="mt-3 p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-textSecondary)] overflow-auto max-h-48 whitespace-pre-wrap">
-                            {docker.containerLogs}
-                          </pre>
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-xs font-medium text-[var(--color-text)]">Container Logs</h4>
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  onClick={() => docker.getContainerLogs(c.id)}
+                                  className="sor-icon-btn-sm"
+                                  aria-label="Refresh logs"
+                                >
+                                  <RefreshCw size={12} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const blob = new Blob([docker.containerLogs!], { type: 'text/plain;charset=utf-8' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `${containerName(c)}-logs-${Date.now()}.txt`;
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  className="sor-icon-btn-sm"
+                                  aria-label="Download logs"
+                                >
+                                  <Download size={12} />
+                                </button>
+                                <button
+                                  onClick={() => docker.clearContainerLogs()}
+                                  className="sor-icon-btn-sm"
+                                  aria-label="Clear logs"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                            <pre className="p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-textSecondary)] overflow-auto max-h-64 whitespace-pre-wrap font-mono">
+                              {docker.containerLogs}
+                            </pre>
+                          </div>
                         )}
                         {docker.selectedContainerId === c.id && docker.containerInspect && (
                           <pre className="mt-3 p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-textSecondary)] overflow-auto max-h-48 whitespace-pre-wrap">

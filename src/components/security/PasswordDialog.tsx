@@ -3,6 +3,7 @@ import { Lock, Eye, EyeOff, Shield, AlertCircle, Fingerprint, Key, FileKey, Uplo
 import { Modal, ModalBody } from '../ui/overlays/Modal';
 import { DialogHeader } from '../ui/overlays/DialogHeader';
 import { usePasswordDialog, AuthMethod } from '../../hooks/security/usePasswordDialog';
+import { usePasswordStrength } from '../../hooks/security/usePasswordStrength';
 
 type Mgr = ReturnType<typeof usePasswordDialog>;
 
@@ -66,7 +67,9 @@ const AuthMethodSelector: React.FC<{ mgr: Mgr; noCollectionSelected: boolean }> 
   </div>
 );
 
-const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionSelected: boolean }> = ({ mgr, mode, noCollectionSelected }) => (
+const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionSelected: boolean }> = ({ mgr, mode, noCollectionSelected }) => {
+  const strength = usePasswordStrength(mgr.password);
+  return (
   <form onSubmit={mgr.handleSubmit} className="space-y-4">
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mode === 'setup' ? 'Create Password' : 'Enter Password'}</label>
@@ -76,6 +79,17 @@ const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionS
           {mgr.showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
+      {mgr.password && mode === 'setup' && (
+        <div className="password-strength-meter mt-2" aria-label={`Password strength: ${strength.label}`}>
+          <div className="h-1.5 w-full rounded bg-[var(--color-border)] overflow-hidden">
+            <div className="strength-bar h-full rounded transition-all" style={{ width: `${(strength.score + 1) * 20}%` }} data-strength={strength.score} />
+          </div>
+          <span className="strength-label text-xs text-[var(--color-textSecondary)] mt-1 block">{strength.label}</span>
+          {strength.suggestions.length > 0 && (
+            <p className="strength-suggestion text-xs text-[var(--color-textMuted)] mt-0.5">{strength.suggestions[0]}</p>
+          )}
+        </div>
+      )}
     </div>
     {mode === 'setup' && (
       <div>
@@ -96,7 +110,8 @@ const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionS
       </button>
     </div>
   </form>
-);
+  );
+};
 
 const PasskeyForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionSelected: boolean }> = ({ mgr, mode, noCollectionSelected }) => (
   <div className="space-y-4">

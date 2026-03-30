@@ -90,7 +90,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" role="treeitem" aria-expanded={connection.isGroup ? isExpanded : undefined} aria-selected={isSelected} tabIndex={isSelected ? 0 : -1}>
       <div
         data-connection-item="true"
         data-connection-id={connection.id}

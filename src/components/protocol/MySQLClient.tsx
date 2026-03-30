@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Play, RefreshCw, Table, Code, BarChart3 } from 'lucide-react';
+import { Database, Play, RefreshCw, Table, Code, BarChart3, Download } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
 import { useMySQLClient } from '../../hooks/protocol/useMySQLClient';
 import { Select, Textarea} from '../ui/forms';
@@ -140,7 +140,28 @@ const QueryEditor: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
-const QueryResults: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+const QueryResults: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const exportCSV = () => {
+    if (!mgr.results?.rows?.length) return;
+    const escape = (val: string) =>
+      val.includes(',') || val.includes('"') || val.includes('\n')
+        ? `"${val.replace(/"/g, '""')}"`
+        : val;
+    const headers = mgr.results.columns.map(escape).join(',');
+    const rows = mgr.results.rows.map(row =>
+      row.map(cell => escape(String(cell ?? ''))).join(',')
+    );
+    const csv = [headers, ...rows].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `query-results-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
   <div className="flex-1 overflow-hidden">
     {mgr.error ? (
       <div className="p-4 bg-error/20 border-l-4 border-error">
@@ -155,6 +176,16 @@ const QueryResults: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               ? `${mgr.results.rows.length} rows returned`
               : `Query executed successfully`}
           </div>
+          {mgr.results.rows.length > 0 && (
+            <button
+              onClick={exportCSV}
+              className="flex items-center space-x-1 px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)]/80 text-[var(--color-text)] rounded text-sm transition-colors"
+              aria-label="Export query results as CSV"
+            >
+              <Download size={14} />
+              <span>Export CSV</span>
+            </button>
+          )}
         </div>
         {mgr.results.rows.length > 0 && (
           <div className="flex-1 overflow-auto">
@@ -200,6 +231,7 @@ const QueryResults: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     )}
   </div>
 );
+};
 
 /* ── main component ── */
 

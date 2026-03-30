@@ -79,7 +79,7 @@ export function useMySQLClient(session: ConnectionSession) {
     setQuery(sampleQueries[queryType] || '');
   }, []);
 
-  const formatCellValue = useCallback((value: MySQLValue): string => {
+  const formatCellValue = useCallback((value: MySQLValue | undefined): string => {
     if (value === null) return 'NULL';
     if (value === undefined) return '';
     if (typeof value === 'object') return JSON.stringify(value);

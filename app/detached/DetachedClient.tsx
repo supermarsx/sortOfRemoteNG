@@ -513,6 +513,11 @@ const DetachedSessionContent: React.FC<{
     }
   }, [isTauri, windowTitle]);
 
+  /** Emit reconnect command to main window's WindowManager. */
+  const handleReconnect = useCallback((sid: string) => {
+    emit("wm:command", { type: "RECONNECT_SESSION", sessionId: sid } as WindowCommand).catch(() => {});
+  }, []);
+
   const disconnectActiveSession = useCallback(async () => {
     const s = activeSessionRef.current;
     if (!s || closingRef.current) return;
@@ -859,9 +864,10 @@ const DetachedSessionContent: React.FC<{
               )}
               {isReal && (
                 <>
-                  {sess.status === "connected" && <div className="w-2 h-2 rounded-full bg-success mr-1 flex-shrink-0" />}
-                  {sess.status === "connecting" && <div className="w-2 h-2 rounded-full bg-warning mr-1 flex-shrink-0" />}
-                  {sess.status === "error" && <div className="w-2 h-2 rounded-full bg-error mr-1 flex-shrink-0" />}
+                  {sess.status === "connected" && <div className="w-2 h-2 rounded-full bg-success mr-1 flex-shrink-0" role="status" aria-label="Connected" />}
+                  {sess.status === "connecting" && <div className="w-2 h-2 rounded-full bg-warning mr-1 flex-shrink-0" role="status" aria-label="Connecting" />}
+                  {sess.status === "disconnected" && <div className="w-2 h-2 rounded-full bg-[var(--color-textMuted)] mr-1 flex-shrink-0" role="status" aria-label="Disconnected" />}
+                  {sess.status === "error" && <div className="w-2 h-2 rounded-full bg-error mr-1 flex-shrink-0" role="status" aria-label="Error" />}
                 </>
               )}
               <button onClick={(e) => { e.stopPropagation(); emit("wm:command", { type: "REATTACH_SESSION", sessionId: sess.id } as WindowCommand).catch(() => {}); }} className="flex-shrink-0 p-1 hover:bg-[var(--color-surface)] rounded transition-colors opacity-0 group-hover:opacity-100" data-tooltip="Reattach" aria-label={`Reattach ${sess.name || "session"}`}><CornerUpLeft size={11} /></button>
@@ -1108,6 +1114,24 @@ const DetachedSessionContent: React.FC<{
           );
         })()}
       </MenuSurface>
+
+      {/* ── Reconnect banner for disconnected/error sessions ── */}
+      {(activeSession.status === 'disconnected' || activeSession.status === 'error') && (
+        <div className="flex items-center justify-between px-4 py-2 bg-warning/10 border-b border-warning/25 text-warning text-xs" role="alert" aria-live="assertive">
+          <span className="flex items-center gap-2">
+            <AlertCircle size={14} />
+            {activeSession.status === 'disconnected' ? 'Connection lost. Attempting to reconnect...' : 'Connection error occurred.'}
+          </span>
+          <button
+            onClick={() => handleReconnect(activeSession.id)}
+            className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded bg-warning/20 hover:bg-warning/30 transition-colors"
+            aria-label={`Retry connection for ${activeSession.name || 'session'}`}
+          >
+            <RefreshCw size={12} />
+            Retry Now
+          </button>
+        </div>
+      )}
 
       <div
         className="flex-1 overflow-hidden min-h-0 h-full"

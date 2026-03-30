@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -30,7 +30,7 @@ interface TrustWarningDialogProps {
   /** The previously stored identity (only for 'mismatch') */
   storedIdentity?: CertIdentity | SshHostKeyIdentity;
   /** Called when user chooses to trust & continue */
-  onAccept: () => void;
+  onAccept: (remember?: boolean) => void;
   /** Called when user refuses to continue */
   onReject: () => void;
 }
@@ -53,6 +53,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
   const isMismatch = reason === "mismatch";
   const isTls = type === "tls";
   const identityLabel = isTls ? "certificate" : "host key";
+  const [rememberDecision, setRememberDecision] = useState(false);
 
   return (
     <Modal
@@ -149,6 +150,17 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 it for future connections. Any change to this {identityLabel}{" "}
                 will trigger a warning.
               </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberDecision}
+                  onChange={(e) => setRememberDecision(e.target.checked)}
+                  className="rounded border-[var(--color-border)]"
+                />
+                <span className="text-sm text-[var(--color-textSecondary)]">
+                  Remember and trust for future connections
+                </span>
+              </label>
             </>
           )}
         </div>
@@ -162,7 +174,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
             Disconnect
           </button>
           <button
-            onClick={onAccept}
+            onClick={() => onAccept(isMismatch ? undefined : rememberDecision)}
             className={`flex items-center gap-2 px-4 py-2 text-sm text-[var(--color-text)] rounded-lg transition-colors ${
               isMismatch
                 ? "bg-error hover:bg-error/90"

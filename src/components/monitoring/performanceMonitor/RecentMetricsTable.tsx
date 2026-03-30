@@ -1,10 +1,35 @@
 import React from "react";
 import { Mgr } from "./types";
 import { useTranslation } from "react-i18next";
-import { Activity, Clock, Cpu, HardDrive, Wifi } from "lucide-react";
+import { Activity, Clock, Cpu, HardDrive, Wifi, Download } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 
 const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
+
+  const handleExportCsv = async () => {
+    const header = "Time,Latency (ms),Throughput (KB/s),CPU (%),Memory (%)";
+    const rows = mgr.recentMetrics.map((m) =>
+      [
+        new Date(m.timestamp).toISOString(),
+        m.latency.toFixed(1),
+        m.throughput.toFixed(1),
+        m.cpuUsage.toFixed(1),
+        m.memoryUsage.toFixed(1),
+      ].join(","),
+    );
+    const csv = [header, ...rows].join("\n");
+
+    const filePath = await save({
+      defaultPath: `metrics-${new Date().toISOString().split("T")[0]}.csv`,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    if (filePath) {
+      await writeTextFile(filePath, csv);
+    }
+  };
+
   return (
     <div>
       <h3 className="sor-perf-heading">
@@ -124,6 +149,16 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </tbody>
           </table>
         </div>
+      </div>
+      <div className="flex justify-end mt-3">
+        <button
+          onClick={handleExportCsv}
+          aria-label="Export performance metrics as CSV"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-xs text-[var(--color-text)]"
+        >
+          <Download size={12} />
+          {t("performance.exportCsv", "Export CSV")}
+        </button>
       </div>
     </div>
   );

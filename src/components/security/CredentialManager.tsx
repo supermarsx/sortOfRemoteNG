@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Select } from "../ui/forms";
 import { useCredentials } from "../../hooks/security/useCredentials";
+import { useToastContext } from "../../contexts/ToastContext";
 import type {
   TrackedCredential,
   RotationPolicy,
@@ -77,13 +78,14 @@ function StrengthMeter({ strength }: { strength: CredentialStrength }) {
 
 interface CredDialogProps {
   credential: Partial<TrackedCredential> | null;
-  onSave: (data: Partial<TrackedCredential>) => void;
+  onSave: (data: Partial<TrackedCredential>) => Promise<void>;
   onClose: () => void;
 }
 
 function CredentialDialog({ credential, onSave, onClose }: CredDialogProps) {
   const { t } = useTranslation();
   const isEdit = !!credential?.id;
+  const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
     label: credential?.label ?? "",
@@ -95,6 +97,18 @@ function CredentialDialog({ credential, onSave, onClose }: CredDialogProps) {
 
   const set = (k: keyof typeof form, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
+  const isValid = form.label.trim().length > 0 && form.connectionName.trim().length > 0;
+
+  const handleSaveClick = async () => {
+    if (!isValid || saving) return;
+    setSaving(true);
+    try {
+      await onSave({ ...credential, ...form });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="sor-credential-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="sor-credential-dialog bg-[var(--color-bgPrimary)] border border-[var(--color-border)] rounded-lg shadow-xl w-full max-w-md p-6">
@@ -102,18 +116,18 @@ function CredentialDialog({ credential, onSave, onClose }: CredDialogProps) {
           <h3 className="text-lg font-semibold text-[var(--color-textPrimary)]">
             {isEdit ? t("credentials.editTitle") : t("credentials.addTitle")}
           </h3>
-          <button onClick={onClose} className="sor-btn-icon p-1 rounded hover:bg-[var(--color-bgSecondary)]">
+          <button onClick={onClose} disabled={saving} className="sor-btn-icon p-1 rounded hover:bg-[var(--color-bgSecondary)]">
             <X size={16} />
           </button>
         </div>
 
         <div className="space-y-3">
           <label className="block">
-            <span className="text-sm text-[var(--color-textSecondary)]">{t("credentials.fields.name")}</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">{t("credentials.fields.name")} *</span>
             <input value={form.label} onChange={(e) => set("label", e.target.value)} className="sor-input mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bgSecondary)] px-3 py-2 text-sm text-[var(--color-textPrimary)]" />
           </label>
           <label className="block">
-            <span className="text-sm text-[var(--color-textSecondary)]">{t("credentials.fields.connectionName")}</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">{t("credentials.fields.connectionName")} *</span>
             <input value={form.connectionName} onChange={(e) => set("connectionName", e.target.value)} className="sor-input mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bgSecondary)] px-3 py-2 text-sm text-[var(--color-textPrimary)]" />
           </label>
           <label className="block">
@@ -136,10 +150,11 @@ function CredentialDialog({ credential, onSave, onClose }: CredDialogProps) {
         </div>
 
         <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onClose} className="sor-btn px-4 py-2 text-sm rounded border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-bgSecondary)]">
+          <button onClick={onClose} disabled={saving} className="sor-btn px-4 py-2 text-sm rounded border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-bgSecondary)]">
             {t("common.cancel")}
           </button>
-          <button onClick={() => onSave({ ...credential, ...form })} className="sor-btn-primary px-4 py-2 text-sm rounded bg-primary text-white hover:bg-primary/90">
+          <button onClick={handleSaveClick} disabled={!isValid || saving} className="sor-btn-primary px-4 py-2 text-sm rounded bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+            {saving && <RefreshCw size={14} className="animate-spin" />}
             {isEdit ? t("common.save") : t("common.add")}
           </button>
         </div>
@@ -193,6 +208,7 @@ function DuplicatesPanel({ groups, credentials, onClose }: { groups: DuplicateGr
 export function CredentialManager() {
   const { t } = useTranslation();
   const creds = useCredentials();
+  const { toast } = useToastContext();
 
   const [tab, setTab] = useState<TabId>("all");
   const [sortField, setSortField] = useState<SortField>("label");
@@ -242,14 +258,19 @@ export function CredentialManager() {
 
   /* actions */
   const handleSave = useCallback(async (data: Partial<TrackedCredential>) => {
-    if (data.id) {
-      await creds.update(data.id, data);
-    } else {
-      await creds.add(data as Parameters<typeof creds.add>[0]);
+    try {
+      if (data.id) {
+        await creds.update(data.id, data);
+      } else {
+        await creds.add(data as Parameters<typeof creds.add>[0]);
+      }
+      setShowDialog(false);
+      setEditingCred(null);
+      toast.success(data.id ? t("credentials.saved") : t("credentials.added"));
+    } catch (err) {
+      toast.error(String(err));
     }
-    setShowDialog(false);
-    setEditingCred(null);
-  }, [creds]);
+  }, [creds, toast, t]);
 
   const handleDetectDuplicates = useCallback(async () => {
     const result = await creds.detectDuplicates();

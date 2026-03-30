@@ -156,6 +156,10 @@ export function useDocker(connectionId: string, isOpen: boolean) {
     return logs;
   }, [call]);
 
+  const clearContainerLogs = useCallback(() => {
+    setContainerLogs('');
+  }, []);
+
   const getContainerStats = useCallback(async (containerId: string) => {
     const stats = await call<ContainerStats>('docker_container_stats', { containerId });
     setContainerStats(stats);
@@ -321,6 +325,7 @@ export function useDocker(connectionId: string, isOpen: boolean) {
     // container actions
     inspectContainer,
     getContainerLogs,
+    clearContainerLogs,
     getContainerStats,
     startContainer,
     stopContainer,

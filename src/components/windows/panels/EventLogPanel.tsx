@@ -43,6 +43,8 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
   const [search, setSearch] = useState("");
   const [maxResults, setMaxResults] = useState(200);
   const [selectedEntry, setSelectedEntry] = useState<number | null>(null);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -65,8 +67,8 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
             : [levelFilter],
         sources: [],
         eventIds: [],
-        startTime: null,
-        endTime: null,
+        startTime: startTime ? new Date(startTime).toISOString() : null,
+        endTime: endTime ? new Date(endTime).toISOString() : null,
         messageContains: search || null,
         computerName: null,
         maxResults,
@@ -81,7 +83,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
     } finally {
       setLoading(false);
     }
-  }, [ctx, selectedLog, levelFilter, search, maxResults]);
+  }, [ctx, selectedLog, levelFilter, search, maxResults, startTime, endTime]);
 
   useEffect(() => {
     fetchLogs();
@@ -204,6 +206,40 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
         </div>
       </div>
 
+      {/* Time-Range Filters */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+        <input
+          type="datetime-local"
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
+          aria-label="Start date filter"
+          className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
+        />
+        <span className="text-xs text-[var(--color-textMuted)]">to</span>
+        <input
+          type="datetime-local"
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
+          aria-label="End date filter"
+          className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
+        />
+        <button
+          onClick={fetchEntries}
+          className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent)]/90"
+        >
+          Apply Filters
+        </button>
+        <button
+          onClick={() => {
+            setStartTime("");
+            setEndTime("");
+          }}
+          className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+        >
+          Clear
+        </button>
+      </div>
+
       {error && (
         <div className="px-3 py-2 text-xs text-[var(--color-error)] bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] flex items-center gap-1.5">
           <AlertCircle size={12} />
@@ -277,9 +313,13 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
         {selectedEntryData && (
           <div
             role="region"
+            aria-live="polite"
             aria-labelledby="event-log-selected-entry-heading"
             className="w-80 border-l border-[var(--color-border)] bg-[var(--color-surface)] overflow-auto p-3 space-y-3"
           >
+            <div className="sr-only" role="status" aria-live="assertive">
+              {`Event ${selectedEntryData.eventCode} from ${selectedEntryData.sourceName} selected`}
+            </div>
             <div className="flex items-center gap-2">
               {LEVEL_ICONS[selectedEntryData.eventType]}
               <h3
