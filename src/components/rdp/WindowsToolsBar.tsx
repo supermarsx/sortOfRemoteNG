@@ -24,10 +24,6 @@ const WindowsToolsBar: React.FC<WindowsToolsBarProps> = ({
   const { dispatch } = useConnections();
   const { settings } = useSettings();
 
-  // Check global + per-connection toggle
-  const winrmEnabled = enableWinrmTools ?? settings.enableWinrmTools ?? true;
-  if (!winrmEnabled) return null;
-
   const openTool = useCallback((toolId: WindowsToolId) => {
     const session = createWinmgmtSession(toolId, connectionId, connectionName, hostname);
     dispatch({ type: 'ADD_SESSION', payload: session });
@@ -37,6 +33,10 @@ const WindowsToolsBar: React.FC<WindowsToolsBarProps> = ({
       onActivateSession(session.id);
     }
   }, [connectionId, connectionName, hostname, dispatch, focusOnWinmgmtTool, settings.openWinmgmtToolInBackground, onActivateSession]);
+
+  // Check global + per-connection toggle
+  const winrmEnabled = enableWinrmTools ?? settings.enableWinrmTools ?? true;
+  if (!winrmEnabled) return null;
 
   return (
     <div className="flex items-center gap-0.5 px-2 py-0.5 bg-[var(--color-surface)] border-b border-[var(--color-border)]">

@@ -95,6 +95,7 @@ export const useAppLifecycle = ({
   const hasReconnected = useRef(false);
   const initStarted = useRef(false);
   const initializedRef = useRef(false);
+  const mountedRef = useRef(true);
   const safeModeRef = useRef<"once" | "permanent" | null>(null);
   const reconnectingSessions = useRef<Set<string>>(new Set());
 
@@ -116,6 +117,7 @@ export const useAppLifecycle = ({
       setInitStatus("Loading settings...");
       console.log("Initializing app...");
       await settingsManager.initialize();
+      if (!mountedRef.current) return;
       const settings = settingsManager.getSettings();
       setInitProgress(25);
       console.log("Settings manager initialized");
@@ -169,7 +171,7 @@ export const useAppLifecycle = ({
             ]);
 
             const wasCleanExit = localCleanExit || dbCleanExit;
-            if (lastSession !== null && !wasCleanExit) {
+            if (mountedRef.current && lastSession !== null && !wasCleanExit) {
               setDidUnexpectedClose(true);
               settingsManager.logAction(
                 "warn",
@@ -189,6 +191,7 @@ export const useAppLifecycle = ({
       }
 
       await Promise.all(parallelTasks);
+      if (!mountedRef.current) return;
       setInitProgress(60);
 
       // Phase 3: Collection loading — skipped in safe mode (show collection selector instead)
@@ -225,6 +228,7 @@ export const useAppLifecycle = ({
           setShowCollectionSelector(true);
         }
       }
+      if (!mountedRef.current) return;
       setInitProgress(100);
       setInitStatus("Ready!");
 
@@ -238,6 +242,7 @@ export const useAppLifecycle = ({
         "sortOfRemoteNG started successfully",
       );
     } catch (error) {
+      if (!mountedRef.current) return;
       console.error("Failed to initialize application:", error);
       const msg = error instanceof Error ? error.message : "Unknown error";
       setCriticalError({
@@ -282,6 +287,7 @@ export const useAppLifecycle = ({
   }, [settingsManager]);
 
   useEffect(() => {
+    mountedRef.current = true;
     initializeApp();
 
     // BSOD timeout — if init hasn't completed in 5 minutes, something is fatally wrong
@@ -301,7 +307,10 @@ export const useAppLifecycle = ({
       });
     }, INIT_TIMEOUT_MS);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timeout);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -29,6 +29,7 @@ const STATE_DOTS: Record<ServiceState, string> = {
 };
 
 type FilterMode = "all" | "running" | "stopped" | "auto" | "disabled";
+type ServiceAction = "start" | "stop" | "restart";
 
 interface ServicesPanelProps {
   ctx: WinmgmtContext;
@@ -41,7 +42,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [selected, setSelected] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<{
+    name: string;
+    action: ServiceAction;
+  } | null>(null);
   const [deps, setDeps] = useState<string[] | null>(null);
 
   const fetchServices = useCallback(async () => {
@@ -62,8 +66,8 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
   }, [fetchServices]);
 
   const doAction = useCallback(
-    async (action: string, name: string) => {
-      setActionLoading(name);
+    async (action: ServiceAction, name: string) => {
+      setActionLoading({ name, action });
       try {
         await ctx.cmd<number>(`winmgmt_${action}_service`, { name });
         await fetchServices();
@@ -110,6 +114,7 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
   const selectedSvc = selected
     ? services.find((s) => s.name === selected)
     : null;
+  const statusSummary = `Showing ${filtered.length} of ${services.length} services`;
 
   return (
     <div className="h-full flex flex-col">
@@ -125,12 +130,14 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search services…"
+            aria-label="Search services"
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value as FilterMode)}
+          aria-label="Filter services"
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
           <option value="all">All</option>
@@ -142,14 +149,27 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
         <button
           onClick={fetchServices}
           disabled={loading}
+          aria-label="Refresh services"
+          aria-busy={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
           title="Refresh"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
-        <span className="text-xs text-[var(--color-textMuted)] ml-auto">
-          {filtered.length} / {services.length}
+        <span
+          className="text-xs text-[var(--color-textMuted)] ml-auto"
+          id="services-filter-summary"
+        >
+          {statusSummary}
         </span>
+        <div
+          id="services-filter-summary-live"
+          role="status"
+          aria-live="polite"
+          className="sr-only"
+        >
+          {statusSummary}
+        </div>
       </div>
 
       {error && (
@@ -170,104 +190,134 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
               />
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <table
+              className="w-full text-xs"
+              aria-label="Windows services list"
+              aria-describedby="services-filter-summary"
+            >
+              <caption className="sr-only">
+                Windows services and their current state
+              </caption>
               <thead className="sticky top-0 bg-[var(--color-surface)] z-10">
                 <tr className="text-left text-[var(--color-textSecondary)]">
-                  <th className="px-3 py-2 font-medium w-8"></th>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Startup</th>
-                  <th className="px-3 py-2 font-medium">Account</th>
-                  <th className="px-3 py-2 font-medium w-24">Actions</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-8"></th>
+                  <th scope="col" className="px-3 py-2 font-medium">Name</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Status</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Startup</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Account</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-24">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((svc) => (
-                  <tr
-                    key={svc.name}
-                    onClick={() => {
-                      setSelected(svc.name);
-                      setDeps(null);
-                    }}
-                    className={`border-b border-[var(--color-border)] cursor-pointer transition-colors ${
-                      selected === svc.name
-                        ? "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)]"
-                        : "hover:bg-[var(--color-surfaceHover)]"
-                    }`}
-                  >
-                    <td className="px-3 py-1.5">
-                      <div
-                        className={`w-2 h-2 rounded-full ${STATE_DOTS[svc.state] || STATE_DOTS.unknown}`}
-                      />
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <div className="text-[var(--color-text)] font-medium">
-                        {svc.displayName}
-                      </div>
-                      <div className="text-[var(--color-textMuted)]">
-                        {svc.name}
-                      </div>
-                    </td>
-                    <td
-                      className={`px-3 py-1.5 capitalize ${STATE_COLORS[svc.state] || ""}`}
+                {filtered.map((svc) => {
+                  const serviceBusy = actionLoading?.name === svc.name;
+                  const startBusy = serviceBusy && actionLoading?.action === "start";
+                  const stopBusy = serviceBusy && actionLoading?.action === "stop";
+                  const restartBusy =
+                    serviceBusy && actionLoading?.action === "restart";
+
+                  return (
+                    <tr
+                      key={svc.name}
+                      aria-selected={selected === svc.name}
+                      onClick={() => {
+                        setSelected(svc.name);
+                        setDeps(null);
+                      }}
+                      className={`border-b border-[var(--color-border)] cursor-pointer transition-colors ${
+                        selected === svc.name
+                          ? "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)]"
+                          : "hover:bg-[var(--color-surfaceHover)]"
+                      }`}
                     >
-                      {svc.state}
-                    </td>
-                    <td className="px-3 py-1.5 text-[var(--color-textSecondary)] capitalize">
-                      {svc.startMode}
-                    </td>
-                    <td className="px-3 py-1.5 text-[var(--color-textSecondary)] font-mono truncate max-w-[120px]">
-                      {svc.startName || "—"}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <div className="flex gap-1">
-                        {svc.state === "stopped" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              doAction("start", svc.name);
-                            }}
-                            disabled={actionLoading === svc.name}
-                            className="p-1 rounded hover:bg-green-500/20 text-green-400"
-                            title="Start"
-                          >
-                            {actionLoading === svc.name ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <Play size={12} />
-                            )}
-                          </button>
-                        )}
-                        {svc.state === "running" && svc.acceptStop && (
-                          <>
+                      <td className="px-3 py-1.5">
+                        <div
+                          className={`w-2 h-2 rounded-full ${STATE_DOTS[svc.state] || STATE_DOTS.unknown}`}
+                        />
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <div className="text-[var(--color-text)] font-medium">
+                          {svc.displayName}
+                        </div>
+                        <div className="text-[var(--color-textMuted)]">
+                          {svc.name}
+                        </div>
+                      </td>
+                      <td
+                        className={`px-3 py-1.5 capitalize ${STATE_COLORS[svc.state] || ""}`}
+                      >
+                        {svc.state}
+                      </td>
+                      <td className="px-3 py-1.5 text-[var(--color-textSecondary)] capitalize">
+                        {svc.startMode}
+                      </td>
+                      <td className="px-3 py-1.5 text-[var(--color-textSecondary)] font-mono truncate max-w-[120px]">
+                        {svc.startName || "—"}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <div className="flex gap-1">
+                          {svc.state === "stopped" && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                doAction("stop", svc.name);
+                                doAction("start", svc.name);
                               }}
-                              disabled={actionLoading === svc.name}
-                              className="p-1 rounded hover:bg-red-500/20 text-red-400"
-                              title="Stop"
+                              disabled={serviceBusy}
+                              aria-busy={startBusy}
+                              aria-label={`Start service ${svc.displayName}`}
+                              className="p-1 rounded hover:bg-green-500/20 text-green-400"
+                              title="Start"
                             >
-                              <Square size={12} />
+                              {startBusy ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Play size={12} />
+                              )}
                             </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                doAction("restart", svc.name);
-                              }}
-                              disabled={actionLoading === svc.name}
-                              className="p-1 rounded hover:bg-blue-500/20 text-blue-400"
-                              title="Restart"
-                            >
-                              <RotateCw size={12} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          )}
+                          {svc.state === "running" && svc.acceptStop && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  doAction("stop", svc.name);
+                                }}
+                                disabled={serviceBusy}
+                                aria-busy={stopBusy}
+                                aria-label={`Stop service ${svc.displayName}`}
+                                className="p-1 rounded hover:bg-red-500/20 text-red-400"
+                                title="Stop"
+                              >
+                                {stopBusy ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <Square size={12} />
+                                )}
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  doAction("restart", svc.name);
+                                }}
+                                disabled={serviceBusy}
+                                aria-busy={restartBusy}
+                                aria-label={`Restart service ${svc.displayName}`}
+                                className="p-1 rounded hover:bg-blue-500/20 text-blue-400"
+                                title="Restart"
+                              >
+                                {restartBusy ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <RotateCw size={12} />
+                                )}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

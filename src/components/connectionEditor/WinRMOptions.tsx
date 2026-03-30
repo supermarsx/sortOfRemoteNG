@@ -43,8 +43,6 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
   formData,
   setFormData,
 }) => {
-  if (!shouldShow(formData)) return null;
-
   const { settings } = useSettings();
   const ws: WinrmConnectionSettings = formData.winrmSettings ?? DEFAULT_WINRM;
   const enableWinrm = formData.enableWinrmTools ?? settings.enableWinrmTools ?? true;
@@ -61,6 +59,8 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
     },
     [setFormData],
   );
+
+  if (!shouldShow(formData)) return null;
 
   return (
     <CollapsibleSection

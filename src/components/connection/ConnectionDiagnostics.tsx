@@ -1187,11 +1187,15 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                 const sections: string[] = [];
 
                 // Network results
-                if (mgr.pingResult || mgr.tcpResult || mgr.dnsResult) {
+                const { dnsResult, tcpTiming: tcpResult, pings, tlsCheck: tlsResult } = mgr.results;
+                if (pings.length > 0 || tcpResult || dnsResult) {
                   let s = '<h2>Network</h2>';
-                  if (mgr.dnsResult) s += `<p><b>DNS:</b> ${typeof mgr.dnsResult === 'string' ? mgr.dnsResult : JSON.stringify(mgr.dnsResult)}</p>`;
-                  if (mgr.tcpResult) s += `<p><b>TCP:</b> ${typeof mgr.tcpResult === 'string' ? mgr.tcpResult : JSON.stringify(mgr.tcpResult)}</p>`;
-                  if (mgr.pingStats) s += `<p><b>Ping:</b> min=${mgr.pingStats.min}ms avg=${mgr.pingStats.avg}ms max=${mgr.pingStats.max}ms loss=${mgr.pingStats.loss}%</p>`;
+                  if (dnsResult) s += `<p><b>DNS:</b> ${typeof dnsResult === 'string' ? dnsResult : JSON.stringify(dnsResult)}</p>`;
+                  if (tcpResult) s += `<p><b>TCP:</b> ${typeof tcpResult === 'string' ? tcpResult : JSON.stringify(tcpResult)}</p>`;
+                  if (mgr.minPing != null && mgr.avgPingTime != null && mgr.maxPing != null) {
+                    const loss = pings.length > 0 ? ((pings.filter(p => !p.success).length / pings.length) * 100).toFixed(1) : '0';
+                    s += `<p><b>Ping:</b> min=${mgr.minPing}ms avg=${mgr.avgPingTime}ms max=${mgr.maxPing}ms loss=${loss}%</p>`;
+                  }
                   sections.push(s);
                 }
 
@@ -1209,12 +1213,12 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                 }
 
                 // Certificate
-                if (mgr.tlsResult) {
+                if (tlsResult) {
                   let s = '<h2>Certificate / Security</h2>';
-                  s += `<p><b>Subject:</b> ${mgr.tlsResult.subject ?? 'N/A'}</p>`;
-                  s += `<p><b>Issuer:</b> ${mgr.tlsResult.issuer ?? 'N/A'}</p>`;
-                  s += `<p><b>Valid:</b> ${mgr.tlsResult.valid_from ?? '?'} — ${mgr.tlsResult.valid_to ?? '?'}</p>`;
-                  s += `<p><b>Fingerprint:</b> ${mgr.tlsResult.fingerprint}</p>`;
+                  s += `<p><b>Subject:</b> ${tlsResult.certificate_subject ?? 'N/A'}</p>`;
+                  s += `<p><b>Issuer:</b> ${tlsResult.certificate_issuer ?? 'N/A'}</p>`;
+                  s += `<p><b>Expires:</b> ${tlsResult.certificate_expiry ?? 'N/A'}</p>`;
+                  s += `<p><b>TLS Version:</b> ${tlsResult.tls_version ?? 'N/A'}</p>`;
                   sections.push(s);
                 }
 

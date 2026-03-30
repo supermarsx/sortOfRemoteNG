@@ -31,12 +31,13 @@ export interface TextInputProps
  * (passed through via `...rest`).
  */
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
-  ({ variant = 'form', className, label: _label, onChange, ...rest }, ref) => (
+  ({ variant = 'form', className, label, onChange, ...rest }, ref) => (
     <input
       ref={ref}
       type="text"
       className={cx(VARIANT_CLASS[variant], className)}
       onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      aria-label={rest['aria-label'] ?? label}
       {...rest}
     />
   ),

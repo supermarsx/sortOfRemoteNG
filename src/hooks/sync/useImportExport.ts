@@ -4,13 +4,13 @@ import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
 import { CollectionManager } from '../../utils/connection/collectionManager';
 import { SettingsManager } from '../../utils/settings/settingsManager';
-import { ImportResult } from '../../components/importExport/types';
+import { ImportResult } from '../../components/ImportExport/types';
 import CryptoJS from 'crypto-js';
 import {
   importConnections,
   detectImportFormat,
   getFormatName,
-} from '../../components/importExport/utils';
+} from '../../components/ImportExport/utils';
 
 interface UseImportExportParams {
   isOpen: boolean;

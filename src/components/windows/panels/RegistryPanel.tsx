@@ -1,12 +1,15 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
-  Search, RefreshCw, Loader2, AlertCircle,
+  Search, RefreshCw, Loader2, AlertCircle, Download,
   ChevronRight, ChevronDown, FolderOpen, Folder,
   FileText, Hash, Binary,
 } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
 import type {
   RegistryHive,
+  RegistryExportFormat,
   RegistryValue,
   RegistryValueType,
   RegistrySearchResult,
@@ -39,6 +42,22 @@ interface TreeNode {
   loading: boolean;
 }
 
+interface VisibleTreeNode {
+  node: TreeNode;
+  depth: number;
+  parentPath: string | null;
+}
+
+const flattenVisibleNodes = (
+  nodes: TreeNode[],
+  depth = 1,
+  parentPath: string | null = null,
+): VisibleTreeNode[] => nodes.flatMap((node) => {
+  const current: VisibleTreeNode = { node, depth, parentPath };
+  if (!node.expanded || !node.children?.length) return [current];
+  return [current, ...flattenVisibleNodes(node.children, depth + 1, node.path)];
+});
+
 interface RegistryPanelProps {
   ctx: WinmgmtContext;
 }
@@ -55,6 +74,8 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<RegistrySearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [focusedNodePath, setFocusedNodePath] = useState<string | null>(null);
+  const treeItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const loadKeys = useCallback(
     async (path: string): Promise<string[]> => {
@@ -243,19 +264,142 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
     }
   }, [ctx, hive, selectedPath, searchQuery]);
 
+  const visibleNodes = useMemo(() => flattenVisibleNodes(tree), [tree]);
+
+  useEffect(() => {
+    if (visibleNodes.length === 0) {
+      setFocusedNodePath(null);
+      return;
+    }
+
+    if (!focusedNodePath || !visibleNodes.some((item) => item.node.path === focusedNodePath)) {
+      setFocusedNodePath(visibleNodes[0].node.path);
+    }
+  }, [visibleNodes, focusedNodePath]);
+
+  const focusTreeItem = useCallback((path: string) => {
+    setFocusedNodePath(path);
+    requestAnimationFrame(() => {
+      treeItemRefs.current[path]?.focus();
+    });
+  }, []);
+
+  const exportRegistry = useCallback(async (format: RegistryExportFormat) => {
+    if (!selectedPath) return;
+
+    try {
+      const exported = await ctx.cmd<string>("winmgmt_registry_export", {
+        hive,
+        path: selectedPath,
+        format,
+      });
+
+      const extension = format === "json" ? "json" : "reg";
+      const baseName = selectedPath.split("\\").pop() || "registry";
+      const targetPath = await save({
+        defaultPath: `${baseName}.${extension}`,
+        filters: [
+          {
+            name: format === "json" ? "JSON Files" : "Registry Files",
+            extensions: [extension],
+          },
+        ],
+      });
+
+      if (targetPath) {
+        await writeTextFile(targetPath, exported);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }, [ctx, hive, selectedPath]);
+
+  const handleTreeKeyDown = useCallback(async (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    node: TreeNode,
+    parentPath: string | null,
+  ) => {
+    const currentIndex = visibleNodes.findIndex((item) => item.node.path === node.path);
+    if (currentIndex < 0) return;
+
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        if (currentIndex < visibleNodes.length - 1) {
+          focusTreeItem(visibleNodes[currentIndex + 1].node.path);
+        }
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        if (currentIndex > 0) {
+          focusTreeItem(visibleNodes[currentIndex - 1].node.path);
+        }
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        if (node.expanded && node.children && node.children.length > 0) {
+          focusTreeItem(node.children[0].path);
+        } else {
+          await toggleNode(node.path);
+          focusTreeItem(node.path);
+        }
+        break;
+      case "ArrowLeft":
+        event.preventDefault();
+        if (node.expanded) {
+          await toggleNode(node.path);
+          focusTreeItem(node.path);
+        } else if (parentPath) {
+          focusTreeItem(parentPath);
+        }
+        break;
+      case "Home":
+        event.preventDefault();
+        focusTreeItem(visibleNodes[0].node.path);
+        break;
+      case "End":
+        event.preventDefault();
+        focusTreeItem(visibleNodes[visibleNodes.length - 1].node.path);
+        break;
+      case "Enter":
+      case " ":
+        event.preventDefault();
+        await selectKey(node.path);
+        await toggleNode(node.path);
+        focusTreeItem(node.path);
+        break;
+      default:
+        break;
+    }
+  }, [focusTreeItem, selectKey, toggleNode, visibleNodes]);
+
   // Render tree node recursively
-  const renderNode = (node: TreeNode, depth: number) => (
+  const renderNode = (node: TreeNode, depth: number, parentPath: string | null) => (
     <div key={node.path}>
-      <div
+      <button
+        type="button"
+        ref={(element) => {
+          treeItemRefs.current[node.path] = element;
+        }}
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-expanded={node.expanded}
+        aria-selected={selectedPath === node.path}
+        tabIndex={focusedNodePath === node.path ? 0 : -1}
         className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer text-xs hover:bg-[var(--color-surfaceHover)] transition-colors ${
           selectedPath === node.path
             ? "bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] text-[var(--color-accent)]"
             : "text-[var(--color-text)]"
-        }`}
+        } focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
-        onClick={() => {
-          selectKey(node.path);
-          toggleNode(node.path);
+        onClick={async () => {
+          setFocusedNodePath(node.path);
+          await selectKey(node.path);
+          await toggleNode(node.path);
+        }}
+        onFocus={() => setFocusedNodePath(node.path)}
+        onKeyDown={(event) => {
+          void handleTreeKeyDown(event, node, parentPath);
         }}
       >
         {node.loading ? (
@@ -271,9 +415,9 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
           <Folder size={12} className="shrink-0 text-yellow-400" />
         )}
         <span className="truncate">{node.name}</span>
-      </div>
+      </button>
       {node.expanded &&
-        node.children?.map((child) => renderNode(child, depth + 1))}
+        node.children?.map((child) => renderNode(child, depth + 1, node.path))}
     </div>
   );
 
@@ -318,6 +462,7 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
           onClick={doSearch}
           disabled={searching || !searchQuery}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
+          aria-label="Search registry"
         >
           {searching ? (
             <Loader2 size={14} className="animate-spin" />
@@ -336,6 +481,26 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
           title="Refresh"
         >
           <RefreshCw size={14} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void exportRegistry("regFile")}
+          disabled={!selectedPath}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Download size={14} />
+          Export .reg
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void exportRegistry("json")}
+          disabled={!selectedPath}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Download size={14} />
+          Export JSON
         </button>
       </div>
 
@@ -366,7 +531,9 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
               </button>
             </div>
           ) : (
-            tree.map((node) => renderNode(node, 0))
+            <div role="tree" aria-label="Registry keys">
+              {tree.map((node) => renderNode(node, 0, null))}
+            </div>
           )}
         </div>
 
@@ -378,12 +545,14 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
                 Search Results ({searchResults.length})
               </h4>
               {searchResults.map((r, i) => (
-                <div
+                <button
                   key={i}
-                  className="text-xs p-2 border-b border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)] cursor-pointer"
-                  onClick={() => {
+                  type="button"
+                  className="block w-full text-left text-xs p-2 border-b border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]"
+                  onClick={async () => {
                     setSearchResults([]);
-                    selectKey(r.path);
+                    await selectKey(r.path);
+                    focusTreeItem(r.path);
                   }}
                 >
                   <div className="text-[var(--color-text)] font-mono text-[10px] truncate">
@@ -392,7 +561,7 @@ const RegistryPanel: React.FC<RegistryPanelProps> = ({ ctx }) => {
                   <div className="text-[var(--color-textSecondary)]">
                     {r.matchType}: {r.matchedText}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : selectedPath ? (

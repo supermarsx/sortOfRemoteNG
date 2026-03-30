@@ -1640,7 +1640,6 @@ export function useRDPClient(session: ConnectionSession) {
     tripleBuffered: pipelineRef.current?.getRenderer()?.tripleBuffered ?? false,
     // Derived
     connection,
-    rdpSettings,
     magnifierEnabled,
     magnifierZoom,
     perfLabel,

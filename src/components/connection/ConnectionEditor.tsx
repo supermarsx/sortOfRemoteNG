@@ -177,8 +177,8 @@ const SearchBar: React.FC<{
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") { setQuery(""); inputRef.current?.blur(); }
-          if (e.key === "Enter" && matchCount > 0) { e.shiftKey ? goPrev() : goNext(); e.preventDefault(); }
-          if (e.key === "F3" || (e.key === "g" && (e.ctrlKey || e.metaKey))) { e.shiftKey ? goPrev() : goNext(); e.preventDefault(); }
+          if (e.key === "Enter" && matchCount > 0) { if (e.shiftKey) { goPrev(); } else { goNext(); } e.preventDefault(); }
+          if (e.key === "F3" || (e.key === "g" && (e.ctrlKey || e.metaKey))) { if (e.shiftKey) { goPrev(); } else { goNext(); } e.preventDefault(); }
         }}
         placeholder="Search settings..."
         className="bg-transparent border-none outline-none text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)] w-full min-w-0"

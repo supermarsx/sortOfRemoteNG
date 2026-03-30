@@ -24,11 +24,11 @@ const PasswordDialog = dynamic(
   { ssr: false },
 );
 const SettingsDialog = dynamic(
-  () => import("../settingsDialog").then((module) => module.SettingsDialog),
+  () => import("../SettingsDialog").then((module) => module.SettingsDialog),
   { ssr: false },
 );
 const ImportExport = dynamic(
-  () => import("../importExport").then((module) => module.ImportExport),
+  () => import("../ImportExport").then((module) => module.ImportExport),
   { ssr: false },
 );
 const ConnectionDiagnostics = dynamic(

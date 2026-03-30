@@ -4,6 +4,7 @@ import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield, RefreshC
 import { ConnectionSession } from '../../types/connection/connection';
 import { isToolProtocol } from '../app/toolSession';
 import { isWinmgmtProtocol } from '../windows/WindowsToolPanel';
+import { FeatureErrorBoundary } from '../app/FeatureErrorBoundary';
 
 const ToolTabViewer = dynamic(
   () => import('../app/ToolPanel').then((module) => module.ToolTabViewer),
@@ -265,7 +266,13 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
 
   return (
     <div className="h-full bg-[var(--color-background)]">
-      {renderContent()}
+      <FeatureErrorBoundary
+        boundaryKey={`${session.id}:${session.status}:${session.protocol}:${session.backendSessionId ?? ''}`}
+        title={`${session.protocol.toUpperCase()} panel failed`}
+        message={`The ${session.protocol.toUpperCase()} view for ${session.hostname || session.name} crashed. Retry the panel without restarting the full app.`}
+      >
+        {renderContent()}
+      </FeatureErrorBoundary>
     </div>
   );
 };

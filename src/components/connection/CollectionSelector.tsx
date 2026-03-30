@@ -17,7 +17,7 @@ import {
   Copy,
   Search,
 } from "lucide-react";
-import { ImportExport } from "../importExport";
+import { ImportExport } from "../ImportExport";
 import { ProxyProfileEditor } from "../network/ProxyProfileEditor";
 import { ProxyChainEditor } from "../network/ProxyChainEditor";
 import { Modal } from "../ui/overlays/Modal";

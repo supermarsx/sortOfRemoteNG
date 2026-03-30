@@ -1,9 +1,30 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { cx } from '../lib/cx';
 
 const hasClassFragment = (value: string | undefined, fragment: string) =>
   Boolean(value && value.includes(fragment));
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
+const getFocusableElements = (container: HTMLElement | null): HTMLElement[] => {
+  if (!container) return [];
+
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
+    if (element.getAttribute('aria-hidden') === 'true') return false;
+    if (element.tabIndex < 0) return false;
+
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  });
+};
 
 export interface ModalProps {
   isOpen: boolean;
@@ -31,12 +52,65 @@ export const Modal: React.FC<ModalProps> = ({
   dataTestId,
   size: _size,
 }) => {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
-    if (!isOpen || !onClose || !closeOnEscape) return;
+    if (!isOpen) return;
+
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+
+    const focusPanel = () => {
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const focusable = getFocusableElements(panel);
+      const nextFocus = focusable[0] ?? panel;
+      nextFocus.focus();
+    };
+
+    const frame = requestAnimationFrame(focusPanel);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && onClose && closeOnEscape) {
+        e.preventDefault();
         onClose();
+        return;
+      }
+
+      if (e.key !== 'Tab') return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const focusable = getFocusableElements(panel);
+      if (focusable.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
       }
     };
 
@@ -65,12 +139,16 @@ export const Modal: React.FC<ModalProps> = ({
       }}
     >
       <div
+        ref={panelRef}
         className={cx(
           'sor-modal-panel w-full',
           !hasMaxWidthClass && 'max-w-md',
           !hasHorizontalMarginClass && 'mx-4',
           panelClassName,
         )}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
       >
         <div className={cx('sor-modal-content', contentClassName)}>{children}</div>
       </div>

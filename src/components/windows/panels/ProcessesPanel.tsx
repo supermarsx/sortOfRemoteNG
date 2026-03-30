@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Search, RefreshCw, Loader2, XCircle, AlertCircle,
-  ArrowUpDown, TreePine,
+  ArrowUpDown,
 } from "lucide-react";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
 import type { WindowsProcess } from "../../../types/windows/winmgmt";
@@ -110,6 +110,7 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
   const selectedProc = selected
     ? processes.find((p) => p.processId === selected)
     : null;
+  const processSummary = `${filtered.length} processes`;
 
   return (
     <div className="h-full flex flex-col">
@@ -125,20 +126,26 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search processes…"
+            aria-label="Search processes"
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
         <button
           onClick={fetchProcesses}
           disabled={loading}
+          aria-label="Refresh processes"
+          aria-busy={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
           title="Refresh"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
-        <span className="text-xs text-[var(--color-textMuted)] ml-auto">
-          {filtered.length} processes
+        <span className="text-xs text-[var(--color-textMuted)] ml-auto" id="processes-summary">
+          {processSummary}
         </span>
+        <div className="sr-only" role="status" aria-live="polite">
+          {processSummary}
+        </div>
       </div>
 
       {error && (
@@ -159,7 +166,14 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
               />
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <table
+              className="w-full text-xs"
+              aria-label="Windows processes list"
+              aria-describedby="processes-summary"
+            >
+              <caption className="sr-only">
+                Running processes with memory and owner information
+              </caption>
               <thead className="sticky top-0 bg-[var(--color-surface)] z-10">
                 <tr className="text-left text-[var(--color-textSecondary)]">
                   <SortHeader
@@ -193,14 +207,15 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
                     onSort={toggleSort}
                     className="w-16"
                   />
-                  <th className="px-3 py-2 font-medium w-20">Owner</th>
-                  <th className="px-3 py-2 font-medium w-10"></th>
+                  <th scope="col" className="px-3 py-2 font-medium w-20">Owner</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-10">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((proc) => (
                   <tr
                     key={proc.processId}
+                    aria-selected={selected === proc.processId}
                     onClick={() => setSelected(proc.processId)}
                     className={`border-b border-[var(--color-border)] cursor-pointer transition-colors ${
                       selected === proc.processId
@@ -231,6 +246,8 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
                             terminateProcess(proc.processId);
                           }}
                           disabled={terminating === proc.processId}
+                          aria-label={`Terminate process ${proc.name} (${proc.processId})`}
+                          aria-busy={terminating === proc.processId}
                           className="p-1 rounded hover:bg-red-500/20 text-red-400"
                           title="Terminate"
                         >
@@ -320,15 +337,27 @@ const SortHeader: React.FC<{
   className?: string;
 }> = ({ label, sortKey: sk, current, dir, onSort, className }) => (
   <th
-    className={`px-3 py-2 font-medium cursor-pointer hover:text-[var(--color-text)] select-none ${className || ""}`}
-    onClick={() => onSort(sk)}
+    scope="col"
+    aria-sort={
+      current === sk
+        ? dir === "asc"
+          ? "ascending"
+          : "descending"
+        : "none"
+    }
+    className={`px-3 py-2 font-medium select-none ${className || ""}`}
   >
-    <span className="flex items-center gap-1">
+    <button
+      type="button"
+      onClick={() => onSort(sk)}
+      aria-label={`Sort by ${label}`}
+      className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
+    >
       {label}
       {current === sk && (
         <ArrowUpDown size={10} className="text-[var(--color-accent)]" />
       )}
-    </span>
+    </button>
   </th>
 );
 

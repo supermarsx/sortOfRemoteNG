@@ -196,8 +196,8 @@ export function verifyIdentity(
     // that were missing when the identity was first stored (e.g. certs
     // stored before we started capturing subject/issuer/validity/SANs).
     record.identity.lastSeen = new Date().toISOString();
-    const stored = record.identity as Record<string, unknown>;
-    const recv = received as Record<string, unknown>;
+    const stored = record.identity as unknown as Record<string, unknown>;
+    const recv = received as unknown as Record<string, unknown>;
     for (const key of Object.keys(recv)) {
       if (key !== 'firstSeen' && key !== 'lastSeen' && recv[key] != null && stored[key] == null) {
         stored[key] = recv[key];

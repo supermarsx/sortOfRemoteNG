@@ -1226,7 +1226,12 @@ const AppContent: React.FC = () => {
           />
 
           {/* Session viewer */}
-          <div className="flex-1 overflow-hidden">
+          <div
+            className="flex-1 overflow-hidden"
+            id="session-main-panel"
+            role="tabpanel"
+            aria-labelledby={activeSessionId ? `session-tab-${activeSessionId}` : undefined}
+          >
             {visibleSessions.length > 0 ? (
               <TabLayoutManager
                 sessions={visibleSessions}

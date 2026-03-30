@@ -50,7 +50,7 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         <InfoTooltip text="Drive mappings inherited by all RDP connections. Individual connections can exclude specific mappings or add their own. Requires Drive Redirection to be enabled." />
       </h5>
       <DriveMappingEditor
-        drives={((rdp as Record<string, unknown>).driveRedirections as RdpDriveRedirection[] | undefined) ?? []}
+        drives={rdp.driveRedirections ?? []}
         onChange={(drives) => {
           const patch: Record<string, unknown> = { driveRedirections: drives };
           if (drives.length > 0 && !rdp.driveRedirection) {

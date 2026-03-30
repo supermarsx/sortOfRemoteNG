@@ -238,6 +238,33 @@ function ConnectionRow({
 }
 
 function ConnectionTable({ mgr }: { mgr: BulkConnectionEditorMgr }) {
+  const ariaSortFor = (
+    field: 'name' | 'protocol' | 'hostname' | 'favorite',
+  ): React.AriaAttributes['aria-sort'] => {
+    if (mgr.sortField !== field) return 'none';
+    return mgr.sortDirection === 'asc' ? 'ascending' : 'descending';
+  };
+
+  const renderSortableHeader = (
+    label: React.ReactNode,
+    field: 'name' | 'protocol' | 'hostname' | 'favorite',
+    className: string,
+    buttonClassName = 'flex w-full items-center space-x-1 text-left hover:text-[var(--color-text)] transition-colors',
+    ariaLabel?: string,
+  ) => (
+    <th className={className} aria-sort={ariaSortFor(field)}>
+      <button
+        type="button"
+        onClick={() => mgr.toggleSort(field)}
+        className={buttonClassName}
+        aria-label={ariaLabel}
+      >
+        {label}
+        <SortIcon field={field} mgr={mgr} />
+      </button>
+    </th>
+  );
+
   return (
     <div className="relative z-10 flex-1 overflow-auto bg-[var(--color-surface)]">
       <table className="w-full text-sm">
@@ -247,39 +274,27 @@ function ConnectionTable({ mgr }: { mgr: BulkConnectionEditorMgr }) {
               <button
                 onClick={mgr.toggleSelectAll}
                 className="p-1 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
+                aria-label={
+                  mgr.selectionState === 'all'
+                    ? 'Clear current selection'
+                    : 'Select all visible connections'
+                }
               >
                 {mgr.selectionState === 'all' && <CheckSquare size={16} className="text-primary" />}
                 {mgr.selectionState === 'partial' && <Minus size={16} className="text-primary" />}
                 {mgr.selectionState === 'none' && <Square size={16} />}
               </button>
             </th>
-            <th className="w-10 px-2 py-3">
-              <button
-                onClick={() => mgr.toggleSort('favorite')}
-                className="flex items-center space-x-1 hover:text-[var(--color-text)] transition-colors"
-              >
-                <Star size={12} />
-                <SortIcon field="favorite" mgr={mgr} />
-              </button>
-            </th>
-            <th className="px-3 py-3 text-left cursor-pointer hover:text-[var(--color-text)] transition-colors" onClick={() => mgr.toggleSort('name')}>
-              <div className="flex items-center space-x-1">
-                <span>Name</span>
-                <SortIcon field="name" mgr={mgr} />
-              </div>
-            </th>
-            <th className="w-28 px-3 py-3 text-left cursor-pointer hover:text-[var(--color-text)] transition-colors" onClick={() => mgr.toggleSort('protocol')}>
-              <div className="flex items-center space-x-1">
-                <span>Protocol</span>
-                <SortIcon field="protocol" mgr={mgr} />
-              </div>
-            </th>
-            <th className="px-3 py-3 text-left cursor-pointer hover:text-[var(--color-text)] transition-colors" onClick={() => mgr.toggleSort('hostname')}>
-              <div className="flex items-center space-x-1">
-                <span>Hostname</span>
-                <SortIcon field="hostname" mgr={mgr} />
-              </div>
-            </th>
+            {renderSortableHeader(
+              <Star size={12} />,
+              'favorite',
+              'w-10 px-2 py-3',
+              'flex items-center space-x-1 hover:text-[var(--color-text)] transition-colors',
+              'Sort by favorite status',
+            )}
+            {renderSortableHeader(<span>Name</span>, 'name', 'px-3 py-3 text-left')}
+            {renderSortableHeader(<span>Protocol</span>, 'protocol', 'w-28 px-3 py-3 text-left')}
+            {renderSortableHeader(<span>Hostname</span>, 'hostname', 'px-3 py-3 text-left')}
             <th className="w-20 px-3 py-3 text-left">Port</th>
             <th className="px-3 py-3 text-left">Username</th>
             <th className="w-24 px-3 py-3 text-right">Actions</th>

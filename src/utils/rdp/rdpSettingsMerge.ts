@@ -1,9 +1,13 @@
-import { DEFAULT_RDP_SETTINGS, RDPConnectionSettings } from '../../types/connection/connection';
+import {
+  DEFAULT_RDP_SETTINGS,
+  RDPConnectionSettings,
+  type RdpDriveRedirection,
+} from '../../types/connection/connection';
 
 type FrontendRendererType = NonNullable<RDPConnectionSettings['performance']>['frontendRenderer'];
 
 /** Remove keys whose value is undefined so they don't overwrite resolved values via spread. */
-function defined<T extends Record<string, unknown>>(obj: T | undefined): Partial<T> {
+function defined<T extends object>(obj: T | undefined): Partial<T> {
   if (!obj) return {};
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -85,11 +89,11 @@ export function mergeRdpSettings(
       audioInput: g.audioInputRedirection ?? base.deviceRedirection?.audioInput,
       driveRedirection: g.driveRedirection ?? base.deviceRedirection?.driveRedirection,
       drives: (() => {
-        const globalDrives = g.driveRedirections ?? base.deviceRedirection?.drives ?? [];
+        const globalDrives: RdpDriveRedirection[] = g.driveRedirections ?? base.deviceRedirection?.drives ?? [];
         const connDrives = conn?.deviceRedirection?.drives ?? [];
         if (conn?.deviceRedirection?.inheritGlobalDrives === false) return connDrives;
         const excluded = new Set(conn?.deviceRedirection?.excludedGlobalDrives ?? []);
-        const inherited = globalDrives.filter(d => !excluded.has(`${d.name}:${d.path}`));
+        const inherited = globalDrives.filter((d) => !excluded.has(`${d.name}:${d.path}`));
         return [...inherited, ...connDrives];
       })(),
       ...(() => {
@@ -117,7 +121,6 @@ export function mergeRdpSettings(
       frontendRenderer: (g.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType,
       frameScheduling: g.frameScheduling ?? base.performance?.frameScheduling,
       tripleBuffering: g.tripleBuffering ?? base.performance?.tripleBuffering,
-      codecs: mergedCodecs,
       ...defined(conn?.performance),
       // Resolve 'inherit': replace with global default
       ...(conn?.performance?.renderBackend === 'inherit' ? { renderBackend: g.renderBackend ?? base.performance?.renderBackend } : {}),

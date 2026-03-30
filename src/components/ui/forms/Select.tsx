@@ -51,6 +51,7 @@ export const Select: React.FC<SelectProps> = ({
   className,
   disabled,
   id,
+  label,
   title,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -213,6 +214,7 @@ export const Select: React.FC<SelectProps> = ({
         role="combobox"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
+        aria-label={label}
         disabled={disabled}
         onClick={() => (isOpen ? close() : open())}
         onKeyDown={handleKeyDown}

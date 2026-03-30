@@ -56,6 +56,7 @@ export function useDebugPanel({
   sessions,
   handleOpenDevtools,
 }: UseDebugPanelParams) {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
   const [filter, setFilter] = useState('');
   const [expandedCategory, setExpandedCategory] = useState<string | null>('sessions');
   const [crashTrigger, setCrashTrigger] = useState(false);
@@ -92,86 +93,88 @@ export function useDebugPanel({
     const list: DebugAction[] = [];
 
     // ── Session creation (per protocol × status) ──────────────────
-    for (const proto of PROTOCOLS) {
-      for (const status of SESSION_STATUSES) {
+    if (isDevelopment) {
+      for (const proto of PROTOCOLS) {
+        for (const status of SESSION_STATUSES) {
+          list.push({
+            id: `session-${proto}-${status}`,
+            label: `${proto.toUpperCase()} → ${status}`,
+            description: `Open a mock ${proto} tab in "${status}" state`,
+            category: 'sessions',
+            action: () => addSession(createMockSession(proto, status)),
+          });
+        }
+      }
+
+      // ── RDP error screen variants ─────────────────────────────────
+      for (const [label, msg] of Object.entries(RDP_ERROR_MESSAGES)) {
         list.push({
-          id: `session-${proto}-${status}`,
-          label: `${proto.toUpperCase()} → ${status}`,
-          description: `Open a mock ${proto} tab in "${status}" state`,
-          category: 'sessions',
-          action: () => addSession(createMockSession(proto, status)),
+          id: `rdp-error-${label}`,
+          label: `RDP Error: ${label}`,
+          description: msg.slice(0, 80) + '…',
+          category: 'errors',
+          action: () => {
+            const session = createMockSession('rdp', 'error', `[Debug] RDP ${label}`, msg);
+            addSession(session);
+          },
         });
       }
-    }
 
-    // ── RDP error screen variants ─────────────────────────────────
-    for (const [label, msg] of Object.entries(RDP_ERROR_MESSAGES)) {
+      // ── Bulk spawn ────────────────────────────────────────────────
       list.push({
-        id: `rdp-error-${label}`,
-        label: `RDP Error: ${label}`,
-        description: msg.slice(0, 80) + '…',
+        id: 'spawn-all-protocols-connected',
+        label: 'All Protocols (connected)',
+        description: 'Open one connected tab for every protocol',
+        category: 'sessions',
+        action: () => {
+          for (const proto of PROTOCOLS) {
+            const session = createMockSession(proto, 'connected');
+            dispatch({ type: 'ADD_SESSION', payload: session });
+          }
+        },
+      });
+
+      list.push({
+        id: 'spawn-all-protocols-error',
+        label: 'All Protocols (error)',
+        description: 'Open one error tab for every protocol',
+        category: 'sessions',
+        action: () => {
+          for (const proto of PROTOCOLS) {
+            const session = createMockSession(proto, 'error');
+            dispatch({ type: 'ADD_SESSION', payload: session });
+          }
+        },
+      });
+
+      list.push({
+        id: 'spawn-all-rdp-errors',
+        label: 'All RDP Error Variants',
+        description: 'Open tabs for every RDP error category',
         category: 'errors',
         action: () => {
-          const session = createMockSession('rdp', 'error', `[Debug] RDP ${label}`, msg);
-          addSession(session);
+          for (const [label, msg] of Object.entries(RDP_ERROR_MESSAGES)) {
+            const session = createMockSession('rdp', 'error', `[Debug] RDP ${label}`, msg);
+            dispatch({ type: 'ADD_SESSION', payload: session });
+          }
+        },
+      });
+
+      list.push({
+        id: 'spawn-mixed-stress',
+        label: 'Stress Test (50 tabs)',
+        description: 'Open 50 random sessions in mixed states',
+        category: 'sessions',
+        action: () => {
+          for (let i = 0; i < 50; i++) {
+            const proto = PROTOCOLS[Math.floor(Math.random() * PROTOCOLS.length)];
+            const status = SESSION_STATUSES[Math.floor(Math.random() * SESSION_STATUSES.length)];
+            const session = createMockSession(proto, status, `[Stress ${i + 1}] ${proto.toUpperCase()}`);
+            dispatch({ type: 'ADD_SESSION', payload: session });
+          }
         },
       });
     }
-
-    // ── Bulk spawn ────────────────────────────────────────────────
-    list.push({
-      id: 'spawn-all-protocols-connected',
-      label: 'All Protocols (connected)',
-      description: 'Open one connected tab for every protocol',
-      category: 'sessions',
-      action: () => {
-        for (const proto of PROTOCOLS) {
-          const session = createMockSession(proto, 'connected');
-          dispatch({ type: 'ADD_SESSION', payload: session });
-        }
-      },
-    });
-
-    list.push({
-      id: 'spawn-all-protocols-error',
-      label: 'All Protocols (error)',
-      description: 'Open one error tab for every protocol',
-      category: 'sessions',
-      action: () => {
-        for (const proto of PROTOCOLS) {
-          const session = createMockSession(proto, 'error');
-          dispatch({ type: 'ADD_SESSION', payload: session });
-        }
-      },
-    });
-
-    list.push({
-      id: 'spawn-all-rdp-errors',
-      label: 'All RDP Error Variants',
-      description: 'Open tabs for every RDP error category',
-      category: 'errors',
-      action: () => {
-        for (const [label, msg] of Object.entries(RDP_ERROR_MESSAGES)) {
-          const session = createMockSession('rdp', 'error', `[Debug] RDP ${label}`, msg);
-          dispatch({ type: 'ADD_SESSION', payload: session });
-        }
-      },
-    });
-
-    list.push({
-      id: 'spawn-mixed-stress',
-      label: 'Stress Test (50 tabs)',
-      description: 'Open 50 random sessions in mixed states',
-      category: 'sessions',
-      action: () => {
-        for (let i = 0; i < 50; i++) {
-          const proto = PROTOCOLS[Math.floor(Math.random() * PROTOCOLS.length)];
-          const status = SESSION_STATUSES[Math.floor(Math.random() * SESSION_STATUSES.length)];
-          const session = createMockSession(proto, status, `[Stress ${i + 1}] ${proto.toUpperCase()}`);
-          dispatch({ type: 'ADD_SESSION', payload: session });
-        }
-      },
-    });
 
     // ── State actions ─────────────────────────────────────────────
     list.push({
@@ -219,37 +222,37 @@ export function useDebugPanel({
       },
     });
 
-    list.push({
-      id: 'throw-unhandled',
-      label: 'Throw Unhandled Exception',
-      description: 'Trigger an unhandled throw (caught by window.onerror, not ErrorBoundary)',
-      category: 'ui',
-      action: () => {
-        setTimeout(() => {
-          throw new Error('[Debug] Unhandled test exception');
-        }, 0);
-      },
-    });
+    if (isDevelopment) {
+      list.push({
+        id: 'throw-unhandled',
+        label: 'Throw Unhandled Exception',
+        description: 'Trigger an unhandled throw (caught by window.onerror, not ErrorBoundary)',
+        category: 'ui',
+        action: () => {
+          setTimeout(() => {
+            throw new Error('[Debug] Unhandled test exception');
+          }, 0);
+        },
+      });
 
-    list.push({
-      id: 'trigger-bsod',
-      label: 'Trigger BSOD (Frontend Crash)',
-      description: 'Throw a React render error to trigger the full BSOD crash screen',
-      category: 'ui',
-      action: () => setCrashTrigger(true),
-    });
+      list.push({
+        id: 'trigger-bsod',
+        label: 'Trigger BSOD (Frontend Crash)',
+        description: 'Throw a React render error to trigger the full BSOD crash screen',
+        category: 'ui',
+        action: () => setCrashTrigger(true),
+      });
 
-    list.push({
-      id: 'trigger-bsod-chain',
-      label: 'Trigger BSOD (Multiple Errors)',
-      description: 'Throw two errors in quick succession to test multi-error accordion',
-      category: 'ui',
-      action: () => {
-        // First error will be caught, then the re-render will trigger a second
-        // via the same mechanism (state stays true across the boundary reset).
-        setCrashTrigger(true);
-      },
-    });
+      list.push({
+        id: 'trigger-bsod-chain',
+        label: 'Trigger BSOD (Multiple Errors)',
+        description: 'Throw two errors in quick succession to test multi-error accordion',
+        category: 'ui',
+        action: () => {
+          setCrashTrigger(true);
+        },
+      });
+    }
 
     list.push({
       id: 'log-state',
@@ -265,7 +268,7 @@ export function useDebugPanel({
     });
 
     return list;
-  }, [addSession, createMockSession, dispatch, sessions, handleOpenDevtools]);
+  }, [addSession, createMockSession, dispatch, sessions, handleOpenDevtools, isDevelopment]);
 
   const filteredActions = useMemo(() => {
     if (!filter) return actions;

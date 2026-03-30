@@ -36,9 +36,11 @@ import type {
   QemuConfig,
   LxcConfig,
   QemuCreateParams,
+  QemuMigrateParams,
   LxcCreateParams,
   QemuCloneParams,
   LxcCloneParams,
+  LxcMigrateParams,
   VncTicket,
   TermProxyTicket,
 } from "../../types/hardware/proxmox";
@@ -186,13 +188,18 @@ export function useProxmoxManager(isOpen: boolean) {
   const [dataError, setDataError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateVm, setShowCreateVm] = useState(false);
+  const [showCreateLxcDialog, setShowCreateLxcDialog] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [showMigrateDialog, setShowMigrateDialog] = useState(false);
   const [showSnapshotDialog, setShowSnapshotDialog] = useState(false);
   const [showConfirmAction, setShowConfirmAction] = useState(false);
   const [confirmAction, setConfirmAction] = useState<(() => Promise<void>) | null>(null);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmTitle, setConfirmTitle] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dialogNode, setDialogNode] = useState<string | null>(null);
+  const [dialogVmId, setDialogVmId] = useState<number | null>(null);
+  const [dialogVmType, setDialogVmType] = useState<"qemu" | "lxc" | null>(null);
 
   const mountedRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -472,6 +479,116 @@ export function useProxmoxManager(isOpen: boolean) {
     }
   }, [refreshNodeVms]);
 
+  const createQemuVm = useCallback(async (node: string, params: QemuCreateParams) => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      await invoke<string | null>("proxmox_create_qemu_vm", { node, params });
+      await Promise.all([
+        refreshNodeVms(node),
+        refreshTasks(node),
+      ]);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
+      if (mountedRef.current) setDataError(msg);
+      throw e;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [refreshNodeVms, refreshTasks]);
+
+  const createLxcContainer = useCallback(async (node: string, params: LxcCreateParams) => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      await invoke<string | null>("proxmox_create_lxc_container", { node, params });
+      await Promise.all([
+        refreshNodeVms(node),
+        refreshTasks(node),
+      ]);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
+      if (mountedRef.current) setDataError(msg);
+      throw e;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [refreshNodeVms, refreshTasks]);
+
+  const cloneQemuVm = useCallback(async (node: string, vmid: number, params: QemuCloneParams) => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      await invoke<string | null>("proxmox_clone_qemu_vm", { node, vmid, params });
+      await Promise.all([
+        refreshNodeVms(node),
+        refreshTasks(node),
+      ]);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
+      if (mountedRef.current) setDataError(msg);
+      throw e;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [refreshNodeVms, refreshTasks]);
+
+  const cloneLxcContainer = useCallback(async (node: string, vmid: number, params: LxcCloneParams) => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      await invoke<string | null>("proxmox_clone_lxc_container", { node, vmid, params });
+      await Promise.all([
+        refreshNodeVms(node),
+        refreshTasks(node),
+      ]);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
+      if (mountedRef.current) setDataError(msg);
+      throw e;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [refreshNodeVms, refreshTasks]);
+
+  const migrateQemuVm = useCallback(async (node: string, vmid: number, params: QemuMigrateParams) => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      await invoke<string | null>("proxmox_migrate_qemu_vm", { node, vmid, params });
+      await Promise.all([
+        refreshNodeVms(node),
+        refreshTasks(node),
+        params.target && params.target !== node ? refreshNodeVms(params.target) : Promise.resolve(),
+      ]);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
+      if (mountedRef.current) setDataError(msg);
+      throw e;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [refreshNodeVms, refreshTasks]);
+
+  const migrateLxcContainer = useCallback(async (node: string, vmid: number, params: LxcMigrateParams) => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      await invoke<string | null>("proxmox_migrate_lxc_container", { node, vmid, params });
+      await Promise.all([
+        refreshNodeVms(node),
+        refreshTasks(node),
+        params.target && params.target !== node ? refreshNodeVms(params.target) : Promise.resolve(),
+      ]);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
+      if (mountedRef.current) setDataError(msg);
+      throw e;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [refreshNodeVms, refreshTasks]);
+
   const createSnapshot = useCallback(async (node: string, vmid: number, vmType: "qemu" | "lxc", params: CreateSnapshotParams) => {
     setLoading(true);
     try {
@@ -592,6 +709,44 @@ export function useProxmoxManager(isOpen: boolean) {
     setConfirmAction(null);
   }, []);
 
+  const openCreateVmDialog = useCallback((node?: string | null) => {
+    setDialogNode(node ?? selectedNode);
+    setDialogVmId(null);
+    setDialogVmType("qemu");
+    setShowCreateVm(true);
+  }, [selectedNode]);
+
+  const openCreateLxcDialog = useCallback((node?: string | null) => {
+    setDialogNode(node ?? selectedNode);
+    setDialogVmId(null);
+    setDialogVmType("lxc");
+    setShowCreateLxcDialog(true);
+  }, [selectedNode]);
+
+  const openCloneDialog = useCallback((node: string, vmid: number, vmType: "qemu" | "lxc") => {
+    setDialogNode(node);
+    setDialogVmId(vmid);
+    setDialogVmType(vmType);
+    setShowCloneDialog(true);
+  }, []);
+
+  const openMigrateDialog = useCallback((node: string, vmid: number, vmType: "qemu" | "lxc") => {
+    setDialogNode(node);
+    setDialogVmId(vmid);
+    setDialogVmType(vmType);
+    setShowMigrateDialog(true);
+  }, []);
+
+  const closeActionDialogs = useCallback(() => {
+    setShowCreateVm(false);
+    setShowCreateLxcDialog(false);
+    setShowCloneDialog(false);
+    setShowMigrateDialog(false);
+    setDialogVmId(null);
+    setDialogVmType(null);
+    setDialogNode(selectedNode);
+  }, [selectedNode]);
+
   // ── Tab change with auto-refresh ──────────────────────────────
 
   const switchTab = useCallback((tab: ProxmoxTab) => {
@@ -694,8 +849,13 @@ export function useProxmoxManager(isOpen: boolean) {
 
     // Dialogs
     showCreateVm, setShowCreateVm,
+    showCreateLxcDialog, setShowCreateLxcDialog,
     showCloneDialog, setShowCloneDialog,
+    showMigrateDialog, setShowMigrateDialog,
     showSnapshotDialog, setShowSnapshotDialog,
+    dialogNode, dialogVmId, dialogVmType,
+    openCreateVmDialog, openCreateLxcDialog,
+    openCloneDialog, openMigrateDialog, closeActionDialogs,
     showConfirmAction, confirmMessage, confirmTitle,
     requestConfirm, executeConfirm, cancelConfirm,
 
@@ -704,6 +864,9 @@ export function useProxmoxManager(isOpen: boolean) {
 
     // Actions
     vmAction, lxcAction,
+    createQemuVm, createLxcContainer,
+    cloneQemuVm, cloneLxcContainer,
+    migrateQemuVm, migrateLxcContainer,
     createSnapshot, rollbackSnapshot, deleteSnapshot,
     openVncConsole, openTermConsole, openNodeConsole,
     loadNodeMetrics, loadVmMetrics,

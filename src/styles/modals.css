@@ -114,6 +114,14 @@
   color: var(--color-text);
 }
 
+.sor-menu-item:focus-visible,
+.sor-menu-submenu-trigger:focus-visible {
+  background-color: var(--color-surfaceHover);
+  color: var(--color-text);
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 .sor-menu-item-danger {
   color: var(--color-error);
 }
@@ -174,6 +182,11 @@
 }
 
 .sor-menu-submenu:hover > .sor-menu-submenu-panel {
+  display: block;
+}
+
+.sor-menu-submenu[data-submenu-open="true"] > .sor-menu-submenu-panel,
+.sor-menu-submenu:focus-within > .sor-menu-submenu-panel {
   display: block;
 }
 

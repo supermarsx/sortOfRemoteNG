@@ -37,7 +37,7 @@ export const NumberInput: React.FC<NumberInputProps> = ({
   variant = 'settings',
   clamp = true,
   className,
-  label: _label,
+  label,
   min,
   max,
   ...rest
@@ -60,6 +60,7 @@ export const NumberInput: React.FC<NumberInputProps> = ({
       min={min}
       max={max}
       className={cx(VARIANT_CLASS[variant], className)}
+      aria-label={rest['aria-label'] ?? label}
       {...rest}
     />
   );

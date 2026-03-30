@@ -269,8 +269,18 @@ export function CredentialManager() {
 
   /* ---------- render helpers ---------- */
   const sortHeader = (label: string, field: SortField) => (
-    <th className="sor-th px-3 py-2 text-left text-xs font-medium text-[var(--color-textSecondary)] cursor-pointer select-none" onClick={() => toggleSort(field)}>
-      {label} {sortField === field ? (sortAsc ? "▲" : "▼") : ""}
+    <th
+      className="sor-th px-3 py-2 text-left text-xs font-medium text-[var(--color-textSecondary)] select-none"
+      aria-sort={sortField === field ? (sortAsc ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => toggleSort(field)}
+        className="flex items-center gap-1 hover:text-[var(--color-textPrimary)] transition-colors"
+      >
+        <span>{label}</span>
+        <span aria-hidden="true">{sortField === field ? (sortAsc ? "▲" : "▼") : ""}</span>
+      </button>
     </th>
   );
 
@@ -334,16 +344,30 @@ export function CredentialManager() {
       </div>
 
       {/* ---------- tabs ---------- */}
-      <div className="sor-tab-bar flex gap-1 px-4 pt-2 border-b border-[var(--color-border)]">
+      <div className="sor-tab-bar flex gap-1 px-4 pt-2 border-b border-[var(--color-border)]" role="tablist" aria-label="Credential manager sections">
         {TABS.map((tb) => (
-          <button key={tb.id} onClick={() => setTab(tb.id)} className={`sor-tab px-3 py-2 text-xs font-medium rounded-t transition-colors ${tab === tb.id ? "bg-[var(--color-bgSecondary)] text-[var(--color-textPrimary)] border-b-2 border-primary" : "text-[var(--color-textSecondary)] hover:text-[var(--color-textPrimary)]"}`}>
+          <button
+            key={tb.id}
+            id={`credentials-tab-${tb.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === tb.id}
+            aria-controls={`credentials-panel-${tb.id}`}
+            onClick={() => setTab(tb.id)}
+            className={`sor-tab px-3 py-2 text-xs font-medium rounded-t transition-colors ${tab === tb.id ? "bg-[var(--color-bgSecondary)] text-[var(--color-textPrimary)] border-b-2 border-primary" : "text-[var(--color-textSecondary)] hover:text-[var(--color-textPrimary)]"}`}
+          >
             {t(tb.labelKey)}
           </button>
         ))}
       </div>
 
       {/* ---------- tab content ---------- */}
-      <div className="sor-tab-content flex-1 overflow-auto px-4 py-3">
+      <div
+        className="sor-tab-content flex-1 overflow-auto px-4 py-3"
+        role="tabpanel"
+        id={`credentials-panel-${tab}`}
+        aria-labelledby={`credentials-tab-${tab}`}
+      >
         {/* ===== All Credentials ===== */}
         {tab === "all" && (
           creds.credentials.length === 0 ? (
@@ -466,16 +490,22 @@ export function CredentialManager() {
                   const members = creds.credentials.filter((c) => g.credentialIds.includes(c.id));
                   return (
                     <li key={g.id} className="sor-group-card border border-[var(--color-border)] rounded">
-                      <div className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-[var(--color-bgSecondary)]" onClick={() => toggleGroupExpand(g.id)}>
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between px-4 py-2 hover:bg-[var(--color-bgSecondary)]">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() => toggleGroupExpand(g.id)}
+                          aria-expanded={expanded}
+                          aria-controls={`credential-group-panel-${g.id}`}
+                        >
                           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           <span className="text-sm font-medium">{g.name}</span>
                           <span className="sor-badge rounded-full bg-[var(--color-bgSecondary)] px-2 py-0.5 text-xs text-[var(--color-textSecondary)]">{g.credentialIds.length} members</span>
-                        </div>
-                        <button onClick={(e) => { e.stopPropagation(); creds.deleteGroup(g.id); }} className="sor-btn-icon p-1 rounded hover:bg-error/10 text-error"><Trash2 size={14} /></button>
+                        </button>
+                        <button onClick={() => creds.deleteGroup(g.id)} className="sor-btn-icon p-1 rounded hover:bg-error/10 text-error" aria-label={`Delete ${g.name} group`}><Trash2 size={14} /></button>
                       </div>
                       {expanded && (
-                        <div className="px-4 pb-3 border-t border-[var(--color-border)]">
+                        <div id={`credential-group-panel-${g.id}`} className="px-4 pb-3 border-t border-[var(--color-border)]">
                           {members.length === 0 ? (
                             <p className="text-xs text-[var(--color-textSecondary)] py-2">{t("credentials.groups.noMembers")}</p>
                           ) : (

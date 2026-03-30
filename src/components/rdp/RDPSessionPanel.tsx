@@ -12,7 +12,7 @@ import { RDPLogViewer } from './RDPLogViewer';
 import {
   useRDPSessionPanel, RDPSessionInfo, RDPSessionHistoryEntry, RDPStats,
   formatUptime, formatBytes,
-} from '../../hooks/rdp/useRDPSessionPanel';
+} from '../../hooks/rdp/useRdpSessionPanel';
 import { Checkbox } from '../ui/forms';
 
 interface RDPSessionPanelProps {

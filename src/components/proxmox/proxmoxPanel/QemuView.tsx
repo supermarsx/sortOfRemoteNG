@@ -58,7 +58,7 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
           </span>
         </h3>
         <button
-          onClick={() => mgr.setShowCreateVm(true)}
+          onClick={() => mgr.openCreateVmDialog(node)}
           className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-medium transition-colors"
         >
           + {t("proxmox.qemu.create", "Create VM")}
@@ -202,7 +202,7 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                     color="text-teal-500"
                     onClick={() => {
                       mgr.selectVm(vm.vmid, "qemu");
-                      mgr.setShowCloneDialog(true);
+                      mgr.openCloneDialog(node, vm.vmid, "qemu");
                     }}
                   />
                   <ActionBtn
@@ -210,7 +210,8 @@ const QemuView: React.FC<SubProps> = ({ mgr }) => {
                     label={t("proxmox.qemu.migrate", "Migrate")}
                     color="text-warning"
                     onClick={() => {
-                      // TODO: open migration dialog
+                      mgr.selectVm(vm.vmid, "qemu");
+                      mgr.openMigrateDialog(node, vm.vmid, "qemu");
                     }}
                   />
                   <div className="w-px bg-[var(--color-border)] mx-1" />

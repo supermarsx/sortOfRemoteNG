@@ -1,10 +1,22 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   SavedProxyChain,
   SavedProxyProfile,
   SavedChainLayer,
 } from '../../types/settings/settings';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
+import {
+  ProxyOpenVPNManager,
+  type OpenVPNConnection,
+  type WireGuardConnection,
+} from '../../utils/network/proxyOpenVPNManager';
+
+interface SavedVpnProfile {
+  id: string;
+  name: string;
+  type: 'openvpn' | 'wireguard';
+  status: string;
+}
 
 interface UseProxyChainEditorParams {
   isOpen: boolean;
@@ -22,24 +34,66 @@ export function useProxyChainEditor({
   const [tagInput, setTagInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savedProfiles, setSavedProfiles] = useState<SavedProxyProfile[]>([]);
+  const [savedVpnProfiles, setSavedVpnProfiles] = useState<SavedVpnProfile[]>([]);
+
+  const vpnManager = useMemo(() => ProxyOpenVPNManager.getInstance(), []);
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    let cancelled = false;
+
+    const loadProfiles = async () => {
       setSavedProfiles(proxyCollectionManager.getProfiles());
-      if (editingChain) {
-        setName(editingChain.name);
-        setDescription(editingChain.description || '');
-        setLayers([...editingChain.layers]);
-        setTags(editingChain.tags || []);
-      } else {
-        setName('');
-        setDescription('');
-        setLayers([]);
-        setTags([]);
+
+      try {
+        const [openVpn, wireGuard] = await Promise.all([
+          vpnManager.listOpenVPNConnections().catch(() => [] as OpenVPNConnection[]),
+          vpnManager.listWireGuardConnections().catch(() => [] as WireGuardConnection[]),
+        ]);
+
+        if (!cancelled) {
+          setSavedVpnProfiles([
+            ...openVpn.map((profile) => ({
+              id: profile.id,
+              name: profile.name,
+              type: 'openvpn' as const,
+              status: profile.status,
+            })),
+            ...wireGuard.map((profile) => ({
+              id: profile.id,
+              name: profile.name,
+              type: 'wireguard' as const,
+              status: profile.status,
+            })),
+          ]);
+        }
+      } catch {
+        if (!cancelled) {
+          setSavedVpnProfiles([]);
+        }
       }
-      setErrors({});
+    };
+
+    void loadProfiles();
+
+    if (editingChain) {
+      setName(editingChain.name);
+      setDescription(editingChain.description || '');
+      setLayers([...editingChain.layers]);
+      setTags(editingChain.tags || []);
+    } else {
+      setName('');
+      setDescription('');
+      setLayers([]);
+      setTags([]);
     }
-  }, [isOpen, editingChain]);
+    setErrors({});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, editingChain, vpnManager]);
 
   const validate = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
@@ -49,6 +103,10 @@ export function useProxyChainEditor({
       if (layer.type === 'proxy' && !layer.proxyProfileId && !layer.inlineConfig) {
         newErrors[`layer-${index}`] =
           'Layer must have a profile or inline configuration';
+      }
+      if ((layer.type === 'openvpn' || layer.type === 'wireguard') && !layer.vpnProfileId && !layer.inlineConfig) {
+        newErrors[`layer-${index}`] =
+          'VPN layers must reference a saved VPN profile';
       }
     });
     setErrors(newErrors);
@@ -165,6 +223,14 @@ export function useProxyChainEditor({
     [savedProfiles],
   );
 
+  const getVpnProfilesForType = useCallback(
+    (type: SavedChainLayer['type']): SavedVpnProfile[] => {
+      if (type !== 'openvpn' && type !== 'wireguard') return [];
+      return savedVpnProfiles.filter((profile) => profile.type === type);
+    },
+    [savedVpnProfiles],
+  );
+
   return {
     name,
     setName,
@@ -176,6 +242,7 @@ export function useProxyChainEditor({
     setTagInput,
     errors,
     savedProfiles,
+    savedVpnProfiles,
     validate,
     buildChainData,
     handleAddLayer,
@@ -188,6 +255,7 @@ export function useProxyChainEditor({
     handleRemoveTag,
     handleTagKeyDown,
     getProfilesForType,
+    getVpnProfilesForType,
   };
 }
 

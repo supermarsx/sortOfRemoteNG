@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   X,
   XCircle,
@@ -62,6 +62,20 @@ const GROUP_COLORS = [
   { name: 'Purple', value: '#a855f7' },
   { name: 'Pink', value: '#ec4899' },
 ];
+
+const MAIN_SESSION_PANEL_ID = "session-main-panel";
+
+const SUBMENU_ITEM_SELECTOR = [
+  '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
+  "button:not([disabled]):not([role])",
+  "[href]:not([role])",
+  '[tabindex]:not([tabindex="-1"]):not([role])',
+].join(", ");
+
+const focusFirstSubmenuItem = (panel: HTMLElement | null) => {
+  const first = panel?.querySelector<HTMLElement>(SUBMENU_ITEM_SELECTOR);
+  first?.focus();
+};
 
 const getToolIcon = (toolKey: string) => {
   switch (toolKey) {
@@ -184,6 +198,14 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
   const [sendToSubmenuOpen, setSendToSubmenuOpen] = useState(false);
   const [detachedWindows, setDetachedWindows] = useState<Array<{ label: string; title: string }>>([]);
+  const groupSubmenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const groupSubmenuPanelRef = useRef<HTMLDivElement | null>(null);
+  const sendToSubmenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const sendToSubmenuPanelRef = useRef<HTMLDivElement | null>(null);
+  const groupSubmenuTriggerId = useId();
+  const groupSubmenuPanelId = useId();
+  const sendToSubmenuTriggerId = useId();
+  const sendToSubmenuPanelId = useId();
 
   useEffect(() => {
     if (renamingSessionId && renameInputRef.current) {
@@ -220,12 +242,84 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     return { ungrouped, grouped };
   }, [sessions, tabGroups]);
 
+  const visibleTabIds = useMemo(() => {
+    const ungroupedIds = orderedTabs.ungrouped.map((session) => session.id);
+    const groupedIds = orderedTabs.grouped.flatMap(({ group, sessions: groupSessions }) =>
+      group.collapsed ? [] : groupSessions.map((session) => session.id),
+    );
+    return [...ungroupedIds, ...groupedIds];
+  }, [orderedTabs]);
+
+  const focusTabById = (sessionId: string) => {
+    requestAnimationFrame(() => {
+      const tab = document.getElementById(`session-tab-${sessionId}`);
+      if (tab instanceof HTMLElement) tab.focus();
+    });
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, sessionId: string) => {
+    if (visibleTabIds.length === 0) return;
+    const currentIndex = visibleTabIds.indexOf(sessionId);
+    if (currentIndex === -1) return;
+
+    let nextIndex = currentIndex;
+    switch (event.key) {
+      case "ArrowLeft":
+        nextIndex = currentIndex === 0 ? visibleTabIds.length - 1 : currentIndex - 1;
+        break;
+      case "ArrowRight":
+        nextIndex = currentIndex === visibleTabIds.length - 1 ? 0 : currentIndex + 1;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = visibleTabIds.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const nextSessionId = visibleTabIds[nextIndex];
+    if (!nextSessionId) return;
+    onSessionSelect(nextSessionId);
+    focusTabById(nextSessionId);
+  };
+
   const closeContextMenu = () => {
     setContextMenu(null);
     setGroupSubmenuOpen(false);
+    setSendToSubmenuOpen(false);
   };
 
   const closeGroupContextMenu = () => setGroupContextMenu(null);
+
+  const handleSubmenuTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    panelRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(true);
+    requestAnimationFrame(() => {
+      focusFirstSubmenuItem(panelRef.current);
+    });
+  };
+
+  const handleSubmenuPanelKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    if (event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
 
   const handleContextMenu = (e: React.MouseEvent, sessionId: string) => {
     e.preventDefault();
@@ -591,8 +685,13 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     return (
       <div
         key={session.id}
+        id={`session-tab-${session.id}`}
         draggable={enableReorder}
         data-tauri-disable-drag="true"
+        role="tab"
+        aria-selected={isActive}
+        aria-controls={MAIN_SESSION_PANEL_ID}
+        tabIndex={isActive ? 0 : -1}
         className={`relative flex items-center h-full px-3 cursor-pointer border-r border-[var(--color-border)] min-w-0 ${
           isActive
             ? "bg-[var(--color-border)] text-[var(--color-text)]"
@@ -613,6 +712,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             : undefined,
         } : undefined}
         onClick={() => onSessionSelect(session.id)}
+        onKeyDown={(event) => handleTabKeyDown(event, session.id)}
         onAuxClick={(e) => handleMiddleClick(session.id, e)}
         onContextMenu={(e) => handleContextMenu(e, session.id)}
         onDragStart={(e) => handleDragStart(e, session.id)}
@@ -640,6 +740,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           <input
             ref={renameInputRef}
             type="text"
+            aria-label={`Rename tab ${session.name}`}
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={handleRenameKeyDown}
@@ -695,6 +796,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     return (
       <div
         key={`group-label-${group.id}`}
+        role="presentation"
         className={`flex items-center h-full px-2 cursor-pointer select-none border-r border-[var(--color-border)] transition-all ${
           isDragOver ? "ring-2 ring-inset" : ""
         }`}
@@ -745,7 +847,11 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   if (sessions.length === 0) {
     return (
-      <div className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-center">
+      <div
+        className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-center"
+        role="tablist"
+        aria-label="Session tabs"
+      >
         <span className="text-[var(--color-textMuted)] text-sm">No active sessions</span>
       </div>
     );
@@ -753,7 +859,12 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   return (
     <>
-      <div className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center overflow-x-auto" data-tauri-disable-drag="true">
+      <div
+        className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center overflow-x-auto"
+        data-tauri-disable-drag="true"
+        role="tablist"
+        aria-label="Session tabs"
+      >
         {/* Ungrouped tabs first */}
         {orderedTabs.ungrouped.map((session) => renderTab(session))}
 
@@ -773,6 +884,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         position={contextMenu}
         className="min-w-[180px]"
         dataTestId="session-tab-context-menu"
+        ariaLabel="Session tab actions"
       >
         {contextMenu && (() => {
           const sessionId = contextMenu.sessionId;
@@ -804,40 +916,64 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
               {/* ── Tab group actions ──────────────────────── */}
               <div
-                className="sor-menu-item relative"
+                className="sor-menu-submenu"
+                data-submenu-open={groupSubmenuOpen ? "true" : "false"}
                 onMouseEnter={() => setGroupSubmenuOpen(true)}
                 onMouseLeave={() => setGroupSubmenuOpen(false)}
+                onBlurCapture={(event) => {
+                  const next = event.relatedTarget as Node | null;
+                  if (!event.currentTarget.contains(next)) {
+                    setGroupSubmenuOpen(false);
+                  }
+                }}
               >
-                <Layers size={14} className="mr-2" />
-                <span className="flex-1">Add to Group</span>
-                <ChevronRight size={12} className="ml-2" />
-                {groupSubmenuOpen && (
-                  <div
-                    className="sor-menu-surface absolute left-full top-0 min-w-[160px] z-[10000]"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {tabGroups.map((g) => (
-                      <button
-                        key={g.id}
-                        onClick={() => handleAddToGroup(sessionId, g.id)}
-                        className="sor-menu-item"
-                      >
-                        <span
-                          className="w-3 h-3 rounded-full flex-shrink-0 mr-2"
-                          style={{ backgroundColor: g.color }}
-                        />
-                        {g.name}
-                      </button>
-                    ))}
-                    {tabGroups.length > 0 && <div className="sor-menu-divider" />}
+                <button
+                  id={groupSubmenuTriggerId}
+                  ref={groupSubmenuTriggerRef}
+                  className="sor-menu-item"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={groupSubmenuOpen}
+                  aria-controls={groupSubmenuPanelId}
+                  onKeyDown={(event) => handleSubmenuTriggerKeyDown(event, setGroupSubmenuOpen, groupSubmenuPanelRef)}
+                >
+                  <Layers size={14} className="mr-2" />
+                  <span className="flex-1">Add to Group</span>
+                  <ChevronRight size={12} className="ml-2" />
+                </button>
+                <div
+                  id={groupSubmenuPanelId}
+                  ref={groupSubmenuPanelRef}
+                  className="sor-menu-submenu-panel"
+                  role="menu"
+                  tabIndex={-1}
+                  aria-label="Add to group submenu"
+                  aria-labelledby={groupSubmenuTriggerId}
+                  onKeyDown={(event) => handleSubmenuPanelKeyDown(event, setGroupSubmenuOpen, groupSubmenuTriggerRef)}
+                >
+                  {tabGroups.map((g) => (
                     <button
-                      onClick={() => handleCreateNewGroup(sessionId)}
+                      key={g.id}
+                      role="menuitem"
+                      onClick={() => handleAddToGroup(sessionId, g.id)}
                       className="sor-menu-item"
                     >
-                      <FolderPlus size={14} className="mr-2" /> New Group...
+                      <span
+                        className="w-3 h-3 rounded-full flex-shrink-0 mr-2"
+                        style={{ backgroundColor: g.color }}
+                      />
+                      {g.name}
                     </button>
-                  </div>
-                )}
+                  ))}
+                  {tabGroups.length > 0 && <div className="sor-menu-divider" />}
+                  <button
+                    role="menuitem"
+                    onClick={() => handleCreateNewGroup(sessionId)}
+                    className="sor-menu-item"
+                  >
+                    <FolderPlus size={14} className="mr-2" /> New Group...
+                  </button>
+                </div>
               </div>
               {isInGroup && (
                 <button onClick={() => handleRemoveFromGroup(sessionId)} className="sor-menu-item">
@@ -913,31 +1049,57 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               </button>
               {detachedWindows.length > 0 && (
                 <div
-                  className="sor-menu-item relative"
+                  className="sor-menu-submenu"
+                  data-submenu-open={sendToSubmenuOpen ? "true" : "false"}
                   onMouseEnter={() => setSendToSubmenuOpen(true)}
                   onMouseLeave={() => setSendToSubmenuOpen(false)}
+                  onBlurCapture={(event) => {
+                    const next = event.relatedTarget as Node | null;
+                    if (!event.currentTarget.contains(next)) {
+                      setSendToSubmenuOpen(false);
+                    }
+                  }}
                 >
-                  <Send size={14} className="mr-2" />
-                  <span className="flex-1">Send to Window</span>
-                  <ChevronRight size={12} className="ml-2" />
-                  {sendToSubmenuOpen && (
-                    <div className="sor-menu-surface absolute left-full top-0 min-w-[160px] z-[10000]" onClick={(e) => e.stopPropagation()}>
-                      {detachedWindows.map(w => (
-                        <button
-                          key={w.label}
-                          onClick={() => act(() => {
-                            import("@tauri-apps/api/event").then(({ emit }) => {
-                              emit("wm:command", { type: "MOVE_SESSION", sessionId, targetWindow: w.label });
-                            });
-                          })}
-                          className="sor-menu-item"
-                        >
-                          <Monitor size={14} className="mr-2" />
-                          {w.title}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <button
+                    id={sendToSubmenuTriggerId}
+                    ref={sendToSubmenuTriggerRef}
+                    className="sor-menu-item"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={sendToSubmenuOpen}
+                    aria-controls={sendToSubmenuPanelId}
+                    onKeyDown={(event) => handleSubmenuTriggerKeyDown(event, setSendToSubmenuOpen, sendToSubmenuPanelRef)}
+                  >
+                    <Send size={14} className="mr-2" />
+                    <span className="flex-1">Send to Window</span>
+                    <ChevronRight size={12} className="ml-2" />
+                  </button>
+                  <div
+                    id={sendToSubmenuPanelId}
+                    ref={sendToSubmenuPanelRef}
+                    className="sor-menu-submenu-panel"
+                    role="menu"
+                    tabIndex={-1}
+                    aria-label="Send to window submenu"
+                    aria-labelledby={sendToSubmenuTriggerId}
+                    onKeyDown={(event) => handleSubmenuPanelKeyDown(event, setSendToSubmenuOpen, sendToSubmenuTriggerRef)}
+                  >
+                    {detachedWindows.map(w => (
+                      <button
+                        key={w.label}
+                        role="menuitem"
+                        onClick={() => act(() => {
+                          import("@tauri-apps/api/event").then(({ emit }) => {
+                            emit("wm:command", { type: "MOVE_SESSION", sessionId, targetWindow: w.label });
+                          });
+                        })}
+                        className="sor-menu-item"
+                      >
+                        <Monitor size={14} className="mr-2" />
+                        {w.title}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               <button onClick={() => act(() => onSessionSelect(sessionId))} className="sor-menu-item">

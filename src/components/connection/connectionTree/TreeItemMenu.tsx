@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
@@ -9,6 +9,19 @@ import {
   ExternalLink, FileDown, FileText, FolderOpen, HardDrive, Monitor, Play,
   PlayCircle, Power, Send, SlidersHorizontal, Star, Terminal, Trash2, UserX,
 } from "lucide-react";
+
+const SUBMENU_ITEM_SELECTOR = [
+  '[role="menuitem"]:not([disabled]):not([aria-disabled="true"])',
+  "button:not([disabled]):not([role])",
+  "[href]:not([role])",
+  '[tabindex]:not([tabindex="-1"]):not([role])',
+].join(", ");
+
+const focusFirstSubmenuItem = (panel: HTMLElement | null) => {
+  const first = panel?.querySelector<HTMLElement>(SUBMENU_ITEM_SELECTOR);
+  first?.focus();
+};
+
 function TreeItemMenu({
   connection, activeSession, showMenu, menuPosition, triggerRef, onClose,
   onConnect, onDisconnect, onEdit, onDelete, onCopyHostname, onRename,
@@ -44,7 +57,42 @@ function TreeItemMenu({
   const act = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); onClose(); };
   const enableWinrm = connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
   const [connectInWindowOpen, setConnectInWindowOpen] = useState(false);
+  const [windowsToolsOpen, setWindowsToolsOpen] = useState(false);
   const [detachedWindows, setDetachedWindows] = useState<Array<{ label: string; title: string }>>([]);
+  const connectInWindowTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const connectInWindowPanelRef = useRef<HTMLDivElement | null>(null);
+  const windowsToolsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const windowsToolsPanelRef = useRef<HTMLDivElement | null>(null);
+  const connectInWindowTriggerId = useId();
+  const connectInWindowPanelId = useId();
+  const windowsToolsTriggerId = useId();
+  const windowsToolsPanelId = useId();
+
+  const handleSubmenuTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    panelRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(true);
+    requestAnimationFrame(() => {
+      focusFirstSubmenuItem(panelRef.current);
+    });
+  };
+
+  const handleSubmenuPanelKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    if (event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
 
   // Fetch detached windows when menu opens
   useEffect(() => {
@@ -63,6 +111,13 @@ function TreeItemMenu({
     ).catch(() => setDetachedWindows([]));
   }, [showMenu]);
 
+  useEffect(() => {
+    if (!showMenu) {
+      setConnectInWindowOpen(false);
+      setWindowsToolsOpen(false);
+    }
+  }, [showMenu]);
+
   return (
     <MenuSurface
       isOpen={showMenu}
@@ -71,6 +126,7 @@ function TreeItemMenu({
       ignoreRefs={[triggerRef]}
       className="min-w-[140px]"
       dataTestId="connection-tree-item-menu"
+      ariaLabel="Connection actions"
     >
       {connection.isGroup && (
         <button
@@ -114,35 +170,58 @@ function TreeItemMenu({
           {detachedWindows.length > 0 && (
             <div
               className="sor-menu-submenu"
+              data-submenu-open={connectInWindowOpen ? "true" : "false"}
               onMouseEnter={() => setConnectInWindowOpen(true)}
               onMouseLeave={() => setConnectInWindowOpen(false)}
+              onBlurCapture={(event) => {
+                const next = event.relatedTarget as Node | null;
+                if (!event.currentTarget.contains(next)) {
+                  setConnectInWindowOpen(false);
+                }
+              }}
             >
-              <button className="sor-menu-submenu-trigger">
+              <button
+                id={connectInWindowTriggerId}
+                ref={connectInWindowTriggerRef}
+                className="sor-menu-item"
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={connectInWindowOpen}
+                aria-controls={connectInWindowPanelId}
+                onKeyDown={(event) => handleSubmenuTriggerKeyDown(event, setConnectInWindowOpen, connectInWindowPanelRef)}
+              >
                 <Send size={14} className="mr-2" />
                 Connect in Window
                 <ChevronRight size={12} className="ml-auto opacity-50" />
               </button>
-              {connectInWindowOpen && (
-                <div className="sor-menu-submenu-panel">
-                  {detachedWindows.map(w => (
-                    <button
-                      key={w.label}
-                      onClick={act(() => {
-                        onConnect(connection);
-                        setTimeout(() => {
-                          import("@tauri-apps/api/event").then(({ emit }) => {
-                            emit("connect-in-window", { connectionId: connection.id, targetWindow: w.label });
-                          });
-                        }, 500);
-                      })}
-                      className="sor-menu-item"
-                    >
-                      <Monitor size={14} className="mr-2" />
-                      {w.title}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div
+                id={connectInWindowPanelId}
+                ref={connectInWindowPanelRef}
+                className="sor-menu-submenu-panel"
+                role="menu"
+                tabIndex={-1}
+                aria-labelledby={connectInWindowTriggerId}
+                onKeyDown={(event) => handleSubmenuPanelKeyDown(event, setConnectInWindowOpen, connectInWindowTriggerRef)}
+              >
+                {detachedWindows.map(w => (
+                  <button
+                    key={w.label}
+                    role="menuitem"
+                    onClick={act(() => {
+                      onConnect(connection);
+                      setTimeout(() => {
+                        import("@tauri-apps/api/event").then(({ emit }) => {
+                          emit("connect-in-window", { connectionId: connection.id, targetWindow: w.label });
+                        });
+                      }, 500);
+                    })}
+                    className="sor-menu-item"
+                  >
+                    <Monitor size={14} className="mr-2" />
+                    {w.title}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </>
@@ -172,37 +251,65 @@ function TreeItemMenu({
       {!connection.isGroup && enableWinrm && (connection.osType === 'windows' || (!connection.osType && connection.protocol === 'rdp')) && (
         <>
           <div className="sor-menu-divider" />
-          <div className="sor-menu-submenu">
-            <button className="sor-menu-submenu-trigger">
+          <div
+            className="sor-menu-submenu"
+            data-submenu-open={windowsToolsOpen ? "true" : "false"}
+            onMouseEnter={() => setWindowsToolsOpen(true)}
+            onMouseLeave={() => setWindowsToolsOpen(false)}
+            onBlurCapture={(event) => {
+              const next = event.relatedTarget as Node | null;
+              if (!event.currentTarget.contains(next)) {
+                setWindowsToolsOpen(false);
+              }
+            }}
+          >
+            <button
+              id={windowsToolsTriggerId}
+              ref={windowsToolsTriggerRef}
+              className="sor-menu-item"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={windowsToolsOpen}
+              aria-controls={windowsToolsPanelId}
+              onKeyDown={(event) => handleSubmenuTriggerKeyDown(event, setWindowsToolsOpen, windowsToolsPanelRef)}
+            >
               <Monitor size={14} className="mr-2" />
               Windows Management
               <ChevronRight size={12} className="ml-auto opacity-50" />
             </button>
-            <div className="sor-menu-submenu-panel">
+            <div
+              id={windowsToolsPanelId}
+              ref={windowsToolsPanelRef}
+              className="sor-menu-submenu-panel"
+              role="menu"
+              tabIndex={-1}
+              aria-labelledby={windowsToolsTriggerId}
+              onKeyDown={(event) => handleSubmenuPanelKeyDown(event, setWindowsToolsOpen, windowsToolsTriggerRef)}
+            >
               <div className="sor-menu-submenu-label">Remote Tools</div>
-              <button onClick={act(() => onWindowsTool?.(connection, 'services'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'services'))} className="sor-menu-item" role="menuitem">
                 <Cog size={14} className="mr-2" />Services
               </button>
-              <button onClick={act(() => onWindowsTool?.(connection, 'processes'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'processes'))} className="sor-menu-item" role="menuitem">
                 <Cpu size={14} className="mr-2" />Processes
               </button>
-              <button onClick={act(() => onWindowsTool?.(connection, 'eventlog'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'eventlog'))} className="sor-menu-item" role="menuitem">
                 <FileText size={14} className="mr-2" />Event Viewer
               </button>
-              <button onClick={act(() => onWindowsTool?.(connection, 'registry'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'registry'))} className="sor-menu-item" role="menuitem">
                 <HardDrive size={14} className="mr-2" />Registry
               </button>
-              <button onClick={act(() => onWindowsTool?.(connection, 'tasks'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'tasks'))} className="sor-menu-item" role="menuitem">
                 <ClipboardList size={14} className="mr-2" />Scheduled Tasks
               </button>
-              <button onClick={act(() => onWindowsTool?.(connection, 'perfmon'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'perfmon'))} className="sor-menu-item" role="menuitem">
                 <Activity size={14} className="mr-2" />Performance
               </button>
               <div className="sor-menu-divider" />
-              <button onClick={act(() => onWindowsTool?.(connection, 'powershell'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'powershell'))} className="sor-menu-item" role="menuitem">
                 <Terminal size={14} className="mr-2" />PowerShell
               </button>
-              <button onClick={act(() => onWindowsTool?.(connection, 'sysinfo'))} className="sor-menu-item">
+              <button onClick={act(() => onWindowsTool?.(connection, 'sysinfo'))} className="sor-menu-item" role="menuitem">
                 <Monitor size={14} className="mr-2" />System Info
               </button>
             </div>

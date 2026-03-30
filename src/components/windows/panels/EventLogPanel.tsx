@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Search, RefreshCw, Loader2, AlertCircle, AlertTriangle,
-  Info, Shield, ShieldAlert, Filter, Download,
+  Info, Shield, ShieldAlert, Download,
 } from "lucide-react";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
 import type {
@@ -123,6 +123,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
   const selectedEntryData = selectedEntry != null
     ? entries.find((e) => e.recordNumber === selectedEntry)
     : null;
+  const eventSummary = `${entries.length} events shown`;
 
   return (
     <div className="h-full flex flex-col">
@@ -131,6 +132,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
         <select
           value={selectedLog}
           onChange={(e) => setSelectedLog(e.target.value)}
+          aria-label="Select event log"
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
           {(logs.length > 0
@@ -148,6 +150,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
           onChange={(e) =>
             setLevelFilter(e.target.value as EventLogLevel | "all")
           }
+          aria-label="Filter event level"
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
           <option value="all">All Levels</option>
@@ -168,6 +171,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter messages…"
+            aria-label="Search event messages"
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
@@ -175,6 +179,8 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
         <button
           onClick={fetchEntries}
           disabled={loading}
+          aria-label="Refresh events"
+          aria-busy={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
           title="Refresh"
         >
@@ -183,15 +189,19 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
 
         <button
           onClick={exportCsv}
+          aria-label="Export events to CSV"
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
           title="Export CSV"
         >
           <Download size={14} />
         </button>
 
-        <span className="text-xs text-[var(--color-textMuted)] ml-auto">
-          {entries.length} events
+        <span className="text-xs text-[var(--color-textMuted)] ml-auto" id="event-log-summary">
+          {eventSummary}
         </span>
+        <div role="status" aria-live="polite" className="sr-only">
+          {eventSummary}
+        </div>
       </div>
 
       {error && (
@@ -212,20 +222,28 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
               />
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <table
+              className="w-full text-xs"
+              aria-label="Windows event log entries"
+              aria-describedby="event-log-summary"
+            >
+              <caption className="sr-only">
+                Event log entries filtered by log name, level, and message search
+              </caption>
               <thead className="sticky top-0 bg-[var(--color-surface)] z-10">
                 <tr className="text-left text-[var(--color-textSecondary)]">
-                  <th className="px-3 py-2 font-medium w-6"></th>
-                  <th className="px-3 py-2 font-medium">Time</th>
-                  <th className="px-3 py-2 font-medium">Source</th>
-                  <th className="px-3 py-2 font-medium w-16">Event ID</th>
-                  <th className="px-3 py-2 font-medium">Message</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-6"></th>
+                  <th scope="col" className="px-3 py-2 font-medium">Time</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Source</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-16">Event ID</th>
+                  <th scope="col" className="px-3 py-2 font-medium">Message</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((entry) => (
                   <tr
                     key={entry.recordNumber}
+                    aria-selected={selectedEntry === entry.recordNumber}
                     onClick={() => setSelectedEntry(entry.recordNumber)}
                     className={`border-b border-[var(--color-border)] cursor-pointer transition-colors ${
                       selectedEntry === entry.recordNumber
@@ -257,10 +275,17 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
 
         {/* Detail Pane */}
         {selectedEntryData && (
-          <div className="w-80 border-l border-[var(--color-border)] bg-[var(--color-surface)] overflow-auto p-3 space-y-3">
+          <div
+            role="region"
+            aria-labelledby="event-log-selected-entry-heading"
+            className="w-80 border-l border-[var(--color-border)] bg-[var(--color-surface)] overflow-auto p-3 space-y-3"
+          >
             <div className="flex items-center gap-2">
               {LEVEL_ICONS[selectedEntryData.eventType]}
-              <h3 className="text-sm font-semibold text-[var(--color-text)]">
+              <h3
+                id="event-log-selected-entry-heading"
+                className="text-sm font-semibold text-[var(--color-text)]"
+              >
                 {LEVEL_LABELS[selectedEntryData.eventType]} —{" "}
                 {selectedEntryData.sourceName}
               </h3>

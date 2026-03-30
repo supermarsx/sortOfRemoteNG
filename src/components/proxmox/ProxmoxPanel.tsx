@@ -15,6 +15,7 @@ import StorageView from "./proxmoxPanel/StorageView";
 import NetworkView from "./proxmoxPanel/NetworkView";
 import TasksView from "./proxmoxPanel/TasksView";
 import SnapshotsView from "./proxmoxPanel/SnapshotsView";
+import ActionDialogs from "./proxmoxPanel/ActionDialogs";
 import {
   BackupsView,
   FirewallView,
@@ -105,6 +106,8 @@ export const ProxmoxPanel: React.FC<ProxmoxPanelProps> = ({
         cancelText={t("common.cancel", "Cancel")}
         variant="danger"
       />
+
+      <ActionDialogs mgr={mgr} />
     </>
   );
 };

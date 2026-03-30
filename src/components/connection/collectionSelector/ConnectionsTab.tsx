@@ -1,4 +1,4 @@
-import { ImportExport } from "../../importExport";
+import { ImportExport } from "../../ImportExport";
 
 function ConnectionsTab() {
   return (

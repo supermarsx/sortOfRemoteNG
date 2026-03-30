@@ -284,7 +284,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
         await mkdir(transferDir, { recursive: true });
       }
 
-      let allEntries: DropEntry[] = [];
+      const allEntries: DropEntry[] = [];
 
       if (topEntries.length > 0) {
         for (const entry of topEntries) {

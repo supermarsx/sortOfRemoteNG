@@ -197,6 +197,8 @@ export interface RegistrySearchResult {
   value: RegistryValue | null;
 }
 
+export type RegistryExportFormat = "regFile" | "json";
+
 // ─── Scheduled Tasks ────────────────────────────────────────────────
 
 export type ScheduledTaskState =

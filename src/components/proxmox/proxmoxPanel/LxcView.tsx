@@ -56,9 +56,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
           </span>
         </h3>
         <button
-          onClick={() => {
-            // TODO: create container dialog
-          }}
+          onClick={() => mgr.openCreateLxcDialog(node)}
           className="px-3 py-1.5 rounded-lg bg-success hover:bg-success/90 text-white text-xs font-medium transition-colors"
         >
           + {t("proxmox.lxc.create", "Create Container")}
@@ -184,7 +182,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                     color="text-teal-500"
                     onClick={() => {
                       mgr.selectVm(ct.vmid, "lxc");
-                      mgr.setShowCloneDialog(true);
+                      mgr.openCloneDialog(node, ct.vmid, "lxc");
                     }}
                   />
                   <ActionBtn
@@ -192,7 +190,8 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                     label={t("proxmox.lxc.migrate", "Migrate")}
                     color="text-warning"
                     onClick={() => {
-                      // TODO: migration dialog
+                      mgr.selectVm(ct.vmid, "lxc");
+                      mgr.openMigrateDialog(node, ct.vmid, "lxc");
                     }}
                   />
                   <div className="w-px bg-[var(--color-border)] mx-1" />

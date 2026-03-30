@@ -196,6 +196,15 @@ export const RdpFileManager: React.FC = () => {
   /* ── render helpers ── */
   const validCount = importEntries.filter((e) => e.validation?.valid).length;
   const invalidCount = importEntries.filter((e) => e.validation && !e.validation.valid).length;
+  const switchTab = (nextTab: "import" | "export") => setActiveTab(nextTab);
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentTab: "import" | "export",
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    switchTab(currentTab === "import" ? "export" : "import");
+  };
 
   /* ---------------------------------------------------------------- */
   return (
@@ -203,11 +212,29 @@ export const RdpFileManager: React.FC = () => {
       {/* Header */}
       <header className="sor-rdpmgr-header">
         <h2 className="sor-rdpmgr-title">{t("rdpManager.title", "RDP File Manager")}</h2>
-        <div className="sor-rdpmgr-actions">
-          <button className="sor-rdpmgr-btn sor-rdpmgr-btn--primary" onClick={() => setActiveTab("import")}>
+        <div className="sor-rdpmgr-actions" role="tablist" aria-label="RDP file manager tabs">
+          <button
+            id="rdp-file-manager-tab-import"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "import"}
+            aria-controls="rdp-file-manager-panel-import"
+            className="sor-rdpmgr-btn sor-rdpmgr-btn--primary"
+            onClick={() => switchTab("import")}
+            onKeyDown={(event) => handleTabKeyDown(event, "import")}
+          >
             {t("rdpManager.import", "Import .rdp")}
           </button>
-          <button className="sor-rdpmgr-btn sor-rdpmgr-btn--primary" onClick={() => setActiveTab("export")}>
+          <button
+            id="rdp-file-manager-tab-export"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "export"}
+            aria-controls="rdp-file-manager-panel-export"
+            className="sor-rdpmgr-btn sor-rdpmgr-btn--primary"
+            onClick={() => switchTab("export")}
+            onKeyDown={(event) => handleTabKeyDown(event, "export")}
+          >
             {t("rdpManager.export", "Export .rdp")}
           </button>
         </div>
@@ -221,11 +248,23 @@ export const RdpFileManager: React.FC = () => {
 
       {/* ── Import tab ── */}
       {activeTab === "import" && (
-        <section className="sor-rdpmgr-section">
+        <section className="sor-rdpmgr-section" role="tabpanel" id="rdp-file-manager-panel-import" aria-labelledby="rdp-file-manager-tab-import">
           <h3 className="sor-rdpmgr-section-title">{t("rdpManager.importTitle", "Import RDP Files")}</h3>
 
           {/* Drop-zone / picker */}
-          <div className="sor-rdpmgr-dropzone" role="button" tabIndex={0} onClick={handlePickFiles} onKeyDown={(e) => e.key === "Enter" && handlePickFiles()}>
+          <div
+            className="sor-rdpmgr-dropzone"
+            role="button"
+            tabIndex={0}
+            aria-label={t("rdpManager.dropHint", "Click to browse or drag .rdp files here")}
+            onClick={handlePickFiles}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                void handlePickFiles();
+              }
+            }}
+          >
             <p className="sor-rdpmgr-dropzone-label">
               {t("rdpManager.dropHint", "Click to browse or drag .rdp files here")}
             </p>
@@ -289,7 +328,7 @@ export const RdpFileManager: React.FC = () => {
 
       {/* ── Export tab ── */}
       {activeTab === "export" && (
-        <section className="sor-rdpmgr-section">
+        <section className="sor-rdpmgr-section" role="tabpanel" id="rdp-file-manager-panel-export" aria-labelledby="rdp-file-manager-tab-export">
           <h3 className="sor-rdpmgr-section-title">{t("rdpManager.exportTitle", "Export RDP Files")}</h3>
 
           <button className="sor-rdpmgr-btn" onClick={handleLoadConnections} disabled={loading}>

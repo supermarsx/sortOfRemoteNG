@@ -83,8 +83,23 @@ const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; tot
         {(layer.type === "openvpn" || layer.type === "wireguard") && (
           <div>
             <label className="block text-xs text-[var(--color-textSecondary)] mb-1">VPN Profile</label>
-            <Select value={layer.vpnProfileId || ""} onChange={(v: string) => mgr.handleVpnProfileChange(index, v)} options={[{ value: '', label: 'Select VPN profile...' }]} className="sor-form-input-sm" />
-            <p className="text-xs text-[var(--color-textSecondary)] mt-1">VPN profiles coming soon</p>
+            <Select
+              value={layer.vpnProfileId || ""}
+              onChange={(v: string) => mgr.handleVpnProfileChange(index, v)}
+              options={[
+                { value: '', label: 'Select VPN profile...' },
+                ...mgr.getVpnProfilesForType(layer.type).map((profile) => ({
+                  value: profile.id,
+                  label: `${profile.name} (${profile.status})`,
+                })),
+              ]}
+              className="sor-form-input-sm"
+            />
+            {mgr.getVpnProfilesForType(layer.type).length === 0 && (
+              <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+                No saved {layer.type === "openvpn" ? "OpenVPN" : "WireGuard"} profiles were found.
+              </p>
+            )}
           </div>
         )}
         {layer.type === "ssh-tunnel" && (
