@@ -338,6 +338,24 @@ describe("BackupWorkerService", () => {
       );
     });
 
+    it("calculateNextBackupTime sets daily next backup", async () => {
+      vi.setSystemTime(new Date("2025-06-15T10:00:00.000Z"));
+      await backupWorker.initialize(
+        makeConfig({
+          frequency: "daily",
+          enabled: true,
+          scheduledTime: "03:00",
+        }),
+      );
+      const state = backupWorker.getState();
+      expect(state.nextScheduledBackup).toBeDefined();
+      const nextDate = new Date(state.nextScheduledBackup!);
+      // 03:00 already passed today, so should be tomorrow
+      expect(nextDate.getHours()).toBe(3);
+      expect(nextDate.getMinutes()).toBe(0);
+      expect(nextDate.getDate()).toBe(16);
+    });
+
     it("calculateNextBackupTime sets weekly next backup", async () => {
       await backupWorker.initialize(
         makeConfig({
@@ -366,6 +384,112 @@ describe("BackupWorkerService", () => {
       expect(state.nextScheduledBackup).toBeDefined();
       const nextDate = new Date(state.nextScheduledBackup!);
       expect(nextDate.getDate()).toBe(15);
+    });
+  });
+
+  // ---------- differential vs full backup logic ----------
+  describe("differential vs full backup logic", () => {
+    it("runs full backup when differentialEnabled is false", async () => {
+      await backupWorker.initialize(
+        makeConfig({ differentialEnabled: false }),
+      );
+      const job = await backupWorker.runBackup();
+      expect(job.type).toBe("full");
+    });
+
+    it("runs full backup on first run even when differential is enabled", async () => {
+      await backupWorker.initialize(
+        makeConfig({ differentialEnabled: true }),
+      );
+      // No lastFullBackupTime → must be full
+      const job = await backupWorker.runBackup();
+      expect(job.type).toBe("full");
+    });
+
+    it("runs differential after a full when differential is enabled", async () => {
+      await backupWorker.initialize(
+        makeConfig({ differentialEnabled: true, fullBackupInterval: 5 }),
+      );
+      const first = await backupWorker.runBackup();
+      expect(first.type).toBe("full");
+
+      const second = await backupWorker.runBackup();
+      expect(second.type).toBe("differential");
+    });
+
+    it("forces full backup after fullBackupInterval differential backups", async () => {
+      await backupWorker.initialize(
+        makeConfig({ differentialEnabled: true, fullBackupInterval: 2 }),
+      );
+
+      const r1 = await backupWorker.runBackup(); // full (no prior)
+      expect(r1.type).toBe("full");
+
+      const r2 = await backupWorker.runBackup(); // diff 1
+      expect(r2.type).toBe("differential");
+      const r3 = await backupWorker.runBackup(); // diff 2
+      expect(r3.type).toBe("differential");
+
+      // After 2 diffs → next should be full
+      const r4 = await backupWorker.runBackup();
+      expect(r4.type).toBe("full");
+    });
+
+    it("forces full backup when forceFull=true", async () => {
+      await backupWorker.initialize(
+        makeConfig({ differentialEnabled: true, fullBackupInterval: 999 }),
+      );
+      await backupWorker.runBackup(); // first → full
+
+      const job = await backupWorker.runBackup(true);
+      expect(job.type).toBe("full");
+    });
+
+    it("includes -diff suffix in filename for differential backup", async () => {
+      await backupWorker.initialize(
+        makeConfig({
+          differentialEnabled: true,
+          fullBackupInterval: 999,
+        }),
+      );
+      await backupWorker.runBackup(); // full
+      const diff = await backupWorker.runBackup(); // differential
+      expect(diff.filePath).toMatch(/-diff/);
+    });
+  });
+
+  // ---------- extractTimestampFromFilename ----------
+  describe("extractTimestampFromFilename", () => {
+    it("correctly parses timestamps so cleanup deletes only the oldest files", async () => {
+      vi.mocked(readDir).mockResolvedValue([
+        { name: "sortOfRemoteNG-backup-2024-01-08T12-30-00-000Z.json", isDirectory: false, isFile: true, isSymlink: false },
+        { name: "sortOfRemoteNG-backup-2024-01-09T12-30-00-000Z-diff-encrypted.xml.gz", isDirectory: false, isFile: true, isSymlink: false },
+        { name: "unrelated-file.txt", isDirectory: false, isFile: true, isSymlink: false },
+      ] as any);
+
+      await backupWorker.initialize(makeConfig({ maxBackupsToKeep: 1 }));
+      await backupWorker.runBackup();
+
+      // Oldest (Jan 8) should be deleted, newer (Jan 9) kept
+      expect(remove).toHaveBeenCalledWith(
+        expect.stringContaining("2024-01-08"),
+      );
+      // Unrelated file should not be touched
+      const removeCalls = vi.mocked(remove).mock.calls.map((c) => c[0]);
+      expect(removeCalls.every((p) => !String(p).includes("unrelated"))).toBe(true);
+    });
+
+    it("ignores files that do not match backup pattern", async () => {
+      vi.mocked(readDir).mockResolvedValue([
+        { name: "random-file.json", isDirectory: false, isFile: true, isSymlink: false },
+        { name: "not-a-backup.xml.gz", isDirectory: false, isFile: true, isSymlink: false },
+      ] as any);
+
+      await backupWorker.initialize(makeConfig({ maxBackupsToKeep: 1 }));
+      await backupWorker.runBackup();
+
+      // Neither file matches the pattern, so nothing should be removed
+      expect(remove).not.toHaveBeenCalled();
     });
   });
 

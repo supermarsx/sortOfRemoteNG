@@ -52,17 +52,13 @@ const mockRecordings: SavedRecording[] = [
 ];
 
 vi.mock('../../src/utils/recording/macroService', () => ({
-  loadMacros: vi.fn().mockResolvedValue([]),
-  loadRecordings: vi.fn().mockResolvedValue([]),
-  saveMacro: vi.fn().mockResolvedValue(undefined),
-  deleteMacro: vi.fn().mockResolvedValue(undefined),
-  deleteRecording: vi.fn().mockResolvedValue(undefined),
-  saveRecording: vi.fn().mockResolvedValue(undefined),
-  exportRecording: vi.fn().mockResolvedValue('{}'),
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string, f?: string) => f || k }),
+  loadMacros: vi.fn(),
+  loadRecordings: vi.fn(),
+  saveMacro: vi.fn(),
+  deleteMacro: vi.fn(),
+  saveRecording: vi.fn(),
+  deleteRecording: vi.fn(),
+  exportRecording: vi.fn().mockResolvedValue('exported-data'),
 }));
 
 import * as macroService from '../../src/utils/recording/macroService';
@@ -74,6 +70,10 @@ describe('useMacroManager', () => {
     vi.clearAllMocks();
     (macroService.loadMacros as Mock).mockResolvedValue([...mockMacros]);
     (macroService.loadRecordings as Mock).mockResolvedValue([...mockRecordings]);
+    (macroService.saveMacro as Mock).mockResolvedValue(undefined);
+    (macroService.deleteMacro as Mock).mockResolvedValue(undefined);
+    (macroService.saveRecording as Mock).mockResolvedValue(undefined);
+    (macroService.deleteRecording as Mock).mockResolvedValue(undefined);
   });
 
   it('loads macros and recordings when isOpen is true', async () => {
@@ -84,7 +84,7 @@ describe('useMacroManager', () => {
     });
   });
 
-  it('does not load when isOpen is false', async () => {
+  it('does not load when isOpen is false', () => {
     renderHook(() => useMacroManager(false));
     expect(macroService.loadMacros).not.toHaveBeenCalled();
   });
@@ -96,20 +96,14 @@ describe('useMacroManager', () => {
 
   it('switches active tab', () => {
     const { result } = renderHook(() => useMacroManager(true));
-    act(() => {
-      result.current.setActiveTab('recordings');
-    });
+    act(() => result.current.setActiveTab('recordings'));
     expect(result.current.activeTab).toBe('recordings');
   });
 
-  it('filters macros by search query', async () => {
+  it('filters macros by name search query', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
-    act(() => {
-      result.current.setSearchQuery('deploy');
-    });
-
+    act(() => result.current.setSearchQuery('deploy'));
     expect(result.current.filteredMacros).toHaveLength(1);
     expect(result.current.filteredMacros[0].name).toBe('Deploy');
   });
@@ -117,19 +111,14 @@ describe('useMacroManager', () => {
   it('filters macros by tag', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
-    act(() => {
-      result.current.setSearchQuery('cleanup');
-    });
-
+    act(() => result.current.setSearchQuery('git'));
     expect(result.current.filteredMacros).toHaveLength(1);
-    expect(result.current.filteredMacros[0].id).toBe('m2');
+    expect(result.current.filteredMacros[0].id).toBe('m1');
   });
 
   it('groups macros by category', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
     expect(result.current.macrosByCategory['DevOps']).toHaveLength(1);
     expect(result.current.macrosByCategory['Maintenance']).toHaveLength(1);
   });
@@ -137,11 +126,7 @@ describe('useMacroManager', () => {
   it('handleNewMacro creates a blank macro in editing state', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
-    act(() => {
-      result.current.handleNewMacro();
-    });
-
+    act(() => result.current.handleNewMacro());
     expect(result.current.editingMacro).not.toBeNull();
     expect(result.current.editingMacro!.name).toBe('New Macro');
     expect(result.current.editingMacro!.steps).toHaveLength(1);
@@ -150,65 +135,54 @@ describe('useMacroManager', () => {
   it('handleSaveMacro calls service and clears editing state', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
-    act(() => {
-      result.current.handleNewMacro();
-    });
-
+    act(() => result.current.handleNewMacro());
+    const macro = result.current.editingMacro!;
     await act(async () => {
-      await result.current.handleSaveMacro(result.current.editingMacro!);
+      await result.current.handleSaveMacro(macro);
     });
-
-    expect(macroService.saveMacro).toHaveBeenCalled();
+    expect(macroService.saveMacro).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'New Macro' }),
+    );
     expect(result.current.editingMacro).toBeNull();
   });
 
   it('handleDeleteMacro removes macro via service and reloads', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
     await act(async () => {
       await result.current.handleDeleteMacro('m1');
     });
-
     expect(macroService.deleteMacro).toHaveBeenCalledWith('m1');
     expect(macroService.loadMacros).toHaveBeenCalledTimes(2); // initial + reload
   });
 
-  it('handleDuplicateMacro creates a copy with new id', async () => {
+  it('handleDuplicateMacro creates a copy with new id and (Copy) suffix', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
     await act(async () => {
-      await result.current.handleDuplicateMacro(result.current.macros[0]);
+      await result.current.handleDuplicateMacro(mockMacros[0]);
     });
-
     expect(macroService.saveMacro).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Deploy (Copy)',
-      }),
+      expect.objectContaining({ name: 'Deploy (Copy)' }),
     );
   });
 
   it('handleDeleteRecording removes recording via service', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.recordings).toHaveLength(1));
-
     await act(async () => {
       await result.current.handleDeleteRecording('r1');
     });
-
     expect(macroService.deleteRecording).toHaveBeenCalledWith('r1');
   });
 
   it('handleRenameRecording updates the recording name', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.recordings).toHaveLength(1));
-
+    const rec = { ...mockRecordings[0] };
     await act(async () => {
-      await result.current.handleRenameRecording(result.current.recordings[0], 'Renamed');
+      await result.current.handleRenameRecording(rec as any, 'Renamed');
     });
-
     expect(macroService.saveRecording).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Renamed' }),
     );
@@ -217,12 +191,15 @@ describe('useMacroManager', () => {
   it('returns empty filtered lists when search matches nothing', async () => {
     const { result } = renderHook(() => useMacroManager(true));
     await waitFor(() => expect(result.current.macros).toHaveLength(2));
-
-    act(() => {
-      result.current.setSearchQuery('zzz-no-match-zzz');
-    });
-
+    act(() => result.current.setSearchQuery('zzz_no_match'));
     expect(result.current.filteredMacros).toHaveLength(0);
     expect(result.current.filteredRecordings).toHaveLength(0);
+  });
+
+  it('filters recordings by host name', async () => {
+    const { result } = renderHook(() => useMacroManager(true));
+    await waitFor(() => expect(result.current.recordings).toHaveLength(1));
+    act(() => result.current.setSearchQuery('server1'));
+    expect(result.current.filteredRecordings).toHaveLength(1);
   });
 });

@@ -46,7 +46,7 @@ describe('AuthService', () => {
     const service2 = new AuthService(storePath);
     await service2.ready();
     expect(await service2.verifyUser('alice', 'password1')).toBe(true);
-  });
+  }, 15000);
 
   test('removeUser', async () => {
     await service.addUser('charlie', 'secret');

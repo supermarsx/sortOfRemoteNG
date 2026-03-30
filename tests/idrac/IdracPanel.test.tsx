@@ -193,3 +193,131 @@ describe("IdracPanel - barrel export", () => {
     expect(mod.IdracPanel).toBeDefined();
   });
 });
+
+describe("IdracPanel - connection and health flows", () => {
+  const wireConnectedMocks = () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "idrac_connect") return "Connected via Redfish";
+      if (cmd === "idrac_get_config")
+        return { host: "10.0.0.1", port: 443, protocol: "Redfish", insecure: true };
+      if (cmd === "idrac_get_dashboard") {
+        return {
+          system: {
+            model: "PowerEdge R740",
+            manufacturer: "Dell Inc.",
+            serialNumber: "SN12345",
+            serviceTag: "ABC1234",
+            biosVersion: "2.15.1",
+            hostName: "server01",
+          },
+          idrac: {
+            firmwareVersion: "6.10.30.20",
+            macAddress: "AA:BB:CC:DD:EE:FF",
+          },
+          health: {
+            overallHealth: "OK",
+            processors: { health: "OK" },
+            memory: { health: "OK" },
+            storage: { health: "OK" },
+            fans: { health: "OK" },
+          },
+          power: { currentWatts: 250, maxWatts: 400 },
+          thermalSummary: null,
+          recentEvents: [],
+          firmwareCount: 12,
+          virtualDiskCount: 2,
+          physicalDiskCount: 4,
+          memoryDimmCount: 8,
+          nicCount: 2,
+        };
+      }
+      if (cmd === "idrac_get_system_info")
+        return {
+          model: "PowerEdge R740",
+          manufacturer: "Dell Inc.",
+          serviceTag: "ABC1234",
+          biosVersion: "2.15.1",
+          hostName: "server01",
+        };
+      if (cmd === "idrac_get_idrac_info")
+        return { firmwareVersion: "6.10.30.20", macAddress: "AA:BB:CC:DD:EE:FF" };
+      return null;
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("connects to iDRAC console", async () => {
+    wireConnectedMocks();
+    render(<IdracPanel />);
+
+    const hostInput = screen.getAllByPlaceholderText("192.168.1.100")[0];
+    fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
+
+    // Password input has no placeholder link; find by type
+    const pwFields = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+    expect(pwFields.length).toBeGreaterThanOrEqual(1);
+    fireEvent.change(pwFields[0], { target: { value: "calvin" } });
+
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "idrac_connect",
+        expect.objectContaining({
+          host: "10.0.0.1",
+          username: "root",
+          password: "calvin",
+          insecure: true,
+        }),
+      );
+    });
+
+    // Verify config is fetched after connect — allow async chain to settle
+    await new Promise(r => setTimeout(r, 200));
+    await waitFor(() => {
+      const calls = vi.mocked(invoke).mock.calls.map((c) => c[0]);
+      expect(calls).toContain("idrac_get_config");
+    });
+  });
+
+  it("displays server health information", async () => {
+    wireConnectedMocks();
+    render(<IdracPanel />);
+
+    const hostInput = screen.getAllByPlaceholderText("192.168.1.100")[0];
+    fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
+    fireEvent.click(screen.getByText("Connect"));
+
+    // After connect, wait for the component to transition to connected state
+    // The dashboard auto-loads on connection — verify invoke was called
+    await waitFor(() => {
+      const calls = vi.mocked(invoke).mock.calls.map((c) => c[0]);
+      expect(calls).toContain("idrac_connect");
+    });
+
+    // Verify connected state renders (header shows Refresh/Disconnect)
+    await waitFor(() => {
+      expect(screen.getByTitle("Disconnect")).toBeInTheDocument();
+    });
+  });
+
+  it("handles auth errors", async () => {
+    vi.mocked(invoke).mockRejectedValue("401 Unauthorized: invalid credentials");
+    render(<IdracPanel />);
+
+    const hostInput = screen.getAllByPlaceholderText("192.168.1.100")[0];
+    fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("401 Unauthorized: invalid credentials")).toBeInTheDocument();
+    });
+  });
+});

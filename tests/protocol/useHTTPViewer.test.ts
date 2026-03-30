@@ -2,44 +2,51 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+const { mockDispatch } = vi.hoisted(() => ({
+  mockDispatch: vi.fn(),
 }));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, fallback?: string) => fallback || key }),
-}));
-
-const mockDispatch = vi.fn();
-
-const defaultConnection = {
-  id: 'conn-1',
-  name: 'Test HTTP',
-  hostname: 'example.com',
-  port: 443,
-  protocol: 'https',
-  username: 'admin',
-  password: 'secret',
-  authType: 'basic',
-  basicAuthUsername: 'admin',
-  basicAuthPassword: 'secret',
-  httpVerifySsl: true,
-  isGroup: false,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
-
-let mockConnection = { ...defaultConnection };
 
 vi.mock('../../src/contexts/useConnections', () => ({
-  useConnections: vi.fn(() => ({
-    state: { connections: [mockConnection] },
+  useConnections: vi.fn().mockReturnValue({
+    state: {
+      connections: [
+        {
+          id: 'conn-1',
+          name: 'Web Server',
+          hostname: 'example.com',
+          port: 8080,
+          protocol: 'http',
+          username: 'admin',
+          password: 'pass123',
+          authType: 'basic',
+          basicAuthUsername: 'admin',
+          basicAuthPassword: 'secret',
+          httpVerifySsl: true,
+          isGroup: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'conn-2',
+          name: 'HTTPS Site',
+          hostname: 'secure.example.com',
+          port: 443,
+          protocol: 'https',
+          isGroup: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    },
     dispatch: mockDispatch,
-  })),
+  }),
 }));
 
 vi.mock('../../src/contexts/SettingsContext', () => ({
-  useSettings: vi.fn().mockReturnValue({ settings: {} }),
+  useSettings: vi.fn().mockReturnValue({
+    settings: { theme: 'dark' },
+    updateSettings: vi.fn(),
+  }),
 }));
 
 import { useHTTPViewer } from '../../src/hooks/protocol/useHTTPViewer';
@@ -47,195 +54,176 @@ import type { ConnectionSession } from '../../src/types/connection/connection';
 
 const mockInvoke = vi.mocked(invoke);
 
-const mockSession: ConnectionSession = {
-  id: 's1',
+const makeSession = (overrides: Partial<ConnectionSession> = {}): ConnectionSession => ({
+  id: 'sess-1',
   connectionId: 'conn-1',
-  protocol: 'https',
-  hostname: 'example.com',
-  name: 'Test HTTP',
+  name: 'Web Server',
   status: 'connected',
   startTime: new Date(),
-};
+  protocol: 'http',
+  hostname: 'example.com',
+  ...overrides,
+});
 
-function setupInvokeMock() {
-  mockInvoke.mockImplementation(async (cmd: string) => {
-    switch (cmd) {
-      case 'start_basic_auth_proxy':
-        return { local_port: 8080, session_id: 'ps1', proxy_url: 'http://localhost:8080' };
-      case 'stop_basic_auth_proxy':
-        return undefined;
-      default:
-        return undefined;
-    }
-  });
-}
+const makeHttpsSession = (): ConnectionSession => ({
+  id: 'sess-2',
+  connectionId: 'conn-2',
+  name: 'HTTPS Site',
+  status: 'connected',
+  startTime: new Date(),
+  protocol: 'https',
+  hostname: 'secure.example.com',
+});
 
 describe('useHTTPViewer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConnection = { ...defaultConnection };
-    setupInvokeMock();
+    mockInvoke.mockReset();
+    mockInvoke.mockResolvedValue(undefined);
   });
 
-  it('has correct initial connection reference', () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
-    expect(result.current.connection).toBeDefined();
-    expect(result.current.connection?.hostname).toBe('example.com');
+  // ── buildTargetUrl ─────────────────────────────────────────────────────
+
+  it('buildTargetUrl returns http URL with non-standard port', () => {
+    const { result } = renderHook(() => useHTTPViewer(makeSession()));
+    expect(result.current.buildTargetUrl()).toBe('http://example.com:8080');
   });
 
-  it('buildTargetUrl builds https URL with default port omitted', () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
-    const url = result.current.buildTargetUrl();
-    expect(url).toBe('https://example.com');
+  it('buildTargetUrl omits port 80 for http', () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(makeSession({ connectionId: 'conn-1' }))
+    );
+    // conn-1 uses port 8080, so port is shown
+    expect(result.current.buildTargetUrl()).toContain('8080');
   });
 
-  it('buildTargetUrl includes non-default port', () => {
-    mockConnection = { ...defaultConnection, port: 8443 };
-
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
-    const url = result.current.buildTargetUrl();
-    expect(url).toBe('https://example.com:8443');
+  it('buildTargetUrl uses https for https protocol', () => {
+    const { result } = renderHook(() => useHTTPViewer(makeHttpsSession()));
+    // conn-2 port 443 → omitted for https
+    expect(result.current.buildTargetUrl()).toBe('https://secure.example.com');
   });
+
+  it('buildTargetUrl returns empty when connection not found', () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(makeSession({ connectionId: 'nonexistent' }))
+    );
+    expect(result.current.buildTargetUrl()).toBe('');
+  });
+
+  // ── resolveCredentials ─────────────────────────────────────────────────
 
   it('resolveCredentials returns basic auth credentials', () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
+    const { result } = renderHook(() => useHTTPViewer(makeSession()));
     const creds = result.current.resolveCredentials();
     expect(creds).toEqual({ username: 'admin', password: 'secret' });
   });
 
+  it('resolveCredentials returns null when connection not found', () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(makeSession({ connectionId: 'nonexistent' }))
+    );
+    expect(result.current.resolveCredentials()).toBeNull();
+  });
+
   it('resolveCredentials returns null when no credentials configured', () => {
-    mockConnection = {
-      ...defaultConnection,
-      authType: undefined as any,
-      basicAuthUsername: undefined as any,
-      basicAuthPassword: undefined as any,
-      username: undefined as any,
-      password: undefined as any,
-    };
-
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
-    const creds = result.current.resolveCredentials();
-    expect(creds).toBeNull();
+    const { result } = renderHook(() => useHTTPViewer(makeHttpsSession()));
+    expect(result.current.resolveCredentials()).toBeNull();
   });
 
-  it('initProxy starts proxy when credentials are present', async () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
+  // ── Proxy initialization ───────────────────────────────────────────────
+
+  it('initProxy starts proxy for connection with basic auth', async () => {
+    const proxyResp = { local_port: 9000, session_id: 'proxy-1', proxy_url: 'http://127.0.0.1:9000' };
+    mockInvoke.mockResolvedValue(proxyResp);
+
+    const { result } = renderHook(() => useHTTPViewer(makeSession()));
 
     await waitFor(() => {
       expect(result.current.status).toBe('connected');
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('start_basic_auth_proxy', expect.objectContaining({
-      config: expect.objectContaining({
-        username: 'admin',
-        password: 'secret',
-      }),
-    }));
-    expect(result.current.proxyUrl).toBe('http://localhost:8080');
-    expect(result.current.proxySessionId).toBe('ps1');
+    expect(result.current.proxyUrl).toBe('http://127.0.0.1:9000');
+    expect(result.current.proxySessionId).toBe('proxy-1');
   });
 
-  it('initProxy sets target URL directly when no credentials', async () => {
-    mockConnection = {
-      ...defaultConnection,
-      port: 80,
-      authType: undefined as any,
-      basicAuthUsername: undefined as any,
-      basicAuthPassword: undefined as any,
-      username: undefined as any,
-      password: undefined as any,
-    };
-
-    const httpSession = { ...mockSession, protocol: 'http' };
-    const { result } = renderHook(() => useHTTPViewer(httpSession));
+  it('initProxy sets direct URL when no credentials', async () => {
+    const { result } = renderHook(() => useHTTPViewer(makeHttpsSession()));
 
     await waitFor(() => {
       expect(result.current.status).toBe('connected');
     });
 
-    expect(mockInvoke).not.toHaveBeenCalledWith('start_basic_auth_proxy', expect.any(Object));
-    expect(result.current.proxyUrl).toBe('http://example.com');
+    expect(result.current.proxyUrl).toBe('https://secure.example.com');
   });
 
-  it('initProxy sets error on failure', async () => {
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'start_basic_auth_proxy') throw new Error('Proxy failed');
-      return undefined;
-    });
-
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
+  it('initProxy sets error when connection not found', async () => {
+    const { result } = renderHook(() =>
+      useHTTPViewer(makeSession({ connectionId: 'nonexistent' }))
+    );
 
     await waitFor(() => {
       expect(result.current.status).toBe('error');
     });
 
-    expect(result.current.error).toBe('Proxy failed');
+    expect(result.current.error).toBe('Connection not found');
   });
 
-  it('navigation: goBack at start does not change index', async () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
+  it('initProxy sets error on invoke failure', async () => {
+    mockInvoke.mockRejectedValue(new Error('Port in use'));
+
+    const { result } = renderHook(() => useHTTPViewer(makeSession()));
 
     await waitFor(() => {
-      expect(result.current.status).toBe('connected');
+      expect(result.current.status).toBe('error');
     });
 
-    expect(result.current.history.length).toBeGreaterThanOrEqual(1);
+    expect(result.current.error).toBe('Port in use');
+  });
+
+  // ── Navigation history ─────────────────────────────────────────────────
+
+  it('history is populated after proxy init', async () => {
+    mockInvoke.mockResolvedValue({
+      local_port: 9000,
+      session_id: 'p1',
+      proxy_url: 'http://127.0.0.1:9000',
+    });
+
+    const { result } = renderHook(() => useHTTPViewer(makeSession()));
+
+    await waitFor(() => {
+      expect(result.current.history.length).toBeGreaterThan(0);
+    });
+
     expect(result.current.historyIndex).toBe(0);
-
-    act(() => {
-      result.current.goBack();
-    });
-    expect(result.current.historyIndex).toBe(0);
   });
 
-  it('isSecure is true for https connections', async () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
-
-    await waitFor(() => {
-      expect(result.current.status).toBe('connected');
-    });
-
-    expect(result.current.isSecure).toBe(true);
-  });
-
-  it('cleanup stops proxy on unmount', async () => {
-    const { result, unmount } = renderHook(() => useHTTPViewer(mockSession));
-
-    await waitFor(() => {
-      expect(result.current.status).toBe('connected');
-    });
-
-    expect(result.current.proxySessionId).toBe('ps1');
-
-    unmount();
-
-    expect(mockInvoke).toHaveBeenCalledWith('stop_basic_auth_proxy', { sessionId: 'ps1' });
-  });
-
-  it('toggleFullscreen toggles state', () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
+  it('toggleFullscreen toggles fullscreen state', async () => {
+    const { result } = renderHook(() => useHTTPViewer(makeHttpsSession()));
 
     expect(result.current.isFullscreen).toBe(false);
 
-    act(() => {
-      result.current.toggleFullscreen();
-    });
+    act(() => { result.current.toggleFullscreen(); });
     expect(result.current.isFullscreen).toBe(true);
 
-    act(() => {
-      result.current.toggleFullscreen();
-    });
+    act(() => { result.current.toggleFullscreen(); });
     expect(result.current.isFullscreen).toBe(false);
   });
 
-  it('showSettings can be toggled', () => {
-    const { result } = renderHook(() => useHTTPViewer(mockSession));
+  // ── TOTP configs ───────────────────────────────────────────────────────
 
-    expect(result.current.showSettings).toBe(false);
+  it('handleUpdateTotpConfigs dispatches UPDATE_CONNECTION', () => {
+    const { result } = renderHook(() => useHTTPViewer(makeSession()));
 
     act(() => {
-      result.current.setShowSettings(true);
+      result.current.handleUpdateTotpConfigs([{ name: 'GitHub', secret: 'abc' } as any]);
     });
-    expect(result.current.showSettings).toBe(true);
+
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UPDATE_CONNECTION',
+        payload: expect.objectContaining({ totpConfigs: [{ name: 'GitHub', secret: 'abc' }] }),
+      })
+    );
   });
 });

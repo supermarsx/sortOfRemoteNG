@@ -259,3 +259,152 @@ describe("SynologyPanel - standalone views", () => {
     expect(mod.default).toBeDefined();
   });
 });
+
+describe("SynologyPanel - connection and post-connect flows", () => {
+  const wireDashboardMocks = () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "syn_connect") return "Connected";
+      if (cmd === "syn_get_dashboard")
+        return {
+          system_info: {
+            model: "DS920+",
+            version: "7.2",
+            serial: "ABC123",
+          },
+          utilization: {
+            cpu: { system_load: 25, user_load: 10 },
+            memory: {
+              physical_memory: {
+                total_real: 4096000,
+                avail_real: 2048000,
+              },
+            },
+            network: [],
+            disk: [],
+          },
+          storage: { volumes: [], disks: [], pools: [] },
+          network: null,
+          hardware: null,
+        };
+      if (cmd === "syn_list_services")
+        return [
+          { name: "SMB", enabled: true, running: true },
+          { name: "NFS", enabled: true, running: false },
+          { name: "SSH", enabled: false, running: false },
+        ];
+      if (cmd === "syn_get_smb_config") return { enabled: true };
+      if (cmd === "syn_get_nfs_config") return { enabled: true };
+      if (cmd === "syn_get_ssh_config") return { enabled: false };
+      if (cmd === "syn_get_system_info")
+        return { model: "DS920+", version: "7.2", serial: "ABC123" };
+      if (cmd === "syn_get_utilization")
+        return {
+          cpu: { system_load: 25, user_load: 10 },
+          memory: {
+            physical_memory: { total_real: 4096000, avail_real: 2048000 },
+          },
+          network: [],
+          disk: [],
+        };
+      if (cmd === "syn_get_storage_overview") return { volumes: [], disks: [], pools: [] };
+      if (cmd === "syn_list_disks") return [];
+      if (cmd === "syn_list_volumes") return [];
+      return null;
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("connects to Synology NAS", async () => {
+    wireDashboardMocks();
+    render(<SynologyPanel isOpen onClose={() => {}} />);
+
+    const hostInput = screen.getByPlaceholderText("192.168.1.1");
+    fireEvent.change(hostInput, { target: { value: "nas.local" } });
+
+    const pwField = screen.getByPlaceholderText("••••••••");
+    fireEvent.change(pwField, { target: { value: "naspass" } });
+
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "syn_connect",
+        expect.objectContaining({
+          host: "nas.local",
+          username: "admin",
+          password: "naspass",
+          useHttps: true,
+          insecure: true,
+        }),
+      );
+    });
+
+    // Should transition to connected state and show dashboard
+    await waitFor(() => {
+      expect(screen.getByText("DS920+")).toBeInTheDocument();
+    });
+  });
+
+  it("lists services after connection", async () => {
+    wireDashboardMocks();
+    render(<SynologyPanel isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "syn_connect",
+        expect.anything(),
+      );
+    });
+
+    // Switch to services tab
+    await waitFor(() => {
+      expect(screen.getByText("DS920+")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("services"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("syn_list_services");
+    });
+  });
+
+  it("handles connection errors", async () => {
+    vi.mocked(invoke).mockRejectedValue("Network unreachable: EHOSTUNREACH");
+    render(<SynologyPanel isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Network unreachable: EHOSTUNREACH")).toBeInTheDocument();
+    });
+  });
+
+  it("tab switching between views", async () => {
+    wireDashboardMocks();
+    render(<SynologyPanel isOpen onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("DS920+")).toBeInTheDocument();
+    });
+
+    // Click system tab
+    fireEvent.click(screen.getByText("system"));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("syn_get_system_info");
+    });
+
+    // Click storage tab
+    fireEvent.click(screen.getByText("storage"));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("syn_get_storage_overview");
+    });
+  });
+});

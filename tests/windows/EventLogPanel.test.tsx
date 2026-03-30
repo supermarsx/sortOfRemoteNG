@@ -160,4 +160,49 @@ describe("EventLogPanel", () => {
     fireEvent.click(screen.getByText("DNS Client Events"));
     expect(screen.getByRole("region", { name: /DNS Client Events/i })).toBeInTheDocument();
   });
+
+  it("renders time-range filter inputs with aria-labels", async () => {
+    const cmd = createCommandMock();
+    const ctx: WinmgmtContext = {
+      sessionId: "session-1",
+      hostname: "win-host",
+      cmd: cmd as WinmgmtContext["cmd"],
+    };
+
+    render(<EventLogPanel ctx={ctx} />);
+    await screen.findByRole("table", { name: /Windows event log entries/i });
+
+    expect(screen.getByLabelText("Start date filter")).toBeInTheDocument();
+    expect(screen.getByLabelText("End date filter")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Apply Filters/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Clear/i })).toBeInTheDocument();
+  });
+
+  it("applies date range filter when Apply clicked", async () => {
+    const cmd = createCommandMock();
+    const ctx: WinmgmtContext = {
+      sessionId: "session-1",
+      hostname: "win-host",
+      cmd: cmd as WinmgmtContext["cmd"],
+    };
+
+    render(<EventLogPanel ctx={ctx} />);
+    await screen.findByRole("table", { name: /Windows event log entries/i });
+
+    fireEvent.change(screen.getByLabelText("Start date filter"), {
+      target: { value: "2026-03-01T00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("End date filter"), {
+      target: { value: "2026-03-30T23:59" },
+    });
+
+    // The useEffect triggers fetchEntries when startTime/endTime change
+    await waitFor(() => {
+      const calls = cmd.mock.calls.filter((args) => args[0] === "winmgmt_query_events");
+      const lastCall = calls[calls.length - 1];
+      const filter = (lastCall[1] as { filter: EventLogFilter }).filter;
+      expect(filter.startTime).not.toBeNull();
+      expect(filter.endTime).not.toBeNull();
+    });
+  });
 });

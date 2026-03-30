@@ -9,12 +9,21 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../src/contexts/useConnections', () => ({
   useConnections: () => ({
-    state: { connections: [], sessions: [] },
+    state: {
+      connections: [
+        { id: 'c1', name: 'Server Alpha' },
+        { id: 'c2', name: 'Server Beta' },
+      ],
+      sessions: [],
+    },
   }),
 }));
 
 const mockCollectionManager = {
-  getAllCollections: vi.fn().mockResolvedValue([]),
+  getAllCollections: vi.fn().mockResolvedValue([
+    { id: 'col1', name: 'Collection A' },
+    { id: 'col2', name: 'Collection B' },
+  ]),
 };
 
 vi.mock('../../src/utils/connection/collectionManager', () => ({
@@ -27,14 +36,24 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn(),
 }));
 
-// ── Storage key used by hook ─────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'sortofremoteng-shortcuts';
 
-// Lazily import the hook to avoid OOM from heavy static module graph
 async function getHook() {
   const mod = await import('../../src/hooks/window/useShortcutManager');
   return mod.useShortcutManager;
+}
+
+function makeShortcut(overrides: Record<string, any> = {}) {
+  return {
+    id: '1',
+    name: 'My Shortcut',
+    path: 'C:\\Users\\Desktop\\shortcut.lnk',
+    createdAt: '2025-01-01T00:00:00Z',
+    exists: true,
+    ...overrides,
+  };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -51,80 +70,29 @@ describe('useShortcutManager', () => {
     expect(result.current.shortcuts).toEqual([]);
   });
 
-  it('loads persisted shortcuts from localStorage', async () => {
-    const stored = [
-      { id: '1', name: 'Test', path: 'C:\\test.lnk', createdAt: '2025-01-01', exists: true },
-    ];
+  it('loads persisted shortcuts from localStorage on open', async () => {
+    const stored = [makeShortcut()];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-
     const useShortcutManager = await getHook();
     const { result } = renderHook(() => useShortcutManager(true));
     await waitFor(() => {
       expect(result.current.shortcuts.length).toBe(1);
-      expect(result.current.shortcuts[0].name).toBe('Test');
+      expect(result.current.shortcuts[0].name).toBe('My Shortcut');
     });
   });
 
-  it('exposes form state setters', async () => {
-    const useShortcutManager = await getHook();
-    const { result } = renderHook(() => useShortcutManager(true));
-    expect(typeof result.current.setShortcutName).toBe('function');
-    expect(typeof result.current.setSelectedCollectionId).toBe('function');
-    expect(typeof result.current.setSelectedConnectionId).toBe('function');
-    expect(typeof result.current.setSelectedFolder).toBe('function');
-    expect(typeof result.current.setCustomFolderPath).toBe('function');
-  });
-
-  it('shortcutName defaults to empty string', async () => {
+  it('form defaults: shortcutName is empty, selectedFolder is desktop', async () => {
     const useShortcutManager = await getHook();
     const { result } = renderHook(() => useShortcutManager(true));
     expect(result.current.shortcutName).toBe('');
-  });
-
-  it('selectedFolder defaults to desktop', async () => {
-    const useShortcutManager = await getHook();
-    const { result } = renderHook(() => useShortcutManager(true));
     expect(result.current.selectedFolder).toBe('desktop');
   });
 
-  it('updating shortcutName reflects in state', async () => {
+  it('selectedCollectionId and selectedConnectionId default to empty strings', async () => {
     const useShortcutManager = await getHook();
     const { result } = renderHook(() => useShortcutManager(true));
-    act(() => {
-      result.current.setShortcutName('My Shortcut');
-    });
-    expect(result.current.shortcutName).toBe('My Shortcut');
-  });
-
-  it('cleanup removes missing shortcuts from localStorage', async () => {
-    const stored = [
-      { id: '1', name: 'Exists', path: 'C:\\exists.lnk', createdAt: '2025-01-01', exists: true },
-      { id: '2', name: 'Gone', path: 'C:\\gone.lnk', createdAt: '2025-01-01', exists: false },
-    ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-
-    const useShortcutManager = await getHook();
-    const { result } = renderHook(() => useShortcutManager(true));
-    await waitFor(() => expect(result.current.shortcuts.length).toBe(2));
-
-    act(() => {
-      result.current.cleanupShortcuts();
-    });
-
-    await waitFor(() => {
-      expect(result.current.shortcuts.length).toBe(1);
-      expect(result.current.shortcuts[0].name).toBe('Exists');
-    });
-  });
-
-  it('does not load data when isOpen is false', async () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([
-      { id: '1', name: 'X', path: 'C:\\x.lnk', createdAt: '2025-01-01', exists: true },
-    ]));
-
-    const useShortcutManager = await getHook();
-    const { result } = renderHook(() => useShortcutManager(false));
-    expect(result.current.shortcuts).toEqual([]);
+    expect(result.current.selectedCollectionId).toBe('');
+    expect(result.current.selectedConnectionId).toBe('');
   });
 
   it('statusMessage and errorMessage default to empty', async () => {
@@ -134,44 +102,77 @@ describe('useShortcutManager', () => {
     expect(result.current.errorMessage).toBe('');
   });
 
-  it('handleEditShortcut populates form fields', async () => {
-    const stored = [
-      { id: '1', name: 'Edit Me', path: 'C:\\edit.lnk', collectionId: 'col1', connectionId: 'conn1', createdAt: '2025-01-01', exists: true },
-    ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-
+  it('does not load data when isOpen is false', async () => {
     const useShortcutManager = await getHook();
-    const { result } = renderHook(() => useShortcutManager(true));
-    await waitFor(() => expect(result.current.shortcuts.length).toBe(1));
-
-    act(() => {
-      result.current.handleEditShortcut(result.current.shortcuts[0]);
-    });
-
-    expect(result.current.shortcutName).toBe('Edit Me');
-    expect(result.current.editingShortcut).toBeDefined();
-    expect(result.current.editingShortcut!.id).toBe('1');
+    const spy = mockCollectionManager.getAllCollections;
+    spy.mockClear();
+    renderHook(() => useShortcutManager(false));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(spy).not.toHaveBeenCalled();
   });
 
-  it('cancelEditing clears editing state and form', async () => {
-    const stored = [
-      { id: '1', name: 'X', path: 'C:\\x.lnk', createdAt: '2025-01-01', exists: true },
-    ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  it('exposes form state setters that update form values', async () => {
+    const useShortcutManager = await getHook();
+    const { result } = renderHook(() => useShortcutManager(true));
+    act(() => result.current.setShortcutName('New Name'));
+    expect(result.current.shortcutName).toBe('New Name');
+    act(() => result.current.setSelectedFolder('documents'));
+    expect(result.current.selectedFolder).toBe('documents');
+  });
 
+  it('handleEditShortcut populates form fields from shortcut', async () => {
+    const shortcut = makeShortcut({ collectionId: 'col1', connectionId: 'c1' });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([shortcut]));
     const useShortcutManager = await getHook();
     const { result } = renderHook(() => useShortcutManager(true));
     await waitFor(() => expect(result.current.shortcuts.length).toBe(1));
-
-    act(() => {
-      result.current.handleEditShortcut(result.current.shortcuts[0]);
-    });
+    act(() => result.current.handleEditShortcut(shortcut as any));
+    expect(result.current.shortcutName).toBe('My Shortcut');
+    expect(result.current.selectedCollectionId).toBe('col1');
+    expect(result.current.selectedConnectionId).toBe('c1');
     expect(result.current.editingShortcut).not.toBeNull();
+  });
 
-    act(() => {
-      result.current.cancelEditing();
-    });
+  it('cancelEditing clears editing state and resets form', async () => {
+    const shortcut = makeShortcut({ collectionId: 'col1' });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([shortcut]));
+    const useShortcutManager = await getHook();
+    const { result } = renderHook(() => useShortcutManager(true));
+    await waitFor(() => expect(result.current.shortcuts.length).toBe(1));
+    act(() => result.current.handleEditShortcut(shortcut as any));
+    expect(result.current.editingShortcut).not.toBeNull();
+    act(() => result.current.cancelEditing());
     expect(result.current.editingShortcut).toBeNull();
     expect(result.current.shortcutName).toBe('');
+  });
+
+  it('cleanupShortcuts removes shortcuts where exists=false', async () => {
+    const stored = [
+      makeShortcut({ id: '1', exists: true }),
+      makeShortcut({ id: '2', name: 'Dead', exists: false }),
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    const useShortcutManager = await getHook();
+    const { result } = renderHook(() => useShortcutManager(true));
+    await waitFor(() => expect(result.current.shortcuts.length).toBe(2));
+    act(() => result.current.cleanupShortcuts());
+    expect(result.current.shortcuts.length).toBe(1);
+    expect(result.current.shortcuts[0].id).toBe('1');
+  });
+
+  it('getConnectionName resolves connection id to name', async () => {
+    const useShortcutManager = await getHook();
+    const { result } = renderHook(() => useShortcutManager(true));
+    expect(result.current.getConnectionName('c1')).toBe('Server Alpha');
+    expect(result.current.getConnectionName('nonexistent')).toBe('Unknown');
+    expect(result.current.getConnectionName(undefined)).toBeNull();
+  });
+
+  it('getCollectionName resolves collection id to name', async () => {
+    const useShortcutManager = await getHook();
+    const { result } = renderHook(() => useShortcutManager(true));
+    await waitFor(() => expect(result.current.collections.length).toBe(2));
+    expect(result.current.getCollectionName('col1')).toBe('Collection A');
+    expect(result.current.getCollectionName(undefined)).toBeNull();
   });
 });

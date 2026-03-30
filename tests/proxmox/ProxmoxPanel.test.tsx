@@ -258,3 +258,143 @@ describe("Proxmox TypeScript types", () => {
     expect(types).toBeDefined();
   });
 });
+
+describe("ProxmoxPanel - connection and post-connect flows", () => {
+  const wireConnectedMocks = () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "proxmox_connect") return "Connected";
+      if (cmd === "proxmox_get_config") return null;
+      if (cmd === "proxmox_get_version") return { version: "8.0", release: "8.0-1", repoid: "abc" };
+      if (cmd === "proxmox_list_nodes") {
+        return [
+          { node: "pve1", status: "online" },
+          { node: "pve2", status: "online" },
+        ];
+      }
+      if (cmd === "proxmox_get_cluster_status") return [];
+      if (cmd === "proxmox_list_cluster_resources") return [];
+      if (cmd === "proxmox_list_qemu_vms") {
+        return [
+          { vmid: 101, name: "web-01", status: "running", cpus: 2, maxmem: 2147483648, maxdisk: 4294967296 },
+          { vmid: 102, name: "db-01", status: "stopped", cpus: 4, maxmem: 4294967296, maxdisk: 8589934592 },
+        ];
+      }
+      if (cmd === "proxmox_list_lxc_containers") {
+        return [
+          { vmid: 201, name: "ct-01", status: "running", cpus: 2, maxmem: 1073741824, maxdisk: 2147483648 },
+        ];
+      }
+      if (cmd === "proxmox_list_storage") {
+        return [{ storage: "local-lvm", type: "lvmthin" }];
+      }
+      if (cmd === "proxmox_list_tasks") return [];
+      return null;
+    });
+  };
+
+  const connectPanel = async () => {
+    render(<ProxmoxPanel isOpen onClose={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText("192.168.1.100"), { target: { value: "10.0.0.1" } });
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "proxmox_connect",
+        expect.objectContaining({ host: "10.0.0.1" }),
+      );
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("connects to Proxmox server with credentials", async () => {
+    wireConnectedMocks();
+    render(<ProxmoxPanel isOpen onClose={() => {}} />);
+
+    fireEvent.change(screen.getByPlaceholderText("192.168.1.100"), { target: { value: "pve.local" } });
+    // Password input has no placeholder/label link; find by type
+    const pwFields = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+    expect(pwFields.length).toBeGreaterThanOrEqual(1);
+    fireEvent.change(pwFields[0], { target: { value: "secret123" } });
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "proxmox_connect",
+        expect.objectContaining({
+          host: "pve.local",
+          username: "root@pam",
+          password: "secret123",
+          insecure: true,
+        }),
+      );
+    });
+  });
+
+  it("lists VMs after connection", async () => {
+    wireConnectedMocks();
+    await connectPanel();
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "proxmox_list_qemu_vms",
+        expect.objectContaining({ node: "pve1" }),
+      );
+    });
+
+    // Navigate to the QEMU tab to see VMs
+    fireEvent.click(screen.getByText("qemu"));
+    await waitFor(() => {
+      expect(screen.getByText("web-01")).toBeInTheDocument();
+      expect(screen.getByText("db-01")).toBeInTheDocument();
+    });
+  });
+
+  it("handles connection errors", async () => {
+    vi.mocked(invoke).mockRejectedValue("Authentication failed: invalid credentials");
+    render(<ProxmoxPanel isOpen onClose={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText("192.168.1.100"), { target: { value: "bad-host" } });
+    fireEvent.click(screen.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Authentication failed: invalid credentials")).toBeInTheDocument();
+    });
+  });
+
+  it("switches between dashboard tabs", async () => {
+    wireConnectedMocks();
+    await connectPanel();
+
+    // After connection the dashboard tab should be active by default
+    // Switch to qemu tab
+    fireEvent.click(screen.getByText("qemu"));
+    await waitFor(() => {
+      expect(screen.getByText("web-01")).toBeInTheDocument();
+    });
+
+    // Switch to lxc tab
+    fireEvent.click(screen.getByText("lxc"));
+    await waitFor(() => {
+      expect(screen.getByText("ct-01")).toBeInTheDocument();
+    });
+
+    // Switch to storage tab
+    fireEvent.click(screen.getByText("storage"));
+    await waitFor(() => {
+      expect(screen.getByText("local-lvm")).toBeInTheDocument();
+    });
+
+    // Switch to nodes tab
+    fireEvent.click(screen.getByText("nodes"));
+    await waitFor(() => {
+      expect(screen.getByText("pve1")).toBeInTheDocument();
+      expect(screen.getByText("pve2")).toBeInTheDocument();
+    });
+  });
+});

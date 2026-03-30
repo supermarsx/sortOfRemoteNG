@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DetachedClient from "../../app/detached/DetachedClient";
+import { listen } from "@tauri-apps/api/event";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
@@ -129,5 +130,87 @@ describe("DetachedClient accessibility", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /rename tab/i }));
 
     expect(await screen.findByLabelText(/rename tab session one/i)).toBeInTheDocument();
+  });
+
+  it("tab close buttons have descriptive aria-label", async () => {
+    await renderAndLoadDetachedClient();
+
+    const closeBtn = screen.getByLabelText(/close session one/i);
+    expect(closeBtn).toBeInTheDocument();
+    expect(closeBtn.tagName).toBe("BUTTON");
+  });
+
+  it("status indicator dots have accessible labels", async () => {
+    await renderAndLoadDetachedClient();
+
+    const statusDot = screen.getByRole("status", { name: /connected/i });
+    expect(statusDot).toBeInTheDocument();
+  });
+});
+
+describe("DetachedClient reconnect banner", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    const disconnectedSession = { ...syncedSession, status: "disconnected" };
+    vi.mocked(listen).mockImplementation(((eventName: string, handler: any) => {
+      if (eventName === "wm:sync") {
+        queueMicrotask(() => {
+          handler({
+            payload: {
+              windowId: "detached-1",
+              sessions: [disconnectedSession],
+              connections: [syncedConnection],
+              tabGroups: [],
+              activeSessionId: "s1",
+            },
+          });
+        });
+      }
+      return Promise.resolve(() => {});
+    }) as any);
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("shows reconnect banner when session disconnected", async () => {
+    render(<DetachedClient />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/connection lost/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry connection/i })).toBeInTheDocument();
+  });
+
+  it("shows error banner when session has error status", async () => {
+    const errorSession = { ...syncedSession, status: "error" };
+    vi.mocked(listen).mockImplementation(((eventName: string, handler: any) => {
+      if (eventName === "wm:sync") {
+        queueMicrotask(() => {
+          handler({
+            payload: {
+              windowId: "detached-1",
+              sessions: [errorSession],
+              connections: [syncedConnection],
+              tabGroups: [],
+              activeSessionId: "s1",
+            },
+          });
+        });
+      }
+      return Promise.resolve(() => {});
+    }) as any);
+
+    render(<DetachedClient />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/connection error occurred/i)).toBeInTheDocument();
   });
 });

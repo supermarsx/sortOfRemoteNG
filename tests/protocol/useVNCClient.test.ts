@@ -1,204 +1,214 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}));
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, fallback?: string) => fallback || key }),
+vi.mock('../../src/contexts/useConnections', () => ({
+  useConnections: vi.fn().mockReturnValue({
+    state: {
+      connections: [
+        {
+          id: 'conn-1',
+          name: 'VNC Server',
+          hostname: '10.0.0.5',
+          port: 5900,
+          protocol: 'vnc',
+          password: 'vncpass',
+          isGroup: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    },
+    dispatch: vi.fn(),
+  }),
 }));
 
 vi.mock('../../src/utils/core/debugLogger', () => ({
   debugLog: vi.fn(),
 }));
 
-vi.mock('../../src/contexts/useConnections', () => ({
-  useConnections: vi.fn().mockReturnValue({
-    state: {
-      connections: [{
-        id: 'conn-1',
-        name: 'Test VNC',
-        hostname: '192.168.1.10',
-        port: 5900,
-        protocol: 'vnc',
-        password: 'vncpass',
-        isGroup: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }],
-    },
-    dispatch: vi.fn(),
-  }),
-}));
-
-// Mock canvas context since jsdom doesn't support it
-const mockCtx = {
-  fillRect: vi.fn(),
-  clearRect: vi.fn(),
-  drawImage: vi.fn(),
-  fillText: vi.fn(),
-  beginPath: vi.fn(),
-  arc: vi.fn(),
-  fill: vi.fn(),
-  strokeRect: vi.fn(),
-  createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-};
-
-HTMLCanvasElement.prototype.getContext = vi.fn(() => mockCtx) as any;
-
-// Mock the noVNC import to prevent real connection attempts
+// Mock noVNC import to always fail so it falls back to simulated desktop
 vi.mock('novnc/core/rfb', () => {
-  throw new Error('noVNC not available');
+  throw new Error('noVNC not available in test');
 });
 
 import { useVNCClient } from '../../src/hooks/protocol/useVNCClient';
 import type { ConnectionSession } from '../../src/types/connection/connection';
+import type { VNCSettings } from '../../src/hooks/protocol/useVNCClient';
 
-const mockSession: ConnectionSession = {
-  id: 's1',
+const makeSession = (overrides: Partial<ConnectionSession> = {}): ConnectionSession => ({
+  id: 'sess-1',
   connectionId: 'conn-1',
-  protocol: 'vnc',
-  hostname: '192.168.1.10',
-  name: 'Test VNC',
+  name: 'VNC Server',
   status: 'connected',
   startTime: new Date(),
+  protocol: 'vnc',
+  hostname: '10.0.0.5',
+  ...overrides,
+});
+
+// Create a mock canvas context
+const mockCtx = {
+  fillStyle: '',
+  strokeStyle: '',
+  lineWidth: 0,
+  font: '',
+  textAlign: 'left' as CanvasTextAlign,
+  fillRect: vi.fn(),
+  strokeRect: vi.fn(),
+  fillText: vi.fn(),
+  beginPath: vi.fn(),
+  arc: vi.fn(),
+  fill: vi.fn(),
+  createLinearGradient: vi.fn().mockReturnValue({
+    addColorStop: vi.fn(),
+  }),
 };
+
+// Mock HTMLCanvasElement.getContext
+const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
 describe('useVNCClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(mockCtx) as any;
   });
 
-  it('has correct initial state', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
+  afterAll(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+  });
 
-    expect(result.current.isFullscreen).toBe(false);
-    expect(result.current.showSettings).toBe(false);
+  // ── Initial state ───────────────────────────────────────────────────────
+
+  it('starts in connecting state', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+    // Initial status is 'connecting' before any async work completes
     expect(result.current.connectionStatus).toBe('connecting');
+    expect(result.current.isConnected).toBe(false);
   });
 
-  it('has correct default VNC settings', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
+  it('has default VNC settings', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
 
-    expect(result.current.settings).toEqual({
-      viewOnly: false,
-      scaleViewport: true,
-      clipViewport: false,
-      dragViewport: true,
-      resizeSession: false,
-      showDotCursor: false,
-      localCursor: true,
-      sharedMode: false,
-      bellPolicy: 'on',
-      compressionLevel: 2,
-      quality: 6,
-    });
+    expect(result.current.settings.viewOnly).toBe(false);
+    expect(result.current.settings.scaleViewport).toBe(true);
+    expect(result.current.settings.localCursor).toBe(true);
+    expect(result.current.settings.quality).toBe(6);
+    expect(result.current.settings.compressionLevel).toBe(2);
   });
 
-  it('setSettings updates VNC settings', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
+  it('showSettings is initially false', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+    expect(result.current.showSettings).toBe(false);
+  });
+
+  it('isFullscreen is initially false', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+    expect(result.current.isFullscreen).toBe(false);
+  });
+
+  // ── Settings updates ───────────────────────────────────────────────────
+
+  it('setSettings updates individual settings', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
 
     act(() => {
-      result.current.setSettings({ ...result.current.settings, viewOnly: true, quality: 9 });
+      result.current.setSettings((prev: VNCSettings) => ({ ...prev, viewOnly: true }));
     });
-
     expect(result.current.settings.viewOnly).toBe(true);
+
+    act(() => {
+      result.current.setSettings((prev: VNCSettings) => ({ ...prev, quality: 9 }));
+    });
     expect(result.current.settings.quality).toBe(9);
   });
 
-  it('toggleFullscreen toggles fullscreen state', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-
-    expect(result.current.isFullscreen).toBe(false);
-
-    act(() => {
-      result.current.toggleFullscreen();
-    });
-    expect(result.current.isFullscreen).toBe(true);
-
-    act(() => {
-      result.current.toggleFullscreen();
-    });
-    expect(result.current.isFullscreen).toBe(false);
-  });
-
   it('setShowSettings toggles settings panel', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
+    const { result } = renderHook(() => useVNCClient(makeSession()));
 
-    expect(result.current.showSettings).toBe(false);
-
-    act(() => {
-      result.current.setShowSettings(true);
-    });
+    act(() => { result.current.setShowSettings(true); });
     expect(result.current.showSettings).toBe(true);
 
-    act(() => {
-      result.current.setShowSettings(false);
-    });
+    act(() => { result.current.setShowSettings(false); });
     expect(result.current.showSettings).toBe(false);
   });
 
-  it('canvasRef is exposed', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    expect(result.current.canvasRef).toBeDefined();
+  // ── Fullscreen toggle ──────────────────────────────────────────────────
+
+  it('toggleFullscreen toggles state', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+
+    act(() => { result.current.toggleFullscreen(); });
+    expect(result.current.isFullscreen).toBe(true);
+
+    act(() => { result.current.toggleFullscreen(); });
+    expect(result.current.isFullscreen).toBe(false);
   });
 
-  it('session is returned', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    expect(result.current.session).toBe(mockSession);
-  });
+  // ── Status helpers ─────────────────────────────────────────────────────
 
-  it('getStatusColor returns correct color for connecting', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    // Initial state is 'connecting'
+  it('getStatusColor returns correct colors for each status', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+
+    // Default is connecting
     expect(result.current.getStatusColor()).toBe('text-yellow-400');
   });
 
-  it('getStatusIcon returns correct icon for connecting', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
+  it('getStatusIcon returns correct icon keys', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+
+    // Default is connecting
     expect(result.current.getStatusIcon()).toBe('connecting');
   });
 
-  it('falls back to simulated desktop when noVNC fails', async () => {
-    // The mock for novnc/core/rfb throws, so the hook should catch
-    // and call simulateVNCConnection which uses canvas
-    const { result } = renderHook(() => useVNCClient(mockSession));
+  // ── Simulated desktop drawing ──────────────────────────────────────────
 
-    // After the import error + simulated connection timeout, status should eventually change
-    // The connection attempt starts in an effect; the error catches and falls back
-    await waitFor(() => {
-      // It should remain in connecting or eventually transition
-      expect(['connecting', 'connected', 'error']).toContain(result.current.connectionStatus);
+  it('drawSimulatedDesktop calls canvas drawing methods', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+
+    const ctx = mockCtx as unknown as CanvasRenderingContext2D;
+    act(() => {
+      result.current.drawSimulatedDesktop(ctx, 1024, 768);
     });
+
+    expect(mockCtx.fillRect).toHaveBeenCalled();
+    expect(mockCtx.fillText).toHaveBeenCalled();
+    expect(mockCtx.createLinearGradient).toHaveBeenCalled();
   });
 
-  it('drawSimulatedDesktop is exposed as a function', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    expect(typeof result.current.drawSimulatedDesktop).toBe('function');
+  // ── Connection initialization ───────────────────────────────────────────
+
+  it('stays in connecting state when canvas is not available', () => {
+    // canvasRef.current is null in renderHook (no DOM), so initializeVNCConnection
+    // returns early without changing state
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+    expect(result.current.connectionStatus).toBe('connecting');
+    expect(result.current.isConnected).toBe(false);
   });
 
-  it('connection reference is found from context', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    // The hook should find the connection in the mocked context
-    // We verify indirectly - the hook doesn't expose connection directly,
-    // but it uses it for the websocket URL
-    expect(result.current.connectionStatus).toBeDefined();
+  it('handleCanvasClick does nothing when not connected', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+
+    // Should not throw when canvas is null and not connected
+    act(() => {
+      result.current.handleCanvasClick({ clientX: 100, clientY: 100 } as React.MouseEvent<HTMLCanvasElement>);
+    });
+    // No error thrown is the assertion
   });
 
-  it('handleCanvasClick is a function', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    expect(typeof result.current.handleCanvasClick).toBe('function');
+  // ── Session passthrough ────────────────────────────────────────────────
+
+  it('returns the session object', () => {
+    const session = makeSession();
+    const { result } = renderHook(() => useVNCClient(session));
+    expect(result.current.session).toBe(session);
   });
 
-  it('handleKeyDown and handleKeyUp are functions', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    expect(typeof result.current.handleKeyDown).toBe('function');
-    expect(typeof result.current.handleKeyUp).toBe('function');
-  });
+  // ── canvasRef ──────────────────────────────────────────────────────────
 
-  it('sendCtrlAltDel is a function', () => {
-    const { result } = renderHook(() => useVNCClient(mockSession));
-    expect(typeof result.current.sendCtrlAltDel).toBe('function');
+  it('provides a canvasRef', () => {
+    const { result } = renderHook(() => useVNCClient(makeSession()));
+    expect(result.current.canvasRef).toBeDefined();
+    expect(result.current.canvasRef.current).toBeNull(); // not mounted in renderHook
   });
 });

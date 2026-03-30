@@ -106,4 +106,17 @@ describe("PerformanceMonitor", () => {
     render(<PerformanceMonitor isOpen={false} onClose={() => {}} />);
     expect(screen.queryByText("performance.title")).not.toBeInTheDocument();
   });
+
+  // ── Export CSV ──────────────────────────────────────────────────
+
+  it("renders export CSV button", async () => {
+    render(<PerformanceMonitor isOpen onClose={() => {}} />);
+    expect(await screen.findByText("Export CSV")).toBeInTheDocument();
+  });
+
+  it("export button has accessible aria-label", async () => {
+    render(<PerformanceMonitor isOpen onClose={() => {}} />);
+    const btn = await screen.findByLabelText("Export performance metrics as CSV");
+    expect(btn).toBeInTheDocument();
+  });
 });

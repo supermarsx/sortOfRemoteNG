@@ -31,7 +31,7 @@ describe("tauriListenerTracker", () => {
     it("registers a listener and increments active count", async () => {
       trackedListen("my-event", vi.fn());
       // The listen call is async (dynamic import + then), so we need to flush
-      await vi.dynamicImportSettled?.() ?? new Promise((r) => setTimeout(r, 0));
+      await (vi.dynamicImportSettled?.() ?? new Promise((r) => setTimeout(r, 0)));
 
       expect(getActiveListenerCount()).toBe(1);
     });

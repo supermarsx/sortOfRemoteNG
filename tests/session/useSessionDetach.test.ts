@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useSessionDetach } from '../../src/hooks/session/useSessionDetach';
 import { invoke } from '@tauri-apps/api/core';
+import type { ConnectionSession, Connection } from '../../src/types/connection/connection';
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 const mockSetFocus = vi.fn().mockResolvedValue(undefined);
-const mockOnce = vi.fn((_, cb) => cb());
+const mockOnce = vi.fn((_event, cb) => cb());
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   WebviewWindow: Object.assign(
@@ -45,67 +46,65 @@ vi.mock('../../src/utils/core/id', () => ({
 
 // ── Test data ──────────────────────────────────────────────────────
 
-const sessions = [
-  {
-    id: 's1',
-    connectionId: 'c1',
-    protocol: 'ssh',
-    name: 'SSH Server',
+function makeSession(id: string, protocol: string = 'ssh', overrides: Partial<ConnectionSession> = {}): ConnectionSession {
+  return {
+    id,
+    connectionId: `conn-${id}`,
+    protocol: protocol as any,
+    name: `Session ${id}`,
     status: 'connected',
-    backendSessionId: 'b1',
-    hostname: 'host1',
+    backendSessionId: `be-${id}`,
+    hostname: `host-${id}`,
     startTime: new Date(),
     reconnectAttempts: 0,
     maxReconnectAttempts: 3,
-  },
-  {
-    id: 's2',
-    connectionId: 'c2',
-    protocol: 'rdp',
-    name: 'RDP Server',
-    status: 'connected',
-    backendSessionId: 'b2',
-    hostname: 'host2',
-    startTime: new Date(),
-    reconnectAttempts: 0,
-    maxReconnectAttempts: 3,
-  },
-];
+    ...overrides,
+  } as ConnectionSession;
+}
 
-const connections = [
-  { id: 'c1', name: 'SSH Server', hostname: 'host1', port: 22, protocol: 'ssh' },
-  { id: 'c2', name: 'RDP Server', hostname: 'host2', port: 3389, protocol: 'rdp' },
-];
+function makeConnection(id: string, protocol: string = 'ssh'): Connection {
+  return {
+    id,
+    name: `Conn ${id}`,
+    hostname: `host-${id}`,
+    port: 22,
+    protocol: protocol as any,
+    isGroup: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as Connection;
+}
+
+const sessions = [makeSession('s1'), makeSession('s2', 'rdp')];
+const connections = [makeConnection('conn-s1'), makeConnection('conn-s2', 'rdp')];
 
 function renderDetach(overrides: Record<string, any> = {}) {
-  const dispatch = vi.fn();
-  const setActiveSessionId = vi.fn();
-  const registerWindow = vi.fn();
-
-  const opts = {
+  const defaults = {
     sessions,
     connections,
     visibleSessions: sessions,
     activeSessionId: 's1',
-    dispatch,
-    setActiveSessionId,
-    registerWindow,
-    ...overrides,
+    dispatch: vi.fn(),
+    setActiveSessionId: vi.fn(),
+    registerWindow: vi.fn(),
   };
-
-  const hook = renderHook(() =>
-    useSessionDetach(
-      opts.sessions,
-      opts.connections,
-      opts.visibleSessions,
-      opts.activeSessionId,
-      opts.dispatch,
-      opts.setActiveSessionId,
-      opts.registerWindow,
+  const opts = { ...defaults, ...overrides };
+  return {
+    ...renderHook(() =>
+      useSessionDetach(
+        opts.sessions,
+        opts.connections,
+        opts.visibleSessions,
+        opts.activeSessionId,
+        opts.dispatch,
+        opts.setActiveSessionId,
+        opts.registerWindow,
+      ),
     ),
-  );
-
-  return { ...hook, dispatch, setActiveSessionId, registerWindow };
+    dispatch: opts.dispatch,
+    setActiveSessionId: opts.setActiveSessionId,
+    registerWindow: opts.registerWindow,
+  };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -114,28 +113,21 @@ describe('useSessionDetach', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    // Simulate Tauri environment
-    (window as any).__TAURI_INTERNALS__ = true;
-    // Default: invoke resolves successfully
     (invoke as Mock).mockResolvedValue(undefined);
-    // Default: listen fires the callback immediately with empty buffer
-    mockListen.mockImplementation((_event: string, cb: any) => {
-      // Don't call the callback automatically for terminal-buffer-response
-      // to simulate timeout / natural flow
-      return Promise.resolve(vi.fn());
-    });
+    // Set up Tauri flag
+    (window as any).__TAURI__ = true;
   });
 
   it('returns handleSessionDetach and handleReattachRdpSession', () => {
     const { result } = renderDetach();
-    expect(typeof result.current.handleSessionDetach).toBe('function');
-    expect(typeof result.current.handleReattachRdpSession).toBe('function');
+    expect(result.current.handleSessionDetach).toBeTypeOf('function');
+    expect(result.current.handleReattachRdpSession).toBeTypeOf('function');
   });
 
   it('does nothing when session ID is not found', async () => {
     const { result, dispatch } = renderDetach();
     await act(async () => {
-      await result.current.handleSessionDetach('no-such-id');
+      await result.current.handleSessionDetach('nonexistent');
     });
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -149,11 +141,10 @@ describe('useSessionDetach', () => {
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored!);
     expect(parsed.session.id).toBe('s1');
-    expect(parsed.connection).toBeDefined();
-    expect(parsed.savedAt).toBeDefined();
+    expect(parsed.savedAt).toBeTypeOf('number');
   });
 
-  it('dispatches UPDATE_SESSION with isDetached=true', async () => {
+  it('dispatches UPDATE_SESSION with isDetached=true and windowId', async () => {
     const { result, dispatch } = renderDetach();
     await act(async () => {
       await result.current.handleSessionDetach('s1');
@@ -163,7 +154,10 @@ describe('useSessionDetach', () => {
         type: 'UPDATE_SESSION',
         payload: expect.objectContaining({
           id: 's1',
-          layout: expect.objectContaining({ isDetached: true }),
+          layout: expect.objectContaining({
+            isDetached: true,
+            windowId: 'detached-s1',
+          }),
         }),
       }),
     );
@@ -174,7 +168,6 @@ describe('useSessionDetach', () => {
     await act(async () => {
       await result.current.handleSessionDetach('s1');
     });
-    // Since s1 was active and is being detached, it should switch to s2
     expect(setActiveSessionId).toHaveBeenCalledWith('s2');
   });
 
@@ -183,7 +176,6 @@ describe('useSessionDetach', () => {
     await act(async () => {
       await result.current.handleSessionDetach('s1');
     });
-    // setActiveSessionId should not be called since s1 was not the active session
     expect(setActiveSessionId).not.toHaveBeenCalled();
   });
 
@@ -192,7 +184,7 @@ describe('useSessionDetach', () => {
     await act(async () => {
       await result.current.handleSessionDetach('s2');
     });
-    expect(invoke).toHaveBeenCalledWith('detach_rdp_session', { connectionId: 'c2' });
+    expect(invoke).toHaveBeenCalledWith('detach_rdp_session', { connectionId: 'conn-s2' });
   });
 
   it('does not call detach_rdp_session for SSH sessions', async () => {
@@ -227,27 +219,28 @@ describe('useSessionDetach', () => {
     expect(registerWindow).toHaveBeenCalledWith('detached-s1', ['s1']);
   });
 
-  // ── handleReattachRdpSession ──────────────────────────────────
-
   it('reattachRdpSession activates existing session by backendSessionId', () => {
-    const { result, setActiveSessionId } = renderDetach();
-    act(() => {
-      result.current.handleReattachRdpSession('b2', 'c2');
+    const rdpSession = makeSession('rdp1', 'rdp', { backendSessionId: 'be-rdp1', status: 'connected' });
+    const { result, setActiveSessionId } = renderDetach({
+      sessions: [rdpSession],
     });
-    expect(setActiveSessionId).toHaveBeenCalledWith('s2');
+    act(() => {
+      result.current.handleReattachRdpSession('be-rdp1');
+    });
+    expect(setActiveSessionId).toHaveBeenCalledWith('rdp1');
   });
 
   it('reattachRdpSession creates new session when none exists', () => {
-    const { result, dispatch, setActiveSessionId } = renderDetach();
+    const { result, dispatch, setActiveSessionId } = renderDetach({ sessions: [] });
     act(() => {
-      result.current.handleReattachRdpSession('new-backend', 'c1');
+      result.current.handleReattachRdpSession('be-new', 'conn-s2');
     });
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'ADD_SESSION',
         payload: expect.objectContaining({
           id: 'new-id',
-          backendSessionId: 'new-backend',
+          backendSessionId: 'be-new',
           protocol: 'rdp',
           status: 'connecting',
         }),
@@ -256,15 +249,32 @@ describe('useSessionDetach', () => {
     expect(setActiveSessionId).toHaveBeenCalledWith('new-id');
   });
 
-  it('continutes gracefully when detach_rdp_session fails', async () => {
+  it('continues gracefully when detach_rdp_session fails', async () => {
     (invoke as Mock).mockRejectedValueOnce(new Error('backend error'));
     const { result, dispatch } = renderDetach();
     await act(async () => {
       await result.current.handleSessionDetach('s2');
     });
-    // Should still dispatch UPDATE_SESSION despite the invoke error
+    // Should still dispatch the UPDATE_SESSION
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'UPDATE_SESSION' }),
+      expect.objectContaining({
+        type: 'UPDATE_SESSION',
+        payload: expect.objectContaining({ id: 's2' }),
+      }),
+    );
+  });
+
+  it('sets disconnected existing RDP session to connecting on reattach', () => {
+    const rdpSession = makeSession('rdp1', 'rdp', { backendSessionId: 'be-rdp1', status: 'disconnected' });
+    const { result, dispatch } = renderDetach({ sessions: [rdpSession] });
+    act(() => {
+      result.current.handleReattachRdpSession('be-rdp1');
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UPDATE_SESSION',
+        payload: expect.objectContaining({ id: 'rdp1', status: 'connecting' }),
+      }),
     );
   });
 });

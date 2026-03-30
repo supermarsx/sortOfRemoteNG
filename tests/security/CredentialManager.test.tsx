@@ -16,7 +16,18 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+vi.mock("../../src/contexts/ToastContext", () => ({
+  useToastContext: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  }),
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 import { CredentialManager } from "../../src/components/security/CredentialManager";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 
 describe("CredentialManager", () => {
   beforeEach(() => {
@@ -45,12 +56,12 @@ describe("CredentialManager", () => {
   });
 
   it("renders the title", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     expect(screen.getByText("credentials.title")).toBeInTheDocument();
   });
 
   it("shows tab bar with all tabs", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     expect(screen.getByText("credentials.tabs.all")).toBeInTheDocument();
     expect(screen.getByText("credentials.tabs.expiring")).toBeInTheDocument();
     expect(screen.getByText("credentials.tabs.expired")).toBeInTheDocument();
@@ -60,22 +71,22 @@ describe("CredentialManager", () => {
   });
 
   it("shows add credential button", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     expect(screen.getByText("credentials.addBtn")).toBeInTheDocument();
   });
 
   it("shows detect duplicates button", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     expect(screen.getByText("credentials.detectDuplicates")).toBeInTheDocument();
   });
 
   it("shows generate alerts button", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     expect(screen.getByText("credentials.generateAlerts")).toBeInTheDocument();
   });
 
   it("switches to expiring soon tab", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     const tab = screen.getByText("credentials.tabs.expiring");
     await act(async () => { fireEvent.click(tab); });
     // Tab should still be in the document after click (no crash)
@@ -83,14 +94,14 @@ describe("CredentialManager", () => {
   });
 
   it("switches to groups tab", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     const tab = screen.getByText("credentials.tabs.groups");
     await act(async () => { fireEvent.click(tab); });
     expect(tab).toBeInTheDocument();
   });
 
   it("opens add credential dialog", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     const addBtn = screen.getByText("credentials.addBtn");
     await act(async () => { fireEvent.click(addBtn); });
     // Dialog should open with form fields
@@ -102,19 +113,19 @@ describe("CredentialManager", () => {
 
   it("calls cred_list on mount", async () => {
     mockInvoke.mockResolvedValue([]);
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalled();
     });
   });
 
   it("shows empty state when no credentials", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     expect(screen.getByText("credentials.empty")).toBeInTheDocument();
   });
 
   it("calls detect duplicates when button clicked", async () => {
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     const btn = screen.getByText("credentials.detectDuplicates");
     await act(async () => { fireEvent.click(btn); });
     expect(mockInvoke).toHaveBeenCalledWith("cred_detect_duplicates");
@@ -150,7 +161,7 @@ describe("CredentialManager", () => {
       }
     });
 
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
 
     const nameHeader = screen.getByRole("columnheader", { name: /credentials.col.name/i });
     expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
@@ -198,7 +209,7 @@ describe("CredentialManager", () => {
       }
     });
 
-    await act(async () => { render(<CredentialManager />); });
+    await act(async () => { render(<ToastProvider><CredentialManager /></ToastProvider>); });
     fireEvent.click(screen.getByRole("tab", { name: "credentials.tabs.groups" }));
 
     const groupButton = await screen.findByRole("button", { name: /^Database Team/i });

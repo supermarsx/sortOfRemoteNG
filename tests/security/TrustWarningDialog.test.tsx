@@ -89,4 +89,81 @@ describe("TrustWarningDialog", () => {
 
     expect(onReject).not.toHaveBeenCalled();
   });
+
+  it("shows remember checkbox on first-use trust", () => {
+    render(
+      <TrustWarningDialog
+        type="tls"
+        host="example.com"
+        port={443}
+        reason="first-use"
+        receivedIdentity={{
+          fingerprint: "AA:BB:CC",
+          firstSeen: now,
+          lastSeen: now,
+        }}
+        onAccept={() => {}}
+        onReject={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByLabelText("Remember and trust for future connections"),
+    ).toBeInTheDocument();
+  });
+
+  it("hides remember checkbox on mismatch trust", () => {
+    render(
+      <TrustWarningDialog
+        type="ssh"
+        host="ssh.internal"
+        port={22}
+        reason="mismatch"
+        receivedIdentity={{
+          fingerprint: "NEW:FP:123",
+          firstSeen: now,
+          lastSeen: now,
+        }}
+        storedIdentity={{
+          fingerprint: "OLD:FP:999",
+          firstSeen: now,
+          lastSeen: now,
+        }}
+        onAccept={() => {}}
+        onReject={() => {}}
+      />,
+    );
+
+    expect(
+      screen.queryByLabelText("Remember and trust for future connections"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("passes remember value to onAccept", () => {
+    const onAccept = vi.fn();
+
+    render(
+      <TrustWarningDialog
+        type="tls"
+        host="example.com"
+        port={443}
+        reason="first-use"
+        receivedIdentity={{
+          fingerprint: "AA:BB:CC",
+          firstSeen: now,
+          lastSeen: now,
+        }}
+        onAccept={onAccept}
+        onReject={() => {}}
+      />,
+    );
+
+    const checkbox = screen.getByLabelText(
+      "Remember and trust for future connections",
+    );
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Accept & Continue" }));
+
+    expect(onAccept).toHaveBeenCalledWith(true);
+  });
 });

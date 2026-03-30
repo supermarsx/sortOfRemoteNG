@@ -193,4 +193,51 @@ describe("HealthDashboard", () => {
     // At least one config-related button exists
     expect(configBtns.length).toBeGreaterThan(0);
   });
+
+  // ── Threshold Config ────────────────────────────────────────────
+
+  it("renders settings gear button", async () => {
+    await renderDashboard({ isOpen: true });
+    const settingsBtn = screen.getByTitle("dashboard.settings");
+    expect(settingsBtn).toBeInTheDocument();
+  });
+
+  it("opens threshold config modal on click", async () => {
+    await renderDashboard({ isOpen: true });
+    const settingsBtn = screen.getByTitle("dashboard.settings");
+    await act(async () => {
+      fireEvent.click(settingsBtn);
+    });
+    // Config panel should now be visible with the Alert Thresholds button
+    expect(screen.getByText("dashboard.thresholdConfig")).toBeInTheDocument();
+    // Click the threshold button to reveal threshold inputs
+    await act(async () => {
+      fireEvent.click(screen.getByText("dashboard.thresholdConfig"));
+    });
+    expect(screen.getByLabelText("Latency threshold in milliseconds")).toBeInTheDocument();
+    expect(screen.getByLabelText("CPU usage threshold percentage")).toBeInTheDocument();
+    expect(screen.getByLabelText("Memory usage threshold percentage")).toBeInTheDocument();
+  });
+
+  it("saves threshold values", async () => {
+    await renderDashboard({ isOpen: true });
+    // Open config panel
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("dashboard.settings"));
+    });
+    // Open thresholds
+    await act(async () => {
+      fireEvent.click(screen.getByText("dashboard.thresholdConfig"));
+    });
+    // Modify a value
+    const latencyInput = screen.getByLabelText("Latency threshold in milliseconds");
+    fireEvent.change(latencyInput, { target: { value: "200" } });
+    // Save
+    await act(async () => {
+      fireEvent.click(screen.getByText("common.save"));
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_set_thresholds", {
+      thresholds: { latencyMs: 200, cpuPercent: 80, memoryPercent: 80 },
+    });
+  });
 });

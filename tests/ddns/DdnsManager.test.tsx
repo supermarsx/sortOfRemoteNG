@@ -111,6 +111,17 @@ vi.mock("../../src/hooks/ddns/useDdnsManager", () => ({
   useDdnsManager: () => hookReturn,
 }));
 
+const mockToast = {
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+};
+
+vi.mock("../../src/contexts/ToastContext", () => ({
+  useToastContext: () => ({ toast: mockToast }),
+}));
+
 const mockOnClose = vi.fn();
 const defaultProps = { isOpen: true, onClose: mockOnClose };
 
@@ -622,6 +633,78 @@ describe("DdnsManager", () => {
       renderComponent();
       fireEvent.click(screen.getByText("Export"));
       expect(hookReturn.exportProfiles).toHaveBeenCalled();
+    });
+  });
+
+  // ── Bulk Profile Selection ─────────────────────────────────────
+
+  describe("Bulk Profile Selection", () => {
+    const twoProfiles = [
+      {
+        id: "p1",
+        name: "Profile A",
+        enabled: true,
+        provider: "Cloudflare" as const,
+        auth: { ApiToken: { token: "x" } },
+        domain: "a.com",
+        hostname: "home",
+        ip_version: "Auto",
+        update_interval_secs: 300,
+        provider_settings: "None",
+        tags: [],
+        notes: null,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+      },
+      {
+        id: "p2",
+        name: "Profile B",
+        enabled: false,
+        provider: "DuckDns" as const,
+        auth: { ApiToken: { token: "y" } },
+        domain: "b.com",
+        hostname: "",
+        ip_version: "V4Only",
+        update_interval_secs: 600,
+        provider_settings: "None",
+        tags: [],
+        notes: null,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+      },
+    ];
+
+    it("renders checkboxes on profile rows", () => {
+      hookReturn = { ...makeHookReturn(), profiles: twoProfiles };
+      renderComponent();
+      expect(screen.getByLabelText("Select Profile A")).toBeInTheDocument();
+      expect(screen.getByLabelText("Select Profile B")).toBeInTheDocument();
+    });
+
+    it("selects all profiles with Select All", () => {
+      hookReturn = { ...makeHookReturn(), profiles: twoProfiles };
+      renderComponent();
+      fireEvent.click(screen.getByText("Select All"));
+      const checkboxes = screen.getAllByRole("checkbox");
+      for (const cb of checkboxes) {
+        expect(cb).toBeChecked();
+      }
+    });
+
+    it("bulk enables selected profiles", async () => {
+      hookReturn = { ...makeHookReturn(), profiles: twoProfiles };
+      hookReturn.enableProfile.mockResolvedValue(undefined);
+      renderComponent();
+      // Select all
+      fireEvent.click(screen.getByText("Select All"));
+      // Click Enable Selected
+      fireEvent.click(screen.getByText("Enable Selected"));
+      // Wait for async bulk enable
+      await vi.waitFor(() => {
+        expect(hookReturn.enableProfile).toHaveBeenCalledWith("p1");
+        expect(hookReturn.enableProfile).toHaveBeenCalledWith("p2");
+        expect(mockToast.success).toHaveBeenCalledWith("2 profiles enabled");
+      });
     });
   });
 });

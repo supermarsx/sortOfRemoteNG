@@ -42,7 +42,7 @@ describe("RegistryPanel", () => {
         return "Windows Registry Editor Version 5.00";
       }
       return [];
-    }),
+    }) as WinmgmtContext["cmd"],
   });
 
   it("renders an accessible tree and expands nodes with keyboard", async () => {
