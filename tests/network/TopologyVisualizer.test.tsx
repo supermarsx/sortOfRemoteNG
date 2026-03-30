@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import React from "react";
 
 const mockInvoke = vi.fn();
@@ -72,8 +72,10 @@ describe("TopologyVisualizer", () => {
 
   it("shows layout selector", async () => {
     await renderOpen();
-    // Layout options inside the <select>
+    // The first layout option is shown in the trigger; open the dropdown to see all
     expect(screen.getByText("topology.layoutForce")).toBeInTheDocument();
+    // Open the dropdown to verify other options exist
+    fireEvent.click(screen.getByText("topology.layoutForce"));
     expect(screen.getByText("topology.layoutHierarchical")).toBeInTheDocument();
   });
 

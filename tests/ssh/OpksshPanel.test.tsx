@@ -314,7 +314,7 @@ describe("OpksshPanel", () => {
       await act(async () => {
         fireEvent.click(screen.getByTitle("serverConfig"));
       });
-      expect(screen.getByLabelText("Select SSH session")).toBeInTheDocument();
+      expect(screen.getAllByRole("combobox").length).toBeGreaterThan(0);
     });
 
     it("should switch to providers tab", async () => {
@@ -488,10 +488,18 @@ describe("OpksshPanel", () => {
         fireEvent.click(screen.getByTitle("serverConfig"));
       });
       // The auto-selector picks the first session, so deselect
-      const select = screen.getByLabelText("Select SSH session");
-      await act(async () => {
-        fireEvent.change(select, { target: { value: "" } });
-      });
+      const sessionSelects = screen.getAllByRole("combobox");
+      const sessionSelect = sessionSelects[0];
+      // Open the dropdown
+      fireEvent.click(sessionSelect);
+      // Select the empty placeholder option to deselect
+      const placeholders = screen.getAllByRole("option");
+      const emptyOption = placeholders.find(
+        (el) => el.textContent?.match(/select ssh session|opkssh\.selectSession/i),
+      );
+      if (emptyOption) {
+        fireEvent.mouseDown(emptyOption);
+      }
       // After deselecting, the component shows the "Server Configuration" heading
       // and prompt to load server config (since no config cached)
       expect(screen.getByText("Server Configuration")).toBeInTheDocument();

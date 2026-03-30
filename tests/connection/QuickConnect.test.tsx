@@ -67,8 +67,8 @@ describe("QuickConnect", () => {
     it("should have RDP as default protocol", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const protocolSelect = screen.getByLabelText("Protocol");
-      expect(protocolSelect).toHaveValue("rdp");
+      // Custom Select shows the selected option label in the trigger button
+      expect(screen.getByText("RDP (Remote Desktop)")).toBeInTheDocument();
     });
   });
 
@@ -77,11 +77,15 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      const protocolSelect = screen.getByLabelText("Protocol");
       const connectButton = screen.getByRole("button", { name: /connect/i });
 
       fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
-      fireEvent.change(protocolSelect, { target: { value: "ssh" } });
+
+      // Open the custom Select dropdown and select SSH
+      const protocolTrigger = screen.getByText("RDP (Remote Desktop)");
+      fireEvent.click(protocolTrigger);
+      fireEvent.mouseDown(screen.getByText("SSH (Secure Shell)"));
+
       fireEvent.change(screen.getByLabelText("Username"), {
         target: { value: "root" },
       });
@@ -219,17 +223,12 @@ describe("QuickConnect", () => {
     it("should have multiple protocol options", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const protocolSelect = screen.getByLabelText(
-        "Protocol",
-      ) as HTMLSelectElement;
-      const options = Array.from(protocolSelect.options).map(
-        (option) => option.value,
-      );
+      // Open the custom Select dropdown to see options
+      const protocolTrigger = screen.getByText("RDP (Remote Desktop)");
+      fireEvent.click(protocolTrigger);
 
-      expect(options).toContain("rdp");
-      expect(options).toContain("ssh");
-      expect(options).toContain("vnc");
-      expect(options.length).toBeGreaterThan(1);
+      expect(screen.getByText("SSH (Secure Shell)")).toBeInTheDocument();
+      expect(screen.getByText("VNC (Virtual Network Computing)")).toBeInTheDocument();
     });
   });
 

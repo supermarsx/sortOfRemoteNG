@@ -33,7 +33,7 @@ describe('ThemeManager', () => {
 
     expect(document.body.classList.contains('theme-dark')).toBe(true);
     expect(document.body.classList.contains('scheme-blue')).toBe(true);
-    const root = document.documentElement;
+    const root = document.body;
     expect(root.style.getPropertyValue('--color-background')).toBe('#111827');
 
     expect(IndexedDbService.setItem).toHaveBeenCalledWith('mremote-theme', 'dark');

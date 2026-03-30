@@ -4,7 +4,12 @@ import { RDPLogViewer } from "../../src/components/rdp/RDPLogViewer";
 import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  invoke: vi.fn().mockResolvedValue([]),
+  transformCallback: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(async () => {})),
 }));
 
 const mockLogs = [

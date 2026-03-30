@@ -18,10 +18,10 @@ vi.mock("../../src/components/security/PasswordDialog", () => ({
 vi.mock("../../src/components/ui/dialogs/ConfirmDialog", () => ({
   ConfirmDialog: () => <div data-testid="confirm-dialog" />,
 }));
-vi.mock("../../src/components/settingsDialog", () => ({
+vi.mock("../../src/components/SettingsDialog", () => ({
   SettingsDialog: () => <div data-testid="settings-dialog" />,
 }));
-vi.mock("../../src/components/importExport", () => ({
+vi.mock("../../src/components/ImportExport", () => ({
   ImportExport: () => <div data-testid="import-export" />,
 }));
 vi.mock("../../src/components/connection/ConnectionDiagnostics", () => ({

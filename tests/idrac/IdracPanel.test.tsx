@@ -5,6 +5,7 @@ import {
   cleanup,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -18,6 +19,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
+import IdracPanel from "../../src/components/idrac/idracPanel/IdracPanel";
 
 describe("IdracPanel", () => {
   beforeEach(() => {
@@ -28,37 +30,31 @@ describe("IdracPanel", () => {
     cleanup();
   });
 
-  it("renders connection form when not connected", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
-    render(<IdracPanel />);
+  it("renders connection form when not connected", () => {
+    const { container } = render(<IdracPanel />);
     expect(
-      screen.getByText("Connect to Dell iDRAC"),
+      within(container).getByText("Connect to Dell iDRAC"),
     ).toBeInTheDocument();
   });
 
-  it("shows host, port, username, password fields", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
+  it("shows host, port, username, password fields", () => {
     render(<IdracPanel />);
-    expect(screen.getByPlaceholderText("192.168.1.100")).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText("192.168.1.100")[0]).toBeInTheDocument();
     expect(screen.getByPlaceholderText("root")).toBeInTheDocument();
   });
 
-  it("shows protocol selection dropdown", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
+  it("shows protocol selection dropdown", () => {
     render(<IdracPanel />);
-    // Protocol select has option text
+    // Default selected option text is visible in the trigger
     expect(screen.getByText("Auto-detect")).toBeInTheDocument();
+    // Open the dropdown to see all options
+    fireEvent.click(screen.getByRole("combobox"));
     expect(screen.getByText("Redfish (iDRAC 7/8/9)")).toBeInTheDocument();
     expect(screen.getByText("WS-Management (iDRAC 6/7 Legacy)")).toBeInTheDocument();
     expect(screen.getByText("IPMI (Very Old BMC)")).toBeInTheDocument();
   });
 
-  it("shows insecure checkbox defaulting to checked", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
+  it("shows insecure checkbox defaulting to checked", () => {
     render(<IdracPanel />);
     const checkbox = screen.getByLabelText(
       "Accept self-signed certificates",
@@ -66,19 +62,15 @@ describe("IdracPanel", () => {
     expect(checkbox).toBeChecked();
   });
 
-  it("connect button is disabled when host is empty", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
+  it("connect button is disabled when host is empty", () => {
     render(<IdracPanel />);
     const connectBtn = screen.getByText("Connect");
     expect(connectBtn).toBeDisabled();
   });
 
-  it("connect button becomes enabled when host is set", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
+  it("connect button becomes enabled when host is set", () => {
     render(<IdracPanel />);
-    const hostInput = screen.getByPlaceholderText("192.168.1.100");
+    const hostInput = screen.getAllByPlaceholderText("192.168.1.100")[0];
     fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
     const connectBtn = screen.getByText("Connect");
     expect(connectBtn).not.toBeDisabled();
@@ -103,10 +95,8 @@ describe("IdracPanel", () => {
       }
       return null;
     });
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
     render(<IdracPanel />);
-    const hostInput = screen.getByPlaceholderText("192.168.1.100");
+    const hostInput = screen.getAllByPlaceholderText("192.168.1.100")[0];
     fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);
@@ -120,10 +110,8 @@ describe("IdracPanel", () => {
 
   it("displays connection error on failure", async () => {
     vi.mocked(invoke).mockRejectedValue("Connection refused");
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
     render(<IdracPanel />);
-    const hostInput = screen.getByPlaceholderText("192.168.1.100");
+    const hostInput = screen.getAllByPlaceholderText("192.168.1.100")[0];
     fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);
@@ -132,13 +120,12 @@ describe("IdracPanel", () => {
     });
   });
 
-  it("selects protocol when dropdown is changed", async () => {
-    const { default: IdracPanel } = await import("../../src/components/idrac/idracPanel/IdracPanel"
-    );
+  it("selects protocol when dropdown is changed", () => {
     render(<IdracPanel />);
-    const select = screen.getByDisplayValue("Auto-detect");
-    fireEvent.change(select, { target: { value: "wsman" } });
-    expect(select).toHaveValue("wsman");
+    const trigger = screen.getByRole("combobox");
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(screen.getByText("WS-Management (iDRAC 6/7 Legacy)"));
+    expect(screen.getByRole("combobox")).toHaveTextContent("WS-Management");
   });
 });
 

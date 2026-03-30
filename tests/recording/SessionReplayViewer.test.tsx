@@ -77,7 +77,8 @@ describe("SessionReplayViewer", () => {
     await act(async () => {
       render(<SessionReplayViewer recordingId="test-recording-1" replayType="terminal" />);
     });
-    expect(screen.getByTitle("replay.speed")).toBeInTheDocument();
+    // Speed selector shows the current speed (1x by default)
+    expect(screen.getByText("1x")).toBeInTheDocument();
   });
 
   it("shows annotations section", async () => {

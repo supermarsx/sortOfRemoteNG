@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ImportExport } from "../../src/components/importExport";
+import { ImportExport } from "../../src/components/ImportExport";
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -56,7 +56,7 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
   },
 }));
 
-vi.mock("../../src/components/importExport/ExportTab", () => ({
+vi.mock("../../src/components/ImportExport/ExportTab", () => ({
   default: ({ handleExport }: { handleExport: () => void }) => (
     <div>
       <div data-testid="export-tab-content">export-content</div>
@@ -65,7 +65,7 @@ vi.mock("../../src/components/importExport/ExportTab", () => ({
   ),
 }));
 
-vi.mock("../../src/components/importExport/ImportTab", () => ({
+vi.mock("../../src/components/ImportExport/ImportTab", () => ({
   default: () => <div data-testid="import-tab-content">import-content</div>,
 }));
 
@@ -90,11 +90,26 @@ describe("ImportExport dialog", () => {
   it("switches tabs between export and import", () => {
     render(<ImportExport isOpen onClose={() => {}} />);
 
-    fireEvent.click(screen.getByText("Import"));
+    fireEvent.click(screen.getByRole("tab", { name: "Import" }));
     expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Export"));
+    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
     expect(screen.getByTestId("export-tab-content")).toBeInTheDocument();
+  });
+
+  it("supports keyboard navigation between tabs", () => {
+    render(<ImportExport isOpen onClose={() => {}} />);
+
+    const exportTab = screen.getByRole("tab", { name: "Export" });
+    const importTab = screen.getByRole("tab", { name: "Import" });
+
+    expect(screen.getByRole("tablist", { name: /import and export tabs/i })).toBeInTheDocument();
+    expect(exportTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(exportTab, { key: "ArrowRight" });
+
+    expect(importTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
   });
 
   it("closes on Escape and backdrop click", () => {

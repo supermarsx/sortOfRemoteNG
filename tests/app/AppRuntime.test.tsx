@@ -19,6 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
+  transformCallback: vi.fn(),
   SERIALIZE_TO_IPC_FN: "__TAURI_TO_IPC_KEY__",
   Channel: class {
     id = 0;
@@ -106,6 +107,13 @@ vi.mock("@tauri-apps/api/dpi", () => ({
   LogicalSize: class LogicalSize {
     constructor(public width: number, public height: number) {}
   },
+}));
+
+vi.mock("../../src/hooks/window/useWindowManager", () => ({
+  useWindowManager: () => ({
+    registerWindow: vi.fn(),
+    detachRef: { current: undefined },
+  }),
 }));
 
 // ── react-i18next mock ──────────────────────────────────────────────────
@@ -368,7 +376,7 @@ describe("Provider tree integrity", () => {
         <Bomb />
       </ErrorBoundary>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Something went wrong");
+    expect(screen.getByText(/ran into a problem/i)).toBeInTheDocument();
     spy.mockRestore();
   });
 
@@ -984,7 +992,7 @@ describe("ToolPanel helpers runtime", () => {
 
 describe("SplashScreen runtime", () => {
   it("renders when isLoading is true", () => {
-    const { container } = render(<SplashScreen isLoading={true} />);
+    const { container } = render(<SplashScreen isLoading={true} progress={0} status="Loading..." />);
     expect(container.querySelector('[class*="fixed"]')).toBeTruthy();
   });
 
@@ -992,11 +1000,11 @@ describe("SplashScreen runtime", () => {
     const onComplete = vi.fn();
 
     const { rerender } = render(
-      <SplashScreen isLoading={true} onLoadComplete={onComplete} />,
+      <SplashScreen isLoading={true} progress={50} status="Loading..." onLoadComplete={onComplete} />,
     );
 
     rerender(
-      <SplashScreen isLoading={false} onLoadComplete={onComplete} />,
+      <SplashScreen isLoading={false} progress={100} status="Done" onLoadComplete={onComplete} />,
     );
 
     await waitFor(
@@ -1217,7 +1225,7 @@ describe("ErrorBoundary recovery", () => {
         <DeepBomb />
       </ErrorBoundary>,
     );
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText(/ran into a problem/i)).toBeInTheDocument();
     spy.mockRestore();
   });
 
@@ -1236,7 +1244,7 @@ describe("ErrorBoundary recovery", () => {
     );
 
     expect(screen.getByTestId("outer")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText(/ran into a problem/i)).toBeInTheDocument();
     spy.mockRestore();
   });
 });

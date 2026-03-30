@@ -28,6 +28,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
+  emit: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock xterm.js
@@ -72,6 +73,19 @@ vi.mock("@xterm/addon-fit", () => ({
 
 vi.mock("@xterm/addon-web-links", () => ({
   WebLinksAddon: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, fallback?: string) => fallback || key,
+    i18n: { language: "en", changeLanguage: vi.fn() },
+  }),
+}));
+
+vi.mock("../../src/contexts/ToastContext", () => ({
+  useToastContext: () => ({
+    toast: vi.fn(),
+  }),
 }));
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
@@ -228,6 +242,19 @@ describe("WebTerminal", () => {
         expect(screen.getByText("SSH lib: Rust")).toBeInTheDocument();
       });
     });
+
+    it("should render error status details when SSH connection fails", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("Connection refused"));
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(
+          screen.getByText("Connection refused - please check the host and port"),
+        ).toBeInTheDocument();
+      });
+    });
   });
 
   describe("Non-SSH Protocols", () => {
@@ -317,6 +344,35 @@ describe("WebTerminal", () => {
     });
   });
 
+  describe("Toolbar Actions", () => {
+    it("should toggle command history panel from the toolbar", async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const historyButton = screen.getByRole("button", {
+        name: /command history/i,
+      });
+
+      expect(historyButton).toHaveAttribute("aria-label", "Command History");
+      expect(screen.queryByTestId("ssh-command-history-panel")).not.toBeInTheDocument();
+
+      fireEvent.click(historyButton);
+      expect(await screen.findByTestId("ssh-command-history-panel")).toBeInTheDocument();
+
+      fireEvent.click(historyButton);
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId("ssh-command-history-panel"),
+        ).not.toBeInTheDocument();
+      });
+    });
+  });
+
   describe("Connection Cleanup", () => {
     it("should keep SSH session alive on unmount", async () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
@@ -399,6 +455,34 @@ describe("WebTerminal", () => {
       });
     });
 
+    it("should filter scripts with search input and keep dialog semantics", async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /run script/i }));
+
+      const modalDialog = await screen.findByRole("dialog");
+      expect(modalDialog).toBeInTheDocument();
+
+      const searchInput = screen.getByPlaceholderText(/Search scripts/i);
+      expect(searchInput).toBeInTheDocument();
+      expect(searchInput).toBeEnabled();
+
+      fireEvent.change(searchInput, { target: { value: "windows" } });
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
+        expect(
+          screen.queryByText("System Info (Linux)"),
+        ).not.toBeInTheDocument();
+      });
+    });
+
     it("should have filter dropdowns in script selector", async () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
@@ -438,10 +522,12 @@ describe("WebTerminal", () => {
         expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
       });
 
-      // Find OS tag filter (third select)
+      // Find OS tag filter (third select) — custom Select: click trigger, then mouseDown on option
       const selects = screen.getAllByRole("combobox");
       const osTagSelect = selects[2];
-      fireEvent.change(osTagSelect, { target: { value: "windows" } });
+      fireEvent.click(osTagSelect);
+      const windowsOption = await screen.findByRole("option", { name: /windows/i });
+      fireEvent.mouseDown(windowsOption);
 
       await waitFor(() => {
         expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
@@ -579,9 +665,11 @@ describe("WebTerminal", () => {
         expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
       });
 
-      // Apply a filter
+      // Apply a filter — custom Select: click trigger, then mouseDown on option
       const selects = screen.getAllByRole("combobox");
-      fireEvent.change(selects[0], { target: { value: "System" } });
+      fireEvent.click(selects[0]);
+      const systemOption = await screen.findByRole("option", { name: "System" });
+      fireEvent.mouseDown(systemOption);
 
       await waitFor(() => {
         expect(screen.getByText("Clear")).toBeInTheDocument();
@@ -606,9 +694,11 @@ describe("WebTerminal", () => {
         expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
       });
 
-      // Apply OS tag filter
+      // Apply OS tag filter — custom Select: click trigger, then mouseDown on option
       const selects = screen.getAllByRole("combobox");
-      fireEvent.change(selects[2], { target: { value: "windows" } });
+      fireEvent.click(selects[2]);
+      const windowsOption = await screen.findByRole("option", { name: /windows/i });
+      fireEvent.mouseDown(windowsOption);
 
       await waitFor(() => {
         expect(

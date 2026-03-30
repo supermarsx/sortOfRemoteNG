@@ -86,7 +86,9 @@ describe('ShortcutManagerDialog', () => {
   it('displays folder location options', () => {
     renderWithProvider({ isOpen: true, onClose: () => {} });
     
-    // Should have folder preset options (select dropdown options have exact text)
+    // Open the folder location dropdown to see options
+    const combobox = screen.getAllByRole('combobox')[0];
+    fireEvent.click(combobox);
     expect(screen.getByRole('option', { name: /Desktop/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Documents/i })).toBeInTheDocument();
   });

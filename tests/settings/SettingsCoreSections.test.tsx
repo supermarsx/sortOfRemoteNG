@@ -1,9 +1,9 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
-import GeneralSettings from "../../src/components/settingsDialog/sections/GeneralSettings";
-import BackendSettings from "../../src/components/settingsDialog/sections/BackendSettings";
-import RDPDefaultSettings from "../../src/components/settingsDialog/sections/RDPDefaultSettings";
+import GeneralSettings from "../../src/components/SettingsDialog/sections/GeneralSettings";
+import BackendSettings from "../../src/components/SettingsDialog/sections/BackendSettings";
+import RDPDefaultSettings from "../../src/components/SettingsDialog/sections/RdpDefaultSettings";
 
 const baseSettings = {
   language: "en",
@@ -62,8 +62,8 @@ describe("Core settings section centralization", () => {
     );
 
     const languageSelect = container.querySelector(
-      '[data-setting-key="language"] select',
-    ) as HTMLSelectElement;
+      '[data-setting-key="language"] [role="combobox"]',
+    ) as HTMLElement;
     expect(languageSelect.className).toContain("sor-settings-select");
 
     const autosaveToggle = container.querySelector(
@@ -114,7 +114,7 @@ describe("Core settings section centralization", () => {
       container.querySelectorAll(".sor-settings-card").length,
     ).toBeGreaterThanOrEqual(8);
 
-    const firstSelect = container.querySelector("select") as HTMLSelectElement;
+    const firstSelect = container.querySelector('[role="combobox"]') as HTMLElement;
     expect(firstSelect.className).toContain("sor-settings-select");
 
     const thumbnailCheckbox = container.querySelector(

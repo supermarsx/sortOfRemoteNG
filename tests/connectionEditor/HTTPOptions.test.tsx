@@ -25,7 +25,7 @@ describe("HTTPOptions", () => {
   it("adds a custom header via modal", async () => {
     const { container } = render(<Wrapper />);
 
-    expect(container.querySelector("select")?.className).toContain(
+    expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-form-select",
     );
 

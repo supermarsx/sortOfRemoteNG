@@ -46,4 +46,9 @@ describe("TextInput", () => {
     const input = screen.getByRole("textbox");
     expect(input.className).toContain("my-extra-class");
   });
+
+  it("uses the label prop as an aria-label when provided", () => {
+    render(<TextInput label="Connection name" />);
+    expect(screen.getByLabelText("Connection name")).toBeInTheDocument();
+  });
 });

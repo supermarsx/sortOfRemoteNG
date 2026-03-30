@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { ConnectionTree } from "../../src/components/connection/ConnectionTree";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection } from "../../src/types/connection/connection";
 
@@ -49,9 +50,11 @@ function InitConnections({ connections }: { connections: Connection[] }) {
 describe("ConnectionTree", () => {
   it("toggles group expansion when clicking the toggle button", async () => {
     render(
-      <ConnectionProvider>
-        <InitConnections connections={mockConnections} />
-      </ConnectionProvider>,
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={mockConnections} />
+        </ConnectionProvider>
+      </ToastProvider>,
     );
 
     expect(screen.queryByText("Item 1")).toBeNull();
@@ -77,10 +80,12 @@ describe("ConnectionTree", () => {
     };
 
     render(
-      <ConnectionProvider>
-        <Observer />
-        <InitConnections connections={mockConnections} />
-      </ConnectionProvider>,
+      <ToastProvider>
+        <ConnectionProvider>
+          <Observer />
+          <InitConnections connections={mockConnections} />
+        </ConnectionProvider>
+      </ToastProvider>,
     );
 
     const groupRow = screen
@@ -97,9 +102,11 @@ describe("ConnectionTree", () => {
 
   it("duplicates a connection when Duplicate is clicked", async () => {
     render(
-      <ConnectionProvider>
-        <InitConnections connections={mockConnections} />
-      </ConnectionProvider>,
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={mockConnections} />
+        </ConnectionProvider>
+      </ToastProvider>,
     );
 
     const groupRow = screen
@@ -122,9 +129,11 @@ describe("ConnectionTree", () => {
 
   it("closes item context menu on Escape", async () => {
     render(
-      <ConnectionProvider>
-        <InitConnections connections={mockConnections} />
-      </ConnectionProvider>,
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={mockConnections} />
+        </ConnectionProvider>
+      </ToastProvider>,
     );
 
     const groupRow = screen

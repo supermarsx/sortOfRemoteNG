@@ -118,11 +118,12 @@ describe("ServerStatsPanel", () => {
 
     it("should render session selector with SSH sessions only", () => {
       renderPanel();
-      const select = screen.getByLabelText("Select SSH session");
-      expect(select).toBeInTheDocument();
-      // Should have the two SSH sessions as options
-      const options = select.querySelectorAll("option");
-      const optionTexts = Array.from(options).map((o) => o.textContent);
+      const sessionSelect = screen.getAllByRole("combobox")[0];
+      expect(sessionSelect).toBeInTheDocument();
+      // Open dropdown to see options
+      fireEvent.click(sessionSelect);
+      const opts = screen.getAllByRole("option");
+      const optionTexts = opts.map((o) => o.textContent);
       expect(optionTexts).toContain("Ubuntu Server");
       expect(optionTexts).toContain("CentOS Server");
       expect(optionTexts).not.toContain("Windows RDP");

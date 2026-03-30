@@ -64,7 +64,7 @@ describe("ConnectionEditor subcomponents", () => {
     expect(container.querySelector('input[type="text"]')?.className).toContain(
       "sor-form-input",
     );
-    expect(container.querySelector("select")?.className).toContain(
+    expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-form-select",
     );
   });
@@ -82,7 +82,7 @@ describe("ConnectionEditor subcomponents", () => {
     expect(container.querySelector('input[type="text"]')?.className).toContain(
       "sor-form-input",
     );
-    expect(container.querySelector("select")?.className).toContain(
+    expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-form-select",
     );
   });
@@ -98,7 +98,7 @@ describe("ConnectionEditor subcomponents", () => {
     expect(container.querySelector('input[type="text"]')?.className).toContain(
       "sor-form-input",
     );
-    expect(container.querySelector("select")?.className).toContain(
+    expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-form-select",
     );
   });

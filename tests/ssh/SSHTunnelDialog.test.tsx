@@ -63,9 +63,11 @@ describe("SSHTunnelDialog", () => {
     fireEvent.change(screen.getByPlaceholderText("My SSH Tunnel"), {
       target: { value: "My Tunnel" },
     });
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
-      target: { value: "conn-1" },
-    });
+    // Open the custom Select dropdown and select the SSH connection
+    const sshSelectTrigger = screen.getAllByRole("combobox")[0];
+    fireEvent.click(sshSelectTrigger);
+    fireEvent.mouseDown(screen.getByText(/SSH Prod/));
+
     fireEvent.change(screen.getByPlaceholderText("0 = auto"), {
       target: { value: "1080" },
     });

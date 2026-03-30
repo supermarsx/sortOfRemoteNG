@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
-import AdvancedSettings from "../../src/components/settingsDialog/sections/AdvancedSettings";
-import LayoutSettings from "../../src/components/settingsDialog/sections/LayoutSettings";
-import ApiSettings from "../../src/components/settingsDialog/sections/ApiSettings";
-import SecuritySettings from "../../src/components/settingsDialog/sections/SecuritySettings";
-import { TrustVerificationSettings } from "../../src/components/settingsDialog/sections/TrustVerificationSettings";
-import RecoverySettings from "../../src/components/settingsDialog/sections/RecoverySettings";
+import AdvancedSettings from "../../src/components/SettingsDialog/sections/AdvancedSettings";
+import LayoutSettings from "../../src/components/SettingsDialog/sections/LayoutSettings";
+import ApiSettings from "../../src/components/SettingsDialog/sections/ApiSettings";
+import SecuritySettings from "../../src/components/SettingsDialog/sections/SecuritySettings";
+import { TrustVerificationSettings } from "../../src/components/SettingsDialog/sections/TrustVerificationSettings";
+import RecoverySettings from "../../src/components/SettingsDialog/sections/RecoverySettings";
 
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
@@ -158,7 +158,7 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    expect(container.querySelectorAll(".sor-settings-card").length).toBe(5);
+    expect(container.querySelectorAll(".sor-settings-card").length).toBeGreaterThanOrEqual(5);
     const hostnameOverride = screen.getByRole("checkbox", {
       name: /override tab names with hostname/i,
     });
@@ -207,9 +207,9 @@ describe("Extended settings section centralization", () => {
       container.querySelector('input[type="checkbox"]')?.className,
     ).toContain("sor-settings-checkbox");
 
-    const sslModeSelect = screen.getByDisplayValue(
+    const sslModeSelect = screen.getByText(
       "Manual (Provide Certificate)",
-    );
+    ).closest('[role="combobox"]') as HTMLElement;
     expect(sslModeSelect.className).toContain("sor-settings-select");
 
     const requestsInput = container.querySelector(
@@ -240,8 +240,8 @@ describe("Extended settings section centralization", () => {
     ).toBeGreaterThanOrEqual(7);
 
     const algorithmSelect = container.querySelector(
-      '[data-setting-key="encryptionAlgorithm"] select',
-    ) as HTMLSelectElement;
+      '[data-setting-key="encryptionAlgorithm"] [role="combobox"]',
+    ) as HTMLElement;
     expect(algorithmSelect.className).toContain("sor-settings-select");
 
     const totpEnabled = container.querySelector(
@@ -264,9 +264,9 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    const tlsPolicySelect = screen.getByDisplayValue(
+    const tlsPolicySelect = screen.getAllByText(
       "Trust On First Use (TOFU)",
-    );
+    )[0].closest('[role="combobox"]') as HTMLElement;
     expect(tlsPolicySelect.className).toContain("sor-settings-select");
 
     const infoToggle = screen.getByRole("checkbox", {

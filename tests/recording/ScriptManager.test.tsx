@@ -134,7 +134,12 @@ describe("ScriptManager", () => {
       renderComponent();
       const categorySelect = screen.getAllByRole("combobox")[0];
 
-      fireEvent.change(categorySelect, { target: { value: "Network" } });
+      fireEvent.click(categorySelect);
+      // Use role="option" to target the dropdown option specifically
+      const networkOption = screen.getAllByRole("option").find(
+        (el) => el.textContent === "Network",
+      )!;
+      fireEvent.mouseDown(networkOption);
 
       expect(
         screen.getByText("Network Connections (Linux)"),
@@ -514,7 +519,7 @@ describe("ScriptManager", () => {
       fireEvent.click(newButton);
 
       // Check for language select in editor
-      const languageSelect = screen.getByDisplayValue(/Auto Detect/i);
+      const languageSelect = screen.getByText(/Auto Detect/i);
       expect(languageSelect).toBeInTheDocument();
     });
   });
@@ -790,7 +795,8 @@ describe("ScriptManager", () => {
       // Find the OS tag filter (third combobox)
       const osTagSelect = screen.getAllByRole("combobox")[2];
 
-      fireEvent.change(osTagSelect, { target: { value: "windows" } });
+      fireEvent.click(osTagSelect);
+      fireEvent.mouseDown(screen.getByText("🪟 Windows"));
 
       // Should show Windows scripts
       expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
@@ -956,7 +962,8 @@ describe("ScriptManager", () => {
 
       // Filter by cisco-ios
       const osTagSelect = screen.getAllByRole("combobox")[2];
-      fireEvent.change(osTagSelect, { target: { value: "cisco-ios" } });
+      fireEvent.click(osTagSelect);
+      fireEvent.mouseDown(screen.getByText("🔌 Cisco IOS"));
 
       expect(screen.getByText("Cisco Config Script")).toBeInTheDocument();
       expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();

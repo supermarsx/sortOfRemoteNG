@@ -2,6 +2,11 @@ import "@testing-library/jest-dom";
 // Provide a browser-like IndexedDB implementation for tests
 import "fake-indexeddb/auto";
 
+// jsdom does not implement scrollIntoView; stub it globally for custom Select tests
+if (typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // Mock Tauri API
 import { vi } from "vitest";
 
@@ -51,8 +56,35 @@ const ensureStorageApi = (key: "localStorage" | "sessionStorage") => {
 ensureStorageApi("localStorage");
 ensureStorageApi("sessionStorage");
 
+if (!("__TAURI_EVENT_PLUGIN_INTERNALS__" in window)) {
+  Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+    configurable: true,
+    writable: true,
+    value: {
+      registerListener: vi.fn(),
+      unregisterListener: vi.fn(),
+    },
+  });
+}
+
+// Mock ResizeObserver (not available in jsdom)
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    constructor(_cb: ResizeObserverCallback) {}
+  } as unknown as typeof ResizeObserver;
+}
+
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  invoke: vi.fn().mockResolvedValue(undefined),
+  transformCallback: vi.fn(),
+  Channel: vi.fn().mockImplementation(() => ({
+    id: 0,
+    onmessage: vi.fn(),
+    toJSON: vi.fn(() => "channel:0"),
+  })),
 }));
 
 // Mock Tauri plugin-fs

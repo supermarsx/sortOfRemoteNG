@@ -4,6 +4,8 @@ import { ProxyChainEditor } from "../../src/components/network/ProxyChainEditor"
 
 const mocks = vi.hoisted(() => ({
   getProfiles: vi.fn(),
+  listOpenVPNConnections: vi.fn(),
+  listWireGuardConnections: vi.fn(),
 }));
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
@@ -17,6 +19,15 @@ vi.mock("react-i18next", () => ({
 vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
   proxyCollectionManager: {
     getProfiles: mocks.getProfiles,
+  },
+}));
+
+vi.mock("../../src/utils/network/proxyOpenVPNManager", () => ({
+  ProxyOpenVPNManager: {
+    getInstance: () => ({
+      listOpenVPNConnections: mocks.listOpenVPNConnections,
+      listWireGuardConnections: mocks.listWireGuardConnections,
+    }),
   },
 }));
 
@@ -53,6 +64,22 @@ describe("ProxyChainEditor", () => {
           port: 1080,
           enabled: true,
         },
+      },
+    ]);
+    mocks.listOpenVPNConnections.mockResolvedValue([
+      {
+        id: "ovpn-1",
+        name: "Corp VPN",
+        status: "connected",
+        config: {},
+      },
+    ]);
+    mocks.listWireGuardConnections.mockResolvedValue([
+      {
+        id: "wg-1",
+        name: "WireGuard Edge",
+        status: "disconnected",
+        config: {},
       },
     ]);
   });
@@ -102,9 +129,10 @@ describe("ProxyChainEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Add Layer/i }));
 
-    fireEvent.change(screen.getByDisplayValue("Select profile..."), {
-      target: { value: "profile-1" },
-    });
+    // Open the profile dropdown and select the profile
+    const profileTrigger = screen.getByText("Select profile...");
+    fireEvent.click(profileTrigger);
+    fireEvent.mouseDown(screen.getByText("SOCKS Gateway (socks5)"));
 
     fireEvent.click(screen.getByRole("button", { name: "Create Chain" }));
 
@@ -117,6 +145,52 @@ describe("ProxyChainEditor", () => {
               type: "proxy",
               proxyProfileId: "profile-1",
               position: 0,
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
+  it("allows selecting a saved OpenVPN profile for VPN layers", async () => {
+    const onSave = vi.fn();
+
+    render(
+      <ProxyChainEditor
+        isOpen
+        onClose={() => {}}
+        onSave={onSave}
+        editingChain={null}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("My Proxy Chain"), {
+      target: { value: "VPN Chain" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Layer/i }));
+
+    const layerTypeTrigger = screen.getByText("Proxy");
+    fireEvent.click(layerTypeTrigger);
+    fireEvent.mouseDown(screen.getByText("OpenVPN"));
+
+    fireEvent.click(screen.getByText("Select VPN profile..."));
+
+    await waitFor(() => {
+      expect(screen.getByText("Corp VPN (connected)")).toBeInTheDocument();
+    });
+
+    fireEvent.mouseDown(screen.getByText("Corp VPN (connected)"));
+    fireEvent.click(screen.getByRole("button", { name: "Create Chain" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "VPN Chain",
+          layers: [
+            expect.objectContaining({
+              type: "openvpn",
+              vpnProfileId: "ovpn-1",
             }),
           ],
         }),

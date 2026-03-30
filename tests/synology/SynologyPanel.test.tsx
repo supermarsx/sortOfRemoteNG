@@ -18,6 +18,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
+import { SynologyPanel } from "../../src/components/synology/SynologyPanel";
 
 describe("SynologyPanel", () => {
   beforeEach(() => {
@@ -28,27 +29,21 @@ describe("SynologyPanel", () => {
     cleanup();
   });
 
-  it("returns null when not open", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("returns null when not open", () => {
     const { container } = render(
       <SynologyPanel isOpen={false} onClose={() => {}} />,
     );
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders connection form when not connected", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("renders connection form when not connected", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     expect(
       screen.getByText("Connect to Synology NAS"),
     ).toBeInTheDocument();
   });
 
-  it("shows host, port, username, password fields", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("shows host, port, username, password fields", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     expect(
       screen.getByPlaceholderText("192.168.1.1"),
@@ -59,9 +54,7 @@ describe("SynologyPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows 2FA and access token fields", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("shows 2FA and access token fields", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     expect(screen.getByPlaceholderText("123456")).toBeInTheDocument();
     expect(
@@ -69,9 +62,7 @@ describe("SynologyPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("connect button is disabled when host is empty", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("connect button is disabled when host is empty", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     const hostInput = screen.getByPlaceholderText("192.168.1.1");
     fireEvent.change(hostInput, { target: { value: "" } });
@@ -92,8 +83,6 @@ describe("SynologyPanel", () => {
         };
       return null;
     });
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
     render(<SynologyPanel isOpen onClose={() => {}} />);
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);
@@ -107,8 +96,6 @@ describe("SynologyPanel", () => {
 
   it("displays connection error on failure", async () => {
     vi.mocked(invoke).mockRejectedValue("Connection refused");
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
     render(<SynologyPanel isOpen onClose={() => {}} />);
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);
@@ -119,9 +106,7 @@ describe("SynologyPanel", () => {
     });
   });
 
-  it("shows HTTPS and allow self-signed checkboxes", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("shows HTTPS and allow self-signed checkboxes", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     const httpsCheckbox = screen.getByLabelText("HTTPS");
     expect(httpsCheckbox).toBeChecked();
@@ -129,18 +114,14 @@ describe("SynologyPanel", () => {
     expect(selfSignedCheckbox).toBeChecked();
   });
 
-  it("renders header with Synology NAS Manager title", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("renders header with Synology NAS Manager title", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     expect(
       screen.getByText("Synology NAS Manager"),
     ).toBeInTheDocument();
   });
 
-  it("shows disconnected status in header when not connected", async () => {
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
+  it("shows disconnected status in header when not connected", () => {
     render(<SynologyPanel isOpen onClose={() => {}} />);
     expect(screen.getByText("Not connected")).toBeInTheDocument();
   });
@@ -172,8 +153,6 @@ describe("SynologyPanel", () => {
         };
       return null;
     });
-    const { SynologyPanel } = await import("../../src/components/synology/SynologyPanel"
-    );
     render(<SynologyPanel isOpen onClose={() => {}} />);
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);

@@ -74,6 +74,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     state: {
       connections: [mockConnection],
     },
+    dispatch: vi.fn(),
   }),
 }));
 
@@ -156,6 +157,7 @@ describe("RDPClient", () => {
       fillRect: vi.fn(),
       fillText: vi.fn(),
       putImageData: vi.fn(),
+      clearRect: vi.fn(),
       font: "",
       textAlign: "",
     })) as any;
@@ -241,7 +243,7 @@ describe("RDPClient", () => {
 
       await waitFor(
         () => {
-          expect(screen.getByText("RDP Connection Failed")).toBeInTheDocument();
+          expect(screen.getByText("Connection Failed")).toBeInTheDocument();
         },
         { timeout: 5000 },
       );
@@ -279,10 +281,10 @@ describe("RDPClient", () => {
     it("should render control buttons", () => {
       renderWithProviders(mockSession);
       expect(
-        screen.getByRole("button", { name: /fullscreen/i }),
+        document.querySelector('[data-tooltip="Fullscreen"]'),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: /rdp settings/i }),
+        document.querySelector('[data-tooltip="RDP Settings"]'),
       ).toBeInTheDocument();
     });
 
@@ -302,9 +304,7 @@ describe("RDPClient", () => {
         expect(screen.getByText("connected")).toBeInTheDocument();
       });
 
-      const fullscreenButton = screen.getByRole("button", {
-        name: /fullscreen/i,
-      });
+      const fullscreenButton = document.querySelector('[data-tooltip="Fullscreen"]') as HTMLElement;
       fullscreenButton.click();
 
       expect(screen.getByText("connected")).toBeInTheDocument();
@@ -315,7 +315,7 @@ describe("RDPClient", () => {
     it("should toggle settings panel", async () => {
       renderWithProviders(mockSession);
 
-      const settingsButton = screen.getByRole("button", { name: /settings/i });
+      const settingsButton = document.querySelector('[data-tooltip="RDP Settings"]') as HTMLElement;
       settingsButton.click();
 
       await waitFor(() => {
@@ -328,9 +328,7 @@ describe("RDPClient", () => {
     it("should toggle internals panel", async () => {
       renderWithProviders(mockSession);
 
-      const internalsButton = screen.getByRole("button", {
-        name: /rdp internals/i,
-      });
+      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
       internalsButton.click();
 
       await waitFor(() => {
@@ -354,9 +352,7 @@ describe("RDPClient", () => {
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
       // Open internals panel
-      const internalsButton = screen.getByRole("button", {
-        name: /rdp internals/i,
-      });
+      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
       internalsButton.click();
 
       // Simulate stats event
@@ -446,7 +442,7 @@ describe("RDPClient", () => {
   });
 
   describe("Cleanup", () => {
-    it("should call detach_rdp_session on unmount", async () => {
+    it("should cleanup on unmount", async () => {
       const { unmount } = renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -458,13 +454,12 @@ describe("RDPClient", () => {
 
       unmount();
 
-      // Should detach (not disconnect) the session by connectionId,
-      // keeping the backend session alive for re-attachment.
-      await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith("detach_rdp_session", {
-          connectionId: "test-connection",
-        });
-      });
+      // Cleanup does NOT call detach_rdp_session — session stays alive
+      // for reattachment via useSessionDetach.
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "detach_rdp_session",
+        expect.any(Object),
+      );
     });
   });
 });

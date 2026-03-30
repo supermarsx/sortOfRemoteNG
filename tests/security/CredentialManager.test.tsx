@@ -21,7 +21,27 @@ import { CredentialManager } from "../../src/components/security/CredentialManag
 describe("CredentialManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation((command: string) => {
+      switch (command) {
+        case "cred_list":
+        case "cred_list_policies":
+        case "cred_list_groups":
+        case "cred_get_alerts":
+        case "cred_get_audit_log":
+        case "cred_get_expiring_soon":
+        case "cred_get_expired":
+        case "cred_detect_duplicates":
+          return Promise.resolve([]);
+        case "cred_get_stats":
+          return Promise.resolve({
+            total: 0,
+            expiringSoon: 0,
+            expired: 0,
+          });
+        default:
+          return Promise.resolve(undefined);
+      }
+    });
   });
 
   it("renders the title", async () => {
@@ -94,10 +114,100 @@ describe("CredentialManager", () => {
   });
 
   it("calls detect duplicates when button clicked", async () => {
-    mockInvoke.mockResolvedValue([]);
     await act(async () => { render(<CredentialManager />); });
     const btn = screen.getByText("credentials.detectDuplicates");
     await act(async () => { fireEvent.click(btn); });
     expect(mockInvoke).toHaveBeenCalledWith("cred_detect_duplicates");
   });
+
+  it("renders sortable headers with aria-sort state", async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      switch (command) {
+        case "cred_list":
+          return Promise.resolve([
+            {
+              id: "cred-1",
+              label: "Primary SSH",
+              connectionName: "Server A",
+              kind: "password",
+              ageDays: 1,
+              expiresAt: null,
+              strength: "strong",
+              lastRotated: null,
+              isExpired: false,
+              isStale: false,
+            },
+          ]);
+        case "cred_list_policies":
+        case "cred_list_groups":
+        case "cred_get_alerts":
+        case "cred_get_audit_log":
+          return Promise.resolve([]);
+        case "cred_get_stats":
+          return Promise.resolve({ total: 1, expiringSoon: 0, expired: 0 });
+        default:
+          return Promise.resolve(undefined);
+      }
+    });
+
+    await act(async () => { render(<CredentialManager />); });
+
+    const nameHeader = screen.getByRole("columnheader", { name: /credentials.col.name/i });
+    expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
+
+    fireEvent.click(screen.getByRole("button", { name: /credentials.col.name/i }));
+
+    expect(nameHeader).toHaveAttribute("aria-sort", "descending");
+  });
+
+  it("expands credential groups with accessible state", async () => {
+    mockInvoke.mockImplementation((command: string) => {
+      switch (command) {
+        case "cred_list":
+          return Promise.resolve([
+            {
+              id: "cred-1",
+              label: "Shared DBA Password",
+              connectionName: "Primary DB",
+              kind: "password",
+              ageDays: 10,
+              expiresAt: null,
+              strength: "strong",
+              lastRotated: null,
+              isExpired: false,
+              isStale: false,
+            },
+          ]);
+        case "cred_list_groups":
+          return Promise.resolve([
+            {
+              id: "group-1",
+              name: "Database Team",
+              description: "",
+              credentialIds: ["cred-1"],
+            },
+          ]);
+        case "cred_list_policies":
+        case "cred_get_alerts":
+        case "cred_get_audit_log":
+          return Promise.resolve([]);
+        case "cred_get_stats":
+          return Promise.resolve({ total: 1, expiringSoon: 0, expired: 0 });
+        default:
+          return Promise.resolve(undefined);
+      }
+    });
+
+    await act(async () => { render(<CredentialManager />); });
+    fireEvent.click(screen.getByRole("tab", { name: "credentials.tabs.groups" }));
+
+    const groupButton = await screen.findByRole("button", { name: /^Database Team/i });
+    expect(groupButton).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(groupButton);
+
+    expect(groupButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/Shared DBA Password/i)).toBeInTheDocument();
+  });
 });
+

@@ -1,10 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
-import PerformanceSettings from "../../src/components/settingsDialog/sections/PerformanceSettings";
-import ThemeSettings from "../../src/components/settingsDialog/sections/ThemeSettings";
-import ProxySettings from "../../src/components/settingsDialog/sections/ProxySettings";
-import StartupSettings from "../../src/components/settingsDialog/sections/StartupSettings";
+import PerformanceSettings from "../../src/components/SettingsDialog/sections/PerformanceSettings";
+import ThemeSettings from "../../src/components/SettingsDialog/sections/ThemeSettings";
+import ProxySettings from "../../src/components/SettingsDialog/sections/ProxySettings";
+import StartupSettings from "../../src/components/SettingsDialog/sections/StartupSettings";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
@@ -122,7 +122,7 @@ describe("Secondary settings section centralization", () => {
     );
 
     expect(container.querySelectorAll(".sor-settings-card").length).toBe(3);
-    expect(container.querySelector("select")?.className).toContain(
+    expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-settings-select",
     );
     expect(

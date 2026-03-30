@@ -15,7 +15,7 @@ describe('ErrorBoundary', () => {
         <Bomb />
       </ErrorBoundary>
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(screen.getByText(/ran into a problem/i)).toBeInTheDocument();
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });

@@ -22,6 +22,18 @@ export default defineConfig({
     alias: {
       '@tauri-apps/plugin-fs': new URL('./vitest.mocks/tauri-plugin-fs.ts', import.meta.url).pathname,
       '@tauri-apps/plugin-dialog': new URL('./vitest.mocks/tauri-plugin-dialog.ts', import.meta.url).pathname
+    },
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.d.ts',
+        'src/**/index.ts',
+        'src/types/**',
+        'src/vite-env.d.ts',
+        'src/main.tsx',
+      ],
+      all: true,
     }
   }
 });

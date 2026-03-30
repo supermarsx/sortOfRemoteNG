@@ -54,4 +54,9 @@ describe("NumberInput", () => {
     render(<NumberInput value={0} onChange={vi.fn()} disabled />);
     expect(screen.getByRole("spinbutton")).toBeDisabled();
   });
+
+  it("uses the label prop as an aria-label when provided", () => {
+    render(<NumberInput value={5} onChange={vi.fn()} label="Retry count" />);
+    expect(screen.getByLabelText("Retry count")).toBeInTheDocument();
+  });
 });
