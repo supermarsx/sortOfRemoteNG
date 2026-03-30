@@ -576,3 +576,126 @@ pub fn create_palette_state(
 ) -> CommandPaletteServiceState {
     Arc::new(RwLock::new(CommandPaletteService::new(data_dir, llm)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_service() -> CommandPaletteService {
+        let tmp = std::env::temp_dir().join(format!(
+            "sorng_palette_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        CommandPaletteService::new(&tmp, None)
+    }
+
+    fn make_entry(command: &str, session_id: &str) -> HistoryEntry {
+        HistoryEntry {
+            command: command.to_string(),
+            session_id: session_id.to_string(),
+            host: None,
+            username: None,
+            cwd: None,
+            exit_code: Some(0),
+            duration_ms: Some(50),
+            first_used: Utc::now(),
+            last_used: Utc::now(),
+            use_count: 1,
+            tags: Vec::new(),
+            pinned: false,
+            os_context: None,
+        }
+    }
+
+    #[test]
+    fn stats_empty_history() {
+        let svc = make_service();
+        let stats = svc.stats();
+        assert_eq!(stats.total_history_entries, 0);
+        assert_eq!(stats.unique_commands, 0);
+        assert!(stats.most_active_sessions.is_empty());
+    }
+
+    #[test]
+    fn stats_most_active_sessions_counted() {
+        let mut svc = make_service();
+        svc.record_command(make_entry("alpha", "session-a"));
+        svc.record_command(make_entry("bravo", "session-a"));
+        svc.record_command(make_entry("charlie", "session-a"));
+        svc.record_command(make_entry("delta", "session-b"));
+        let stats = svc.stats();
+        assert_eq!(stats.most_active_sessions.len(), 2);
+        // session-a has 3 commands, session-b has 1
+        assert_eq!(stats.most_active_sessions[0].0, "session-a");
+        assert_eq!(stats.most_active_sessions[0].1, 3);
+        assert_eq!(stats.most_active_sessions[1].0, "session-b");
+        assert_eq!(stats.most_active_sessions[1].1, 1);
+    }
+
+    #[test]
+    fn stats_most_active_sessions_sorted_descending() {
+        let mut svc = make_service();
+        svc.record_command(make_entry("a", "s1"));
+        svc.record_command(make_entry("b", "s2"));
+        svc.record_command(make_entry("c", "s2"));
+        svc.record_command(make_entry("d", "s3"));
+        svc.record_command(make_entry("e", "s3"));
+        svc.record_command(make_entry("f", "s3"));
+        let stats = svc.stats();
+        assert_eq!(stats.most_active_sessions[0].0, "s3");
+        assert_eq!(stats.most_active_sessions[0].1, 3);
+        assert_eq!(stats.most_active_sessions[1].0, "s2");
+        assert_eq!(stats.most_active_sessions[1].1, 2);
+        assert_eq!(stats.most_active_sessions[2].0, "s1");
+        assert_eq!(stats.most_active_sessions[2].1, 1);
+    }
+
+    #[test]
+    fn stats_most_active_truncated_to_20() {
+        let mut svc = make_service();
+        for i in 0..30 {
+            svc.record_command(make_entry(&format!("cmd{}", i), &format!("s{}", i)));
+        }
+        let stats = svc.stats();
+        assert!(stats.most_active_sessions.len() <= 20);
+    }
+
+    #[test]
+    fn stats_empty_session_id_excluded() {
+        let mut svc = make_service();
+        svc.record_command(make_entry("ls", ""));
+        svc.record_command(make_entry("pwd", "session-a"));
+        let stats = svc.stats();
+        // Only session-a should appear, not the empty one
+        assert_eq!(stats.most_active_sessions.len(), 1);
+        assert_eq!(stats.most_active_sessions[0].0, "session-a");
+    }
+
+    #[test]
+    fn stats_total_aliases() {
+        let mut svc = make_service();
+        svc.aliases.push(Alias {
+            trigger: "ll".into(),
+            expansion: "ls -la".into(),
+            description: None,
+            enabled: true,
+            use_count: 0,
+            created_at: Utc::now(),
+            os_target: OsTarget::default(),
+        });
+        let stats = svc.stats();
+        assert_eq!(stats.total_aliases, 1);
+    }
+
+    #[test]
+    fn record_and_remove_history() {
+        let mut svc = make_service();
+        svc.record_command(make_entry("ls", "s1"));
+        assert_eq!(svc.stats().total_history_entries, 1);
+        svc.remove_history_entry("ls");
+        assert_eq!(svc.stats().total_history_entries, 0);
+    }
+}

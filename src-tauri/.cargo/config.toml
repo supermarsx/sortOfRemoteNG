@@ -10,8 +10,9 @@
 # 32 GB.  Bump to 2-4 after the first build populates the incremental
 # cache (incremental rebuilds only recompile one or two crates).
 jobs = 1
-# Default Windows builds to the MSVC target.
-target = "x86_64-pc-windows-msvc"
+# Default Windows builds to the GNU target (uses MinGW GCC from C:\msys64\mingw64).
+# Switch to x86_64-pc-windows-msvc once VS C++ Build Tools are installed.
+target = "x86_64-pc-windows-gnu"
 # `sccache` is installed on this machine, but wrapper-enabled builds were
 # failing nondeterministically in this workspace (`h2` / `tauri-utils`
 # exiting without a Rust diagnostic). Keep the default build path reliable.

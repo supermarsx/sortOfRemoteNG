@@ -374,4 +374,101 @@ log {
         assert!(!stripped.contains("# comment"));
         assert!(stripped.contains("source"));
     }
+
+    #[test]
+    fn test_parse_empty_input() {
+        let config = parse_syslog_ng_conf("");
+        assert!(config.version.is_none());
+        assert!(config.sources.is_empty());
+        assert!(config.destinations.is_empty());
+        assert!(config.filters.is_empty());
+        assert!(config.log_paths.is_empty());
+    }
+
+    #[test]
+    fn test_parse_version_only() {
+        let config = parse_syslog_ng_conf("@version: 4.0");
+        assert_eq!(config.version, Some("4.0".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_sources_and_destinations() {
+        let input = r#"
+@version: 3.38
+source s_net { tcp(port(514)); };
+source s_local { system(); };
+destination d_file { file("/var/log/messages"); };
+destination d_remote { tcp("10.0.0.1" port(514)); };
+log { source(s_net); source(s_local); destination(d_file); destination(d_remote); };
+"#;
+        let config = parse_syslog_ng_conf(input);
+        assert_eq!(config.sources.len(), 2);
+        assert_eq!(config.destinations.len(), 2);
+        assert_eq!(config.log_paths.len(), 1);
+        assert_eq!(config.log_paths[0].sources.len(), 2);
+        assert_eq!(config.log_paths[0].destinations.len(), 2);
+    }
+
+    #[test]
+    fn test_inline_comment_stripped() {
+        let input = "source s_local { system(); }; # this is inline";
+        let stripped = strip_comments(input);
+        assert!(!stripped.contains("this is inline"));
+        assert!(stripped.contains("system()"));
+    }
+
+    #[test]
+    fn test_hash_inside_quotes_preserved() {
+        let input = r#"destination d { file("/var/log/#special"); };"#;
+        let stripped = strip_comments(input);
+        assert!(stripped.contains("#special"));
+    }
+
+    #[test]
+    fn test_filter_expression_captured() {
+        let input = r#"filter f_crit { level(crit..emerg) and facility(kern); };"#;
+        let config = parse_syslog_ng_conf(input);
+        assert_eq!(config.filters.len(), 1);
+        assert_eq!(config.filters[0].name, "f_crit");
+        assert!(config.filters[0].expression.contains("level"));
+    }
+
+    #[test]
+    fn test_nested_braces() {
+        let input = r#"source s { tcp(ip("0.0.0.0") port(514) flags(no-parse) { options(); }); };"#;
+        let config = parse_syslog_ng_conf(input);
+        assert_eq!(config.sources.len(), 1);
+        assert_eq!(config.sources[0].name, "s");
+    }
+
+    #[test]
+    fn test_extract_function_calls_basic() {
+        let calls = extract_function_calls("source(s_local); filter(f_err); destination(d_file)");
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0], ("source".to_string(), "s_local".to_string()));
+        assert_eq!(calls[1], ("filter".to_string(), "f_err".to_string()));
+        assert_eq!(calls[2], ("destination".to_string(), "d_file".to_string()));
+    }
+
+    #[test]
+    fn test_extract_function_calls_empty() {
+        assert!(extract_function_calls("").is_empty());
+    }
+
+    #[test]
+    fn test_extract_blocks_unknown_keyword_skipped() {
+        let input = "option o { something(); }; source s { system(); };";
+        let blocks = extract_blocks(input);
+        // "option" is not a recognized keyword, "source" is
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].0, "source");
+    }
+
+    #[test]
+    fn test_destination_file_path_extracted() {
+        let input = r#"destination d_log { file("/var/log/messages"); };"#;
+        let config = parse_syslog_ng_conf(input);
+        assert_eq!(config.destinations.len(), 1);
+        assert_eq!(config.destinations[0].path, Some("/var/log/messages".to_string()));
+    }
 }

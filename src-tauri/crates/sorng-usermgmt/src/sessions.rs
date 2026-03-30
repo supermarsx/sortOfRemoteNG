@@ -427,4 +427,164 @@ admin    tty1         2024-01-02 08:30";
         assert_eq!(sessions[1].terminal, "tty1");
         assert!(sessions[1].remote_host.is_none());
     }
+
+    // ── Edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn parse_last_empty_input() {
+        assert!(parse_last_output("").is_empty());
+    }
+
+    #[test]
+    fn parse_last_only_wtmp_line() {
+        assert!(parse_last_output("wtmp begins Mon Jan  1 00:00:00 2024").is_empty());
+    }
+
+    #[test]
+    fn parse_last_shutdown_entry() {
+        let input = "shutdown system down  5.15.0-91  Mon Jan  1 14:00:00 2024 - Mon Jan  1 14:05:00 2024  (00:05)";
+        let sessions = parse_last_output(input);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_type, SessionType::Shutdown);
+        assert!(!sessions[0].still_active);
+    }
+
+    #[test]
+    fn parse_last_duration_calculated() {
+        let input = "alice    pts/1        10.0.0.5         Mon Jan  1 10:00:00 2024 - Mon Jan  1 12:30:00 2024  (02:30)";
+        let sessions = parse_last_output(input);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].duration_secs, Some(9000)); // 2.5 hours
+    }
+
+    #[test]
+    fn parse_last_ssh_vs_console_classification() {
+        let input = "\
+remote   pts/0        10.0.0.1         Mon Jan  1 10:00:00 2024   still logged in
+local    tty1                          Mon Jan  1 10:00:00 2024   still logged in";
+        let sessions = parse_last_output(input);
+        assert_eq!(sessions[0].session_type, SessionType::Ssh);
+        assert_eq!(sessions[1].session_type, SessionType::Console);
+    }
+
+    #[test]
+    fn parse_last_malformed_line_skipped() {
+        let input = "short";
+        assert!(parse_last_output(input).is_empty());
+    }
+
+    #[test]
+    fn parse_lastlog_empty_input() {
+        assert!(parse_lastlog_output("").is_empty());
+    }
+
+    #[test]
+    fn parse_lastlog_header_only() {
+        assert!(
+            parse_lastlog_output("Username         Port     From             Latest").is_empty()
+        );
+    }
+
+    #[test]
+    fn parse_lastlog_with_timezone_offset() {
+        let input = "\
+Username         Port     From             Latest
+root             pts/0    10.0.0.1         Mon Jan  1 12:00:00 +0000 2024";
+        let logins = parse_lastlog_output(input);
+        assert_eq!(logins.len(), 1);
+        assert!(logins[0].time.is_some());
+        assert!(!logins[0].never_logged_in);
+    }
+
+    #[test]
+    fn parse_lastlog_all_never_logged_in() {
+        let input = "\
+Username         Port     From             Latest
+nobody                                     **Never logged in**
+daemon                                     **Never logged in**";
+        let logins = parse_lastlog_output(input);
+        assert_eq!(logins.len(), 2);
+        assert!(logins.iter().all(|l| l.never_logged_in));
+    }
+
+    #[test]
+    fn parse_who_empty_input() {
+        assert!(parse_who_output("").is_empty());
+    }
+
+    #[test]
+    fn parse_who_local_display_excluded() {
+        // :0 should not be treated as a remote host
+        let input = "user     tty7         2024-01-01 10:00 (:0)";
+        let sessions = parse_who_output(input);
+        assert_eq!(sessions.len(), 1);
+        assert!(sessions[0].remote_host.is_none());
+    }
+
+    #[test]
+    fn parse_who_multiple_sessions() {
+        let input = "\
+root     pts/0        2024-06-15 09:00 (10.0.0.1)
+root     pts/1        2024-06-15 09:30 (10.0.0.2)
+admin    pts/2        2024-06-15 10:00 (10.0.0.3)";
+        let sessions = parse_who_output(input);
+        assert_eq!(sessions.len(), 3);
+        assert_eq!(sessions[2].remote_host, Some("10.0.0.3".into()));
+    }
+
+    // ── Helper unit tests ────────────────────────────────────
+
+    #[test]
+    fn is_day_of_week_valid() {
+        for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] {
+            assert!(is_day_of_week(d), "{} should be recognized", d);
+        }
+    }
+
+    #[test]
+    fn is_day_of_week_invalid() {
+        assert!(!is_day_of_week("Monday"));
+        assert!(!is_day_of_week("mon"));
+        assert!(!is_day_of_week(""));
+    }
+
+    #[test]
+    fn classify_pts_with_host_is_ssh() {
+        assert_eq!(
+            classify_session_type("pts/0", Some("10.0.0.1")),
+            SessionType::Ssh
+        );
+    }
+
+    #[test]
+    fn classify_pts_without_host_is_console() {
+        assert_eq!(classify_session_type("pts/0", None), SessionType::Console);
+        assert_eq!(
+            classify_session_type("pts/0", Some(":0")),
+            SessionType::Console
+        );
+    }
+
+    #[test]
+    fn classify_tty_is_console() {
+        assert_eq!(classify_session_type("tty1", None), SessionType::Console);
+    }
+
+    #[test]
+    fn classify_display_is_gui() {
+        assert_eq!(classify_session_type(":0", None), SessionType::Gui);
+    }
+
+    #[test]
+    fn parse_full_timestamp_valid() {
+        let parts = vec!["Mon", "Jan", "1", "12:00:00", "2024"];
+        let ts = parse_full_timestamp(&parts, 0);
+        assert!(ts.is_some());
+    }
+
+    #[test]
+    fn parse_full_timestamp_insufficient_parts() {
+        let parts = vec!["Mon", "Jan"];
+        assert!(parse_full_timestamp(&parts, 0).is_none());
+    }
 }

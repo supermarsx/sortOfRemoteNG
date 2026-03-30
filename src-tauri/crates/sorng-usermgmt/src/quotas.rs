@@ -168,4 +168,67 @@ bob       --    1024    2048    4096               10    20    40";
         assert_eq!(quotas[2].block_usage_kb, 1024);
         assert_eq!(quotas[2].filesystem, "/dev/sda1");
     }
+
+    #[test]
+    fn test_parse_repquota_empty() {
+        assert!(parse_repquota("", "/dev/sda1").is_empty());
+    }
+
+    #[test]
+    fn test_parse_repquota_header_only() {
+        let input = "\
+*** Report for user quotas on device /dev/sda1
+Block grace time: 7days; Inode grace time: 7days
+                        Block limits                File limits
+User            used    soft    hard  grace    used  soft  hard  grace
+----------------------------------------------------------------------";
+        assert!(parse_repquota(input, "/dev/sda1").is_empty());
+    }
+
+    #[test]
+    fn test_parse_repquota_over_inode() {
+        let input = "bob       -+    1024    2048    4096              50    40    80  3days";
+        let quotas = parse_repquota(input, "/");
+        assert_eq!(quotas.len(), 1);
+        assert!(!quotas[0].over_block_soft);
+        assert!(quotas[0].over_inode_soft);
+    }
+
+    #[test]
+    fn test_parse_repquota_both_over() {
+        let input = "eve       ++  600000  500000  700000  6days      100    80   120  2days";
+        let quotas = parse_repquota(input, "/data");
+        assert_eq!(quotas.len(), 1);
+        assert!(quotas[0].over_block_soft);
+        assert!(quotas[0].over_inode_soft);
+        assert_eq!(quotas[0].block_usage_kb, 600000);
+        assert!(quotas[0].block_grace_remaining.is_some());
+        assert!(quotas[0].inode_grace_remaining.is_some());
+    }
+
+    #[test]
+    fn test_parse_repquota_zero_limits() {
+        let input = "root      --       0       0       0                 0     0     0";
+        let quotas = parse_repquota(input, "/");
+        assert_eq!(quotas.len(), 1);
+        assert_eq!(quotas[0].block_soft_limit_kb, 0);
+        assert_eq!(quotas[0].block_hard_limit_kb, 0);
+        assert_eq!(quotas[0].inode_soft_limit, 0);
+    }
+
+    #[test]
+    fn test_parse_repquota_comment_lines_skipped() {
+        let input = "\
+# This is a comment
+user1     --    1024    2048    4096               10    20    40";
+        let quotas = parse_repquota(input, "/dev/sdb1");
+        assert_eq!(quotas.len(), 1);
+        assert_eq!(quotas[0].filesystem, "/dev/sdb1");
+    }
+
+    #[test]
+    fn test_parse_repquota_short_line_skipped() {
+        let input = "short --";
+        assert!(parse_repquota(input, "/").is_empty());
+    }
 }

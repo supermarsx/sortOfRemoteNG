@@ -166,3 +166,159 @@ impl SmartCardDevice {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dev() -> SmartCardDevice {
+        SmartCardDevice::new(5, "test-session".into())
+    }
+
+    fn unwrap_completion(resp: Option<Vec<u8>>) -> (u32, Vec<u8>) {
+        let buf = resp.expect("expected completion");
+        assert!(buf.len() >= 16);
+        let io_status = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+        let output = buf[16..].to_vec();
+        (io_status, output)
+    }
+
+    fn make_ioctl_data(ioctl_code: u32) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&256u32.to_le_bytes()); // output_buffer_length
+        data.extend_from_slice(&0u32.to_le_bytes());   // input_buffer_length
+        data.extend_from_slice(&ioctl_code.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn irp_create_returns_success() {
+        let mut d = dev();
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_CREATE, 0, 1, 0, &[]));
+        assert_eq!(status, STATUS_SUCCESS);
+        assert_eq!(out.len(), 5);
+    }
+
+    #[test]
+    fn irp_close_returns_success() {
+        let mut d = dev();
+        let (status, _) = unwrap_completion(d.handle_irp(IRP_MJ_CLOSE, 0, 2, 0, &[]));
+        assert_eq!(status, STATUS_SUCCESS);
+    }
+
+    #[test]
+    fn unsupported_irp_returns_not_supported() {
+        let mut d = dev();
+        let (status, _) = unwrap_completion(d.handle_irp(0xFF, 0, 3, 0, &[]));
+        assert_eq!(status, STATUS_NOT_SUPPORTED);
+    }
+
+    #[test]
+    fn ioctl_short_data_returns_error() {
+        let mut d = dev();
+        let data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
+        // The handle_ioctl is reached via IRP_MJ_DEVICE_CONTROL
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 4, 0, &[0u8; 4]));
+        assert_eq!(status, STATUS_SUCCESS); // IRP status is always SUCCESS
+        // output should be the error response (0 length)
+        let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+        assert_eq!(buf_len, 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    mod windows_tests {
+        use super::*;
+
+        #[test]
+        fn ioctl_access_started_event() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_ACCESS_STARTED_EVENT);
+            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
+            assert_eq!(status, STATUS_SUCCESS);
+            // success response: OutputBufferLength(4) + empty data
+            let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+            assert_eq!(buf_len, 0);
+        }
+
+        #[test]
+        fn ioctl_establish_context_returns_handle() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
+            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 11, 0, &data));
+            assert_eq!(status, STATUS_SUCCESS);
+            let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+            assert!(buf_len >= 12); // SCARD_S_SUCCESS(4) + cbContext(4) + hContext(4)
+            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+            assert_eq!(scard_status, SCARD_S_SUCCESS);
+        }
+
+        #[test]
+        fn ioctl_list_readers_returns_empty() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_LIST_READERS_W);
+            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 12, 0, &data));
+            assert_eq!(status, STATUS_SUCCESS);
+            let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+            assert!(buf_len >= 8); // SCARD_S_SUCCESS(4) + cReaders(4)
+            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+            assert_eq!(scard_status, SCARD_S_SUCCESS);
+            let reader_count = u32::from_le_bytes(out[8..12].try_into().unwrap());
+            assert_eq!(reader_count, 0);
+        }
+
+        #[test]
+        fn ioctl_connect_returns_no_service() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_CONNECT_W);
+            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 13, 0, &data));
+            assert_eq!(status, STATUS_SUCCESS);
+            let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+            assert!(buf_len >= 4);
+            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+            assert_eq!(scard_status, SCARD_E_NO_SERVICE);
+        }
+
+        #[test]
+        fn ioctl_transmit_returns_no_service() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_TRANSMIT);
+            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 14, 0, &data));
+            assert_eq!(status, STATUS_SUCCESS);
+            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+            assert_eq!(scard_status, SCARD_E_NO_SERVICE);
+        }
+
+        #[test]
+        fn ioctl_get_status_change_returns_timeout() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_GET_STATUS_CHANGE_W);
+            let (_, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 15, 0, &data));
+            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+            assert_eq!(scard_status, 0x8010_000A); // SCARD_E_TIMEOUT
+        }
+
+        #[test]
+        fn ioctl_release_context_returns_success() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_RELEASE_CONTEXT);
+            let (_, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 16, 0, &data));
+            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+            assert_eq!(scard_status, SCARD_S_SUCCESS);
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    mod non_windows_tests {
+        use super::*;
+
+        #[test]
+        fn ioctl_returns_no_service_on_non_windows() {
+            let mut d = dev();
+            let data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
+            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
+            assert_eq!(status, STATUS_SUCCESS);
+            let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+            assert_eq!(buf_len, 0); // error response has 0 output
+        }
+    }
+}

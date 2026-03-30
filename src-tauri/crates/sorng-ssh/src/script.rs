@@ -230,15 +230,11 @@ impl ScriptService {
                                                     // Add basic globals
                                                     let global = ctx.globals();
 
-                                                    // Console mock
-                                                    let _ = {
-                                                        let _: () = ctx.eval::<(), _>("({
-                                                            log: (...args) => {},
-                                                            warn: (...args) => {},
-                                                            error: (...args) => {}
-                                                        })").unwrap_or(());
-                                                        global.set("console", ())
-                                                    };
+                                                    // Console mock - provide no-op methods so scripts can call
+                                                    // console.log/warn/error without throwing exceptions
+                                                    let _ = ctx.eval::<(), _>(
+                                                        "var console = { log: function(){}, warn: function(){}, error: function(){}, info: function(){}, debug: function(){} };"
+                                                    );
 
                                                     // SSH Module Binding
                                                     if let Ok(ssh_obj) = Object::new(ctx.clone()) {

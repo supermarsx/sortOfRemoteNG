@@ -640,4 +640,62 @@ mod tests {
         assert!(info.connected);
         assert_eq!(info.host, "192.168.1.1");
     }
+
+    // ── WriteBack variant tests ──────────────────────────────
+
+    #[test]
+    fn session_event_writeback_carries_data() {
+        let data = vec![IAC, 0xFB, 0x01];
+        let event = SessionEvent::WriteBack(data.clone());
+        match event {
+            SessionEvent::WriteBack(d) => assert_eq!(d, data),
+            _ => panic!("expected WriteBack"),
+        }
+    }
+
+    #[test]
+    fn session_event_writeback_empty() {
+        let event = SessionEvent::WriteBack(vec![]);
+        match event {
+            SessionEvent::WriteBack(d) => assert!(d.is_empty()),
+            _ => panic!("expected WriteBack"),
+        }
+    }
+
+    #[test]
+    fn handle_subneg_ttype_produces_writeback_data() {
+        // handle_subnegotiation returns a non-empty Vec<u8> for TTYPE SEND,
+        // which is what gets wrapped in WriteBack during the read loop.
+        let resp = handle_subnegotiation(
+            TelnetOption::TerminalType as u8,
+            &[SN_SEND],
+            "xterm-256color",
+            "38400,38400",
+            80,
+            24,
+        );
+        assert!(!resp.is_empty());
+        // Verify it starts with IAC SB (subneg response)
+        assert_eq!(resp[0], IAC);
+        assert_eq!(resp[1], SB);
+    }
+
+    #[test]
+    fn handle_subneg_naws_produces_window_size() {
+        let resp = handle_subnegotiation(
+            TelnetOption::NAWS as u8,
+            &[],
+            "xterm",
+            "38400,38400",
+            132,
+            50,
+        );
+        // IAC SB NAWS <width_hi> <width_lo> <height_hi> <height_lo> IAC SE
+        assert_eq!(resp.len(), 9);
+        // Width = 132 = 0x0084
+        assert_eq!(resp[3], 0);   // width high byte
+        assert_eq!(resp[4], 132); // width low byte
+        assert_eq!(resp[5], 0);   // height high byte
+        assert_eq!(resp[6], 50);  // height low byte
+    }
 }

@@ -476,9 +476,11 @@ mod tests {
         let ev = |t: SshLifecycleEventType| SshLifecycleEvent {
             session_id: "s1".into(),
             connection_id: None,
+            host: None,
+            username: None,
             event_type: t,
             timestamp: Utc::now(),
-            details: HashMap::new(),
+            metadata: HashMap::new(),
         };
         assert_eq!(map_event_to_triggers(&ev(SshLifecycleEventType::Connected)), vec!["login"]);
         assert_eq!(map_event_to_triggers(&ev(SshLifecycleEventType::Disconnected)), vec!["logout"]);

@@ -193,3 +193,157 @@ impl SerialDevice {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dev() -> SerialDevice {
+        SerialDevice::new(1, "COM1", "test-session".into())
+    }
+
+    fn unwrap_completion(resp: Option<Vec<u8>>) -> (u32, Vec<u8>) {
+        let buf = resp.expect("expected completion");
+        // skip RDPDR header (4 bytes) + device_id(4) + completion_id(4) + io_status(4) = 16 bytes header
+        assert!(buf.len() >= 16);
+        let io_status = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+        let output = buf[16..].to_vec();
+        (io_status, output)
+    }
+
+    #[test]
+    fn irp_create_returns_success() {
+        let mut d = dev();
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_CREATE, 0, 1, 0, &[]));
+        assert_eq!(status, STATUS_SUCCESS);
+        assert_eq!(out.len(), 5); // FileId(4) + Information(1)
+    }
+
+    #[test]
+    fn irp_close_returns_success() {
+        let mut d = dev();
+        let (status, _) = unwrap_completion(d.handle_irp(IRP_MJ_CLOSE, 0, 2, 0, &[]));
+        assert_eq!(status, STATUS_SUCCESS);
+    }
+
+    #[test]
+    fn irp_read_returns_empty() {
+        let mut d = dev();
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_READ, 0, 3, 0, &[]));
+        assert_eq!(status, STATUS_SUCCESS);
+        let length = u32::from_le_bytes(out[0..4].try_into().unwrap());
+        assert_eq!(length, 0);
+    }
+
+    #[test]
+    fn irp_write_acknowledges_length() {
+        let mut d = dev();
+        let mut data = Vec::new();
+        data.extend_from_slice(&42u32.to_le_bytes()); // Length = 42
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_WRITE, 0, 4, 0, &data));
+        assert_eq!(status, STATUS_SUCCESS);
+        let echoed = u32::from_le_bytes(out[0..4].try_into().unwrap());
+        assert_eq!(echoed, 42);
+    }
+
+    #[test]
+    fn irp_write_zero_length() {
+        let mut d = dev();
+        let data = 0u32.to_le_bytes();
+        let (status, _) = unwrap_completion(d.handle_irp(IRP_MJ_WRITE, 0, 5, 0, &data));
+        assert_eq!(status, STATUS_SUCCESS);
+    }
+
+    #[test]
+    fn unsupported_irp_returns_not_supported() {
+        let mut d = dev();
+        let (status, _) = unwrap_completion(d.handle_irp(0xFF, 0, 6, 0, &[]));
+        assert_eq!(status, STATUS_NOT_SUPPORTED);
+    }
+
+    #[test]
+    fn ioctl_get_baud_rate() {
+        let mut d = dev();
+        // Build IOCTL data: output_buffer_len(4) + input_buffer_len(4) + ioctl_code(4)
+        let mut data = Vec::new();
+        data.extend_from_slice(&64u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&IOCTL_SERIAL_GET_BAUD_RATE.to_le_bytes());
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 7, 0, &data));
+        assert_eq!(status, STATUS_SUCCESS);
+        // OutputBufferLength(4) + baud_rate(4)
+        assert!(out.len() >= 8);
+        let baud = u32::from_le_bytes(out[4..8].try_into().unwrap());
+        assert_eq!(baud, 9600); // default
+    }
+
+    #[test]
+    fn ioctl_set_then_get_baud_rate() {
+        let mut d = dev();
+        // SET baud to 115200
+        let mut set_data = vec![0u8; 36];
+        set_data[8..12].copy_from_slice(&IOCTL_SERIAL_SET_BAUD_RATE.to_le_bytes());
+        set_data[32..36].copy_from_slice(&115200u32.to_le_bytes());
+        d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 8, 0, &set_data);
+
+        // GET baud
+        let mut get_data = Vec::new();
+        get_data.extend_from_slice(&64u32.to_le_bytes());
+        get_data.extend_from_slice(&0u32.to_le_bytes());
+        get_data.extend_from_slice(&IOCTL_SERIAL_GET_BAUD_RATE.to_le_bytes());
+        let (_, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 9, 0, &get_data));
+        let baud = u32::from_le_bytes(out[4..8].try_into().unwrap());
+        assert_eq!(baud, 115200);
+    }
+
+    #[test]
+    fn ioctl_get_line_control() {
+        let mut d = dev();
+        let mut data = Vec::new();
+        data.extend_from_slice(&64u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&IOCTL_SERIAL_GET_LINE_CONTROL.to_le_bytes());
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
+        assert_eq!(status, STATUS_SUCCESS);
+        assert_eq!(out[6], 8); // WordLength = 8
+    }
+
+    #[test]
+    fn ioctl_set_get_wait_mask() {
+        let mut d = dev();
+        // SET wait mask
+        let mut set_data = vec![0u8; 36];
+        set_data[8..12].copy_from_slice(&IOCTL_SERIAL_SET_WAIT_MASK.to_le_bytes());
+        set_data[32..36].copy_from_slice(&0x1Fu32.to_le_bytes());
+        d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 11, 0, &set_data);
+
+        // GET wait mask
+        let mut get_data = Vec::new();
+        get_data.extend_from_slice(&64u32.to_le_bytes());
+        get_data.extend_from_slice(&0u32.to_le_bytes());
+        get_data.extend_from_slice(&IOCTL_SERIAL_GET_WAIT_MASK.to_le_bytes());
+        let (_, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 12, 0, &get_data));
+        let mask = u32::from_le_bytes(out[4..8].try_into().unwrap());
+        assert_eq!(mask, 0x1F);
+    }
+
+    #[test]
+    fn ioctl_get_commstatus_zeros() {
+        let mut d = dev();
+        let mut data = Vec::new();
+        data.extend_from_slice(&64u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&IOCTL_SERIAL_GET_COMMSTATUS.to_le_bytes());
+        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 13, 0, &data));
+        assert_eq!(status, STATUS_SUCCESS);
+        let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+        assert_eq!(buf_len, 20);
+    }
+
+    #[test]
+    fn ioctl_short_data_returns_not_supported() {
+        let mut d = dev();
+        let (status, _) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 14, 0, &[0u8; 4]));
+        assert_eq!(status, STATUS_NOT_SUPPORTED);
+    }
+}
