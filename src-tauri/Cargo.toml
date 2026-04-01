@@ -323,6 +323,8 @@ tokio-test = { workspace = true }
 tempfile = { workspace = true }
 mockall = "0.11"
 serial_test = "2.0"
+chrono = { workspace = true }
+uuid = { workspace = true }
 
 [features]
 default = ["cloud", "collab", "ops", "platform", "rdp"]

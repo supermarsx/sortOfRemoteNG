@@ -56,6 +56,9 @@ lazy_static::lazy_static! {
 // All types
 pub use types::*;
 
+// Tunnel utility functions (status queries, listing, RDP file generation)
+pub use tunnels::*;
+
 // Service struct and helpers
 #[allow(unused_imports)]
 pub use service::generate_totp_code;
