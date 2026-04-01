@@ -662,6 +662,7 @@ fn count_files(dir: &Path) -> u64 {
 mod tests {
     use super::*;
     use crate::types::BackupMethod;
+    use chrono::Duration;
 
     fn make_entry() -> CatalogEntry {
         CatalogEntry::new(

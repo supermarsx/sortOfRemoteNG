@@ -426,6 +426,7 @@ mod tests {
     use super::*;
     use crate::types::BackupMethod;
     use chrono::Duration;
+    use uuid::Uuid;
 
     fn make_entry(
         id: &str,

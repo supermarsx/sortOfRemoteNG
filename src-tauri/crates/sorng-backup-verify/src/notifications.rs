@@ -483,6 +483,7 @@ impl Default for NotificationDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::NotifyEvent;
 
     #[test]
     fn test_no_smtp_config() {
