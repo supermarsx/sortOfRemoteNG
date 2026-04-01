@@ -41,3 +41,5 @@ cargo-check*.log
 users.json
 coverage/
 coverage-output2.txt
+coverage_output.txt
+test_toolbar_output.txt
