@@ -1182,6 +1182,7 @@ mod tests {
             namespace: r"root\cimv2".to_string(),
             use_ssl: false,
             port: 0,
+            alt_port: 0,
             skip_ca_check: false,
             timeout_sec: 30,
             skip_cn_check: false,
