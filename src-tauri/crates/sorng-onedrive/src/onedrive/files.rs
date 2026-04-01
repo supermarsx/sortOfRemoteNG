@@ -10,6 +10,8 @@ use crate::onedrive::types::{
     ConflictBehavior, CopyRequest, DriveItem, DriveItemVersion, ItemPreview, MoveRequest,
     UploadProgress, UploadSession,
 };
+#[cfg(test)]
+use crate::onedrive::types::{ItemReference, UploadSessionCreateRequest};
 use log::{debug, info};
 use serde_json::json;
 
