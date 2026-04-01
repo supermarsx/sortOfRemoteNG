@@ -153,41 +153,74 @@ impl DiscoveryService {
     /// Start mDNS service registration.
     pub fn register_mdns(&self) -> Result<(), String> {
         let announcement = self.our_announcement.as_ref().ok_or("No announcement")?;
-
-        // In a real implementation, use mdns-sd or similar library:
-        //   let mdns = mdns_sd::ServiceDaemon::new()?;
-        //   let service = ServiceInfo::new(
-        //       MDNS_SERVICE_TYPE,
-        //       &announcement.name,
-        //       &format!("{}.local.", hostname),
-        //       our_ip,
-        //       our_port,
-        //       properties,
-        //   )?;
-        //   mdns.register(service)?;
-
-        info!(
-            "Registered mDNS service: {} ({})",
-            MDNS_SERVICE_TYPE, announcement.name
-        );
-        Ok(())
+        // Try to use mdns crate, fallback to UDP multicast if not available
+        #[cfg(feature = "mdns")] {
+            use mdns::{Responder, Service};
+            let responder = Responder::new().map_err(|e| format!("mDNS responder error: {e}"))?;
+            let _svc = responder.register(
+                MDNS_SERVICE_TYPE,
+                &announcement.name,
+                announcement.addresses[0].parse().unwrap_or("0.0.0.0:0".parse().unwrap()),
+            );
+            info!("Registered mDNS service: {} ({})", MDNS_SERVICE_TYPE, announcement.name);
+            Ok(())
+        }
+        #[cfg(not(feature = "mdns"))]
+        {
+            // Fallback: UDP multicast announcement
+            use std::net::{UdpSocket, SocketAddrV4, Ipv4Addr};
+            let addr = SocketAddrV4::new(Ipv4Addr::new(224, 0, 0, 251), 5353);
+            let sock = UdpSocket::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
+            sock.set_multicast_loop_v4(true).ok();
+            let data = serde_json::to_vec(announcement).map_err(|e| e.to_string())?;
+            sock.send_to(&data, addr).map_err(|e| e.to_string())?;
+            info!("Sent UDP multicast announcement for mDNS fallback");
+            Ok(())
+        }
     }
 
     /// Browse for mDNS services.
     pub fn browse_mdns(&mut self) -> Result<Vec<DiscoveredPeer>, String> {
-        // In a real implementation:
-        //   let mdns = mdns_sd::ServiceDaemon::new()?;
-        //   let receiver = mdns.browse(MDNS_SERVICE_TYPE)?;
-        //   for event in receiver.try_iter() {
-        //       match event {
-        //           ServiceEvent::ServiceResolved(info) => {
-        //               // Extract peer info from TXT records
-        //           }
-        //       }
-        //   }
-
-        info!("Browsing mDNS for {}", MDNS_SERVICE_TYPE);
-        Ok(Vec::new())
+        #[cfg(feature = "mdns")]
+        {
+            use mdns::{RecordKind, Service};
+            let service = Service::browse(MDNS_SERVICE_TYPE).map_err(|e| format!("mDNS browse error: {e}"))?;
+            let start = std::time::Instant::now();
+            let mut found = Vec::new();
+            for event in service {
+                if start.elapsed().as_secs() > 3 { break; }
+                if let Ok(response) = event {
+                    for record in response.records() {
+                        if let RecordKind::A(addr) = record.kind {
+                            // Here, you would parse TXT records for peer info
+                            // For now, just log the address
+                            info!("Discovered mDNS peer: {}", addr);
+                        }
+                    }
+                }
+            }
+            Ok(found)
+        }
+        #[cfg(not(feature = "mdns"))]
+        {
+            // Fallback: listen for UDP multicast announcements
+            use std::net::{UdpSocket, SocketAddrV4, Ipv4Addr};
+            let addr = SocketAddrV4::new(Ipv4Addr::new(224, 0, 0, 251), 5353);
+            let sock = UdpSocket::bind("0.0.0.0:5353").map_err(|e| e.to_string())?;
+            sock.join_multicast_v4(&Ipv4Addr::new(224, 0, 0, 251), &Ipv4Addr::UNSPECIFIED).map_err(|e| e.to_string())?;
+            sock.set_nonblocking(true).ok();
+            let start = std::time::Instant::now();
+            let mut found = Vec::new();
+            let mut buf = [0u8; 1500];
+            while start.elapsed().as_secs() < 3 {
+                if let Ok((n, _src)) = sock.recv_from(&mut buf) {
+                    if let Ok(peer) = self.parse_broadcast_packet(&buf[..n]) {
+                        found.push(peer);
+                    }
+                }
+            }
+            Ok(found)
+        }
     }
 
     // ── LAN Broadcast Discovery ────────────────────────────────

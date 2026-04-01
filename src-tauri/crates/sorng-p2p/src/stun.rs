@@ -7,6 +7,8 @@ use crate::types::{StunBinding, StunServer};
 use log::{debug, info};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+use tokio::runtime::Runtime;
+use tokio::net::UdpSocket;
 
 /// STUN message types (RFC 5389 §6).
 #[repr(u16)]
@@ -278,39 +280,47 @@ fn parse_address(data: &[u8], xor: bool, txn: &[u8; 12]) -> Option<SocketAddr> {
 pub fn stun_binding(
     server: &StunServer,
     local_addr: &str,
-    _timeout: Duration,
+    timeout: Duration,
 ) -> Result<StunBinding, String> {
     let txn = generate_transaction_id();
-    let _request = build_binding_request(&txn);
-
+    let request = build_binding_request(&txn);
     let server_addr = format!("{}:{}", server.host, server.port);
+    let server_sock_addr: SocketAddr = server_addr.parse().map_err(|e| format!("Invalid STUN server address: {e}"))?;
     let start = Instant::now();
 
-    // In a real implementation, this would use async UDP sockets (tokio::net::UdpSocket).
-    // For the structural implementation, we define the protocol flow:
-    //
-    // 1. Bind a local UDP socket
-    // 2. Send the binding request to the STUN server
-    // 3. Wait for the response (with timeout)
-    // 4. Parse the response to get our public address
-    //
-    // This is a placeholder that demonstrates the correct API surface.
+    // Use a Tokio runtime for async UDP
+    let rt = Runtime::new().map_err(|e| format!("Tokio runtime error: {e}"))?;
+    let result = rt.block_on(async {
+        let sock = UdpSocket::bind(local_addr).await.map_err(|e| format!("UDP bind failed: {e}"))?;
+        sock.send_to(&request, server_sock_addr).await.map_err(|e| format!("UDP send failed: {e}"))?;
 
-    let rtt = start.elapsed();
-
-    info!(
-        "STUN binding to {} from {} (placeholder — would return mapped address)",
-        server_addr, local_addr
-    );
-
-    Ok(StunBinding {
-        server: server_addr,
-        local_addr: local_addr.to_string(),
-        mapped_addr: format!("{}:{}", local_addr, 0), // placeholder
-        rtt_ms: rtt.as_millis() as u64,
-        changed_ip: false,
-        changed_port: false,
-    })
+        let mut buf = [0u8; 1500];
+        let recv_fut = sock.recv_from(&mut buf);
+        let timeout_fut = tokio::time::sleep(timeout);
+        tokio::select! {
+            res = recv_fut => {
+                let (n, _src) = res.map_err(|e| format!("UDP recv failed: {e}"))?;
+                let response = parse_stun_response(&buf[..n], &txn)?;
+                if let Some(addr) = response.mapped_address {
+                    let rtt = start.elapsed();
+                    Ok(StunBinding {
+                        server: server_addr.clone(),
+                        local_addr: local_addr.to_string(),
+                        mapped_addr: addr.to_string(),
+                        rtt_ms: rtt.as_millis() as u64,
+                        changed_ip: response.changed_ip,
+                        changed_port: response.changed_port,
+                    })
+                } else {
+                    Err("No mapped address in STUN response".to_string())
+                }
+            },
+            _ = timeout_fut => {
+                Err("STUN response timed out".to_string())
+            }
+        }
+    });
+    result
 }
 
 /// Perform STUN binding requests to multiple servers in parallel

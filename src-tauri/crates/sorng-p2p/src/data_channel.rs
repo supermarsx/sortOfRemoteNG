@@ -9,6 +9,10 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
+use chacha20poly1305::{aead::{Aead, KeyInit, Payload}, ChaCha20Poly1305, Nonce};
+use hkdf::Hkdf;
+use sha2::Sha256;
+
 /// Data channel state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataChannelState {
@@ -123,6 +127,8 @@ pub struct EncryptionContext {
     cipher_suite: CipherSuite,
     /// Shared secret (derived from X25519 key exchange)
     shared_secret: Vec<u8>,
+    /// Symmetric key derived from shared_secret
+    key: Option<chacha20poly1305::Key>,
     /// Send nonce counter
     send_nonce: u64,
     /// Receive nonce counter
@@ -138,9 +144,19 @@ pub struct EncryptionContext {
 impl EncryptionContext {
     /// Create a new encryption context with a shared secret.
     pub fn new(cipher_suite: CipherSuite, shared_secret: Vec<u8>) -> Self {
+        let key = if cipher_suite == CipherSuite::ChaCha20Poly1305 {
+            // Derive a 32-byte key using HKDF-SHA256
+            let hk = Hkdf::<Sha256>::new(None, &shared_secret);
+            let mut okm = [0u8; 32];
+            hk.expand(b"sorng-p2p-datachannel", &mut okm).expect("HKDF expand failed");
+            Some(*chacha20poly1305::Key::from_slice(&okm))
+        } else {
+            None
+        };
         Self {
             cipher_suite,
             shared_secret,
+            key,
             send_nonce: 0,
             recv_nonce: 0,
             key_rotation_pending: false,
@@ -155,24 +171,34 @@ impl EncryptionContext {
             return Ok(plaintext.to_vec());
         }
 
-        // In a real implementation:
-        // 1. Derive per-message key from shared_secret + nonce
-        // 2. Encrypt with AEAD (ChaCha20-Poly1305 or AES-GCM)
-        // 3. Prepend nonce to ciphertext
-        // 4. Append authentication tag
+        if self.cipher_suite != CipherSuite::ChaCha20Poly1305 {
+            return Err("Only ChaCha20Poly1305 is implemented".to_string());
+        }
+
+        let key = self.key.as_ref().ok_or("Missing encryption key")?;
+
+        // Nonce: 12 bytes, use 4 zero bytes + 8-byte sequence number (big endian)
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..].copy_from_slice(&self.send_nonce.to_be_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Associated data: the nonce (or could be a header if available)
+        let aad = &self.send_nonce.to_be_bytes();
+
+        let cipher = ChaCha20Poly1305::new(key);
+        let ciphertext = cipher.encrypt(nonce, Payload { msg: plaintext, aad })
+            .map_err(|e| format!("Encryption failed: {e}"))?;
 
         self.send_nonce += 1;
         self.bytes_encrypted += plaintext.len() as u64;
-
         if self.bytes_encrypted > self.rotation_threshold {
             self.key_rotation_pending = true;
         }
 
-        // Structural placeholder — returns plaintext with a "header"
-        let mut output = Vec::with_capacity(8 + plaintext.len() + 16);
-        output.extend_from_slice(&self.send_nonce.to_be_bytes()); // nonce (8 bytes)
-        output.extend_from_slice(plaintext); // ciphertext
-        output.extend_from_slice(&[0u8; 16]); // auth tag placeholder
+        // Output: 8-byte nonce (seq), ciphertext (includes tag)
+        let mut output = Vec::with_capacity(8 + ciphertext.len());
+        output.extend_from_slice(&self.send_nonce.wrapping_sub(1).to_be_bytes());
+        output.extend_from_slice(&ciphertext);
         Ok(output)
     }
 
@@ -182,34 +208,39 @@ impl EncryptionContext {
             return Ok(ciphertext.to_vec());
         }
 
-        if ciphertext.len() < 24 {
+        if self.cipher_suite != CipherSuite::ChaCha20Poly1305 {
+            return Err("Only ChaCha20Poly1305 is implemented".to_string());
+        }
+
+        if ciphertext.len() < 8 + 16 {
             return Err("Ciphertext too short".to_string());
         }
 
-        // In a real implementation:
-        // 1. Extract nonce from the first 8 bytes
-        // 2. Verify nonce is >= expected (prevent replay)
-        // 3. Extract auth tag from last 16 bytes
-        // 4. Decrypt and verify with AEAD
+        let key = self.key.as_ref().ok_or("Missing encryption key")?;
 
-        let nonce = u64::from_be_bytes([
-            ciphertext[0],
-            ciphertext[1],
-            ciphertext[2],
-            ciphertext[3],
-            ciphertext[4],
-            ciphertext[5],
-            ciphertext[6],
-            ciphertext[7],
+        // Extract nonce (first 8 bytes)
+        let nonce_val = u64::from_be_bytes([
+            ciphertext[0], ciphertext[1], ciphertext[2], ciphertext[3],
+            ciphertext[4], ciphertext[5], ciphertext[6], ciphertext[7],
         ]);
 
-        if nonce < self.recv_nonce {
+        if nonce_val < self.recv_nonce {
             return Err("Replay detected: nonce too old".to_string());
         }
-        self.recv_nonce = nonce;
+        self.recv_nonce = nonce_val;
 
-        // Extract plaintext (between nonce and auth tag)
-        let plaintext = ciphertext[8..ciphertext.len() - 16].to_vec();
+        // Nonce: 12 bytes, 4 zero bytes + 8-byte seq
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..].copy_from_slice(&ciphertext[0..8]);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Associated data: the nonce (or could be a header if available)
+        let aad = &ciphertext[0..8];
+
+        let cipher = ChaCha20Poly1305::new(key);
+        let ct = &ciphertext[8..];
+        let plaintext = cipher.decrypt(nonce, Payload { msg: ct, aad })
+            .map_err(|e| format!("Decryption failed: {e}"))?;
         Ok(plaintext)
     }
 
@@ -221,7 +252,13 @@ impl EncryptionContext {
     /// Rotate the encryption key.
     pub fn rotate_key(&mut self, new_shared_secret: Vec<u8>) {
         info!("Rotating data channel encryption key");
-        self.shared_secret = new_shared_secret;
+        self.shared_secret = new_shared_secret.clone();
+        if self.cipher_suite == CipherSuite::ChaCha20Poly1305 {
+            let hk = Hkdf::<Sha256>::new(None, &new_shared_secret);
+            let mut okm = [0u8; 32];
+            hk.expand(b"sorng-p2p-datachannel", &mut okm).expect("HKDF expand failed");
+            self.key = Some(*chacha20poly1305::Key::from_slice(&okm));
+        }
         self.send_nonce = 0;
         self.recv_nonce = 0;
         self.bytes_encrypted = 0;

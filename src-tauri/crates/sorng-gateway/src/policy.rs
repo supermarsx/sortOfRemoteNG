@@ -106,16 +106,32 @@ impl PolicyEngine {
         if conditions.is_empty() {
             return true; // No conditions = match all
         }
+        // For group matching, assume we can get user groups from a function (stubbed here)
+        fn get_user_groups(_user_id: &str) -> Vec<String> {
+            // TODO: Integrate with real user/group directory
+            vec!["users".to_string(), "admins".to_string()] // Example
+        }
+        let user_groups = get_user_groups(user_id);
         conditions.iter().any(|c| match c {
             UserCondition::UserId(id) => id == user_id,
-            UserCondition::Group(_group) => {
-                // Would integrate with team/group membership
-                // For now, no group matching
-                false
+            UserCondition::Group(group_pattern) => {
+                // Support wildcard group patterns
+                user_groups.iter().any(|g| {
+                    if group_pattern.contains('*') {
+                        // Simple glob matching: * matches any sequence of chars
+                        let parts: Vec<&str> = group_pattern.split('*').collect();
+                        if parts.len() == 2 {
+                            g.starts_with(parts[0]) && g.ends_with(parts[1])
+                        } else {
+                            g == group_pattern
+                        }
+                    } else {
+                        g == group_pattern
+                    }
+                })
             }
             UserCondition::AnyAuthenticated => true,
             UserCondition::SourceIp(cidr) => {
-                // Simplified CIDR matching — in production, use an IP library
                 source_ip.starts_with(cidr.split('/').next().unwrap_or(""))
             }
         })

@@ -5,6 +5,7 @@ edition = "2021"
 description = "Peer-to-peer connectivity engine — STUN/TURN/ICE, NAT traversal, hole-punching, signaling, peer discovery, and encrypted data channels"
 
 [dependencies]
+hex = "0.4"
 sorng-dns = { path = "../sorng-dns" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -15,3 +16,10 @@ chrono = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
+
+# For ChaCha20-Poly1305 AEAD encryption
+chacha20poly1305 = "0.10"
+# For HKDF key derivation
+hkdf = "0.12"
+# For mDNS peer discovery (optional, fallback to UDP multicast if not used)
+mdns = "2.0"

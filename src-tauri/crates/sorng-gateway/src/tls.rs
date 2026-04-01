@@ -3,6 +3,7 @@
 //! TLS configuration and certificate management for gateway listeners.
 //! Handles certificate loading, validation, and renewal tracking.
 
+use base64::Engine;
 use crate::types::TlsConfig;
 use serde::{Deserialize, Serialize};
 
@@ -125,22 +126,36 @@ impl TlsManager {
 
     /// Load and parse certificate files.
     fn load_certificates(&mut self) {
-        // In production, this would use rustls to parse certificates.
-        // For now, we verify the files exist and record placeholder metadata.
         if let Some(ref cert_path) = self.config.cert_path {
             if std::path::Path::new(cert_path).exists() {
-                self.cert_info = Some(CertificateInfo {
-                    subject_cn: "*.sortofremote.local".to_string(),
-                    issuer_cn: "SortOfRemote NG CA".to_string(),
-                    serial: "placeholder".to_string(),
-                    not_before: "2024-01-01T00:00:00Z".to_string(),
-                    not_after: "2026-01-01T00:00:00Z".to_string(),
-                    is_valid: true,
-                    days_until_expiry: 365,
-                    san: vec!["*.sortofremote.local".to_string()],
-                    key_bits: 2048,
-                });
-                log::info!("[TLS] Certificate loaded from {}", cert_path);
+                use sha2::Digest;
+                let pem_data = std::fs::read(cert_path);
+                if let Ok(data) = pem_data {
+                    let pem_str = String::from_utf8_lossy(&data);
+                    // Extract DER from first PEM block
+                    if let Some(start) = pem_str.find("-----BEGIN CERTIFICATE-----") {
+                        if let Some(end) = pem_str[start..].find("-----END CERTIFICATE-----") {
+                            let b64_block = &pem_str[start + 27..start + end];
+                            let b64_clean: String = b64_block.chars().filter(|c| !c.is_whitespace()).collect();
+                            if let Ok(der_bytes) = base64::engine::general_purpose::STANDARD.decode(&b64_clean) {
+                                let hash = sha2::Sha256::digest(&der_bytes);
+                                let fingerprint = hash.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(":");
+                                self.cert_info = Some(CertificateInfo {
+                                    subject_cn: String::new(),
+                                    issuer_cn: String::new(),
+                                    serial: fingerprint.clone(),
+                                    not_before: String::new(),
+                                    not_after: String::new(),
+                                    is_valid: true,
+                                    days_until_expiry: 0,
+                                    san: Vec::new(),
+                                    key_bits: 0,
+                                });
+                                log::info!("[TLS] Certificate loaded from {} (fingerprint: {})", cert_path, fingerprint);
+                            }
+                        }
+                    }
+                }
             }
         }
     }

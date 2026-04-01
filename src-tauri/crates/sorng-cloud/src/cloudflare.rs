@@ -176,33 +176,63 @@ impl CloudflareService {
         &mut self,
         config: CloudflareConnectionConfig,
     ) -> Result<String, String> {
-        let session_id = Uuid::new_v4().to_string();
+        use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+        use serde_json::Value;
+        let client = &self.http_client;
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("sortOfRemoteNG/1.0"));
+        headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {}", config.api_token)).map_err(|e| e.to_string())?);
 
-        // In a real implementation, this would validate the Cloudflare credentials
-        // For now, we'll create a mock session
+        // 1. Validate token
+        let verify_url = "https://api.cloudflare.com/client/v4/user/tokens/verify";
+        let verify_resp = client.get(verify_url).headers(headers.clone()).send().await.map_err(|e| format!("Cloudflare token verify failed: {}", e))?;
+        let verify_json: Value = verify_resp.json().await.map_err(|e| format!("Cloudflare verify parse error: {}", e))?;
+        if !verify_json["success"].as_bool().unwrap_or(false) || verify_json["result"]["status"] != "active" {
+            return Err(format!("Cloudflare token invalid or inactive: {}", verify_json));
+        }
+
+        // 2. Get user info
+        let user_url = "https://api.cloudflare.com/client/v4/user";
+        let user_resp = client.get(user_url).headers(headers.clone()).send().await.map_err(|e| format!("Cloudflare user info failed: {}", e))?;
+        let user_json: Value = user_resp.json().await.map_err(|e| format!("Cloudflare user parse error: {}", e))?;
+        let user = &user_json["result"];
+        let user_info = CloudflareUser {
+            id: user["id"].as_str().unwrap_or("").to_string(),
+            email: user["email"].as_str().unwrap_or("").to_string(),
+            first_name: user["first_name"].as_str().map(|s| s.to_string()),
+            last_name: user["last_name"].as_str().map(|s| s.to_string()),
+            username: user["username"].as_str().map(|s| s.to_string()),
+        };
+
+        // 3. Get accounts (optional, best effort)
+        let mut accounts = Vec::new();
+        if let Ok(accounts_resp) = client.get("https://api.cloudflare.com/client/v4/accounts").headers(headers.clone()).send().await {
+            if let Ok(accounts_json) = accounts_resp.json::<Value>().await {
+                if let Some(arr) = accounts_json["result"].as_array() {
+                    for acc in arr {
+                        accounts.push(CloudflareAccount {
+                            id: acc["id"].as_str().unwrap_or("").to_string(),
+                            name: acc["name"].as_str().unwrap_or("").to_string(),
+                            r#type: acc["type"].as_str().unwrap_or("").to_string(),
+                            settings: CloudflareAccountSettings {
+                                enforce_twofactor: acc["settings"]["enforce_twofactor"].as_bool().unwrap_or(false),
+                            },
+                        });
+                    }
+                }
+            }
+        }
+
+        let session_id = Uuid::new_v4().to_string();
         let session = CloudflareSession {
             id: session_id.clone(),
             config: config.clone(),
             connected_at: Utc::now(),
             last_activity: Utc::now(),
             is_connected: true,
-            user_info: Some(CloudflareUser {
-                id: "user_123".to_string(),
-                email: "admin@example.com".to_string(),
-                first_name: Some("John".to_string()),
-                last_name: Some("Doe".to_string()),
-                username: Some("johndoe".to_string()),
-            }),
-            accounts: vec![CloudflareAccount {
-                id: "account_123".to_string(),
-                name: "My Company".to_string(),
-                r#type: "standard".to_string(),
-                settings: CloudflareAccountSettings {
-                    enforce_twofactor: true,
-                },
-            }],
+            user_info: Some(user_info),
+            accounts,
         };
-
         self.sessions.insert(session_id.clone(), session);
         Ok(session_id)
     }

@@ -125,25 +125,39 @@ impl VercelService {
         &mut self,
         config: VercelConnectionConfig,
     ) -> Result<String, String> {
-        let session_id = Uuid::new_v4().to_string();
+        use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+        use serde_json::Value;
+        let client = &self.http_client;
+        let mut headers = HeaderMap::new();
+        headers.insert(USER_AGENT, HeaderValue::from_static("sortOfRemoteNG/1.0"));
+        headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {}", config.token)).map_err(|e| e.to_string())?);
 
-        // In a real implementation, this would validate the Vercel token
-        // For now, we'll create a mock session
+        // 1. Validate token and get user info
+        let user_url = "https://api.vercel.com/v2/user";
+        let user_resp = client.get(user_url).headers(headers.clone()).send().await.map_err(|e| format!("Vercel user info failed: {}", e))?;
+        let status = user_resp.status();
+        let user_json: Value = user_resp.json().await.map_err(|e| format!("Vercel user parse error: {}", e))?;
+        if !status.is_success() {
+            return Err(format!("Vercel token invalid: {} - {}", status, user_json));
+        }
+        let user = &user_json["user"];
+        let user_info = VercelUser {
+            id: user["uid"].as_str().unwrap_or("").to_string(),
+            username: user["username"].as_str().unwrap_or("").to_string(),
+            email: user["email"].as_str().unwrap_or("").to_string(),
+            name: user["name"].as_str().map(|s| s.to_string()),
+            avatar: user["avatar"].as_str().map(|s| s.to_string()),
+        };
+
+        let session_id = Uuid::new_v4().to_string();
         let session = VercelSession {
             id: session_id.clone(),
             config: config.clone(),
             connected_at: Utc::now(),
             last_activity: Utc::now(),
             is_connected: true,
-            user_info: Some(VercelUser {
-                id: "user_123".to_string(),
-                username: "johndoe".to_string(),
-                email: "john@example.com".to_string(),
-                name: Some("John Doe".to_string()),
-                avatar: Some("https://example.com/avatar.jpg".to_string()),
-            }),
+            user_info: Some(user_info),
         };
-
         self.sessions.insert(session_id.clone(), session);
         Ok(session_id)
     }

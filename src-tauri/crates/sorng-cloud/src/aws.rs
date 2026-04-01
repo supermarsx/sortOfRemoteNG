@@ -104,10 +104,125 @@ impl AwsService {
     }
 
     pub async fn connect_aws(&mut self, config: AwsConnectionConfig) -> Result<String, String> {
-        let session_id = Uuid::new_v4().to_string();
+        use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, HOST, USER_AGENT};
+        use chrono::Utc;
+        use quick_xml::de::from_str as xml_from_str;
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        use base64::{engine::general_purpose, Engine as _};
+        use std::collections::BTreeMap;
 
-        // In a real implementation, this would validate AWS credentials
-        // For now, we'll create a mock session
+        // Prepare request for AWS STS GetCallerIdentity
+        let endpoint = "https://sts.amazonaws.com/";
+        let region = if config.region.is_empty() { "us-east-1" } else { &config.region };
+        let access_key = &config.access_key_id;
+        let secret_key = &config.secret_access_key;
+        let session_token = config.session_token.clone();
+        let body = "Action=GetCallerIdentity&Version=2011-06-15";
+
+        // Date/time for headers
+        let now = Utc::now();
+        let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = now.format("%Y%m%d").to_string();
+
+        // Canonical request
+        let canonical_uri = "/";
+        let canonical_querystring = "";
+        let canonical_headers = format!("content-type:application/x-www-form-urlencoded; charset=utf-8\nhost:sts.amazonaws.com\nx-amz-date:{}\n", amz_date);
+        let signed_headers = "content-type;host;x-amz-date";
+        let payload_hash = format!("{:x}", Sha256::digest(body.as_bytes()));
+        let canonical_request = format!(
+            "POST\n{}\n{}\n{}\n{}\n{}",
+            canonical_uri, canonical_querystring, canonical_headers, signed_headers, payload_hash
+        );
+
+        // String to sign
+        let algorithm = "AWS4-HMAC-SHA256";
+        let credential_scope = format!("{}/{}/sts/aws4_request", date_stamp, region);
+        let canonical_request_hash = format!("{:x}", Sha256::digest(canonical_request.as_bytes()));
+        let string_to_sign = format!(
+            "{}\n{}\n{}\n{}",
+            algorithm, amz_date, credential_scope, canonical_request_hash
+        );
+
+        // Derive signing key
+        fn sign(key: &[u8], msg: &str) -> Vec<u8> {
+            let mut mac = Hmac::<Sha256>::new_from_slice(key).unwrap();
+            mac.update(msg.as_bytes());
+            mac.finalize().into_bytes().to_vec()
+        }
+        let k_secret = format!("AWS4{}", secret_key);
+        let k_date = sign(k_secret.as_bytes(), &date_stamp);
+        let k_region = sign(&k_date, region);
+        let k_service = sign(&k_region, "sts");
+        let k_signing = sign(&k_service, "aws4_request");
+        let signature = {
+            let mut mac = Hmac::<Sha256>::new_from_slice(&k_signing).unwrap();
+            mac.update(string_to_sign.as_bytes());
+            hex::encode(mac.finalize().into_bytes())
+        };
+
+        // Build authorization header
+        let authorization_header = format!(
+            "{} Credential={}/{}, SignedHeaders={}, Signature={}",
+            algorithm, access_key, credential_scope, signed_headers, signature
+        );
+
+        // Build headers
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/x-www-form-urlencoded; charset=utf-8"));
+        headers.insert(HOST, HeaderValue::from_static("sts.amazonaws.com"));
+        headers.insert("x-amz-date", HeaderValue::from_str(&amz_date).unwrap());
+        headers.insert("Authorization", HeaderValue::from_str(&authorization_header).unwrap());
+        if let Some(token) = &session_token {
+            headers.insert("x-amz-security-token", HeaderValue::from_str(token).unwrap());
+        }
+        headers.insert(USER_AGENT, HeaderValue::from_static("sortOfRemoteNG/1.0"));
+
+        // Send request
+        let client = &self.http_client;
+        let resp = client
+            .post(endpoint)
+            .headers(headers)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("AWS STS request failed: {}", e))?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(|e| format!("Failed to read AWS STS response: {}", e))?;
+        if !status.is_success() {
+            return Err(format!("AWS credential validation failed: {} - {}", status, text));
+        }
+
+        // Parse XML response
+        #[derive(Debug, Deserialize)]
+        struct GetCallerIdentityResponse {
+            #[serde(rename = "GetCallerIdentityResult")]
+            result: Option<GetCallerIdentityResult>,
+        }
+        #[derive(Debug, Deserialize)]
+        struct GetCallerIdentityResult {
+            #[serde(rename = "Account")]
+            account: String,
+            #[serde(rename = "Arn")]
+            arn: String,
+            #[serde(rename = "UserId")]
+            user_id: String,
+        }
+
+        let identity: Option<GetCallerIdentityResult> = {
+            let start = text.find("<GetCallerIdentityResult>");
+            let end = text.find("</GetCallerIdentityResult>");
+            if let (Some(start), Some(end)) = (start, end) {
+                let xml = &text[start..end+"</GetCallerIdentityResult>".len()];
+                xml_from_str::<GetCallerIdentityResult>(xml).ok()
+            } else {
+                None
+            }
+        };
+        let identity = identity.ok_or_else(|| format!("Failed to parse AWS identity from response: {}", text))?;
+
+        let session_id = Uuid::new_v4().to_string();
         let session = AwsSession {
             id: session_id.clone(),
             config: config.clone(),
@@ -116,33 +231,12 @@ impl AwsService {
             is_connected: true,
             services: vec![
                 AwsServiceInfo {
-                    service_name: "EC2".to_string(),
-                    endpoint: format!("https://ec2.{}.amazonaws.com", config.region),
-                    status: "available".to_string(),
-                },
-                AwsServiceInfo {
-                    service_name: "S3".to_string(),
-                    endpoint: format!("https://s3.{}.amazonaws.com", config.region),
-                    status: "available".to_string(),
-                },
-                AwsServiceInfo {
-                    service_name: "RDS".to_string(),
-                    endpoint: format!("https://rds.{}.amazonaws.com", config.region),
-                    status: "available".to_string(),
-                },
-                AwsServiceInfo {
-                    service_name: "Lambda".to_string(),
-                    endpoint: format!("https://lambda.{}.amazonaws.com", config.region),
-                    status: "available".to_string(),
-                },
-                AwsServiceInfo {
-                    service_name: "CloudWatch".to_string(),
-                    endpoint: format!("https://monitoring.{}.amazonaws.com", config.region),
-                    status: "available".to_string(),
+                    service_name: "STS".to_string(),
+                    endpoint: endpoint.to_string(),
+                    status: "connected".to_string(),
                 },
             ],
         };
-
         self.sessions.insert(session_id.clone(), session);
         Ok(session_id)
     }

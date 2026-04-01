@@ -156,25 +156,15 @@ impl AcmeClient {
     pub async fn fetch_directory(&mut self) -> Result<AcmeDirectory, String> {
         let url = self.directory_url();
         log::info!("[ACME] Fetching directory from {}", url);
-
-        // In production: let resp = reqwest::get(&url).await...
-        // For now, create a plausible directory structure:
-        let dir = AcmeDirectory {
-            new_nonce: format!("{}/acme/new-nonce", url.trim_end_matches("/directory")),
-            new_account: format!("{}/acme/new-acct", url.trim_end_matches("/directory")),
-            new_order: format!("{}/acme/new-order", url.trim_end_matches("/directory")),
-            revoke_cert: format!("{}/acme/revoke-cert", url.trim_end_matches("/directory")),
-            key_change: format!("{}/acme/key-change", url.trim_end_matches("/directory")),
-            meta: Some(AcmeDirectoryMeta {
-                terms_of_service: Some(
-                    "https://letsencrypt.org/documents/LE-SA-v1.4-April-3-2024.pdf".to_string(),
-                ),
-                website: Some("https://letsencrypt.org".to_string()),
-                caa_identities: Some(vec!["letsencrypt.org".to_string()]),
-                external_account_required: Some(false),
-            }),
-        };
-
+        let resp = reqwest::get(&url)
+            .await
+            .map_err(|e| format!("Failed to fetch ACME directory: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("ACME directory fetch failed: HTTP {}", resp.status()));
+        }
+        let dir: AcmeDirectory = resp.json()
+            .await
+            .map_err(|e| format!("Failed to parse ACME directory JSON: {e}"))?;
         self.directory = Some(dir.clone());
         Ok(dir)
     }
@@ -193,8 +183,21 @@ impl AcmeClient {
 
     /// Fetch a fresh anti-replay nonce from the CA.
     pub async fn fetch_nonce(&mut self) -> Result<String, String> {
-        // In production: HEAD request to newNonce URL, read Replay-Nonce header
-        let nonce = uuid::Uuid::new_v4().to_string();
+        let url = {
+            let dir = self.directory().await?;
+            dir.new_nonce.clone()
+        };
+        let client = reqwest::Client::new();
+        let resp = client.head(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch nonce: {e}"))?;
+        let nonce = resp.headers()
+            .get("Replay-Nonce")
+            .ok_or_else(|| "Replay-Nonce header missing".to_string())?
+            .to_str()
+            .map_err(|e| format!("Invalid Replay-Nonce header: {e}"))?
+            .to_string();
         self.nonce = Some(nonce.clone());
         Ok(nonce)
     }
@@ -224,22 +227,37 @@ impl AcmeClient {
         if !agree_tos {
             return Err("You must agree to the Terms of Service".to_string());
         }
-
         log::info!("[ACME] Registering account with contacts: {:?}", contacts);
-
-        // In production: build JWS payload with newAccount URL, POST, parse response
-        let account_url = format!(
-            "{}/acme/acct/{}",
-            self.directory_url().trim_end_matches("/directory"),
-            uuid::Uuid::new_v4()
-        );
+        let url = {
+            let dir = self.directory().await?;
+            dir.new_account.clone()
+        };
+        let nonce = self.fetch_nonce().await?;
+        // Build JWS header and payload (simplified, assumes ES256 key)
+        // In a real implementation, sign with the account key
+        let payload = serde_json::json!({
+            "termsOfServiceAgreed": true,
+            "contact": contacts,
+        });
+        // Placeholder: send unsigned payload (for demo, not production safe)
+        let client = reqwest::Client::new();
+        let resp = client.post(url)
+            .header("Content-Type", "application/jose+json")
+            .header("Replay-Nonce", nonce)
+            .body(payload.to_string())
+            .send()
+            .await
+            .map_err(|e| format!("Failed to POST newAccount: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("Account registration failed: HTTP {}", resp.status()));
+        }
+        let account_url = resp.headers()
+            .get("Location")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
         self.account_url = Some(account_url.clone());
-
-        let thumbprint = self
-            .key_thumbprint
-            .clone()
-            .unwrap_or_else(|| "placeholder-thumbprint".to_string());
-
+        let thumbprint = self.key_thumbprint.clone().unwrap_or_default();
         let account = AcmeAccount {
             id: uuid::Uuid::new_v4().to_string(),
             environment: self.environment,
@@ -253,7 +271,6 @@ impl AcmeClient {
             tos_agreed: true,
             eab_key_id: eab_key_id.map(|s| s.to_string()),
         };
-
         log::info!("[ACME] Account registered: {}", account.id);
         Ok(account)
     }
@@ -452,18 +469,17 @@ impl AcmeClient {
     /// Download the issued certificate chain.
     pub async fn download_certificate(&self, certificate_url: &str) -> Result<String, String> {
         log::info!("[ACME] Downloading certificate from {}", certificate_url);
-        // In production: POST-as-GET to the certificate URL, returning the PEM chain
-
-        // Return a placeholder PEM chain
-        Ok(format!(
-            "-----BEGIN CERTIFICATE-----\n\
-             (placeholder certificate from {})\n\
-             -----END CERTIFICATE-----\n\
-             -----BEGIN CERTIFICATE-----\n\
-             (placeholder intermediate)\n\
-             -----END CERTIFICATE-----\n",
-            certificate_url
-        ))
+        let client = reqwest::Client::new();
+        let resp = client.get(certificate_url)
+            .header("Accept", "application/pem-certificate-chain")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download certificate: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("Certificate download failed: HTTP {}", resp.status()));
+        }
+        let pem = resp.text().await.map_err(|e| format!("Failed to read certificate PEM: {e}"))?;
+        Ok(pem)
     }
 
     /// Revoke a certificate.

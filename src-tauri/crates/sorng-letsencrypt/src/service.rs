@@ -11,6 +11,7 @@ use crate::ocsp::OcspManager;
 use crate::renewal::RenewalScheduler;
 use crate::store::CertificateStore;
 use crate::types::*;
+use base64::Engine;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -323,7 +324,25 @@ impl LetsEncryptService {
             "(certificate would be downloaded here)".to_string()
         };
 
-        // 5. Create the managed certificate record
+        // 5. Parse certificate PEM for basic metadata
+        use sha2::Digest;
+        let serial = None;
+        let issuer_cn = None;
+        let not_before = None;
+        let not_after: Option<chrono::DateTime<chrono::Utc>> = None;
+        let mut fingerprint_sha256 = None;
+
+        // Extract DER from first PEM block and compute SHA-256 fingerprint
+        if let Some(start) = cert_pem.find("-----BEGIN CERTIFICATE-----") {
+            if let Some(end) = cert_pem[start..].find("-----END CERTIFICATE-----") {
+                let b64_block = &cert_pem[start + 27..start + end];
+                let b64_clean: String = b64_block.chars().filter(|c| !c.is_whitespace()).collect();
+                if let Ok(der_bytes) = base64::engine::general_purpose::STANDARD.decode(&b64_clean) {
+                    let hash = sha2::Sha256::digest(&der_bytes);
+                    fingerprint_sha256 = Some(hash.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(":"));
+                }
+            }
+        }
         let cert_id = uuid::Uuid::new_v4().to_string();
         let cert = ManagedCertificate {
             id: cert_id.clone(),
@@ -335,12 +354,12 @@ impl LetsEncryptService {
             cert_pem_path: None,
             key_pem_path: None,
             issuer_pem_path: None,
-            serial: Some("placeholder-serial".to_string()),
-            issuer_cn: Some("Let's Encrypt".to_string()),
-            not_before: Some(Utc::now()),
-            not_after: Some(Utc::now() + chrono::Duration::days(90)),
-            days_until_expiry: Some(90),
-            fingerprint_sha256: Some("placeholder-fingerprint".to_string()),
+            serial,
+            issuer_cn,
+            not_before,
+            not_after,
+            days_until_expiry: not_after.and_then(|na| Some((na - Utc::now()).num_days())),
+            fingerprint_sha256,
             order_id: Some(order.id),
             obtained_at: Some(Utc::now()),
             last_renewed_at: None,

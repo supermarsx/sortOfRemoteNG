@@ -391,22 +391,45 @@ pub fn gather_candidates(config: &P2pConfig) -> Result<Vec<IceCandidate>, String
 fn gather_host_candidates(config: &P2pConfig) -> Result<Vec<IceCandidate>, String> {
     let mut candidates = Vec::new();
 
-    // In a real implementation, enumerate network interfaces via
-    // `pnet::datalink::interfaces()` or `nix::ifaddrs`.
-    // For structural implementation, create a representative host candidate.
-    let candidate = IceCandidate {
-        id: uuid::Uuid::new_v4().to_string(),
-        candidate_type: IceCandidateType::Host,
-        transport: "udp".to_string(),
-        address: "0.0.0.0".to_string(),
-        port: config.port_range_start,
-        priority: compute_candidate_priority(IceCandidateType::Host, 0, 1),
-        foundation: compute_foundation(IceCandidateType::Host, "0.0.0.0", "udp"),
-        component: 1,
-        related_address: None,
-        related_port: None,
-    };
-    candidates.push(candidate);
+    // Try to use get_if_addrs if available, otherwise fallback to binding UDP sockets
+    #[cfg(feature = "get_if_addrs")] {
+        for iface in get_if_addrs::get_if_addrs().map_err(|e| e.to_string())? {
+            if iface.ip().is_loopback() || iface.ip().is_unspecified() { continue; }
+            let candidate = IceCandidate {
+                id: uuid::Uuid::new_v4().to_string(),
+                candidate_type: IceCandidateType::Host,
+                transport: "udp".to_string(),
+                address: iface.ip().to_string(),
+                port: config.port_range_start,
+                priority: compute_candidate_priority(IceCandidateType::Host, 0, 1),
+                foundation: compute_foundation(IceCandidateType::Host, &iface.ip().to_string(), "udp"),
+                component: 1,
+                related_address: None,
+                related_port: None,
+            };
+            candidates.push(candidate);
+        }
+    }
+    #[cfg(not(feature = "get_if_addrs"))]
+    {
+        use std::net::UdpSocket;
+        // Try to bind to 0.0.0.0 and get the local address
+        let sock = UdpSocket::bind(("0.0.0.0", 0)).map_err(|e| e.to_string())?;
+        let local_addr = sock.local_addr().map_err(|e| e.to_string())?;
+        let candidate = IceCandidate {
+            id: uuid::Uuid::new_v4().to_string(),
+            candidate_type: IceCandidateType::Host,
+            transport: "udp".to_string(),
+            address: local_addr.ip().to_string(),
+            port: config.port_range_start,
+            priority: compute_candidate_priority(IceCandidateType::Host, 0, 1),
+            foundation: compute_foundation(IceCandidateType::Host, &local_addr.ip().to_string(), "udp"),
+            component: 1,
+            related_address: None,
+            related_port: None,
+        };
+        candidates.push(candidate);
+    }
 
     Ok(candidates)
 }

@@ -84,20 +84,41 @@ pub struct AgentCommandResult {
 
 pub struct AgentService {
     sessions: HashMap<String, AgentSession>,
+    configs: HashMap<String, AgentConnectionConfig>,
+    client: reqwest::Client,
 }
 
 impl AgentService {
     pub fn new() -> AgentServiceState {
         Arc::new(Mutex::new(AgentService {
             sessions: HashMap::new(),
+            configs: HashMap::new(),
+            client: reqwest::Client::new(),
         }))
+    }
+
+    fn build_base_url(&self, config: &AgentConnectionConfig) -> String {
+        let scheme = if config.use_ssl { "https" } else { "http" };
+        format!("{}://{}:{}", scheme, config.host, config.port)
+    }
+
+    fn apply_auth(
+        &self,
+        builder: reqwest::RequestBuilder,
+        config: &AgentConnectionConfig,
+    ) -> reqwest::RequestBuilder {
+        if let Some(token) = &config.auth_token {
+            builder.bearer_auth(token)
+        } else if let Some(key) = &config.api_key {
+            builder.header("X-API-Key", key.as_str())
+        } else {
+            builder
+        }
     }
 
     pub async fn connect_agent(&mut self, config: AgentConnectionConfig) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
-        // For now, simulate agent connection
-        // In a real implementation, this would connect to actual monitoring agents
         let session = AgentSession {
             id: session_id.clone(),
             host: config.host.clone(),
@@ -108,6 +129,7 @@ impl AgentService {
             status: AgentStatus::Connected,
         };
 
+        self.configs.insert(session_id.clone(), config);
         self.sessions.insert(session_id.clone(), session);
         Ok(session_id)
     }
@@ -127,26 +149,37 @@ impl AgentService {
             .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
-        if let AgentStatus::Connected = &session.status {
-            // For now, return mock metrics
-            // In a real implementation, this would query actual agent metrics
-            let metrics = AgentMetrics {
-                timestamp: Utc::now(),
-                cpu_usage: Some(45.2),
-                memory_usage: Some(67.8),
-                disk_usage: Some(234.5),
-                network_rx: Some(1024000),
-                network_tx: Some(512000),
-                custom_metrics: HashMap::from([
-                    ("temperature".to_string(), serde_json::json!(65.5)),
-                    ("uptime".to_string(), serde_json::json!(86400)),
-                ]),
-            };
-
-            Ok(metrics)
-        } else {
-            Err(format!("Agent session {} is not connected", session_id))
+        if !matches!(&session.status, AgentStatus::Connected) {
+            return Err(format!("Agent session {} is not connected", session_id));
         }
+
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("Agent config for session {} not found", session_id))?;
+
+        let url = format!("{}/api/metrics", self.build_base_url(config));
+        let mut builder = self.client.get(&url);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch agent metrics: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Agent metrics HTTP error {}: {}", status, body));
+        }
+
+        resp.json::<AgentMetrics>()
+            .await
+            .map_err(|e| format!("Failed to parse agent metrics: {}", e))
     }
 
     pub async fn get_agent_logs(
@@ -159,57 +192,89 @@ impl AgentService {
             .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
-        if let AgentStatus::Connected = &session.status {
-            // For now, return mock log entries
-            // In a real implementation, this would query actual agent logs
-            let limit = limit.unwrap_or(100);
-            let mut logs = Vec::new();
-
-            for i in 0..limit.min(10) {
-                logs.push(AgentLogEntry {
-                    timestamp: Utc::now() - chrono::Duration::minutes(i as i64),
-                    level: if i % 3 == 0 {
-                        "ERROR"
-                    } else if i % 2 == 0 {
-                        "WARN"
-                    } else {
-                        "INFO"
-                    }
-                    .to_string(),
-                    message: format!("Sample log message {}", i + 1),
-                    source: "agent".to_string(),
-                    metadata: Some(serde_json::json!({"line": i + 1})),
-                });
-            }
-
-            Ok(logs)
-        } else {
-            Err(format!("Agent session {} is not connected", session_id))
+        if !matches!(&session.status, AgentStatus::Connected) {
+            return Err(format!("Agent session {} is not connected", session_id));
         }
+
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("Agent config for session {} not found", session_id))?;
+
+        let limit = limit.unwrap_or(100);
+        let url = format!("{}/api/logs?limit={}", self.build_base_url(config), limit);
+        let mut builder = self.client.get(&url);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch agent logs: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Agent logs HTTP error {}: {}", status, body));
+        }
+
+        resp.json::<Vec<AgentLogEntry>>()
+            .await
+            .map_err(|e| format!("Failed to parse agent logs: {}", e))
     }
 
     pub async fn execute_agent_command(
         &self,
         session_id: &str,
-        _command: AgentCommand,
+        command: AgentCommand,
     ) -> Result<String, String> {
         let session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
-        if let AgentStatus::Connected = &session.status {
-            // For now, simulate command execution
-            // In a real implementation, this would send command to actual agent
-            let command_id = Uuid::new_v4().to_string();
-
-            // Simulate some processing time
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-            Ok(command_id)
-        } else {
-            Err(format!("Agent session {} is not connected", session_id))
+        if !matches!(&session.status, AgentStatus::Connected) {
+            return Err(format!("Agent session {} is not connected", session_id));
         }
+
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("Agent config for session {} not found", session_id))?;
+
+        let url = format!("{}/api/commands", self.build_base_url(config));
+        let mut builder = self.client.post(&url).json(&command);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to execute agent command: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Agent command HTTP error {}: {}", status, body));
+        }
+
+        #[derive(Deserialize)]
+        struct CommandResponse {
+            command_id: String,
+        }
+
+        let parsed: CommandResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse command response: {}", e))?;
+
+        Ok(parsed.command_id)
     }
 
     pub async fn get_agent_command_result(
@@ -222,21 +287,44 @@ impl AgentService {
             .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
-        if let AgentStatus::Connected = &session.status {
-            // For now, return mock command result
-            // In a real implementation, this would query command status from agent
-            let result = AgentCommandResult {
-                command_id: command_id.to_string(),
-                success: true,
-                output: Some("Command executed successfully\nResult: OK".to_string()),
-                error: None,
-                execution_time_ms: 75,
-            };
-
-            Ok(result)
-        } else {
-            Err(format!("Agent session {} is not connected", session_id))
+        if !matches!(&session.status, AgentStatus::Connected) {
+            return Err(format!("Agent session {} is not connected", session_id));
         }
+
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("Agent config for session {} not found", session_id))?;
+
+        let url = format!(
+            "{}/api/commands/{}",
+            self.build_base_url(config),
+            command_id
+        );
+        let mut builder = self.client.get(&url);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch command result: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "Agent command result HTTP error {}: {}",
+                status, body
+            ));
+        }
+
+        resp.json::<AgentCommandResult>()
+            .await
+            .map_err(|e| format!("Failed to parse command result: {}", e))
     }
 
     pub async fn get_agent_session(&self, session_id: &str) -> Option<AgentSession> {
@@ -261,23 +349,37 @@ impl AgentService {
     }
 
     pub async fn get_agent_info(&self, session_id: &str) -> Result<serde_json::Value, String> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
-        // For now, return mock agent info
-        // In a real implementation, this would query actual agent information
-        let info = serde_json::json!({
-            "agent_id": session.id,
-            "version": "1.0.0",
-            "platform": "linux",
-            "hostname": session.host,
-            "capabilities": ["metrics", "logs", "commands"],
-            "uptime_seconds": 3600
-        });
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("Agent config for session {} not found", session_id))?;
 
-        Ok(info)
+        let url = format!("{}/api/info", self.build_base_url(config));
+        let mut builder = self.client.get(&url);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch agent info: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Agent info HTTP error {}: {}", status, body));
+        }
+
+        resp.json::<serde_json::Value>()
+            .await
+            .map_err(|e| format!("Failed to parse agent info: {}", e))
     }
 }
-

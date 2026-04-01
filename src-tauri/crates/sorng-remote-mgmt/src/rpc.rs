@@ -73,20 +73,47 @@ pub struct RpcError {
 
 pub struct RpcService {
     sessions: HashMap<String, RpcSession>,
+    configs: HashMap<String, RpcConnectionConfig>,
+    client: reqwest::Client,
 }
 
 impl RpcService {
     pub fn new() -> RpcServiceState {
         Arc::new(Mutex::new(RpcService {
             sessions: HashMap::new(),
+            configs: HashMap::new(),
+            client: reqwest::Client::new(),
         }))
+    }
+
+    fn build_url(&self, config: &RpcConnectionConfig) -> String {
+        let scheme = if config.use_ssl { "https" } else { "http" };
+        format!("{}://{}:{}/", scheme, config.host, config.port)
+    }
+
+    fn apply_auth(
+        &self,
+        builder: reqwest::RequestBuilder,
+        config: &RpcConnectionConfig,
+    ) -> reqwest::RequestBuilder {
+        match &config.auth_method {
+            Some(RpcAuthMethod::Basic { username, password }) => {
+                builder.basic_auth(username, Some(password))
+            }
+            Some(RpcAuthMethod::Bearer { token }) => builder.bearer_auth(token),
+            Some(RpcAuthMethod::Custom {
+                method,
+                credentials,
+            }) => builder
+                .header("X-Auth-Method", method.as_str())
+                .header("X-Auth-Credentials", credentials.to_string()),
+            Some(RpcAuthMethod::None) | None => builder,
+        }
     }
 
     pub async fn connect_rpc(&mut self, config: RpcConnectionConfig) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
-        // For now, simulate RPC connection
-        // In a real implementation, this would establish actual RPC connections
         let session = RpcSession {
             id: session_id.clone(),
             host: config.host.clone(),
@@ -96,11 +123,13 @@ impl RpcService {
             authenticated: config.auth_method.is_some(),
         };
 
+        self.configs.insert(session_id.clone(), config);
         self.sessions.insert(session_id.clone(), session);
         Ok(session_id)
     }
 
     pub async fn disconnect_rpc(&mut self, session_id: &str) -> Result<(), String> {
+        self.configs.remove(session_id);
         if self.sessions.remove(session_id).is_some() {
             Ok(())
         } else {
@@ -118,38 +147,51 @@ impl RpcService {
             .get(session_id)
             .ok_or_else(|| format!("RPC session {} not found", session_id))?;
 
-        // For now, simulate RPC method call
-        // In a real implementation, this would make actual RPC calls
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("RPC config for session {} not found", session_id))?;
 
-        // Mock response based on method
-        let response = match request.method.as_str() {
-            "system.listMethods" => RpcResponse {
-                result: Some(serde_json::json!([
-                    "method1",
-                    "method2",
-                    "system.listMethods"
-                ])),
-                error: None,
-                id: request.id,
-            },
-            "system.describe" => RpcResponse {
-                result: Some(serde_json::json!({
-                    "service": "Mock RPC Service",
-                    "version": "1.0",
-                    "methods": ["method1", "method2"]
-                })),
-                error: None,
-                id: request.id,
-            },
-            _ => RpcResponse {
-                result: Some(serde_json::json!({"status": "success", "method": request.method})),
-                error: None,
-                id: request.id,
-            },
-        };
+        let url = self.build_url(config);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": request.method,
+            "params": request.params,
+            "id": request.id,
+        });
 
-        Ok(response)
+        let mut builder = self.client.post(&url).json(&body);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("RPC request failed: {}", e))?;
+
+        let status = resp.status();
+        let resp_body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read RPC response: {}", e))?;
+
+        if !status.is_success() {
+            return Err(format!("RPC HTTP error {}: {}", status, resp_body));
+        }
+
+        let json_resp: serde_json::Value = serde_json::from_str(&resp_body)
+            .map_err(|e| format!("Failed to parse RPC response JSON: {}", e))?;
+
+        Ok(RpcResponse {
+            result: json_resp.get("result").cloned(),
+            error: json_resp
+                .get("error")
+                .and_then(|e| serde_json::from_value(e.clone()).ok()),
+            id: json_resp.get("id").and_then(|v| if v.is_null() { None } else { Some(v.clone()) }),
+        })
     }
 
     pub async fn get_rpc_session(&self, session_id: &str) -> Option<RpcSession> {
@@ -166,18 +208,23 @@ impl RpcService {
             .get(session_id)
             .ok_or_else(|| format!("RPC session {} not found", session_id))?;
 
-        // For now, return mock RPC methods
-        // In a real implementation, this would discover available RPC methods
-        let methods = vec![
-            "system.listMethods".to_string(),
-            "system.describe".to_string(),
-            "service.status".to_string(),
-            "service.restart".to_string(),
-            "data.get".to_string(),
-            "data.set".to_string(),
-        ];
+        let request = RpcRequest {
+            method: "system.listMethods".to_string(),
+            params: serde_json::Value::Null,
+            id: Some(serde_json::json!(1)),
+        };
 
-        Ok(methods)
+        let response = self.call_rpc_method(session_id, request).await?;
+
+        if let Some(error) = response.error {
+            return Err(format!("RPC error {}: {}", error.code, error.message));
+        }
+
+        let result = response
+            .result
+            .ok_or_else(|| "No result in system.listMethods response".to_string())?;
+
+        serde_json::from_value(result).map_err(|e| format!("Failed to parse methods list: {}", e))
     }
 
     pub async fn batch_rpc_calls(
@@ -190,22 +237,141 @@ impl RpcService {
             .get(session_id)
             .ok_or_else(|| format!("RPC session {} not found", session_id))?;
 
-        // For now, simulate batch RPC calls
-        // In a real implementation, this would make actual batch RPC calls
-        let mut responses = Vec::new();
-
-        for request in requests {
-            let response = self.call_rpc_method(session_id, request).await?;
-            responses.push(response);
+        if requests.is_empty() {
+            return Ok(Vec::new());
         }
 
-        Ok(responses)
+        let config = self
+            .configs
+            .get(session_id)
+            .ok_or_else(|| format!("RPC config for session {} not found", session_id))?;
+
+        let url = self.build_url(config);
+        let batch: Vec<serde_json::Value> = requests
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": r.method,
+                    "params": r.params,
+                    "id": r.id,
+                })
+            })
+            .collect();
+
+        let mut builder = self.client.post(&url).json(&batch);
+        builder = self.apply_auth(builder, config);
+
+        if let Some(timeout_ms) = config.timeout {
+            builder = builder.timeout(std::time::Duration::from_millis(timeout_ms));
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("RPC batch request failed: {}", e))?;
+
+        let status = resp.status();
+        let resp_body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read RPC batch response: {}", e))?;
+
+        if !status.is_success() {
+            return Err(format!("RPC batch HTTP error {}: {}", status, resp_body));
+        }
+
+        let json_responses: Vec<serde_json::Value> = serde_json::from_str(&resp_body)
+            .map_err(|e| format!("Failed to parse RPC batch response: {}", e))?;
+
+        Ok(json_responses
+            .iter()
+            .map(|j| RpcResponse {
+                result: j.get("result").cloned(),
+                error: j
+                    .get("error")
+                    .and_then(|e| serde_json::from_value(e.clone()).ok()),
+                id: j.get("id").cloned(),
+            })
+            .collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Spawn a minimal HTTP server for JSON-RPC testing. Returns (port, shutdown_tx).
+    async fn spawn_mock_jsonrpc_server() -> (u16, tokio::sync::oneshot::Sender<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        if let Ok((mut stream, _)) = accepted {
+                            tokio::spawn(async move {
+                                let mut buf = vec![0u8; 8192];
+                                let n = stream.read(&mut buf).await.unwrap_or(0);
+                                let req_str = String::from_utf8_lossy(&buf[..n]);
+                                // Extract body after blank line
+                                let body = req_str.split("\r\n\r\n").nth(1).unwrap_or("{}");
+                                let response_body = if body.starts_with('[') {
+                                    // Batch request
+                                    let reqs: Vec<serde_json::Value> = serde_json::from_str(body).unwrap_or_default();
+                                    let resps: Vec<serde_json::Value> = reqs.iter().map(|r| {
+                                        serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "result": mock_method_result(r["method"].as_str().unwrap_or("")),
+                                            "id": r.get("id").cloned()
+                                        })
+                                    }).collect();
+                                    serde_json::to_string(&resps).unwrap()
+                                } else {
+                                    let r: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+                                    let method = r["method"].as_str().unwrap_or("");
+                                    let resp = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "result": mock_method_result(method),
+                                        "id": r.get("id").cloned()
+                                    });
+                                    serde_json::to_string(&resp).unwrap()
+                                };
+                                let http = format!(
+                                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                                    response_body.len(), response_body
+                                );
+                                let _ = stream.write_all(http.as_bytes()).await;
+                            });
+                        }
+                    }
+                    _ = &mut rx => break,
+                }
+            }
+        });
+        (port, tx)
+    }
+
+    fn mock_method_result(method: &str) -> serde_json::Value {
+        match method {
+            "system.listMethods" => serde_json::json!(["system.listMethods", "system.describe", "custom.method"]),
+            "system.describe" => serde_json::json!({"service": "mock-rpc", "version": "1.0"}),
+            _ => serde_json::json!({"method": method, "status": "ok"}),
+        }
+    }
+
+    fn test_config_with_port(port: u16) -> RpcConnectionConfig {
+        RpcConnectionConfig {
+            host: "127.0.0.1".to_string(),
+            port,
+            protocol: RpcProtocol::JsonRpc,
+            auth_method: None,
+            timeout: Some(5000),
+            use_ssl: false,
+        }
+    }
 
     fn test_config() -> RpcConnectionConfig {
         RpcConnectionConfig {
@@ -398,9 +564,10 @@ mod tests {
 
     #[tokio::test]
     async fn call_system_list_methods() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let resp = svc
             .call_rpc_method(
                 &id,
@@ -419,9 +586,10 @@ mod tests {
 
     #[tokio::test]
     async fn call_system_describe() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let resp = svc
             .call_rpc_method(
                 &id,
@@ -439,9 +607,10 @@ mod tests {
 
     #[tokio::test]
     async fn call_unknown_method_returns_success() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let resp = svc
             .call_rpc_method(
                 &id,
@@ -479,9 +648,10 @@ mod tests {
 
     #[tokio::test]
     async fn discover_methods_returns_list() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let methods = svc.discover_rpc_methods(&id).await.unwrap();
         assert!(!methods.is_empty());
         assert!(methods.contains(&"system.listMethods".to_string()));
@@ -499,9 +669,10 @@ mod tests {
 
     #[tokio::test]
     async fn batch_calls_returns_same_count() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let requests = vec![
             RpcRequest {
                 method: "m1".to_string(),
@@ -544,9 +715,10 @@ mod tests {
 
     #[tokio::test]
     async fn response_preserves_request_id() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let resp = svc
             .call_rpc_method(
                 &id,
@@ -563,9 +735,10 @@ mod tests {
 
     #[tokio::test]
     async fn response_preserves_null_id() {
+        let (port, _tx) = spawn_mock_jsonrpc_server().await;
         let state = RpcService::new();
         let mut svc = state.lock().await;
-        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let id = svc.connect_rpc(test_config_with_port(port)).await.unwrap();
         let resp = svc
             .call_rpc_method(
                 &id,
@@ -580,4 +753,3 @@ mod tests {
         assert!(resp.id.is_none());
     }
 }
-

@@ -288,8 +288,49 @@ impl GatewayService {
             log::warn!("[GATEWAY] Let's Encrypt bridge init failed: {e}");
         }
 
-        // In a real implementation, this would spawn the proxy listeners
-        // and the management API server (see server.rs)
+        // Start TCP/TLS listeners for each proxy route
+        let routes = self.proxy.list_routes().into_iter().cloned().collect::<Vec<_>>();
+        for route in routes {
+            if !route.enabled { continue; }
+            let listen_addr = format!("0.0.0.0:{}", route.listen_port);
+            let backend_addr = format!("{}:{}", route.target_host, route.target_port);
+            let protocol = route.protocol;
+            tokio::spawn(async move {
+                use tokio::net::TcpListener;
+                let listener = match TcpListener::bind(&listen_addr).await {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log::error!("[GATEWAY] Failed to bind {}: {}", listen_addr, e);
+                        return;
+                    }
+                };
+                log::info!("[GATEWAY] Listening on {} for {:?}", listen_addr, protocol);
+                loop {
+                    match listener.accept().await {
+                        Ok((mut inbound, addr)) => {
+                            let backend_addr = backend_addr.clone();
+                            tokio::spawn(async move {
+                                match tokio::net::TcpStream::connect(&backend_addr).await {
+                                    Ok(mut outbound) => {
+                                        let (mut ri, mut wi) = inbound.split();
+                                        let (mut ro, mut wo) = outbound.split();
+                                        let c1 = tokio::io::copy(&mut ri, &mut wo);
+                                        let c2 = tokio::io::copy(&mut ro, &mut wi);
+                                        let _ = tokio::try_join!(c1, c2);
+                                    }
+                                    Err(e) => {
+                                        log::error!("[GATEWAY] Failed to connect to backend {}: {}", backend_addr, e);
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            log::error!("[GATEWAY] Accept error on {}: {}", listen_addr, e);
+                        }
+                    }
+                }
+            });
+        }
 
         Ok(())
     }

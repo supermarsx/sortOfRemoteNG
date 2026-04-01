@@ -24,7 +24,6 @@ fn categorize_js(name: &str) -> &'static str {
         n if n == "node-ssh"
             || n == "simple-ssh"
             || n == "ssh2-sftp-client"
-            || n == "scp2"
             || n == "basic-ftp" =>
         {
             "SSH & File Transfer"
@@ -104,7 +103,6 @@ fn production_deps() -> Vec<DependencyInfo> {
         ("react-resizable", "^3.0.5", "MIT"),
         ("react-resizable-panels", "^0.0.55", "MIT"),
         ("react-zoom-pan-pinch", "^3.1.0", "MIT"),
-        ("scp2", "^0.5.0", "MIT"),
         ("simple-ssh", "^1.0.0", "MIT"),
         ("socks", "^2.7.1", "MIT"),
         ("sql.js", "^1.8.0", "MIT"),
@@ -148,8 +146,8 @@ fn dev_deps() -> Vec<DependencyInfo> {
         ("@types/react-grid-layout", "^1.3.5", "MIT"),
         ("@types/react-resizable", "^3.0.7", "MIT"),
         ("@types/ssh2-sftp-client", "^9.0.6", "MIT"),
-        ("@vitejs/plugin-react", "^5.1.2", "MIT"),
-        ("@vitest/coverage-v8", "^1.6.1", "MIT"),
+        ("@vitejs/plugin-react", "^5.2.0", "MIT"),
+        ("@vitest/coverage-v8", "^3.2.4", "MIT"),
         ("@webgpu/types", "^0.1.69", "BSD-3-Clause"),
         ("autoprefixer", "^10.4.18", "MIT"),
         ("eslint", "^8.57.0", "MIT"),
@@ -165,8 +163,8 @@ fn dev_deps() -> Vec<DependencyInfo> {
         ("turbo", "^2.0.0", "MIT"),
         ("typescript", "^5.5.3", "Apache-2.0"),
         ("typescript-eslint", "^8.3.0", "MIT"),
-        ("vite", "^5.4.2", "MIT"),
-        ("vitest", "^1.5.0", "MIT"),
+        ("vite", "^6.4.1", "MIT"),
+        ("vitest", "^3.2.4", "MIT"),
     ];
 
     raw.iter()

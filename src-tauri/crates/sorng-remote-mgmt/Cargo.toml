@@ -11,5 +11,6 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
+reqwest = { workspace = true }
 tokio-tungstenite = { workspace = true }
 futures-util = "0.3"

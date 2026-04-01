@@ -252,33 +252,52 @@ impl Dns01Solver {
     pub async fn wait_for_propagation(&self, domain: &str) -> Result<(), String> {
         let timeout = self.config.propagation_timeout_secs;
         let interval = self.config.polling_interval_secs;
-
+        let expected = self.get_txt_value(domain).unwrap_or("");
+        let record_name = format!("_acme-challenge.{}", domain.trim_start_matches("*."));
         log::info!(
             "[DNS-01] Waiting for DNS propagation for {} (timeout: {}s)",
-            domain,
+            record_name,
             timeout
         );
-
         let start = std::time::Instant::now();
-        #[allow(clippy::never_loop)]
         loop {
             if start.elapsed().as_secs() > timeout {
                 return Err(format!(
                     "DNS propagation timeout for {} after {}s",
-                    domain, timeout
+                    record_name, timeout
                 ));
             }
-
-            // In production: query public DNS resolvers (8.8.8.8, 1.1.1.1)
-            // for the TXT record to verify propagation
-            log::debug!("[DNS-01] Checking propagation for {}...", domain);
-
-            // Simulated check — in production, actually query DNS
+            // Try trust-dns-resolver if available, else fallback to nslookup
+            let found = {
+                #[cfg(feature = "dns-resolver")]
+                {
+                    use trust_dns_resolver::TokioAsyncResolver;
+                    use trust_dns_resolver::config::*;
+                    let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default()).map_err(|e| format!("DNS resolver error: {e}"))?;
+                    let response = resolver.txt_lookup(record_name.clone()).await;
+                    if let Ok(txts) = response {
+                        txts.iter().any(|r| r.iter().any(|txt| txt == expected.as_bytes()))
+                    } else { false }
+                }
+                #[cfg(not(feature = "dns-resolver"))]
+                {
+                    use std::process::Command;
+                    let output = Command::new("nslookup")
+                        .arg("-type=TXT")
+                        .arg(&record_name)
+                        .output();
+                    if let Ok(out) = output {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        stdout.contains(expected)
+                    } else { false }
+                }
+            };
+            if found {
+                log::info!("[DNS-01] DNS propagation confirmed for {}", record_name);
+                return Ok(());
+            }
+            log::debug!("[DNS-01] TXT record for {} not found yet, retrying...", record_name);
             tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
-
-            // For now, assume propagated after first check
-            log::info!("[DNS-01] DNS propagation confirmed for {}", domain);
-            return Ok(());
         }
     }
 
