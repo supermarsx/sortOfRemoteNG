@@ -2360,5 +2360,32 @@
       "empty": "No audit entries",
       "emptyHint": "Actions will be logged here"
     }
+  },
+  "toolbar": {
+    "disableTransparency": "Disable transparency",
+    "enableTransparency": "Enable transparency",
+    "unpinWindow": "Unpin window",
+    "pinWindow": "Pin window",
+    "centerWindow": "Center window on screen",
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close",
+    "switchCollection": "Switch Collection",
+    "settings": "Settings",
+    "tagManager": "Tag Manager",
+    "tabGroupManager": "Tab Group Manager",
+    "rdpSessions": "RDP Sessions",
+    "internalProxy": "Internal Proxy Manager",
+    "proxyVpn": "Proxy & VPN",
+    "shortcutManager": "Shortcut Manager",
+    "wakeOnLan": "Wake-on-LAN",
+    "macroManager": "Macro Manager",
+    "recordingManager": "Recording Manager",
+    "performanceMonitor": "Performance Monitor",
+    "actionLog": "Action Log",
+    "toggleErrorLog": "Toggle Error Log",
+    "devConsole": "Open dev console",
+    "debugPanel": "Debug Panel",
+    "security": "Security"
   }
 }

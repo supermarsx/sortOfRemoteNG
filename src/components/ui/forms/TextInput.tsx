@@ -21,6 +21,10 @@ export interface TextInputProps
   onChange?: (value: string) => void;
   /** Label text (consumed by wrapper layouts, not rendered by TextInput itself). */
   label?: string;
+  /** Error message to display. When set, marks the input as invalid. */
+  error?: string;
+  /** Helper text displayed below the input. */
+  helperText?: string;
 }
 
 /**
@@ -31,16 +35,44 @@ export interface TextInputProps
  * (passed through via `...rest`).
  */
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
-  ({ variant = 'form', className, label, onChange, ...rest }, ref) => (
-    <input
-      ref={ref}
-      type="text"
-      className={cx(VARIANT_CLASS[variant], className)}
-      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-      aria-label={rest['aria-label'] ?? label}
-      {...rest}
-    />
-  ),
+  ({ variant = 'form', className, label, onChange, error, helperText, ...rest }, ref) => {
+    const descriptionId = rest.id ? `${rest.id}-desc` : undefined;
+    const hasDescription = !!(error || helperText);
+
+    const input = (
+      <input
+        ref={ref}
+        type="text"
+        className={cx(
+          VARIANT_CLASS[variant],
+          error && 'border-error',
+          className,
+        )}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        aria-label={rest['aria-label'] ?? label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={hasDescription ? descriptionId : undefined}
+        {...rest}
+      />
+    );
+
+    if (!hasDescription) return input;
+
+    return (
+      <div className="flex flex-col">
+        {input}
+        <span
+          id={descriptionId}
+          className={cx(
+            'text-xs mt-1',
+            error ? 'text-error' : 'text-[var(--color-textMuted)]',
+          )}
+        >
+          {error || helperText}
+        </span>
+      </div>
+    );
+  },
 );
 
 TextInput.displayName = 'TextInput';

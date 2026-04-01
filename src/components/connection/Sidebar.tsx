@@ -43,7 +43,7 @@ const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="p-3 border-b border-[var(--color-border)]">
     <div className="relative">
       <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
-      <input type="text" placeholder={mgr.t('connections.search')} value={mgr.state.filter.searchTerm} onChange={(e) => mgr.handleSearch(e.target.value)} className="w-full pl-8 pr-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-xs" />
+      <input type="text" placeholder={mgr.t('connections.search')} value={mgr.state.filter.searchTerm} onChange={(e) => mgr.handleSearch(e.target.value)} aria-label={mgr.t('connections.search')} className="w-full pl-8 pr-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-xs" />
     </div>
     <div className="flex items-center justify-between mt-2">
       <button onClick={() => mgr.setShowFilters(!mgr.showFilters)} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors">

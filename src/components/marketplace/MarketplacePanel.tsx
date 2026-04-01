@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "../ui/forms";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { useMarketplace } from "../../hooks/marketplace/useMarketplace";
 import type {
   MarketplaceListing,
@@ -59,6 +60,7 @@ export default function MarketplacePanel() {
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewBody, setReviewBody] = useState("");
   const [reviewRating, setReviewRating] = useState(5);
+  const [confirmUninstall, setConfirmUninstall] = useState<{ id: string; name: string } | null>(null);
 
   /* ---- bootstrap ---- */
   useEffect(() => {
@@ -253,7 +255,7 @@ export default function MarketplacePanel() {
                     type="checkbox"
                     checked={p.enabled}
                     onChange={() =>
-                      p.enabled ? mkt.uninstall(p.id) : mkt.install(p.id)
+                      p.enabled ? setConfirmUninstall({ id: p.id, name: p.name }) : mkt.install(p.id)
                     }
                   />
                   <span className="sor-toggle-slider" />
@@ -269,7 +271,7 @@ export default function MarketplacePanel() {
                 )}
                 <button
                   className="sor-btn sor-btn-sm sor-btn-danger"
-                  onClick={() => mkt.uninstall(p.id)}
+                  onClick={() => setConfirmUninstall({ id: p.id, name: p.name })}
                 >
                   {t("marketplace.uninstall")}
                 </button>
@@ -518,7 +520,7 @@ export default function MarketplacePanel() {
           {/* install / uninstall */}
           <div className="sor-detail-footer">
             {isInstalled ? (
-              <button className="sor-btn sor-btn-danger" onClick={() => mkt.uninstall(p.id)}>
+              <button className="sor-btn sor-btn-danger" onClick={() => setConfirmUninstall({ id: p.id, name: p.name })}>
                 {t("marketplace.uninstall")}
               </button>
             ) : (
@@ -610,6 +612,21 @@ export default function MarketplacePanel() {
 
       {/* detail modal */}
       {renderDetailModal()}
+
+      {/* uninstall confirmation */}
+      <ConfirmDialog
+        isOpen={!!confirmUninstall}
+        title={t("marketplace.uninstall")}
+        message={t("marketplace.confirmUninstall", { name: confirmUninstall?.name ?? "" })}
+        confirmText={t("marketplace.uninstall")}
+        cancelText={t("common.cancel")}
+        variant="danger"
+        onConfirm={() => {
+          if (confirmUninstall) mkt.uninstall(confirmUninstall.id);
+          setConfirmUninstall(null);
+        }}
+        onCancel={() => setConfirmUninstall(null)}
+      />
     </div>
   );
 }

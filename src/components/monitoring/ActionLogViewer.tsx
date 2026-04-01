@@ -67,7 +67,7 @@ function SearchBar({ m }: { m: Mgr }) {
     <div className="flex items-center justify-between gap-4">
       <div className="relative flex-1 max-w-md">
         <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
-        <input type="text" placeholder="Search logs..." value={m.searchTerm} onChange={(e) => m.setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-warning/50 focus:border-warning/50 text-sm transition-all" />
+        <input type="text" placeholder="Search logs..." value={m.searchTerm} onChange={(e) => m.setSearchTerm(e.target.value)} aria-label="Search logs" className="w-full pl-9 pr-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-warning/50 focus:border-warning/50 text-sm transition-all" />
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-[var(--color-textSecondary)] px-2 py-1 bg-[var(--color-border)]/50 rounded-lg">{m.filteredLogs.length} of {m.logs.length}</span>

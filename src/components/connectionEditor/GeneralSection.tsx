@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Cloud,
   Database,
@@ -115,6 +115,9 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   availableGroups,
   allConnections = [],
 }) => {
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [portError, setPortError] = useState<string | null>(null);
+
   const iconOptions = [
     { value: "", label: "Default", icon: Monitor },
     { value: "terminal", label: "Terminal", icon: Terminal },
@@ -168,10 +171,23 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
             type="text"
             required
             value={formData.name || ""}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            onChange={(e) => {
+              setFormData({ ...formData, name: e.target.value });
+              if (nameError) setNameError(null);
+            }}
+            onBlur={() => {
+              if (!formData.name?.trim()) setNameError("Name is required");
+            }}
             className="sor-form-input"
             placeholder={formData.isGroup ? "Folder name" : "Connection name"}
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? "name-error" : undefined}
           />
+          {nameError && (
+            <span id="name-error" className="text-sm text-red-500" role="alert">
+              {nameError}
+            </span>
+          )}
         </div>
 
         <div>
@@ -260,10 +276,22 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Port
               </label>
-              <NumberInput value={formData.port || 0} onChange={(v: number) => setFormData({
-                    ...formData,
-                    port: v,
-                  })} variant="form" min={1} max={65535} />
+              <NumberInput value={formData.port || 0} onChange={(v: number) => {
+                    setFormData({ ...formData, port: v });
+                    if (portError) setPortError(null);
+                  }} onBlur={() => {
+                    const p = formData.port ?? 0;
+                    if (!Number.isFinite(p) || p < 1 || p > 65535) {
+                      setPortError("Port must be between 1 and 65535");
+                    }
+                  }} variant="form" min={1} max={65535}
+                  aria-invalid={portError ? true : undefined}
+                  aria-describedby={portError ? "port-error" : undefined} />
+              {portError && (
+                <span id="port-error" className="text-sm text-red-500" role="alert">
+                  {portError}
+                </span>
+              )}
             </div>
 
             {formData.protocol === "rdp" && (

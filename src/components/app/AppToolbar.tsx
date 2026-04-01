@@ -144,8 +144,8 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               className="app-bar-button p-2"
               data-tooltip={
                 appSettings.windowTransparencyEnabled
-                  ? "Disable transparency"
-                  : "Enable transparency"
+                  ? t("toolbar.disableTransparency", "Disable transparency")
+                  : t("toolbar.enableTransparency", "Enable transparency")
               }
             >
               {appSettings.windowTransparencyEnabled ? (
@@ -158,7 +158,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           <button
             onClick={handleToggleAlwaysOnTop}
             className="app-bar-button p-2"
-            title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
+            title={isAlwaysOnTop ? t("toolbar.unpinWindow", "Unpin window") : t("toolbar.pinWindow", "Pin window")}
           >
             <Pin
               size={14}
@@ -168,28 +168,28 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           <button
             onClick={handleRepatriateWindow}
             className="app-bar-button p-2"
-            title="Center window on screen"
+            title={t("toolbar.centerWindow", "Center window on screen")}
           >
             <ScreenShare size={14} />
           </button>
           <button
             onClick={handleMinimize}
             className="app-bar-button p-2"
-            title="Minimize"
+            title={t("toolbar.minimize", "Minimize")}
           >
             <Minus size={14} />
           </button>
           <button
             onClick={handleMaximize}
             className="app-bar-button p-2"
-            title="Maximize"
+            title={t("toolbar.maximize", "Maximize")}
           >
             <Square size={12} />
           </button>
           <button
             onClick={handleClose}
             className="app-bar-button app-bar-button-danger p-2"
-            title="Close"
+            title={t("toolbar.close", "Close")}
           >
             <X size={14} />
           </button>
@@ -212,7 +212,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowCollectionSelector(true)}
               className="app-bar-button p-2"
-              title="Switch Collection"
+              title={t("toolbar.switchCollection", "Switch Collection")}
             >
               <Database size={14} />
             </button>
@@ -221,7 +221,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowSettings(true)}
               className="app-bar-button p-2"
-              title="Settings"
+              title={t("toolbar.settings", "Settings")}
             >
               <Settings size={14} />
             </button>
@@ -229,14 +229,14 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           <button
             onClick={() => setShowTagManager(true)}
             className="app-bar-button p-2"
-            title="Tag Manager"
+            title={t("toolbar.tagManager", "Tag Manager")}
           >
             <Tag size={14} />
           </button>
           <button
             onClick={() => setShowTabGroupManager(true)}
             className="app-bar-button p-2"
-            title="Tab Group Manager"
+            title={t("toolbar.tabGroupManager", "Tab Group Manager")}
           >
             <Layers size={14} />
           </button>
@@ -247,7 +247,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setRdpPanelOpen(true)}
               className="app-bar-button p-2"
-              title="RDP Sessions"
+              title={t("toolbar.rdpSessions", "RDP Sessions")}
             >
               <Cpu size={14} />
             </button>
@@ -256,7 +256,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowInternalProxyManager(true)}
               className="app-bar-button p-2"
-              title="Internal Proxy Manager"
+              title={t("toolbar.internalProxy", "Internal Proxy Manager")}
             >
               <ArrowUpDown size={14} />
             </button>
@@ -265,7 +265,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowProxyMenu(true)}
               className="app-bar-button p-2"
-              title="Proxy & VPN"
+              title={t("toolbar.proxyVpn", "Proxy & VPN")}
             >
               <Network size={14} />
             </button>
@@ -274,7 +274,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowShortcutManager(true)}
               className="app-bar-button p-2"
-              title="Shortcut Manager"
+              title={t("toolbar.shortcutManager", "Shortcut Manager")}
             >
               <Keyboard size={14} />
             </button>
@@ -283,7 +283,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowWol(true)}
               className="app-bar-button p-2"
-              title="Wake-on-LAN"
+              title={t("toolbar.wakeOnLan", "Wake-on-LAN")}
             >
               <Power size={14} />
             </button>
@@ -337,7 +337,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowMacroManager(true)}
               className="app-bar-button p-2"
-              title="Macro Manager"
+              title={t("toolbar.macroManager", "Macro Manager")}
             >
               <ListVideo size={14} />
             </button>
@@ -346,7 +346,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowRecordingManager(true)}
               className="app-bar-button p-2"
-              title="Recording Manager"
+              title={t("toolbar.recordingManager", "Recording Manager")}
             >
               <Disc size={14} />
             </button>
@@ -355,7 +355,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowPerformanceMonitor(true)}
               className="app-bar-button p-2"
-              title="Performance Monitor"
+              title={t("toolbar.performanceMonitor", "Performance Monitor")}
             >
               <BarChart3 size={14} />
             </button>
@@ -364,7 +364,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowActionLog(true)}
               className="app-bar-button p-2"
-              title="Action Log"
+              title={t("toolbar.actionLog", "Action Log")}
             >
               <ScrollText size={14} />
             </button>
@@ -373,7 +373,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowErrorLog(!showErrorLog)}
               className={`app-bar-button p-2 ${showErrorLog ? "text-error" : ""}`}
-              title="Toggle Error Log"
+              title={t("toolbar.toggleErrorLog", "Toggle Error Log")}
             >
               <Bug size={14} />
             </button>
@@ -382,7 +382,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={handleOpenDevtools}
               className="app-bar-button p-2"
-              title="Open dev console"
+              title={t("toolbar.devConsole", "Open dev console")}
             >
               <Terminal size={14} />
             </button>
@@ -391,7 +391,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowDebugPanel(true)}
               className="app-bar-button p-2"
-              title="Debug Panel"
+              title={t("toolbar.debugPanel", "Debug Panel")}
             >
               <FlaskConical size={14} />
             </button>
@@ -400,7 +400,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={handleShowPasswordDialog}
               className="app-bar-button p-2"
-              title="Security"
+              title={t("toolbar.security", "Security")}
             >
               <Shield size={14} />
             </button>

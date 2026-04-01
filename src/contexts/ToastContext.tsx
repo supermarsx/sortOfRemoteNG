@@ -9,6 +9,7 @@ interface ToastContextType {
     warning: (message: string, duration?: number) => string;
     info: (message: string, duration?: number) => string;
   };
+  removeAll: () => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -17,17 +18,26 @@ interface ToastProviderProps {
   children: ReactNode;
 }
 
+const MAX_TOASTS = 5;
+
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const addToast = useCallback((type: ToastType, message: string, duration?: number) => {
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    setToasts((prev) => [...prev, { id, type, message, duration }]);
+    setToasts((prev) => {
+      const next = [...prev, { id, type, message, duration }];
+      return next.length > MAX_TOASTS ? next.slice(-MAX_TOASTS) : next;
+    });
     return id;
   }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
+
+  const removeAll = useCallback(() => {
+    setToasts([]);
   }, []);
 
   const toast = {
@@ -38,7 +48,7 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   };
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={{ toast, removeAll }}>
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>

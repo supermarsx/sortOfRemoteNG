@@ -85,7 +85,7 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               ) : (
                 mgr.recentMetrics.map((metric, index) => (
                   <tr
-                    key={index}
+                    key={`${metric.timestamp}-${index}`}
                     className="hover:bg-[var(--color-surfaceHover)]/50 transition-colors"
                   >
                     <td className="px-4 py-2.5 text-xs text-[var(--color-textSecondary)]">

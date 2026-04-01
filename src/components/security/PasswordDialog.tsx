@@ -74,7 +74,7 @@ const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionS
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mode === 'setup' ? 'Create Password' : 'Enter Password'}</label>
       <div className="relative">
-        <input type={mgr.showPassword ? 'text' : 'password'} required value={mgr.password} onChange={(e) => mgr.setPassword(e.target.value)} disabled={noCollectionSelected} className="sor-form-input w-full pr-10 disabled:opacity-50" placeholder="Enter password" minLength={4} autoFocus />
+        <input type={mgr.showPassword ? 'text' : 'password'} required value={mgr.password} onChange={(e) => mgr.setPassword(e.target.value)} disabled={noCollectionSelected} className="sor-form-input w-full pr-10 disabled:opacity-50" placeholder="Enter password" minLength={4} autoFocus aria-label="Password" />
         <button type="button" onClick={() => mgr.setShowPassword(!mgr.showPassword)} className="sor-search-clear">
           {mgr.showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
@@ -95,7 +95,7 @@ const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionS
       <div>
         <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Confirm Password</label>
         <div className="relative">
-          <input type={mgr.showConfirmPassword ? 'text' : 'password'} required value={mgr.confirmPassword} onChange={(e) => mgr.setConfirmPassword(e.target.value)} disabled={noCollectionSelected} className="sor-form-input w-full pr-10 disabled:opacity-50" placeholder="Confirm password" minLength={4} />
+          <input type={mgr.showConfirmPassword ? 'text' : 'password'} required value={mgr.confirmPassword} onChange={(e) => mgr.setConfirmPassword(e.target.value)} disabled={noCollectionSelected} className="sor-form-input w-full pr-10 disabled:opacity-50" placeholder="Confirm password" minLength={4} aria-label="Confirm password" />
           <button type="button" onClick={() => mgr.setShowConfirmPassword(!mgr.showConfirmPassword)} className="sor-search-clear">
             {mgr.showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
@@ -134,7 +134,7 @@ const KeyFileForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionSe
   <div className="space-y-4">
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mode === 'setup' ? 'Select Key File' : 'Select Your Key File'}</label>
-      <div onClick={noCollectionSelected ? undefined : mgr.handleKeyFileSelect} className={`border-2 border-dashed border-[var(--color-border)] rounded-lg p-6 text-center cursor-pointer hover:border-[var(--color-border)] transition-colors ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}>
+      <div role="button" tabIndex={0} aria-label="Select key file" onClick={noCollectionSelected ? undefined : mgr.handleKeyFileSelect} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !noCollectionSelected) { e.preventDefault(); mgr.handleKeyFileSelect(); } }} className={`border-2 border-dashed border-[var(--color-border)] rounded-lg p-6 text-center cursor-pointer hover:border-[var(--color-border)] transition-colors ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}>
         {mgr.keyFilePath ? (
           <div className="flex items-center justify-center space-x-2 text-success"><FileKey size={24} /><span>{mgr.keyFilePath}</span></div>
         ) : (

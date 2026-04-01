@@ -85,8 +85,8 @@ export function useWinmgmtSession(config: Record<string, unknown>) {
     if (!sessionId) return;
     try {
       await invoke("winmgmt_disconnect", { sessionId });
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("winmgmt_disconnect failed:", e);
     }
     if (mountedRef.current) {
       setSessionId(null);

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   MarketplaceListing,
@@ -23,16 +23,23 @@ export function useMarketplace() {
   const [installing, setInstalling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const search = useCallback(async (query: string, category?: PluginCategory) => {
     setLoading(true);
     setSearchQuery(query);
     if (category) setSelectedCategory(category);
     try {
       const results = await invoke<MarketplaceListing[]>("mkt_search", { query, category: category ?? null });
-      setListings(results);
+      if (mountedRef.current) setListings(results);
       return results;
     } catch (e) { setError(String(e)); return []; }
-    finally { setLoading(false); }
+    finally { if (mountedRef.current) setLoading(false); }
   }, []);
 
   const getListing = useCallback(async (pluginId: string) => {
@@ -63,7 +70,7 @@ export function useMarketplace() {
   const fetchInstalled = useCallback(async () => {
     try {
       const list = await invoke<InstalledPlugin[]>("mkt_get_installed");
-      setInstalled(list);
+      if (mountedRef.current) setInstalled(list);
       return list;
     } catch (e) { setError(String(e)); return []; }
   }, []);
@@ -74,13 +81,13 @@ export function useMarketplace() {
       await invoke("mkt_install", { pluginId });
       await fetchInstalled();
     } catch (e) { setError(String(e)); }
-    finally { setInstalling(null); }
+    finally { if (mountedRef.current) setInstalling(null); }
   }, [fetchInstalled]);
 
   const uninstall = useCallback(async (pluginId: string) => {
     try {
       await invoke("mkt_uninstall", { pluginId });
-      setInstalled(prev => prev.filter(p => p.id !== pluginId));
+      if (mountedRef.current) setInstalled(prev => prev.filter(p => p.id !== pluginId));
     } catch (e) { setError(String(e)); }
   }, []);
 
@@ -90,7 +97,7 @@ export function useMarketplace() {
       await invoke("mkt_update", { pluginId });
       await fetchInstalled();
     } catch (e) { setError(String(e)); }
-    finally { setInstalling(null); }
+    finally { if (mountedRef.current) setInstalling(null); }
   }, [fetchInstalled]);
 
   const checkUpdates = useCallback(async () => {
@@ -102,7 +109,7 @@ export function useMarketplace() {
   const fetchRepositories = useCallback(async () => {
     try {
       const list = await invoke<PluginRepository[]>("mkt_list_repositories");
-      setRepositories(list);
+      if (mountedRef.current) setRepositories(list);
       return list;
     } catch (e) { setError(String(e)); return []; }
   }, []);
@@ -113,13 +120,13 @@ export function useMarketplace() {
       await invoke("mkt_refresh_repositories");
       await fetchRepositories();
     } catch (e) { setError(String(e)); }
-    finally { setLoading(false); }
+    finally { if (mountedRef.current) setLoading(false); }
   }, [fetchRepositories]);
 
   const addRepository = useCallback(async (name: string, url: string, branch?: string) => {
     try {
       const id = await invoke<string>("mkt_add_repository", { name, url, branch: branch ?? "main" });
-      await fetchRepositories();
+      if (mountedRef.current) await fetchRepositories();
       return id;
     } catch (e) { setError(String(e)); return null; }
   }, [fetchRepositories]);
@@ -127,14 +134,14 @@ export function useMarketplace() {
   const removeRepository = useCallback(async (repoId: string) => {
     try {
       await invoke("mkt_remove_repository", { repoId });
-      setRepositories(prev => prev.filter(r => r.id !== repoId));
+      if (mountedRef.current) setRepositories(prev => prev.filter(r => r.id !== repoId));
     } catch (e) { setError(String(e)); }
   }, []);
 
   const fetchReviews = useCallback(async (pluginId: string) => {
     try {
       const list = await invoke<PluginReview[]>("mkt_get_reviews", { pluginId });
-      setReviews(list);
+      if (mountedRef.current) setReviews(list);
       return list;
     } catch (e) { setError(String(e)); return []; }
   }, []);
@@ -142,7 +149,7 @@ export function useMarketplace() {
   const addReview = useCallback(async (pluginId: string, rating: number, title: string, body: string) => {
     try {
       const id = await invoke<string>("mkt_add_review", { pluginId, rating, title, body });
-      await fetchReviews(pluginId);
+      if (mountedRef.current) await fetchReviews(pluginId);
       return id;
     } catch (e) { setError(String(e)); return null; }
   }, [fetchReviews]);
@@ -150,7 +157,7 @@ export function useMarketplace() {
   const fetchStats = useCallback(async () => {
     try {
       const s = await invoke<MarketplaceStats>("mkt_get_stats");
-      setStats(s);
+      if (mountedRef.current) setStats(s);
       return s;
     } catch (e) { setError(String(e)); return null; }
   }, []);
@@ -158,7 +165,7 @@ export function useMarketplace() {
   const loadConfig = useCallback(async () => {
     try {
       const c = await invoke<MarketplaceConfig>("mkt_get_config");
-      setConfig(c);
+      if (mountedRef.current) setConfig(c);
     } catch (e) { setError(String(e)); }
   }, []);
 
@@ -166,7 +173,7 @@ export function useMarketplace() {
     try {
       const merged = { ...config, ...cfg } as MarketplaceConfig;
       await invoke("mkt_update_config", { config: merged });
-      setConfig(merged);
+      if (mountedRef.current) setConfig(merged);
     } catch (e) { setError(String(e)); }
   }, [config]);
 

@@ -370,7 +370,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
               </div>
               {mgr.scannedShortcuts.map((scanned, index) => (
                 <div
-                  key={index}
+                  key={scanned.path ?? index}
                   className="flex items-center justify-between p-3 rounded-lg bg-accent/20 border border-accent/40"
                 >
                   <div className="flex-1 min-w-0">

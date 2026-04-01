@@ -140,7 +140,7 @@ const LayersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center border border-dashed border-[var(--color-border)] rounded-lg">No layers added. Click "Add Layer" to start building your chain.</div>
       ) : (
         mgr.layers.map((layer, index) => (
-          <LayerCard key={index} mgr={mgr} layer={layer} index={index} total={mgr.layers.length} />
+          <LayerCard key={layer.position} mgr={mgr} layer={layer} index={index} total={mgr.layers.length} />
         ))
       )}
     </div>

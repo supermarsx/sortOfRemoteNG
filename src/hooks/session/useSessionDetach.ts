@@ -45,6 +45,8 @@ export function useSessionDetach(
       let terminalBuffer = "";
       if (session.protocol !== 'rdp' && !isWinmgmtProtocol(session.protocol)) {
         try {
+          const cleanup: { unlisten: (() => void) | null } = { unlisten: null };
+
           const bufferPromise = new Promise<string>((resolve) => {
             const timeout = setTimeout(() => {
               resolve("");
@@ -56,12 +58,13 @@ export function useSessionDetach(
                 resolve(event.payload.buffer);
               }
             }).then(unlisten => {
-              setTimeout(() => unlisten(), 1200);
+              cleanup.unlisten = unlisten;
             });
           });
 
           await emit("request-terminal-buffer", { sessionId });
           terminalBuffer = await bufferPromise;
+          cleanup.unlisten?.();
         } catch (error) {
           console.warn("Failed to get terminal buffer:", error);
         }

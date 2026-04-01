@@ -180,16 +180,16 @@ export class SFTPAdapter implements FileTransferAdapter {
   }
 }
 
-// SCP implementation using scp2
+// SCP implementation using node-ssh (replaces abandoned scp2)
 export class SCPAdapter implements FileTransferAdapter {
   private client: any;
   constructor(private config: any) {}
 
   private async getClient() {
     if (!this.client) {
-      const scp2 = await import(/* @vite-ignore */ "scp2");
-      this.client = new (scp2 as any).Client();
-      this.client.defaults(this.config);
+      const { NodeSSH } = await import(/* @vite-ignore */ "node-ssh");
+      this.client = new NodeSSH();
+      await this.client.connect(this.config);
     }
     return this.client;
   }
@@ -204,25 +204,15 @@ export class SCPAdapter implements FileTransferAdapter {
     onProgress?: (transferred: number, total: number) => void,
     signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) throw new Error("aborted");
     const client = await this.getClient();
     const buffer =
       file instanceof Buffer
         ? file
         : Buffer.from(await (file as any).arrayBuffer());
     const total = buffer.length;
-    await new Promise<void>((resolve, reject) => {
-      client
-        .upload(buffer, remotePath, (err: Error) => {
-          if (err) return reject(err);
-          resolve();
-        })
-        .on("transfer", (buf: Buffer, uploaded: number, _remote: string) => {
-          onProgress?.(uploaded, total);
-          if (signal?.aborted) {
-            reject(new Error("aborted"));
-          }
-        });
-    });
+    await client.putBuffer(buffer, remotePath);
+    onProgress?.(total, total);
   }
 
   async download(
@@ -231,19 +221,9 @@ export class SCPAdapter implements FileTransferAdapter {
     onProgress?: (transferred: number, total: number) => void,
     signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) throw new Error("aborted");
     const client = await this.getClient();
-    await new Promise<void>((resolve, reject) => {
-      client
-        .download(remotePath, localPath, (err: Error) => {
-          if (err) return reject(err);
-          resolve();
-        })
-        .on("transfer", (buf: Buffer, downloaded: number, _remote: string) => {
-          onProgress?.(downloaded, buf.length);
-          if (signal?.aborted) {
-            reject(new Error("aborted"));
-          }
-        });
-    });
+    await client.getFile(localPath, remotePath);
+    onProgress?.(1, 1);
   }
 }
