@@ -92,6 +92,13 @@ describe("Sidebar", () => {
       expect(searchInput).toHaveValue('test search');
     });
 
+    it("search input has accessible label", () => {
+      renderWithProviders();
+
+      const searchInput = screen.getByRole('textbox');
+      expect(searchInput).toHaveAttribute('aria-label', 'connections.search');
+    });
+
     it("should clear search when clear button is clicked", () => {
       renderWithProviders();
 

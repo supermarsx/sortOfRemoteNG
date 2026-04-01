@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider } from '../../src/contexts/ConnectionContext';
 import { useConnections } from '../../src/contexts/useConnections';
@@ -71,5 +71,148 @@ describe('ConnectionProvider auto-save', () => {
       `mremote-collection-${collectionId}`
     );
     expect(stored!.connections).toEqual([]);
+  });
+
+  it('auto-saves after updating a connection', async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData();
+    });
+
+    const conn: Connection = {
+      id: 'u1',
+      name: 'original',
+      protocol: 'ssh',
+      hostname: 'host',
+      port: 22,
+      isGroup: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Connection;
+
+    await act(async () => {
+      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn] });
+    });
+    await Promise.resolve();
+
+    const updated = { ...conn, name: 'renamed' };
+    await act(async () => {
+      result.current.dispatch({ type: 'UPDATE_CONNECTION', payload: updated });
+    });
+    await Promise.resolve();
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-collection-${collectionId}`
+    );
+    expect(stored!.connections).toHaveLength(1);
+    expect(stored!.connections[0].name).toBe('renamed');
+  });
+
+  it('auto-saves after adding a connection', async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData();
+    });
+
+    const conn: Connection = {
+      id: 'a1',
+      name: 'added',
+      protocol: 'rdp',
+      hostname: 'newhost',
+      port: 3389,
+      isGroup: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Connection;
+
+    await act(async () => {
+      result.current.dispatch({ type: 'ADD_CONNECTION', payload: conn });
+    });
+    await Promise.resolve();
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-collection-${collectionId}`
+    );
+    expect(stored!.connections).toHaveLength(1);
+    expect(stored!.connections[0].id).toBe('a1');
+  });
+
+  it('persists the latest state after multiple rapid updates', async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData();
+    });
+
+    const conn1: Connection = {
+      id: 'r1',
+      name: 'first',
+      protocol: 'ssh',
+      hostname: 'h1',
+      port: 22,
+      isGroup: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Connection;
+    const conn2: Connection = {
+      id: 'r2',
+      name: 'second',
+      protocol: 'rdp',
+      hostname: 'h2',
+      port: 3389,
+      isGroup: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Connection;
+
+    await act(async () => {
+      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn1] });
+    });
+    await act(async () => {
+      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn1, conn2] });
+    });
+    await Promise.resolve();
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-collection-${collectionId}`
+    );
+    expect(stored!.connections).toHaveLength(2);
+  });
+
+  it('auto-save handles errors gracefully', async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData();
+    });
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const saveSpy = vi.spyOn(
+      CollectionManager.getInstance(),
+      'saveCurrentCollectionData' as any,
+    ).mockRejectedValueOnce(new Error('DB write failed'));
+
+    const conn: Connection = {
+      id: 'e1',
+      name: 'err',
+      protocol: 'ssh',
+      hostname: 'host',
+      port: 22,
+      isGroup: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Connection;
+
+    await act(async () => {
+      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn] });
+    });
+    await Promise.resolve();
+
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    saveSpy.mockRestore();
   });
 });

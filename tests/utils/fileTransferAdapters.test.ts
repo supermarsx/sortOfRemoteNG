@@ -28,18 +28,14 @@ vi.mock("ssh2-sftp-client", () => ({
   default: vi.fn(() => mockSFTPClient),
 }));
 
-const mockSCPClientInstance = {
-  defaults: vi.fn(),
-  upload: vi.fn().mockReturnValue({
-    on: vi.fn().mockReturnThis(),
-  }),
-  download: vi.fn().mockReturnValue({
-    on: vi.fn().mockReturnThis(),
-  }),
+const mockNodeSSHInstance = {
+  connect: vi.fn().mockResolvedValue(undefined),
+  putBuffer: vi.fn().mockResolvedValue(undefined),
+  getFile: vi.fn().mockResolvedValue(undefined),
 };
 
-vi.mock("scp2", () => ({
-  Client: vi.fn(() => mockSCPClientInstance),
+vi.mock("node-ssh", () => ({
+  NodeSSH: vi.fn(() => mockNodeSSHInstance),
 }));
 
 // We also mock "stream" since the code uses Readable.from

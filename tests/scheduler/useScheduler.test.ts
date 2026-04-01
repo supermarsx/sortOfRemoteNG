@@ -432,7 +432,7 @@ describe("useScheduler", () => {
   // --- updateConfig ---
 
   it("updateConfig merges with existing config and persists", async () => {
-    const initial = { maxConcurrent: 5, retryDefault: 3, timeoutDefault: 60000, logLevel: "info" };
+    const initial = { enabled: true, maxConcurrentTasks: 5, defaultTimeoutMs: 60000, historyRetentionDays: 30, missedTaskPolicy: "skip" as const, notifyOnFailure: true, notifyOnSuccess: false };
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "sched_get_config") return Promise.resolve(initial);
       return Promise.resolve(undefined);
@@ -442,19 +442,19 @@ describe("useScheduler", () => {
     await act(async () => { await result.current.loadConfig(); });
     expect(result.current.config).toEqual(initial);
 
-    await act(async () => { await result.current.updateConfig({ maxConcurrent: 10 }); });
+    await act(async () => { await result.current.updateConfig({ maxConcurrentTasks: 10 }); });
 
     expect(mockInvoke).toHaveBeenCalledWith("sched_update_config", {
-      config: { ...initial, maxConcurrent: 10 },
+      config: { ...initial, maxConcurrentTasks: 10 },
     });
-    expect(result.current.config).toEqual({ ...initial, maxConcurrent: 10 });
+    expect(result.current.config).toEqual({ ...initial, maxConcurrentTasks: 10 });
   });
 
   it("updateConfig sets error on failure", async () => {
     mockInvoke.mockRejectedValueOnce("Write error");
 
     const { result } = renderHook(() => useScheduler());
-    await act(async () => { await result.current.updateConfig({ maxConcurrent: 10 }); });
+    await act(async () => { await result.current.updateConfig({ maxConcurrentTasks: 10 }); });
 
     expect(result.current.error).toBe("Write error");
   });

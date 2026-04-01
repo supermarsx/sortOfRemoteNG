@@ -61,4 +61,76 @@ describe("BulkConnectionEditor", () => {
 
     expect(nameHeader).toHaveAttribute("aria-sort", "descending");
   });
+
+  it("renders connection names in the table", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    expect(await screen.findByText("Alpha")).toBeInTheDocument();
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+  });
+
+  it("renders hostnames in the table", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    expect(await screen.findByText("alpha.local")).toBeInTheDocument();
+    expect(screen.getByText("beta.local")).toBeInTheDocument();
+  });
+
+  it("filters connections by search term", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    await screen.findByText("Alpha");
+
+    const searchInput = screen.getByPlaceholderText(/search by name/i);
+    fireEvent.change(searchInput, { target: { value: "Alpha" } });
+
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("Beta")).not.toBeInTheDocument();
+  });
+
+  it("selects all connections when select-all is clicked", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    await screen.findByText("Alpha");
+
+    fireEvent.click(screen.getByRole("button", { name: "Select all visible connections" }));
+
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  });
+
+  it("shows empty state when search matches nothing", async () => {
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+    await screen.findByText("Alpha");
+
+    const searchInput = screen.getByPlaceholderText(/search by name/i);
+    fireEvent.change(searchInput, { target: { value: "nonexistent-xyz" } });
+
+    expect(screen.getByText("No connections match your search")).toBeInTheDocument();
+  });
 });

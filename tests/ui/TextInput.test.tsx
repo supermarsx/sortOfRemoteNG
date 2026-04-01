@@ -51,4 +51,37 @@ describe("TextInput", () => {
     render(<TextInput label="Connection name" />);
     expect(screen.getByLabelText("Connection name")).toBeInTheDocument();
   });
+
+  it("renders with aria-invalid when error prop is provided", () => {
+    render(<TextInput id="test" error="Required field" />);
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("renders error message text below input", () => {
+    render(<TextInput id="test" error="Something went wrong" />);
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+  });
+
+  it("renders helper text when no error", () => {
+    render(<TextInput id="test" helperText="Enter your name" />);
+    expect(screen.getByText("Enter your name")).toBeInTheDocument();
+    const input = screen.getByRole("textbox");
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("error takes priority over helperText", () => {
+    render(<TextInput id="test" error="Bad value" helperText="Helpful hint" />);
+    expect(screen.getByText("Bad value")).toBeInTheDocument();
+    expect(screen.queryByText("Helpful hint")).not.toBeInTheDocument();
+  });
+
+  it("aria-describedby links to the description element", () => {
+    render(<TextInput id="myfield" error="Oops" />);
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveAttribute("aria-describedby", "myfield-desc");
+    const desc = document.getElementById("myfield-desc");
+    expect(desc).not.toBeNull();
+    expect(desc!.textContent).toBe("Oops");
+  });
 });

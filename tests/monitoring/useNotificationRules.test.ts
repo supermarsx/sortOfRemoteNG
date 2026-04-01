@@ -8,15 +8,16 @@ const mockInvoke = vi.mocked(invoke);
 const makeRule = (overrides: Record<string, unknown> = {}) => ({
   id: "r1",
   name: "CPU Alert",
-  description: "Alert when CPU > 90%",
-  enabled: true,
-  metric: "cpu_percent",
-  condition: "gt",
-  threshold: 90,
-  channelKind: "email",
+  trigger: "latency_high" as const,
+  severity: "warning" as const,
+  channelKind: "email" as const,
   channelConfig: { to: "admin@example.com" },
-  cooldownMs: 300000,
+  conditions: [],
+  conditionLogic: "and" as const,
+  enabled: true,
+  throttleMs: 300000,
   templateId: null,
+  escalationDelayMs: null,
   createdAt: "2026-03-30T00:00:00Z",
   updatedAt: "2026-03-30T00:00:00Z",
   ...overrides,
@@ -27,6 +28,7 @@ const makeTemplate = (overrides: Record<string, unknown> = {}) => ({
   name: "Default Alert",
   subject: "Alert: {{metric}}",
   body: "{{metric}} is {{value}}",
+  variables: [] as string[],
   format: "text",
   ...overrides,
 });
@@ -35,10 +37,14 @@ const makeHistoryEntry = (overrides: Record<string, unknown> = {}) => ({
   id: "nh1",
   ruleId: "r1",
   ruleName: "CPU Alert",
-  channelKind: "email",
+  trigger: "latency_high" as const,
+  severity: "warning" as const,
+  channelKind: "email" as const,
+  message: "CPU alert triggered",
   sentAt: "2026-03-30T00:00:00Z",
-  status: "sent",
+  delivered: true,
   errorMessage: null,
+  metadata: {},
   ...overrides,
 });
 
@@ -113,10 +119,11 @@ describe("useNotificationRules", () => {
     let id: string | null = null;
     await act(async () => {
       id = await result.current.addRule({
-        name: "CPU Alert", description: "Alert when CPU > 90%",
-        enabled: true, metric: "cpu_percent", condition: "gt", threshold: 90,
+        name: "CPU Alert",
+        trigger: "latency_high", severity: "warning",
         channelKind: "email", channelConfig: { to: "admin@example.com" },
-        cooldownMs: 300000, templateId: null,
+        conditions: [], conditionLogic: "and",
+        enabled: true, throttleMs: 300000, templateId: null, escalationDelayMs: null,
       });
     });
 
@@ -134,9 +141,11 @@ describe("useNotificationRules", () => {
     let id: string | null = null;
     await act(async () => {
       id = await result.current.addRule({
-        name: "Dup", description: "", enabled: true,
-        metric: "cpu_percent", condition: "gt", threshold: 90,
-        channelKind: "email", channelConfig: {}, cooldownMs: 0, templateId: null,
+        name: "Dup",
+        trigger: "latency_high", severity: "warning",
+        channelKind: "email", channelConfig: {},
+        conditions: [], conditionLogic: "and",
+        enabled: true, throttleMs: 0, templateId: null, escalationDelayMs: null,
       });
     });
 
@@ -248,7 +257,7 @@ describe("useNotificationRules", () => {
     let id: string | null = null;
     await act(async () => {
       id = await result.current.addTemplate({
-        name: "New Template", subject: "Alert", body: "Body", format: "text",
+        name: "New Template", subject: "Alert", body: "Body", format: "text", variables: [],
       });
     });
 
@@ -265,7 +274,7 @@ describe("useNotificationRules", () => {
     const { result } = renderHook(() => useNotificationRules());
     let id: string | null = null;
     await act(async () => {
-      id = await result.current.addTemplate({ name: "Err", subject: "", body: "", format: "text" });
+      id = await result.current.addTemplate({ name: "Err", subject: "", body: "", format: "text", variables: [] });
     });
 
     expect(id).toBeNull();
@@ -303,7 +312,7 @@ describe("useNotificationRules", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_get_history");
     expect(result.current.history).toHaveLength(1);
-    expect(result.current.history[0].status).toBe("sent");
+    expect(result.current.history[0].delivered).toBe(true);
   });
 
   it("fetchRecentHistory uses default limit of 50", async () => {
@@ -425,7 +434,7 @@ describe("useNotificationRules", () => {
   // --- updateConfig ---
 
   it("updateConfig merges with existing config and persists", async () => {
-    const initial = { globalCooldownMs: 60000, maxPerHour: 100, enabled: true };
+    const initial = { enabled: true, globalThrottleMs: 60000, maxHistoryEntries: 100, retryCount: 3, retryDelayMs: 1000, batchDelivery: false, batchIntervalMs: 0, quietHoursEnabled: false, quietHoursStart: "22:00", quietHoursEnd: "07:00" };
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "notif_get_config") return Promise.resolve(initial);
       return Promise.resolve(undefined);
@@ -435,12 +444,12 @@ describe("useNotificationRules", () => {
     await act(async () => { await result.current.loadConfig(); });
     expect(result.current.config).toEqual(initial);
 
-    await act(async () => { await result.current.updateConfig({ maxPerHour: 200 }); });
+    await act(async () => { await result.current.updateConfig({ maxHistoryEntries: 200 }); });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_update_config", {
-      config: { ...initial, maxPerHour: 200 },
+      config: { ...initial, maxHistoryEntries: 200 },
     });
-    expect(result.current.config).toEqual({ ...initial, maxPerHour: 200 });
+    expect(result.current.config).toEqual({ ...initial, maxHistoryEntries: 200 });
   });
 
   it("updateConfig sets error on failure", async () => {
