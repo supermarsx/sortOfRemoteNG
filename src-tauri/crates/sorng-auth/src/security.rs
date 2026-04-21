@@ -1,0 +1,120 @@
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use base64::{engine::general_purpose, Engine as _};
+use rand::rngs::OsRng;
+use rand::RngCore;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use totp_rs::{Algorithm, TOTP};
+
+pub type SecurityServiceState = Arc<Mutex<SecurityService>>;
+
+pub struct SecurityService {
+    totp: Option<TOTP>,
+}
+
+impl SecurityService {
+    pub fn new() -> SecurityServiceState {
+        Arc::new(Mutex::new(SecurityService { totp: None }))
+    }
+
+    pub async fn generate_totp_secret(&mut self) -> Result<String, String> {
+        let mut secret = [0u8; 32];
+        OsRng.fill_bytes(&mut secret);
+
+        // Encode as base32 (standard for authenticator apps like Google Authenticator)
+        let secret_b32 = data_encoding::BASE32_NOPAD.encode(&secret);
+
+        let totp = TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            secret.to_vec(), // raw secret bytes, NOT the encoded string
+        )
+        .map_err(|e| e.to_string())?;
+        self.totp = Some(totp);
+        Ok(secret_b32)
+    }
+
+    pub async fn verify_totp(&self, code: String) -> Result<bool, String> {
+        if let Some(totp) = &self.totp {
+            let result = totp.check_current(&code).map_err(|e| e.to_string())?;
+            Ok(result)
+        } else {
+            Err("TOTP not initialized".to_string())
+        }
+    }
+
+    pub async fn encrypt_data(&self, data: String, key: String) -> Result<String, String> {
+        // Derive a 32-byte key from the provided key using a simple hash
+        let key_bytes = Self::derive_key(&key);
+        let cipher = Aes256Gcm::new(&key_bytes.into());
+
+        // Generate a random nonce
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Encrypt the data
+        let ciphertext = cipher
+            .encrypt(nonce, data.as_bytes())
+            .map_err(|e| format!("Encryption failed: {:?}", e))?;
+
+        // Combine nonce and ciphertext, then base64 encode
+        let mut combined = nonce_bytes.to_vec();
+        combined.extend(ciphertext);
+        let encoded = general_purpose::STANDARD.encode(&combined);
+
+        Ok(encoded)
+    }
+
+    pub async fn decrypt_data(&self, data: String, key: String) -> Result<String, String> {
+        // Decode from base64
+        let combined = general_purpose::STANDARD
+            .decode(data.as_bytes())
+            .map_err(|e| format!("Base64 decode failed: {}", e))?;
+
+        if combined.len() < 12 {
+            return Err("Invalid encrypted data".to_string());
+        }
+
+        // Split nonce and ciphertext
+        let nonce_bytes = &combined[..12];
+        let ciphertext = &combined[12..];
+
+        // Derive key
+        let key_bytes = Self::derive_key(&key);
+        let cipher = Aes256Gcm::new(&key_bytes.into());
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        // Decrypt
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|e| format!("Decryption failed: {:?}", e))?;
+
+        String::from_utf8(plaintext).map_err(|e| format!("UTF-8 decode failed: {}", e))
+    }
+
+    /// Derive a 256-bit key from a password using PBKDF2-HMAC-SHA256.
+    ///
+    /// Uses 600 000 iterations (OWASP 2023 recommendation) with a
+    /// deterministic salt derived from the password itself. For even
+    /// stronger security a random salt should be persisted alongside
+    /// the ciphertext, but this keeps backward-compatible API parity
+    /// (encrypt/decrypt with the same key string always matches).
+    fn derive_key(password: &str) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+
+        // Deterministic salt = SHA-256("sorng-kdf-salt:" || password)
+        let mut salt_hasher = Sha256::new();
+        salt_hasher.update(b"sorng-kdf-salt:");
+        salt_hasher.update(password.as_bytes());
+        let salt = salt_hasher.finalize();
+
+        let mut key = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 600_000, &mut key);
+        key
+    }
+}
+

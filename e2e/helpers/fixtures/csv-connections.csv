@@ -1,0 +1,6 @@
+Name,Hostname,Port,Protocol,Username,Domain,Description,Tags
+"Web Server Alpha",web-alpha.example.com,22,ssh,admin,,Primary web server,production;web
+"RDP Workstation",win-ws01.example.com,3389,rdp,john.doe,OFFICE,Office workstation,office;windows
+"VNC Display",vnc-host.example.com,5900,vnc,,,VNC remote display,remote
+"MySQL Primary",mysql-primary.example.com,3306,mysql,dbadmin,,Primary database,database;production
+"HTTPS Monitor",monitor.example.com,443,https,,,Health check endpoint,monitoring

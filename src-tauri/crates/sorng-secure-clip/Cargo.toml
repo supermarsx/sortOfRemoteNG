@@ -1,0 +1,13 @@
+[package]
+name = "sorng-secure-clip"
+version = "0.1.0"
+edition = "2021"
+description = "Secure clipboard with auto-clear, one-time paste, credential field copying, and paste-to-terminal for sortOfRemoteNG"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }

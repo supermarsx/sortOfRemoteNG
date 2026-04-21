@@ -1,0 +1,56 @@
+[package]
+name = "sorng-commands-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core command handlers — split from app crate to reduce coherence checking time"
+
+[dependencies]
+sorng-app-domains = { path = "../sorng-app-domains" }
+sorng-app-shell = { path = "../sorng-app-shell" }
+sorng-core = { path = "../sorng-core" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+ssh2 = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+tokio-rustls = { workspace = true }
+axum = "0.7"
+tauri-plugin-autostart = "=2.5.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[features]
+# `protocol-serial-dynamic` is in the default set so a bare
+# `cargo build -p app` still registers the 31 serial_* commands. Turn
+# it off with `--no-default-features` (or combine with
+# `protocol-serial` for the static/vendored dev path).
+default = ["protocol-serial-dynamic"]
+rdp = ["sorng-app-domains/rdp"]
+# `ops` forwards to `sorng-app-domains/ops` so that ops-gated crates
+# (e.g., `sorng_powershell`, `sorng_ipmi`) are re-exported via
+# `sorng_app_domains_ops` and become reachable from `crate::<name>::...`
+# paths inside the shim wrappers under `src-tauri/src/*_commands.rs`.
+ops = ["sorng-app-domains/ops"]
+script-engine = []
+# Forwards to `sorng-vpn/vpn-softether`. When off, the softether command
+# shim is not compiled and the 7 SoftEther commands are not registered
+# with the Tauri handler.
+vpn-softether = ["sorng-app-domains/vpn-softether"]
+# Serial / RS-232 feature split (t3-e4). Self-contained: these only
+# gate the 31 serial_* command registrations in `core_handler.rs` via
+# `#[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]`.
+# `sorng-serial` itself always compiles (its crate-level feature split
+# controls only the runtime probe semantics), so these features do not
+# need to forward anywhere. `protocol-serial-dynamic` is in `default`
+# so normal builds keep the commands wired.
+protocol-serial = []
+protocol-serial-dynamic = []

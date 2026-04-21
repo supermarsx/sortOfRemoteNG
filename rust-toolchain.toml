@@ -1,0 +1,22 @@
+# Pinned Rust toolchain for sortOfRemoteNG.
+#
+# `channel = "stable"` keeps the file cross-platform so Linux/macOS dev
+# environments and CI runners install the normal stable host toolchain.
+#
+# The `targets` entry ensures the MSVC *target* std is available on every
+# platform. Windows hosts MUST additionally use the MSVC *host* toolchain —
+# the GNU host fails to link large crates in this workspace (the historical
+# "export ordinal too large" error from rdkafka/ironrdp chains). That
+# requirement is enforced by:
+#   - CI: `.github/workflows/ci.yml` `rust-check-windows` job (see below).
+#   - Developers: `README.md` Toolchain section + `CONTRIBUTING.md`.
+#
+# To switch a Windows machine to MSVC host:
+#   rustup set default-host x86_64-pc-windows-msvc
+#   rustup default stable-x86_64-pc-windows-msvc
+
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]
+profile = "minimal"

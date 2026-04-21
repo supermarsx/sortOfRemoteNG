@@ -1,0 +1,12 @@
+[package]
+name = "sorng-fonts"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive font management for SSH terminals, app UI, and editors"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }

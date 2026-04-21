@@ -1,0 +1,22 @@
+[package]
+name = "sorng-i18n"
+version = "0.1.0"
+edition = "2021"
+description = "Backend i18n engine with hot-reload, SSR, and pluralization"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+notify = { version = "7", features = ["macos_kqueue"] }
+notify-debouncer-mini = "0.5"
+arc-swap = "1.7"
+dashmap = "6"
+sys-locale = "0.3"
+chrono = { workspace = true }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }

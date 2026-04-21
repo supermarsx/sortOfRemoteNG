@@ -1,0 +1,77 @@
+[package]
+name = "sorng-vpn"
+version = "0.1.0"
+edition = "2021"
+description = "VPN (OpenVPN, WireGuard, ZeroTier, Tailscale), proxy, and connection chaining"
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+sorng-storage = { path = "../sorng-storage" }
+sorng-vault = { path = "../sorng-vault" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+base64 = { workspace = true }
+log = { workspace = true }
+tracing = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = "0.3"
+quinn = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+russh = "0.40"
+russh-keys = "0.40"
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+which = { workspace = true }
+zeroize = { workspace = true }
+defguard_wireguard_rs = { workspace = true }
+# SE-4: session-key derivation + cipher setup. RC4 is implemented
+# inline (~20 LOC) to avoid `cipher`-crate generics gymnastics. AES
+# and CBC come from RustCrypto.
+md-5 = "0.10"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+# t4-e14: SoftEther Protocol V2 AEAD (ChaCha20-Poly1305). Stock
+# RustCrypto crate; negotiated when the peer advertises a V2 cipher
+# name (see `softether/session_key.rs::classify_cipher`). V1 RC4 /
+# AES-CBC remain the default fallback.
+chacha20poly1305 = "0.10"
+# SE-5b: real TAP (layer-2) device. `tun` crate's `async` feature is
+# intentionally NOT enabled — we bridge its synchronous Read/Write
+# to tokio via spawn_blocking workers (see softether/tap.rs). On
+# Windows/macOS the crate compiles cleanly but the L2 path returns
+# `DeviceError::DriverMissing` (wintun + utun are both L3-only).
+tun = "0.8"
+# SE-6: reconnect backoff jitter.
+rand = { workspace = true }
+# SE-6: UDP acceleration V1 per-packet key derivation (SHA1 of
+# common_key || iv — matches Cedar's UdpAccelCalcKey in UdpAccel.c).
+sha1 = "0.10"
+
+[dev-dependencies]
+rcgen = { version = "0.12", features = ["pem"] }
+# t4-e12: property-based / fuzz tests for the SoftEther PACK codec.
+proptest = "1"
+
+[features]
+default = []
+# Gate the SoftEther VPN client (PACK codec, watermark/auth handshake,
+# session-key derivation, TAP dataplane, supervisor, reconnect, UDP
+# accel) behind an opt-in feature. Off by default in 1.0 — enable with
+# `--features vpn-softether`. The SE-1..7 test suite
+# (`tests/softether_e2e.rs`) lives behind this flag as well.
+vpn-softether = []
+# t3-e8 (2026-04-20): opt-in gate for Docker-backed SoftEther e2e tests
+# in `tests/softether_e2e.rs`. Requires `docker compose -f
+# docs/cedar-reference/docker-compose.softether-test.yml up -d` first.
+# When off (default), the e2e tests remain `#[ignore]` so `cargo test`
+# skips them; when on, they become runnable (single-threaded is still
+# recommended — the tests share a hub). Intended CI lane:
+#   cargo test -p sorng-vpn --features vpn-softether,docker-e2e \
+#     --test softether_e2e -- --test-threads=1
+docker-e2e = ["vpn-softether"]

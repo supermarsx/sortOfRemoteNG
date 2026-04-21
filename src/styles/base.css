@@ -1,0 +1,239 @@
+/* Default color variables so the UI has sensible colors before the ThemeManager runs */
+:root {
+  --color-primary: #3b82f6;
+  --color-primary-rgb: 59 130 246;
+  --color-secondary: #6b7280;
+  --color-secondary-rgb: 107 114 128;
+  --color-accent: #10b981;
+  --color-accent-rgb: 16 185 129;
+  --color-background: #111827;
+  --color-background-rgb: 17 24 39;
+  --color-surface: #1f2937;
+  --color-surface-rgb: 31 41 55;
+  --color-surfaceHover: #374151;
+  --color-input: #374151;
+  --color-text: #f9fafb;
+  --color-textSecondary: #d1d5db;
+  --color-textMuted: #9ca3af;
+  --color-border: #374151;
+  --color-border-rgb: 55 65 81;
+  --color-success: #10b981;
+  --color-success-rgb: 16 185 129;
+  --color-warning: #f59e0b;
+  --color-warning-rgb: 245 158 11;
+  --color-error: #ef4444;
+  --color-error-rgb: 239 68 68;
+  --color-info: #06b6d4;
+  --color-info-rgb: 6 182 212;
+
+  /* Animation variables */
+  --animation-duration: 550ms;
+  --animation-enabled: 1;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --animation-duration: 0ms;
+    --animation-enabled: 0;
+  }
+}
+
+/* Disable animations class */
+.animations-disabled {
+  --animation-duration: 0ms !important;
+  --animation-enabled: 0 !important;
+}
+
+.animations-disabled *,
+.animations-disabled *::before,
+.animations-disabled *::after {
+  animation-duration: 0ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* Reduced motion class */
+.reduce-motion {
+  --animation-duration: 50ms !important;
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 50ms !important;
+  transition-duration: 50ms !important;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
+/* ── xterm.js structural styles ──────────────────────────────────
+   Cherry-picked from @xterm/xterm/css/xterm.css so that xterm's
+   internal buffer-level selection renders correctly.
+   We skip the full import because it sets background-color:#000
+   on .xterm-viewport, which kills transparent/animated backgrounds.
+   ─────────────────────────────────────────────────────────────── */
+
+/* Disable browser-native DOM selection — xterm handles selection
+   against its internal buffer, not the .xterm-rows DOM overlay */
+.xterm {
+  cursor: text;
+  position: relative;
+  user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+}
+
+.xterm.focus,
+.xterm:focus {
+  outline: none;
+}
+.xterm:focus-visible {
+  box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 50%);
+}
+
+/* Viewport: scrollable layer over the buffer. No background-color
+   so animated/transparent terminal backgrounds show through. */
+.xterm .xterm-viewport {
+  overflow-y: scroll;
+  cursor: default;
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+/* Screen: positioned container so the selection overlay and row
+   rendering align to the same coordinate space */
+.xterm .xterm-screen {
+  position: relative;
+}
+
+.xterm .xterm-screen canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* Helpers: offscreen textarea for keyboard capture + IME */
+.xterm .xterm-helpers {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+}
+
+.xterm .xterm-helper-textarea {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  position: absolute;
+  opacity: 0;
+  left: -9999em;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: -5;
+  white-space: nowrap;
+  overflow: hidden;
+  resize: none;
+}
+
+/* IME composition overlay */
+.xterm .composition-view {
+  background: #000;
+  color: #fff;
+  display: none;
+  position: absolute;
+  white-space: nowrap;
+  z-index: 1;
+}
+.xterm .composition-view.active {
+  display: block;
+}
+
+/* Scroll area and char measurement (offscreen) */
+.xterm .xterm-scroll-area {
+  visibility: hidden;
+}
+.xterm-char-measure-element {
+  display: inline-block;
+  visibility: hidden;
+  position: absolute;
+  top: 0;
+  left: -9999em;
+  line-height: normal;
+}
+
+/* Cursor variants */
+.xterm.enable-mouse-events { cursor: default; }
+.xterm.xterm-cursor-pointer,
+.xterm .xterm-cursor-pointer { cursor: pointer; }
+.xterm.column-select.focus { cursor: crosshair; }
+
+/* Accessibility tree: allow user-select only here (screen reader) */
+.xterm .xterm-accessibility:not(.debug),
+.xterm .xterm-message {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 10;
+  color: transparent;
+  pointer-events: none;
+}
+.xterm .xterm-accessibility-tree:not(.debug) *::selection {
+  color: transparent;
+}
+.xterm .xterm-accessibility-tree {
+  user-select: text;
+  white-space: pre;
+}
+.xterm .live-region {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Text decorations */
+.xterm-dim { opacity: 1 !important; }
+.xterm-underline-1 { text-decoration: underline; }
+.xterm-underline-2 { text-decoration: double underline; }
+.xterm-underline-3 { text-decoration: wavy underline; }
+.xterm-underline-4 { text-decoration: dotted underline; }
+.xterm-underline-5 { text-decoration: dashed underline; }
+.xterm-overline { text-decoration: overline; }
+.xterm-overline.xterm-underline-1 { text-decoration: overline underline; }
+.xterm-overline.xterm-underline-2 { text-decoration: overline double underline; }
+.xterm-overline.xterm-underline-3 { text-decoration: overline wavy underline; }
+.xterm-overline.xterm-underline-4 { text-decoration: overline dotted underline; }
+.xterm-overline.xterm-underline-5 { text-decoration: overline dashed underline; }
+.xterm-strikethrough { text-decoration: line-through; }
+
+/* Decoration layers */
+.xterm-screen .xterm-decoration-container .xterm-decoration {
+  z-index: 6;
+  position: absolute;
+}
+.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
+  z-index: 7;
+}
+.xterm-decoration-overview-ruler {
+  z-index: 8;
+  position: absolute;
+  top: 0;
+  right: 0;
+  pointer-events: none;
+}
+.xterm-decoration-top {
+  z-index: 2;
+  position: relative;
+}
+

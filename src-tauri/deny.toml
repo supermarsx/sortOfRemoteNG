@@ -1,0 +1,54 @@
+# cargo-deny configuration for sortOfRemoteNG (t3-e31).
+#
+# Scope: gate CI on high+ severity advisories and a permissive-OSI license
+# allow-list. Vendored crates under `sorng-*-vendor` are excluded from bans
+# scans because they intentionally mirror upstream trees and may carry
+# duplicate transitive deps.
+#
+# Reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# Ignore yanked crates for now — cargo-audit covers yank hygiene separately
+# and yanked crates are not an advisory severity signal.
+yanked = "allow"
+# No per-advisory ignores; tighten as real exemptions are needed.
+ignore = []
+
+[licenses]
+version = 2
+# Permissive OSI licenses accepted for the workspace.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "allow"
+wildcards = "warn"
+# Vendored mirrors are allowed to carry their own dep closures.
+skip-tree = [
+    { name = "sorng-aws-vendor" },
+    { name = "sorng-compression-vendor" },
+    { name = "sorng-rdp-vendor" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "allow"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

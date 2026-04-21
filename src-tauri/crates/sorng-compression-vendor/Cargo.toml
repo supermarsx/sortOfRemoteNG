@@ -1,0 +1,12 @@
+[package]
+name = "sorng-compression-vendor"
+version = "0.1.0"
+edition = "2021"
+description = "Dynamically linked vendor dependencies for compression (zstd + flate2)"
+
+[lib]
+crate-type = ["dylib", "rlib"]
+
+[dependencies]
+zstd = "0.13"
+flate2 = "1.0"

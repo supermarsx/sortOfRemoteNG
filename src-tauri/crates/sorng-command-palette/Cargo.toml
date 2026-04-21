@@ -1,0 +1,17 @@
+[package]
+name = "sorng-command-palette"
+version = "0.1.0"
+edition = "2021"
+description = "SSH command palette with memory, AI completions, snippets, and fuzzy search"
+
+[dependencies]
+sorng-llm = { path = "../sorng-llm" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+fuzzy-matcher = "0.3"
+log = { workspace = true }
+sha2 = { workspace = true }

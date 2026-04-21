@@ -1,0 +1,19 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Production%20SSH]
+"HostName"="prod-ssh.example.com"
+"PortNumber"=dword:00000016
+"Protocol"="ssh"
+"UserName"="admin"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Staging%20Server]
+"HostName"="staging.example.com"
+"PortNumber"=dword:00000016
+"Protocol"="ssh"
+"UserName"="deploy"
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Legacy%20Telnet]
+"HostName"="legacy.example.com"
+"PortNumber"=dword:00000017
+"Protocol"="telnet"
+"UserName"=""

@@ -1,0 +1,27 @@
+[package]
+name = "sorng-gateway"
+version = "0.1.0"
+edition = "2021"
+description = "Headless gateway server for SortOfRemote NG — connection proxying, access policies, session management, and health monitoring"
+
+[[bin]]
+name = "sorng-gateway-server"
+path = "src/main_headless.rs"
+required-features = ["headless"]
+
+[features]
+default = []
+headless = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { version = "1.0" }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+sorng-letsencrypt = { path = "../sorng-letsencrypt" }

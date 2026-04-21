@@ -1,0 +1,26 @@
+[package]
+name = "sorng-winmgmt"
+version = "0.1.0"
+edition = "2021"
+description = "Remote Windows Management — Services, Event Viewer, Processes, Performance Monitoring via WMI/WinRM/DCOM"
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["cookies"] }
+base64 = { workspace = true }
+quick-xml = { version = "0.31", features = ["serialize"] }
+url = { workspace = true }
+regex = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+md-5 = "0.10"
+hex = { workspace = true }
+rand = { workspace = true }

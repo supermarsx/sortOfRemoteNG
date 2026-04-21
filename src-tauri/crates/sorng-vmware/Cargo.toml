@@ -1,0 +1,21 @@
+[package]
+name = "sorng-vmware"
+version = "0.1.0"
+edition = "2021"
+description = "VMware vSphere / VMRC management (VM lifecycle, snapshots, networking, storage, metrics, ESXi hosts, VMRC console)"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["cookies"] }
+base64 = { workspace = true }
+url = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls-native-certs = { workspace = true }

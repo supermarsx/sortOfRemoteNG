@@ -1,0 +1,94 @@
+version: "3.8"
+
+services:
+  test-ssh:
+    image: lscr.io/linuxserver/openssh-server
+    ports:
+      - "2222:2222"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=${SSH_USER}
+      - USER_PASSWORD=${SSH_PASSWORD}
+      - PASSWORD_ACCESS=true
+      - SUDO_ACCESS=true
+    volumes:
+      - ./fixtures:/fixtures:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2222"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test-rdp:
+    image: danielguerra/ubuntu-xrdp
+    ports:
+      - "13389:3389"
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "3389"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  test-vnc:
+    image: consol/rocky-xfce-vnc
+    ports:
+      - "15900:5901"
+      - "16901:6901"
+    environment:
+      - VNC_PW=${VNC_PASSWORD}
+      - VNC_RESOLUTION=1280x720
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "5901"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test-http:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./fixtures/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./fixtures/htpasswd:/etc/nginx/.htpasswd:ro
+      - ./fixtures/ssl:/etc/nginx/ssl:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test-mysql:
+    image: mysql:8.0
+    ports:
+      - "13306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=testdb
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test-ftp:
+    image: fauria/vsftpd
+    ports:
+      - "2121:21"
+      - "21100-21110:21100-21110"
+    environment:
+      - FTP_USER=${FTP_USER}
+      - FTP_PASS=${FTP_PASSWORD}
+      - PASV_MIN_PORT=21100
+      - PASV_MAX_PORT=21110
+      - PASV_ADDRESS=127.0.0.1
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "21"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

@@ -1,0 +1,28 @@
+@import '../src/styles/base.css';
+@import './styles/theme-variables.css';
+@import './styles/app-shell.css';
+@import './styles/scrollbar.css';
+@import './styles/form-controls.css';
+@import './styles/tooltip-editor.css';
+@import './styles/animations.css';
+@import '../src/styles/tailwind-overrides.css';
+@import '../src/styles/embedded.css';
+@import '../src/styles/buttons.css';
+@import '../src/styles/primitives.css';
+@import '../src/styles/modals.css';
+@import '../src/styles/forms.css';
+@import '../src/styles/lists.css';
+@import '../src/styles/tables-tabs.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Override Tailwind's default border color with theme variable */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
+}

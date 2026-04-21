@@ -1,0 +1,18 @@
+[package]
+name = "sorng-ansible"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Ansible automation management – inventory, playbooks, ad-hoc commands, roles, galaxy, vault, facts, and configuration"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+dirs = { workspace = true }

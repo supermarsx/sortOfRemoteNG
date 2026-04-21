@@ -1,0 +1,24 @@
+//! # SortOfRemote NG — Biometrics
+//!
+//! Cross-platform biometric authentication using **native OS APIs**:
+//!
+//! | Platform | Mechanism |
+//! |----------|-----------|
+//! | Windows  | Windows Hello / `UserConsentVerifier` via WinRT |
+//! | macOS    | Touch ID / `LocalAuthentication` via native ObjC FFI + Secure Enclave |
+//! | Linux    | `polkit` agent + `fprintd` D-Bus fingerprint service |
+//!
+//! ## Crate layout
+//!
+//! - [`availability`] — detect whether biometric hardware is present
+//! - [`authenticate`] — prompt the user for biometric verification
+//! - [`types`]        — shared types, errors, results
+//! - [`platform`]     — per-OS implementation details (private)
+
+pub mod authenticate;
+pub mod availability;
+pub mod platform;
+pub mod types;
+
+#[cfg(target_os = "windows")]
+mod windows_registry;

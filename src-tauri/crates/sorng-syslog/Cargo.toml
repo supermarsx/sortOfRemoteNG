@@ -1,0 +1,17 @@
+[package]
+name = "sorng-syslog"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Syslog management crate for SortOfRemote NG — rsyslog, syslog-ng, journald configuration, logrotate, centralized log collection, and Tauri integration"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }

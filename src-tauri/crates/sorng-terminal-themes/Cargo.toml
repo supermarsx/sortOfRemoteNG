@@ -1,0 +1,13 @@
+[package]
+name = "sorng-terminal-themes"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive terminal theming engine with 40+ built-in themes, ANSI-256 and true-color palettes, custom theme creation, and xterm.js integration"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }

@@ -1,0 +1,200 @@
+import React from "react";
+import {
+  X,
+  Plus,
+  Trash2,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+  AlertTriangle,
+} from "lucide-react";
+import {
+  SavedProxyChain,
+  SavedChainLayer,
+} from "../../types/settings/settings";
+import { useProxyChainEditor, LAYER_TYPES } from "../../hooks/network/useProxyChainEditor";
+import { Select, Textarea, TextInput} from '../ui/forms';
+
+type Mgr = ReturnType<typeof useProxyChainEditor>;
+
+interface ProxyChainEditorProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (
+    chain: Omit<SavedProxyChain, "id" | "createdAt" | "updatedAt">,
+  ) => void;
+  editingChain: SavedProxyChain | null;
+}
+
+/* ── Sub-components ──────────────────────────────────────────────── */
+
+const NameField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div>
+    <label className="block text-sm font-medium text-[var(--color-text)] mb-1">
+      Chain Name <span className="text-error">*</span>
+    </label>
+    <input
+      type="text"
+      value={mgr.name}
+      onChange={(e) => mgr.setName(e.target.value)}
+      placeholder="My Proxy Chain"
+      className={`w-full px-3 py-2 bg-[var(--color-bg)] border rounded-lg text-[var(--color-text)] text-sm focus:ring-2 focus:ring-primary focus:border-transparent ${mgr.errors.name ? "border-error" : "border-[var(--color-border)]"}`}
+    />
+    {mgr.errors.name && <p className="text-xs text-error mt-1">{mgr.errors.name}</p>}
+  </div>
+);
+
+const DescriptionField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div>
+    <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Description</label>
+    <Textarea
+      value={mgr.description}
+      onChange={(v) => mgr.setDescription(v)}
+      placeholder="Optional description for this chain"
+      rows={2}
+      className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:ring-2 focus:ring-primary resize-none"
+    />
+  </div>
+);
+
+const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; total: number }> = ({ mgr, layer, index, total }) => (
+  <div className={`border rounded-lg bg-[var(--color-bg)] ${mgr.errors[`layer-${index}`] ? "border-error" : "border-[var(--color-border)]"}`}>
+    <div className="p-3">
+      <div className="flex items-center gap-2 mb-3">
+        <GripVertical size={14} className="text-[var(--color-textSecondary)]" />
+        <span className="text-xs font-mono text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] px-2 py-0.5 rounded">Layer {index + 1}</span>
+        <div className="flex-1" />
+        <button onClick={() => mgr.handleMoveLayer(index, "up")} disabled={index === 0} className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] rounded disabled:opacity-30" title="Move up"><ChevronUp size={14} /></button>
+        <button onClick={() => mgr.handleMoveLayer(index, "down")} disabled={index === total - 1} className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] rounded disabled:opacity-30" title="Move down"><ChevronDown size={14} /></button>
+        <button onClick={() => mgr.handleRemoveLayer(index)} className="p-1 text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 rounded" title="Remove layer"><Trash2 size={14} /></button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Layer Type</label>
+          <Select value={layer.type} onChange={(v: string) => mgr.handleLayerTypeChange(index, v as SavedChainLayer["type"])} options={[...LAYER_TYPES.map((lt) => ({ value: lt.value, label: lt.label }))]} className="sor-form-input-sm" />
+        </div>
+        {layer.type === "proxy" && (
+          <div>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Proxy Profile</label>
+            <Select value={layer.proxyProfileId || ""} onChange={(v: string) => mgr.handleLayerProfileChange(index, v)} options={[{ value: '', label: 'Select profile...' }, ...mgr.getProfilesForType(layer.type).map((profile) => ({ value: profile.id, label: `${profile.name} (${profile.config.type})` }))]} className="sor-form-input-sm" />
+          </div>
+        )}
+        {(layer.type === "openvpn" || layer.type === "wireguard") && (
+          <div>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">VPN Profile</label>
+            <Select
+              value={layer.vpnProfileId || ""}
+              onChange={(v: string) => mgr.handleVpnProfileChange(index, v)}
+              options={[
+                { value: '', label: 'Select VPN profile...' },
+                ...mgr.getVpnProfilesForType(layer.type).map((profile) => ({
+                  value: profile.id,
+                  label: `${profile.name} (${profile.status})`,
+                })),
+              ]}
+              className="sor-form-input-sm"
+            />
+            {mgr.getVpnProfilesForType(layer.type).length === 0 && (
+              <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+                No saved {layer.type === "openvpn" ? "OpenVPN" : "WireGuard"} profiles were found.
+              </p>
+            )}
+          </div>
+        )}
+        {layer.type === "ssh-tunnel" && (
+          <div>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">SSH Tunnel</label>
+            <p className="text-xs text-[var(--color-textSecondary)] px-2 py-1.5">Configure SSH tunnels in the Tunnels tab</p>
+          </div>
+        )}
+      </div>
+      {layer.proxyProfileId && layer.type === "proxy" && (
+        <div className="mt-2 text-xs text-[var(--color-textSecondary)]">
+          {(() => {
+            const profile = mgr.savedProfiles.find((p) => p.id === layer.proxyProfileId);
+            if (!profile) return "Profile not found";
+            return <span className="font-mono">{profile.config.host}:{profile.config.port}</span>;
+          })()}
+        </div>
+      )}
+    </div>
+    {mgr.errors[`layer-${index}`] && (
+      <div className="px-3 pb-2 text-xs text-error">{mgr.errors[`layer-${index}`]}</div>
+    )}
+  </div>
+);
+
+const LayersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div>
+    <div className="flex items-center justify-between mb-2">
+      <label className="block text-sm font-medium text-[var(--color-text)]">Chain Layers <span className="text-error">*</span></label>
+      <button onClick={mgr.handleAddLayer} className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-primary hover:bg-primary/90 text-[var(--color-text)]"><Plus size={12} />Add Layer</button>
+    </div>
+    {mgr.errors.layers && (
+      <div className="flex items-center gap-2 p-2 mb-2 bg-error/10 border border-error/30 rounded-lg text-xs text-error"><AlertTriangle size={14} />{mgr.errors.layers}</div>
+    )}
+    <div className="text-xs text-[var(--color-textSecondary)] mb-3">Chain layers are executed in order. Traffic flows through each layer sequentially.</div>
+    <div className="space-y-2">
+      {mgr.layers.length === 0 ? (
+        <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center border border-dashed border-[var(--color-border)] rounded-lg">No layers added. Click "Add Layer" to start building your chain.</div>
+      ) : (
+        mgr.layers.map((layer, index) => (
+          <LayerCard key={layer.position} mgr={mgr} layer={layer} index={index} total={mgr.layers.length} />
+        ))
+      )}
+    </div>
+  </div>
+);
+
+const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div>
+    <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Tags</label>
+    <div className="flex flex-wrap gap-2 mb-2">
+      {mgr.tags.map((tag) => (
+        <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/20 text-primary text-xs">
+          {tag}
+          <button onClick={() => mgr.handleRemoveTag(tag)} className="hover:text-error"><X size={12} /></button>
+        </span>
+      ))}
+    </div>
+    <div className="flex gap-2">
+      <TextInput value={mgr.tagInput} onChange={(v) => mgr.setTagInput(v)} onKeyDown={mgr.handleTagKeyDown} placeholder="Add tag..." variant="form" className="flex-1" />
+      <button onClick={mgr.handleAddTag} disabled={!mgr.tagInput.trim()} className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] disabled:opacity-50">Add</button>
+    </div>
+  </div>
+);
+
+/* ── Root component ──────────────────────────────────────────────── */
+
+export const ProxyChainEditor: React.FC<ProxyChainEditorProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  editingChain,
+}) => {
+  const mgr = useProxyChainEditor({ isOpen, editingChain });
+
+  const handleSave = () => {
+    if (!mgr.validate()) return;
+    onSave(mgr.buildChainData());
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto w-full p-4 space-y-5">
+          <NameField mgr={mgr} />
+          <DescriptionField mgr={mgr} />
+          <LayersSection mgr={mgr} />
+          <TagsSection mgr={mgr} />
+        </div>
+      </div>
+      <div className="px-4 py-3 border-t border-[var(--color-border)] flex justify-end gap-3 flex-shrink-0">
+        <button onClick={onClose} className="sor-btn sor-btn-secondary">Cancel</button>
+        <button onClick={handleSave} className="sor-btn sor-btn-primary">{editingChain ? "Update Chain" : "Create Chain"}</button>
+      </div>
+    </div>
+  );
+};

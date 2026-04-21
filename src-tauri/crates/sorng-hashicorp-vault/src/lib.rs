@@ -1,0 +1,13 @@
+pub mod audit;
+pub mod auth_methods;
+pub mod client;
+pub mod error;
+pub mod kv;
+pub mod leases;
+pub mod pki;
+pub mod policies;
+pub mod service;
+pub mod sys;
+pub mod tokens;
+pub mod transit;
+pub mod types;

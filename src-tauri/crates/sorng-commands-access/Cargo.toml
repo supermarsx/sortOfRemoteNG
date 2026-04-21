@@ -1,0 +1,14 @@
+[package]
+name = "sorng-commands-access"
+version = "0.1.0"
+edition = "2021"
+description = "Access command handlers — split from app crate to reduce coherence checking time"
+
+[dependencies]
+sorng-app-domains = { path = "../sorng-app-domains" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+sorng-app-shell = { path = "../sorng-app-shell" }
+tauri-plugin-autostart = "=2.5.1"

@@ -1,0 +1,1362 @@
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
+import dynamic from "next/dynamic";
+import { Monitor, Zap, Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { Connection, ConnectionSession, TabLayout } from "./types/connection/connection";
+import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings/settings";
+import { SettingsManager } from "./utils/settings/settingsManager";
+import { StatusChecker } from "./utils/connection/statusChecker";
+import { CollectionManager } from "./utils/connection/collectionManager";
+import { CollectionNotFoundError, InvalidPasswordError } from "./utils/core/errors";
+import { SecureStorage } from "./utils/storage/storage";
+import { useSessionManager } from "./hooks/session/useSessionManager";
+import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
+import { ConnectionProvider } from "./contexts/ConnectionProvider";
+import { useConnections } from "./contexts/useConnections";
+import { ToastProvider } from "./contexts/ToastContext";
+import { SettingsProvider } from "./contexts/SettingsContext";
+import { Sidebar } from "./components/connection/Sidebar";
+import { SessionTabs } from "./components/session/SessionTabs";
+import { SessionViewer } from "./components/session/SessionViewer";
+import { TabLayoutManager } from "./components/session/TabLayoutManager";
+import { ErrorBoundary } from "./components/app/ErrorBoundary";
+import { SplashScreen } from "./components/app/SplashScreen";
+import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
+import { startMemoryWatchdog } from "./utils/debug/memoryWatchdog";
+import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
+import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/toolSession";
+import { generateId } from "./utils/core/id";
+import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
+import { useWindowControls } from "./hooks/window/useWindowControls";
+import { useWindowTheme } from "./hooks/window/useWindowTheme";
+import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
+import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
+import { useWindowManager } from "./hooks/window/useWindowManager";
+import { AppToolbar } from "./components/app/AppToolbar";
+import { AppStatusBar } from "./components/app/AppStatusBar";
+import { DebugPanel } from "./components/debug/DebugPanel";
+import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
+import { useSessionDetach } from "./hooks/session/useSessionDetach";
+
+const AppDialogs = dynamic(
+  () => import("./components/app/AppDialogs").then((module) => module.AppDialogs),
+  { ssr: false },
+);
+
+/**
+ * Core application component responsible for rendering the main layout and
+ * managing global application state.
+ */
+const AppContent: React.FC = () => {
+  const { t } = useTranslation();
+  const { state, dispatch, loadData, saveData } = useConnections();
+  const settingsManager = SettingsManager.getInstance();
+  const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
+  const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
+  const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
+  const [showImportExport, setShowImportExport] = useState(false);
+  const [importExportInitialTab, setImportExportInitialTab] = useState<'export' | 'import'>('export');
+  const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
+  // isRdpPanelResizing is in useResizeHandlers hook
+  const [showErrorLog, setShowErrorLog] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
+  const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
+    string | null
+  >(null);
+  const [tabLayout, setTabLayout] = useState<TabLayout>(() => ({
+    mode: "tabs",
+    sessions: [],
+  }));
+  const [passwordDialogMode, setPasswordDialogMode] = useState<
+    "setup" | "unlock"
+  >("setup"); // current mode for password dialog
+  const [passwordError, setPasswordError] = useState(""); // password dialog error message
+  const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
+  // isResizing state is in useResizeHandlers hook
+  const [sidebarPosition, setSidebarPosition] = useState<"left" | "right">(
+    "left",
+  ); // sidebar position
+  const [dialogState, setDialogState] = useState<{
+    isOpen: boolean;
+    message: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    message: "",
+    onConfirm: () => {},
+  }); // confirm dialog state
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const [appSettings, setAppSettings] = useState(() =>
+    settingsManager.getSettings(),
+  );
+  // windowSaveTimeout and sidebarSaveTimeout are in useWindowPersistence hook
+  const lastWorkAtRef = useRef<number>(Date.now());
+  const hasUnsavedWorkRef = useRef(false);
+  const [hasStoragePassword, setHasStoragePassword] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [appReady, setAppReady] = useState(false);
+  const closingMainRef = useRef(false);
+  const pendingCloseRef = useRef<(() => void) | null>(null);
+  const awaitingCloseConfirmRef = useRef(false);
+
+  const statusChecker = StatusChecker.getInstance();
+  const collectionManager = CollectionManager.getInstance();
+
+  const {
+    activeSessionId,
+    setActiveSessionId,
+    handleConnect,
+    handleQuickConnect,
+    handleSessionClose,
+    restoreSession,
+    confirmDialog,
+  } = useSessionManager();
+
+  const { isInitialized, initProgress, initStatus, criticalError } = useAppLifecycle({
+    handleConnect,
+    restoreSession,
+    setShowCollectionSelector,
+    setShowPasswordDialog,
+    setPasswordDialogMode,
+  });
+
+  // Start memory watchdog once settings are available
+  useEffect(() => {
+    const mw = appSettings.memoryWatchdog;
+    if (!mw?.enabled) return;
+    startMemoryWatchdog({
+      intervalMs: mw.intervalMs,
+      warningMb: mw.heapWarningMb,
+      criticalMb: mw.heapCriticalMb,
+      killMb: mw.heapKillMb,
+      systemWarningPct: mw.systemWarningPct,
+      systemKillPct: mw.systemKillPct,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time watchdog init on mount
+  }, []);
+
+  // Extracted hooks
+  const {
+    isAlwaysOnTop, isWindowPermissionError,
+    handleMinimize, handleToggleTransparency, handleToggleAlwaysOnTop,
+    handleRepatriateWindow, handleMaximize, handleOpenDevtools, handleClose,
+  } = useWindowControls(appSettings, settingsManager);
+  useTooltipSystem();
+  useWindowTheme(appSettings, isWindowPermissionError);
+  useWindowPersistence(
+    appSettings, settingsManager, isInitialized, isWindowPermissionError,
+    sidebarWidth, setSidebarWidth, sidebarPosition, setSidebarPosition,
+    state.sidebarCollapsed, dispatch,
+  );
+  useDetachedSessionEvents(handleSessionClose, state.sessions, dispatch, setActiveSessionId);
+  const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } = useWindowManager({
+    sessions: state.sessions,
+    connections: state.connections,
+    tabGroups: state.tabGroups,
+    dispatch,
+    setActiveSessionId,
+    handleSessionClose,
+  });
+  const { handleMouseDown, handleRdpPanelMouseDown } = useResizeHandlers(
+    sidebarPosition, setSidebarWidth, setRdpPanelWidth, layoutRef,
+  );
+
+  // ─── Tool Tab Mode ──────────────────────────────────────────────
+  // All tools open as session tabs. Use a ref for the latest sessions
+  // so the callback never needs to be re-created.
+  const sessionsRef = useRef(state.sessions);
+  useEffect(() => { sessionsRef.current = state.sessions; }, [state.sessions]);
+
+  /** Focus a detached Tauri window by its label. */
+  const focusDetachedWindow = useCallback((windowId: string) => {
+    getAllWindows().then(windows => {
+      const win = windows.find(w => w.label === windowId);
+      if (win) {
+        win.setFocus().catch(() => undefined);
+        win.unminimize().catch(() => undefined);
+      }
+    }).catch(() => undefined);
+  }, []);
+
+  /**
+   * Creates a setter that opens/focuses a tool as a session tab.
+   * Passing `true` opens or focuses the tab; any other value is a no-op.
+   */
+  const makeToolSetter = useCallback((toolKey: ToolKey): React.Dispatch<React.SetStateAction<boolean>> => {
+    return ((v: boolean | ((prev: boolean) => boolean)) => {
+      if (v !== true) return;
+      const protocol = getToolProtocol(toolKey);
+      // Check for detached instance first — focus its window instead of creating a duplicate
+      const detached = sessionsRef.current.find(
+        s => s.protocol === protocol && s.layout?.isDetached,
+      );
+      if (detached?.layout?.windowId) {
+        focusDetachedWindow(detached.layout.windowId);
+        return;
+      }
+      const existing = sessionsRef.current.find(
+        s => s.protocol === protocol && !s.layout?.isDetached,
+      );
+      if (existing) {
+        setActiveSessionId(existing.id);
+      } else {
+        const session = createToolSession(toolKey);
+        dispatch({ type: 'ADD_SESSION', payload: session });
+        requestAnimationFrame(() => setActiveSessionId(session.id));
+      }
+    }) as React.Dispatch<React.SetStateAction<boolean>>;
+  }, [dispatch, setActiveSessionId, focusDetachedWindow]);
+
+  // Build wrapped setters once — they're stable because makeToolSetter
+  // only depends on stable refs and dispatch.
+  const toolShowSetters = useRef<Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>>(null!);
+  if (toolShowSetters.current === null) {
+    const keys: ToolKey[] = [
+      'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
+      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
+      'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
+      'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
+      'connectionEditor',
+    ];
+    const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
+    for (const key of keys) result[key] = makeToolSetter(key);
+    toolShowSetters.current = result;
+  }
+
+  // Show window immediately so splash screen is visible
+  useEffect(() => {
+    const showWindow = async () => {
+      try {
+        const currentWindow = getCurrentWindow();
+        // Center the window first, then show it
+        await currentWindow.center();
+        await currentWindow.show();
+        await currentWindow.setFocus();
+      } catch {
+        // Not in Tauri environment, ignore
+      }
+    };
+    showWindow();
+  }, []);
+
+  // Suppress autocomplete on all inputs when the setting is disabled
+  useEffect(() => {
+    if (appSettings.enableAutocomplete) return;
+    const attr = 'autocomplete';
+    const applyToAll = () => {
+      document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select').forEach((el) => {
+        if (!el.getAttribute(attr) || el.getAttribute(attr) !== 'off') {
+          el.setAttribute(attr, 'off');
+          // Chrome ignores autocomplete="off" on some fields — use a non-standard
+          // value to ensure the browser doesn't auto-fill.
+          el.setAttribute('data-lpignore', 'true');
+          el.setAttribute('data-form-type', 'other');
+        }
+      });
+    };
+    applyToAll();
+    const observer = new MutationObserver(() => applyToAll());
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [appSettings.enableAutocomplete]);
+
+  // Track when app is fully initialized
+  useEffect(() => {
+    if (isInitialized && !appReady) {
+      setAppReady(true);
+      // Close the native splash screen now that the frontend is ready
+      invoke("close_splash").catch(() => {});
+    }
+  }, [isInitialized, appReady]);
+
+  // Restore frontend tabs for backend RDP sessions that survived a reload.
+  // Runs once on startup — checks list_rdp_sessions for connected sessions
+  // that don't have a matching frontend tab, and creates them.
+  const rdpRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!appReady || rdpRestoredRef.current) return;
+    rdpRestoredRef.current = true;
+
+    (async () => {
+      try {
+        const backendSessions = await invoke<Array<{
+          id: string;
+          connectionId?: string;
+          host: string;
+          port: number;
+          connected: boolean;
+          desktopWidth: number;
+          desktopHeight: number;
+        }>>('list_rdp_sessions');
+
+        const connectedSessions = backendSessions.filter(s => s.connected);
+        if (connectedSessions.length === 0) return;
+
+        for (const bs of connectedSessions) {
+          // Skip if a frontend session already exists for this backend session
+          const existing = state.sessions.find(
+            s => s.protocol === 'rdp' && (
+              s.connectionId === bs.connectionId ||
+              s.backendSessionId === bs.id
+            )
+          );
+          if (existing) continue;
+
+          const connection = bs.connectionId
+            ? state.connections.find(c => c.id === bs.connectionId)
+            : state.connections.find(c =>
+                c.hostname === bs.host && (c.port || 3389) === bs.port && c.protocol === 'rdp'
+              );
+
+          const newSession: ConnectionSession = {
+            id: generateId(),
+            connectionId: connection?.id || bs.connectionId || bs.id,
+            name: connection?.name || `${bs.host}:${bs.port}`,
+            status: 'connected',
+            startTime: new Date(),
+            protocol: 'rdp',
+            hostname: bs.host,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 3,
+          };
+
+          dispatch({ type: 'ADD_SESSION', payload: newSession });
+          // RDPClient will mount and auto-detect the existing backend session
+          // via list_rdp_sessions → attach_rdp_session, receiving the full
+          // framebuffer immediately.
+        }
+      } catch {
+        // Backend may not be ready yet — not an error
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- appReady is the one meaningful trigger
+  }, [appReady]);
+
+  const handleQuickConnectWithHistory = useCallback(
+    (payload: {
+      hostname: string;
+      protocol: string;
+      username?: string;
+      password?: string;
+      domain?: string;
+      authType?: "password" | "key";
+      privateKey?: string;
+      passphrase?: string;
+      basicAuthUsername?: string;
+      basicAuthPassword?: string;
+      httpVerifySsl?: boolean;
+    }) => {
+      if (appSettings.quickConnectHistoryEnabled) {
+        const entry = {
+          hostname: payload.hostname,
+          protocol: payload.protocol,
+          username: payload.username,
+          authType: payload.authType,
+        };
+        const current = appSettings.quickConnectHistory ?? [];
+        const next = [
+          entry,
+          ...current.filter(
+            (item) =>
+              item.hostname !== entry.hostname ||
+              item.protocol !== entry.protocol ||
+              item.username !== entry.username ||
+              item.authType !== entry.authType,
+          ),
+        ].slice(0, 12);
+        settingsManager
+          .saveSettings({ quickConnectHistory: next }, { silent: true })
+          .catch(console.error);
+      }
+      handleQuickConnect(payload);
+    },
+    [
+      appSettings.quickConnectHistory,
+      appSettings.quickConnectHistoryEnabled,
+      handleQuickConnect,
+      settingsManager,
+    ],
+  );
+
+  const clearQuickConnectHistory = useCallback(() => {
+    settingsManager
+      .saveSettings({ quickConnectHistory: [] }, { silent: true })
+      .catch(console.error);
+  }, [settingsManager]);
+
+  const launchArgsHandledRef = useRef(false);
+
+  const visibleSessions = useMemo(
+    () => state.sessions.filter((session) => !session.layout?.isDetached),
+    [state.sessions],
+  );
+
+  const { handleSessionDetach, handleReattachRdpSession } = useSessionDetach(
+    state.sessions, state.connections, visibleSessions,
+    activeSessionId, dispatch, setActiveSessionId, wmRegisterWindow,
+  );
+  // Wire handleSessionDetach into WindowManager (ref avoids circular dependency)
+  wmDetachRef.current = handleSessionDetach;
+
+  /** Backend RDP session IDs that have an active frontend viewer tab. */
+  const activeRdpBackendIds = useMemo(
+    () => state.sessions
+      .filter((s) => s.protocol === 'rdp')
+      .map((s) => s.backendSessionId || s.connectionId)
+      .filter(Boolean) as string[],
+    [state.sessions],
+  );
+
+  const buildTabLayout = useCallback(
+    (mode: TabLayout["mode"], sessions: ConnectionSession[]): TabLayout => {
+      const orderedSessions = activeSessionId
+        ? [
+            ...sessions.filter((session) => session.id === activeSessionId),
+            ...sessions.filter((session) => session.id !== activeSessionId),
+          ]
+        : sessions;
+
+      const buildGridLayout = (cols: number, rows?: number) => {
+        const totalRows =
+          (rows ?? Math.ceil(orderedSessions.length / cols)) || 1;
+        const width = 100 / cols;
+        const height = 100 / totalRows;
+        return orderedSessions.map((session, index) => ({
+          sessionId: session.id,
+          position: {
+            x: (index % cols) * width,
+            y: Math.floor(index / cols) * height,
+            width,
+            height,
+          },
+        }));
+      };
+
+      switch (mode) {
+        case "splitVertical": {
+          const cols = 2;
+          const rows = Math.ceil(orderedSessions.length / cols) || 1;
+          return { mode, sessions: buildGridLayout(cols, rows) };
+        }
+        case "splitHorizontal": {
+          const rows = 2;
+          const cols = Math.ceil(orderedSessions.length / rows) || 1;
+          return { mode, sessions: buildGridLayout(cols, rows) };
+        }
+        case "grid2":
+          return { mode, sessions: buildGridLayout(2, 1).slice(0, 2) };
+        case "grid4":
+          return { mode, sessions: buildGridLayout(2, 2).slice(0, 4) };
+        case "grid6":
+          return { mode, sessions: buildGridLayout(3, 2).slice(0, 6) };
+        case "sideBySide":
+          return { mode, sessions: buildGridLayout(2) };
+        case "mosaic": {
+          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
+          return { mode, sessions: buildGridLayout(cols) };
+        }
+        case "miniMosaic": {
+          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
+          return { mode, sessions: buildGridLayout(cols) };
+        }
+        default:
+          return { mode: "tabs", sessions: buildGridLayout(1, 1) };
+      }
+    },
+    [activeSessionId],
+  );
+
+  useEffect(() => {
+    setTabLayout((current) => {
+      const currentIds = new Set(
+        current.sessions.map((item) => item.sessionId),
+      );
+      const visibleIds = new Set(visibleSessions.map((session) => session.id));
+      const hasDiff =
+        current.sessions.some((item) => !visibleIds.has(item.sessionId)) ||
+        visibleSessions.some((session) => !currentIds.has(session.id));
+      if (!hasDiff) {
+        return current;
+      }
+      return buildTabLayout(current.mode, visibleSessions);
+    });
+  }, [visibleSessions, buildTabLayout]);
+
+  useEffect(() => {
+    if (
+      activeSessionId &&
+      !visibleSessions.some((session) => session.id === activeSessionId)
+    ) {
+      setActiveSessionId(visibleSessions[0]?.id);
+    }
+  }, [activeSessionId, visibleSessions, setActiveSessionId]);
+
+  const showAlert = useCallback((message: string) => {
+    setDialogState({
+      isOpen: true,
+      message,
+      onConfirm: () => setDialogState((prev) => ({ ...prev, isOpen: false })),
+    });
+  }, []);
+
+  /**
+   * Select a collection and load its data, handling common errors.
+   *
+   * @param collectionId - ID of the collection to select.
+   * @param password - Optional password for encrypted collections.
+   */
+  const handleCollectionSelect = useCallback(
+    async (collectionId: string, password?: string): Promise<void> => {
+      try {
+        await collectionManager.selectCollection(collectionId, password);
+        await loadData();
+        setShowCollectionSelector(false);
+        settingsManager.logAction(
+          "info",
+          "Collection selected",
+          undefined,
+          `Collection: ${collectionManager.getCurrentCollection()?.name}`,
+        );
+        
+        // Save the last opened collection ID for auto-open feature
+        const currentSettings = settingsManager.getSettings();
+        if (currentSettings.autoOpenLastCollection) {
+          await settingsManager.saveSettings({
+            ...currentSettings,
+            lastOpenedCollectionId: collectionId,
+          }, { silent: true });
+        }
+      } catch (error) {
+        console.error("Failed to select collection:", error);
+        if (error instanceof CollectionNotFoundError) {
+          showAlert("Collection not found");
+        } else if (error instanceof InvalidPasswordError) {
+          showAlert("Invalid or missing password");
+        } else {
+          showAlert("Failed to access collection. Please check your password.");
+        }
+      }
+    },
+    [
+      collectionManager,
+      loadData,
+      setShowCollectionSelector,
+      settingsManager,
+      showAlert,
+    ],
+  );
+
+  /** Open the connection editor to create a new connection. */
+  const handleNewConnection = (): void => {
+    const session = createToolSession('connectionEditor', { name: 'New Connection' });
+    dispatch({ type: 'ADD_SESSION', payload: session });
+    requestAnimationFrame(() => setActiveSessionId(session.id));
+  };
+
+  const handleEditConnection = (connection: Connection) => {
+    // Check if an editor tab for this connection already exists
+    const protocol = getToolProtocol('connectionEditor');
+    const existing = state.sessions.find(
+      s => s.protocol === protocol && s.connectionId === connection.id && !s.layout?.isDetached,
+    );
+    if (existing) {
+      setActiveSessionId(existing.id);
+      return;
+    }
+    const session = createToolSession('connectionEditor', {
+      connectionId: connection.id,
+      name: `Edit: ${connection.name}`,
+    });
+    dispatch({ type: 'ADD_SESSION', payload: session });
+    requestAnimationFrame(() => setActiveSessionId(session.id));
+  };
+
+  const handleDeleteConnection = (connection: Connection) => {
+    const settings = settingsManager.getSettings();
+    const confirmMessage =
+      connection.warnOnClose || settings.warnOnClose
+        ? t("dialogs.confirmDelete")
+        : null;
+
+    if (!confirmMessage) {
+      dispatch({ type: "DELETE_CONNECTION", payload: connection.id });
+      statusChecker.stopChecking(connection.id);
+      settingsManager.logAction(
+        "info",
+        "Connection deleted",
+        connection.id,
+        `Connection "${connection.name}" deleted`,
+        undefined,
+        connection.name,
+      );
+    } else {
+      showConfirm(confirmMessage, () => {
+        dispatch({ type: "DELETE_CONNECTION", payload: connection.id });
+        statusChecker.stopChecking(connection.id);
+        settingsManager.logAction(
+          "info",
+          "Connection deleted",
+          connection.id,
+          `Connection "${connection.name}" deleted`,
+          undefined,
+          connection.name,
+        );
+      });
+    }
+  };
+
+  const handleOpenSettings = useCallback(() => {
+    // Check if a settings tab already exists — reuse it
+    const existing = state.sessions.find(s => s.protocol === 'tool:settings');
+    if (existing) {
+      // If detached, focus the external window instead of the tab
+      if (existing.layout?.isDetached && existing.layout?.windowId) {
+        focusDetachedWindow(existing.layout.windowId);
+        return;
+      }
+      setActiveSessionId(existing.id);
+      return;
+    }
+    const settingsSession: ConnectionSession = {
+      id: generateId(),
+      connectionId: 'tool-settings',
+      name: 'Settings',
+      status: 'connected',
+      startTime: new Date(),
+      protocol: 'tool:settings',
+      hostname: '',
+    };
+    dispatch({ type: 'ADD_SESSION', payload: settingsSession });
+    setActiveSessionId(settingsSession.id);
+  }, [dispatch, setActiveSessionId, state.sessions, focusDetachedWindow]);
+
+  const handleDiagnostics = useCallback((connection: Connection) => {
+    // Open diagnostics as a dedicated tab instead of a popup dialog
+    const diagSession: ConnectionSession = {
+      id: generateId(),
+      connectionId: connection.id,
+      name: `Diagnostics — ${connection.name}`,
+      status: 'connected',
+      startTime: new Date(),
+      protocol: 'tool:diagnostics',
+      hostname: connection.hostname,
+    };
+    dispatch({ type: 'ADD_SESSION', payload: diagSession });
+    setActiveSessionId(diagSession.id);
+  }, [dispatch, setActiveSessionId]);
+
+  const handleDisconnectConnection = useCallback(
+    async (connection: Connection) => {
+      const session = state.sessions.find(
+        (item) => item.connectionId === connection.id,
+      );
+      if (!session) {
+        return;
+      }
+      await handleSessionClose(session.id);
+    },
+    [handleSessionClose, state.sessions],
+  );
+
+  // handleSessionDetach and handleReattachRdpSession are in useSessionDetach hook
+
+  /**
+   * Process a submitted password for unlocking or securing data storage.
+   *
+   * @param password - User provided password.
+   */
+  const handlePasswordSubmit = async (password: string): Promise<void> => {
+    try {
+      setPasswordError("");
+      SecureStorage.setPassword(password);
+
+      if (passwordDialogMode === "unlock") {
+        await loadData();
+      } else {
+        await saveData();
+      }
+
+      setShowPasswordDialog(false);
+      settingsManager.logAction(
+        "info",
+        "Storage unlocked",
+        undefined,
+        "Data storage unlocked successfully",
+      );
+    } catch (error) {
+      setPasswordError(
+        passwordDialogMode === "unlock"
+          ? t("dialogs.invalidPassword")
+          : "Failed to secure data",
+      );
+      SecureStorage.clearPassword();
+      settingsManager.logAction(
+        "error",
+        "Storage unlock failed",
+        undefined,
+        error instanceof Error ? error.message : "Unknown error",
+      );
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    if (passwordDialogMode === "setup") {
+      if (!collectionManager.getCurrentCollection()) {
+        showAlert("No collection selected.");
+        setShowPasswordDialog(false);
+        setPasswordError("");
+        return;
+      }
+      saveData().catch(console.error);
+    }
+    setShowPasswordDialog(false);
+    setPasswordError("");
+  };
+
+  const handleShowPasswordDialog = async () => {
+    if (await SecureStorage.isStorageEncrypted()) {
+      if (SecureStorage.isStorageUnlocked()) {
+        setPasswordDialogMode("setup");
+      } else {
+        setPasswordDialogMode("unlock");
+      }
+    } else {
+      setPasswordDialogMode("setup");
+    }
+    setShowPasswordDialog(true);
+  };
+
+  const showConfirm = (
+    message: string,
+    onConfirm: () => void,
+    onCancel?: () => void,
+  ) => {
+    setDialogState({
+      isOpen: true,
+      message,
+      onConfirm,
+      onCancel,
+    });
+  };
+
+  // isWindowPermissionError is in useWindowControls hook
+
+  const closeConfirmDialog = () => {
+    setDialogState((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const toggleSidebarPosition = () => {
+    setSidebarPosition((prev) => (prev === "left" ? "right" : "left"));
+  };
+
+  // Sidebar + RDP panel resize handlers are in useResizeHandlers hook
+
+  useEffect(() => {
+    let isMounted = true;
+    settingsManager
+      .loadSettings()
+      .then((settings) => {
+        if (isMounted) {
+          setAppSettings(settings);
+        }
+      })
+      .catch(console.error);
+
+    const handleSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<GlobalSettings>).detail;
+      if (detail) {
+        setAppSettings(detail);
+      }
+    };
+
+    window.addEventListener("settings-updated", handleSettingsUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("settings-updated", handleSettingsUpdated);
+    };
+  }, [settingsManager]);
+
+  const performCloudSync = useCallback(
+    async (provider?: CloudSyncProvider) => {
+      const currentConfig = appSettings.cloudSync ?? defaultCloudSyncConfig;
+      const enabledProviders = currentConfig.enabledProviders ?? [];
+
+      if (!currentConfig.enabled || enabledProviders.length === 0) {
+        return;
+      }
+
+      const targetProviders = provider
+        ? enabledProviders.includes(provider)
+          ? [provider]
+          : []
+        : enabledProviders;
+
+      if (targetProviders.length === 0) {
+        return;
+      }
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const nextProviderStatus: GlobalSettings["cloudSync"]["providerStatus"] = {
+        ...currentConfig.providerStatus,
+      };
+
+      targetProviders.forEach((target) => {
+        nextProviderStatus[target] = {
+          ...nextProviderStatus[target],
+          enabled: true,
+          lastSyncTime: nowSeconds,
+          lastSyncStatus: "success",
+          lastSyncError: undefined,
+        };
+      });
+
+      const updatedCloudSync: GlobalSettings["cloudSync"] = {
+        ...currentConfig,
+        providerStatus: nextProviderStatus,
+        lastSyncTime: nowSeconds,
+        lastSyncStatus: "success",
+        lastSyncError: undefined,
+      };
+
+      setAppSettings((prev) => ({ ...prev, cloudSync: updatedCloudSync }));
+      await settingsManager.saveSettings(
+        { cloudSync: updatedCloudSync },
+        { silent: true },
+      );
+    },
+    [appSettings, settingsManager],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    SecureStorage.isStorageEncrypted()
+      .then((encrypted) => {
+        if (isMounted) {
+          setHasStoragePassword(encrypted);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      isMounted = false;
+    };
+  }, [showPasswordDialog]);
+
+  useEffect(() => {
+    hasUnsavedWorkRef.current = true;
+    lastWorkAtRef.current = Date.now();
+  }, [state.connections, state.sessions]);
+
+  useEffect(() => {
+    if (!appSettings.autoSaveEnabled) return;
+    const intervalMs =
+      Math.max(1, appSettings.autoSaveIntervalMinutes || 1) * 60 * 1000;
+
+    const interval = setInterval(() => {
+      if (!hasUnsavedWorkRef.current) return;
+      const elapsed = Date.now() - lastWorkAtRef.current;
+      if (elapsed < intervalMs) return;
+      if (!collectionManager.getCurrentCollection()) return;
+
+      saveData()
+        .then(() => {
+          hasUnsavedWorkRef.current = false;
+        })
+        .catch(console.error);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [
+    appSettings.autoSaveEnabled,
+    appSettings.autoSaveIntervalMinutes,
+    collectionManager,
+    saveData,
+  ]);
+
+  useEffect(() => {
+    if (!appSettings) return;
+    const root = document.documentElement;
+
+    // Determine glow color: either from color scheme or custom setting
+    let glowColor = appSettings.backgroundGlowColor || "#2563eb";
+    if (appSettings.backgroundGlowFollowsColorScheme) {
+      // Read --color-primary from <body> where ThemeManager sets it
+      const computedPrimary = getComputedStyle(document.body).getPropertyValue("--color-primary").trim();
+      if (computedPrimary) {
+        glowColor = computedPrimary;
+      }
+    }
+
+    root.style.setProperty("--app-glow-color", glowColor);
+    root.style.setProperty(
+      "--app-glow-opacity",
+      `${appSettings.backgroundGlowOpacity ?? 0}`,
+    );
+    root.style.setProperty(
+      "--app-glow-radius",
+      `${appSettings.backgroundGlowRadius ?? 520}px`,
+    );
+    root.style.setProperty(
+      "--app-glow-blur",
+      `${appSettings.backgroundGlowBlur ?? 140}px`,
+    );
+  }, [
+    appSettings,
+    appSettings.backgroundGlowBlur,
+    appSettings.backgroundGlowColor,
+    appSettings.backgroundGlowFollowsColorScheme,
+    appSettings.backgroundGlowOpacity,
+    appSettings.backgroundGlowRadius,
+    appSettings.colorScheme,
+    appSettings.primaryAccentColor,
+    appSettings.useCustomAccent,
+  ]);
+
+  // Tooltip system is in useTooltipSystem hook
+
+  // Always-on-top check is in useWindowControls hook
+
+  useEffect(() => {
+    if (!isInitialized || launchArgsHandledRef.current) return;
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+
+    launchArgsHandledRef.current = true;
+    (async () => {
+      try {
+        const args = await invoke<{
+          collection_id?: string | null;
+          connection_id?: string | null;
+        }>("get_launch_args");
+
+        if (args.collection_id) {
+          await handleCollectionSelect(args.collection_id);
+        }
+
+        if (args.connection_id) {
+          setPendingLaunchConnectionId(args.connection_id);
+        }
+      } catch (error) {
+        console.error("Failed to read launch args:", error);
+      }
+    })();
+  }, [handleCollectionSelect, isInitialized]);
+
+  useEffect(() => {
+    if (!pendingLaunchConnectionId) return;
+    if (state.connections.length === 0) return;
+    const connection = state.connections.find(
+      (item) => item.id === pendingLaunchConnectionId,
+    );
+    if (connection) {
+      handleConnect(connection);
+    }
+    setPendingLaunchConnectionId(null);
+  }, [handleConnect, pendingLaunchConnectionId, state.connections]);
+
+  // Detached session events are in useDetachedSessionEvents hook
+  // Window theme/transparency effect is in useWindowTheme hook
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isTauri = Boolean(
+      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+    );
+    if (!isTauri) return;
+    const currentWindow = getCurrentWindow();
+    let isCancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    const performClose = async () => {
+      if (closingMainRef.current) return;
+      closingMainRef.current = true;
+      try {
+        const windows = await getAllWindows();
+        await Promise.all(
+          windows
+            .filter((win) => win.label !== currentWindow.label)
+            .map((win) => win.close().catch(() => undefined)),
+        );
+      } catch (error) {
+        console.error("Failed to close detached windows:", error);
+      }
+      currentWindow.close().catch(() => undefined);
+    };
+
+    currentWindow
+      .onCloseRequested(async (event) => {
+        // If we're already in the process of closing, allow it
+        if (closingMainRef.current) return;
+        
+        // If we're awaiting confirmation, don't re-trigger
+        if (awaitingCloseConfirmRef.current) {
+          event.preventDefault();
+          return;
+        }
+        
+        // Check if we should warn the user
+        const settings = settingsManager.getSettings();
+        const hasActiveSessions = state.sessions.length > 0;
+
+        if ((settings.warnOnClose || settings.warnOnExit) && hasActiveSessions) {
+          // Prevent close and show confirmation dialog
+          event.preventDefault();
+          awaitingCloseConfirmRef.current = true;
+          pendingCloseRef.current = performClose;
+          setDialogState({
+            isOpen: true,
+            message: t("dialogs.confirmExit", "You have active sessions. Are you sure you want to close?"),
+            onConfirm: () => {
+              awaitingCloseConfirmRef.current = false;
+              pendingCloseRef.current?.();
+              pendingCloseRef.current = null;
+            },
+            onCancel: () => {
+              awaitingCloseConfirmRef.current = false;
+              pendingCloseRef.current = null;
+            },
+          });
+        } else {
+          // No warning needed - close detached windows first, then allow close
+          await performClose();
+        }
+      })
+      .then((stop) => {
+        if (isCancelled) {
+          try { stop(); } catch { /* ignore */ }
+        } else {
+          unlisten = stop;
+        }
+      })
+      .catch(console.error);
+
+    return () => {
+      isCancelled = true;
+      try { unlisten?.(); } catch { /* ignore */ }
+    };
+  }, [settingsManager, state.sessions.length, t]);
+
+  // Convert native title attributes to data-tooltip for the styled tooltip
+  // system. Uses a MutationObserver so dynamically-added elements (e.g. RDP
+  // session toolbar buttons) are picked up automatically.
+  useEffect(() => {
+    const convert = (root: ParentNode) => {
+      root.querySelectorAll<HTMLElement>("[title]").forEach((el) => {
+        if (el.dataset.tooltip) return;
+        const title = el.getAttribute("title");
+        if (!title) return;
+        el.setAttribute("data-tooltip", title);
+        el.removeAttribute("title");
+      });
+    };
+
+    // Initial pass
+    convert(document);
+
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === "attributes" && m.attributeName === "title") {
+          const el = m.target as HTMLElement;
+          if (el.dataset.tooltip) continue;
+          const title = el.getAttribute("title");
+          if (!title) continue;
+          el.setAttribute("data-tooltip", title);
+          el.removeAttribute("title");
+        }
+        if (m.type === "childList") {
+          for (const node of m.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const el = node as HTMLElement;
+              if (el.hasAttribute("title")) {
+                const title = el.getAttribute("title")!;
+                if (!el.dataset.tooltip) {
+                  el.setAttribute("data-tooltip", title);
+                  el.removeAttribute("title");
+                }
+              }
+              convert(el);
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["title"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Window/sidebar persistence is in useWindowPersistence hook
+  // Window control handlers are in useWindowControls hook
+
+  const renderSidebar = (position: "left" | "right") => {
+    if (sidebarPosition !== position) return null;
+    const resizerEdge = position === "left" ? "right-0" : "left-0";
+
+    return (
+      <div
+        className="relative flex-shrink-0 z-10"
+        style={{ width: state.sidebarCollapsed ? "48px" : `${sidebarWidth}px` }}
+      >
+        <Sidebar
+          sidebarPosition={sidebarPosition}
+          onToggleSidebarPosition={toggleSidebarPosition}
+          onNewConnection={handleNewConnection}
+          onEditConnection={handleEditConnection}
+          onDeleteConnection={handleDeleteConnection}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnectConnection}
+          onDiagnostics={handleDiagnostics}
+          onSessionDetach={handleSessionDetach}
+          onActivateSession={setActiveSessionId}
+          onShowPasswordDialog={handleShowPasswordDialog}
+          enableConnectionReorder={appSettings.enableConnectionReorder}
+          onOpenImport={() => {
+            setImportExportInitialTab('import');
+            setShowImportExport(true);
+          }}
+          noCollection={!collectionManager.getCurrentCollection()}
+        />
+        {!state.sidebarCollapsed && (
+          <div
+            className={`absolute top-0 ${resizerEdge} w-1 h-full cursor-col-resize hover:w-1.5 bg-[var(--color-border)]/30 hover:bg-primary/60 transition-all duration-150`}
+            onMouseDown={handleMouseDown}
+          />
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      data-testid="app-shell"
+      className={`h-full text-[var(--color-text)] flex flex-col overflow-hidden app-shell ${
+        appSettings.backgroundGlowEnabled ? "app-glow" : ""
+      } ${
+        appSettings.windowTransparencyEnabled
+          ? "app-transparent bg-transparent"
+          : "bg-background"
+      } ${!appSettings.animationsEnabled ? "animations-disabled" : ""} ${
+        appSettings.reduceMotion ? "reduce-motion" : ""
+      }`}
+      style={
+        {
+          "--animation-duration": `${appSettings.animationDuration || 200}ms`,
+        } as React.CSSProperties
+      }
+    >
+      {/* Critical Error BSOD */}
+      {criticalError && (
+        <CriticalErrorScreen
+          title={criticalError.title}
+          detail={criticalError.detail}
+        />
+      )}
+      {/* Splash Screen */}
+      {!criticalError && showSplash && (
+        <SplashScreen
+          isLoading={!isInitialized}
+          progress={initProgress}
+          status={initStatus}
+          onLoadComplete={() => setShowSplash(false)}
+        />
+      )}
+      <AppToolbar
+        appSettings={appSettings}
+        isAlwaysOnTop={isAlwaysOnTop}
+        rdpPanelOpen={false}
+        showErrorLog={showErrorLog}
+        collectionManager={collectionManager}
+        connections={state.connections}
+        setShowQuickConnect={setShowQuickConnect}
+        setShowCollectionSelector={setShowCollectionSelector}
+        setShowSettings={handleOpenSettings}
+        setRdpPanelOpen={toolShowSetters.current.rdpSessions}
+        setShowInternalProxyManager={toolShowSetters.current.internalProxy}
+        setShowProxyMenu={toolShowSetters.current.proxyChain}
+        setShowShortcutManager={toolShowSetters.current.shortcutManager}
+        setShowWol={toolShowSetters.current.wol}
+        setShowBulkSSH={toolShowSetters.current.bulkSsh}
+        setShowServerStats={toolShowSetters.current.serverStats}
+        setShowOpkssh={toolShowSetters.current.opkssh}
+        setShowMcpServer={toolShowSetters.current.mcpServer}
+        setShowScriptManager={toolShowSetters.current.scriptManager}
+        setShowMacroManager={toolShowSetters.current.macroManager}
+        setShowRecordingManager={toolShowSetters.current.recordingManager}
+        setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
+        setShowActionLog={toolShowSetters.current.actionLog}
+        setShowErrorLog={setShowErrorLog}
+        handleToggleTransparency={handleToggleTransparency}
+        handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+        handleRepatriateWindow={handleRepatriateWindow}
+        handleMinimize={handleMinimize}
+        handleMaximize={handleMaximize}
+        handleClose={handleClose}
+        handleOpenDevtools={handleOpenDevtools}
+        handleShowPasswordDialog={handleShowPasswordDialog}
+        performCloudSync={performCloudSync}
+        setShowDebugPanel={setShowDebugPanel}
+        setShowTagManager={toolShowSetters.current.tagManager}
+        setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
+      />
+
+      <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
+        {renderSidebar("left")}
+
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <SessionTabs
+            activeSessionId={activeSessionId}
+            onSessionSelect={setActiveSessionId}
+            onSessionClose={handleSessionClose}
+            onSessionDetach={handleSessionDetach}
+            enableReorder={appSettings.enableTabReorder}
+            middleClickCloseTab={appSettings.middleClickCloseTab}
+          />
+
+          {/* Session viewer */}
+          <div
+            className="flex-1 overflow-hidden"
+            id="session-main-panel"
+            role="tabpanel"
+            aria-labelledby={activeSessionId ? `session-tab-${activeSessionId}` : undefined}
+          >
+            {visibleSessions.length > 0 ? (
+              <TabLayoutManager
+                sessions={visibleSessions}
+                activeSessionId={activeSessionId}
+                layout={tabLayout}
+                onLayoutChange={setTabLayout}
+                onSessionSelect={setActiveSessionId}
+                onSessionClose={handleSessionClose}
+                onSessionDetach={handleSessionDetach}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} />}
+                showTabBar={false}
+                middleClickCloseTab={appSettings.middleClickCloseTab}
+              />
+            ) : (
+              <div data-testid="welcome-screen" className="welcome-screen h-full flex flex-col items-center justify-center text-[var(--color-textSecondary)] relative overflow-hidden">
+                {/* Accent background glow */}
+                <div className="welcome-glow pointer-events-none absolute inset-0" />
+                {!appSettings.hideQuickStartMessage && (
+                  <>
+                    <Monitor size={64} className="mb-4 text-primary relative z-10" />
+                    <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
+                      {appSettings.welcomeScreenTitle || `Welcome to ${t("app.title")}`}
+                    </h2>
+                    <p className="text-center max-w-md mb-6 whitespace-pre-wrap text-[var(--color-textMuted)] relative z-10">
+                      {appSettings.welcomeScreenMessage ||
+                        `Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.`}
+                    </p>
+                  </>
+                )}
+                {!appSettings.hideQuickStartButtons && (
+                  <div className="flex space-x-4 relative z-10">
+                    <button
+                      onClick={handleNewConnection}
+                      className="sor-btn sor-btn-primary flex items-center space-x-2"
+                    >
+                      <Plus size={16} />
+                      <span>{t("connections.new")} Connection</span>
+                    </button>
+                    <button
+                      onClick={() => setShowQuickConnect(true)}
+                      className="sor-btn sor-btn-ghost flex items-center space-x-2"
+                    >
+                      <Zap size={16} />
+                      <span>{t("connections.quickConnect")}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {renderSidebar("right")}
+      </div>
+
+      <AppStatusBar
+        connections={state.connections}
+        sessions={state.sessions}
+        collectionManager={collectionManager}
+        isInitialized={isInitialized}
+      />
+
+      <AppDialogs
+        appSettings={appSettings}
+        showCollectionSelector={showCollectionSelector}
+        showQuickConnect={showQuickConnect}
+        showPasswordDialog={showPasswordDialog}
+        showSettings={showSettings}
+        showImportExport={showImportExport}
+        showDiagnostics={showDiagnostics}
+        showErrorLog={showErrorLog}
+        setShowCollectionSelector={setShowCollectionSelector}
+        setShowQuickConnect={setShowQuickConnect}
+        setShowSettings={handleOpenSettings}
+        setShowImportExport={setShowImportExport}
+        setShowDiagnostics={setShowDiagnostics}
+        setShowErrorLog={setShowErrorLog}
+        passwordDialogMode={passwordDialogMode}
+        passwordError={passwordError}
+        importExportInitialTab={importExportInitialTab}
+        diagnosticsConnection={diagnosticsConnection}
+        setDiagnosticsConnection={setDiagnosticsConnection}
+        hasStoragePassword={hasStoragePassword}
+        dialogState={dialogState}
+        closeConfirmDialog={closeConfirmDialog}
+        confirmDialog={confirmDialog}
+        handlePasswordSubmit={handlePasswordSubmit}
+        handlePasswordCancel={handlePasswordCancel}
+        handleQuickConnectWithHistory={handleQuickConnectWithHistory}
+        clearQuickConnectHistory={clearQuickConnectHistory}
+        handleCollectionSelect={handleCollectionSelect}
+        handleConnect={handleConnect}
+        settingsManager={settingsManager}
+        collectionManager={collectionManager}
+      />
+
+      <DebugPanel
+        isOpen={showDebugPanel}
+        onClose={() => setShowDebugPanel(false)}
+        dispatch={dispatch}
+        setActiveSessionId={setActiveSessionId}
+        sessions={state.sessions}
+        handleOpenDevtools={handleOpenDevtools}
+      />
+
+    </div>
+  );
+};
+
+const App: React.FC = () => (
+  <ToastProvider>
+    <SettingsProvider>
+      <ConnectionProvider>
+        <ErrorBoundary>
+          <AppContent />
+        </ErrorBoundary>
+      </ConnectionProvider>
+    </SettingsProvider>
+  </ToastProvider>
+);
+
+export default App;

@@ -1,0 +1,36 @@
+{
+  "hosts": [
+    {
+      "label": "Cloud Server Alpha",
+      "address": "cloud-alpha.example.com",
+      "port": 22,
+      "ssh_config": {
+        "username": "ubuntu",
+        "use_ssh_key": true
+      }
+    },
+    {
+      "label": "Docker Host",
+      "address": "docker.example.com",
+      "port": 2222,
+      "ssh_config": {
+        "username": "dockeradmin",
+        "use_ssh_key": false
+      }
+    },
+    {
+      "label": "Bastion Host",
+      "address": "bastion.example.com",
+      "port": 22,
+      "ssh_config": {
+        "username": "jumpuser",
+        "use_ssh_key": true
+      }
+    }
+  ],
+  "groups": [
+    {
+      "label": "Cloud Servers"
+    }
+  ]
+}

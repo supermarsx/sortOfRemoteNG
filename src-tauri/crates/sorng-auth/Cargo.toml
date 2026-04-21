@@ -1,0 +1,63 @@
+[package]
+name = "sorng-auth"
+version = "0.1.0"
+edition = "2021"
+description = "Authentication, security, and credential management"
+
+[features]
+default = []
+cert-auth = ["dep:x509-parser"]
+# Enable native macOS LocalAuthentication / Keychain-backed biometric unlock
+# of the secret store. No-op on non-macOS hosts.
+platform-macos-biometrics = ["dep:security-framework"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+bcrypt = "0.15"
+argon2 = "0.5"
+jsonwebtoken = "9"
+totp-rs = "5.4"
+aes-gcm = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+rustls-pemfile = "1.0"
+qrcode = "0.14"
+png = "0.17"
+reqwest = { workspace = true, features = ["cookies", "blocking"] }
+oauth2 = { version = "5.0", default-features = false }
+url = { workspace = true }
+sha2 = { workspace = true }
+regex = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+data-encoding = "2.5"
+hex = { workspace = true }
+x509-parser = { version = "0.15", optional = true }
+pbkdf2 = { workspace = true }
+hmac = { workspace = true }
+serde_urlencoded = "0.7"
+hostname = "0.3"
+sorng-biometrics = { path = "../sorng-biometrics" }
+sorng-notifications = { path = "../sorng-notifications" }
+rcgen = { version = "0.12", features = ["pem"] }
+time = "0.3"
+pkcs8 = { version = "0.10", features = ["pem", "encryption", "std"] }
+rsa = { version = "0.9", features = ["pem"] }
+p256 = { version = "0.13", features = ["pem", "ecdsa"] }
+p384 = { version = "0.13", features = ["pem", "ecdsa"] }
+ed25519-dalek = { version = "2", features = ["pem", "pkcs8"] }
+pem = "3.0"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+md-5 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Registry"] }
+
+# macOS-only optional dependency for biometric-gated Keychain access.
+# Pulled in only when the `platform-macos-biometrics` feature is enabled.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", optional = true }

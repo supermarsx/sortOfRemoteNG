@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VanDyke>
+  <Sessions>
+    <Session Name="Production/WebServer">
+      <S:"Protocol Name">SSH2</S:"Protocol Name">
+      <S:"Hostname">web.prod.example.com</S:"Hostname">
+      <D:"[SSH2] Port">22</D:"[SSH2] Port">
+      <S:"Username">webadmin</S:"Username">
+    </Session>
+    <Session Name="Production/Database">
+      <S:"Protocol Name">SSH2</S:"Protocol Name">
+      <S:"Hostname">db.prod.example.com</S:"Hostname">
+      <D:"[SSH2] Port">5432</D:"[SSH2] Port">
+      <S:"Username">postgres</S:"Username">
+    </Session>
+    <Session Name="Legacy/Telnet Gateway">
+      <S:"Protocol Name">Telnet</S:"Protocol Name">
+      <S:"Hostname">gateway.legacy.example.com</S:"Hostname">
+      <D:"Port">23</D:"Port">
+    </Session>
+  </Sessions>
+</VanDyke>

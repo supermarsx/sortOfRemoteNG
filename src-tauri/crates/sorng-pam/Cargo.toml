@@ -1,0 +1,18 @@
+[package]
+name = "sorng-pam"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "PAM authentication module management for SortOfRemoteNG — PAM service configuration, module management, stack editing, limits.conf management, access control, namespace configuration, password quality rules, and login.defs management."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }

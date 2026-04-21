@@ -1,0 +1,20 @@
+[package]
+name = "sorng-netbird"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Extensive NetBird integration for SortOfRemoteNG — daemon management, peer-to-peer WireGuard mesh, management API, routes, DNS, ACLs, relay (TURN/STUN), setup keys, groups, rules, posture checks, and network diagnostics."
+publish = false
+
+[dependencies]
+sorng-dns = { path = "../sorng-dns" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }

@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+; SortOfRemoteNG GPO defaults (Local Machine)
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\SortOfRemoteNG\Security]
+"AutoLockEnabled"=dword:00000001
+"AutoLockTimeout"=dword:0000001e
+"RequirePassword"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\SortOfRemoteNG\Limits]
+"MaxConnections"=dword:0000000a
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\SortOfRemoteNG\Access]
+"AllowedProtocols"="ssh,rdp,vnc"

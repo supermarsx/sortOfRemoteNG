@@ -1,0 +1,14 @@
+pub mod backups;
+pub mod client;
+pub mod images;
+pub mod instances;
+pub mod migration;
+pub mod networks;
+pub mod operations;
+pub mod profiles;
+pub mod projects;
+pub mod server;
+pub mod service;
+pub mod snapshots;
+pub mod storage;
+pub mod types;

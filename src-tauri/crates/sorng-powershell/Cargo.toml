@@ -1,0 +1,33 @@
+[package]
+name = "sorng-powershell"
+version = "0.1.0"
+edition = "2021"
+description = "PowerShell Remoting (WinRM, PSSession, CIM, DSC, JEA) services"
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["cookies", "blocking"] }
+base64 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+md-5 = "0.10"
+quick-xml = { version = "0.31", features = ["serialize"] }
+url = { workspace = true }
+lazy_static = { workspace = true }
+regex = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+
+# sspi-rs for CredSSP / Negotiate / NTLM / Kerberos.
+# Default features pull in aws-lc-rs which installs the rustls default
+# crypto provider globally — disable defaults since sorng-app installs
+# the ring provider.  We only need base SSPI + Kerberos builder types.
+sspi = { version = "0.18", default-features = false }

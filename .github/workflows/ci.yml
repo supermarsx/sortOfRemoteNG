@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run format
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test -- --run --coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: Report coverage
+        run: >-
+          node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync('coverage/coverage-final.json','utf8'));let total=0,covered=0;for(const f of Object.values(data)){total+=Object.keys(f.statementMap).length;for(const k in f.s){if(f.s[k])covered++;}}const pct=(covered/total*100).toFixed(2);console.log('Coverage: '+pct+'%');"
+
+  # ── Rust workspace check ───────────────────────────────────────────
+  # Kafka is off by default. On Windows we exclude `sorng-kafka` entirely
+  # because the rdkafka-sys cmake build fails under MSYS64 (see
+  # `src-tauri/crates/sorng-kafka/README.md`). On Linux we additionally
+  # run with `--features kafka` to cover the Kafka surface area.
+  rust-check-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install librdkafka build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo check (default features — no Kafka)
+        run: cargo check --workspace --exclude sorng-kafka
+      - name: cargo check (--features kafka — static librdkafka build)
+        run: cargo check -p app --features kafka
+  # MSVC host is REQUIRED on Windows — the GNU host triggers "export ordinal
+  # too large" link errors in large crate chains (rdkafka-sys, ironrdp-*,
+  # sspi-rs). `windows-latest` runners default to the MSVC host, but we pin
+  # it explicitly so a future runner-image change or a contributor's
+  # `rustup default stable-x86_64-pc-windows-gnu` on a self-hosted runner
+  # cannot silently regress us. See `rust-toolchain.toml` and
+  # `README.md` Toolchain section.
+  rust-check-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin MSVC host toolchain (explicit)
+        shell: pwsh
+        run: rustup set default-host x86_64-pc-windows-msvc
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - name: Verify MSVC host active
+        shell: pwsh
+        run: |
+          rustc -vV
+          rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo check (default — Kafka excluded; MSYS64 cmake issue, see crate README)
+        run: cargo check --workspace --exclude sorng-kafka
+
+  # ── t3-e2: feature-flag cleanup + -D warnings gate (R4) ────────────
+  # The two jobs below are owned by executor t3-e2 and are DISJOINT
+  # from t3-e1's windows-check job above. They are currently allowed
+  # to fail (continue-on-error) while P2 cleanup executors (F5 vpn
+  # warnings, t3-e9..e14 todo!-cleanup) land; the goal is to make them
+  # blocking once the workspace is clean. Remove continue-on-error
+  # when the Acceptance rows for t3-e2 flip to green locally.
+  rust-check-all-features-linux:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install librdkafka build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev librdkafka-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo check (--workspace --all-features --exclude sorng-kafka)
+        run: cargo check --workspace --all-features --exclude sorng-kafka
+
+  rust-lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: src-tauri
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install librdkafka build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev librdkafka-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo clippy (--workspace --all-targets --all-features -D warnings)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings

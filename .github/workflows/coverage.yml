@@ -1,0 +1,72 @@
+name: Backend Coverage
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Backend (Rust) coverage gate for the sorng workspace.
+#
+# RATCHET: raise to 60% for 1.1 — target 2026-08-01
+# The initial 1.0 gate is pinned at 40% (see plan t3-e33, Q4). When the 1.1
+# milestone approaches, bump THRESHOLD below to 60 and update this comment.
+# Kafka is excluded to stay consistent with `ci.yml` (rdkafka-sys/cmake on
+# Windows; feature-gated elsewhere). See src-tauri/crates/sorng-kafka/README.md.
+
+jobs:
+  backend-coverage:
+    name: cargo-llvm-cov (workspace, kafka excluded)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    env:
+      THRESHOLD: "40"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install librdkafka build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate lcov coverage report
+        run: cargo llvm-cov --workspace --exclude sorng-kafka --lcov --output-path coverage.lcov
+
+      - name: Upload lcov artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-lcov
+          path: src-tauri/coverage.lcov
+
+      - name: Enforce coverage threshold (RATCHET — raise to 60% for 1.1, target 2026-08-01)
+        run: |
+          set -euo pipefail
+          LCOV="coverage.lcov"
+          if [ ! -f "$LCOV" ]; then
+            echo "coverage.lcov not found" >&2
+            exit 1
+          fi
+          # Aggregate LH (lines hit) / LF (lines found) across all records.
+          PCT=$(awk -F: '
+            /^LH:/ { hit += $2 }
+            /^LF:/ { found += $2 }
+            END {
+              if (found == 0) { print "0.00"; exit }
+              printf "%.2f", (hit / found) * 100
+            }
+          ' "$LCOV")
+          echo "Backend line coverage: ${PCT}%"
+          echo "Threshold:             ${THRESHOLD}%"
+          awk -v p="$PCT" -v t="$THRESHOLD" 'BEGIN { exit !(p + 0 >= t + 0) }' \
+            || { echo "::error::Backend coverage ${PCT}% is below threshold ${THRESHOLD}%"; exit 1; }

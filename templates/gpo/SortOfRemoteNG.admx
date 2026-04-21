@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitions revision="1.0" schemaVersion="1.0"
+  xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <policyNamespaces>
+    <target namespace="SortOfRemoteNG.Policies" prefix="sorng" />
+    <using namespace="Microsoft.Policies.Windows" prefix="windows" />
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0" />
+  <categories>
+    <category name="SortOfRemoteNG" displayName="$(string.CategorySortOfRemoteNG)" />
+    <category name="Security" displayName="$(string.CategorySecurity)" parentCategory="SortOfRemoteNG" />
+    <category name="Limits" displayName="$(string.CategoryLimits)" parentCategory="SortOfRemoteNG" />
+    <category name="Access" displayName="$(string.CategoryAccess)" parentCategory="SortOfRemoteNG" />
+  </categories>
+  <policies>
+    <policy name="AutoLockEnabled" class="Both" displayName="$(string.AutoLockEnabled)"
+      explainText="$(string.AutoLockEnabled_Explain)"
+      key="SOFTWARE\Policies\SortOfRemoteNG\Security" valueName="AutoLockEnabled"
+      presentation="AutoLockEnabled">
+      <elements>
+        <boolean id="AutoLockEnabledValue" valueName="AutoLockEnabled">
+          <trueValue>
+            <decimal value="1" />
+          </trueValue>
+          <falseValue>
+            <decimal value="0" />
+          </falseValue>
+        </boolean>
+      </elements>
+    </policy>
+    <policy name="AutoLockTimeout" class="Both" displayName="$(string.AutoLockTimeout)"
+      explainText="$(string.AutoLockTimeout_Explain)"
+      key="SOFTWARE\Policies\SortOfRemoteNG\Security" valueName="AutoLockTimeout"
+      presentation="AutoLockTimeout">
+      <elements>
+        <decimal id="AutoLockTimeoutValue" valueName="AutoLockTimeout" minValue="1" maxValue="1440" required="true" />
+      </elements>
+    </policy>
+    <policy name="RequirePassword" class="Both" displayName="$(string.RequirePassword)"
+      explainText="$(string.RequirePassword_Explain)"
+      key="SOFTWARE\Policies\SortOfRemoteNG\Security" valueName="RequirePassword"
+      presentation="RequirePassword">
+      <elements>
+        <boolean id="RequirePasswordValue" valueName="RequirePassword">
+          <trueValue>
+            <decimal value="1" />
+          </trueValue>
+          <falseValue>
+            <decimal value="0" />
+          </falseValue>
+        </boolean>
+      </elements>
+    </policy>
+    <policy name="MaxConnections" class="Both" displayName="$(string.MaxConnections)"
+      explainText="$(string.MaxConnections_Explain)"
+      key="SOFTWARE\Policies\SortOfRemoteNG\Limits" valueName="MaxConnections"
+      presentation="MaxConnections">
+      <elements>
+        <decimal id="MaxConnectionsValue" valueName="MaxConnections" minValue="1" maxValue="1000" required="true" />
+      </elements>
+    </policy>
+    <policy name="AllowedProtocols" class="Both" displayName="$(string.AllowedProtocols)"
+      explainText="$(string.AllowedProtocols_Explain)"
+      key="SOFTWARE\Policies\SortOfRemoteNG\Access" valueName="AllowedProtocols"
+      presentation="AllowedProtocols">
+      <elements>
+        <text id="AllowedProtocolsValue" valueName="AllowedProtocols" required="true" />
+      </elements>
+    </policy>
+  </policies>
+</policyDefinitions>

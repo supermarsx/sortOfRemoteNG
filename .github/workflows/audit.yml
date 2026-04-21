@@ -1,0 +1,75 @@
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+  schedule:
+    # Weekly on Monday 04:17 UTC.
+    - cron: '17 4 * * 1'
+
+jobs:
+  # ── Rust advisory scan (RustSec DB), gated at high+ severity ────────
+  # The `rustsec/audit-check` action itself has no severity threshold
+  # input (only `token`, `ignore`, `working-directory`), so we install
+  # cargo-audit directly and filter the JSON output on severity.
+  # See t3-e31 acceptance criterion (fail on high+ only).
+  cargo-audit:
+    name: cargo audit (high+)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install cargo-audit + jq
+        run: |
+          cargo install --locked cargo-audit || true
+          which jq
+      - name: cargo audit (JSON; fail only on high+ severity)
+        shell: bash
+        run: |
+          # cargo-audit exits non-zero on ANY advisory; we post-process
+          # the JSON via scripts/ci/audit_filter.py and fail only on
+          # CVSS v3 base-score >= 7.0 (NVD "High"/"Critical"). Non-CVSS
+          # advisories (unmaintained / unsound) are reported but do
+          # not fail the job.
+          cargo audit --json > audit.json || true
+          python3 ../scripts/ci/audit_filter.py audit.json
+
+  # ── cargo-deny: license / bans / sources (advisories handled above) ─
+  # `cargo-deny` has no severity-threshold in its v2 schema, so we scope
+  # this job to licenses/bans/sources and let the cargo-audit job above
+  # own the advisory gate. Config: src-tauri/deny.toml.
+  cargo-deny:
+    name: cargo deny (licenses+bans+sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command: check
+          # Skip advisories here — cargo-audit job owns severity-gated
+          # advisory enforcement. deny.toml still configures the section
+          # so local `cargo deny check` runs remain useful.
+          arguments: --all-features bans licenses sources
+
+  # ── npm audit (frontend dep graph), gated at high+ severity ─────────
+  npm-audit:
+    name: npm audit (high+)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      - name: npm audit --audit-level=high
+        run: npm audit --audit-level=high

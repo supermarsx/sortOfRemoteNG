@@ -1,0 +1,13 @@
+[package]
+name = "sorng-core"
+version = "0.1.0"
+edition = "2021"
+description = "Shared types and diagnostics infrastructure"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

@@ -1,0 +1,7 @@
+[package]
+name = "sorng-app-auth"
+version = "0.1.0"
+edition = "2021"
+description = "Tauri command adapters for app-level auth administration"
+
+[dependencies]

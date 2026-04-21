@@ -1,0 +1,13 @@
+[package]
+name = "sorng-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "Native MCP (Model Context Protocol) server for SortOfRemote NG — exposes connection management, SSH operations, file transfers, network utilities, and system diagnostics as MCP tools, resources, and prompts for AI assistant integration."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }

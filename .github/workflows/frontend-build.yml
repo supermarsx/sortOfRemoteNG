@@ -1,0 +1,47 @@
+name: Frontend Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  # ── Next.js 16 production build (Turbopack-stable) ────────────────────
+  # Verifies `next build` succeeds end-to-end with the Next.js 16 /
+  # Turbopack-stable toolchain and produces a static export (the app uses
+  # `output: 'export'` for Tauri packaging). Fails the job on any build
+  # error so SSR / Turbopack chunking regressions are caught in CI.
+  #
+  # This job is intentionally kept in its own workflow file to avoid
+  # contention on .github/workflows/ci.yml with the rust-check /
+  # lint / test jobs maintained by other executors.
+  frontend-prod-build:
+    name: frontend-prod-build (next build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: next build (production, turbopack-stable)
+        run: npm run build
+        env:
+          # Surface any build warnings as errors in CI output; Next.js 16
+          # still writes build diagnostics to stderr on failure so a
+          # non-zero exit is sufficient for fail-on-error semantics.
+          NEXT_TELEMETRY_DISABLED: '1'
+          CI: 'true'
+      - name: Upload build output (debug on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build-output
+          path: |
+            .next
+            out
+          if-no-files-found: ignore
+          retention-days: 3

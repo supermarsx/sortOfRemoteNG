@@ -1,0 +1,319 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.2.3)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Build + (optionally) sign platform bundles in a matrix.
+  # Each target tolerates missing signing secrets and falls back to UNSIGNED.
+  # --------------------------------------------------------------------------
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+            bundles: 'appimage,deb'
+          - os: macos-14
+            target: macos
+            bundles: 'dmg,app'
+          - os: windows-2022
+            target: windows
+            bundles: 'msi,nsis'
+    runs-on: ${{ matrix.os }}
+    outputs:
+      version: ${{ steps.resolve_version.outputs.version }}
+    env:
+      # Tauri updater signing (graceful: absent => plain bundles, no .sig)
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve version from tag
+        id: resolve_version
+        shell: bash
+        run: |
+          RAW="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${RAW#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${VERSION}"
+
+      - name: Install Node toolchain
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux system deps
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libayatana-appindicator3-dev
+
+      - name: Install JS deps
+        run: npm ci
+
+      # ----------------------------------------------------------------------
+      # macOS: Developer ID cert import (graceful degrade)
+      # ----------------------------------------------------------------------
+      - name: Check macOS signing secrets
+        id: check_macos_signing
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_CERT_P12_BASE64 }}" ] \
+             && [ -n "${{ secrets.APPLE_CERT_PASSWORD }}" ] \
+             && [ -n "${{ secrets.APPLE_ID }}" ] \
+             && [ -n "${{ secrets.APPLE_PASSWORD }}" ] \
+             && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "macOS signing: ENABLED"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::macOS signing secrets missing — producing UNSIGNED .dmg/.app (skipping codesign + notarytool)."
+          fi
+
+      - name: Import Apple Developer ID certificate
+        if: matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true'
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          CERT_PATH="$RUNNER_TEMP/apple_cert.p12"
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          rm -f "$CERT_PATH"
+
+      # ----------------------------------------------------------------------
+      # Windows: EV code-signing via thumbprint (graceful degrade)
+      # signtool is available in windows-2022 image (Windows SDK).
+      # ----------------------------------------------------------------------
+      - name: Check Windows signing secrets
+        id: check_windows_signing
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.WINDOWS_CERT_THUMBPRINT }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Windows signing: ENABLED (thumbprint provided)"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WINDOWS_CERT_THUMBPRINT missing — producing UNSIGNED .msi/.exe (skipping signtool)."
+          fi
+
+      # ----------------------------------------------------------------------
+      # Build bundles with tauri-action. For macOS, tauri-action itself
+      # invokes codesign + notarytool when APPLE_* env vars are set.
+      # ----------------------------------------------------------------------
+      - name: Build Tauri bundles
+        id: tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing / notarization (only populated when enabled)
+          APPLE_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}
+        with:
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: 'sortOfRemoteNG ${{ steps.resolve_version.outputs.version }}'
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          args: --bundles ${{ matrix.bundles }}
+
+      # ----------------------------------------------------------------------
+      # Windows: sign .msi/.exe post-bundle via signtool + EV thumbprint.
+      # ----------------------------------------------------------------------
+      - name: Sign Windows artifacts (signtool + EV cert)
+        if: matrix.target == 'windows' && steps.check_windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
+        run: |
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          Write-Host "Using signtool: $signtool"
+          $bundleDir = "src-tauri/target/release/bundle"
+          Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe | ForEach-Object {
+            Write-Host "Signing $($_.FullName)"
+            & $signtool sign /sha1 $env:WINDOWS_CERT_THUMBPRINT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($_.FullName)" }
+          }
+
+      # ----------------------------------------------------------------------
+      # Collect artifacts for latest.json feed generation job.
+      # ----------------------------------------------------------------------
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          case "${{ matrix.target }}" in
+            linux)
+              find src-tauri/target/release/bundle/appimage -type f \( -name "*.AppImage" -o -name "*.AppImage.sig" \) -exec cp {} artifacts/ \; || true
+              find src-tauri/target/release/bundle/deb -type f -name "*.deb" -exec cp {} artifacts/ \; || true
+              ;;
+            macos)
+              find src-tauri/target/release/bundle/dmg -type f \( -name "*.dmg" -o -name "*.dmg.sig" \) -exec cp {} artifacts/ \; || true
+              find src-tauri/target/release/bundle/macos -type f -name "*.app.tar.gz*" -exec cp {} artifacts/ \; || true
+              ;;
+            windows)
+              find src-tauri/target/release/bundle/msi -type f \( -name "*.msi" -o -name "*.msi.sig" \) -exec cp {} artifacts/ \; || true
+              find src-tauri/target/release/bundle/nsis -type f \( -name "*.exe" -o -name "*.exe.sig" \) -exec cp {} artifacts/ \; || true
+              ;;
+          esac
+          ls -la artifacts/ || true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Aggregate artifacts, build latest.json feed, attach to GitHub Release.
+  # --------------------------------------------------------------------------
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all bundle artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: bundle-*
+          merge-multiple: true
+
+      - name: Resolve version + release URL base
+        id: meta
+        shell: bash
+        run: |
+          RAW="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${RAW#v}"
+          TAG="${RAW}"
+          REPO="${{ github.repository }}"
+          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "pub_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # Build latest.json in the Tauri updater shape:
+      #   { version, pub_date, notes, platforms: { "<target>": { signature, url } } }
+      # Signature is read from each bundle's companion .sig (if present).
+      # Missing .sig => empty string (updater will reject, but feed is valid).
+      # ----------------------------------------------------------------------
+      - name: Generate latest.json
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          PUB_DATE: ${{ steps.meta.outputs.pub_date }}
+          BASE: ${{ steps.meta.outputs.base }}
+        run: |
+          set -euo pipefail
+          sig_of() {
+            local f="$1"
+            if [ -f "${f}.sig" ]; then
+              tr -d '\r\n' < "${f}.sig"
+            else
+              echo ""
+            fi
+          }
+          find_one() {
+            ls dist/ 2>/dev/null | grep -E "$1" | head -n 1 || true
+          }
+
+          LINUX_APPIMAGE=$(find_one '\.AppImage$' || true)
+          MAC_DMG=$(find_one '\.dmg$' || true)
+          MAC_TARGZ=$(find_one '\.app\.tar\.gz$' || true)
+          WIN_MSI=$(find_one '\.msi$' || true)
+          WIN_NSIS=$(find_one '\.exe$' || true)
+
+          jq_platforms='{}'
+          add_platform() {
+            local key="$1"; local file="$2"
+            if [ -n "$file" ] && [ -f "dist/$file" ]; then
+              local sig
+              sig=$(sig_of "dist/$file")
+              jq_platforms=$(jq --arg k "$key" \
+                                --arg s "$sig" \
+                                --arg u "${BASE}/${file}" \
+                                '. + {($k): {signature: $s, url: $u}}' \
+                                <<<"$jq_platforms")
+              if [ -z "$sig" ]; then
+                echo "::warning::No .sig for $file — platform $key will have empty signature (UNSIGNED build)."
+              fi
+            fi
+          }
+
+          add_platform "linux-x86_64"   "$LINUX_APPIMAGE"
+          add_platform "darwin-x86_64"  "${MAC_TARGZ:-$MAC_DMG}"
+          add_platform "darwin-aarch64" "${MAC_TARGZ:-$MAC_DMG}"
+          add_platform "windows-x86_64" "${WIN_NSIS:-$WIN_MSI}"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg notes "Release $VERSION" \
+            --argjson platforms "$jq_platforms" \
+            '{version: $version, pub_date: $pub_date, notes: $notes, platforms: $platforms}' \
+            > latest.json
+
+          echo "---- latest.json ----"
+          cat latest.json
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: sortOfRemoteNG ${{ steps.meta.outputs.version }}
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: false
+          files: |
+            dist/**/*
+            latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

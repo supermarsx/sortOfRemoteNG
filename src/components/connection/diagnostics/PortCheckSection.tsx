@@ -1,0 +1,77 @@
+import StatusIcon from "./StatusIcon";
+import { Network, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Connection } from "../../../types/connection/connection";
+import { DiagnosticsMgr } from "../../../hooks/connection/useConnectionDiagnostics";
+
+const PortCheckSection = ({
+  mgr,
+  connection,
+}: {
+  mgr: DiagnosticsMgr;
+  connection: Connection;
+}) => {
+  const { t } = useTranslation();
+  const { results, isRunning } = mgr;
+
+  return (
+    <div className="sor-diag-panel">
+      <h3 className="sor-diag-heading">
+        <Network size={12} />
+        {t("diagnostics.portCheck", "Port Check")}
+      </h3>
+
+      {results.portCheck ? (
+        <div
+          className={`p-4 rounded-lg ${
+            results.portCheck.open
+              ? "bg-success/10 border border-success/30"
+              : "bg-error/10 border border-error/30"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-medium text-[var(--color-text)]">
+                {t("diagnostics.port", "Port")} {results.portCheck.port} (
+                {connection.protocol.toUpperCase()})
+              </div>
+              <div className="text-sm text-[var(--color-textSecondary)]">
+                {results.portCheck.open
+                  ? t(
+                      "diagnostics.portOpen",
+                      "Port is open and accepting connections",
+                    )
+                  : t(
+                      "diagnostics.portClosed",
+                      "Port is closed or filtered",
+                    )}
+              </div>
+            </div>
+            <StatusIcon
+              status={results.portCheck.open ? "success" : "failed"}
+            />
+          </div>
+          {results.portCheck.banner && (
+            <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+              <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1">
+                Banner / Fingerprint
+              </div>
+              <code className="text-xs font-mono bg-[var(--color-surface)] px-2 py-1 rounded text-[var(--color-text)] block truncate">
+                {results.portCheck.banner}
+              </code>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="sor-diag-empty">
+          <Loader2
+            size={20}
+            className="text-[var(--color-textMuted)] animate-spin"
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PortCheckSection;

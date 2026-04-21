@@ -1,0 +1,16 @@
+[package]
+name = "sorng-hashicorp-vault"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "HashiCorp Vault integration for SortOfRemote NG — secrets engines (KV v1/v2, Transit, PKI, Database, AWS, SSH), auth methods, policies, audit, tokens, leases, and Tauri integration"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+base64 = { workspace = true }

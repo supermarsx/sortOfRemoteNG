@@ -1,0 +1,21 @@
+[package]
+name = "sorng-network"
+version = "0.1.0"
+edition = "2021"
+description = "Network utilities, WOL, QR codes, and diagnostics helpers"
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+sorng-dns = { path = "../sorng-dns" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+dns-lookup = "2.0"
+mac_address = "1.1"
+futures = { workspace = true }
+qrcode = "0.14"
+base64 = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }

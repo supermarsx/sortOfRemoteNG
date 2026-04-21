@@ -1,0 +1,56 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.env
+/.next
+/out
+tsconfig.tsbuildinfo
+/.claude
+
+# Temporary build/test output files
+*-output.txt
+*-err.txt
+*-test.txt
+*-test*.txt
+*-check.txt
+timings_err.txt
+BUILDLOG*.log
+cargo-check*.log
+*_output.txt
+incremental_build.txt
+rust_warnings*.txt
+timing_data.json
+users.json
+coverage/
+coverage-output2.txt
+coverage_output.txt
+test_toolbar_output.txt
+target/reports/
+/.orchestration
+
+# Tauri signing keys (never commit — pub key is inline in tauri.conf.json)
+.keys/
+*.key
+*.key.pub

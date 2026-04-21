@@ -1,0 +1,63 @@
+# t3-e30 — Docker e2e aggregator overlay
+#
+# Adds SMB (samba) + SoftEther services missing from the primary
+# `e2e/docker-compose.yml` protocol stack. Used alongside the primary
+# compose file via `-f e2e/docker-compose.yml -f docker/compose.e2e.yml`
+# so the nightly e2e workflow brings up:
+#
+#   SSH, SFTP (via SSH subsystem), RDP, VNC, HTTP, MySQL, FTP
+#   (from e2e/docker-compose.yml)
+#   SMB  (this file, `test-smb`)
+#   SoftEther (this file, `test-softether`)
+#
+# Port mapping mirrors the env vars the Rust golden-path tests read:
+#   SMB_HOST=127.0.0.1 SMB_PORT=1445 SMB_USER/SMB_PASSWORD/SMB_SHARE
+#   SoftEther: tests/softether_e2e.rs pins 127.0.0.1:5555 (E2E_SERVER /
+#   E2E_PORT_TLS_VPN).
+
+services:
+  test-smb:
+    image: dperson/samba
+    container_name: sorng-e2e-smb
+    ports:
+      - "1445:445"
+    environment:
+      - USERID=1000
+      - GROUPID=1000
+    command: >
+      -u "${SMB_USER:-sorngtest};${SMB_PASSWORD:-sorngpass}"
+      -s "${SMB_SHARE:-public};/share;yes;no;no;${SMB_USER:-sorngtest}"
+      -p
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 445 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+
+  test-softether:
+    # Same image/flags as docs/cedar-reference/docker-compose.softether-test.yml.
+    # Duplicated here (not `extends:`) so the aggregator compose is
+    # self-contained for the nightly CI lane — no cross-file path
+    # traversal required.
+    image: siomiz/softethervpn:debian
+    container_name: sorng-e2e-softether
+    restart: "no"
+    cap_add:
+      - NET_ADMIN
+    environment:
+      SPW: "${SOFTETHER_ADMIN_PWD:-test-admin-pwd-CHANGE-ME}"
+      HPW: "${SOFTETHER_ADMIN_PWD:-test-admin-pwd-CHANGE-ME}"
+      USERS: "${SOFTETHER_USER:-testuser}:${SOFTETHER_PASSWORD:-testpass123}"
+      VPNCMD_SERVER: "HubCreate test_hub /password:${SOFTETHER_ADMIN_PWD:-test-admin-pwd-CHANGE-ME}"
+    ports:
+      - "5555:5555/tcp"
+      - "992:992/tcp"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "timeout 2 bash -c '</dev/tcp/127.0.0.1/5555' || exit 1"
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 25s

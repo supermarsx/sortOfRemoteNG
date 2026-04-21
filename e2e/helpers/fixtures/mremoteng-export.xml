@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="..." ConfVersion="2.6">
+  <Node Name="Production Servers" Type="Container" Expanded="true" Descr="Production environment">
+    <Node Name="Web Server 01" Type="Connection" Descr="Primary web server" Protocol="SSH2" Hostname="web01.prod.example.com" Port="22" Username="deploy" Domain="" />
+    <Node Name="Web Server 02" Type="Connection" Descr="Secondary web server" Protocol="SSH2" Hostname="web02.prod.example.com" Port="22" Username="deploy" Domain="" />
+    <Node Name="Windows DC" Type="Connection" Descr="Domain controller" Protocol="RDP" Hostname="dc01.prod.example.com" Port="3389" Username="Administrator" Domain="PROD" Resolution="FitToWindow" Colors="32Bit" UseCredSsp="True" />
+  </Node>
+  <Node Name="Development" Type="Container" Expanded="false" Descr="Dev servers">
+    <Node Name="Dev Linux" Type="Connection" Descr="Development Linux box" Protocol="SSH2" Hostname="dev.example.com" Port="2222" Username="devuser" />
+    <Node Name="Dev DB" Type="Connection" Protocol="SSH2" Hostname="devdb.example.com" Port="22" Username="postgres" />
+  </Node>
+  <Node Name="Standalone VNC" Type="Connection" Protocol="VNC" Hostname="vnc.example.com" Port="5900" />
+</Connections>

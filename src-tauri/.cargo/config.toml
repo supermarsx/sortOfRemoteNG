@@ -1,0 +1,114 @@
+# Cargo configuration
+# Using crates.io with sparse protocol (fast, default since Rust 1.70)
+
+[build]
+# 200 GB RAM — no memory constraints, maximise parallelism.
+jobs = 28
+# Default Windows builds to the GNU target (uses MinGW GCC from C:\msys64\mingw64).
+# Switch to x86_64-pc-windows-msvc once VS C++ Build Tools are installed.
+target = "x86_64-pc-windows-gnu"
+# `sccache` is installed on this machine, but wrapper-enabled builds were
+# failing nondeterministically in this workspace (`h2` / `tauri-utils`
+# exiting without a Rust diagnostic). Keep the default build path reliable.
+# Re-enable locally once the wrapper issue is understood.
+# rustc-wrapper = "sccache"
+
+[alias]
+c2 = "check -j 2"
+b2 = "build -j 2"
+t2 = "test -j 2"
+r2 = "run -j 2"
+
+[net]
+# Retry failed downloads up to 3 times
+retry = 3
+# Use git CLI for fetching (more reliable in some network conditions)
+git-fetch-with-cli = true
+
+[http]
+# Increase timeout for slow connections (in seconds)
+timeout = 60
+# Lower-level timeout settings
+low-speed-limit = 5
+
+# Sparse protocol is already the default in modern Rust
+# No source replacement needed - crates.io works directly
+
+# ═══════════════════════════════════════════════════════════════════════
+# x86-64 performance target features
+# ═══════════════════════════════════════════════════════════════════════
+#
+# These flags tell rustc to emit instructions for the listed extensions
+# *unconditionally* — no runtime CPUID dispatch overhead.  This enables
+# the RustCrypto crates (aes, sha2, aes-gcm, pbkdf2, argon2, etc.) and
+# other SIMD-aware code to inline hardware-accelerated paths.
+#
+# Baseline: x86-64-v3 (Haswell / Zen 1, ~2013–2017+).  This is safe for
+# virtually all desktop/server CPUs manufactured in the last decade.
+# We add crypto extensions (AES-NI, PCLMULQDQ, SHA-NI) on top.
+#
+# If you need to support older CPUs, remove flags or lower to x86-64-v2:
+#   rustflags = ["-C", "target-cpu=x86-64-v2"]
+#
+# For development on your own machine, use target-cpu=native:
+#   rustflags = ["-C", "target-cpu=native"]
+#
+# Affected crates and the extensions they benefit from:
+#
+#   +aes, +pclmulqdq   -> aes-gcm, aes/cbc      (sorng-auth, sorng-vault,
+#                          sorng-storage, sorng-bitwarden, sorng-lastpass,
+#                          sorng-mremoteng, sorng-vnc, sorng-totp)
+#                       -> ring/rustls            (TLS everywhere)
+#   +sha               -> sha2, sha1, pbkdf2,    (25+ crates — 2-5x KDF
+#                          hmac, hkdf              speedup)
+#   +avx, +avx2        -> ed25519-dalek, argon2,  (sorng-auth, sorng-vault,
+#                          zstd, image, base64     sorng-recording)
+#                       -> YUV conversion          (sorng-rdp)
+#   +bmi1, +bmi2       -> RSA/ECC bignum, zstd    (sorng-auth, sorng-ssh,
+#                          match-finding            sorng-recording)
+#   +fma               -> float ops               (LLM inference, graphics)
+#   +sse4.1, +sse4.2   -> openh264 IDCT,          (sorng-rdp)
+#                          CRC32 intrinsics
+#   +adx               -> big-integer multiply    (RSA key gen/signing)
+#   +popcnt, +lzcnt    -> general bit ops         (compression, search)
+#
+# ═══════════════════════════════════════════════════════════════════════
+# Linker + target feature flags
+# ═══════════════════════════════════════════════════════════════════════
+#
+# We use the platform-native fast linker for each OS:
+#   Windows → rust-lld  (ships with Rust, ~2-5× faster than link.exe)
+#   Linux   → mold      (install via `apt install mold` or from GitHub)
+#   macOS   → default   (Apple ld is already fast; lld has issues on macOS)
+#
+# Combined with the x86-64-v3 target features for crypto / SIMD.
+
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]
+
+[target.x86_64-pc-windows-msvc]
+# We intentionally do NOT set linker = "rust-lld.exe" here.
+# While rust-lld ships with the toolchain, it hangs when linking this
+# project's 178-crate binary (~7 GB of rlibs). The default MSVC link.exe
+# handles it reliably when MSVC is selected on purpose.
+#
+# /threads:8 parallelises the MSVC linker (supported since VS 2019 16.6+).
+# This alone can halve link time on multi-core machines.
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+  "-C", "link-arg=/threads:8",
+]
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+  "-C", "link-arg=-fuse-ld=mold",
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]
+
+[target.x86_64-apple-darwin]
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]

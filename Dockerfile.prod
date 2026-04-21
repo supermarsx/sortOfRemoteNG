@@ -1,0 +1,181 @@
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# sortOfRemoteNG — Production Dockerfile
+#
+# Purpose
+# -------
+# Multi-stage build for sortOfRemoteNG's desktop binary + static frontend.
+#
+# IMPORTANT — Headless limitation
+# -------------------------------
+# sortOfRemoteNG is a Tauri 2 desktop application. There is currently NO
+# headless / server / agent-only mode: the Rust binary (`app`) links
+# webkit2gtk and expects a windowing system at runtime. Running
+# `/opt/sortofremoteng/app` inside a minimal container (no X11/Wayland)
+# will fail to open its main window.
+#
+# This image is therefore NOT a deployable server. It exists to:
+#   1. Produce a reproducible Linux build of the Tauri binary and the
+#      exported Next.js frontend (`out/`) for distribution / sideload
+#      onto Linux desktops (e.g. copying the artifact out with
+#      `docker cp` or using this stage as a base for a `.deb` packager).
+#   2. Provide a clean CI-reproducible build surface that doesn't depend
+#      on a developer's host toolchain.
+#
+# If/when a headless agent mode is implemented (separate `app-headless`
+# binary with no webview), update the runtime stage to copy that binary
+# instead and expose its listening port.
+#
+# Usage
+# -----
+#   docker build -f Dockerfile.prod -t sortofremoteng:test .
+#   # Extract the built binary + frontend:
+#   docker create --name sorng-extract sortofremoteng:test
+#   docker cp sorng-extract:/opt/sortofremoteng ./dist-linux
+#   docker rm sorng-extract
+#
+# Targets
+# -------
+#   --target builder   # full build toolchain + artifacts in /build
+#   (default)          # slim runtime-ish image carrying the artifacts
+#
+# Size target: < 500 MB for the default (artifact-carrier) stage. The
+# `builder` stage is intentionally large.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1 — builder: Rust + Node toolchain, compiles Rust workspace + Next.js.
+# -----------------------------------------------------------------------------
+FROM debian:bookworm-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_TERM_COLOR=never \
+    RUST_BACKTRACE=1 \
+    PATH="/root/.cargo/bin:/usr/local/node/bin:${PATH}" \
+    NODE_VERSION=20.18.1 \
+    RUSTUP_HOME=/root/.rustup \
+    CARGO_HOME=/root/.cargo
+
+# System packages required to build Tauri 2 on Debian bookworm.
+# (webkit2gtk-4.1 + soup-3.0 match Tauri 2 defaults.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        file \
+        git \
+        libayatana-appindicator3-dev \
+        libglib2.0-dev \
+        libgtk-3-dev \
+        librsvg2-dev \
+        libsoup-3.0-dev \
+        libssl-dev \
+        libwebkit2gtk-4.1-dev \
+        libxdo-dev \
+        patchelf \
+        pkg-config \
+        wget \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js (pinned) — Next.js 16 needs Node >= 18.18.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) node_arch=x64 ;; \
+        arm64) node_arch=arm64 ;; \
+        *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /usr/local/node; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" \
+        | tar -xJ --strip-components=1 -C /usr/local/node; \
+    node --version; \
+    npm --version
+
+# Rust stable toolchain (MSVC pinning only matters on Windows; on Linux we
+# use the default GNU target).
+RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile minimal \
+    && rustc --version \
+    && cargo --version
+
+WORKDIR /build
+
+# --- Dependency layer: copy manifests first to leverage Docker layer cache. ---
+# Frontend deps
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund --prefer-offline
+
+# --- Source copy ---
+COPY . .
+
+# Build the static frontend (Next.js `output: 'export'` → ./out/).
+RUN npm run build
+
+# Build the Rust workspace release binary.
+# We build the `app` package (Tauri host). Kafka is excluded from the default
+# feature set per t2/t3 decisions (users supply librdkafka at runtime).
+RUN cargo build --release --manifest-path src-tauri/Cargo.toml -p app \
+    && ls -la src-tauri/target/release/
+
+# Stage the distributable layout for the runtime image.
+RUN set -eux; \
+    mkdir -p /stage/opt/sortofremoteng/bin /stage/opt/sortofremoteng/frontend; \
+    cp src-tauri/target/release/app /stage/opt/sortofremoteng/bin/app; \
+    strip /stage/opt/sortofremoteng/bin/app || true; \
+    cp -r out/. /stage/opt/sortofremoteng/frontend/; \
+    cp license.md /stage/opt/sortofremoteng/LICENSE.md; \
+    cp readme.md /stage/opt/sortofremoteng/README.md; \
+    du -sh /stage/opt/sortofremoteng
+
+# -----------------------------------------------------------------------------
+# Stage 2 — runtime: slim image carrying the built artifacts.
+#
+# This stage is NOT self-sufficient for GUI execution (see header). It is
+# sized for artifact distribution. To actually run the binary you must
+# either (a) install the full webkit2gtk-4.1 runtime and an X/Wayland server,
+# or (b) replace the binary with a future headless variant.
+# -----------------------------------------------------------------------------
+FROM debian:bookworm-slim AS runtime
+
+LABEL org.opencontainers.image.title="sortOfRemoteNG" \
+      org.opencontainers.image.description="Linux build artifacts for sortOfRemoteNG (Tauri 2 desktop app). NOT a headless server — see Dockerfile.prod header." \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/sortofremote/sortOfRemoteNG"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Minimal shared libs the built binary dynamically links against. We do NOT
+# install the full webkit2gtk stack here — that would push the image above
+# the 500 MB target and still not suffice without a display server. Callers
+# who want to run the binary should layer their own GUI runtime on top.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libc6 \
+        libgcc-s1 \
+        libssl3 \
+        libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+COPY --from=builder /stage/opt/sortofremoteng /opt/sortofremoteng
+
+# Non-root user for artifact inspection.
+RUN useradd --system --create-home --home-dir /home/sorng --shell /usr/sbin/nologin sorng \
+    && chown -R sorng:sorng /opt/sortofremoteng
+USER sorng
+WORKDIR /opt/sortofremoteng
+
+# Default command prints the headless-limitation notice. Override with
+# `docker run ... bash` to inspect, or `docker cp` to extract artifacts.
+CMD ["/bin/sh", "-c", "echo 'sortOfRemoteNG is a desktop (Tauri) app with no headless mode.' && \
+echo 'This image carries build artifacts under /opt/sortofremoteng for' && \
+echo 'distribution/sideload purposes. See Dockerfile.prod header for details.' && \
+echo '' && \
+echo 'Artifacts:' && ls -la /opt/sortofremoteng && \
+echo '' && \
+echo 'Binary (requires webkit2gtk + display server to run):' && \
+ls -la /opt/sortofremoteng/bin/ && \
+echo '' && \
+echo 'Frontend (static export):' && \
+ls /opt/sortofremoteng/frontend/ | head -20"]

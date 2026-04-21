@@ -1,0 +1,88 @@
+import { Lock, Key, Loader2, FileKey, CheckCircle, Database } from "lucide-react";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
+import type { Mgr } from "./types";
+function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
+  return (
+    <div className="space-y-4">
+      <h4 className="sor-section-heading">
+        <Database className="w-4 h-4 text-primary" />
+        <span className="flex items-center gap-1">Generate Collection Encryption Key File <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your connection collections instead of using a password" /></span>
+      </h4>
+
+      <div className="sor-settings-card space-y-4">
+        <p className="text-sm text-[var(--color-textSecondary)]">
+          Generate a secure encryption key file that can be used to encrypt your
+          connection collections. This key file can be used instead of a password
+          when creating or opening encrypted collections.
+          <span className="text-warning block mt-2">
+            ⚠️ Keep this file secure! Anyone with access to it can decrypt your
+            collections.
+          </span>
+        </p>
+
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+            <Key className="w-4 h-4" />
+            <span className="flex items-center gap-1">Key Strength <InfoTooltip text="Bit length of the generated key — 256-bit is sufficient for most uses, 512-bit provides extra margin for high-security environments" /></span>
+          </label>
+          <div className="flex space-x-3">
+            <button
+              onClick={() => mgr.setCollectionKeyLength(32)}
+              className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                mgr.collectionKeyLength === 32
+                  ? "bg-primary/30 border border-primary text-primary"
+                  : "bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
+              }`}
+            >
+              256-bit (Standard)
+            </button>
+            <button
+              onClick={() => mgr.setCollectionKeyLength(64)}
+              className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                mgr.collectionKeyLength === 64
+                  ? "bg-primary/30 border border-primary text-primary"
+                  : "bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
+              }`}
+            >
+              512-bit (High Security)
+            </button>
+          </div>
+        </div>
+
+        <button
+          onClick={mgr.generateCollectionKey}
+          disabled={mgr.isGeneratingCollectionKey}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
+        >
+          {mgr.isGeneratingCollectionKey ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Generating...</span>
+            </>
+          ) : (
+            <>
+              <FileKey className="w-4 h-4" />
+              <span>Generate & Save Collection Key File</span>
+            </>
+          )}
+        </button>
+
+        {mgr.collectionKeySuccess && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-primary/30 border border-primary/50 rounded-md text-primary text-sm">
+            <CheckCircle className="w-4 h-4" />
+            {mgr.collectionKeySuccess}
+          </div>
+        )}
+
+        {mgr.collectionKeyError && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-error/30 border border-error/50 rounded-md text-error text-sm">
+            <Lock className="w-4 h-4" />
+            {mgr.collectionKeyError}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default CollectionKeyGenSection;

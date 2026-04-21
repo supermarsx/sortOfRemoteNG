@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import './styles/base.css';
+@import './styles/tailwind-overrides.css';
+@import './styles/embedded.css';
+@import './styles/buttons.css';
+@import './styles/primitives.css';
+@import './styles/modals.css';
+@import './styles/forms.css';
+@import './styles/lists.css';
+@import './styles/tables-tabs.css';

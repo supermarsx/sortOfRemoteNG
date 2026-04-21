@@ -1,0 +1,296 @@
+import React from "react";
+import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { GlobalSettings } from "../../../types/settings/settings";
+import {
+  Power,
+  Monitor,
+  Play,
+  RefreshCw,
+  Minimize2,
+  X as XIcon,
+  AppWindow,
+  FolderOpen,
+  EyeOff,
+  Type,
+  MessageSquare,
+  RotateCcw,
+} from "lucide-react";
+import { Checkbox, Textarea} from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
+
+interface StartupSettingsProps {
+  settings: GlobalSettings;
+  updateSettings: (updates: Partial<GlobalSettings>) => void;
+}
+
+export const StartupSettings: React.FC<StartupSettingsProps> = ({
+  settings,
+  updateSettings,
+}) => {
+  const { t } = useTranslation();
+
+  const handleStartWithSystemChange = async (enabled: boolean) => {
+    try {
+      // Call Tauri to enable/disable autostart
+      await invoke("set_autostart", { enabled });
+      updateSettings({ startWithSystem: enabled });
+    } catch (err) {
+      console.error("Failed to set autostart:", err);
+      // Revert the setting if it failed
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <SectionHeading icon={<Power className="w-5 h-5" />} title={t("settings.startup.title", "Startup & Tray")} description="Application launch behavior, system tray options, and welcome screen customization." />
+
+      {/* Startup Behavior */}
+      <div className="space-y-4">
+        <h4 className="sor-section-heading">
+          {t("settings.startup.behavior", "Startup Behavior")}
+        </h4>
+
+        <div className="sor-settings-card">
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.startWithSystem} onChange={(v: boolean) => handleStartWithSystemChange(v)} />
+            <div className="flex items-center gap-2">
+              <Play className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-textSecondary)]">
+                {t("settings.startup.startWithSystem", "Start with system")} <InfoTooltip text="Automatically launch the application when the operating system starts" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.startMinimized} onChange={(v: boolean) => updateSettings({ startMinimized: v })} disabled={settings.startMaximized} />
+            <div className="flex items-center gap-2">
+              <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span
+                className={`text-[var(--color-textSecondary)] ${settings.startMaximized ? "opacity-50" : ""}`}
+              >
+                {t("settings.startup.startMinimized", "Start minimized")} <InfoTooltip text="Start the application minimized to the taskbar or system tray" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.startMaximized} onChange={(v: boolean) => updateSettings({ startMaximized: v })} disabled={settings.startMinimized} />
+            <div className="flex items-center gap-2">
+              <Monitor className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span
+                className={`text-[var(--color-textSecondary)] ${settings.startMinimized ? "opacity-50" : ""}`}
+              >
+                {t("settings.startup.startMaximized", "Start maximized")} <InfoTooltip text="Open the application window in maximized (full-screen) mode" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.reconnectPreviousSessions} onChange={(v: boolean) => updateSettings({ reconnectPreviousSessions: v })} />
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-textSecondary)]">
+                {t(
+                  "settings.startup.reconnectSessions",
+                  "Reconnect previous sessions on startup",
+                )} <InfoTooltip text="Automatically reconnect all sessions that were active when the application was last closed" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.autoOpenLastCollection} onChange={(v: boolean) => updateSettings({ autoOpenLastCollection: v })} />
+            <div className="flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-textSecondary)]">
+                {t(
+                  "settings.startup.autoOpenLastCollection",
+                  "Auto-open last used connection collection",
+                )} <InfoTooltip text="Automatically load the most recently used connection collection on startup" />
+              </span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Tray Behavior */}
+      <div className="space-y-4">
+        <h4 className="sor-section-heading">
+          {t("settings.startup.trayBehavior", "System Tray Behavior")}
+        </h4>
+
+        <div className="sor-settings-card">
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.showTrayIcon} onChange={(v: boolean) => updateSettings({ showTrayIcon: v })} />
+            <div className="flex items-center gap-2">
+              <AppWindow className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-textSecondary)]">
+                {t("settings.startup.showTrayIcon", "Show system tray icon")} <InfoTooltip text="Display an icon in the system notification area for quick access" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.minimizeToTray} onChange={(v: boolean) => updateSettings({ minimizeToTray: v })} disabled={!settings.showTrayIcon} />
+            <div className="flex items-center gap-2">
+              <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span
+                className={`text-[var(--color-textSecondary)] ${!settings.showTrayIcon ? "opacity-50" : ""}`}
+              >
+                {t(
+                  "settings.startup.minimizeToTray",
+                  "Minimize to notification area",
+                )} <InfoTooltip text="When minimizing, hide the window and keep it accessible from the system tray icon" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.closeToTray} onChange={(v: boolean) => updateSettings({ closeToTray: v })} disabled={!settings.showTrayIcon} />
+            <div className="flex items-center gap-2">
+              <XIcon className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span
+                className={`text-[var(--color-textSecondary)] ${!settings.showTrayIcon ? "opacity-50" : ""}`}
+              >
+                {t(
+                  "settings.startup.closeToTray",
+                  "Close to notification area",
+                )} <InfoTooltip text="When closing the window, minimize to the system tray instead of quitting the application" />
+              </span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Welcome Screen */}
+      <div className="space-y-4">
+        <h4 className="sor-section-heading">
+          {t("settings.startup.welcomeScreen", "Welcome Screen")}
+        </h4>
+
+        <div className="sor-settings-card">
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.hideQuickStartMessage ?? false} onChange={(v: boolean) => updateSettings({ hideQuickStartMessage: v })} />
+            <div className="flex items-center gap-2">
+              <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-textSecondary)]">
+                {t(
+                  "settings.startup.hideQuickStartMessage",
+                  "Hide welcome message",
+                )} <InfoTooltip text="Hide the introductory welcome message shown on the start screen" />
+              </span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <Checkbox checked={settings.hideQuickStartButtons ?? false} onChange={(v: boolean) => updateSettings({ hideQuickStartButtons: v })} />
+            <div className="flex items-center gap-2">
+              <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-textSecondary)]">
+                {t(
+                  "settings.startup.hideQuickStartButtons",
+                  "Hide quick action buttons",
+                )} <InfoTooltip text="Hide the shortcut buttons for common actions on the welcome screen" />
+              </span>
+            </div>
+          </label>
+
+          {/* Custom Welcome Screen Content */}
+          <div className="space-y-3 pt-2 border-t border-[var(--color-border)]/50 mt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-[var(--color-textMuted)]">
+                {t(
+                  "settings.startup.customWelcomeContent",
+                  "Custom Welcome Content",
+                )}
+              </span>
+              {(settings.welcomeScreenTitle ||
+                settings.welcomeScreenMessage) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSettings({
+                      welcomeScreenTitle: undefined,
+                      welcomeScreenMessage: undefined,
+                    })
+                  }
+                  className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)] flex items-center gap-1 transition-colors"
+                  title={t(
+                    "settings.startup.resetToDefault",
+                    "Reset to default",
+                  )}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  {t("settings.startup.reset", "Reset")}
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+                <Type className="w-4 h-4 text-[var(--color-textSecondary)]" />
+                {t("settings.startup.customTitle", "Custom Title")} <InfoTooltip text="Set a custom title to display on the welcome screen instead of the default" />
+              </label>
+              <input
+                type="text"
+                value={settings.welcomeScreenTitle ?? ""}
+                onChange={(e) =>
+                  updateSettings({
+                    welcomeScreenTitle: e.target.value || undefined,
+                  })
+                }
+                placeholder={t(
+                  "settings.startup.customTitlePlaceholder",
+                  "Leave empty for default",
+                )}
+                className="sor-settings-input w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+                <MessageSquare className="w-4 h-4 text-[var(--color-textSecondary)]" />
+                {t("settings.startup.customMessage", "Custom Message")} <InfoTooltip text="Set a custom message to display on the welcome screen instead of the default" />
+              </label>
+              <Textarea
+                value={settings.welcomeScreenMessage ?? ""}
+                onChange={(v) =>
+                  updateSettings({
+                    welcomeScreenMessage: v || undefined,
+                  })
+                }
+                placeholder={t(
+                  "settings.startup.customMessagePlaceholder",
+                  "Leave empty for default",
+                )}
+                rows={3}
+                className="sor-settings-input w-full resize-none"
+              />
+            </div>
+
+            <p className="text-xs text-[var(--color-textMuted)] pl-7">
+              {t(
+                "settings.startup.welcomeScreenNote",
+                "Controls what is shown when no connection is active.",
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Info notice */}
+      <div className="p-3 bg-primary/30 border border-primary/50 rounded-lg text-sm text-primary">
+        <p>
+          {t(
+            "settings.startup.note",
+            "Note: Some settings require an application restart to take effect.",
+          )}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+export default StartupSettings;

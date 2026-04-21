@@ -1,0 +1,89 @@
+# =============================================================================
+# .dockerignore for sortOfRemoteNG production image (Dockerfile.prod)
+#
+# Goal: keep the build context small and reproducible. Exclude everything
+# that isn't needed to compile the Rust workspace or the Next.js frontend.
+# =============================================================================
+
+# --- VCS / editor / OS junk -------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- Claude Code / orchestration scratch ------------------------------------
+.claude
+.orchestration
+
+# --- Node / frontend build artifacts ----------------------------------------
+node_modules
+.next
+out
+dist
+dist-ssr
+coverage
+coverage-*
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.turbo
+tsconfig.tsbuildinfo
+
+# --- Rust build artifacts ---------------------------------------------------
+src-tauri/target
+target
+**/target
+Cargo.lock.bak
+
+# --- Tests / e2e fixtures not needed in prod build --------------------------
+e2e/node_modules
+e2e/screenshots
+e2e/videos
+e2e/allure-results
+e2e/allure-report
+tests/__snapshots__
+
+# --- Local / secrets --------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local
+users.json
+
+# --- Scratch output files from prior runs (per .gitignore patterns) ---------
+*-output.txt
+*-err.txt
+*-test.txt
+*-test*.txt
+*-check.txt
+timings_err.txt
+BUILDLOG*.log
+cargo-check*.log
+*_output.txt
+incremental_build.txt
+rust_warnings*.txt
+timing_data.json
+coverage-output2.txt
+coverage_output.txt
+test_toolbar_output.txt
+
+# --- Docs / media (not needed to build) -------------------------------------
+docs
+*.md
+!readme.md
+!license.md
+!SECURITY.md
+!ARCHITECTURE.md
+
+# --- Docker self-reference --------------------------------------------------
+Dockerfile*
+.dockerignore

@@ -1,0 +1,14 @@
+[package]
+name = "sorng-credentials"
+version = "0.1.0"
+edition = "2021"
+description = "Credential lifecycle management for SortOfRemote NG — password age tracking, certificate expiry monitoring, SSH key rotation reminders, linked credential groups, audit reports, policy enforcement, and expiry alerting"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+sha2 = { workspace = true }

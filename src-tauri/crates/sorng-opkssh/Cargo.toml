@@ -1,0 +1,14 @@
+[package]
+name = "sorng-opkssh"
+version = "0.1.0"
+edition = "2021"
+description = "Full OpenPubkey SSH (opkssh) integration for SortOfRemote NG — OIDC-based SSH authentication, key lifecycle, server policy management, provider configuration, audit logging, and binary management."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }

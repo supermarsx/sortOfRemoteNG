@@ -1,0 +1,92 @@
+import type { SectionBaseProps } from "./types";
+import Section from "./Section";
+import { Mouse, ScanSearch, Info } from "lucide-react";
+import { KEYBOARD_LAYOUTS, CSS } from "../../../hooks/rdp/useRDPOptions";
+import { Select, Slider } from "../../ui/forms";
+const InputSection: React.FC<
+  SectionBaseProps & {
+    detectingLayout: boolean;
+    detectKeyboardLayout: () => void;
+  }
+> = ({ rdp, updateRdp, detectingLayout, detectKeyboardLayout }) => (
+  <Section
+    title="Input"
+    icon={<Mouse size={14} className="text-warning" />}
+  >
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+        Mouse Mode
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Absolute sends real screen coordinates; Relative sends delta movement. Use Absolute unless the remote app requires raw mouse input." />
+      </label>
+      <Select value={rdp.input?.mouseMode ?? ""} onChange={(v: string) => updateRdp("input", {
+            mouseMode: v === "" ? undefined : (v as "relative" | "absolute"),
+          })} options={[{ value: "", label: "Use global default" }, { value: "absolute", label: "Absolute (real mouse position)" }, { value: "relative", label: "Relative (virtual mouse delta)" }]} className="CSS.select" />
+    </div>
+
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Auto-detect keyboard layout on connect <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Detect keyboard layout from the OS on connect. Disable to manually pick a layout below." /></label>
+      <Select value={rdp.input?.autoDetectLayout === undefined ? "" : rdp.input.autoDetectLayout ? "true" : "false"} onChange={(v: string) => updateRdp("input", { autoDetectLayout: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
+
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+        Keyboard Layout{" "}
+        {rdp.input?.autoDetectLayout !== false && (
+          <span className="text-primary">(overridden by auto-detect)</span>
+        )}
+      </label>
+      <div className="flex gap-2">
+        <Select value={rdp.input?.keyboardLayout ?? 0x0409} onChange={(v: string) =>
+            updateRdp("input", { keyboardLayout: parseInt(v) })} options={[...KEYBOARD_LAYOUTS.map((kl) => ({ value: kl.value, label: `${kl.label} (0x${kl.value.toString(16).padStart(4, "0")})` }))]} disabled={rdp.input?.autoDetectLayout !== false} className={CSS.select +
+            " flex-1" +
+            (rdp.input?.autoDetectLayout !== false ? " opacity-50" : "")} />
+        <button
+          type="button"
+          onClick={detectKeyboardLayout}
+          disabled={detectingLayout}
+          className="px-2 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded text-xs text-[var(--color-textSecondary)] flex items-center gap-1 disabled:opacity-50"
+          title="Auto-detect current keyboard layout"
+        >
+          <ScanSearch size={12} />
+          {detectingLayout ? "..." : "Detect"}
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+        Keyboard Type
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Physical keyboard type reported to the server. Most modern keyboards are IBM Enhanced (101/102 key)." />
+      </label>
+      <Select value={rdp.input?.keyboardType ?? "ibm-enhanced"} onChange={(v: string) => updateRdp("input", {
+            keyboardType: v as "ibm-enhanced",
+          })} options={[{ value: "ibm-pc-xt", label: "IBM PC/XT (83 key)" }, { value: "olivetti", label: "Olivetti (102 key)" }, { value: "ibm-pc-at", label: "IBM PC/AT (84 key)" }, { value: "ibm-enhanced", label: "IBM Enhanced (101/102 key)" }, { value: "nokia1050", label: "Nokia 1050" }, { value: "nokia9140", label: "Nokia 9140" }, { value: "japanese", label: "Japanese" }]} className="CSS.select" />
+    </div>
+
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+        Input Priority
+        <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Realtime sends each input event immediately; Batched groups events to reduce packet count at the cost of slight latency." />
+      </label>
+      <Select value={rdp.input?.inputPriority ?? "realtime"} onChange={(v: string) => updateRdp("input", {
+            inputPriority: v as "realtime" | "batched",
+          })} options={[{ value: "realtime", label: "Realtime (send immediately)" }, { value: "batched", label: "Batched (group events)" }]} className="CSS.select" />
+    </div>
+
+    {rdp.input?.inputPriority === "batched" && (
+      <div>
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+          Batch Interval: {rdp.input?.batchIntervalMs ?? 16}ms
+        </label>
+        <Slider value={rdp.input?.batchIntervalMs ?? 16} onChange={(v: number) => updateRdp("input", { batchIntervalMs: v })} min={8} max={100} variant="full" step={4} />
+      </div>
+    )}
+
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">Enable Unicode keyboard input <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Send characters as Unicode events instead of scancodes. Useful for non-Latin keyboards or special characters." /></label>
+      <Select value={rdp.input?.enableUnicodeInput === undefined ? "" : rdp.input.enableUnicodeInput ? "true" : "false"} onChange={(v: string) => updateRdp("input", { enableUnicodeInput: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
+  </Section>
+);
+
+export default InputSection;

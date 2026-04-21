@@ -1,0 +1,78 @@
+name: cargo-update
+
+# Weekly Rust dependency refresh.
+#
+# Runs `cargo update` inside the `src-tauri/` workspace and opens (or
+# updates) a single long-lived PR containing the resulting `Cargo.lock`
+# diff. Reviewers must cross-check any upstream bumps against
+# `src-tauri/crates/VENDORED.md` and bump the relevant "Last sync"
+# rows in the same PR when a vendored / patched crate has moved.
+
+on:
+  schedule:
+    # 04:00 UTC every Monday.
+    - cron: '0 4 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cargo-update:
+    name: cargo update (weekly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-update-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-update-
+
+      - name: Run cargo update
+        run: cargo update --verbose
+
+      - name: Check for Cargo.lock changes
+        id: diff
+        run: |
+          if git diff --quiet -- Cargo.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Pull Request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(deps): weekly cargo update"
+          title: "chore(deps): weekly cargo update"
+          branch: automation/cargo-update
+          delete-branch: true
+          add-paths: |
+            src-tauri/Cargo.lock
+          labels: |
+            dependencies
+            automated
+          body: |
+            Automated weekly `cargo update` run.
+
+            Review notes:
+            - Confirm all downstream crates still build (CI will run).
+            - If any crate listed in `src-tauri/crates/VENDORED.md`
+              has moved upstream, bump the **Last sync** column in
+              the same PR and re-sync the vendored / patched source.

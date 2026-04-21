@@ -1,0 +1,79 @@
+# Local SoftEther VPN server for SE-7 end-to-end testing.
+#
+# Image: siomiz/softethervpn (active on Docker Hub; 7.4M pulls,
+# last updated 2024-09 / 2024-10; tracks SoftEther v4.38-9760-rtm).
+# If the image ever becomes stale, the alternative is to build
+# SoftEther from upstream source inside a plain ubuntu:22.04
+# container — see SE-7-TEST-GUIDE.md "Fallback: manual build".
+#
+# USAGE
+#   docker compose -f docker-compose.softether-test.yml up -d
+#   docker compose -f docker-compose.softether-test.yml logs -f
+#   docker compose -f docker-compose.softether-test.yml down
+#
+# Change the passwords below before committing any deploy
+# artifacts derived from this file to a non-test environment.
+
+services:
+  softether:
+    # Pinned to the Debian variant for smaller image + consistent
+    # glibc. Swap `:debian` for `:alpine` if you need a smaller
+    # footprint, but libcap/iptables behave slightly differently.
+    image: siomiz/softethervpn:debian
+    container_name: sorng-softether-test
+    # IMPORTANT: `restart: no` — the entrypoint re-runs provisioning
+    # every time the container restarts, which can wipe dynamically
+    # created hubs. For test runs we want a stable, single-start
+    # container. Tests should bring it up, run, and tear down.
+    restart: "no"
+
+    # SoftEther needs NET_ADMIN to configure TAP/TUN and
+    # SecureNAT NAT routing. cap-add is safer than --privileged.
+    cap_add:
+      - NET_ADMIN
+
+    environment:
+      # Server admin (management password).
+      SPW: "test-admin-pwd-CHANGE-ME"
+      # Default hub (`DEFAULT`) admin password.
+      HPW: "test-admin-pwd-CHANGE-ME"
+      # Pre-provisioned user on the DEFAULT hub (entrypoint wires
+      # USERS → DEFAULT hub). We also create the same user on
+      # `test_hub` via the init script below.
+      USERS: "testuser:testpass123"
+      # Create `test_hub` via vpncmd during entrypoint (before the
+      # server is finalized). Semicolons separate multi-token cmds.
+      VPNCMD_SERVER: "HubCreate test_hub /password:test-admin-pwd-CHANGE-ME"
+
+    ports:
+      # SoftEther-native TLS-VPN (the one SE-5's port talks to).
+      - "443:443/tcp"
+      # Historical SoftEther management / alt TLS-VPN port.
+      - "992:992/tcp"
+      # SoftEther default TLS-VPN port.
+      - "5555:5555/tcp"
+      # L2TP/IPsec — kept exposed in case SE-7 wants to cross-test.
+      - "500:500/udp"
+      - "4500:4500/udp"
+      - "1701:1701/udp"
+      # OpenVPN bridge (some upstream tests exercise this).
+      - "1194:1194/udp"
+
+    volumes:
+      # Persist vpn_server.config so restarts preserve hub +
+      # user state. The image stores config under /usr/vpnserver.
+      - softether_config:/usr/vpnserver
+
+    # Basic healthcheck: the TLS port should accept connections.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "timeout 2 bash -c '</dev/tcp/127.0.0.1/5555' || exit 1"
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  softether_config:
+    name: sorng_softether_test_config

@@ -1,0 +1,22 @@
+[package]
+name = "sorng-port-knock"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Comprehensive port knocking capabilities for SortOfRemoteNG — TCP/UDP knock sequences, Single Packet Authorization (SPA), fwknop protocol support, knockd configuration, encrypted knock payloads, firewall integration (iptables/nftables/pf/Windows Firewall), knock profiles, history logging, sequence generation, and port knock verification."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8"
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+chacha20poly1305 = "0.10"
+
+[dev-dependencies]
+tokio-test = { workspace = true }

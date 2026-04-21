@@ -1,0 +1,395 @@
+//! Aggregate service facade for the Windows Management crate.
+//!
+//! Manages WMI sessions and delegates to the domain-specific managers
+//! (services, event logs, processes, perf monitoring, registry,
+//! scheduled tasks, system info).
+
+use crate::transport::WmiTransport;
+use crate::types::*;
+use chrono::Utc;
+use log::{info, warn};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Alias for Tauri managed state.
+pub type WinMgmtServiceState = Arc<Mutex<WinMgmtService>>;
+
+/// Internal session wrapper that owns the transport alongside metadata.
+struct ManagedSession {
+    meta: WmiSession,
+    config: WmiConnectionConfig,
+    transport: WmiTransport,
+}
+
+/// Central service managing WMI sessions to remote Windows hosts.
+pub struct WinMgmtService {
+    /// Active sessions keyed by session ID.
+    sessions: HashMap<String, ManagedSession>,
+    /// Global configuration.
+    config: WinMgmtConfig,
+}
+
+/// Configuration for the Windows Management service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WinMgmtConfig {
+    /// Default namespace for WMI queries.
+    pub default_namespace: String,
+    /// HTTP timeout in seconds for WinRM transport.
+    pub timeout_seconds: u64,
+    /// Maximum number of concurrent sessions.
+    pub max_sessions: usize,
+    /// Whether to verify TLS certificates.
+    pub verify_tls: bool,
+}
+
+impl Default for WinMgmtConfig {
+    fn default() -> Self {
+        Self {
+            default_namespace: "root/cimv2".to_string(),
+            timeout_seconds: 30,
+            max_sessions: 50,
+            verify_tls: false,
+        }
+    }
+}
+
+/// Summary of a connected session (for UI listing).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub hostname: String,
+    pub protocol: String,
+    pub port: u16,
+    pub namespace: String,
+    pub state: String,
+}
+
+impl WinMgmtService {
+    /// Create a new service with default config.
+    pub fn new() -> Self {
+        Self {
+            sessions: HashMap::new(),
+            config: WinMgmtConfig::default(),
+        }
+    }
+
+    /// Create a new service with custom config.
+    pub fn with_config(config: WinMgmtConfig) -> Self {
+        Self {
+            sessions: HashMap::new(),
+            config,
+        }
+    }
+
+    /// Get the current configuration.
+    pub fn config(&self) -> &WinMgmtConfig {
+        &self.config
+    }
+
+    /// Update the configuration.
+    pub fn set_config(&mut self, config: WinMgmtConfig) {
+        self.config = config;
+    }
+
+    // ─── Session Management ──────────────────────────────────────────
+
+    /// Connect to a remote host and create a new WMI session.
+    ///
+    /// If the caller did not explicitly set a port (`port == 0`) and the
+    /// initial attempt fails with a connection-level error, we automatically
+    /// retry with the opposite transport security (HTTP ↔ HTTPS) so that
+    /// users don't have to guess which one the target supports.
+    pub async fn connect(&mut self, config: WmiConnectionConfig) -> Result<String, String> {
+        if self.sessions.len() >= self.config.max_sessions {
+            return Err(format!(
+                "Maximum session limit ({}) reached",
+                self.config.max_sessions
+            ));
+        }
+
+        // Try primary config first (default: HTTP on 5985)
+        match self.try_connect(&config).await {
+            Ok((session_id, transport, effective_config)) => {
+                let id = session_id.clone();
+                self.finish_connect(session_id, transport, effective_config);
+                return Ok(id);
+            }
+            Err(primary_err) => {
+                // Attempt fallback to the other protocol.
+                // WinRM has two standard ports:
+                //   HTTP  = 5985 (or config.port when use_ssl=false)
+                //   HTTPS = 5986 (or config.alt_port, or vice versa)
+                let mut fallback = config.clone();
+                fallback.use_ssl = !config.use_ssl;
+
+                // Set the fallback port:
+                //   - If alt_port is explicitly set, use it
+                //   - Otherwise use the standard port for the alternate protocol
+                fallback.port = if config.alt_port > 0 {
+                    config.alt_port
+                } else if fallback.use_ssl {
+                    5986
+                } else {
+                    5985
+                };
+                fallback.alt_port = 0; // no further fallback
+
+                if fallback.use_ssl {
+                    fallback.skip_ca_check = true;
+                    fallback.skip_cn_check = true;
+                }
+
+                let primary_port = config.effective_port();
+                let primary_label = if config.use_ssl { "HTTPS" } else { "HTTP" };
+                let alt_label = if fallback.use_ssl { "HTTPS" } else { "HTTP" };
+                let alt_port = fallback.port;
+
+                info!(
+                    "Primary {} connection to {}:{} failed ({}), trying {}:{}",
+                    primary_label, config.computer_name, primary_port,
+                    primary_err, alt_label, alt_port,
+                );
+
+                match self.try_connect(&fallback).await {
+                    Ok((session_id, transport, effective_config)) => {
+                        info!(
+                            "Fallback {}:{} connection to {} succeeded (session {})",
+                            alt_label, alt_port, config.computer_name, session_id,
+                        );
+                        let id = session_id.clone();
+                        self.finish_connect(session_id, transport, effective_config);
+                        return Ok(id);
+                    }
+                    Err(fallback_err) => {
+                        // Both failed — show what happened on each port
+                        let http_err = if config.use_ssl { &fallback_err } else { &primary_err };
+                        let https_err = if config.use_ssl { &primary_err } else { &fallback_err };
+                        let http_port = if config.use_ssl { alt_port } else { primary_port };
+                        let https_port = if config.use_ssl { primary_port } else { alt_port };
+                        return Err(format!(
+                            "HTTP ({}): {}\nHTTPS ({}): {}",
+                            http_port, http_err,
+                            https_port, https_err,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Attempt a single connect with the given config.  Returns the session
+    /// ID, connected transport, and the config that was actually used.
+    async fn try_connect(
+        &self,
+        config: &WmiConnectionConfig,
+    ) -> Result<(String, WmiTransport, WmiConnectionConfig), String> {
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        info!(
+            "Connecting to {} via {:?} {} (session {})",
+            config.computer_name,
+            config.protocol,
+            if config.use_ssl { "HTTPS" } else { "HTTP" },
+            session_id,
+        );
+
+        let mut transport =
+            WmiTransport::new(config).map_err(|e| format!("Failed to create transport: {e}"))?;
+
+        // Test connectivity — Identify without auth first (verifies WinRM is listening)
+        // Many servers allow anonymous Identify, so this is just a reachability check.
+        // If it fails with a non-auth error, bail early.
+        match transport.test_connection().await {
+            Ok(_) => {}
+            Err(e) if e.contains("401") || e.contains("403") => {
+                // Server requires auth even for Identify — that's fine, continue
+            }
+            Err(e) => {
+                return Err(format!("Connection test failed: {e}"));
+            }
+        }
+
+        // Try credential variants adaptively (DOMAIN\user, user@domain, user, .\user).
+        // This handles the common case where the server accepts Basic auth but is
+        // picky about the username format.
+        if config.credential.is_some() {
+            transport
+                .try_auth_variants(config)
+                .await
+                .map_err(|e| format!("Authentication failed: {e}"))?;
+        }
+
+        // Probe with a real WQL query to verify credentials and WMI access.
+        if let Err(e) = transport
+            .wql_query("SELECT Caption FROM Win32_OperatingSystem")
+            .await
+        {
+            warn!(
+                "WMI auth probe failed for {} — {e}",
+                config.computer_name
+            );
+            return Err(format!("Authentication/access check failed: {e}"));
+        }
+
+        Ok((session_id, transport, config.clone()))
+    }
+
+    /// Finish connecting by storing the session.
+    fn finish_connect(
+        &mut self,
+        session_id: String,
+        transport: WmiTransport,
+        config: WmiConnectionConfig,
+    ) {
+        let now = Utc::now();
+        let meta = WmiSession {
+            id: session_id.clone(),
+            computer_name: config.computer_name.clone(),
+            namespace: config.namespace.clone(),
+            state: WmiSessionState::Connected,
+            protocol: config.protocol.clone(),
+            auth_method: config.auth_method.clone(),
+            connected_at: now,
+            last_activity: now,
+        };
+
+        let managed = ManagedSession {
+            meta,
+            config: config.clone(),
+            transport,
+        };
+
+        self.sessions.insert(session_id.clone(), managed);
+
+        info!(
+            "Session {} connected to {}",
+            session_id, config.computer_name
+        );
+    }
+
+    /// Disconnect a session.
+    pub fn disconnect(&mut self, session_id: &str) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .remove(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        info!(
+            "Session {} disconnected from {}",
+            session_id, managed.config.computer_name
+        );
+        Ok(())
+    }
+
+    /// Disconnect all sessions.
+    pub fn disconnect_all(&mut self) -> usize {
+        let count = self.sessions.len();
+        self.sessions.clear();
+        info!("Disconnected {} sessions", count);
+        count
+    }
+
+    /// List all active sessions.
+    pub fn list_sessions(&self) -> Vec<SessionSummary> {
+        self.sessions
+            .values()
+            .map(|s| SessionSummary {
+                session_id: s.meta.id.clone(),
+                hostname: s.meta.computer_name.clone(),
+                protocol: format!("{:?}", s.meta.protocol),
+                port: s.config.effective_port(),
+                namespace: s.meta.namespace.clone(),
+                state: format!("{:?}", s.meta.state),
+            })
+            .collect()
+    }
+
+    /// Get session count.
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    /// Check if a session exists.
+    pub fn has_session(&self, session_id: &str) -> bool {
+        self.sessions.contains_key(session_id)
+    }
+
+    /// Get a mutable reference to the transport for a session.
+    pub fn get_transport(&mut self, session_id: &str) -> Result<&mut WmiTransport, String> {
+        let managed = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+        match managed.meta.state {
+            WmiSessionState::Connected => {}
+            WmiSessionState::Disconnected => {
+                return Err(format!("Session {session_id} is disconnected"));
+            }
+            WmiSessionState::Error => {
+                return Err(format!("Session {session_id} is in error state"));
+            }
+        }
+
+        managed.meta.last_activity = Utc::now();
+        Ok(&mut managed.transport)
+    }
+
+    /// Execute a raw WQL query on a session.
+    pub async fn raw_query(
+        &mut self,
+        session_id: &str,
+        query: &str,
+    ) -> Result<Vec<HashMap<String, String>>, String> {
+        let transport = self.get_transport(session_id)?;
+        transport.wql_query(query).await
+    }
+}
+
+impl Default for WinMgmtService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = WinMgmtConfig::default();
+        assert_eq!(config.default_namespace, "root/cimv2");
+        assert_eq!(config.timeout_seconds, 30);
+        assert_eq!(config.max_sessions, 50);
+        assert!(!config.verify_tls);
+    }
+
+    #[test]
+    fn test_service_new() {
+        let svc = WinMgmtService::new();
+        assert_eq!(svc.session_count(), 0);
+        assert!(svc.list_sessions().is_empty());
+    }
+
+    #[test]
+    fn test_disconnect_missing() {
+        let mut svc = WinMgmtService::new();
+        assert!(svc.disconnect("nonexistent").is_err());
+    }
+
+    #[test]
+    fn test_has_session() {
+        let svc = WinMgmtService::new();
+        assert!(!svc.has_session("unknown"));
+    }
+
+    #[test]
+    fn test_disconnect_all() {
+        let mut svc = WinMgmtService::new();
+        assert_eq!(svc.disconnect_all(), 0);
+    }
+}

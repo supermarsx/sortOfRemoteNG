@@ -1,0 +1,37 @@
+[package]
+name = "sorng-protocols"
+version = "0.1.0"
+edition = "2021"
+description = "VNC, Telnet, Serial, Rlogin, Raw Socket, FTP, DB, and HTTP protocols"
+
+[features]
+default = []
+tls-cert-details = ["dep:x509-parser"]
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+vnc-rs = "0.5"
+suppaftp = "4.5"
+ssh2 = { workspace = true }
+sqlx = { workspace = true, features = ["mysql", "runtime-tokio"] }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+serialport = "4.2"
+socket2 = "0.5"
+reqwest = { workspace = true, features = ["cookies", "blocking"] }
+regex = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+x509-parser = { version = "0.15", optional = true }
+base64 = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
+futures-util = "0.3"
+axum = "0.7"
+flate2 = "1.0"
+hex = { workspace = true }

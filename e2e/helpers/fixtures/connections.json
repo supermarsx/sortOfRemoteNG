@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Production SSH",
+    "protocol": "ssh",
+    "hostname": "prod-server.example.com",
+    "port": 22,
+    "username": "admin",
+    "description": "Main production server",
+    "tags": ["production", "linux"]
+  },
+  {
+    "name": "Dev RDP",
+    "protocol": "rdp",
+    "hostname": "dev-win.example.com",
+    "port": 3389,
+    "username": "developer",
+    "domain": "DEVDOMAIN",
+    "description": "Development Windows Server"
+  },
+  {
+    "name": "Staging VNC",
+    "protocol": "vnc",
+    "hostname": "staging-vnc.example.com",
+    "port": 5900,
+    "description": "Staging VNC display"
+  },
+  {
+    "name": "API Gateway",
+    "protocol": "https",
+    "hostname": "api.example.com",
+    "port": 443,
+    "description": "REST API endpoint"
+  },
+  {
+    "name": "Database",
+    "protocol": "mysql",
+    "hostname": "db.example.com",
+    "port": 3306,
+    "username": "dbadmin",
+    "description": "Main MySQL database"
+  }
+]

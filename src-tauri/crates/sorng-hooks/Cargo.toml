@@ -1,0 +1,13 @@
+[package]
+name = "sorng-hooks"
+version = "0.1.0"
+edition = "2021"
+description = "Hook and event engine for SortOfRemote NG — lifecycle event dispatch, subscriber management, async hook pipelines, event filtering, priority ordering, and cross-crate event bus"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }

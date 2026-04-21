@@ -1,0 +1,42 @@
+[package]
+name = "sorng-commands-ops"
+version = "0.1.0"
+edition = "2021"
+description = "Ops command handlers — infra/mail/services split into separate crates to reduce coherence checking time"
+
+[dependencies]
+sorng-about = { path = "../sorng-about" }
+sorng-bootloader = { path = "../sorng-bootloader" }
+sorng-ceph = { path = "../sorng-ceph" }
+sorng-cicd = { path = "../sorng-cicd" }
+sorng-cpanel = { path = "../sorng-cpanel" }
+sorng-cron = { path = "../sorng-cron" }
+sorng-cups = { path = "../sorng-cups" }
+sorng-fail2ban = { path = "../sorng-fail2ban" }
+sorng-freeipa = { path = "../sorng-freeipa" }
+sorng-grafana = { path = "../sorng-grafana" }
+sorng-hashicorp-vault = { path = "../sorng-hashicorp-vault" }
+sorng-ipmi = { path = "../sorng-ipmi" }
+sorng-kernel = { path = "../sorng-kernel" }
+sorng-mac = { path = "../sorng-mac" }
+sorng-mysql-admin = { path = "../sorng-mysql-admin" }
+sorng-netbox = { path = "../sorng-netbox" }
+sorng-os-detect = { path = "../sorng-os-detect" }
+sorng-pam = { path = "../sorng-pam" }
+sorng-pfsense = { path = "../sorng-pfsense" }
+sorng-postgres-admin = { path = "../sorng-postgres-admin" }
+sorng-php = { path = "../sorng-php" }
+sorng-port-knock = { path = "../sorng-port-knock" }
+sorng-proc = { path = "../sorng-proc" }
+sorng-prometheus = { path = "../sorng-prometheus" }
+sorng-rabbitmq = { path = "../sorng-rabbitmq" }
+sorng-time-ntp = { path = "../sorng-time-ntp" }
+sorng-ups = { path = "../sorng-ups" }
+sorng-zabbix = { path = "../sorng-zabbix" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }

@@ -1,0 +1,1193 @@
+use crate::platform;
+use chrono::{DateTime, Utc};
+use sorng_core::events::DynEventEmitter;
+use std::collections::HashMap;
+use std::path::Path;
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use uuid::Uuid;
+
+pub type OpenVPNServiceState = Arc<Mutex<OpenVPNService>>;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OpenVPNConnection {
+    pub id: String,
+    pub name: String,
+    pub config: OpenVPNConfig,
+    pub status: OpenVPNStatus,
+    pub created_at: DateTime<Utc>,
+    pub connected_at: Option<DateTime<Utc>>,
+    pub process_id: Option<u32>,
+    pub local_ip: Option<String>,
+    pub remote_ip: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum OpenVPNStatus {
+    Disconnected,
+    Connecting,
+    Connected,
+    Disconnecting,
+    Error(String),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OpenVPNConfig {
+    pub config_file: Option<String>,
+    pub auth_file: Option<String>,
+    pub ca_cert: Option<String>,
+    pub client_cert: Option<String>,
+    pub client_key: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub remote_host: Option<String>,
+    pub remote_port: Option<u16>,
+    pub protocol: Option<String>, // "udp" or "tcp"
+    pub cipher: Option<String>,
+    pub auth: Option<String>,
+    pub tls_auth: Option<bool>,
+    pub tls_crypt: Option<bool>,
+    pub compression: Option<bool>,
+    pub mss_fix: Option<u16>,
+    pub tun_mtu: Option<u16>,
+    pub fragment: Option<u16>,
+    pub mtu_discover: Option<bool>,
+    pub keep_alive: Option<KeepAliveConfig>,
+    pub route_no_pull: Option<bool>,
+    pub routes: Vec<RouteConfig>,
+    pub dns_servers: Vec<DNSConfig>,
+    pub custom_options: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeepAliveConfig {
+    pub interval: u16,
+    pub timeout: u16,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RouteConfig {
+    pub network: String,
+    pub netmask: String,
+    pub gateway: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DNSConfig {
+    pub server: String,
+    pub domain: Option<String>,
+}
+
+pub struct OpenVPNService {
+    connections: HashMap<String, OpenVPNConnection>,
+    emitter: Option<DynEventEmitter>,
+}
+
+impl OpenVPNService {
+    pub fn new() -> OpenVPNServiceState {
+        Arc::new(Mutex::new(OpenVPNService {
+            connections: HashMap::new(),
+            emitter: None,
+        }))
+    }
+
+    pub fn new_with_emitter(emitter: DynEventEmitter) -> OpenVPNServiceState {
+        Arc::new(Mutex::new(OpenVPNService {
+            connections: HashMap::new(),
+            emitter: Some(emitter),
+        }))
+    }
+
+    fn emit_status(&self, connection_id: &str, status: &str, extra: serde_json::Value) {
+        if let Some(emitter) = &self.emitter {
+            let mut payload = serde_json::json!({
+                "connection_id": connection_id,
+                "vpn_type": "openvpn",
+                "status": status,
+            });
+            if let (Some(base), Some(ext)) = (payload.as_object_mut(), extra.as_object()) {
+                for (k, v) in ext {
+                    base.insert(k.clone(), v.clone());
+                }
+            }
+            let _ = emitter.emit_event("vpn::status-changed", payload);
+        }
+    }
+
+    pub async fn create_connection(
+        &mut self,
+        name: String,
+        config: OpenVPNConfig,
+    ) -> Result<String, String> {
+        let id = Uuid::new_v4().to_string();
+        let connection = OpenVPNConnection {
+            id: id.clone(),
+            name,
+            config,
+            status: OpenVPNStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            process_id: None,
+            local_ip: None,
+            remote_ip: None,
+        };
+
+        self.connections.insert(id.clone(), connection);
+        Ok(id)
+    }
+
+    pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        if let OpenVPNStatus::Connected = connection.status {
+            return Ok(());
+        }
+
+        connection.status = OpenVPNStatus::Connecting;
+
+        // Build OpenVPN command arguments
+        let mut args = vec![
+            "--client".to_string(),
+            "--dev".to_string(),
+            "tun".to_string(),
+        ];
+
+        // Add configuration file if provided
+        if let Some(config_file) = &connection.config.config_file {
+            if Path::new(config_file).exists() {
+                args.push("--config".to_string());
+                args.push(config_file.clone());
+            }
+        }
+
+        // Add individual options
+        if let Some(remote_host) = &connection.config.remote_host {
+            args.push("--remote".to_string());
+            args.push(remote_host.clone());
+        }
+
+        if let Some(remote_port) = connection.config.remote_port {
+            args.push("--port".to_string());
+            args.push(remote_port.to_string());
+        }
+
+        if let Some(protocol) = &connection.config.protocol {
+            args.push("--proto".to_string());
+            args.push(protocol.clone());
+        }
+
+        if let Some(cipher) = &connection.config.cipher {
+            args.push("--cipher".to_string());
+            args.push(cipher.clone());
+        }
+
+        if let Some(auth) = &connection.config.auth {
+            args.push("--auth".to_string());
+            args.push(auth.clone());
+        }
+
+        if connection.config.tls_auth.unwrap_or(false) {
+            args.push("--tls-auth".to_string());
+            args.push("ta.key".to_string()); // Assume ta.key file exists
+        }
+
+        if connection.config.tls_crypt.unwrap_or(false) {
+            args.push("--tls-crypt".to_string());
+            args.push("tls-crypt.key".to_string()); // Assume tls-crypt.key file exists
+        }
+
+        if connection.config.compression.unwrap_or(false) {
+            args.push("--compress".to_string());
+            args.push("lz4".to_string());
+        }
+
+        if let Some(mss_fix) = connection.config.mss_fix {
+            args.push("--mssfix".to_string());
+            args.push(mss_fix.to_string());
+        }
+
+        if let Some(tun_mtu) = connection.config.tun_mtu {
+            args.push("--tun-mtu".to_string());
+            args.push(tun_mtu.to_string());
+        }
+
+        if let Some(fragment) = connection.config.fragment {
+            args.push("--fragment".to_string());
+            args.push(fragment.to_string());
+        }
+
+        if connection.config.mtu_discover.unwrap_or(false) {
+            args.push("--mtu-disc".to_string());
+            args.push("yes".to_string());
+        }
+
+        if let Some(keep_alive) = &connection.config.keep_alive {
+            args.push("--keepalive".to_string());
+            args.push(keep_alive.interval.to_string());
+            args.push(keep_alive.timeout.to_string());
+        }
+
+        if connection.config.route_no_pull.unwrap_or(false) {
+            args.push("--route-no-pull".to_string());
+        }
+
+        // Add routes
+        for route in &connection.config.routes {
+            args.push("--route".to_string());
+            args.push(route.network.clone());
+            args.push(route.netmask.clone());
+            if let Some(gateway) = &route.gateway {
+                args.push(gateway.clone());
+            }
+        }
+
+        // Add DNS servers
+        for dns in &connection.config.dns_servers {
+            args.push("--dhcp-option".to_string());
+            args.push("DNS".to_string());
+            args.push(dns.server.clone());
+            if let Some(domain) = &dns.domain {
+                args.push("--dhcp-option".to_string());
+                args.push("DOMAIN".to_string());
+                args.push(domain.clone());
+            }
+        }
+
+        // Add custom options
+        for option in &connection.config.custom_options {
+            args.push(option.clone());
+        }
+
+        // Add management interface
+        args.push("--management".to_string());
+        args.push("127.0.0.1".to_string());
+        args.push("7505".to_string());
+        args.push("--management-client".to_string());
+
+        // Add daemon mode
+        args.push("--daemon".to_string());
+
+        // Start OpenVPN process
+        let binary = platform::resolve_binary("openvpn")
+            .map_err(|e| format!("Failed to find openvpn binary: {}", e))?;
+        let mut child = Command::new(binary)
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start OpenVPN: {}", e))?;
+
+        let pid = child.id().ok_or("Failed to get process ID")?;
+        connection.process_id = Some(pid);
+        connection.connected_at = Some(Utc::now());
+
+        // Wait a bit for connection to establish
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+        // Check if process is still running
+        if let Ok(Some(_)) = child.try_wait() {
+            let err_msg = "OpenVPN process exited early".to_string();
+            connection.status = OpenVPNStatus::Error(err_msg.clone());
+
+            self.emit_status(
+                connection_id,
+                "error",
+                serde_json::json!({ "error": err_msg }),
+            );
+            return Err("OpenVPN connection failed".to_string());
+        }
+
+        connection.status = OpenVPNStatus::Connected;
+        let local_ip = connection.local_ip.clone();
+        let remote_ip = connection.remote_ip.clone();
+
+        self.emit_status(
+            connection_id,
+            "connected",
+            serde_json::json!({
+                "local_ip": local_ip,
+                "remote_ip": remote_ip,
+            }),
+        );
+        Ok(())
+    }
+
+    pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        if let Some(pid) = connection.process_id {
+            // Kill the OpenVPN process
+            #[cfg(windows)]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/F"])
+                    .status()
+                    .await;
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = Command::new("kill").arg(pid.to_string()).status().await;
+            }
+        }
+
+        connection.status = OpenVPNStatus::Disconnected;
+        connection.process_id = None;
+        connection.connected_at = None;
+        connection.local_ip = None;
+        connection.remote_ip = None;
+
+
+        self.emit_status(
+            connection_id,
+            "disconnected",
+            serde_json::json!({}),
+        );
+
+        Ok(())
+    }
+
+    pub async fn get_connection(&self, connection_id: &str) -> Result<OpenVPNConnection, String> {
+        self.connections
+            .get(connection_id)
+            .cloned()
+            .ok_or_else(|| "OpenVPN connection not found".to_string())
+    }
+
+    pub async fn list_connections(&self) -> Vec<OpenVPNConnection> {
+        self.connections.values().cloned().collect()
+    }
+
+    pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
+        if let Some(connection) = self.connections.get(connection_id) {
+            if let OpenVPNStatus::Connected = connection.status {
+                self.disconnect(connection_id).await?;
+            }
+        }
+
+        self.connections.remove(connection_id);
+        Ok(())
+    }
+
+    pub async fn get_status(&self, connection_id: &str) -> Result<OpenVPNStatus, String> {
+        let connection = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+        Ok(connection.status.clone())
+    }
+
+    pub async fn is_connection_active(&self, connection_id: &str) -> bool {
+        if let Some(connection) = self.connections.get(connection_id) {
+            matches!(connection.status, OpenVPNStatus::Connected)
+        } else {
+            false
+        }
+    }
+
+    pub async fn parse_ovpn_file(&self, ovpn_content: &str) -> Result<OpenVPNConfig, String> {
+        let mut config = OpenVPNConfig {
+            config_file: None,
+            auth_file: None,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            username: None,
+            password: None,
+            remote_host: None,
+            remote_port: None,
+            protocol: None,
+            cipher: None,
+            auth: None,
+            tls_auth: None,
+            tls_crypt: None,
+            compression: None,
+            mss_fix: None,
+            tun_mtu: None,
+            fragment: None,
+            mtu_discover: None,
+            keep_alive: None,
+            route_no_pull: None,
+            routes: Vec::new(),
+            dns_servers: Vec::new(),
+            custom_options: Vec::new(),
+        };
+
+        let lines: Vec<&str> = ovpn_content.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            let line = lines[i].trim();
+
+            // Skip comments and empty lines
+            if line.starts_with('#') || line.starts_with(';') || line.is_empty() {
+                i += 1;
+                continue;
+            }
+
+            // Parse remote directive
+            if line.starts_with("remote ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.remote_host = Some(parts[1].to_string());
+                    if parts.len() >= 3 {
+                        config.remote_port = parts[2].parse().ok();
+                    }
+                }
+            }
+            // Parse port directive
+            else if line.starts_with("port ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.remote_port = parts[1].parse().ok();
+                }
+            }
+            // Parse proto directive
+            else if line.starts_with("proto ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.protocol = Some(parts[1].to_string());
+                }
+            }
+            // Parse cipher directive
+            else if line.starts_with("cipher ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.cipher = Some(parts[1].to_string());
+                }
+            }
+            // Parse auth directive
+            else if line.starts_with("auth ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.auth = Some(parts[1].to_string());
+                }
+            }
+            // Parse tls-auth directive
+            else if line == "tls-auth ta.key" || line == "tls-auth ta.key 1" {
+                config.tls_auth = Some(true);
+            }
+            // Parse tls-crypt directive
+            else if line.starts_with("tls-crypt ") {
+                config.tls_crypt = Some(true);
+            }
+            // Parse compress directive
+            else if line.starts_with("compress ") || line == "compress" {
+                config.compression = Some(true);
+            }
+            // Parse mssfix directive
+            else if line.starts_with("mssfix ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.mss_fix = parts[1].parse().ok();
+                }
+            }
+            // Parse tun-mtu directive
+            else if line.starts_with("tun-mtu ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.tun_mtu = parts[1].parse().ok();
+                }
+            }
+            // Parse fragment directive
+            else if line.starts_with("fragment ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.fragment = parts[1].parse().ok();
+                }
+            }
+            // Parse mtu-disc directive
+            else if line.starts_with("mtu-disc ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.mtu_discover = Some(parts[1] == "yes");
+                }
+            }
+            // Parse keepalive directive
+            else if line.starts_with("keepalive ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    config.keep_alive = Some(KeepAliveConfig {
+                        interval: parts[1].parse().unwrap_or(10),
+                        timeout: parts[2].parse().unwrap_or(60),
+                    });
+                }
+            }
+            // Parse route-no-pull directive
+            else if line == "route-no-pull" {
+                config.route_no_pull = Some(true);
+            }
+            // Parse route directive
+            else if line.starts_with("route ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    config.routes.push(RouteConfig {
+                        network: parts[1].to_string(),
+                        netmask: parts[2].to_string(),
+                        gateway: parts.get(3).map(|s| s.to_string()),
+                    });
+                }
+            }
+            // Parse dhcp-option DNS directive
+            else if line.starts_with("dhcp-option DNS ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    config.dns_servers.push(DNSConfig {
+                        server: parts[2].to_string(),
+                        domain: None,
+                    });
+                }
+            }
+            // Parse dhcp-option DOMAIN directive
+            else if line.starts_with("dhcp-option DOMAIN ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 && !config.dns_servers.is_empty() {
+                    if let Some(dns) = config.dns_servers.last_mut() {
+                        dns.domain = Some(parts[2].to_string());
+                    }
+                }
+            }
+            // Handle inline certificates and keys
+            else if line == "<ca>" {
+                let mut cert_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</ca>" {
+                    cert_content.push_str(lines[i]);
+                    cert_content.push('\n');
+                    i += 1;
+                }
+                // In a real implementation, you'd save this to a temp file
+                config.ca_cert = Some("inline_ca_cert".to_string());
+            } else if line == "<cert>" {
+                let mut cert_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</cert>" {
+                    cert_content.push_str(lines[i]);
+                    cert_content.push('\n');
+                    i += 1;
+                }
+                config.client_cert = Some("inline_client_cert".to_string());
+            } else if line == "<key>" {
+                let mut key_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</key>" {
+                    key_content.push_str(lines[i]);
+                    key_content.push('\n');
+                    i += 1;
+                }
+                config.client_key = Some("inline_client_key".to_string());
+            } else if line == "<tls-auth>" {
+                let mut tls_auth_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</tls-auth>" {
+                    tls_auth_content.push_str(lines[i]);
+                    tls_auth_content.push('\n');
+                    i += 1;
+                }
+                config.tls_auth = Some(true);
+            } else if line == "<tls-crypt>" {
+                let mut tls_crypt_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</tls-crypt>" {
+                    tls_crypt_content.push_str(lines[i]);
+                    tls_crypt_content.push('\n');
+                    i += 1;
+                }
+                config.tls_crypt = Some(true);
+            }
+            // Add other directives as custom options
+            else if !line.is_empty() {
+                config.custom_options.push(line.to_string());
+            }
+
+            i += 1;
+        }
+
+        Ok(config)
+    }
+
+    pub async fn create_connection_from_ovpn(
+        &mut self,
+        name: String,
+        ovpn_content: String,
+    ) -> Result<String, String> {
+        let config = self.parse_ovpn_file(&ovpn_content).await?;
+        self.create_connection(name, config).await
+    }
+
+    pub async fn update_connection_auth(
+        &mut self,
+        connection_id: &str,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        connection.config.username = username;
+        connection.config.password = password;
+        Ok(())
+    }
+
+    pub async fn update_connection(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        config: Option<OpenVPNConfig>,
+    ) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        if let Some(new_name) = name {
+            connection.name = new_name;
+        }
+        if let Some(new_config) = config {
+            connection.config = new_config;
+        }
+        Ok(())
+    }
+
+    pub async fn set_connection_key_files(
+        &mut self,
+        connection_id: &str,
+        ca_cert: Option<String>,
+        client_cert: Option<String>,
+        client_key: Option<String>,
+        tls_auth: Option<String>,
+    ) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        connection.config.ca_cert = ca_cert;
+        connection.config.client_cert = client_cert;
+        connection.config.client_key = client_key;
+
+        if tls_auth.is_some() {
+            connection.config.tls_auth = Some(true);
+        }
+
+        Ok(())
+    }
+
+    pub async fn validate_ovpn_config(&self, ovpn_content: &str) -> Result<Vec<String>, String> {
+        let mut warnings = Vec::new();
+        let mut errors = Vec::new();
+
+        let lines: Vec<&str> = ovpn_content.lines().collect();
+
+        let mut has_remote = false;
+        let mut has_ca = false;
+        let mut has_cert = false;
+        let mut has_key = false;
+
+        for line in lines {
+            let line = line.trim();
+
+            if line.starts_with("remote ") {
+                has_remote = true;
+            } else if line == "<ca>" {
+                has_ca = true;
+            } else if line == "<cert>" {
+                has_cert = true;
+            } else if line == "<key>" {
+                has_key = true;
+            } else if line.starts_with("cipher ") {
+                // Check if cipher is supported
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let cipher = parts[1];
+                    if ![
+                        "AES-256-GCM",
+                        "AES-128-GCM",
+                        "AES-256-CBC",
+                        "AES-128-CBC",
+                        "BF-CBC",
+                    ]
+                    .contains(&cipher)
+                    {
+                        warnings.push(format!("Potentially unsupported cipher: {}", cipher));
+                    }
+                }
+            }
+        }
+
+        if !has_remote {
+            errors.push("No remote server specified".to_string());
+        }
+
+        if !has_ca {
+            warnings.push("No CA certificate specified - connection may not be secure".to_string());
+        }
+
+        if !has_cert && !has_key {
+            warnings.push(
+                "No client certificate or key specified - will use password authentication only"
+                    .to_string(),
+            );
+        }
+
+        if !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
+
+        Ok(warnings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_config() -> OpenVPNConfig {
+        OpenVPNConfig {
+            config_file: None,
+            auth_file: None,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            username: None,
+            password: None,
+            remote_host: Some("vpn.example.com".to_string()),
+            remote_port: Some(1194),
+            protocol: Some("udp".to_string()),
+            cipher: None,
+            auth: None,
+            tls_auth: None,
+            tls_crypt: None,
+            compression: None,
+            mss_fix: None,
+            tun_mtu: None,
+            fragment: None,
+            mtu_discover: None,
+            keep_alive: None,
+            route_no_pull: None,
+            routes: Vec::new(),
+            dns_servers: Vec::new(),
+            custom_options: Vec::new(),
+        }
+    }
+
+    // ── Serde ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn openvpn_status_serde_roundtrip() {
+        let variants: Vec<OpenVPNStatus> = vec![
+            OpenVPNStatus::Disconnected,
+            OpenVPNStatus::Connecting,
+            OpenVPNStatus::Connected,
+            OpenVPNStatus::Disconnecting,
+            OpenVPNStatus::Error("test error".to_string()),
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: OpenVPNStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", v), format!("{:?}", back));
+        }
+    }
+
+    #[test]
+    fn openvpn_config_serde_roundtrip() {
+        let cfg = default_config();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: OpenVPNConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.remote_host, Some("vpn.example.com".to_string()));
+        assert_eq!(back.remote_port, Some(1194));
+    }
+
+    #[test]
+    fn openvpn_connection_serde_roundtrip() {
+        let conn = OpenVPNConnection {
+            id: "abc".to_string(),
+            name: "Test VPN".to_string(),
+            config: default_config(),
+            status: OpenVPNStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            process_id: None,
+            local_ip: None,
+            remote_ip: None,
+        };
+        let json = serde_json::to_string(&conn).unwrap();
+        let back: OpenVPNConnection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "abc");
+        assert_eq!(back.name, "Test VPN");
+    }
+
+    // ── Connection CRUD ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn create_connection_returns_uuid() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        assert!(!id.is_empty());
+        // UUID format check
+        assert_eq!(id.len(), 36);
+    }
+
+    #[tokio::test]
+    async fn create_connection_initial_status_disconnected() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert!(matches!(conn.status, OpenVPNStatus::Disconnected));
+    }
+
+    #[tokio::test]
+    async fn list_connections_empty() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        assert!(svc.list_connections().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_connections_after_create() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        svc.create_connection("VPN1".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.create_connection("VPN2".to_string(), default_config())
+            .await
+            .unwrap();
+        assert_eq!(svc.list_connections().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_connection_not_found() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc.get_connection("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_connection_removes_it() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.delete_connection(&id).await.unwrap();
+        assert!(svc.get_connection(&id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn is_connection_active_false_when_disconnected() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        assert!(!svc.is_connection_active(&id).await);
+    }
+
+    #[tokio::test]
+    async fn is_connection_active_false_for_nonexistent() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        assert!(!svc.is_connection_active("nonexistent").await);
+    }
+
+    #[tokio::test]
+    async fn get_status_not_found() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        assert!(svc.get_status("nonexistent").await.is_err());
+    }
+
+    // ── Auth / key file updates ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn update_connection_auth() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.update_connection_auth(&id, Some("user".to_string()), Some("pass".to_string()))
+            .await
+            .unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.config.username, Some("user".to_string()));
+        assert_eq!(conn.config.password, Some("pass".to_string()));
+    }
+
+    #[tokio::test]
+    async fn update_connection_auth_not_found() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let result = svc.update_connection_auth("nope", None, None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_connection_key_files() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.set_connection_key_files(
+            &id,
+            Some("ca.pem".into()),
+            Some("cert.pem".into()),
+            Some("key.pem".into()),
+            Some("ta.key".into()),
+        )
+        .await
+        .unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.config.ca_cert, Some("ca.pem".to_string()));
+        assert_eq!(conn.config.tls_auth, Some(true));
+    }
+
+    // ── .ovpn parsing ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn parse_ovpn_minimal() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote vpn.example.com 443\nproto tcp\ncipher AES-256-GCM\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.remote_host, Some("vpn.example.com".to_string()));
+        assert_eq!(cfg.remote_port, Some(443));
+        assert_eq!(cfg.protocol, Some("tcp".to_string()));
+        assert_eq!(cfg.cipher, Some("AES-256-GCM".to_string()));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_with_keepalive() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\nkeepalive 10 120\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        let ka = cfg.keep_alive.unwrap();
+        assert_eq!(ka.interval, 10);
+        assert_eq!(ka.timeout, 120);
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_with_routes_and_dns() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\nroute 10.0.0.0 255.255.0.0\ndhcp-option DNS 8.8.8.8\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.routes.len(), 1);
+        assert_eq!(cfg.routes[0].network, "10.0.0.0");
+        assert_eq!(cfg.dns_servers.len(), 1);
+        assert_eq!(cfg.dns_servers[0].server, "8.8.8.8");
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_skips_comments() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "# This is a comment\n; Another comment\nremote host 1194\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.remote_host, Some("host".to_string()));
+        assert!(cfg.custom_options.is_empty());
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_inline_certs() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\n<ca>\nMIIC...\n</ca>\n<cert>\nMIID...\n</cert>\n<key>\nMIIE...\n</key>\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.ca_cert, Some("inline_ca_cert".to_string()));
+        assert_eq!(cfg.client_cert, Some("inline_client_cert".to_string()));
+        assert_eq!(cfg.client_key, Some("inline_client_key".to_string()));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_empty() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let cfg = svc.parse_ovpn_file("").await.unwrap();
+        assert!(cfg.remote_host.is_none());
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_route_no_pull() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\nroute-no-pull\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.route_no_pull, Some(true));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_mtu_settings() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\ntun-mtu 1500\nmssfix 1400\nfragment 1300\nmtu-disc yes\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.tun_mtu, Some(1500));
+        assert_eq!(cfg.mss_fix, Some(1400));
+        assert_eq!(cfg.fragment, Some(1300));
+        assert_eq!(cfg.mtu_discover, Some(true));
+    }
+
+    // ── Config validation ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn validate_ovpn_no_remote_fails() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc.validate_ovpn_config("cipher AES-256-GCM\n").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No remote"));
+    }
+
+    #[tokio::test]
+    async fn validate_ovpn_with_remote_ok() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc
+            .validate_ovpn_config(
+                "remote vpn.example.com 1194\n<ca>\n</ca>\n<cert>\n</cert>\n<key>\n</key>\n",
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn validate_ovpn_unsupported_cipher_warns() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc
+            .validate_ovpn_config("remote host 1194\ncipher CHACHA20\n")
+            .await
+            .unwrap();
+        assert!(result.iter().any(|w| w.contains("unsupported cipher")));
+    }
+
+    #[tokio::test]
+    async fn validate_ovpn_no_certs_warns() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let warnings = svc
+            .validate_ovpn_config("remote host 1194\n")
+            .await
+            .unwrap();
+        assert!(
+            !warnings.is_empty(),
+            "Should produce warnings about missing certs"
+        );
+    }
+
+    // ── create_connection_from_ovpn ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn create_from_ovpn() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let ovpn = "remote myserver.com 443\nproto tcp\ncipher AES-256-GCM\n";
+        let id = svc
+            .create_connection_from_ovpn("MyVPN".to_string(), ovpn.to_string())
+            .await
+            .unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.name, "MyVPN");
+        assert_eq!(conn.config.remote_host, Some("myserver.com".to_string()));
+    }
+
+    // ── update_connection ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn update_connection_name() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let config = default_config();
+        let id = svc.create_connection("Original".to_string(), config).await.unwrap();
+
+        svc.update_connection(&id, Some("Updated Name".to_string()), None).await.unwrap();
+
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.name, "Updated Name");
+    }
+
+    #[tokio::test]
+    async fn update_connection_config() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let config = default_config();
+        let id = svc.create_connection("Test".to_string(), config).await.unwrap();
+
+        let mut new_config = default_config();
+        new_config.remote_host = Some("new-host.example.com".to_string());
+        new_config.remote_port = Some(443);
+
+        svc.update_connection(&id, None, Some(new_config)).await.unwrap();
+
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.config.remote_host, Some("new-host.example.com".to_string()));
+        assert_eq!(conn.config.remote_port, Some(443));
+    }
+
+    #[tokio::test]
+    async fn update_connection_both() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let config = default_config();
+        let id = svc.create_connection("Test".to_string(), config).await.unwrap();
+
+        let mut new_config = default_config();
+        new_config.protocol = Some("tcp".to_string());
+
+        svc.update_connection(&id, Some("Renamed".to_string()), Some(new_config)).await.unwrap();
+
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.name, "Renamed");
+        assert_eq!(conn.config.protocol, Some("tcp".to_string()));
+    }
+
+    #[tokio::test]
+    async fn update_connection_not_found() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let result = svc.update_connection("nonexistent", Some("Name".to_string()), None).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn update_connection_no_changes() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let config = default_config();
+        let id = svc.create_connection("Test".to_string(), config).await.unwrap();
+
+        // Update with None for both should be a no-op
+        svc.update_connection(&id, None, None).await.unwrap();
+
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.name, "Test");
+    }
+}
+

@@ -1,0 +1,31 @@
+{
+  "Objects": [
+    {
+      "Type": "RoyalFolder",
+      "Name": "Infrastructure",
+      "Objects": [
+        {
+          "Type": "RoyalRDSConnection",
+          "Name": "Windows Server 2022",
+          "URI": "win2022.example.com",
+          "Port": 3389,
+          "CredentialUsername": "admin"
+        },
+        {
+          "Type": "RoyalSSHConnection",
+          "Name": "Web Server",
+          "URI": "web.example.com",
+          "Port": 22,
+          "CredentialUsername": "webadmin"
+        }
+      ]
+    },
+    {
+      "Type": "RoyalSSHConnection",
+      "Name": "Jump Host",
+      "URI": "jump.example.com",
+      "Port": 22,
+      "CredentialUsername": "jumper"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+[package]
+name = "sorng-kafka"
+version = "0.1.0"
+edition = "2021"
+description = "Apache Kafka integration — cluster management, topic operations, consumer groups, producer/consumer, ACLs, Schema Registry, Kafka Connect, quotas, reassignment, and performance monitoring"
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+# rdkafka 0.36. Linking mode is selected by the mutually-exclusive `cmake-build`
+# and `dynamic-linking` crate features (below). We keep `libz` + `tokio` here
+# because the async `FutureProducer` / `StreamConsumer` APIs this crate uses
+# require rdkafka's `tokio` feature, and compression codec support needs libz.
+# See `README.md` in this crate for platform-specific install instructions +
+# the known MSYS64 cmake failure workaround.
+rdkafka = { version = "0.36", default-features = false, features = ["libz", "tokio"] }
+reqwest = { workspace = true, features = ["cookies"] }
+url = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+# Runtime `librdkafka` presence probe (t3-e38). Used by `runtime_check.rs`
+# to surface a typed `LibraryMissing` error with a per-OS install hint when
+# the `dynamic-linking` feature is active and the native library is absent.
+libloading = "0.8"
+
+[features]
+# Default: dynamic-link against a system-installed librdkafka (t3-e38).
+# This is the v1.0 shipping configuration — release artifacts expect users
+# to install librdkafka ≥ 2.x via their OS package manager (apt, dnf,
+# pacman, brew, vcpkg, winget). The static `cmake-build` path is retained
+# for developer builds / CI images that want a self-contained binary but
+# is no longer the default because the MSYS64 cmake path-mangling failure
+# blocks out-of-the-box Windows builds. See `README.md` for install
+# instructions and `runtime_check.rs` for the missing-library diagnostic.
+default = ["dynamic-linking"]
+# Link against a system-installed librdkafka — skips the cmake build entirely.
+# Enable via `--features kafka-dynamic` on the top-level app crate. Users must
+# install librdkafka themselves (vcpkg, pacman, brew, winget — see README).
+dynamic-linking = ["rdkafka/dynamic-linking"]
+# Compile librdkafka from source via cmake. Produces a statically linked
+# binary. Requires CMake + a C toolchain. Fails on Windows/MSYS64 due to
+# mixed-slash path mangling (see README). Opt in via `--features kafka`
+# on the top-level app crate.
+cmake-build = ["rdkafka/cmake-build"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+serde_json = { workspace = true }

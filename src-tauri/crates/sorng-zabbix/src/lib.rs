@@ -1,0 +1,17 @@
+pub mod actions;
+pub mod alerts;
+pub mod client;
+pub mod discovery;
+pub mod error;
+pub mod graphs;
+pub mod host_groups;
+pub mod hosts;
+pub mod items;
+pub mod maintenance;
+pub mod media_types;
+pub mod proxies;
+pub mod service;
+pub mod templates;
+pub mod triggers;
+pub mod types;
+pub mod users;
