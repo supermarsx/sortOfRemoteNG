@@ -8,8 +8,7 @@ mod types {
 
 #[allow(dead_code)]
 mod inner {
-    include!("../crates/sorng-hetzner/src/commands.rs");
+    include!("../../sorng-hetzner/src/commands.rs");
 }
 
 pub(crate) use inner::*;
-

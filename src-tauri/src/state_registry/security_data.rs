@@ -58,6 +58,10 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let smtp_service = SmtpService::new();
     app.manage(smtp_service.clone());
 
+    // Hetzner Cloud — 76 commands (sorng-hetzner)
+    let hetzner_service = HetznerService::new();
+    app.manage(hetzner_service);
+
     let ibm_service = IbmService::new();
     app.manage(ibm_service.clone());
 

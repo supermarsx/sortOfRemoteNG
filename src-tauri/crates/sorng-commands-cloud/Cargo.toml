@@ -6,6 +6,7 @@ description = "Cloud command handlers — split from app crate to reduce coheren
 
 [dependencies]
 sorng-app-domains = { path = "../sorng-app-domains", features = ["cloud"] }
+sorng-hetzner = { path = "../sorng-hetzner" }
 tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

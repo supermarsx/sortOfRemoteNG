@@ -9437,6 +9437,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-app-domains",
+ "sorng-hetzner",
  "tauri",
 ]
 

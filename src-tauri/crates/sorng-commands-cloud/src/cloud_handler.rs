@@ -349,6 +349,82 @@ pub fn is_command(command: &str) -> bool {
             | "exchange_list_mailbox_export_requests"
             | "exchange_remove_mailbox_import_request"
             | "exchange_remove_mailbox_export_request"
+            | "hetzner_connect"
+            | "hetzner_disconnect"
+            | "hetzner_list_connections"
+            | "hetzner_ping"
+            | "hetzner_get_dashboard"
+            | "hetzner_list_servers"
+            | "hetzner_get_server"
+            | "hetzner_create_server"
+            | "hetzner_delete_server"
+            | "hetzner_start_server"
+            | "hetzner_stop_server"
+            | "hetzner_reboot_server"
+            | "hetzner_rebuild_server"
+            | "hetzner_reset_server"
+            | "hetzner_change_server_type"
+            | "hetzner_enable_rescue"
+            | "hetzner_disable_rescue"
+            | "hetzner_create_server_image"
+            | "hetzner_enable_backup"
+            | "hetzner_disable_backup"
+            | "hetzner_get_server_metrics"
+            | "hetzner_list_networks"
+            | "hetzner_get_network"
+            | "hetzner_create_network"
+            | "hetzner_update_network"
+            | "hetzner_delete_network"
+            | "hetzner_add_subnet"
+            | "hetzner_delete_subnet"
+            | "hetzner_add_route"
+            | "hetzner_delete_route"
+            | "hetzner_list_firewalls"
+            | "hetzner_get_firewall"
+            | "hetzner_create_firewall"
+            | "hetzner_update_firewall"
+            | "hetzner_delete_firewall"
+            | "hetzner_set_firewall_rules"
+            | "hetzner_apply_firewall"
+            | "hetzner_remove_firewall"
+            | "hetzner_list_floating_ips"
+            | "hetzner_get_floating_ip"
+            | "hetzner_create_floating_ip"
+            | "hetzner_delete_floating_ip"
+            | "hetzner_assign_floating_ip"
+            | "hetzner_unassign_floating_ip"
+            | "hetzner_list_volumes"
+            | "hetzner_get_volume"
+            | "hetzner_create_volume"
+            | "hetzner_delete_volume"
+            | "hetzner_attach_volume"
+            | "hetzner_detach_volume"
+            | "hetzner_resize_volume"
+            | "hetzner_list_load_balancers"
+            | "hetzner_get_load_balancer"
+            | "hetzner_create_load_balancer"
+            | "hetzner_delete_load_balancer"
+            | "hetzner_add_lb_service"
+            | "hetzner_update_lb_service"
+            | "hetzner_delete_lb_service"
+            | "hetzner_add_lb_target"
+            | "hetzner_remove_lb_target"
+            | "hetzner_list_images"
+            | "hetzner_get_image"
+            | "hetzner_update_image"
+            | "hetzner_delete_image"
+            | "hetzner_list_ssh_keys"
+            | "hetzner_get_ssh_key"
+            | "hetzner_create_ssh_key"
+            | "hetzner_update_ssh_key"
+            | "hetzner_delete_ssh_key"
+            | "hetzner_list_certificates"
+            | "hetzner_get_certificate"
+            | "hetzner_create_certificate"
+            | "hetzner_update_certificate"
+            | "hetzner_delete_certificate"
+            | "hetzner_list_actions"
+            | "hetzner_get_action"
             | "smtp_add_profile"
             | "smtp_update_profile"
             | "smtp_delete_profile"
@@ -795,6 +871,83 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         exchange_commands::exchange_list_mailbox_export_requests,
         exchange_commands::exchange_remove_mailbox_import_request,
         exchange_commands::exchange_remove_mailbox_export_request,
+        // Hetzner commands (sorng-hetzner)
+        hetzner_commands::hetzner_connect,
+        hetzner_commands::hetzner_disconnect,
+        hetzner_commands::hetzner_list_connections,
+        hetzner_commands::hetzner_ping,
+        hetzner_commands::hetzner_get_dashboard,
+        hetzner_commands::hetzner_list_servers,
+        hetzner_commands::hetzner_get_server,
+        hetzner_commands::hetzner_create_server,
+        hetzner_commands::hetzner_delete_server,
+        hetzner_commands::hetzner_start_server,
+        hetzner_commands::hetzner_stop_server,
+        hetzner_commands::hetzner_reboot_server,
+        hetzner_commands::hetzner_rebuild_server,
+        hetzner_commands::hetzner_reset_server,
+        hetzner_commands::hetzner_change_server_type,
+        hetzner_commands::hetzner_enable_rescue,
+        hetzner_commands::hetzner_disable_rescue,
+        hetzner_commands::hetzner_create_server_image,
+        hetzner_commands::hetzner_enable_backup,
+        hetzner_commands::hetzner_disable_backup,
+        hetzner_commands::hetzner_get_server_metrics,
+        hetzner_commands::hetzner_list_networks,
+        hetzner_commands::hetzner_get_network,
+        hetzner_commands::hetzner_create_network,
+        hetzner_commands::hetzner_update_network,
+        hetzner_commands::hetzner_delete_network,
+        hetzner_commands::hetzner_add_subnet,
+        hetzner_commands::hetzner_delete_subnet,
+        hetzner_commands::hetzner_add_route,
+        hetzner_commands::hetzner_delete_route,
+        hetzner_commands::hetzner_list_firewalls,
+        hetzner_commands::hetzner_get_firewall,
+        hetzner_commands::hetzner_create_firewall,
+        hetzner_commands::hetzner_update_firewall,
+        hetzner_commands::hetzner_delete_firewall,
+        hetzner_commands::hetzner_set_firewall_rules,
+        hetzner_commands::hetzner_apply_firewall,
+        hetzner_commands::hetzner_remove_firewall,
+        hetzner_commands::hetzner_list_floating_ips,
+        hetzner_commands::hetzner_get_floating_ip,
+        hetzner_commands::hetzner_create_floating_ip,
+        hetzner_commands::hetzner_delete_floating_ip,
+        hetzner_commands::hetzner_assign_floating_ip,
+        hetzner_commands::hetzner_unassign_floating_ip,
+        hetzner_commands::hetzner_list_volumes,
+        hetzner_commands::hetzner_get_volume,
+        hetzner_commands::hetzner_create_volume,
+        hetzner_commands::hetzner_delete_volume,
+        hetzner_commands::hetzner_attach_volume,
+        hetzner_commands::hetzner_detach_volume,
+        hetzner_commands::hetzner_resize_volume,
+        hetzner_commands::hetzner_list_load_balancers,
+        hetzner_commands::hetzner_get_load_balancer,
+        hetzner_commands::hetzner_create_load_balancer,
+        hetzner_commands::hetzner_delete_load_balancer,
+        hetzner_commands::hetzner_add_lb_service,
+        hetzner_commands::hetzner_update_lb_service,
+        hetzner_commands::hetzner_delete_lb_service,
+        hetzner_commands::hetzner_add_lb_target,
+        hetzner_commands::hetzner_remove_lb_target,
+        hetzner_commands::hetzner_list_images,
+        hetzner_commands::hetzner_get_image,
+        hetzner_commands::hetzner_update_image,
+        hetzner_commands::hetzner_delete_image,
+        hetzner_commands::hetzner_list_ssh_keys,
+        hetzner_commands::hetzner_get_ssh_key,
+        hetzner_commands::hetzner_create_ssh_key,
+        hetzner_commands::hetzner_update_ssh_key,
+        hetzner_commands::hetzner_delete_ssh_key,
+        hetzner_commands::hetzner_list_certificates,
+        hetzner_commands::hetzner_get_certificate,
+        hetzner_commands::hetzner_create_certificate,
+        hetzner_commands::hetzner_update_certificate,
+        hetzner_commands::hetzner_delete_certificate,
+        hetzner_commands::hetzner_list_actions,
+        hetzner_commands::hetzner_get_action,
         // SMTP commands
         smtp_commands::smtp_add_profile,
         smtp_commands::smtp_update_profile,

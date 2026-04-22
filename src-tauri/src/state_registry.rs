@@ -88,6 +88,8 @@ pub(crate) use exchange::service::ExchangeService;
 #[cfg(feature = "cloud")]
 pub(crate) use gcp::GcpService;
 #[cfg(feature = "cloud")]
+pub(crate) use hetzner::service::HetznerService;
+#[cfg(feature = "cloud")]
 pub(crate) use smtp::service::SmtpService;
 
 // ── Platform types ──────────────────────────────────────────────────
