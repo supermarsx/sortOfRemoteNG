@@ -39,6 +39,7 @@ sorng-hooks = { path = "../sorng-hooks" }
 sorng-i18n = { path = "../sorng-i18n" }
 sorng-ipmi = { path = "../sorng-ipmi" }
 sorng-jira = { path = "../sorng-jira" }
+sorng-kafka = { path = "../sorng-kafka", optional = true, default-features = false }
 sorng-k8s = { path = "../sorng-k8s" }
 sorng-kernel = { path = "../sorng-kernel" }
 sorng-letsencrypt = { path = "../sorng-letsencrypt" }
@@ -92,3 +93,10 @@ sorng-wireguard = { path = "../sorng-wireguard" }
 sorng-yubikey = { path = "../sorng-yubikey" }
 sorng-zabbix = { path = "../sorng-zabbix" }
 sorng-zerotier = { path = "../sorng-zerotier" }
+
+[features]
+# Forwarded from app → sorng-app-domains → here via
+# `sorng-app-domains-ops?/kafka`. Enables the `kafka` module re-export so
+# that app-crate code (state registry, ops handler) can refer to
+# `kafka::service::KafkaServiceState` unqualified.
+kafka = ["dep:sorng-kafka"]

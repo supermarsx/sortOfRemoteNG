@@ -255,6 +255,17 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let cicd_state: CicdServiceState = Arc::new(Mutex::new(cicd::service::CicdService::new()));
     app.manage(cicd_state);
 
+    // t5-e5: Kafka service state — registers only when the `kafka`
+    // (dynamic or static) feature is on. `KafkaService::new()` is a pure
+    // HashMap constructor and does not touch librdkafka, so registration
+    // is safe even when the native library is absent; the runtime probe
+    // fires on `kafka_connect` via `RealProbe::probe()`.
+    #[cfg(any(feature = "kafka", feature = "kafka-dynamic", feature = "kafka-static"))]
+    {
+        let kafka_state: KafkaServiceState = kafka::service::new_state();
+        app.manage(kafka_state);
+    }
+
 
     let locales_dir = app
         .path()

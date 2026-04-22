@@ -33,6 +33,8 @@ pub use sorng_hooks as hooks;
 pub use sorng_i18n as i18n;
 pub use sorng_ipmi as ipmi;
 pub use sorng_jira as jira;
+#[cfg(feature = "kafka")]
+pub use sorng_kafka as kafka;
 pub use sorng_k8s as k8s;
 pub use sorng_kernel as kernel_mgmt;
 pub use sorng_letsencrypt as letsencrypt;

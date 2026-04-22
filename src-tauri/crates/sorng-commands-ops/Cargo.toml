@@ -17,6 +17,7 @@ sorng-freeipa = { path = "../sorng-freeipa" }
 sorng-grafana = { path = "../sorng-grafana" }
 sorng-hashicorp-vault = { path = "../sorng-hashicorp-vault" }
 sorng-ipmi = { path = "../sorng-ipmi" }
+sorng-kafka = { path = "../sorng-kafka", optional = true, default-features = false }
 sorng-kernel = { path = "../sorng-kernel" }
 sorng-mac = { path = "../sorng-mac" }
 sorng-mysql-admin = { path = "../sorng-mysql-admin" }
@@ -40,3 +41,11 @@ log = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
+
+[features]
+# Forwarded from the top-level app crate via `sorng-commands-ops?/kafka` so
+# that enabling `kafka` / `kafka-dynamic` / `kafka-static` on the app crate
+# also pulls `sorng-kafka` into this ops commands crate and compiles the 39
+# `kafka_*` Tauri command handlers. Without this forwarding hop the commands
+# would remain unwired even when the app enables Kafka.
+kafka = ["dep:sorng-kafka"]

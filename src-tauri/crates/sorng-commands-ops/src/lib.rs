@@ -10,6 +10,8 @@ pub use sorng_freeipa as freeipa;
 pub use sorng_grafana as grafana;
 pub use sorng_hashicorp_vault as hashicorp_vault;
 pub use sorng_ipmi as ipmi;
+#[cfg(feature = "kafka")]
+pub use sorng_kafka as kafka;
 pub use sorng_kernel as kernel_mgmt;
 pub use sorng_mac as mac_mgmt;
 pub use sorng_mysql_admin as mysql_admin;
@@ -39,6 +41,8 @@ mod freeipa_commands;
 mod grafana_commands;
 mod hashicorp_vault_commands;
 mod ipmi_commands;
+#[cfg(feature = "kafka")]
+mod kafka_commands;
 mod kernel_mgmt_commands;
 #[path = "../../../src/mac_mgmt_commands.rs"]
 mod mac_mgmt_commands;

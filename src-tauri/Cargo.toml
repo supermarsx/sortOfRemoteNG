@@ -362,16 +362,16 @@ db-sqlite = ["sorng-app-domains/db-sqlite"]
 # `sorng-kafka::runtime_check` probe surfaces a typed `LibraryMissing`
 # error with a per-OS install hint if the native library is absent.
 # See `crates/sorng-kafka/README.md` for platform install instructions.
-kafka = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking"]
+kafka = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking", "sorng-commands-ops?/kafka", "sorng-app-domains/kafka"]
 # `kafka-dynamic` is kept as an explicit alias of `kafka` for the v1.0
 # release flow (CI invokes `--features kafka-dynamic`). Both pull the
 # same `dynamic-linking` linking mode.
-kafka-dynamic = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking"]
+kafka-dynamic = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking", "sorng-commands-ops?/kafka", "sorng-app-domains/kafka"]
 # `kafka-static` compiles librdkafka from source via cmake and statically
 # links it. Requires CMake + a C toolchain. Fails on Windows/MSYS64 due
 # to mixed-slash path mangling — use `kafka` or `kafka-dynamic` there.
 # Opt in explicitly; NOT part of release artifacts.
-kafka-static = ["dep:sorng-kafka", "sorng-kafka/cmake-build"]
+kafka-static = ["dep:sorng-kafka", "sorng-kafka/cmake-build", "sorng-commands-ops?/kafka", "sorng-app-domains/kafka"]
 ops = ["sorng-app-domains/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
 platform = ["sorng-app-domains/platform", "dep:sorng-commands-platform"]
 rdp = ["sorng-app-domains/rdp", "sorng-commands-core/rdp"]
