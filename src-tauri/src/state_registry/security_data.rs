@@ -49,6 +49,11 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let gcp_service = GcpService::new();
     app.manage(gcp_service.clone());
 
+    // Oracle Cloud Infrastructure — sorng-oracle-cloud (67 tauri commands).
+    // OciService::new() returns Arc<Mutex<OciService>> (OciServiceState).
+    let oci_service = OciService::new();
+    app.manage(oci_service);
+
     let azure_service = AzureService::new();
     app.manage(azure_service.clone());
 

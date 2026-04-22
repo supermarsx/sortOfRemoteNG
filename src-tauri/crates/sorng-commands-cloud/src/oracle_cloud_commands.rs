@@ -8,8 +8,7 @@ mod types {
 
 #[allow(dead_code)]
 mod inner {
-    include!("../crates/sorng-oracle-cloud/src/commands.rs");
+    include!("../../sorng-oracle-cloud/src/commands.rs");
 }
 
 pub(crate) use inner::*;
-
