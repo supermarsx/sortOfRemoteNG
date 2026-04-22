@@ -31,6 +31,10 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let etcd_state: EtcdServiceState = Arc::new(Mutex::new(EtcdService::new()));
     app.manage(etcd_state);
 
+    // t5-e7: Remote Backup service state (jobs, history, progress).
+    let remote_backup_state: RemoteBackupServiceState = RemoteBackupService::new();
+    app.manage(remote_backup_state);
+
     let terraform_state: TerraformServiceState =
         Arc::new(Mutex::new(terraform::service::TerraformService::new()));
     app.manage(terraform_state);
