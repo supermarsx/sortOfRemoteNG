@@ -5,6 +5,7 @@ pub mod export;
 pub mod import;
 pub mod qr;
 pub mod service;
+pub mod stateless;
 pub mod storage;
 pub mod types;
 pub mod uri;

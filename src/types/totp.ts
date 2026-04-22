@@ -139,3 +139,31 @@ export interface TotpEntryFilter {
 
 /** Tuple returned by `totp_password_strength`: (score 0-100, label). */
 export type TotpPasswordStrength = [number, string];
+
+// ────────────────────────────────────────────────────────────────────
+//  Stateless TOTP helpers (t5-e9)
+// ────────────────────────────────────────────────────────────────────
+
+/** Parameters for the stateless `totp_compute_code` command. */
+export interface TotpComputeCodeParams {
+  secret: string;
+  algorithm?: TotpAlgorithm;
+  digits?: number;
+  period?: number;
+}
+
+/** Parameters for the stateless `totp_build_otpauth_uri` command. */
+export interface TotpBuildOtpauthUriParams {
+  secret: string;
+  issuer: string;
+  account: string;
+  algorithm?: TotpAlgorithm;
+  digits?: number;
+  period?: number;
+}
+
+/** Parameters for the stateless `totp_generate_backup_codes` command. */
+export interface TotpGenerateBackupCodesParams {
+  count: number;
+  length?: number;
+}

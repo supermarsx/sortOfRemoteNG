@@ -112,6 +112,33 @@ export const totpApi = {
   deduplicate: (): Promise<number> => invoke("totp_deduplicate"),
   vaultStats: (): Promise<TotpVaultStats> => invoke("totp_vault_stats"),
   allTags: (): Promise<string[]> => invoke("totp_all_tags"),
+
+  // ── Stateless helpers (t5-e9, 3) ───────────────────────────────
+  computeCode: (
+    secret: string,
+    algorithm?: TotpAlgorithm,
+    digits?: number,
+    period?: number,
+  ): Promise<string> =>
+    invoke("totp_compute_code", { secret, algorithm, digits, period }),
+  buildOtpauthUri: (
+    secret: string,
+    issuer: string,
+    account: string,
+    algorithm?: TotpAlgorithm,
+    digits?: number,
+    period?: number,
+  ): Promise<string> =>
+    invoke("totp_build_otpauth_uri", {
+      secret,
+      issuer,
+      account,
+      algorithm,
+      digits,
+      period,
+    }),
+  generateBackupCodes: (count: number, length?: number): Promise<string[]> =>
+    invoke("totp_generate_backup_codes", { count, length }),
 };
 
 /**

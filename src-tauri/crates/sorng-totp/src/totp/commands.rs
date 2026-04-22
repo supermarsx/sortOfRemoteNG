@@ -366,3 +366,49 @@ pub async fn totp_all_tags(
     let svc = state.lock().await;
     svc.all_tags().map_err(|e| e.to_string())
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Stateless commands (t5-e9)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Compute a current TOTP code from a raw base-32 secret.
+#[tauri::command]
+pub async fn totp_compute_code(
+    secret: String,
+    algorithm: Option<String>,
+    digits: Option<u32>,
+    period: Option<u64>,
+) -> Result<String, String> {
+    super::stateless::compute_code(&secret, algorithm.as_deref(), digits, period)
+        .map_err(|e| e.to_string())
+}
+
+/// Build an `otpauth://totp/...` URI from ad-hoc parameters.
+#[tauri::command]
+pub async fn totp_build_otpauth_uri(
+    secret: String,
+    issuer: String,
+    account: String,
+    algorithm: Option<String>,
+    digits: Option<u32>,
+    period: Option<u64>,
+) -> Result<String, String> {
+    super::stateless::build_otpauth_uri(
+        &secret,
+        &issuer,
+        &account,
+        algorithm.as_deref(),
+        digits,
+        period,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Generate `count` random readable backup codes (default length = 10).
+#[tauri::command]
+pub async fn totp_generate_backup_codes(
+    count: u32,
+    length: Option<u32>,
+) -> Result<Vec<String>, String> {
+    super::stateless::generate_backup_codes(count, length).map_err(|e| e.to_string())
+}

@@ -937,6 +937,10 @@ pub fn is_command(command: &str) -> bool {
             | "totp_deduplicate"
             | "totp_vault_stats"
             | "totp_all_tags"
+            // ── t5-e9: stateless TOTP helpers ─────────────────────────
+            | "totp_compute_code"
+            | "totp_build_otpauth_uri"
+            | "totp_generate_backup_codes"
     )
     || {
         // ── PowerShell Remoting (53) ─────────────────────────────────
@@ -2005,6 +2009,10 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         openvpn_dedicated_commands::openvpn_get_default_reconnect,
         openvpn_dedicated_commands::openvpn_set_default_routing,
         openvpn_dedicated_commands::openvpn_set_default_dns,
+        // ── t5-e9: stateless TOTP helpers ──────────────────────────
+        totp_commands::totp_compute_code,
+        totp_commands::totp_build_otpauth_uri,
+        totp_commands::totp_generate_backup_codes,
         // rlogin::connect_rlogin,
         // rlogin::disconnect_rlogin,
         // rlogin::send_rlogin_command,

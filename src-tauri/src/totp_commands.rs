@@ -10,6 +10,10 @@ mod types {
     pub use crate::totp::types::*;
 }
 
+mod stateless {
+    pub use crate::totp::stateless::*;
+}
+
 #[allow(dead_code)]
 mod inner {
     include!("../crates/sorng-totp/src/totp/commands.rs");
