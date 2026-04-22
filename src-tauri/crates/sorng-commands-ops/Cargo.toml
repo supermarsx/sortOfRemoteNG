@@ -9,6 +9,7 @@ sorng-about = { path = "../sorng-about" }
 sorng-bootloader = { path = "../sorng-bootloader" }
 sorng-ceph = { path = "../sorng-ceph" }
 sorng-cicd = { path = "../sorng-cicd" }
+sorng-consul = { path = "../sorng-consul" }
 sorng-cpanel = { path = "../sorng-cpanel" }
 sorng-cron = { path = "../sorng-cron" }
 sorng-cups = { path = "../sorng-cups" }

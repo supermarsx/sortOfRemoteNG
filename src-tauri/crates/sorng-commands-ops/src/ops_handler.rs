@@ -1086,6 +1086,7 @@ pub fn is_command(command: &str) -> bool {
         || is_command_k(command)
         || is_command_l(command)
         || is_command_m(command)
+        || is_command_r(command)
 }
 
 fn is_command_c(command: &str) -> bool {
@@ -3362,6 +3363,83 @@ fn build_m() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
     ]
 }
 
+fn is_command_r(command: &str) -> bool {
+    matches!(
+        command,
+        // ── Consul (32) ── t5-e6 ─────────────────────────────────────
+        "consul_connect"
+            | "consul_disconnect"
+            | "consul_list_connections"
+            | "consul_get_dashboard"
+            | "consul_kv_get"
+            | "consul_kv_put"
+            | "consul_kv_delete"
+            | "consul_kv_list"
+            | "consul_kv_get_tree"
+            | "consul_list_services"
+            | "consul_get_service"
+            | "consul_register_service"
+            | "consul_deregister_service"
+            | "consul_list_nodes"
+            | "consul_get_node"
+            | "consul_list_datacenters"
+            | "consul_node_health"
+            | "consul_service_health"
+            | "consul_agent_info"
+            | "consul_agent_members"
+            | "consul_agent_join"
+            | "consul_agent_leave"
+            | "consul_agent_metrics"
+            | "consul_acl_list_tokens"
+            | "consul_acl_create_token"
+            | "consul_acl_list_policies"
+            | "consul_acl_create_policy"
+            | "consul_sessions_list"
+            | "consul_sessions_create"
+            | "consul_sessions_delete"
+            | "consul_fire_event"
+            | "consul_list_events"
+    )
+}
+
+fn build_r() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // Consul commands (32, t5-e6)
+        consul_commands::consul_connect,
+        consul_commands::consul_disconnect,
+        consul_commands::consul_list_connections,
+        consul_commands::consul_get_dashboard,
+        consul_commands::consul_kv_get,
+        consul_commands::consul_kv_put,
+        consul_commands::consul_kv_delete,
+        consul_commands::consul_kv_list,
+        consul_commands::consul_kv_get_tree,
+        consul_commands::consul_list_services,
+        consul_commands::consul_get_service,
+        consul_commands::consul_register_service,
+        consul_commands::consul_deregister_service,
+        consul_commands::consul_list_nodes,
+        consul_commands::consul_get_node,
+        consul_commands::consul_list_datacenters,
+        consul_commands::consul_node_health,
+        consul_commands::consul_service_health,
+        consul_commands::consul_agent_info,
+        consul_commands::consul_agent_members,
+        consul_commands::consul_agent_join,
+        consul_commands::consul_agent_leave,
+        consul_commands::consul_agent_metrics,
+        consul_commands::consul_acl_list_tokens,
+        consul_commands::consul_acl_create_token,
+        consul_commands::consul_acl_list_policies,
+        consul_commands::consul_acl_create_policy,
+        consul_commands::consul_sessions_list,
+        consul_commands::consul_sessions_create,
+        consul_commands::consul_sessions_delete,
+        consul_commands::consul_fire_event,
+        consul_commands::consul_list_events,
+    ]
+}
+
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     let a = build_a();
     let b = build_b();
@@ -3376,6 +3454,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
     let k = build_k();
     let l = build_l();
     let m = build_m();
+    let r = build_r();
     move |invoke| {
         let cmd = invoke.message.command();
         if is_command_a(cmd) { return a(invoke); }
@@ -3391,6 +3470,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         if is_command_k(cmd) { return k(invoke); }
         if is_command_l(cmd) { return l(invoke); }
         if is_command_m(cmd) { return m(invoke); }
+        if is_command_r(cmd) { return r(invoke); }
         false
     }
 }
