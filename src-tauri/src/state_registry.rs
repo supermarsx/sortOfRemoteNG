@@ -90,6 +90,8 @@ pub(crate) use gcp::GcpService;
 #[cfg(feature = "cloud")]
 pub(crate) use hetzner::service::HetznerService;
 #[cfg(feature = "cloud")]
+pub(crate) use oracle_cloud::service::OciService;
+#[cfg(feature = "cloud")]
 pub(crate) use smtp::service::SmtpService;
 
 // ── Platform types ──────────────────────────────────────────────────
