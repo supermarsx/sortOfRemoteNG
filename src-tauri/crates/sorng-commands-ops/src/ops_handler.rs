@@ -1086,6 +1086,7 @@ pub fn is_command(command: &str) -> bool {
         || is_command_k(command)
         || is_command_l(command)
         || is_command_m(command)
+        || is_command_n(command)
         || {
             #[cfg(feature = "kafka")]
             { is_command_q(command) }
@@ -3481,6 +3482,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
     let k = build_k();
     let l = build_l();
     let m = build_m();
+    let n = build_n();
     #[cfg(feature = "kafka")]
     let q = build_q();
     move |invoke| {
@@ -3498,8 +3500,134 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         if is_command_k(cmd) { return k(invoke); }
         if is_command_l(cmd) { return l(invoke); }
         if is_command_m(cmd) { return m(invoke); }
+        if is_command_n(cmd) { return n(invoke); }
         #[cfg(feature = "kafka")]
         if is_command_q(cmd) { return q(invoke); }
         false
     }
+}
+
+// ── t5-e3: Docker Compose v2 (52 commands from sorng-docker-compose) ─────────
+// Distinct from the 13 `docker_compose_*` entries belonging to `sorng-docker`
+// (registered in `sorng-commands-platform`). Covers parser, dependency graph,
+// profiles, templates, and the full Compose CLI surface.
+fn is_command_n(command: &str) -> bool {
+    matches!(
+        command,
+        "compose_init"
+            | "compose_is_available"
+            | "compose_version"
+            | "compose_list_projects"
+            | "compose_up"
+            | "compose_down"
+            | "compose_ps"
+            | "compose_logs"
+            | "compose_build"
+            | "compose_pull"
+            | "compose_push"
+            | "compose_run"
+            | "compose_exec"
+            | "compose_create"
+            | "compose_start"
+            | "compose_stop"
+            | "compose_restart"
+            | "compose_pause"
+            | "compose_unpause"
+            | "compose_kill"
+            | "compose_rm"
+            | "compose_cp"
+            | "compose_top"
+            | "compose_port"
+            | "compose_images"
+            | "compose_events"
+            | "compose_config"
+            | "compose_watch"
+            | "compose_scale"
+            | "compose_parse_file"
+            | "compose_parse_yaml"
+            | "compose_discover_files"
+            | "compose_merge_files"
+            | "compose_validate"
+            | "compose_interpolate"
+            | "compose_parse_env_file"
+            | "compose_to_yaml"
+            | "compose_to_json"
+            | "compose_write_file"
+            | "compose_dependency_graph"
+            | "compose_startup_order"
+            | "compose_shutdown_order"
+            | "compose_dependents"
+            | "compose_list_profiles"
+            | "compose_profile_names"
+            | "compose_active_services"
+            | "compose_validate_profile_deps"
+            | "compose_list_templates"
+            | "compose_get_template"
+            | "compose_template_categories"
+            | "compose_templates_by_category"
+            | "compose_scaffold"
+    )
+}
+
+fn build_n() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // Init / Detection
+        compose_commands::compose_init,
+        compose_commands::compose_is_available,
+        compose_commands::compose_version,
+        // Project lifecycle / CLI surface
+        compose_commands::compose_list_projects,
+        compose_commands::compose_up,
+        compose_commands::compose_down,
+        compose_commands::compose_ps,
+        compose_commands::compose_logs,
+        compose_commands::compose_build,
+        compose_commands::compose_pull,
+        compose_commands::compose_push,
+        compose_commands::compose_run,
+        compose_commands::compose_exec,
+        compose_commands::compose_create,
+        compose_commands::compose_start,
+        compose_commands::compose_stop,
+        compose_commands::compose_restart,
+        compose_commands::compose_pause,
+        compose_commands::compose_unpause,
+        compose_commands::compose_kill,
+        compose_commands::compose_rm,
+        compose_commands::compose_cp,
+        compose_commands::compose_top,
+        compose_commands::compose_port,
+        compose_commands::compose_images,
+        compose_commands::compose_events,
+        compose_commands::compose_config,
+        compose_commands::compose_watch,
+        compose_commands::compose_scale,
+        // Parser / File operations
+        compose_commands::compose_parse_file,
+        compose_commands::compose_parse_yaml,
+        compose_commands::compose_discover_files,
+        compose_commands::compose_merge_files,
+        compose_commands::compose_validate,
+        compose_commands::compose_interpolate,
+        compose_commands::compose_parse_env_file,
+        compose_commands::compose_to_yaml,
+        compose_commands::compose_to_json,
+        compose_commands::compose_write_file,
+        // Dependency graph
+        compose_commands::compose_dependency_graph,
+        compose_commands::compose_startup_order,
+        compose_commands::compose_shutdown_order,
+        compose_commands::compose_dependents,
+        // Profiles
+        compose_commands::compose_list_profiles,
+        compose_commands::compose_profile_names,
+        compose_commands::compose_active_services,
+        compose_commands::compose_validate_profile_deps,
+        // Templates
+        compose_commands::compose_list_templates,
+        compose_commands::compose_get_template,
+        compose_commands::compose_template_categories,
+        compose_commands::compose_templates_by_category,
+        compose_commands::compose_scaffold,
+    ]
 }
