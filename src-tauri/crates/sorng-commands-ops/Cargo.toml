@@ -13,6 +13,7 @@ sorng-consul = { path = "../sorng-consul" }
 sorng-cpanel = { path = "../sorng-cpanel" }
 sorng-cron = { path = "../sorng-cron" }
 sorng-cups = { path = "../sorng-cups" }
+sorng-docker-compose = { path = "../sorng-docker-compose" }
 sorng-fail2ban = { path = "../sorng-fail2ban" }
 sorng-freeipa = { path = "../sorng-freeipa" }
 sorng-grafana = { path = "../sorng-grafana" }

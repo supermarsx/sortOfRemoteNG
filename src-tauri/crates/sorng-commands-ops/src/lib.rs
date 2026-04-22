@@ -6,6 +6,11 @@ pub use sorng_consul as consul;
 pub use sorng_cpanel as cpanel;
 pub use sorng_cron as cron;
 pub use sorng_cups as cups;
+// t5-e3: `sorng-docker-compose` (53 `compose_*` commands: parser, graph,
+// profiles, templates, lifecycle). Aliased as `docker_compose_v2` to
+// disambiguate from the `docker_compose_*` entries that belong to
+// `sorng-docker` and live in `sorng-commands-platform`.
+pub use sorng_docker_compose as docker_compose_v2;
 pub use sorng_fail2ban as fail2ban;
 pub use sorng_freeipa as freeipa;
 pub use sorng_grafana as grafana;
@@ -38,6 +43,7 @@ mod cicd_commands;
 mod consul_commands;
 mod cpanel_commands;
 mod cron_commands;
+mod compose_commands;
 mod cups_commands;
 mod fail2ban_commands;
 mod freeipa_commands;
