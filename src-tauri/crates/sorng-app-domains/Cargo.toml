@@ -22,6 +22,10 @@ db-postgres = ["sorng-app-domains-core/db-postgres"]
 db-redis = ["sorng-app-domains-core/db-redis"]
 db-sqlite = ["sorng-app-domains-core/db-sqlite"]
 ops = ["dep:sorng-app-domains-ops"]
+# t5-e5: forwards `kafka` through to the ops domain re-exports so that
+# `domains::kafka` (→ `sorng_kafka`) is available to app-crate code when
+# Kafka is enabled at the top-level. Only meaningful together with `ops`.
+kafka = ["sorng-app-domains-ops?/kafka"]
 platform = ["dep:sorng-app-domains-platform"]
 rdp = ["sorng-app-domains-core/rdp"]
 rdp-software-decode = ["sorng-app-domains-core/rdp-software-decode"]

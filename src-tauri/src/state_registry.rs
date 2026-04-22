@@ -229,6 +229,14 @@ pub(crate) use procmail::service::ProcmailServiceState;
 pub(crate) use prometheus::service::PrometheusServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use rabbitmq::service::RabbitServiceState;
+// t5-e5: Kafka managed state alias — gated behind the top-level `kafka`
+// feature (which forwards through sorng-app-domains → sorng-app-domains-ops
+// to expose the `kafka` module). Only compiled when Kafka is enabled.
+#[cfg(all(
+    feature = "ops",
+    any(feature = "kafka", feature = "kafka-dynamic", feature = "kafka-static")
+))]
+pub(crate) use kafka::service::KafkaServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use proxmox::service::ProxmoxServiceState;
 #[cfg(feature = "ops")]

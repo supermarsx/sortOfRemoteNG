@@ -1086,7 +1086,12 @@ pub fn is_command(command: &str) -> bool {
         || is_command_k(command)
         || is_command_l(command)
         || is_command_m(command)
-        || is_command_r(command)
+        || {
+            #[cfg(feature = "kafka")]
+            { is_command_q(command) }
+            #[cfg(not(feature = "kafka"))]
+            { false }
+        }
 }
 
 fn is_command_c(command: &str) -> bool {
@@ -3363,80 +3368,102 @@ fn build_m() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
     ]
 }
 
-fn is_command_r(command: &str) -> bool {
+// ── t5-e5: Kafka (39) — slot q, feature-gated ────────────────────────────
+// Slot letter `q` is reserved for Kafka per the t5 slot-coordination note;
+// slots n-p are intentionally skipped to leave room for peer executors.
+// All 39 `kafka_*` commands register only when the `kafka` feature is on
+// (which forwards from the app's `kafka` / `kafka-dynamic` / `kafka-static`
+// features via `sorng-commands-ops?/kafka`).
+#[cfg(feature = "kafka")]
+fn is_command_q(command: &str) -> bool {
     matches!(
         command,
-        // ── Consul (32) ── t5-e6 ─────────────────────────────────────
-        "consul_connect"
-            | "consul_disconnect"
-            | "consul_list_connections"
-            | "consul_get_dashboard"
-            | "consul_kv_get"
-            | "consul_kv_put"
-            | "consul_kv_delete"
-            | "consul_kv_list"
-            | "consul_kv_get_tree"
-            | "consul_list_services"
-            | "consul_get_service"
-            | "consul_register_service"
-            | "consul_deregister_service"
-            | "consul_list_nodes"
-            | "consul_get_node"
-            | "consul_list_datacenters"
-            | "consul_node_health"
-            | "consul_service_health"
-            | "consul_agent_info"
-            | "consul_agent_members"
-            | "consul_agent_join"
-            | "consul_agent_leave"
-            | "consul_agent_metrics"
-            | "consul_acl_list_tokens"
-            | "consul_acl_create_token"
-            | "consul_acl_list_policies"
-            | "consul_acl_create_policy"
-            | "consul_sessions_list"
-            | "consul_sessions_create"
-            | "consul_sessions_delete"
-            | "consul_fire_event"
-            | "consul_list_events"
+        // ── Kafka (39) — t5-e5 ──
+        "kafka_connect"
+            | "kafka_disconnect"
+            | "kafka_test_connection"
+            | "kafka_list_sessions"
+            | "kafka_list_brokers"
+            | "kafka_get_broker"
+            | "kafka_get_broker_config"
+            | "kafka_update_broker_config"
+            | "kafka_get_cluster_id"
+            | "kafka_list_topics"
+            | "kafka_get_topic"
+            | "kafka_create_topic"
+            | "kafka_delete_topic"
+            | "kafka_list_partitions"
+            | "kafka_get_partition"
+            | "kafka_list_consumer_groups"
+            | "kafka_describe_consumer_group"
+            | "kafka_get_consumer_group_offsets"
+            | "kafka_produce_message"
+            | "kafka_list_acls"
+            | "kafka_create_acls"
+            | "kafka_delete_acls"
+            | "kafka_list_subjects"
+            | "kafka_get_schema"
+            | "kafka_register_schema"
+            | "kafka_delete_subject"
+            | "kafka_list_connectors"
+            | "kafka_get_connector"
+            | "kafka_create_connector"
+            | "kafka_delete_connector"
+            | "kafka_pause_connector"
+            | "kafka_resume_connector"
+            | "kafka_list_quotas"
+            | "kafka_alter_quotas"
+            | "kafka_start_reassignment"
+            | "kafka_list_reassignments"
+            | "kafka_get_cluster_metrics"
+            | "kafka_get_broker_metrics"
+            | "kafka_get_topic_metrics"
     )
 }
 
-fn build_r() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+#[cfg(feature = "kafka")]
+fn build_q() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
-        // Consul commands (32, t5-e6)
-        consul_commands::consul_connect,
-        consul_commands::consul_disconnect,
-        consul_commands::consul_list_connections,
-        consul_commands::consul_get_dashboard,
-        consul_commands::consul_kv_get,
-        consul_commands::consul_kv_put,
-        consul_commands::consul_kv_delete,
-        consul_commands::consul_kv_list,
-        consul_commands::consul_kv_get_tree,
-        consul_commands::consul_list_services,
-        consul_commands::consul_get_service,
-        consul_commands::consul_register_service,
-        consul_commands::consul_deregister_service,
-        consul_commands::consul_list_nodes,
-        consul_commands::consul_get_node,
-        consul_commands::consul_list_datacenters,
-        consul_commands::consul_node_health,
-        consul_commands::consul_service_health,
-        consul_commands::consul_agent_info,
-        consul_commands::consul_agent_members,
-        consul_commands::consul_agent_join,
-        consul_commands::consul_agent_leave,
-        consul_commands::consul_agent_metrics,
-        consul_commands::consul_acl_list_tokens,
-        consul_commands::consul_acl_create_token,
-        consul_commands::consul_acl_list_policies,
-        consul_commands::consul_acl_create_policy,
-        consul_commands::consul_sessions_list,
-        consul_commands::consul_sessions_create,
-        consul_commands::consul_sessions_delete,
-        consul_commands::consul_fire_event,
-        consul_commands::consul_list_events,
+        // ── Kafka (39) — t5-e5 ──
+        kafka_commands::kafka_connect,
+        kafka_commands::kafka_disconnect,
+        kafka_commands::kafka_test_connection,
+        kafka_commands::kafka_list_sessions,
+        kafka_commands::kafka_list_brokers,
+        kafka_commands::kafka_get_broker,
+        kafka_commands::kafka_get_broker_config,
+        kafka_commands::kafka_update_broker_config,
+        kafka_commands::kafka_get_cluster_id,
+        kafka_commands::kafka_list_topics,
+        kafka_commands::kafka_get_topic,
+        kafka_commands::kafka_create_topic,
+        kafka_commands::kafka_delete_topic,
+        kafka_commands::kafka_list_partitions,
+        kafka_commands::kafka_get_partition,
+        kafka_commands::kafka_list_consumer_groups,
+        kafka_commands::kafka_describe_consumer_group,
+        kafka_commands::kafka_get_consumer_group_offsets,
+        kafka_commands::kafka_produce_message,
+        kafka_commands::kafka_list_acls,
+        kafka_commands::kafka_create_acls,
+        kafka_commands::kafka_delete_acls,
+        kafka_commands::kafka_list_subjects,
+        kafka_commands::kafka_get_schema,
+        kafka_commands::kafka_register_schema,
+        kafka_commands::kafka_delete_subject,
+        kafka_commands::kafka_list_connectors,
+        kafka_commands::kafka_get_connector,
+        kafka_commands::kafka_create_connector,
+        kafka_commands::kafka_delete_connector,
+        kafka_commands::kafka_pause_connector,
+        kafka_commands::kafka_resume_connector,
+        kafka_commands::kafka_list_quotas,
+        kafka_commands::kafka_alter_quotas,
+        kafka_commands::kafka_start_reassignment,
+        kafka_commands::kafka_list_reassignments,
+        kafka_commands::kafka_get_cluster_metrics,
+        kafka_commands::kafka_get_broker_metrics,
+        kafka_commands::kafka_get_topic_metrics,
     ]
 }
 
@@ -3454,7 +3481,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
     let k = build_k();
     let l = build_l();
     let m = build_m();
-    let r = build_r();
+    #[cfg(feature = "kafka")]
+    let q = build_q();
     move |invoke| {
         let cmd = invoke.message.command();
         if is_command_a(cmd) { return a(invoke); }
@@ -3470,7 +3498,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         if is_command_k(cmd) { return k(invoke); }
         if is_command_l(cmd) { return l(invoke); }
         if is_command_m(cmd) { return m(invoke); }
-        if is_command_r(cmd) { return r(invoke); }
+        #[cfg(feature = "kafka")]
+        if is_command_q(cmd) { return q(invoke); }
         false
     }
 }
