@@ -152,6 +152,8 @@ pub(crate) use consul::service::{ConsulServiceHolder, ConsulServiceState};
 #[cfg(feature = "ops")]
 pub(crate) use etcd::service::{EtcdService, EtcdServiceState};
 #[cfg(feature = "ops")]
+pub(crate) use remote_backup::service::{RemoteBackupService, RemoteBackupServiceState};
+#[cfg(feature = "ops")]
 pub(crate) use cpanel::service::CpanelServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use cups::service::CupsServiceState;

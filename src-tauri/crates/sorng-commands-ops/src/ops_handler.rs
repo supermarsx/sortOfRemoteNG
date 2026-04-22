@@ -1092,6 +1092,9 @@ pub fn is_command(command: &str) -> bool {
             #[cfg(not(feature = "kafka"))]
             { false }
         }
+        || is_command_p(command)
+        || is_command_r(command)
+        || is_command_s(command)
 }
 
 fn is_command_c(command: &str) -> bool {
@@ -3467,6 +3470,219 @@ fn build_q() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
     ]
 }
 
+fn is_command_p(command: &str) -> bool {
+    matches!(
+        command,
+        // ── etcd (42) — t5-e4 ───────────────────────────────────────
+        "etcd_connect"
+            | "etcd_disconnect"
+            | "etcd_list_connections"
+            | "etcd_get_dashboard"
+            | "etcd_kv_get"
+            | "etcd_kv_put"
+            | "etcd_kv_delete"
+            | "etcd_kv_range"
+            | "etcd_kv_get_history"
+            | "etcd_lease_grant"
+            | "etcd_lease_revoke"
+            | "etcd_lease_list"
+            | "etcd_lease_ttl"
+            | "etcd_lease_keep_alive"
+            | "etcd_member_list"
+            | "etcd_member_add"
+            | "etcd_member_remove"
+            | "etcd_member_update"
+            | "etcd_member_promote"
+            | "etcd_cluster_health"
+            | "etcd_endpoint_status"
+            | "etcd_auth_enable"
+            | "etcd_auth_disable"
+            | "etcd_user_list"
+            | "etcd_user_add"
+            | "etcd_user_delete"
+            | "etcd_user_get"
+            | "etcd_user_change_password"
+            | "etcd_user_grant_role"
+            | "etcd_user_revoke_role"
+            | "etcd_role_list"
+            | "etcd_role_add"
+            | "etcd_role_delete"
+            | "etcd_role_get"
+            | "etcd_role_grant_permission"
+            | "etcd_role_revoke_permission"
+            | "etcd_alarm_list"
+            | "etcd_alarm_disarm"
+            | "etcd_defragment"
+            | "etcd_status"
+            | "etcd_move_leader"
+            | "etcd_compact"
+    )
+}
+
+fn build_p() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // ── etcd (42) — t5-e4 ───────────────────────────────────────
+        etcd_commands::etcd_connect,
+        etcd_commands::etcd_disconnect,
+        etcd_commands::etcd_list_connections,
+        etcd_commands::etcd_get_dashboard,
+        etcd_commands::etcd_kv_get,
+        etcd_commands::etcd_kv_put,
+        etcd_commands::etcd_kv_delete,
+        etcd_commands::etcd_kv_range,
+        etcd_commands::etcd_kv_get_history,
+        etcd_commands::etcd_lease_grant,
+        etcd_commands::etcd_lease_revoke,
+        etcd_commands::etcd_lease_list,
+        etcd_commands::etcd_lease_ttl,
+        etcd_commands::etcd_lease_keep_alive,
+        etcd_commands::etcd_member_list,
+        etcd_commands::etcd_member_add,
+        etcd_commands::etcd_member_remove,
+        etcd_commands::etcd_member_update,
+        etcd_commands::etcd_member_promote,
+        etcd_commands::etcd_cluster_health,
+        etcd_commands::etcd_endpoint_status,
+        etcd_commands::etcd_auth_enable,
+        etcd_commands::etcd_auth_disable,
+        etcd_commands::etcd_user_list,
+        etcd_commands::etcd_user_add,
+        etcd_commands::etcd_user_delete,
+        etcd_commands::etcd_user_get,
+        etcd_commands::etcd_user_change_password,
+        etcd_commands::etcd_user_grant_role,
+        etcd_commands::etcd_user_revoke_role,
+        etcd_commands::etcd_role_list,
+        etcd_commands::etcd_role_add,
+        etcd_commands::etcd_role_delete,
+        etcd_commands::etcd_role_get,
+        etcd_commands::etcd_role_grant_permission,
+        etcd_commands::etcd_role_revoke_permission,
+        etcd_commands::etcd_alarm_list,
+        etcd_commands::etcd_alarm_disarm,
+        etcd_commands::etcd_defragment,
+        etcd_commands::etcd_status,
+        etcd_commands::etcd_move_leader,
+        etcd_commands::etcd_compact,
+    ]
+}
+
+fn is_command_r(command: &str) -> bool {
+    matches!(
+        command,
+        // ── Consul (32) ── t5-e6 ─────────────────────────────────────
+        "consul_connect"
+            | "consul_disconnect"
+            | "consul_list_connections"
+            | "consul_get_dashboard"
+            | "consul_kv_get"
+            | "consul_kv_put"
+            | "consul_kv_delete"
+            | "consul_kv_list"
+            | "consul_kv_get_tree"
+            | "consul_list_services"
+            | "consul_get_service"
+            | "consul_register_service"
+            | "consul_deregister_service"
+            | "consul_list_nodes"
+            | "consul_get_node"
+            | "consul_list_datacenters"
+            | "consul_node_health"
+            | "consul_service_health"
+            | "consul_agent_info"
+            | "consul_agent_members"
+            | "consul_agent_join"
+            | "consul_agent_leave"
+            | "consul_agent_metrics"
+            | "consul_acl_list_tokens"
+            | "consul_acl_create_token"
+            | "consul_acl_list_policies"
+            | "consul_acl_create_policy"
+            | "consul_sessions_list"
+            | "consul_sessions_create"
+            | "consul_sessions_delete"
+            | "consul_fire_event"
+            | "consul_list_events"
+    )
+}
+
+fn build_r() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // Consul commands (32, t5-e6)
+        consul_commands::consul_connect,
+        consul_commands::consul_disconnect,
+        consul_commands::consul_list_connections,
+        consul_commands::consul_get_dashboard,
+        consul_commands::consul_kv_get,
+        consul_commands::consul_kv_put,
+        consul_commands::consul_kv_delete,
+        consul_commands::consul_kv_list,
+        consul_commands::consul_kv_get_tree,
+        consul_commands::consul_list_services,
+        consul_commands::consul_get_service,
+        consul_commands::consul_register_service,
+        consul_commands::consul_deregister_service,
+        consul_commands::consul_list_nodes,
+        consul_commands::consul_get_node,
+        consul_commands::consul_list_datacenters,
+        consul_commands::consul_node_health,
+        consul_commands::consul_service_health,
+        consul_commands::consul_agent_info,
+        consul_commands::consul_agent_members,
+        consul_commands::consul_agent_join,
+        consul_commands::consul_agent_leave,
+        consul_commands::consul_agent_metrics,
+        consul_commands::consul_acl_list_tokens,
+        consul_commands::consul_acl_create_token,
+        consul_commands::consul_acl_list_policies,
+        consul_commands::consul_acl_create_policy,
+        consul_commands::consul_sessions_list,
+        consul_commands::consul_sessions_create,
+        consul_commands::consul_sessions_delete,
+        consul_commands::consul_fire_event,
+        consul_commands::consul_list_events,
+    ]
+}
+
+fn is_command_s(command: &str) -> bool {
+    matches!(
+        command,
+        // ── Remote Backup (13) — job scheduling for SSH remote backups ──
+        "backup_add_job"
+            | "backup_update_job"
+            | "backup_remove_job"
+            | "backup_get_job"
+            | "backup_list_jobs"
+            | "backup_run_job"
+            | "backup_cancel_job"
+            | "backup_job_history"
+            | "backup_all_history"
+            | "backup_job_progress"
+            | "backup_aggregate_progress"
+            | "backup_detect_tools"
+            | "backup_evaluate_retention"
+    )
+}
+
+fn build_s() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // ── Remote Backup (13) ──────────────────────────────────────────
+        remote_backup_commands::backup_add_job,
+        remote_backup_commands::backup_update_job,
+        remote_backup_commands::backup_remove_job,
+        remote_backup_commands::backup_get_job,
+        remote_backup_commands::backup_list_jobs,
+        remote_backup_commands::backup_run_job,
+        remote_backup_commands::backup_cancel_job,
+        remote_backup_commands::backup_job_history,
+        remote_backup_commands::backup_all_history,
+        remote_backup_commands::backup_job_progress,
+        remote_backup_commands::backup_aggregate_progress,
+        remote_backup_commands::backup_detect_tools,
+        remote_backup_commands::backup_evaluate_retention,
+    ]
+}
+
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     let a = build_a();
     let b = build_b();
@@ -3483,6 +3699,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
     let m = build_m();
     #[cfg(feature = "kafka")]
     let q = build_q();
+    let p = build_p();
+    let r = build_r();
+    let s = build_s();
     move |invoke| {
         let cmd = invoke.message.command();
         if is_command_a(cmd) { return a(invoke); }
@@ -3500,6 +3719,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         if is_command_m(cmd) { return m(invoke); }
         #[cfg(feature = "kafka")]
         if is_command_q(cmd) { return q(invoke); }
+        if is_command_p(cmd) { return p(invoke); }
+        if is_command_r(cmd) { return r(invoke); }
+        if is_command_s(cmd) { return s(invoke); }
         false
     }
 }

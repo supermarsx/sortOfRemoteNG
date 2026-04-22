@@ -9439,6 +9439,7 @@ dependencies = [
  "serde_json",
  "sorng-app-domains",
  "sorng-hetzner",
+ "sorng-oracle-cloud",
  "tauri",
 ]
 
@@ -9545,6 +9546,7 @@ dependencies = [
  "sorng-cpanel",
  "sorng-cron",
  "sorng-cups",
+ "sorng-etcd",
  "sorng-fail2ban",
  "sorng-freeipa",
  "sorng-grafana",
@@ -9564,6 +9566,7 @@ dependencies = [
  "sorng-proc",
  "sorng-prometheus",
  "sorng-rabbitmq",
+ "sorng-remote-backup",
  "sorng-time-ntp",
  "sorng-ups",
  "sorng-zabbix",

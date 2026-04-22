@@ -13,6 +13,7 @@ sorng-consul = { path = "../sorng-consul" }
 sorng-cpanel = { path = "../sorng-cpanel" }
 sorng-cron = { path = "../sorng-cron" }
 sorng-cups = { path = "../sorng-cups" }
+sorng-etcd = { path = "../sorng-etcd" }
 sorng-fail2ban = { path = "../sorng-fail2ban" }
 sorng-freeipa = { path = "../sorng-freeipa" }
 sorng-grafana = { path = "../sorng-grafana" }
@@ -32,6 +33,7 @@ sorng-port-knock = { path = "../sorng-port-knock" }
 sorng-proc = { path = "../sorng-proc" }
 sorng-prometheus = { path = "../sorng-prometheus" }
 sorng-rabbitmq = { path = "../sorng-rabbitmq" }
+sorng-remote-backup = { path = "../sorng-remote-backup" }
 sorng-time-ntp = { path = "../sorng-time-ntp" }
 sorng-ups = { path = "../sorng-ups" }
 sorng-zabbix = { path = "../sorng-zabbix" }
