@@ -3,6 +3,7 @@ pub use sorng_app_domains::*;
 mod azure_commands;
 mod exchange_commands;
 mod gcp_commands;
+mod oracle_cloud_commands;
 mod powershell_commands;
 mod smtp_commands;
 

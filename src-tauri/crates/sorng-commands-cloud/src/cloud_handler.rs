@@ -417,6 +417,73 @@ pub fn is_command(command: &str) -> bool {
             | "smtp_validate_email_address"
             | "smtp_parse_email_address"
             | "smtp_reverse_dns"
+            | "oci_connect"
+            | "oci_disconnect"
+            | "oci_list_connections"
+            | "oci_ping"
+            | "oci_get_dashboard"
+            | "oci_list_instances"
+            | "oci_get_instance"
+            | "oci_launch_instance"
+            | "oci_terminate_instance"
+            | "oci_start_instance"
+            | "oci_stop_instance"
+            | "oci_reboot_instance"
+            | "oci_list_shapes"
+            | "oci_list_images"
+            | "oci_get_image"
+            | "oci_list_vcns"
+            | "oci_get_vcn"
+            | "oci_create_vcn"
+            | "oci_delete_vcn"
+            | "oci_list_subnets"
+            | "oci_get_subnet"
+            | "oci_create_subnet"
+            | "oci_delete_subnet"
+            | "oci_list_security_lists"
+            | "oci_get_security_list"
+            | "oci_list_route_tables"
+            | "oci_list_internet_gateways"
+            | "oci_list_nat_gateways"
+            | "oci_list_load_balancers"
+            | "oci_get_load_balancer"
+            | "oci_list_block_volumes"
+            | "oci_get_block_volume"
+            | "oci_create_block_volume"
+            | "oci_delete_block_volume"
+            | "oci_list_buckets"
+            | "oci_get_bucket"
+            | "oci_create_bucket"
+            | "oci_delete_bucket"
+            | "oci_list_objects"
+            | "oci_list_compartments"
+            | "oci_get_compartment"
+            | "oci_create_compartment"
+            | "oci_list_users"
+            | "oci_get_user"
+            | "oci_create_user"
+            | "oci_delete_user"
+            | "oci_list_groups"
+            | "oci_list_policies"
+            | "oci_list_db_systems"
+            | "oci_get_db_system"
+            | "oci_list_autonomous_dbs"
+            | "oci_get_autonomous_db"
+            | "oci_create_autonomous_db"
+            | "oci_start_autonomous_db"
+            | "oci_stop_autonomous_db"
+            | "oci_list_container_instances"
+            | "oci_list_oke_clusters"
+            | "oci_get_oke_cluster"
+            | "oci_list_node_pools"
+            | "oci_list_applications"
+            | "oci_list_functions"
+            | "oci_get_function"
+            | "oci_invoke_function"
+            | "oci_list_alarms"
+            | "oci_get_alarm"
+            | "oci_query_metrics"
+            | "oci_list_audit_events"
     )
 }
 
@@ -864,5 +931,81 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         smtp_commands::smtp_validate_email_address,
         smtp_commands::smtp_parse_email_address,
         smtp_commands::smtp_reverse_dns,
+        // Oracle Cloud (OCI) — sorng-oracle-cloud (67 commands)
+        oracle_cloud_commands::oci_connect,
+        oracle_cloud_commands::oci_disconnect,
+        oracle_cloud_commands::oci_list_connections,
+        oracle_cloud_commands::oci_ping,
+        oracle_cloud_commands::oci_get_dashboard,
+        // Compute
+        oracle_cloud_commands::oci_list_instances,
+        oracle_cloud_commands::oci_get_instance,
+        oracle_cloud_commands::oci_launch_instance,
+        oracle_cloud_commands::oci_terminate_instance,
+        oracle_cloud_commands::oci_start_instance,
+        oracle_cloud_commands::oci_stop_instance,
+        oracle_cloud_commands::oci_reboot_instance,
+        oracle_cloud_commands::oci_list_shapes,
+        oracle_cloud_commands::oci_list_images,
+        oracle_cloud_commands::oci_get_image,
+        // Networking
+        oracle_cloud_commands::oci_list_vcns,
+        oracle_cloud_commands::oci_get_vcn,
+        oracle_cloud_commands::oci_create_vcn,
+        oracle_cloud_commands::oci_delete_vcn,
+        oracle_cloud_commands::oci_list_subnets,
+        oracle_cloud_commands::oci_get_subnet,
+        oracle_cloud_commands::oci_create_subnet,
+        oracle_cloud_commands::oci_delete_subnet,
+        oracle_cloud_commands::oci_list_security_lists,
+        oracle_cloud_commands::oci_get_security_list,
+        oracle_cloud_commands::oci_list_route_tables,
+        oracle_cloud_commands::oci_list_internet_gateways,
+        oracle_cloud_commands::oci_list_nat_gateways,
+        oracle_cloud_commands::oci_list_load_balancers,
+        oracle_cloud_commands::oci_get_load_balancer,
+        // Storage
+        oracle_cloud_commands::oci_list_block_volumes,
+        oracle_cloud_commands::oci_get_block_volume,
+        oracle_cloud_commands::oci_create_block_volume,
+        oracle_cloud_commands::oci_delete_block_volume,
+        oracle_cloud_commands::oci_list_buckets,
+        oracle_cloud_commands::oci_get_bucket,
+        oracle_cloud_commands::oci_create_bucket,
+        oracle_cloud_commands::oci_delete_bucket,
+        oracle_cloud_commands::oci_list_objects,
+        // Identity / IAM
+        oracle_cloud_commands::oci_list_compartments,
+        oracle_cloud_commands::oci_get_compartment,
+        oracle_cloud_commands::oci_create_compartment,
+        oracle_cloud_commands::oci_list_users,
+        oracle_cloud_commands::oci_get_user,
+        oracle_cloud_commands::oci_create_user,
+        oracle_cloud_commands::oci_delete_user,
+        oracle_cloud_commands::oci_list_groups,
+        oracle_cloud_commands::oci_list_policies,
+        // Database
+        oracle_cloud_commands::oci_list_db_systems,
+        oracle_cloud_commands::oci_get_db_system,
+        oracle_cloud_commands::oci_list_autonomous_dbs,
+        oracle_cloud_commands::oci_get_autonomous_db,
+        oracle_cloud_commands::oci_create_autonomous_db,
+        oracle_cloud_commands::oci_start_autonomous_db,
+        oracle_cloud_commands::oci_stop_autonomous_db,
+        // Containers / OKE
+        oracle_cloud_commands::oci_list_container_instances,
+        oracle_cloud_commands::oci_list_oke_clusters,
+        oracle_cloud_commands::oci_get_oke_cluster,
+        oracle_cloud_commands::oci_list_node_pools,
+        // Functions
+        oracle_cloud_commands::oci_list_applications,
+        oracle_cloud_commands::oci_list_functions,
+        oracle_cloud_commands::oci_get_function,
+        oracle_cloud_commands::oci_invoke_function,
+        // Monitoring
+        oracle_cloud_commands::oci_list_alarms,
+        oracle_cloud_commands::oci_get_alarm,
+        oracle_cloud_commands::oci_query_metrics,
+        oracle_cloud_commands::oci_list_audit_events,
     ]
 }
