@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Plus,
@@ -17,7 +17,8 @@ import {
   FileUp,
 } from 'lucide-react';
 import { TOTPConfig } from '../../types/settings/settings';
-import { TOTPService } from '../../utils/auth/totpService';
+import { totpApi } from '../../hooks/totp/useTOTP';
+import type { TotpAlgorithm } from '../../types/totp';
 import { TotpImportDialog } from '../security/TotpImportDialog';
 import { PopoverSurface } from '../ui/overlays/PopoverSurface';
 import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/rdp/useRDPTotpPanel';
@@ -47,20 +48,30 @@ function QRDisplay({
   onDismiss: () => void;
 }) {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const totpService = useMemo(() => new TOTPService(), []);
 
   useEffect(() => {
     let cancelled = false;
-    totpService
-      .generateQRCode(config)
-      .then((url) => {
+    (async () => {
+      try {
+        const uri = await totpApi.buildOtpauthUri(
+          config.secret,
+          config.issuer,
+          config.account,
+          (config.algorithm ?? 'sha1').toUpperCase() as TotpAlgorithm,
+          config.digits,
+          config.period,
+        );
+        const QRCode = await import('qrcode');
+        const url = await QRCode.toDataURL(uri);
         if (!cancelled) setQrUrl(url);
-      })
-      .catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [config, totpService]);
+  }, [config]);
 
   return (
     <div className="p-3 border-b border-[var(--color-border)] flex flex-col items-center space-y-2">

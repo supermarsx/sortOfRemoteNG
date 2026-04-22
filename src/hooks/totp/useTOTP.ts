@@ -2,10 +2,9 @@
  * React hook wrapping the 36 `totp_*` Tauri commands exposed by the
  * `sorng-totp` backend crate (see t3-e44 wiring).
  *
- * This hook is the canonical Rust-backed TOTP API. The legacy frontend
- * in `src/components/security/TOTPManager.tsx` still uses the in-browser
- * `utils/auth/totpService` (otplib + localStorage); migrating it is a
- * follow-up per the t3-e44 handoff notes.
+ * This hook is the canonical Rust-backed TOTP API. The former in-browser
+ * JS shim under `utils/auth/` was removed in t5-e11; all callers now
+ * route through `totpApi` below.
  */
 
 import { invoke } from "@tauri-apps/api/core";
