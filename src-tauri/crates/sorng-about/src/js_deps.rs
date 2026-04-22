@@ -25,7 +25,6 @@ fn categorize_js(name: &str) -> &'static str {
         n if n == "crypto-js"
             || n == "bcryptjs"
             || n == "node-forge"
-            || n == "otplib"
             || n == "qrcode"
             || n == "jsqr" =>
         {
@@ -84,7 +83,6 @@ fn production_deps() -> Vec<DependencyInfo> {
         ("next", "^15.3.3", "MIT"),
         ("node-forge", "^1.3.1", "BSD-3-Clause OR GPL-2.0"),
         ("novnc", "^1.2.0", "MPL-2.0"),
-        ("otplib", "^12.0.1", "MIT"),
         ("qrcode", "^1.5.4", "MIT"),
         ("react", "^18.3.1", "MIT"),
         ("@hello-pangea/dnd", "^18.0.1", "Apache-2.0"),
@@ -125,7 +123,6 @@ fn dev_deps() -> Vec<DependencyInfo> {
         ("@types/jszip", "^3.4.0", "MIT"),
         ("@types/node", "^24.0.7", "MIT"),
         ("@types/novnc", "^0.0.27", "MIT"),
-        ("@types/otplib", "^7.0.0", "MIT"),
         ("@types/qrcode", "^1.5.6", "MIT"),
         ("@types/react", "^18.3.5", "MIT"),
         ("@types/react-dom", "^18.3.0", "MIT"),

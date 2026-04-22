@@ -1,6 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { TOTPConfig } from '../../types/settings/settings';
-import { TOTPService } from '../../utils/auth/totpService';
+import { totpApi } from '../../hooks/totp/useTOTP';
+import type { TotpAlgorithm } from '../../types/totp';
+
+// `TOTPConfig.algorithm` is lowercase (`sha1`); the Rust backend accepts
+// either case but the wire type is uppercase.
+const toAlgo = (a?: string): TotpAlgorithm =>
+  (a ?? 'sha1').toUpperCase() as TotpAlgorithm;
 
 // ─── Hook ────────────────────────────────────────────────────────────
 
@@ -35,30 +41,55 @@ export function useRDPTotpPanel(
   const [showImport, setShowImport] = useState(false);
   const [showFileImport, setShowFileImport] = useState(false);
 
-  const totpService = useMemo(() => new TOTPService(), []);
   const configsRef = useRef(configs);
   configsRef.current = configs;
 
   // ── Code generation ────────────────────────────────────────────
 
-  const refreshCodes = useCallback(() => {
-    const c: Record<string, string> = {};
-    configsRef.current.forEach((cfg) => {
-      if (cfg.secret) {
-        c[cfg.secret] = totpService.generateToken(cfg.secret, cfg);
-      }
-    });
-    setCodes(c);
-  }, [totpService]);
+  const refreshCodes = useCallback(async (cancelledRef: { current: boolean }) => {
+    const current = configsRef.current;
+    const results = await Promise.all(
+      current.map(async (cfg) => {
+        if (!cfg.secret) return [cfg.secret, ''] as const;
+        try {
+          const code = await totpApi.computeCode(
+            cfg.secret,
+            toAlgo(cfg.algorithm),
+            cfg.digits ?? 6,
+            cfg.period ?? 30,
+          );
+          return [cfg.secret, code] as const;
+        } catch {
+          return [cfg.secret, ''] as const;
+        }
+      }),
+    );
+    if (cancelledRef.current) return;
+    const next: Record<string, string> = {};
+    for (const [secret, code] of results) {
+      if (secret) next[secret] = code;
+    }
+    setCodes(next);
+  }, []);
 
   useEffect(() => {
-    refreshCodes();
-    const interval = setInterval(refreshCodes, 1000);
-    return () => clearInterval(interval);
+    const cancelledRef = { current: false };
+    void refreshCodes(cancelledRef);
+    const interval = setInterval(() => {
+      void refreshCodes(cancelledRef);
+    }, 1000);
+    return () => {
+      cancelledRef.current = true;
+      clearInterval(interval);
+    };
   }, [refreshCodes]);
 
   useEffect(() => {
-    refreshCodes();
+    const cancelledRef = { current: false };
+    void refreshCodes(cancelledRef);
+    return () => {
+      cancelledRef.current = true;
+    };
   }, [configs, refreshCodes]);
 
   const getTimeRemaining = (period: number = 30) => {
@@ -68,9 +99,9 @@ export function useRDPTotpPanel(
 
   // ── Add ────────────────────────────────────────────────────────
 
-  const handleAdd = useCallback(() => {
+  const handleAdd = useCallback(async () => {
     if (!newAccount) return;
-    const secret = newSecret || totpService.generateSecret();
+    const secret = newSecret || (await totpApi.generateSecret());
     const config: TOTPConfig = {
       secret,
       issuer: newIssuer || defaults.issuer,
@@ -90,7 +121,7 @@ export function useRDPTotpPanel(
     setNewAlgorithm(defaults.algorithm);
     setShowNewSecret(false);
     setShowAdd(false);
-  }, [newAccount, newSecret, newIssuer, newDigits, newPeriod, newAlgorithm, totpService, configs, onUpdate, defaults]);
+  }, [newAccount, newSecret, newIssuer, newDigits, newPeriod, newAlgorithm, configs, onUpdate, defaults]);
 
   // ── Delete ─────────────────────────────────────────────────────
 
@@ -151,13 +182,13 @@ export function useRDPTotpPanel(
 
   // ── Backup codes ───────────────────────────────────────────────
 
-  const generateBackup = useCallback((secret: string) => {
-    const backupCodes = totpService.generateBackupCodes(10);
+  const generateBackup = useCallback(async (secret: string) => {
+    const backupCodes = await totpApi.generateBackupCodes(10);
     onUpdate(
       configs.map((c) => (c.secret === secret ? { ...c, backupCodes } : c)),
     );
     setShowBackup(secret);
-  }, [totpService, configs, onUpdate]);
+  }, [configs, onUpdate]);
 
   const copyAllBackup = useCallback((backupCodes: string[]) => {
     navigator.clipboard.writeText(backupCodes.join('\n'));

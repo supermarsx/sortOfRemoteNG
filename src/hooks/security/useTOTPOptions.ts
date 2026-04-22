@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Connection } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
-import { TOTPService } from "../../utils/auth/totpService";
+import { totpApi } from "../../hooks/totp/useTOTP";
+import type { TotpAlgorithm } from "../../types/totp";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useConnections } from "../../contexts/useConnections";
+
+// `TOTPConfig.algorithm` stores lowercase `sha1`/`sha256`/`sha512`; the
+// Rust backend accepts both cases, but we normalise to uppercase so the
+// wire type (`TotpAlgorithm`) matches.
+const toAlgo = (a?: string): TotpAlgorithm =>
+  (a ?? "sha1").toUpperCase() as TotpAlgorithm;
 
 /* ═══════════════════════════════════════════════════════════════
    Hook
@@ -63,27 +70,51 @@ export function useTOTPOptions(
   const [replicateDone, setReplicateDone] = useState(false);
 
   // ── Derived ───────────────────────────────────────────────────
-  const totpService = useMemo(() => new TOTPService(), []);
   const configs = useMemo(() => formData.totpConfigs ?? [], [formData.totpConfigs]);
   const configsRef = useRef(configs);
   configsRef.current = configs;
 
   // ── Code refresh effect ───────────────────────────────────────
-  const refreshCodes = useCallback(() => {
-    const c: Record<string, string> = {};
-    configsRef.current.forEach((cfg) => {
-      if (cfg.secret) {
-        c[cfg.secret] = totpService.generateToken(cfg.secret, cfg);
-      }
-    });
-    setCodes(c);
-  }, [totpService]);
+  // Fan out one `totp_compute_code` invoke per config; a cancellation
+  // flag guards against state updates after the effect has been torn
+  // down (the tick fires every second).
+  const refreshCodes = useCallback(async (cancelledRef: { current: boolean }) => {
+    const current = configsRef.current;
+    const results = await Promise.all(
+      current.map(async (cfg) => {
+        if (!cfg.secret) return [cfg.secret, ""] as const;
+        try {
+          const code = await totpApi.computeCode(
+            cfg.secret,
+            toAlgo(cfg.algorithm),
+            cfg.digits ?? 6,
+            cfg.period ?? 30,
+          );
+          return [cfg.secret, code] as const;
+        } catch {
+          return [cfg.secret, ""] as const;
+        }
+      }),
+    );
+    if (cancelledRef.current) return;
+    const next: Record<string, string> = {};
+    for (const [secret, code] of results) {
+      if (secret) next[secret] = code;
+    }
+    setCodes(next);
+  }, []);
 
   useEffect(() => {
     if (!expanded || configs.length === 0) return;
-    refreshCodes();
-    const interval = setInterval(refreshCodes, 1000);
-    return () => clearInterval(interval);
+    const cancelledRef = { current: false };
+    void refreshCodes(cancelledRef);
+    const interval = setInterval(() => {
+      void refreshCodes(cancelledRef);
+    }, 1000);
+    return () => {
+      cancelledRef.current = true;
+      clearInterval(interval);
+    };
   }, [expanded, configs.length, refreshCodes]);
 
   // ── Handlers ──────────────────────────────────────────────────
@@ -96,7 +127,7 @@ export function useTOTPOptions(
 
   const handleAdd = useCallback(async () => {
     if (!newAccount) return;
-    const secret = newSecret || totpService.generateSecret();
+    const secret = newSecret || (await totpApi.generateSecret());
     const config: TOTPConfig = {
       secret,
       issuer: newIssuer || settings.totpIssuer || "sortOfRemoteNG",
@@ -109,7 +140,16 @@ export function useTOTPOptions(
     updateConfigs([...configs, config]);
 
     try {
-      const url = await totpService.generateQRCode(config);
+      const uri = await totpApi.buildOtpauthUri(
+        config.secret,
+        config.issuer,
+        config.account,
+        toAlgo(config.algorithm),
+        config.digits,
+        config.period,
+      );
+      const QRCode = await import("qrcode");
+      const url = await QRCode.toDataURL(uri);
       setQrDataUrl(url);
     } catch {
       /* ignore */
@@ -131,7 +171,6 @@ export function useTOTPOptions(
     newPeriod,
     newAlgorithm,
     configs,
-    totpService,
     settings,
     updateConfigs,
   ]);
@@ -192,8 +231,8 @@ export function useTOTPOptions(
   }, []);
 
   const generateBackup = useCallback(
-    (secret: string) => {
-      const backupCodes = totpService.generateBackupCodes(10);
+    async (secret: string) => {
+      const backupCodes = await totpApi.generateBackupCodes(10);
       updateConfigs(
         configs.map((c) =>
           c.secret === secret ? { ...c, backupCodes } : c,
@@ -201,7 +240,7 @@ export function useTOTPOptions(
       );
       setShowBackup(secret);
     },
-    [configs, totpService, updateConfigs],
+    [configs, updateConfigs],
   );
 
   const copyAllBackup = useCallback((backupCodes: string[]) => {

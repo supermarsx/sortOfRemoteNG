@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Connection } from '../../types/connection/connection';
 import { TOTPConfig } from '../../types/settings/settings';
-import { TOTPService } from '../../utils/auth/totpService';
+import { totpApi } from '../../hooks/totp/useTOTP';
 
 export function useBackupCodesSection(
   formData: Partial<Connection>,
@@ -14,7 +14,6 @@ export function useBackupCodesSection(
   const [addSingleTarget, setAddSingleTarget] = useState<string | null>(null);
   const [singleCode, setSingleCode] = useState('');
 
-  const totpService = useMemo(() => new TOTPService(), []);
   const configs = useMemo(() => formData.totpConfigs ?? [], [formData.totpConfigs]);
 
   const shouldHide = formData.isGroup || configs.length === 0;
@@ -82,8 +81,8 @@ export function useBackupCodesSection(
   );
 
   const generateBackupFor = useCallback(
-    (secret: string) => {
-      const backupCodes = totpService.generateBackupCodes(10);
+    async (secret: string) => {
+      const backupCodes = await totpApi.generateBackupCodes(10);
       const updated = configs.map(cfg =>
         cfg.secret === secret
           ? { ...cfg, backupCodes: [...(cfg.backupCodes ?? []), ...backupCodes] }
@@ -91,7 +90,7 @@ export function useBackupCodesSection(
       );
       updateConfigs(updated);
     },
-    [configs, updateConfigs, totpService],
+    [configs, updateConfigs],
   );
 
   const clearBackupFor = useCallback(
