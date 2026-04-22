@@ -2,6 +2,7 @@ pub use sorng_about as about;
 pub use sorng_bootloader as bootloader;
 pub use sorng_ceph as ceph;
 pub use sorng_cicd as cicd;
+pub use sorng_consul as consul;
 pub use sorng_cpanel as cpanel;
 pub use sorng_cron as cron;
 pub use sorng_cups as cups;
@@ -31,6 +32,8 @@ mod about_commands;
 mod bootloader_commands;
 mod ceph_commands;
 mod cicd_commands;
+#[path = "../../../src/consul_commands.rs"]
+mod consul_commands;
 mod cpanel_commands;
 mod cron_commands;
 mod cups_commands;

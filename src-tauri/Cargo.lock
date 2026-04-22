@@ -9540,6 +9540,7 @@ dependencies = [
  "sorng-bootloader",
  "sorng-ceph",
  "sorng-cicd",
+ "sorng-consul",
  "sorng-cpanel",
  "sorng-cron",
  "sorng-cups",
