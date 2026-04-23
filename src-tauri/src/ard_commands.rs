@@ -5,6 +5,7 @@
 // `super::types`, `super::session_runner`, `super::ArdServiceState`).
 
 mod service {
+    #[allow(unused_imports)]
     pub use crate::ard::service::*;
 }
 

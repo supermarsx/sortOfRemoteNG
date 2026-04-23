@@ -11,4 +11,5 @@ mod inner {
     include!("../crates/sorng-docker-compose/src/commands.rs");
 }
 
+#[allow(unused_imports)]
 pub(crate) use inner::*;

@@ -23,5 +23,6 @@ mod inner {
     include!("../crates/sorng-powershell/src/commands.rs");
 }
 
+#[allow(unused_imports)]
 pub(crate) use inner::*;
 

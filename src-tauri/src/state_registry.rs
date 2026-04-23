@@ -142,6 +142,7 @@ pub(crate) use budibase::service::BudibaseServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use caddy::service::CaddyServiceState;
 #[cfg(feature = "ops")]
+#[allow(unused_imports)]
 pub(crate) use ceph::service::CephServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use cicd::service::CicdServiceState;
@@ -232,6 +233,7 @@ pub(crate) use procmail::service::ProcmailServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use prometheus::service::PrometheusServiceState;
 #[cfg(feature = "ops")]
+#[allow(unused_imports)]
 pub(crate) use rabbitmq::service::RabbitServiceState;
 // t5-e5: Kafka managed state alias — gated behind the top-level `kafka`
 // feature (which forwards through sorng-app-domains → sorng-app-domains-ops

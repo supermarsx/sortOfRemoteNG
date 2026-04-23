@@ -11,5 +11,6 @@ mod inner {
     include!("../crates/sorng-consul/src/commands.rs");
 }
 
+#[allow(unused_imports)]
 pub(crate) use inner::*;
 
