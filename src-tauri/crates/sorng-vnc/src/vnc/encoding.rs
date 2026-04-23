@@ -577,7 +577,7 @@ mod tests {
         let tile = vec![255u8; 2 * 2 * 4]; // 2×2 white
         blit_tile(&mut dst, 4, 1, 1, 2, 2, &tile);
         // Check pixel at (1,1) is white.
-        let idx = (1 * 4 + 1) * 4;
+        let idx = (4 + 1) * 4;
         assert_eq!(dst[idx], 255);
         // Check pixel at (0,0) is still black.
         assert_eq!(dst[0], 0);
@@ -591,7 +591,7 @@ mod tests {
         // 2×2 rect, single raw tile
         let mut data = Vec::new();
         data.push(1); // RAW flag
-        data.extend_from_slice(&vec![0u8; 2 * 2 * 4]); // raw pixel data
+        data.extend_from_slice(&[0u8; 2 * 2 * 4]); // raw pixel data
         let rect = decode_hextile(0, 0, 2, 2, &data, &pf).unwrap();
         assert_eq!(rect.pixels.len(), 2 * 2 * 4);
     }

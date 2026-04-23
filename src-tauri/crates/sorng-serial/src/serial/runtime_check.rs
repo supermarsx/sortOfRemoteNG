@@ -106,7 +106,7 @@ pub fn probe_host() -> Result<(), SerialError> {
     // linking, run the real probe even if the static feature is also on.
     #[cfg(feature = "protocol-serial-dynamic")]
     {
-        return probe_host_dynamic();
+        probe_host_dynamic()
     }
 
     // Static/vendored: driver presence is a build-time assumption. Do not

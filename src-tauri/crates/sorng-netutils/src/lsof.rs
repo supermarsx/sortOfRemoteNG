@@ -69,7 +69,7 @@ pub fn parse_lsof_output(output: &str) -> Vec<NetworkFd> {
         let name = parts[8].trim().to_string();
 
         // Extract protocol from NODE (e.g., "TCP", "UDP")
-        let protocol = if !node.is_empty() && node != "" {
+        let protocol = if !node.is_empty() {
             Some(node.clone())
         } else {
             None
@@ -117,7 +117,7 @@ fn parse_lsof_name(
         let state_str = name[paren_start + 1..].trim_end_matches(')');
         (name[..paren_start].trim(), Some(state_str.to_string()))
     } else {
-        (name.as_ref(), None)
+        (name, None)
     };
 
     // Split on "->" for local->remote
