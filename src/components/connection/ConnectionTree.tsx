@@ -108,6 +108,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDiagnostics={onDiagnostics}
           onDetachSession={onSessionDetach}
           onDuplicate={mgr.handleDuplicate}
+          onCheckConnection={mgr.handleCheckConnection}
           onWindowsTool={handleWindowsTool}
           onConnectAll={handleConnectAll}
           onConnectAllRecursive={handleConnectAllRecursive}

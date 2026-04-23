@@ -10,7 +10,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   connection, level,
   onConnect, onDisconnect, onEdit, onDelete, onCopyHostname, onRename, onExport,
   onConnectWithOptions, onConnectWithoutCredentials, onExecuteScripts,
-  onDiagnostics, onDetachSession, onDuplicate, onWindowsTool,
+  onDiagnostics, onDetachSession, onDuplicate, onCheckConnection, onWindowsTool,
   onConnectAll, onConnectAllRecursive,
   enableReorder, isDragging, isDragOver, dropPosition,
   onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop,
@@ -211,6 +211,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             onDiagnostics={onDiagnostics}
             onDetachSession={onDetachSession}
             onDuplicate={onDuplicate}
+            onCheckConnection={onCheckConnection}
             onWindowsTool={onWindowsTool}
             onConnectAll={onConnectAll}
             onConnectAllRecursive={onConnectAllRecursive}

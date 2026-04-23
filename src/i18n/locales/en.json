@@ -19,7 +19,27 @@
     "singleConnection": "Single connection mode",
     "warnOnClose": "Warn on close",
     "warnOnDetachClose": "Warn before closing detached windows",
-    "warnOnExit": "Warn on exit"
+    "warnOnExit": "Warn on exit",
+    "clone": "Clone",
+    "cloneWithCredentials": "Clone with credentials",
+    "includeCredentials": "Include credentials",
+    "cloned": "Connection cloned",
+    "cloneFailed": "Failed to clone connection",
+    "checkConnection": "Check connection",
+    "checkTheseConnections": "Check these connections",
+    "checkAllTitle": "Reachability check",
+    "checkCancel": "Cancel",
+    "checkBanner": "Banner",
+    "checkNlaRequired": "NLA required",
+    "checkElapsedMs": "{{ms}} ms",
+    "checkStatus": {
+      "pending": "Pending",
+      "probing": "Probing…",
+      "reachable": "Reachable",
+      "refused": "Refused",
+      "timeout": "Timeout",
+      "error": "Error"
+    }
   },
   "connection": {
     "name": "Name",

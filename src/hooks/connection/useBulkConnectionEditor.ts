@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Connection } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
-import { generateId } from '../../utils/core/id';
+import { useToastContext } from '../../contexts/ToastContext';
 
 type EditableField = 'name' | 'hostname' | 'port' | 'username';
 
@@ -11,6 +12,8 @@ export function useBulkConnectionEditor(
   onEditConnection?: (connection: Connection) => void,
 ) {
   const { state, dispatch } = useConnections();
+  const { t } = useTranslation();
+  const { toast } = useToastContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
@@ -150,37 +153,48 @@ export function useBulkConnectionEditor(
     [selectedIds, connections, dispatch],
   );
 
-  // Duplicate
+  // Clone (backend stamps id/timestamps, strips secrets unless opt-in)
   const duplicateConnection = useCallback(
-    (connection: Connection) => {
-      const newConnection: Connection = {
-        ...connection,
-        id: generateId(),
-        name: `${connection.name} (Copy)`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      dispatch({ type: 'ADD_CONNECTION', payload: newConnection });
+    async (
+      connection: Connection,
+      options?: { includeCredentials?: boolean },
+    ): Promise<Connection | undefined> => {
+      try {
+        const includeCredentials = options?.includeCredentials ?? false;
+        const { invoke } = await import('@tauri-apps/api/core');
+        const cloned = await invoke<Connection>('clone_connection', {
+          connection,
+          newName: null,
+          includeCredentials,
+        });
+        dispatch({ type: 'ADD_CONNECTION', payload: cloned });
+        toast.success(t('connections.cloned'));
+        return cloned;
+      } catch (e) {
+        console.error('clone_connection failed', e);
+        toast.error(t('connections.cloneFailed'));
+        throw e;
+      }
     },
-    [dispatch],
+    [dispatch, t, toast],
   );
 
-  const duplicateSelected = useCallback(() => {
-    selectedIds.forEach((id) => {
-      const connection = connections.find((c) => c.id === id);
-      if (connection) {
-        const newConnection: Connection = {
-          ...connection,
-          id: generateId(),
-          name: `${connection.name} (Copy)`,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        dispatch({ type: 'ADD_CONNECTION', payload: newConnection });
+  const duplicateSelected = useCallback(
+    async (options?: { includeCredentials?: boolean }) => {
+      const ids = Array.from(selectedIds);
+      for (const id of ids) {
+        const connection = connections.find((c) => c.id === id);
+        if (!connection) continue;
+        try {
+          await duplicateConnection(connection, options);
+        } catch {
+          // individual errors already toasted; continue with remaining
+        }
       }
-    });
-    setSelectedIds(new Set());
-  }, [selectedIds, connections, dispatch]);
+      setSelectedIds(new Set());
+    },
+    [selectedIds, connections, duplicateConnection],
+  );
 
   // Delete
   const deleteConnection = useCallback(

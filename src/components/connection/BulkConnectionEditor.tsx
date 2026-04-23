@@ -1,8 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   X, Search, Trash2, Copy, Check, ChevronDown, ChevronUp,
   FolderOpen, Server, Globe, Database, Terminal, Monitor,
-  CheckSquare, Square, Minus, Star, RefreshCw, Edit3,
+  CheckSquare, Square, Minus, Star, RefreshCw, Edit3, KeyRound,
 } from 'lucide-react';
 import { Connection } from '../../types/connection/connection';
 import { Modal } from '../ui/overlays/Modal';
@@ -50,6 +51,7 @@ function BulkEditorHeader({ mgr }: { mgr: BulkConnectionEditorMgr }) {
 }
 
 function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
+  const { t } = useTranslation();
   return (
     <div className="relative z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between gap-4 bg-[var(--color-surfaceHover)]/50">
       <div className="relative flex-1 max-w-md">
@@ -83,12 +85,22 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             <Star size={12} />
           </button>
           <button
-            onClick={mgr.duplicateSelected}
+            onClick={() => mgr.duplicateSelected()}
             className="px-2.5 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
             data-testid="bulk-duplicate"
+            title={t('connections.clone')}
           >
             <Copy size={12} />
-            <span>Duplicate</span>
+            <span>{t('connections.clone')}</span>
+          </button>
+          <button
+            onClick={() => mgr.duplicateSelected({ includeCredentials: true })}
+            className="px-2.5 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
+            data-testid="bulk-duplicate-with-credentials"
+            title={t('connections.cloneWithCredentials')}
+          >
+            <KeyRound size={12} />
+            <span>{t('connections.cloneWithCredentials')}</span>
           </button>
           <button
             onClick={() => mgr.setShowDeleteConfirm(true)}
@@ -165,6 +177,7 @@ function ConnectionRow({
   connection: Connection;
   mgr: BulkConnectionEditorMgr;
 }) {
+  const { t } = useTranslation();
   return (
     <tr
       className={`hover:bg-[var(--color-surfaceHover)]/30 transition-colors group ${
@@ -227,9 +240,18 @@ function ConnectionRow({
           <button
             onClick={() => mgr.duplicateConnection(connection)}
             className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
-            title="Duplicate"
+            title={t('connections.clone')}
+            data-testid="row-clone"
           >
             <Copy size={14} />
+          </button>
+          <button
+            onClick={() => mgr.duplicateConnection(connection, { includeCredentials: true })}
+            className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
+            title={t('connections.cloneWithCredentials')}
+            data-testid="row-clone-with-credentials"
+          >
+            <KeyRound size={14} />
           </button>
           <button
             onClick={() => mgr.deleteConnection(connection.id)}

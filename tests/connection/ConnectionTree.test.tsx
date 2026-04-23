@@ -1,6 +1,8 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
+
 import { ConnectionTree } from "../../src/components/connection/ConnectionTree";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
@@ -48,6 +50,21 @@ function InitConnections({ connections }: { connections: Connection[] }) {
 }
 
 describe("ConnectionTree", () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
+      if (cmd === "clone_connection") {
+        const src = args?.connection as Connection;
+        return {
+          ...src,
+          id: `${src.id}-copy-${Math.random().toString(36).slice(2, 8)}`,
+          name: args?.newName ?? src.name,
+          updatedAt: new Date().toISOString(),
+        } as any;
+      }
+      return undefined as any;
+    });
+  });
+
   it("toggles group expansion when clicking the toggle button", async () => {
     render(
       <ToastProvider>
@@ -121,10 +138,12 @@ describe("ConnectionTree", () => {
     const menuButton = within(itemGroup).getAllByRole("button")[1];
     fireEvent.click(menuButton);
 
-    const duplicateButton = screen.getByText("Duplicate");
+    const duplicateButton = screen.getByText("connections.clone");
     fireEvent.click(duplicateButton);
 
-    expect(await screen.findAllByText("Item 1")).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.getAllByText("Item 1")).toHaveLength(2),
+    );
   });
 
   it("closes item context menu on Escape", async () => {
@@ -148,8 +167,8 @@ describe("ConnectionTree", () => {
     const menuButton = within(itemGroup).getAllByRole("button")[1];
     fireEvent.click(menuButton);
 
-    expect(screen.getByText("Duplicate")).toBeInTheDocument();
+    expect(screen.getByText("connections.clone")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByText("Duplicate")).not.toBeInTheDocument();
+    expect(screen.queryByText("connections.clone")).not.toBeInTheDocument();
   });
 });

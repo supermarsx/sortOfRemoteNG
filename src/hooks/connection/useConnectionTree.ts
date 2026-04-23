@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { generateId } from "../../utils/core/id";
+import { useToastContext } from "../../contexts/ToastContext";
 import { ScriptEngine } from "../../utils/recording/scriptEngine";
 import { canMoveToParent } from "../../utils/window/dragDropManager";
 
@@ -25,6 +26,8 @@ export function useConnectionTree(
 ) {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
+  const { t } = useTranslation();
+  const { toast } = useToastContext();
 
   /* ── Drag / drop state ── */
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -152,14 +155,54 @@ export function useConnectionTree(
     setRenameTarget(null);
   }, [dispatch, renameTarget, renameValue]);
 
-  const handleDuplicate = useCallback((connection: Connection) => {
-    const now = new Date().toISOString();
-    const newConnection = structuredClone(connection);
-    newConnection.id = generateId();
-    newConnection.createdAt = now;
-    newConnection.updatedAt = now;
-    dispatch({ type: "ADD_CONNECTION", payload: newConnection });
-  }, [dispatch]);
+  const handleDuplicate = useCallback(
+    async (
+      connection: Connection,
+      options?: { includeCredentials?: boolean },
+    ): Promise<Connection | undefined> => {
+      try {
+        const includeCredentials = options?.includeCredentials ?? false;
+        const { invoke } = await import("@tauri-apps/api/core");
+        const cloned = await invoke<Connection>("clone_connection", {
+          connection,
+          newName: null,
+          includeCredentials,
+        });
+        dispatch({ type: "ADD_CONNECTION", payload: cloned });
+        toast.success(t("connections.cloned"));
+        return cloned;
+      } catch (e) {
+        console.error("clone_connection failed", e);
+        toast.error(t("connections.cloneFailed"));
+        throw e;
+      }
+    },
+    [dispatch, t, toast],
+  );
+
+  const handleDuplicateWithCredentials = useCallback(
+    (connection: Connection) => handleDuplicate(connection, { includeCredentials: true }),
+    [handleDuplicate],
+  );
+
+  // Check-connection dispatch: delegated to t5-e4's useBulkConnectionCheck via
+  // window event. ConnectionTree subscribes and opens the modal. This keeps the
+  // hook API stable whether or not the e4 hook/modal has landed yet.
+  const handleCheckConnection = useCallback((connection: Connection) => {
+    window.dispatchEvent(
+      new CustomEvent("bulk-check-connections", {
+        detail: { connections: [connection] },
+      }),
+    );
+  }, []);
+
+  const handleCheckConnections = useCallback((list: Connection[]) => {
+    window.dispatchEvent(
+      new CustomEvent("bulk-check-connections", {
+        detail: { connections: list },
+      }),
+    );
+  }, []);
 
   /* ── Tree building ── */
 
@@ -396,6 +439,9 @@ export function useConnectionTree(
     handleExportConnection,
     handleExecuteScripts,
     handleDuplicate,
+    handleDuplicateWithCredentials,
+    handleCheckConnection,
+    handleCheckConnections,
     buildTree,
     filteredConnections,
   };

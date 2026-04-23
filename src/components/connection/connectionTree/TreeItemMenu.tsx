@@ -1,13 +1,14 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import { useSettings } from "../../../contexts/SettingsContext";
 import type { Connection } from "../../../types/connection/connection";
 import {
   Activity, ChevronRight, ClipboardList, Cog, Copy, Cpu, Edit,
-  ExternalLink, FileDown, FileText, FolderOpen, HardDrive, Monitor, Play,
-  PlayCircle, Power, Send, SlidersHorizontal, Star, Terminal, Trash2, UserX,
+  ExternalLink, FileDown, FileText, FolderOpen, HardDrive, KeyRound, Monitor, Play,
+  PlayCircle, Power, Send, SlidersHorizontal, Star, Terminal, Trash2, UserX, Wifi,
 } from "lucide-react";
 
 const SUBMENU_ITEM_SELECTOR = [
@@ -26,7 +27,7 @@ function TreeItemMenu({
   connection, activeSession, showMenu, menuPosition, triggerRef, onClose,
   onConnect, onDisconnect, onEdit, onDelete, onCopyHostname, onRename,
   onExport, onConnectWithOptions, onConnectWithoutCredentials,
-  onExecuteScripts, onDiagnostics, onDetachSession, onDuplicate, onWindowsTool,
+  onExecuteScripts, onDiagnostics, onDetachSession, onDuplicate, onCheckConnection, onWindowsTool,
   onConnectAll, onConnectAllRecursive,
 }: {
   connection: Connection;
@@ -47,13 +48,18 @@ function TreeItemMenu({
   onExecuteScripts: (c: Connection, sessionId?: string) => void;
   onDiagnostics?: (c: Connection) => void;
   onDetachSession?: (sessionId: string) => void;
-  onDuplicate: (c: Connection) => void;
+  onDuplicate: (
+    c: Connection,
+    options?: { includeCredentials?: boolean },
+  ) => void | Promise<Connection | undefined>;
+  onCheckConnection?: (c: Connection) => void;
   onWindowsTool?: (c: Connection, tool: string) => void;
   onConnectAll?: (folder: Connection) => void;
   onConnectAllRecursive?: (folder: Connection) => void;
 }) {
   const { dispatch } = useConnections();
   const { settings } = useSettings();
+  const { t } = useTranslation();
   const act = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); onClose(); };
   const enableWinrm = connection.enableWinrmTools ?? settings.enableWinrmTools ?? true;
   const [connectInWindowOpen, setConnectInWindowOpen] = useState(false);
@@ -346,9 +352,17 @@ function TreeItemMenu({
           <FileDown size={14} className="mr-2" />Export to file
         </button>
       )}
-      <button onClick={act(() => onDuplicate(connection))} className="sor-menu-item">
-        <Copy size={14} className="mr-2" />Duplicate
+      <button onClick={act(() => { void onDuplicate(connection); })} className="sor-menu-item">
+        <Copy size={14} className="mr-2" />{t('connections.clone')}
       </button>
+      <button onClick={act(() => { void onDuplicate(connection, { includeCredentials: true }); })} className="sor-menu-item">
+        <KeyRound size={14} className="mr-2" />{t('connections.cloneWithCredentials')}
+      </button>
+      {!connection.isGroup && onCheckConnection && (
+        <button onClick={act(() => onCheckConnection(connection))} className="sor-menu-item">
+          <Wifi size={14} className="mr-2" />{t('connections.checkConnection')}
+        </button>
+      )}
       <div className="sor-menu-divider" />
       <button onClick={act(() => onDelete(connection))} className="sor-menu-item sor-menu-item-danger">
         <Trash2 size={14} className="mr-2" />Delete

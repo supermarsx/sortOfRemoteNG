@@ -45,6 +45,8 @@ import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
+// t5-e4: global reachability-check modal — listens for `bulk-check-connections` CustomEvent.
+import { CheckConnectionsModalMount } from "./components/connection/CheckConnectionsModal";
 
 const AppDialogs = dynamic(
   () => import("./components/app/AppDialogs").then((module) => module.AppDialogs),
@@ -1342,6 +1344,9 @@ const AppContent: React.FC = () => {
         sessions={state.sessions}
         handleOpenDevtools={handleOpenDevtools}
       />
+
+      {/* t5-e4: global reachability-check modal (one mount site). */}
+      <CheckConnectionsModalMount />
 
     </div>
   );

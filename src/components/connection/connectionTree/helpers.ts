@@ -52,7 +52,11 @@ export interface ConnectionTreeItemProps {
   onExecuteScripts: (connection: Connection, sessionId?: string) => void;
   onDiagnostics?: (connection: Connection) => void;
   onDetachSession?: (sessionId: string) => void;
-  onDuplicate: (connection: Connection) => void;
+  onDuplicate: (
+    connection: Connection,
+    options?: { includeCredentials?: boolean },
+  ) => void | Promise<Connection | undefined>;
+  onCheckConnection?: (connection: Connection) => void;
   onWindowsTool?: (connection: Connection, tool: string) => void;
   onConnectAll?: (folder: Connection) => void;
   onConnectAllRecursive?: (folder: Connection) => void;

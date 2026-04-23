@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Sidebar } from "../../src/components/connection/Sidebar";
 import { Connection } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 
 // Mock child components
 vi.mock('../../src/components/connection/ConnectionTree', () => ({
@@ -55,9 +56,11 @@ const mockProps = {
 
 const renderWithProviders = (props = mockProps) => {
   return render(
-    <ConnectionProvider>
-      <Sidebar {...props} />
-    </ConnectionProvider>
+    <ToastProvider>
+      <ConnectionProvider>
+        <Sidebar {...props} />
+      </ConnectionProvider>
+    </ToastProvider>
   );
 };
 
