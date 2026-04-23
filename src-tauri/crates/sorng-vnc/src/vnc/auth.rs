@@ -402,8 +402,8 @@ mod tests {
         assert_eq!(key[0], reverse_bits(b'a'));
         assert_eq!(key[1], reverse_bits(b'b'));
         assert_eq!(key[2], reverse_bits(b'c'));
-        for i in 3..8 {
-            assert_eq!(key[i], 0);
+        for b in &key[3..8] {
+            assert_eq!(*b, 0);
         }
     }
 

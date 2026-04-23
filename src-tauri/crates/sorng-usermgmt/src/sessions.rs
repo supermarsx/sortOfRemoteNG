@@ -174,15 +174,20 @@ fn parse_lastlog_output(output: &str) -> Vec<LastLogin> {
 
             // Parts 1 and 2 may be port and from_host, or the timestamp may start
             // at position 1, 2, or 3 depending on column contents.
-            for i in 1..parts.len().min(4) {
-                if is_day_of_week(parts[i]) {
+            for (i, part) in parts
+                .iter()
+                .enumerate()
+                .take(parts.len().min(4))
+                .skip(1)
+            {
+                if is_day_of_week(part) {
                     ts_idx = i;
                     break;
                 }
                 if port.is_none() {
-                    port = Some(parts[i].to_string());
+                    port = Some(part.to_string());
                 } else if from.is_none() {
-                    from = Some(parts[i].to_string());
+                    from = Some(part.to_string());
                 }
                 ts_idx = i + 1;
             }

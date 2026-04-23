@@ -632,8 +632,8 @@ mod tests {
     #[tokio::test]
     async fn test_service_scan_ports() {
         let service = SerialService::new();
-        let result = service.scan_ports(ScanOptions::default()).await.unwrap();
-        assert!(result.total_found > 0 || result.total_found == 0); // platform dependent
+        let _result = service.scan_ports(ScanOptions::default()).await.unwrap();
+        // total_found is platform dependent; simply exercising the API is enough.
     }
 
     #[tokio::test]

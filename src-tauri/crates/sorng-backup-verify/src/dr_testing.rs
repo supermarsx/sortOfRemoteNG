@@ -683,7 +683,7 @@ mod tests {
         entry.timestamp = Utc::now() - Duration::hours(6);
         let rpo = engine.measure_rpo(&entry);
         // Should be ~6 hours in seconds (± a few seconds)
-        assert!(rpo >= 21590 && rpo <= 21700);
+        assert!((21590..=21700).contains(&rpo));
     }
 
     #[test]
