@@ -1,3 +1,5 @@
+#![allow(clippy::assertions_on_constants)]
+
 use std::sync::Arc;
 
 // Import our services from the library

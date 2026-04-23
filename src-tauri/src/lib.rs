@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::assertions_on_constants, clippy::overly_complex_bool_expr))]
 //! # SortOfRemote NG
 //!
 //! A comprehensive remote connectivity and management application built with Tauri and Rust.

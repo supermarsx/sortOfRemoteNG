@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
 //! # sorng-rdpfile
 //!
 //! RDP file parser and generator for SortOfRemote NG.
