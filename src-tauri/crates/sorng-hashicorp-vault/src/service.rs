@@ -29,6 +29,12 @@ pub struct VaultService {
     connections: HashMap<String, VaultClient>,
 }
 
+impl Default for VaultService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VaultService {
     pub fn new() -> Self {
         Self {

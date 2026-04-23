@@ -23,6 +23,12 @@ pub struct EtcdService {
     connections: HashMap<String, EtcdClient>,
 }
 
+impl Default for EtcdService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EtcdService {
     pub fn new() -> Self {
         Self {

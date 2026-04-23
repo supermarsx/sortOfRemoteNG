@@ -28,6 +28,12 @@ pub struct FreeIpaServiceHolder {
     connections: HashMap<String, FreeIpaClient>,
 }
 
+impl Default for FreeIpaServiceHolder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FreeIpaServiceHolder {
     pub fn new() -> Self {
         Self {

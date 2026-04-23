@@ -32,6 +32,12 @@ pub struct ZabbixService {
     connections: HashMap<String, ZabbixClient>,
 }
 
+impl Default for ZabbixService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZabbixService {
     pub fn new() -> Self {
         Self {
