@@ -282,10 +282,10 @@ export function useImportExport({
           const invoke = (globalThis as any).__TAURI__?.core?.invoke;
           if (invoke) {
             try {
-              decrypted = await invoke<string>(
+              decrypted = (await invoke(
                 'crypto_legacy_decrypt_cryptojs',
                 { ciphertext: processedContent, password },
-              );
+              )) as string;
             } catch {
               decrypted = null;
             }

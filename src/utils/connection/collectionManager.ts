@@ -99,10 +99,10 @@ async function decryptData(payload: string, password: string): Promise<string> {
 async function legacyDecrypt(ciphertext: string, password: string): Promise<string | null> {
   if (!invoke) return null;
   try {
-    const plaintext = await invoke<string>("crypto_legacy_decrypt_cryptojs", {
+    const plaintext = (await invoke("crypto_legacy_decrypt_cryptojs", {
       ciphertext,
       password,
-    });
+    })) as string;
     return plaintext || null;
   } catch {
     return null;
