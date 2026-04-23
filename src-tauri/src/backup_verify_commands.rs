@@ -27,4 +27,5 @@ mod inner {
     include!("../crates/sorng-backup-verify/src/commands.rs");
 }
 
+#[allow(unused_imports)]
 pub(crate) use inner::*;
