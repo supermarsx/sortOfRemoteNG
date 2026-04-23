@@ -216,9 +216,7 @@ impl UnifiedChainService {
 
             let last_enabled_type = chain
                 .layers
-                .iter()
-                .filter(|l| l.enabled)
-                .last()
+                .iter().rfind(|l| l.enabled)
                 .map(|l| l.tunnel_type.clone());
             let needs_target = matches!(
                 last_enabled_type.as_ref(),

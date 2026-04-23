@@ -116,7 +116,7 @@ impl WinMgmtService {
             Ok((session_id, transport, effective_config)) => {
                 let id = session_id.clone();
                 self.finish_connect(session_id, transport, effective_config);
-                return Ok(id);
+                Ok(id)
             }
             Err(primary_err) => {
                 // Attempt fallback to the other protocol.
@@ -162,7 +162,7 @@ impl WinMgmtService {
                         );
                         let id = session_id.clone();
                         self.finish_connect(session_id, transport, effective_config);
-                        return Ok(id);
+                        Ok(id)
                     }
                     Err(fallback_err) => {
                         // Both failed — show what happened on each port
@@ -170,11 +170,11 @@ impl WinMgmtService {
                         let https_err = if config.use_ssl { &primary_err } else { &fallback_err };
                         let http_port = if config.use_ssl { alt_port } else { primary_port };
                         let https_port = if config.use_ssl { primary_port } else { alt_port };
-                        return Err(format!(
+                        Err(format!(
                             "HTTP ({}): {}\nHTTPS ({}): {}",
                             http_port, http_err,
                             https_port, https_err,
-                        ));
+                        ))
                     }
                 }
             }

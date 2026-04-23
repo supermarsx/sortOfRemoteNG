@@ -266,7 +266,7 @@ fn is_day_of_week(s: &str) -> bool {
 
 fn classify_session_type(terminal: &str, host_hint: Option<&str>) -> SessionType {
     if terminal.starts_with("pts/") {
-        if host_hint.map_or(false, |h| !h.is_empty() && h != ":0") {
+        if host_hint.is_some_and(|h| !h.is_empty() && h != ":0") {
             SessionType::Ssh
         } else {
             SessionType::Console

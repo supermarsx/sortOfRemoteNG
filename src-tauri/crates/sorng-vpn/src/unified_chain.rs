@@ -40,7 +40,9 @@ pub enum TunnelType {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "state")]
+#[derive(Default)]
 pub enum LayerStatus {
+    #[default]
     Disconnected,
     Connecting,
     Connected,
@@ -48,17 +50,14 @@ pub enum LayerStatus {
     Error { message: String },
 }
 
-impl Default for LayerStatus {
-    fn default() -> Self {
-        LayerStatus::Disconnected
-    }
-}
 
 // ── Chain status ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "state")]
+#[derive(Default)]
 pub enum ChainStatus {
+    #[default]
     Disconnected,
     Connecting,
     Connected,
@@ -67,11 +66,6 @@ pub enum ChainStatus {
     Error { message: String },
 }
 
-impl Default for ChainStatus {
-    fn default() -> Self {
-        ChainStatus::Disconnected
-    }
-}
 
 // ── Layer config sub-structs ────────────────────────────────────────
 

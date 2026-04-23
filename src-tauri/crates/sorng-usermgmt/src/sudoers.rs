@@ -87,9 +87,9 @@ fn parse_sudoers_rule(line: &str, source_file: &str, line_number: u32) -> Option
     }
 
     let principal_str = parts[0];
-    let principal = if principal_str.starts_with('%') {
+    let principal = if let Some(group) = principal_str.strip_prefix('%') {
         SudoersPrincipal::Group {
-            name: principal_str[1..].to_string(),
+            name: group.to_string(),
         }
     } else {
         SudoersPrincipal::User {

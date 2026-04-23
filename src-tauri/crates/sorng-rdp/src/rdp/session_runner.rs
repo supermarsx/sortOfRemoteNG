@@ -120,7 +120,7 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
             Ok(ConnectionResult {
                 io_channel_id,
                 user_channel_id,
-                static_channels: preserved_channels.unwrap_or_else(crate::ironrdp_svc::StaticChannelSet::new),
+                static_channels: preserved_channels.unwrap_or_default(),
                 desktop_size,
                 enable_server_pointer,
                 pointer_software_rendering,
@@ -413,7 +413,7 @@ fn run_rdp_session_auto_detect(
             password,
             domain,
             &attempt_settings,
-            &event_emitter,
+            event_emitter,
             cmd_rx,
             stats,
             cached_tls_connector.clone(),
@@ -525,7 +525,7 @@ fn run_rdp_session_auto_detect(
                     password,
                     domain,
                     &fallback_settings,
-                    &event_emitter,
+                    event_emitter,
                     cmd_rx,
                     stats,
                     cached_tls_connector.clone(),
@@ -966,7 +966,7 @@ fn establish_rdp_connection(
         if let Some(details) = extract_cert_details(tls_stream) {
             let _ = event_emitter.emit_event(
                 "rdp://cert-fingerprint",
-                serde_json::to_value(&serde_json::json!({
+                serde_json::to_value(serde_json::json!({
                     "session_id": session_id,
                     "fingerprint": details.fingerprint,
                     "host": host,
@@ -985,7 +985,7 @@ fn establish_rdp_connection(
             // Fallback: emit fingerprint-only if full parsing failed
             let _ = event_emitter.emit_event(
                 "rdp://cert-fingerprint",
-                serde_json::to_value(&serde_json::json!({
+                serde_json::to_value(serde_json::json!({
                     "session_id": session_id,
                     "fingerprint": fp,
                     "host": host,
@@ -1074,7 +1074,7 @@ fn establish_rdp_connection(
     // Emit timing event to frontend for visibility
     let _ = event_emitter.emit_event(
         "rdp://timing",
-        serde_json::to_value(&serde_json::json!({
+        serde_json::to_value(serde_json::json!({
             "session_id": session_id,
             "dns_ms": dns_ms,
             "tcp_ms": tcp_ms,
@@ -1181,7 +1181,7 @@ fn establish_rdp_connection(
     // Notify the frontend which render backend is actually active
     let _ = event_emitter.emit_event(
         "rdp://render-backend",
-        serde_json::to_value(&serde_json::json!({
+        serde_json::to_value(serde_json::json!({
             "session_id": session_id,
             "backend": active_render_backend,
         })).unwrap_or_default(),
@@ -1582,7 +1582,7 @@ fn run_active_session_loop(
                             &est.image,
                             est.desktop_width,
                             est.desktop_height,
-                            &event_emitter,
+                            event_emitter,
                             stats,
                             full_frame_sync_interval,
                             frame_store,
@@ -1622,7 +1622,7 @@ fn run_active_session_loop(
 
         // - Emit periodic stats -
         if last_stats_emit.elapsed() >= stats_interval {
-            let _ = event_emitter.emit_event("rdp://stats", serde_json::to_value(&stats.to_event(session_id)).unwrap_or_default());
+            let _ = event_emitter.emit_event("rdp://stats", serde_json::to_value(stats.to_event(session_id)).unwrap_or_default());
             last_stats_emit = Instant::now();
 
             // -- RDP-level keepalive guard --
@@ -2237,7 +2237,7 @@ fn run_rdp_session_inner(
             password,
             domain,
             settings,
-            &event_emitter,
+            event_emitter,
             cmd_rx,
             stats,
             cached_tls_connector.clone(),
@@ -2312,7 +2312,7 @@ fn run_rdp_session_inner(
             session_id,
             &mut established,
             settings,
-            &event_emitter,
+            event_emitter,
             cmd_rx,
             stats,
             frame_store,
@@ -2331,32 +2331,32 @@ fn run_rdp_session_inner(
 
         match exit {
             SessionLoopExit::Shutdown => {
-                emit_log(&event_emitter, log_sink, "info", "Session shut down".to_string(), session_id);
+                emit_log(event_emitter, log_sink, "info", "Session shut down".to_string(), session_id);
                 return Ok(());
             }
             SessionLoopExit::ServerClosed => {
-                emit_log(&event_emitter, log_sink, "info", "Server closed connection".to_string(), session_id);
+                emit_log(event_emitter, log_sink, "info", "Server closed connection".to_string(), session_id);
                 return Ok(());
             }
             SessionLoopExit::ProtocolError(msg) => {
-                emit_log(&event_emitter, log_sink, "error", format!("Fatal protocol error: {msg}"), session_id);
+                emit_log(event_emitter, log_sink, "error", format!("Fatal protocol error: {msg}"), session_id);
                 return Err(msg.into());
             }
             SessionLoopExit::NetworkError(msg) => {
                 if !reconnect_enabled {
-                    emit_log(&event_emitter, log_sink, "error", format!("Network error (reconnect disabled): {msg}"), session_id);
+                    emit_log(event_emitter, log_sink, "error", format!("Network error (reconnect disabled): {msg}"), session_id);
                     return Err(msg.into());
                 }
                 reconnect_count += 1;
                 log::info!("RDP session {session_id}: will reconnect ({reconnect_count}): {msg}");
-                emit_log(&event_emitter, log_sink, "warn", format!("Reconnecting ({reconnect_count}): {msg}"), session_id);
+                emit_log(event_emitter, log_sink, "warn", format!("Reconnecting ({reconnect_count}): {msg}"), session_id);
             }
             SessionLoopExit::ReconnectRequested => {
                 reconnect_count += 1;
                 log::info!(
                     "RDP session {session_id}: will reconnect ({reconnect_count}): manual reconnect"
                 );
-                emit_log(&event_emitter, log_sink, "info", format!("Manual reconnect ({reconnect_count})"), session_id);
+                emit_log(event_emitter, log_sink, "info", format!("Manual reconnect ({reconnect_count})"), session_id);
             }
         }
 

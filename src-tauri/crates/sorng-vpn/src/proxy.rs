@@ -952,11 +952,11 @@ impl ProxyService {
 
         #[cfg(windows)]
         {
-            return Err(
+            Err(
                 "DNS tunneling via iodine is not supported on Windows. \
                  iodine requires a TUN/TAP device that is unavailable on this platform."
                     .to_string(),
-            );
+            )
         }
 
         #[cfg(not(windows))]
@@ -1027,12 +1027,12 @@ impl ProxyService {
 
         #[cfg(windows)]
         {
-            return Err(
+            Err(
                 "ICMP tunneling via hping3 is not supported on Windows. \
                  hping3 requires raw socket access that is unavailable on this platform. \
                  A native pnet-based implementation is planned for a future release."
                     .to_string(),
-            );
+            )
         }
 
         #[cfg(not(windows))]

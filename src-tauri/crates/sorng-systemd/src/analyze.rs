@@ -116,7 +116,7 @@ fn parse_critical_chain(output: &str) -> Vec<CriticalChainEntry> {
             continue;
         }
         // Replace tree-drawing characters with spaces to measure indent
-        let stripped = raw.replace('└', " ").replace('─', " ").replace('│', " ");
+        let stripped = raw.replace(['└', '─', '│'], " ");
         let indent = stripped.len() - stripped.trim_start().len();
         let depth = (indent / 2) as u32;
 

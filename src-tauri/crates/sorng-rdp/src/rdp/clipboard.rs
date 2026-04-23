@@ -64,6 +64,12 @@ pub struct ClipboardState {
     pub disabled: bool,
 }
 
+impl Default for ClipboardState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClipboardState {
     pub fn new() -> Self {
         Self {

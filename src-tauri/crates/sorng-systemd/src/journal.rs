@@ -261,7 +261,7 @@ fn parse_boots(output: &str) -> Vec<BootEntry> {
 }
 
 fn parse_systemd_timestamp(s: &str) -> Option<DateTime<Utc>> {
-    let parts: Vec<&str> = s.trim().split_whitespace().collect();
+    let parts: Vec<&str> = s.split_whitespace().collect();
     let date_idx = parts.iter().position(|p| {
         p.len() == 10 && p.as_bytes().get(4) == Some(&b'-') && p.as_bytes().get(7) == Some(&b'-')
     })?;

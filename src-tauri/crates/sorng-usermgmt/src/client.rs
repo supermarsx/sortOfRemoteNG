@@ -92,11 +92,8 @@ async fn exec_remote(
         .arg("-p")
         .arg(ssh.port.to_string());
 
-    match &ssh.auth {
-        crate::types::SshAuth::PrivateKey { key_path, .. } => {
-            cmd.arg("-i").arg(key_path);
-        }
-        _ => {}
+    if let crate::types::SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
+        cmd.arg("-i").arg(key_path);
     }
 
     cmd.arg(format!("{}@{}", ssh.username, ssh.host))

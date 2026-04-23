@@ -123,6 +123,12 @@ pub struct RdpSessionStats {
     pub consecutive_pdu_errors: AtomicU64,
 }
 
+impl Default for RdpSessionStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RdpSessionStats {
     pub fn new() -> Self {
         let now = Instant::now();

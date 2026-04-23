@@ -191,11 +191,8 @@ fn parse_unit_show(output: &str, unit_name: &str) -> Result<SystemdUnit, Systemd
 
     Ok(SystemdUnit {
         name: name.clone(),
-        unit_type: if name.ends_with(".service") {
-            UnitType::Service
-        } else {
-            UnitType::Service
-        },
+        // TODO: detect UnitType from suffix (.service/.socket/.timer/.target)
+        unit_type: UnitType::Service,
         description: props.get("Description").cloned().unwrap_or_default(),
         load_state: parse_load_state(
             props
