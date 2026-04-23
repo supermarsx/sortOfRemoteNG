@@ -697,6 +697,14 @@ pub fn is_command(command: &str) -> bool {
             | "rustdesk_server_config_summary"
             | "rustdesk_client_config_summary"
             | "rustdesk_session_summary"
+            // ── t5-e7: Connection Clone (secrets stripped by default) ─
+            | "clone_connection"
+            // ── t5-e7b: Probes (TCP / SSH / RDP) + bulk check run ──────
+            | "tcp_probe"
+            | "ssh_probe"
+            | "rdp_probe"
+            | "check_all_connections"
+            | "cancel_check_run"
     )
     || {
         #[cfg(feature = "vpn-softether")]
@@ -2060,5 +2068,13 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // raw_socket::send_raw_socket_data,
         // raw_socket::get_raw_socket_session_info,
         // raw_socket::list_raw_socket_sessions,
+        // ── t5-e7: Connection Clone ────────────────────────────────
+        crate::connection_clone_cmds::clone_connection,
+        // ── t5-e7b: Probes ─────────────────────────────────────────
+        sorng_probes::commands::tcp_probe,
+        sorng_probes::commands::ssh_probe,
+        sorng_probes::commands::rdp_probe,
+        sorng_probes::commands::check_all_connections,
+        sorng_probes::commands::cancel_check_run,
     ]
 }

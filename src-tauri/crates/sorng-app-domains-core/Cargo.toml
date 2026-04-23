@@ -22,6 +22,7 @@ sorng-mysql = { path = "../sorng-mysql", optional = true }
 sorng-network = { path = "../sorng-network" }
 sorng-passbolt = { path = "../sorng-passbolt" }
 sorng-postgres = { path = "../sorng-postgres", optional = true }
+sorng-probes = { path = "../sorng-probes", default-features = false }
 sorng-protocols = { path = "../sorng-protocols", default-features = false }
 sorng-rdp = { path = "../sorng-rdp", optional = true }
 sorng-redis = { path = "../sorng-redis", optional = true }

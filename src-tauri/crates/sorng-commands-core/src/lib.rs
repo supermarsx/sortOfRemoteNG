@@ -1,5 +1,8 @@
 pub use sorng_app_domains::*;
 
+// t5-e7: connection clone command (in-crate module, not an `include!` shim)
+pub mod connection_clone_cmds;
+
 #[path = "../../../src/agent_commands.rs"]
 mod agent_commands;
 #[path = "../../../src/anydesk_commands.rs"]
@@ -11,6 +14,9 @@ mod app_auth_commands;
 mod app_shell_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
+#[cfg(feature = "ops")]
+#[path = "../../../src/backup_verify_commands.rs"]
+mod backup_verify_commands;
 #[path = "../../../src/biometrics_commands.rs"]
 mod biometrics_commands;
 #[path = "../../../src/cert_auth_commands.rs"]
@@ -23,11 +29,19 @@ mod chaining_commands;
 mod cloudflare_commands;
 #[path = "../../../src/commander_commands.rs"]
 mod commander_commands;
+#[cfg(feature = "ops")]
+#[path = "../../../src/consul_commands.rs"]
+mod consul_commands;
+#[path = "../../../src/cryptojs_compat_commands.rs"]
+mod cryptojs_compat_commands;
 #[path = "../../../src/db_commands.rs"]
 mod db_commands;
 #[cfg(feature = "ops")]
 #[path = "../../../src/docker_compose_commands.rs"]
 mod docker_compose_commands;
+#[cfg(feature = "ops")]
+#[path = "../../../src/etcd_commands.rs"]
+mod etcd_commands;
 #[path = "../../../src/ftp_commands.rs"]
 mod ftp_commands;
 #[path = "../../../src/http_commands.rs"]
@@ -38,8 +52,6 @@ mod ikev2_commands;
 mod ipsec_commands;
 #[path = "../../../src/l2tp_commands.rs"]
 mod l2tp_commands;
-#[path = "../../../src/cryptojs_compat_commands.rs"]
-mod cryptojs_compat_commands;
 #[path = "../../../src/legacy_crypto_commands.rs"]
 mod legacy_crypto_commands;
 #[path = "../../../src/meshcentral_commands.rs"]
@@ -53,17 +65,8 @@ mod openvpn_dedicated_commands;
 #[path = "../../../src/passkey_commands.rs"]
 mod passkey_commands;
 #[cfg(feature = "ops")]
-#[path = "../../../src/backup_verify_commands.rs"]
-mod backup_verify_commands;
-#[cfg(feature = "ops")]
 #[path = "../../../src/powershell_commands.rs"]
 mod powershell_commands;
-#[cfg(feature = "ops")]
-#[path = "../../../src/consul_commands.rs"]
-mod consul_commands;
-#[cfg(feature = "ops")]
-#[path = "../../../src/etcd_commands.rs"]
-mod etcd_commands;
 #[path = "../../../src/pptp_commands.rs"]
 mod pptp_commands;
 #[path = "../../../src/proxy_commands.rs"]
@@ -120,16 +123,16 @@ mod ard_commands;
 mod nx_commands;
 #[path = "../../../src/spice_commands.rs"]
 mod spice_commands;
-#[path = "../../../src/x2go_commands.rs"]
-mod x2go_commands;
-#[path = "../../../src/xdmcp_commands.rs"]
-mod xdmcp_commands;
 #[path = "../../../src/wireguard_commands.rs"]
 mod wireguard_commands;
 #[path = "../../../src/wmi_commands.rs"]
 mod wmi_commands;
 #[path = "../../../src/wol_commands.rs"]
 mod wol_commands;
+#[path = "../../../src/x2go_commands.rs"]
+mod x2go_commands;
+#[path = "../../../src/xdmcp_commands.rs"]
+mod xdmcp_commands;
 #[path = "../../../src/zerotier_commands.rs"]
 mod zerotier_commands;
 

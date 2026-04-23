@@ -204,6 +204,7 @@ members = [
   "crates/sorng-commands-sessions",
   "crates/sorng-commands-access",
   "crates/sorng-smb",
+  "crates/sorng-probes",
 ]
 
 [workspace.dependencies]

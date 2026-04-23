@@ -8936,6 +8936,7 @@ dependencies = [
  "sorng-openvpn",
  "sorng-passbolt",
  "sorng-postgres",
+ "sorng-probes",
  "sorng-protocols",
  "sorng-rdp",
  "sorng-redis",
@@ -9473,11 +9474,13 @@ dependencies = [
  "sorng-app-domains",
  "sorng-app-shell",
  "sorng-core",
+ "sorng-probes",
  "ssh2",
  "tauri",
  "tauri-plugin-autostart",
  "tokio 1.50.0",
  "tokio-rustls 0.26.4",
+ "tracing",
  "uuid",
  "windows 0.62.2",
 ]
@@ -11123,6 +11126,20 @@ dependencies = [
  "sspi",
  "tokio 1.50.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-probes"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 1.0.69",
+ "tokio 1.50.0",
+ "tokio-util",
+ "tracing",
  "uuid",
 ]
 
@@ -13814,6 +13831,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio 1.50.0",
 ]

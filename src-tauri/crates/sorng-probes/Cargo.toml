@@ -1,0 +1,21 @@
+[package]
+name = "sorng-probes"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["tauri-commands"]
+tauri-commands = ["dep:tauri"]
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+tauri = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

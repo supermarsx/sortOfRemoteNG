@@ -27,6 +27,8 @@ pub use sorng_network::network;
 pub use sorng_network::qr;
 pub use sorng_network::wol;
 
+pub use sorng_probes as probes;
+
 pub use sorng_sftp::sftp;
 pub use sorng_ssh::script;
 pub use sorng_ssh::ssh;
