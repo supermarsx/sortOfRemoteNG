@@ -4,7 +4,7 @@ import type { Connection, TunnelType } from "../../../types/connection/connectio
 import { Select } from "../../ui/forms";
 import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
 import type { SavedTunnelChain } from "../../../types/settings/vpnSettings";
-import { getTypeLabel } from "./tunnelChainShared";
+import { getTypeLabel } from "./tunnelChainShared.helpers";
 
 const tunnelTypeLabels: Record<TunnelType, string> = {
   proxy: "Proxy",

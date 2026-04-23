@@ -7,9 +7,9 @@ import type { TunnelChainManager } from "../../../hooks/network/useTunnelChainMa
 import {
   getTypeIcon,
   getTypeLabel,
-  ChainPreviewInline,
   getProfileConfigSummary,
-} from "./tunnelChainShared";
+} from "./tunnelChainShared.helpers";
+import { ChainPreviewInline } from "./tunnelChainShared";
 
 interface TunnelChainTabProps {
   isOpen: boolean;

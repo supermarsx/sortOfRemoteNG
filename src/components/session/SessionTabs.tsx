@@ -50,7 +50,7 @@ import {
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
-import { isWinmgmtProtocol, getWinmgmtToolId, getWindowsToolIcon } from "../windows/WindowsToolPanel";
+import { isWinmgmtProtocol, getWinmgmtToolId, getWindowsToolIcon } from "../windows/WindowsToolPanel.helpers";
 import MenuSurface from "../ui/overlays/MenuSurface";
 import type { ConnectionSession, TabGroup } from "../../types/connection/connection";
 

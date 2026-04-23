@@ -8,9 +8,9 @@ import type { Mgr } from "./types";
 import {
   getTypeIcon,
   getTypeLabel,
-  ChainPreviewInline,
   getProfileConfigSummary,
-} from "./tunnelChainShared";
+} from "./tunnelChainShared.helpers";
+import { ChainPreviewInline } from "./tunnelChainShared";
 
 interface UnifiedChainsTabProps {
   isOpen: boolean;

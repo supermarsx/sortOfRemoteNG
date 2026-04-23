@@ -5,7 +5,7 @@ import {
   WINDOWS_TOOLS,
   createWinmgmtSession,
   type WindowsToolId,
-} from '../windows/WindowsToolPanel';
+} from '../windows/WindowsToolPanel.helpers';
 
 interface WindowsToolsBarProps {
   connectionId: string;
