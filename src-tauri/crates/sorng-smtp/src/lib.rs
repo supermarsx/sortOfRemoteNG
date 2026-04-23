@@ -15,6 +15,11 @@
 //! | [`diagnostics`] | MX lookup, connectivity tests, deliverability checks |
 //! | [`service`] | Service façade |
 
+#![cfg_attr(
+    test,
+    allow(clippy::field_reassign_with_default, clippy::useless_vec)
+)]
+
 pub mod auth;
 pub mod client;
 pub mod contacts;
