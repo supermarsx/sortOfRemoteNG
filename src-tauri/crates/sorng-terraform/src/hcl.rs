@@ -124,7 +124,7 @@ impl HclAnalyzer {
                 let default: Option<serde_json::Value> = default_str.and_then(|s| {
                     serde_json::from_str(&s)
                         .ok()
-                        .or_else(|| Some(serde_json::Value::String(s)))
+                        .or(Some(serde_json::Value::String(s)))
                 });
 
                 let validation_rules: Vec<String> = if block.contains("validation") {

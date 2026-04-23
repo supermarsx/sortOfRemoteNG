@@ -54,8 +54,8 @@ pub async fn stop_array(host: &DiskHost, device: &str) -> Result<(), DiskError> 
 
 fn parse_mdstat(content: &str) -> Vec<MdArray> {
     let mut arrays = Vec::new();
-    let mut lines = content.lines().peekable();
-    while let Some(line) = lines.next() {
+    let lines = content.lines();
+    for line in lines {
         if line.starts_with("md") && line.contains(" : ") {
             let dev = line.split_whitespace().next().unwrap_or("").to_string();
             let rest = line.split(" : ").nth(1).unwrap_or("");

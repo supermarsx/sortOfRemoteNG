@@ -148,7 +148,7 @@ fn extract_blocks(input: &str) -> Vec<(String, String, String)> {
         for kw in &keywords {
             if rest.starts_with(kw) {
                 let after = rest.as_bytes().get(kw.len());
-                if after.map_or(true, |&b| b == b' ' || b == b'\t' || b == b'{') {
+                if after.is_none_or(|&b| b == b' ' || b == b'\t' || b == b'{') {
                     matched = Some(*kw);
                     break;
                 }

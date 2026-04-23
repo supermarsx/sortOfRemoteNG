@@ -90,8 +90,8 @@ pub fn parse_ldif_search(output: &str) -> LdapSearchResult {
             }
             continue;
         }
-        if line.starts_with("dn:") {
-            dn = line[3..].trim().to_string();
+        if let Some(rest) = line.strip_prefix("dn:") {
+            dn = rest.trim().to_string();
         } else if let Some((k, v)) = line.split_once(':') {
             let v = v.trim().to_string();
             attrs.entry(k.trim().to_string()).or_default().push(v);

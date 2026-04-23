@@ -25,9 +25,9 @@ pub async fn get_replication_status(host: &LdapHost) -> Result<Vec<ReplicationSt
 fn unfold_ldif(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     for line in text.lines() {
-        if line.starts_with(' ') {
+        if let Some(rest) = line.strip_prefix(' ') {
             // Continuation: append content after the leading space
-            result.push_str(&line[1..]);
+            result.push_str(rest);
         } else {
             if !result.is_empty() {
                 result.push('\n');

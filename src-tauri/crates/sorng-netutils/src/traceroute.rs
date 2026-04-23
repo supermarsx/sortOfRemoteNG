@@ -98,8 +98,8 @@ pub fn parse_traceroute_output(output: &str, target: &str) -> Option<TracerouteR
                 i += 2;
             } else if token.ends_with("ms") || (i + 1 < remaining.len() && remaining[i + 1] == "ms")
             {
-                let rtt_str = if token.ends_with("ms") {
-                    &token[..token.len() - 2]
+                let rtt_str = if let Some(stripped) = token.strip_suffix("ms") {
+                    stripped
                 } else {
                     token
                 };

@@ -120,15 +120,15 @@ pub fn parse_dig_output(output: &str) -> Option<DigResult> {
             continue;
         } else if trimmed.starts_with(";;") {
             // Other ;; lines — parse footer info
-            if trimmed.starts_with(";; Query time:") {
+            if let Some(rest) = trimmed.strip_prefix(";; Query time:") {
                 // ";; Query time: 12 msec"
-                let after = &trimmed[";; Query time:".len()..].trim();
+                let after = rest.trim();
                 if let Some(num_str) = after.split_whitespace().next() {
                     query_time_ms = num_str.parse().unwrap_or(0);
                 }
-            } else if trimmed.starts_with(";; SERVER:") {
+            } else if let Some(rest) = trimmed.strip_prefix(";; SERVER:") {
                 // ";; SERVER: 8.8.8.8#53(8.8.8.8)"
-                let after = &trimmed[";; SERVER:".len()..].trim();
+                let after = rest.trim();
                 // Take address before '#'
                 let srv = if let Some(hash) = after.find('#') {
                     &after[..hash]

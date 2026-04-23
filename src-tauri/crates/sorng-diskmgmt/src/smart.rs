@@ -50,7 +50,6 @@ fn parse_smartctl(output: &str, device: &str) -> SmartInfo {
                     194 | 190 => {
                         info.temperature_c = Some(
                             attr.raw
-                                .trim()
                                 .split_whitespace()
                                 .next()
                                 .and_then(|v| v.parse().ok())

@@ -38,8 +38,8 @@ pub fn parse_rsyslog_conf(content: &str) -> Result<RsyslogConfig, SyslogError> {
                 template_type: String::new(),
                 content: line.to_string(),
             });
-        } else if line.starts_with("$") {
-            if let Some((k, v)) = line[1..].split_once(' ') {
+        } else if let Some(rest) = line.strip_prefix('$') {
+            if let Some((k, v)) = rest.split_once(' ') {
                 global.insert(k.trim().to_string(), v.trim().to_string());
             }
         } else if line.contains('.') && !line.starts_with("&") {

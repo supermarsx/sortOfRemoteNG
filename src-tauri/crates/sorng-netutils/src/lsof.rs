@@ -102,16 +102,18 @@ pub fn parse_lsof_output(output: &str) -> Vec<NetworkFd> {
     results
 }
 
+/// Parsed components of an `lsof` NAME field:
+/// `(local_addr, local_port, remote_addr, remote_port, state)`.
+type LsofNameParts = (
+    Option<String>,
+    Option<u16>,
+    Option<String>,
+    Option<u16>,
+    Option<String>,
+);
+
 /// Parse the NAME field from lsof output into address components and state.
-fn parse_lsof_name(
-    name: &str,
-) -> (
-    Option<String>,
-    Option<u16>,
-    Option<String>,
-    Option<u16>,
-    Option<String>,
-) {
+fn parse_lsof_name(name: &str) -> LsofNameParts {
     // Extract state from parentheses at end, e.g. "(LISTEN)"
     let (addr_part, state) = if let Some(paren_start) = name.rfind('(') {
         let state_str = name[paren_start + 1..].trim_end_matches(')');
