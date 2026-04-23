@@ -22,7 +22,11 @@ export default defineConfig({
     },
     alias: {
       '@tauri-apps/plugin-fs': new URL('./vitest.mocks/tauri-plugin-fs.ts', import.meta.url).pathname,
-      '@tauri-apps/plugin-dialog': new URL('./vitest.mocks/tauri-plugin-dialog.ts', import.meta.url).pathname
+      '@tauri-apps/plugin-dialog': new URL('./vitest.mocks/tauri-plugin-dialog.ts', import.meta.url).pathname,
+      // Mirror tsconfig.json `paths` so modules that use the `@/*` alias
+      // (e.g. src/components/connection/CheckConnectionsModal.tsx) resolve
+      // under vitest the same way they do under Next.js / the Tauri webview.
+      '@/': new URL('./src/', import.meta.url).pathname,
     },
     coverage: {
       provider: 'v8',
