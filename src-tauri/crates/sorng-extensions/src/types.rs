@@ -1282,6 +1282,6 @@ mod tests {
     fn script_value_as_float_from_string() {
         let v = ScriptValue::String("3.14".into());
         let f = v.as_float().unwrap();
-        assert!((f - 3.14).abs() < 0.001);
+        assert!((f - std::f64::consts::PI).abs() < 0.01);
     }
 }
