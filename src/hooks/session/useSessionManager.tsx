@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/toolSession";
-import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel";
+import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 import { ScriptEngine } from "../../utils/recording/scriptEngine";

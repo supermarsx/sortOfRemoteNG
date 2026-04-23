@@ -36,7 +36,7 @@ vi.mock('@tauri-apps/api/window', () => ({
   currentMonitor: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../../src/components/windows/WindowsToolPanel', () => ({
+vi.mock('../../src/components/windows/WindowsToolPanel.helpers', () => ({
   isWinmgmtProtocol: vi.fn().mockReturnValue(false),
 }));
 

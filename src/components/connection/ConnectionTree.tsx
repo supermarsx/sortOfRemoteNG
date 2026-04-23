@@ -3,7 +3,7 @@ import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
 import { useToastContext } from "../../contexts/ToastContext";
 import type { Connection } from "../../types/connection/connection";
-import { createWinmgmtSession, type WindowsToolId } from "../windows/WindowsToolPanel";
+import { createWinmgmtSession, type WindowsToolId } from "../windows/WindowsToolPanel.helpers";
 import ConnectionTreeItem from "./connectionTree/ConnectionTreeItem";
 import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";

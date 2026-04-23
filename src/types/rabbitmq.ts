@@ -119,7 +119,7 @@ export interface FederationUpstream {
   prefetchCount?: number;
 }
 
-export interface FederationUpstreamDef extends FederationUpstream {}
+export type FederationUpstreamDef = FederationUpstream;
 
 export interface FederationLink {
   upstream: string;

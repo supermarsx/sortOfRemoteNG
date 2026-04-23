@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 import { Connection, ConnectionSession } from '../../types/connection/connection';
-import { isWinmgmtProtocol } from '../../components/windows/WindowsToolPanel';
+import { isWinmgmtProtocol } from '../../components/windows/WindowsToolPanel.helpers';
 import { generateId } from '../../utils/core/id';
 import type { WindowId } from '../../types/windowManager';
 

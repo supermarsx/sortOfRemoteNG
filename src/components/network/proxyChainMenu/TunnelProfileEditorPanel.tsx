@@ -5,8 +5,8 @@ import type { TunnelType, TunnelChainLayer } from "../../../types/connection/con
 import {
   TUNNEL_TYPE_OPTIONS,
   getTypeLabel,
-  LayerConfigForm,
-} from "./tunnelChainShared";
+} from "./tunnelChainShared.helpers";
+import { LayerConfigForm } from "./tunnelChainShared";
 
 // Reuse createDefaultLayer from useTunnelChainEditor
 function createDefaultLayer(type: TunnelType): TunnelChainLayer {

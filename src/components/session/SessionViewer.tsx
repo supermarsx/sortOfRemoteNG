@@ -3,7 +3,7 @@ import dynamic from 'next/dynamic';
 import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield, RefreshCw } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
 import { isToolProtocol } from '../app/toolSession';
-import { isWinmgmtProtocol } from '../windows/WindowsToolPanel';
+import { isWinmgmtProtocol } from '../windows/WindowsToolPanel.helpers';
 import { FeatureErrorBoundary } from '../app/FeatureErrorBoundary';
 
 const ToolTabViewer = dynamic(

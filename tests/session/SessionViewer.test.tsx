@@ -31,6 +31,10 @@ vi.mock("../../src/components/windows/WindowsToolPanel", () => ({
     mockState.windowsToolPanelProps(props);
     return <div data-testid="mock-windows-tool-panel">Windows Tool Panel</div>;
   },
+}));
+
+vi.mock("../../src/components/windows/WindowsToolPanel.helpers", () => ({
+  __esModule: true,
   isWinmgmtProtocol: (protocol: string) => protocol.startsWith("winmgmt:"),
 }));
 

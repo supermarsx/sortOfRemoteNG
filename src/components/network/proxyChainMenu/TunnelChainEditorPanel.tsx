@@ -11,6 +11,8 @@ import {
   TUNNEL_TYPE_OPTIONS,
   getTypeIcon,
   getTypeLabel,
+} from "./tunnelChainShared.helpers";
+import {
   LayerConfigForm,
   ChainPreviewInline,
 } from "./tunnelChainShared";
