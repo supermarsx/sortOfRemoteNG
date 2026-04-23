@@ -202,6 +202,33 @@ src/
 for the union of its topics; `src-tauri/src/lib.rs` chains every enabled
 family's `handler()` into the builder. Disabled families compile to nothing.
 
+### 5.1 Connection Clone & Bulk Reachability Check
+
+Clone duplicates an existing connection with a new id. By default, credentials
+and other sensitive fields (`password`, `privateKey`, `passphrase`,
+`totpSecret`, `basicAuthPassword`, `rustdeskPassword`, plus nested secrets
+inside `cloudProvider` / `gatewaySettings` / `gateway` / `proxyConfig`
+— `password`, `apiKey`, `accessToken`, `clientSecret`, `privateKey`,
+`passphrase`, `proxyPassword` — and `totpConfigs`) are stripped; an explicit
+`include_credentials` flag on the `clone_connection` command opts into
+preserving them. Every clone call emits a
+`tracing::info!(target = "audit", action = "connection.clone", …)` event
+recording the source id, new id, and whether credentials were included.
+
+Bulk reachability check (`check_all_connections`) probes a batch of
+connections concurrently (default cap 8 via `tokio::sync::Semaphore`), with
+per-protocol probes implemented in the `sorng-probes` crate:
+
+- **TCP**: `tcp_probe` — plain connect with timeout.
+- **SSH**: `ssh_probe` — connect + banner read.
+- **RDP**: `rdp_probe` — connect + X.224 negotiation parse (reports
+  `nla_required` / `negotiated_protocol`).
+
+Progress streams over `connection-check-progress` events (per connection) and
+terminates with `connection-check-complete`. The run is cancellable via
+`cancel_check_run` backed by a `tokio_util::sync::CancellationToken`. Probes
+never send credentials; they only test reachability and capability metadata.
+
 ---
 
 ## 6. Feature-flag reference
