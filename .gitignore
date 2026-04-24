@@ -49,8 +49,15 @@ coverage_output.txt
 test_toolbar_output.txt
 target/reports/
 /.orchestration
+.wdio-drivers/
+e2e/screenshots/failure-*.png
+/.kilo/
+/generate_fixture.rs
+/test_encryption.rs
 
 # Tauri signing keys (never commit — pub key is inline in tauri.conf.json)
 .keys/
 *.key
 *.key.pub
+/.copilot
+/target-copilot-rdp-check

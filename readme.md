@@ -170,6 +170,14 @@ npm test
 npm run lint
 ```
 
+For end-to-end coverage, the repository now uses a tiered model instead of
+trying to gate every environment-sensitive test on every change. The required
+PR gate is a narrow Docker-backed SSH/SFTP smoke suite; broader Docker, WDIO,
+and specialty integration coverage stays opt-in, nightly, or lab-only.
+
+See [`docs/testing/e2e-runbook.md`](docs/testing/e2e-runbook.md) for the
+current E2E tiers, local commands, and CI expectations.
+
 ## 📄 License
 
 Distributed under the MIT License. See [license.md](license.md) for details.

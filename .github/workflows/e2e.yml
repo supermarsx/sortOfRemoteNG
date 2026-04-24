@@ -15,7 +15,7 @@ name: Docker e2e (nightly)
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: "0 3 * * *"
   workflow_dispatch: {}
   pull_request:
     types: [labeled, synchronize, reopened]
@@ -38,6 +38,10 @@ env:
   MYSQL_PASSWORD: testpass
   FTP_USER: testuser
   FTP_PASSWORD: testpass
+  FTP_TEST_HOST: 127.0.0.1
+  FTP_TEST_PORT: "2121"
+  FTP_TEST_USER: testuser
+  FTP_TEST_PASSWORD: testpass
   SMB_HOST: 127.0.0.1
   SMB_PORT: "1445"
   SMB_USER: sorngtest
@@ -185,6 +189,16 @@ jobs:
             --test softether_e2e -- --include-ignored --nocapture \
             --test-threads=1 2>&1 | tee ../e2e-softether.log
 
+      # ── t3-e5: FTP wiring smoke ───────────────────────────────────
+      - name: FTP wire smoke (t3-e5)
+        id: test-ftp
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          cargo test -p sorng-ftp --features docker-e2e \
+            --test golden_path -- --include-ignored --nocapture \
+            2>&1 | tee ../e2e-ftp.log
+
       # ── Artifacts + failure capture ────────────────────────────────
       - name: Collect container logs (always)
         if: always()
@@ -208,6 +222,7 @@ jobs:
             e2e-rdp.log
             e2e-vnc.log
             e2e-softether.log
+            e2e-ftp.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -241,6 +256,7 @@ jobs:
           echo "| rdp (t3-e7) | ${{ steps.test-rdp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| vnc (t3-e7) | ${{ steps.test-vnc.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| softether (t3-e8) | ${{ steps.test-softether.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ftp (t3-e5) | ${{ steps.test-ftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           # Fail the job if any test step failed.
           fails=0
           for o in \
@@ -249,7 +265,8 @@ jobs:
             "${{ steps.test-smb.outcome }}" \
             "${{ steps.test-rdp.outcome }}" \
             "${{ steps.test-vnc.outcome }}" \
-            "${{ steps.test-softether.outcome }}"; do
+            "${{ steps.test-softether.outcome }}" \
+            "${{ steps.test-ftp.outcome }}"; do
             if [ "$o" = "failure" ]; then fails=$((fails+1)); fi
           done
           if [ "$fails" -gt 0 ]; then

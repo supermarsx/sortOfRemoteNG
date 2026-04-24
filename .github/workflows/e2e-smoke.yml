@@ -1,0 +1,119 @@
+name: E2E Smoke
+
+on:
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SSH_USER: testuser
+  SSH_PASSWORD: testpass
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  e2e-smoke:
+    name: SSH/SFTP smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: e2e-smoke
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev
+
+      - name: Prepare compose .env
+        working-directory: e2e
+        run: |
+          cat > .env <<'EOF'
+          SSH_USER=${{ env.SSH_USER }}
+          SSH_PASSWORD=${{ env.SSH_PASSWORD }}
+          EOF
+
+      - name: Docker compose up (SSH fixture only)
+        run: |
+          docker compose \
+            -f e2e/docker-compose.yml \
+            --env-file e2e/.env \
+            up -d test-ssh
+
+      - name: Wait for SSH healthcheck
+        run: |
+          container_id=$(docker compose -f e2e/docker-compose.yml --env-file e2e/.env ps -q test-ssh)
+          if [ -z "$container_id" ]; then
+            echo "::error::test-ssh container was not created"
+            docker compose -f e2e/docker-compose.yml --env-file e2e/.env ps
+            exit 1
+          fi
+
+          for i in $(seq 1 18); do
+            status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id" 2>/dev/null || true)
+            if [ "$status" = "healthy" ]; then
+              echo "SSH fixture is healthy."
+              exit 0
+            fi
+            echo "waiting for SSH fixture health, current status='$status'"
+            sleep 5
+          done
+          echo "::error::SSH fixture did not become healthy in time"
+          docker ps -a
+          exit 1
+
+      - name: SSH golden path
+        working-directory: src-tauri
+        run: |
+          cargo test -p sorng-ssh --features docker-e2e \
+            --test golden_path -- --include-ignored --nocapture
+
+      - name: SFTP golden path
+        working-directory: src-tauri
+        run: |
+          cargo test -p sorng-sftp --features docker-e2e \
+            --test golden_path -- --include-ignored --nocapture
+
+      - name: Collect container logs
+        if: always()
+        run: |
+          mkdir -p container-logs
+          for c in $(docker compose -f e2e/docker-compose.yml ps -q); do
+            name=$(docker inspect --format '{{.Name}}' "$c" | sed 's|^/||')
+            docker logs "$c" > "container-logs/${name}.log" 2>&1 || true
+          done
+          docker ps -a > container-logs/_docker-ps.txt || true
+
+      - name: Upload container logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-container-logs
+          path: container-logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Docker compose down
+        if: always()
+        run: |
+          docker compose \
+            -f e2e/docker-compose.yml \
+            down -v --remove-orphans || true

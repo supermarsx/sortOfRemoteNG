@@ -1,9 +1,38 @@
 import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import type { Options } from '@wdio/types';
 import TauriDriverService from './helpers/tauri-service';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const windowsTarget = process.env.CARGO_BUILD_TARGET ?? 'x86_64-pc-windows-gnu';
+
+const tauriBinaryCandidates = [
+  path.resolve(__dirname, '../src-tauri/target/release/app.exe'),
+  path.resolve(__dirname, `../src-tauri/target/${windowsTarget}/release/app.exe`),
+  path.resolve(__dirname, '../src-tauri/target/debug/app.exe'),
+  path.resolve(__dirname, `../src-tauri/target/${windowsTarget}/debug/app.exe`),
+  path.resolve(__dirname, '../src-tauri/target/release/sortOfRemoteNG.exe'),
+  path.resolve(
+    __dirname,
+    `../src-tauri/target/${windowsTarget}/release/sortOfRemoteNG.exe`,
+  ),
+  path.resolve(__dirname, '../src-tauri/target/debug/sortOfRemoteNG.exe'),
+  path.resolve(
+    __dirname,
+    `../src-tauri/target/${windowsTarget}/debug/sortOfRemoteNG.exe`,
+  ),
+];
+
+const tauriBinaryPath =
+  tauriBinaryCandidates.find((candidate) => fs.existsSync(candidate)) ??
+  tauriBinaryCandidates[1];
+
 export const config = {
   runner: 'local',
+  hostname: '127.0.0.1',
+  port: 4444,
+  path: '/',
   autoCompileOpts: {
     tsNodeOpts: {
       project: path.resolve(__dirname, './tsconfig.json'),
@@ -17,17 +46,13 @@ export const config = {
 
   capabilities: [
     {
-      browserName: 'wry',
       'tauri:options': {
-        application: path.resolve(
-          __dirname,
-          '../src-tauri/target/release/sortOfRemoteNG.exe',
-        ),
+        application: tauriBinaryPath,
       },
     } as never,
   ],
 
-  services: [[TauriDriverService, {}]],
+  services: [[TauriDriverService]],
 
   framework: 'mocha',
   mochaOpts: {

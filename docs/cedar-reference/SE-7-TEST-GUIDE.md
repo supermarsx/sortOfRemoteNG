@@ -82,7 +82,7 @@ matrix:
 
 Tests should be tagged `#[ignore]` by default (they require Docker) and
 opt-in via `cargo test -- --ignored softether_e2e`. CI should gate them
-behind a `--features e2e-docker` workspace feature.
+behind a `--features docker-e2e` workspace feature.
 
 ### Recommended test scaffolding
 

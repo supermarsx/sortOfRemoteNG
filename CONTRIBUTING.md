@@ -45,6 +45,9 @@ CI enforces this explicitly in `.github/workflows/ci.yml`
 # Install frontend deps
 npm install
 
+# Prepare the local E2E env file once
+cp e2e/.env.example e2e/.env
+
 # Run the Tauri app in dev mode
 npm run tauri:dev
 
@@ -60,6 +63,12 @@ cd src-tauri
 cargo check --workspace --exclude sorng-kafka
 cargo clippy --workspace --exclude sorng-kafka --all-targets -- -D warnings
 cargo test --workspace --exclude sorng-kafka
+
+# Required E2E smoke gate (same scope as the new PR smoke workflow)
+cd ..
+npm run e2e:smoke:up
+npm run e2e:smoke:required
+npm run e2e:smoke:down
 ```
 
 ### Kafka
@@ -76,12 +85,15 @@ Every PR must pass:
 - `format` — `npm run format` (Prettier).
 - `lint` — `npm run lint` (ESLint).
 - `test` — `npm test -- --run --coverage`.
+- `e2e-smoke` — Docker-backed SSH + SFTP smoke tests only.
 - `rust-check-linux` — `cargo check --workspace --exclude sorng-kafka`
   plus `cargo check -p app --features kafka`.
 - `rust-check-windows` — `cargo check --workspace --exclude sorng-kafka`
   on an MSVC host.
 
-Run the same commands locally before opening a PR to avoid round-trips.
+Broader E2E remains opt-in or nightly. See `docs/testing/e2e-runbook.md`
+for the tier model and environment expectations. Run the same required
+commands locally before opening a PR to avoid round-trips.
 
 ## Commits & PRs
 
