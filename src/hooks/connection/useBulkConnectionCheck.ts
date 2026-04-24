@@ -39,6 +39,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
 
   const unlistenersRef = useRef<Array<() => void>>([]);
   const runIdRef = useRef<string | null>(null);
+  const pendingCancelRef = useRef(false);
 
   const teardown = useCallback(() => {
     for (const un of unlistenersRef.current) {
@@ -57,24 +58,50 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
     setRows([]);
     setRunId(null);
     runIdRef.current = null;
+    pendingCancelRef.current = false;
     setTotal(0);
     setCompleted(0);
     setCancelled(false);
     setError(null);
   }, [teardown]);
 
-  const cancel = useCallback(async () => {
-    const id = runIdRef.current;
-    if (!id) return;
+  const requestCancel = useCallback(async (id: string) => {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('cancel_check_run', { runId: id });
-      setCancelled(true);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('cancel_check_run failed', e);
     }
   }, []);
+
+  const acceptRunId = useCallback(
+    (id: string) => {
+      if (runIdRef.current && runIdRef.current !== id) return false;
+      if (runIdRef.current !== id) {
+        runIdRef.current = id;
+        setRunId(id);
+      }
+      if (pendingCancelRef.current) {
+        pendingCancelRef.current = false;
+        setCancelled(true);
+        void requestCancel(id);
+      }
+      return true;
+    },
+    [requestCancel],
+  );
+
+  const cancel = useCallback(async () => {
+    setCancelled(true);
+    const id = runIdRef.current;
+    if (!id) {
+      pendingCancelRef.current = true;
+      return;
+    }
+    pendingCancelRef.current = false;
+    await requestCancel(id);
+  }, [requestCancel]);
 
   const open = useCallback(
     async (connections: Connection[]) => {
@@ -95,6 +122,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
       setCancelled(false);
       setError(null);
       setIsOpen(true);
+      pendingCancelRef.current = false;
 
       if (initial.length === 0) return;
 
@@ -114,7 +142,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
           'connection-check-progress',
           (evt) => {
             const p = evt.payload;
-            if (p.run_id !== runIdRef.current) return;
+            if (!acceptRunId(p.run_id)) return;
             setRows((prev) =>
               prev.map((r) =>
                 r.connectionId === p.connection_id
@@ -131,8 +159,9 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
           'connection-check-complete',
           (evt) => {
             const p = evt.payload;
-            if (p.run_id !== runIdRef.current) return;
-            setCancelled(p.cancelled);
+            if (!acceptRunId(p.run_id)) return;
+            setCompleted(p.completed);
+            setCancelled((current) => current || p.cancelled);
           },
         );
         unlistenersRef.current.push(unComplete);
@@ -142,8 +171,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
           concurrency: 8,
           timeoutMs: 5000,
         });
-        setRunId(id);
-        runIdRef.current = id;
+        acceptRunId(id);
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error('check_all_connections failed', e);
@@ -151,7 +179,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
         teardown();
       }
     },
-    [teardown],
+    [acceptRunId, teardown],
   );
 
   useEffect(() => () => teardown(), [teardown]);

@@ -24,13 +24,17 @@ import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { useCollectionSelector } from "../../hooks/connection/useCollectionSelector";
 import { Checkbox } from '../ui/forms';
+import { useTranslation } from "react-i18next";
 import CollectionsTab from "./collectionSelector/CollectionsTab";
 import ConnectionsTab from "./collectionSelector/ConnectionsTab";
 import ProxiesTab from "./collectionSelector/ProxiesTab";
 
 interface CollectionSelectorProps {
   isOpen: boolean;
-  onCollectionSelect: (collectionId: string, password?: string) => void;
+  onCollectionSelect: (
+    collectionId: string,
+    password?: string,
+  ) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -39,6 +43,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   onCollectionSelect,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const mgr = useCollectionSelector(isOpen, onCollectionSelect);
 
   if (!isOpen) return null;
@@ -58,8 +63,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           icon={Database}
           iconColor="text-primary"
           iconBg="bg-primary/20"
-          title="Collection Center"
-          subtitle="Manage your connection collections"
+          title={t("collectionCenter.title")}
+          subtitle={t("collectionCenter.subtitle")}
           onClose={onClose}
           sticky
           actions={
@@ -71,7 +76,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     className="sor-btn-secondary-sm"
                   >
                     <Upload size={14} />
-                    <span>Import</span>
+                    <span>{t("collectionCenter.actions.import")}</span>
                   </button>
                   <button
                     onClick={() => mgr.setShowCreateForm(true)}
@@ -79,7 +84,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     data-testid="collection-create"
                   >
                     <Plus size={14} />
-                    <span>New</span>
+                    <span>{t("connections.new")}</span>
                   </button>
                 </>
               )}
@@ -90,14 +95,14 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     className="sor-btn-secondary-sm"
                   >
                     <Upload size={14} />
-                    <span>Import</span>
+                    <span>{t("collectionCenter.actions.import")}</span>
                   </button>
                   <button
                     onClick={mgr.handleExportProxies}
                     className="sor-btn-secondary-sm"
                   >
                     <Download size={14} />
-                    <span>Export</span>
+                    <span>{t("collectionCenter.actions.export")}</span>
                   </button>
                 </>
               )}
@@ -117,7 +122,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               }`}
             >
               <Database size={16} />
-              <span>Collections</span>
+              <span>{t("collectionCenter.tabs.collections")}</span>
             </button>
             <button
               onClick={() => mgr.setActiveTab("connections")}
@@ -128,7 +133,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               }`}
             >
               <Layers size={16} />
-              <span>Connections</span>
+              <span>{t("collectionCenter.tabs.connections")}</span>
             </button>
             <button
               onClick={() => mgr.setActiveTab("proxies")}
@@ -139,7 +144,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               }`}
             >
               <Network size={16} />
-              <span>Proxy/VPN Profiles</span>
+              <span>{t("collectionCenter.tabs.proxies")}</span>
             </button>
           </div>
 

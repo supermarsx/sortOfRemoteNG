@@ -10,10 +10,26 @@ import { ConnectionCollection } from '../../src/types/connection/connection';
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
 
+const translations: Record<string, string> = {
+  'collectionCenter.actions.clone': 'Clone',
+  'collectionCenter.actions.edit': 'Edit',
+  'collectionCenter.collections.actionsLabel': 'Actions for {{name}}',
+  'collectionCenter.collections.updateAction': 'Update',
+  'collectionCenter.collections.cloneAction': 'Clone Collection',
+  'collectionCenter.collections.cloneTitle': 'Clone Collection: {{name}}',
+  'collectionCenter.collections.sourcePasswordPlaceholder': 'Enter source collection password',
+};
+
+const interpolate = (template: string, options?: Record<string, unknown>) =>
+  template.replace(/{{(\w+)}}/g, (_, key: string) => String(options?.[key] ?? ''));
+
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      interpolate(translations[key] ?? key, options),
+  }),
 }));
 
 vi.mock('../../src/utils/settings/settingsManager', () => ({
@@ -31,6 +47,8 @@ vi.mock('../../src/contexts/useConnections', () => ({
   useConnections: () => ({
     state: { connections: [], sessions: [], selectedConnection: null },
     dispatch: vi.fn(),
+    saveData: vi.fn().mockResolvedValue(undefined),
+    loadData: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 
@@ -67,7 +85,10 @@ describe('CollectionSelector editing', () => {
       <CollectionSelector isOpen onCollectionSelect={() => {}} onClose={() => {}} />
     );
 
-    fireEvent.click(await screen.findByTitle('Edit'));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for First' }),
+    );
+    fireEvent.click(await screen.findByText('Edit'));
 
     const [nameInput, descInput] = screen.getAllByRole('textbox');
     fireEvent.change(nameInput, { target: { value: 'Renamed' } });
@@ -80,5 +101,66 @@ describe('CollectionSelector editing', () => {
       expect(stored![0].name).toBe('Renamed');
       expect(stored![0].description).toBe('updated');
     });
+  });
+
+  it('clones a collection from the overflow menu', async () => {
+    render(
+      <CollectionSelector isOpen onCollectionSelect={() => {}} onClose={() => {}} />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for First' }),
+    );
+    fireEvent.click(await screen.findByText('Clone'));
+
+    await waitFor(async () => {
+      const stored = await IndexedDbService.getItem<ConnectionCollection[]>('mremote-collections');
+      expect(stored).toHaveLength(2);
+      expect(stored?.[1].name).toBe('First (Copy)');
+    });
+
+    expect(await screen.findByText('First (Copy)')).toBeInTheDocument();
+    expect(screen.getByTestId('collection-selector')).toBeInTheDocument();
+  });
+
+  it('prompts for the source password before cloning another encrypted collection', async () => {
+    const secure = await manager.createCollection('Secure', 'sealed', true, 'secret');
+    await manager.saveCollectionData(
+      secure.id,
+      {
+        connections: [{ id: 'secure-1', name: 'Locked' } as any],
+        settings: { favoriteOnly: true },
+        timestamp: 99,
+      } as any,
+      'secret',
+    );
+
+    render(
+      <CollectionSelector isOpen onCollectionSelect={() => {}} onClose={() => {}} />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Secure' }),
+    );
+    fireEvent.click(await screen.findByText('Clone'));
+
+    expect(await screen.findByText('Clone Collection: Secure')).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByPlaceholderText('Enter source collection password'),
+      { target: { value: 'secret' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clone Collection' }));
+
+    await waitFor(async () => {
+      const stored = await IndexedDbService.getItem<ConnectionCollection[]>('mremote-collections');
+      expect(stored?.map((collection) => collection.name)).toEqual([
+        'First',
+        'Secure',
+        'Secure (Copy)',
+      ]);
+    });
+
+    expect(await screen.findByText('Secure (Copy)')).toBeInTheDocument();
   });
 });

@@ -3,6 +3,9 @@ import { ConnectionCollection } from "../../types/connection/connection";
 import { SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
 import { CollectionManager } from "../../utils/connection/collectionManager";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
+import { InvalidPasswordError } from "../../utils/core/errors";
+import { useConnections } from "../../contexts/useConnections";
+import { useTranslation } from "react-i18next";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -29,13 +32,40 @@ const EMPTY_NEW_COLLECTION: NewCollectionForm = {
   confirmPassword: "",
 };
 
+type PasswordDialogMode = "unlock" | "clone";
+
+interface CollectionActionMenuState {
+  collection: ConnectionCollection;
+  position: {
+    x: number;
+    y: number;
+  };
+}
+
+function getCollectionActionError(
+  error: unknown,
+  fallbackMessage: string,
+  invalidPasswordMessage: string,
+): string {
+  if (error instanceof InvalidPasswordError) {
+    return invalidPasswordMessage;
+  }
+
+  return error instanceof Error ? error.message : fallbackMessage;
+}
+
 // ─── Hook ──────────────────────────────────────────────────────────
 
 export function useCollectionSelector(
   isOpen: boolean,
-  onCollectionSelect: (collectionId: string, password?: string) => void,
+  onCollectionSelect: (
+    collectionId: string,
+    password?: string,
+  ) => Promise<void> | void,
 ) {
   const collectionManager = CollectionManager.getInstance();
+  const { saveData } = useConnections();
+  const { t } = useTranslation();
 
   // Collections
   const [collections, setCollections] = useState<ConnectionCollection[]>([]);
@@ -44,6 +74,8 @@ export function useCollectionSelector(
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [selectedCollection, setSelectedCollection] =
     useState<ConnectionCollection | null>(null);
+  const [passwordDialogMode, setPasswordDialogMode] =
+    useState<PasswordDialogMode>("unlock");
   const [newCollection, setNewCollection] =
     useState<NewCollectionForm>(EMPTY_NEW_COLLECTION);
   const [editingCollection, setEditingCollection] =
@@ -74,6 +106,12 @@ export function useCollectionSelector(
   // Password unlock
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [collectionMenu, setCollectionMenu] =
+    useState<CollectionActionMenuState | null>(null);
+  const [isWorking, setIsWorking] = useState(false);
+  const [highlightedCollectionId, setHighlightedCollectionId] = useState<
+    string | null
+  >(null);
 
   // Shared UI state
   const [error, setError] = useState("");
@@ -109,24 +147,60 @@ export function useCollectionSelector(
     }
   }, [isOpen, loadCollections]);
 
+  useEffect(() => {
+    if (!highlightedCollectionId) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setHighlightedCollectionId(null);
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightedCollectionId]);
+
+  const closePasswordDialog = useCallback(() => {
+    setShowPasswordDialog(false);
+    setSelectedCollection(null);
+    setPassword("");
+    setPasswordDialogMode("unlock");
+  }, []);
+
+  const openCollectionMenu = useCallback(
+    (
+      collection: ConnectionCollection,
+      position: CollectionActionMenuState["position"],
+    ) => {
+      setCollectionMenu({ collection, position });
+      setError("");
+    },
+    [],
+  );
+
+  const closeCollectionMenu = useCallback(() => {
+    setCollectionMenu(null);
+  }, []);
+
   // ─── Collection CRUD ────────────────────────────────────────────
 
   const handleCreateCollection = async () => {
     if (!newCollection.name.trim()) {
-      setError("Collection name is required");
+      setError(t("collectionCenter.collections.errors.nameRequired"));
       return;
     }
     if (newCollection.isEncrypted) {
       if (!newCollection.password) {
-        setError("Password is required for encrypted collections");
+        setError(
+          t("collectionCenter.collections.errors.passwordRequiredForEncrypted"),
+        );
         return;
       }
       if (newCollection.password !== newCollection.confirmPassword) {
-        setError("Passwords do not match");
+        setError(t("collectionCenter.collections.errors.passwordsDoNotMatch"));
         return;
       }
       if (newCollection.password.length < 4) {
-        setError("Password must be at least 4 characters");
+        setError(t("collectionCenter.collections.errors.passwordTooShort"));
         return;
       }
     }
@@ -138,14 +212,18 @@ export function useCollectionSelector(
         newCollection.isEncrypted,
         newCollection.password || undefined,
       );
-      setCollections([...collections, collection]);
+      setCollections((currentCollections) => [...currentCollections, collection]);
       setShowCreateForm(false);
       setNewCollection(EMPTY_NEW_COLLECTION);
       setError("");
-      onCollectionSelect(collection.id, newCollection.password || undefined);
+      await Promise.resolve(
+        onCollectionSelect(collection.id, newCollection.password || undefined),
+      );
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Failed to create collection",
+        error instanceof Error
+          ? error.message
+          : t("collectionCenter.collections.errors.createFailed"),
       );
     }
   };
@@ -153,23 +231,27 @@ export function useCollectionSelector(
   const handleDeleteCollection = async (collection: ConnectionCollection) => {
     if (
       confirm(
-        `Are you sure you want to delete the collection "${collection.name}"? This action cannot be undone.`,
+        t("collectionCenter.collections.deleteConfirm", {
+          name: collection.name,
+        }),
       )
     ) {
       try {
+        closeCollectionMenu();
         await collectionManager.deleteCollection(collection.id);
         setCollections(collections.filter((c) => c.id !== collection.id));
       } catch (error) {
         setError(
           error instanceof Error
             ? error.message
-            : "Failed to delete collection",
+            : t("collectionCenter.collections.errors.deleteFailed"),
         );
       }
     }
   };
 
   const handleEditCollection = (collection: ConnectionCollection) => {
+    closeCollectionMenu();
     setEditingCollection({ ...collection });
     setEditPassword({
       current: "",
@@ -183,7 +265,7 @@ export function useCollectionSelector(
   const handleUpdateCollection = async () => {
     if (!editingCollection) return;
     if (!editingCollection.name.trim()) {
-      setError("Collection name is required");
+      setError(t("collectionCenter.collections.errors.nameRequired"));
       return;
     }
 
@@ -192,25 +274,35 @@ export function useCollectionSelector(
 
     if (wantsEncryption) {
       if (!editingCollection.isEncrypted && !wantsPasswordChange) {
-        setError("Password is required to encrypt this collection");
+        setError(
+          t("collectionCenter.collections.errors.passwordRequiredToEncrypt"),
+        );
         return;
       }
       if (wantsPasswordChange) {
         if (editPassword.next !== editPassword.confirm) {
-          setError("New passwords do not match");
+          setError(
+            t("collectionCenter.collections.errors.newPasswordsDoNotMatch"),
+          );
           return;
         }
         if (editPassword.next.length < 4) {
-          setError("Password must be at least 4 characters");
+          setError(t("collectionCenter.collections.errors.passwordTooShort"));
           return;
         }
         if (editingCollection.isEncrypted && !editPassword.current) {
-          setError("Current password is required");
+          setError(
+            t("collectionCenter.collections.errors.currentPasswordRequired"),
+          );
           return;
         }
       }
     } else if (editingCollection.isEncrypted && !editPassword.current) {
-      setError("Current password is required to remove encryption");
+      setError(
+        t(
+          "collectionCenter.collections.errors.currentPasswordRequiredToRemoveEncryption",
+        ),
+      );
       return;
     }
 
@@ -247,33 +339,117 @@ export function useCollectionSelector(
       setError("");
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Failed to update collection",
+        error instanceof Error
+          ? error.message
+          : t("collectionCenter.collections.errors.updateFailed"),
       );
     }
   };
 
+  const runCloneCollection = useCallback(
+    async (
+      collection: ConnectionCollection,
+      sourcePassword?: string,
+    ): Promise<ConnectionCollection> => {
+      setIsWorking(true);
+      try {
+        if (collectionManager.getCurrentCollection()?.id === collection.id) {
+          await saveData();
+        }
+
+        const duplicate = await collectionManager.duplicateCollection(collection.id, {
+          password: sourcePassword,
+        });
+        await loadCollections();
+        setHighlightedCollectionId(duplicate.id);
+        setError("");
+        closePasswordDialog();
+        closeCollectionMenu();
+        return duplicate;
+      } catch (error) {
+        setError(
+          getCollectionActionError(
+            error,
+            t("collectionCenter.collections.errors.cloneFailed"),
+            t("collectionCenter.collections.errors.invalidPassword"),
+          ),
+        );
+        throw error;
+      } finally {
+        setIsWorking(false);
+      }
+    },
+    [
+      closeCollectionMenu,
+      closePasswordDialog,
+      collectionManager,
+      loadCollections,
+      saveData,
+      t,
+    ],
+  );
+
+  const handleCloneCollection = useCallback(
+    async (collection: ConnectionCollection) => {
+      const isCurrentEncryptedCollection =
+        collection.isEncrypted &&
+        collectionManager.getCurrentCollection()?.id === collection.id;
+
+      if (collection.isEncrypted && !isCurrentEncryptedCollection) {
+        closeCollectionMenu();
+        setSelectedCollection(collection);
+        setPassword("");
+        setPasswordDialogMode("clone");
+        setShowPasswordDialog(true);
+        setError("");
+        return;
+      }
+
+      await runCloneCollection(collection);
+    },
+    [closeCollectionMenu, collectionManager, runCloneCollection],
+  );
+
   // ─── Collection Selection ──────────────────────────────────────
 
-  const handleSelectCollection = (collection: ConnectionCollection) => {
+  const handleSelectCollection = async (collection: ConnectionCollection) => {
+    closeCollectionMenu();
+    setError("");
+
     if (collection.isEncrypted) {
       setSelectedCollection(collection);
+      setPasswordDialogMode("unlock");
       setShowPasswordDialog(true);
       setPassword("");
-      setError("");
     } else {
-      onCollectionSelect(collection.id);
+      await Promise.resolve(onCollectionSelect(collection.id));
     }
   };
 
   const handlePasswordSubmit = async () => {
     if (!selectedCollection) return;
+
+    setIsWorking(true);
     try {
-      onCollectionSelect(selectedCollection.id, password);
-      setShowPasswordDialog(false);
-      setPassword("");
+      if (passwordDialogMode === "clone") {
+        await runCloneCollection(selectedCollection, password);
+        return;
+      }
+
+      await collectionManager.loadCollectionData(selectedCollection.id, password);
+      await Promise.resolve(onCollectionSelect(selectedCollection.id, password));
+      closePasswordDialog();
       setError("");
-    } catch {
-      setError("Invalid password");
+    } catch (error) {
+      setError(
+        getCollectionActionError(
+          error,
+          t("collectionCenter.collections.errors.accessFailed"),
+          t("collectionCenter.collections.errors.invalidPassword"),
+        ),
+      );
+    } finally {
+      setIsWorking(false);
     }
   };
 
@@ -281,16 +457,22 @@ export function useCollectionSelector(
 
   const handleImportCollection = async () => {
     if (!importFile) {
-      setError("Select a collection file to import");
+      setError(t("collectionCenter.collections.errors.fileRequired"));
       return;
     }
     if (encryptImport) {
       if (!importEncryptPassword) {
-        setError("Password is required to encrypt the imported collection");
+        setError(
+          t("collectionCenter.collections.errors.passwordRequiredToEncryptImport"),
+        );
         return;
       }
       if (importEncryptPassword !== importEncryptConfirmPassword) {
-        setError("Encryption passwords do not match");
+        setError(
+          t(
+            "collectionCenter.collections.errors.encryptionPasswordsDoNotMatch",
+          ),
+        );
         return;
       }
     }
@@ -313,7 +495,9 @@ export function useCollectionSelector(
       setError("");
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Failed to import collection",
+        error instanceof Error
+          ? error.message
+          : t("collectionCenter.collections.errors.importFailed"),
       );
     }
   };
@@ -349,7 +533,9 @@ export function useCollectionSelector(
       setError("");
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Failed to export collection",
+        error instanceof Error
+          ? error.message
+          : t("collectionCenter.collections.errors.exportFailed"),
       );
     }
   };
@@ -395,13 +581,15 @@ export function useCollectionSelector(
   };
 
   const handleDeleteProfile = async (profileId: string) => {
-    if (confirm("Are you sure you want to delete this proxy profile?")) {
+    if (confirm(t("collectionCenter.proxies.deleteProfileConfirm"))) {
       try {
         await proxyCollectionManager.deleteProfile(profileId);
         setSavedProfiles(proxyCollectionManager.getProfiles());
       } catch (error) {
         alert(
-          error instanceof Error ? error.message : "Failed to delete profile",
+          error instanceof Error
+            ? error.message
+            : t("collectionCenter.proxies.deleteProfileFailed"),
         );
       }
     }
@@ -453,13 +641,15 @@ export function useCollectionSelector(
   };
 
   const handleDeleteChain = async (chainId: string) => {
-    if (confirm("Are you sure you want to delete this proxy chain?")) {
+    if (confirm(t("collectionCenter.proxies.deleteChainConfirm"))) {
       try {
         await proxyCollectionManager.deleteChain(chainId);
         setSavedChains(proxyCollectionManager.getChains());
       } catch (error) {
         alert(
-          error instanceof Error ? error.message : "Failed to delete chain",
+          error instanceof Error
+            ? error.message
+            : t("collectionCenter.proxies.deleteChainFailed"),
         );
       }
     }
@@ -503,8 +693,11 @@ export function useCollectionSelector(
           setSavedChains(proxyCollectionManager.getChains());
         } catch (error) {
           alert(
-            "Failed to import profiles: " +
-              (error instanceof Error ? error.message : "Unknown error"),
+            t("collectionCenter.proxies.importFailed", {
+              message: error instanceof Error
+                ? error.message
+                : t("collectionCenter.proxies.unknownError"),
+            }),
           );
         }
       }
@@ -542,8 +735,9 @@ export function useCollectionSelector(
     showImportForm,
     setShowImportForm,
     showPasswordDialog,
-    setShowPasswordDialog,
+    closePasswordDialog,
     selectedCollection,
+    passwordDialogMode,
     newCollection,
     setNewCollection,
     editingCollection,
@@ -556,7 +750,13 @@ export function useCollectionSelector(
     handleEditCollection,
     handleUpdateCollection,
     handleSelectCollection,
+    handleCloneCollection,
     handlePasswordSubmit,
+    collectionMenu,
+    openCollectionMenu,
+    closeCollectionMenu,
+    isWorking,
+    highlightedCollectionId,
 
     // Import
     importFile,

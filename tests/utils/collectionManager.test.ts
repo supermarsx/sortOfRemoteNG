@@ -64,6 +64,85 @@ describe("CollectionManager", () => {
     expect(manager.getCurrentCollection()?.name).toBe("B");
   });
 
+  it("duplicates an unencrypted collection after its source", async () => {
+    const source = await manager.createCollection("Source");
+    await manager.createCollection("Sibling");
+
+    const sourceData = {
+      connections: [{ id: "conn-1", name: "Alpha" } as any],
+      settings: { sidebarCollapsed: true },
+      timestamp: 42,
+    };
+    await manager.saveCollectionData(source.id, sourceData as any);
+
+    const duplicate = await manager.duplicateCollection(source.id);
+    const storedCollections = await manager.getAllCollections();
+
+    expect(duplicate.name).toBe("Source (Copy)");
+    expect(storedCollections.map((collection) => collection.name)).toEqual([
+      "Source",
+      "Source (Copy)",
+      "Sibling",
+    ]);
+    expect(await manager.loadCollectionData(duplicate.id)).toEqual(sourceData);
+  });
+
+  it("duplicates the active encrypted collection using the cached password", async () => {
+    const source = await manager.createCollection(
+      "Secure",
+      "desc",
+      true,
+      "secret",
+    );
+    const sourceData = {
+      connections: [{ id: "conn-2", name: "Bravo" } as any],
+      settings: { keepOpen: true },
+      timestamp: 84,
+    };
+
+    await manager.saveCollectionData(source.id, sourceData as any, "secret");
+    await manager.selectCollection(source.id, "secret");
+
+    const duplicate = await manager.duplicateCollection(source.id);
+
+    expect(duplicate.name).toBe("Secure (Copy)");
+    expect(duplicate.isEncrypted).toBe(true);
+    expect(await manager.loadCollectionData(duplicate.id, "secret")).toEqual(
+      sourceData,
+    );
+  });
+
+  it("duplicates another encrypted collection when the source password is provided", async () => {
+    const source = await manager.createCollection(
+      "Vault",
+      "desc",
+      true,
+      "secret",
+    );
+    await manager.createCollection("Sibling");
+
+    const sourceData = {
+      connections: [{ id: "conn-3", name: "Charlie" } as any],
+      settings: { filtersPinned: true },
+      timestamp: 128,
+    };
+
+    await manager.saveCollectionData(source.id, sourceData as any, "secret");
+
+    const duplicate = await manager.duplicateCollection(source.id, {
+      password: "secret",
+    });
+
+    expect((await manager.getAllCollections()).map((collection) => collection.name)).toEqual([
+      "Vault",
+      "Vault (Copy)",
+      "Sibling",
+    ]);
+    expect(await manager.loadCollectionData(duplicate.id, "secret")).toEqual(
+      sourceData,
+    );
+  });
+
   it("throws CollectionNotFoundError when selecting missing collection", async () => {
     await expect(manager.selectCollection("missing")).rejects.toBeInstanceOf(
       CollectionNotFoundError,

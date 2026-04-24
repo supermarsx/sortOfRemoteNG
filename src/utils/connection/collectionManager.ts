@@ -109,6 +109,38 @@ async function legacyDecrypt(ciphertext: string, password: string): Promise<stri
   }
 }
 
+function cloneStorageData(data: StorageData): StorageData {
+  if (typeof structuredClone === "function") {
+    return structuredClone(data);
+  }
+
+  return JSON.parse(JSON.stringify(data)) as StorageData;
+}
+
+function buildDuplicateCollectionName(
+  sourceName: string,
+  collections: ConnectionCollection[],
+  preferredName?: string,
+): string {
+  const desiredName = (preferredName?.trim() || `${sourceName} (Copy)`).trim();
+  const existingNames = new Set(
+    collections.map((collection) => collection.name.trim().toLocaleLowerCase()),
+  );
+
+  if (!existingNames.has(desiredName.toLocaleLowerCase())) {
+    return desiredName;
+  }
+
+  let suffix = 2;
+  let candidate = `${desiredName} ${suffix}`;
+  while (existingNames.has(candidate.toLocaleLowerCase())) {
+    suffix += 1;
+    candidate = `${desiredName} ${suffix}`;
+  }
+
+  return candidate;
+}
+
 /**
  * Handles persistence and encryption of connection collections.
  *
@@ -281,6 +313,81 @@ export class CollectionManager {
       this.currentCollection = null;
       this.currentPassword = null;
     }
+  }
+
+  async duplicateCollection(
+    collectionId: string,
+    options?: {
+      password?: string;
+      name?: string;
+    },
+  ): Promise<ConnectionCollection> {
+    const sourceCollection = await this.getCollection(collectionId);
+    if (!sourceCollection) {
+      throw new CollectionNotFoundError();
+    }
+
+    const duplicatePassword = sourceCollection.isEncrypted
+      ? options?.password ??
+        (this.currentCollection?.id === collectionId
+          ? this.currentPassword || undefined
+          : undefined)
+      : undefined;
+
+    if (sourceCollection.isEncrypted && !duplicatePassword) {
+      throw new InvalidPasswordError(
+        "Password required for encrypted collection",
+      );
+    }
+
+    const sourceData = await this.loadCollectionData(
+      collectionId,
+      duplicatePassword,
+    );
+    if (!sourceData) {
+      throw new CollectionNotFoundError();
+    }
+
+    const collections = await this.getAllCollections();
+    const sourceIndex = collections.findIndex(
+      (collection) => collection.id === collectionId,
+    );
+    if (sourceIndex < 0) {
+      throw new CollectionNotFoundError();
+    }
+
+    const now = new Date().toISOString();
+    const duplicatedCollection: ConnectionCollection = {
+      id: generateId(),
+      name: buildDuplicateCollectionName(
+        sourceCollection.name,
+        collections,
+        options?.name,
+      ),
+      description: sourceCollection.description,
+      isEncrypted: sourceCollection.isEncrypted,
+      createdAt: now,
+      updatedAt: now,
+      lastAccessed: now,
+    };
+
+    const nextCollections = [...collections];
+    nextCollections.splice(sourceIndex + 1, 0, duplicatedCollection);
+    await this.saveCollections(nextCollections);
+    await this.saveCollectionData(
+      duplicatedCollection.id,
+      cloneStorageData(sourceData),
+      sourceCollection.isEncrypted ? duplicatePassword : undefined,
+    );
+
+    SettingsManager.getInstance().logAction(
+      "info",
+      "Database cloned",
+      undefined,
+      `Database "${sourceCollection.name}" cloned to "${duplicatedCollection.name}"`,
+    );
+
+    return duplicatedCollection;
   }
 
   private async saveCollections(

@@ -81,7 +81,6 @@ pub async fn check_all<E: EmitProgress>(
 ) -> String {
     let run_id = uuid::Uuid::new_v4().to_string();
     let cap = if concurrency == 0 { 8 } else { concurrency };
-    let sem = Arc::new(Semaphore::new(cap));
     let total = requests.len();
     let token = CancellationToken::new();
     {
@@ -89,59 +88,66 @@ pub async fn check_all<E: EmitProgress>(
         reg.insert(run_id.clone(), token.clone());
     }
 
-    let mut handles = Vec::with_capacity(total);
-    for (index, req) in requests.into_iter().enumerate() {
-        let sem = sem.clone();
-        let token = token.clone();
-        let emitter = emitter.clone();
-        let run_id_c = run_id.clone();
-        let handle = tokio::spawn(async move {
-            if token.is_cancelled() {
-                return false;
+    tokio::spawn({
+        let run_id = run_id.clone();
+        async move {
+            let sem = Arc::new(Semaphore::new(cap));
+            let mut handles = Vec::with_capacity(total);
+            for (index, req) in requests.into_iter().enumerate() {
+                let sem = sem.clone();
+                let token = token.clone();
+                let emitter = emitter.clone();
+                let run_id_c = run_id.clone();
+                let handle = tokio::spawn(async move {
+                    if token.is_cancelled() {
+                        return false;
+                    }
+                    let _permit = match sem.acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => return false,
+                    };
+                    if token.is_cancelled() {
+                        return false;
+                    }
+                    let start = std::time::Instant::now();
+                    let result = tokio::select! {
+                        _ = token.cancelled() => return false,
+                        r = probe_one(&req, timeout_ms) => r,
+                    };
+                    let evt = ProgressEvent {
+                        run_id: run_id_c,
+                        connection_id: req.connection_id.clone(),
+                        index,
+                        total,
+                        result,
+                        elapsed_ms: start.elapsed().as_millis() as u64,
+                    };
+                    emitter.emit_progress(&evt);
+                    true
+                });
+                handles.push(handle);
             }
-            let _permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return false,
-            };
-            if token.is_cancelled() {
-                return false;
-            }
-            let start = std::time::Instant::now();
-            let result = tokio::select! {
-                _ = token.cancelled() => return false,
-                r = probe_one(&req, timeout_ms) => r,
-            };
-            let evt = ProgressEvent {
-                run_id: run_id_c,
-                connection_id: req.connection_id.clone(),
-                index,
-                total,
-                result,
-                elapsed_ms: start.elapsed().as_millis() as u64,
-            };
-            emitter.emit_progress(&evt);
-            true
-        });
-        handles.push(handle);
-    }
 
-    let mut completed = 0usize;
-    for h in handles {
-        if let Ok(true) = h.await {
-            completed += 1;
+            let mut completed = 0usize;
+            for h in handles {
+                if let Ok(true) = h.await {
+                    completed += 1;
+                }
+            }
+            let cancelled = token.is_cancelled();
+            {
+                let mut reg = registry().lock().unwrap();
+                reg.remove(&run_id);
+            }
+            emitter.emit_complete(&CompleteEvent {
+                run_id: run_id.clone(),
+                total,
+                completed,
+                cancelled,
+            });
         }
-    }
-    let cancelled = token.is_cancelled();
-    {
-        let mut reg = registry().lock().unwrap();
-        reg.remove(&run_id);
-    }
-    emitter.emit_complete(&CompleteEvent {
-        run_id: run_id.clone(),
-        total,
-        completed,
-        cancelled,
     });
+
     run_id
 }
 

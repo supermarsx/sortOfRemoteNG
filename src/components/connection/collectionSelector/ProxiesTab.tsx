@@ -1,26 +1,28 @@
 import type { Mgr } from './types';
 import { Plus, Trash2, Edit, Copy, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 function ProxiesTab({ mgr }: { mgr: Mgr }) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       {/* Proxy Profiles Section */}
       <div className="sor-section-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-medium text-[var(--color-text)]">
-            Proxy Profiles
+            {t("collectionCenter.proxies.profilesTitle")}
           </h3>
           <button
             onClick={mgr.handleNewProfile}
             className="sor-btn-primary-sm"
           >
             <Plus size={14} />
-            New Profile
+            {t("collectionCenter.actions.newProfile")}
           </button>
         </div>
         <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-          Create and manage reusable proxy configurations that can be used
-          across connections and chains.
+          {t("collectionCenter.proxies.profilesDescription")}
         </p>
 
         {/* Search */}
@@ -30,7 +32,7 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
             type="text"
             value={mgr.profileSearch}
             onChange={(e) => mgr.setProfileSearch(e.target.value)}
-            placeholder="Search profiles..."
+            placeholder={t("collectionCenter.proxies.profileSearchPlaceholder")}
             className="sor-search-input"
           />
         </div>
@@ -40,8 +42,8 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
           {mgr.filteredProfiles.length === 0 ? (
             <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
               {mgr.profileSearch
-                ? "No profiles match your search."
-                : 'No proxy profiles saved. Click "New Profile" to create one.'}
+                ? t("collectionCenter.proxies.profilesEmptySearch")
+                : t("collectionCenter.proxies.profilesEmpty")}
             </div>
           ) : (
             mgr.filteredProfiles.map((profile) => (
@@ -59,7 +61,7 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
                     </span>
                     {profile.isDefault && (
                       <span className="sor-badge sor-badge-yellow">
-                        Default
+                        {t("collectionCenter.proxies.defaultBadge")}
                       </span>
                     )}
                   </div>
@@ -90,21 +92,21 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
                   <button
                     onClick={() => mgr.handleDuplicateProfile(profile.id)}
                     className="sor-icon-btn"
-                    title="Duplicate"
+                    title={t("collectionCenter.actions.duplicate")}
                   >
                     <Copy size={14} />
                   </button>
                   <button
                     onClick={() => mgr.handleEditProfile(profile)}
                     className="sor-icon-btn"
-                    title="Edit"
+                    title={t("collectionCenter.actions.edit")}
                   >
                     <Edit size={14} />
                   </button>
                   <button
                     onClick={() => mgr.handleDeleteProfile(profile.id)}
                     className="sor-icon-btn-danger"
-                    title="Delete"
+                    title={t("collectionCenter.actions.delete")}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -119,19 +121,18 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
       <div className="sor-section-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-medium text-[var(--color-text)]">
-            Proxy Chains
+            {t("collectionCenter.proxies.chainsTitle")}
           </h3>
           <button
             onClick={mgr.handleNewChain}
             className="sor-btn-primary-sm"
           >
             <Plus size={14} />
-            New Chain
+            {t("collectionCenter.actions.newChain")}
           </button>
         </div>
         <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-          Create reusable proxy chains that route traffic through multiple
-          layers.
+          {t("collectionCenter.proxies.chainsDescription")}
         </p>
 
         {/* Search */}
@@ -141,7 +142,7 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
             type="text"
             value={mgr.chainSearch}
             onChange={(e) => mgr.setChainSearch(e.target.value)}
-            placeholder="Search chains..."
+            placeholder={t("collectionCenter.proxies.chainSearchPlaceholder")}
             className="sor-search-input"
           />
         </div>
@@ -151,8 +152,8 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
           {mgr.filteredChains.length === 0 ? (
             <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
               {mgr.chainSearch
-                ? "No chains match your search."
-                : 'No proxy chains saved. Click "New Chain" to create one.'}
+                ? t("collectionCenter.proxies.chainsEmptySearch")
+                : t("collectionCenter.proxies.chainsEmpty")}
             </div>
           ) : (
             mgr.filteredChains.map((chain) => (
@@ -166,8 +167,10 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
                       {chain.name}
                     </div>
                     <span className="sor-badge sor-badge-purple">
-                      {chain.layers.length} layer
-                      {chain.layers.length !== 1 ? "s" : ""}
+                      {chain.layers.length}{" "}
+                      {chain.layers.length === 1
+                        ? t("collectionCenter.proxies.layerSingular")
+                        : t("collectionCenter.proxies.layerPlural")}
                     </span>
                   </div>
                   {chain.description && (
@@ -209,21 +212,21 @@ function ProxiesTab({ mgr }: { mgr: Mgr }) {
                   <button
                     onClick={() => mgr.handleDuplicateChain(chain.id)}
                     className="sor-icon-btn"
-                    title="Duplicate"
+                    title={t("collectionCenter.actions.duplicate")}
                   >
                     <Copy size={14} />
                   </button>
                   <button
                     onClick={() => mgr.handleEditChain(chain)}
                     className="sor-icon-btn"
-                    title="Edit"
+                    title={t("collectionCenter.actions.edit")}
                   >
                     <Edit size={14} />
                   </button>
                   <button
                     onClick={() => mgr.handleDeleteChain(chain.id)}
                     className="sor-icon-btn-danger"
-                    title="Delete"
+                    title={t("collectionCenter.actions.delete")}
                   >
                     <Trash2 size={14} />
                   </button>

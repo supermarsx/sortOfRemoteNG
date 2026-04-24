@@ -524,6 +524,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         <input
           type="text"
           required
+          data-testid="editor-hostname"
           value={mgr.formData.hostname || ""}
           onChange={(e) =>
             mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
@@ -543,7 +544,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         <NumberInput value={mgr.formData.port || 0} onChange={(v: number) => mgr.setFormData({
               ...mgr.formData,
               port: v,
-              })} variant="form" min={1} max={65535} />
+            })} variant="form" min={1} max={65535} data-testid="editor-port" />
       </div>
     </div>
     {/* Username + Password row */}
@@ -561,6 +562,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         </label>
         <input
           type="text"
+          data-testid="editor-username"
           value={mgr.formData.username || ""}
           onChange={(e) =>
             mgr.setFormData({ ...mgr.formData, username: e.target.value })
@@ -587,6 +589,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           } />
         </label>
         <PasswordInput
+          data-testid="editor-password"
           value={mgr.formData.password || ""}
           onChange={(e) =>
             mgr.setFormData({ ...mgr.formData, password: e.target.value })

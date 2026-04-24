@@ -109,7 +109,7 @@ const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const SidebarToolbar: React.FC<{ mgr: Mgr; onNewConnection: () => void; noCollection: boolean }> = ({ mgr, onNewConnection, noCollection }) => (
   <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center space-x-1">
-    <button onClick={onNewConnection} disabled={noCollection} className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary" title={mgr.t('connections.new')}>
+    <button onClick={onNewConnection} disabled={noCollection} className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary" title={mgr.t('connections.new')} data-testid="toolbar-new-connection">
       <Plus size={14} />
     </button>
     <button onClick={mgr.handleNewGroup} disabled={noCollection} className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed" title={mgr.t('connections.newFolder')}>

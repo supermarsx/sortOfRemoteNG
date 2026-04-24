@@ -219,6 +219,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowCollectionSelector(true)}
               className="app-bar-button p-2"
               title={t("toolbar.switchCollection", "Switch Collection")}
+              data-testid="toolbar-collection"
             >
               <Database size={14} />
             </button>
