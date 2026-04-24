@@ -529,15 +529,9 @@ impl MremotengService {
         }))
     }
 
-    /// Get last import result.
-    pub fn get_last_import(&self) -> Option<&MrngImportResult> {
-        self.last_import.as_ref()
-    }
 
-    /// Get last export result.
-    pub fn get_last_export(&self) -> Option<&MrngImportResult> {
-        self.last_export.as_ref()
-    }
+
+
 }
 
 #[cfg(test)]
@@ -624,123 +618,4 @@ mod tests {
     }
 }
 
-    /// Get last export result.
-    pub fn get_last_export(&self) -> Option<&MrngExportResult> {
-        self.last_export.as_ref()
-    }
 
-    /// Set the default password for operations.
-    pub fn set_default_password(&mut self, password: &str) {
-        self.default_password = password.to_string();
-    }
-
-    /// Set the KDF iteration count.
-    pub fn set_kdf_iterations(&mut self, iterations: u32) {
-        self.kdf_iterations = iterations;
-    }
-
-    #[test]
-    fn test_detect_encryption_not_encrypted() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
-<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
- BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
-    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
-</Connections>"#;
-
-        let info = detect_encryption(xml).unwrap();
-        assert!(!info.is_encrypted);
-        assert!(!info.full_file_encryption);
-        assert!(!info.requires_password);
-    }
-
-    #[test]
-    fn test_detect_encryption_full_encryption() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
-<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
- KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
-    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
-</Connections>"#;
-
-        let info = detect_encryption(xml).unwrap();
-        assert!(info.is_encrypted);
-        assert!(info.full_file_encryption);
-        assert!(info.requires_password);
-        assert_eq!(info.kdf_iterations, 1000);
-    }
-
-    #[test]
-    fn test_detect_encryption_partial_encryption() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
-<Connections Name="Connections" ConfVersion="2.6" EncryptionEngine="AES"
- BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="dGVzdA==">
-    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
-</Connections>"#;
-
-        let info = detect_encryption(xml).unwrap();
-        assert!(info.is_encrypted);
-        assert!(!info.full_file_encryption);
-        assert!(!info.requires_password);
-    }
-
-    #[test]
-    fn test_import_xml_requires_password_for_full_encryption() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
-<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
- KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
-    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
-</Connections>"#;
-
-        let mut service = MremotengService::new();
-        let config = MrngImportConfig::default();
-
-        let result = service.import_xml(xml, &config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            MremotengError::EncryptionRequired(_) => {}
-            e => panic!("Expected EncryptionRequired error, got {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_validate_xml_detailed() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
-<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
- BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
-    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
-</Connections>"#;
-
-        let service = MremotengService::new();
-        let result = service.validate_xml_detailed(xml).unwrap();
-        assert_eq!(result["version"], "2.7");
-        assert_eq!(result["encrypted"], false);
-        assert_eq!(result["fullFileEncryption"], false);
-        assert_eq!(result["requiresPassword"], false);
-        assert_eq!(result["totalConnections"], 1);
-    }
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-/// Count all connections in a tree (excluding containers themselves).
-fn count_connections(nodes: &[MrngConnectionInfo]) -> usize {
-    let mut count = 0;
-    for node in nodes {
-        if node.node_type == MrngNodeType::Connection {
-            count += 1;
-        }
-        count += count_connections(&node.children);
-    }
-    count
-}
-
-/// Count containers in a tree.
-fn count_containers(nodes: &[MrngConnectionInfo]) -> usize {
-    let mut count = 0;
-    for node in nodes {
-        if node.node_type == MrngNodeType::Container {
-            count += 1;
-        }
-        count += count_containers(&node.children);
-    }
-    count
-}

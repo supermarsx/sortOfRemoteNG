@@ -7,7 +7,6 @@ use serde_json::Value;
 
 use super::service::MremotengServiceState;
 use super::types::*;
-use super::MremotengError;
 
 // ─── Format Detection ────────────────────────────────────────────────
 
@@ -41,7 +40,7 @@ pub async fn mrng_detect_encryption(
 pub async fn mrng_validate_xml_detailed(
     xml_content: String,
 ) -> Result<Value, String> {
-    let svc = MremotengServiceState::default();
+    let svc = super::service::MremotengService::new();
     let svc = svc.lock().await;
     svc.validate_xml_detailed(&xml_content)
         .map_err(|e| e.to_string())
