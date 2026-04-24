@@ -237,7 +237,8 @@ impl Rc4 {
             self.i = self.i.wrapping_add(1);
             self.j = self.j.wrapping_add(self.s[self.i as usize]);
             self.s.swap(self.i as usize, self.j as usize);
-            let k = self.s[(self.s[self.i as usize].wrapping_add(self.s[self.j as usize])) as usize];
+            let k =
+                self.s[(self.s[self.i as usize].wrapping_add(self.s[self.j as usize])) as usize];
             *byte ^= k;
         }
     }
@@ -272,11 +273,7 @@ fn derive_rc4_key(
 /// session key (which is why Cedar's Welcome PACK ships a 32-byte
 /// variant); the IV is a SHA-0 of `(tag || session_key_32_bytes ||
 /// server_random)` truncated to 16 bytes.
-fn derive_aes_key(
-    tag: u8,
-    server_random: &[u8; SHA0_SIZE],
-    session_key_32: &[u8; 32],
-) -> AesKey {
+fn derive_aes_key(tag: u8, server_random: &[u8; SHA0_SIZE], session_key_32: &[u8; 32]) -> AesKey {
     // Key: the 32-byte session_key_32 IS the AES-256 key material.
     let key = *session_key_32;
 
@@ -375,9 +372,7 @@ pub fn derive_session_keys(
                 cipher_name: cipher_name.to_string(),
             })
         }
-        CipherFamily::Unsupported => {
-            Err(KeyError::UnsupportedCipher(cipher_name.to_string()))
-        }
+        CipherFamily::Unsupported => Err(KeyError::UnsupportedCipher(cipher_name.to_string())),
     }
 }
 
@@ -386,10 +381,7 @@ pub fn derive_session_keys(
 /// [`derive_session_keys`]. Uses SHA-0 over the concat so the expansion
 /// is deterministic and byte-stable; callers who already have 32 raw
 /// bytes should prefer [`derive_aes_keys`] directly.
-pub fn expand_session_key_32(
-    session_key: &[u8; SHA0_SIZE],
-    session_key_32: u32,
-) -> [u8; 32] {
+pub fn expand_session_key_32(session_key: &[u8; SHA0_SIZE], session_key_32: u32) -> [u8; 32] {
     let mut buf = Vec::with_capacity(SHA0_SIZE + 4);
     buf.extend_from_slice(session_key);
     buf.extend_from_slice(&session_key_32.to_be_bytes());
@@ -746,8 +738,9 @@ mod tests {
         // across enc/dec. Use the same direction key (c2s) so the
         // receiver role is fabricated — in real use the peer has the
         // matching direction key.
-        let mut dec_keys = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "AES256-SHA")
-            .expect("derive aes dec");
+        let mut dec_keys =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "AES256-SHA")
+                .expect("derive aes dec");
         let pt = decrypt_frame(&mut dec_keys.client_to_server, &ct).expect("decrypt");
         assert_eq!(&pt[..], &plaintext[..]);
     }
@@ -787,7 +780,10 @@ mod tests {
         let err = decrypt_frame(&mut dec.client_to_server, short)
             .expect_err("must reject non-block-multiple ct");
         assert!(
-            matches!(err, KeyError::InvalidBlockSize(_) | KeyError::FrameTooShort(_)),
+            matches!(
+                err,
+                KeyError::InvalidBlockSize(_) | KeyError::FrameTooShort(_)
+            ),
             "expected block-size/frame-length error, got {:?}",
             err
         );
@@ -798,8 +794,8 @@ mod tests {
         let mut dec = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "AES256-SHA")
             .expect("derive aes");
         // Less than 32 bytes (IV + 1 block) → FrameTooShort.
-        let err = decrypt_frame(&mut dec.client_to_server, &[0u8; 8])
-            .expect_err("tiny frame rejected");
+        let err =
+            decrypt_frame(&mut dec.client_to_server, &[0u8; 8]).expect_err("tiny frame rejected");
         assert!(matches!(err, KeyError::FrameTooShort(8)));
     }
 
@@ -849,8 +845,8 @@ mod tests {
 
     #[test]
     fn derive_rc4_session_keys_happy() {
-        let keys = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5")
-            .expect("derive");
+        let keys =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").expect("derive");
         assert_eq!(keys.cipher_name, "RC4-MD5");
         match keys.client_to_server {
             CipherState::Rc4(_) => {}
@@ -862,20 +858,12 @@ mod tests {
 
     #[test]
     fn chacha_round_trip() {
-        let mut enc = derive_session_keys(
-            &SERVER_RANDOM,
-            &SESSION_KEY,
-            &key32(),
-            "ChaCha20-Poly1305",
-        )
-        .expect("derive chacha");
-        let mut dec = derive_session_keys(
-            &SERVER_RANDOM,
-            &SESSION_KEY,
-            &key32(),
-            "ChaCha20-Poly1305",
-        )
-        .expect("derive chacha dec");
+        let mut enc =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "ChaCha20-Poly1305")
+                .expect("derive chacha");
+        let mut dec =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "ChaCha20-Poly1305")
+                .expect("derive chacha dec");
         let plaintext = b"SoftEther V2 AEAD data-plane frame";
         let ct = encrypt_frame(&mut enc.client_to_server, plaintext);
         // 8-byte seq prefix + plaintext + 16-byte tag.
@@ -886,13 +874,9 @@ mod tests {
 
     #[test]
     fn chacha_counter_advances() {
-        let mut keys = derive_session_keys(
-            &SERVER_RANDOM,
-            &SESSION_KEY,
-            &key32(),
-            "CHACHA20-POLY1305",
-        )
-        .expect("derive");
+        let mut keys =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "CHACHA20-POLY1305")
+                .expect("derive");
         let c1 = encrypt_frame(&mut keys.client_to_server, b"frame-1");
         let c2 = encrypt_frame(&mut keys.client_to_server, b"frame-2");
         // Distinct seq prefixes → distinct nonces → distinct ciphertexts
@@ -904,20 +888,12 @@ mod tests {
 
     #[test]
     fn chacha_tamper_fails_auth() {
-        let mut enc = derive_session_keys(
-            &SERVER_RANDOM,
-            &SESSION_KEY,
-            &key32(),
-            "ChaCha20-Poly1305",
-        )
-        .expect("derive");
-        let mut dec = derive_session_keys(
-            &SERVER_RANDOM,
-            &SESSION_KEY,
-            &key32(),
-            "ChaCha20-Poly1305",
-        )
-        .expect("derive");
+        let mut enc =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "ChaCha20-Poly1305")
+                .expect("derive");
+        let mut dec =
+            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "ChaCha20-Poly1305")
+                .expect("derive");
         let mut ct = encrypt_frame(&mut enc.client_to_server, b"authentic payload");
         // Flip a byte inside the ciphertext body (past the 8-byte seq
         // prefix) — the Poly1305 tag must reject.
@@ -944,13 +920,8 @@ mod tests {
 
     #[test]
     fn derive_chacha_session_keys_happy() {
-        let keys = derive_session_keys(
-            &SERVER_RANDOM,
-            &SESSION_KEY,
-            &key32(),
-            "ChaCha20-Poly1305",
-        )
-        .expect("derive");
+        let keys = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "ChaCha20-Poly1305")
+            .expect("derive");
         assert_eq!(keys.cipher_name, "ChaCha20-Poly1305");
         match keys.client_to_server {
             CipherState::ChaCha20Poly1305(_) => {}

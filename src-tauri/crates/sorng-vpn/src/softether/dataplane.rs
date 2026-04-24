@@ -310,9 +310,7 @@ mod tests {
 
     #[test]
     fn plain_round_trip_five_frames_in_batch() {
-        let frames: Vec<DataFrame> = (0..5)
-            .map(|i| eth(&[i as u8; 64]))
-            .collect();
+        let frames: Vec<DataFrame> = (0..5).map(|i| eth(&[i as u8; 64])).collect();
         let wire = encode_plain(&frames).expect("encode");
         // 4 (num) + 5 * (4 + 64) = 344
         assert_eq!(wire.len(), 4 + 5 * (4 + 64));

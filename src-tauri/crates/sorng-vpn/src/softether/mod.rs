@@ -86,8 +86,8 @@ pub use reconnect::{
     SessionDoneOutcome,
 };
 pub use session_key::{
-    decrypt_frame, derive_session_keys, encrypt_frame, expand_session_key_32, AesKey,
-    CipherState, KeyError, Rc4, SessionKeys,
+    decrypt_frame, derive_session_keys, encrypt_frame, expand_session_key_32, AesKey, CipherState,
+    KeyError, Rc4, SessionKeys,
 };
 pub use udp_accel::{
     build_v1_packet, parse_v1_packet, run_udp_accel, udp_accel_calc_key, UdpAccelConfig,
@@ -279,8 +279,7 @@ pub struct SoftEtherService {
     /// ownership via [`SoftEtherService::take_session_stream`] before
     /// entering the framed packet loop — do NOT `.await` on the
     /// stream while holding `&mut SoftEtherService`.
-    session_streams:
-        HashMap<String, tokio_rustls::client::TlsStream<tokio::net::TcpStream>>,
+    session_streams: HashMap<String, tokio_rustls::client::TlsStream<tokio::net::TcpStream>>,
     /// SE-5b: live data-plane supervisor handles, keyed by connection
     /// id. Populated by [`SoftEtherService::spawn_dataplane`]; consumed
     /// on [`SoftEtherService::disconnect`] via graceful shutdown.
@@ -309,7 +308,7 @@ impl SoftEtherService {
             dataplane_handles: HashMap::new(),
             udp_accel_infos: HashMap::new(),
             udp_accel_handles: HashMap::new(),
-            emitter:None,
+            emitter: None,
         }))
     }
 
@@ -323,7 +322,7 @@ impl SoftEtherService {
             dataplane_handles: HashMap::new(),
             udp_accel_infos: HashMap::new(),
             udp_accel_handles: HashMap::new(),
-            emitter:Some(emitter),
+            emitter: Some(emitter),
         }))
     }
 
@@ -702,8 +701,7 @@ impl SoftEtherService {
                         // keepalive detail tracked for SE-8).
                         let _ = self.session_streams.remove(connection_id);
                         let _ = self.derived_keys.remove(connection_id);
-                        self.udp_accel_handles
-                            .insert(connection_id.to_string(), h);
+                        self.udp_accel_handles.insert(connection_id.to_string(), h);
                         if let Some(c) = self.connections.get_mut(connection_id) {
                             c.status = SoftEtherStatus::Connected;
                             c.connected_at = Some(Utc::now());
@@ -757,14 +755,11 @@ impl SoftEtherService {
             }
         }
 
-        let stream = self
-            .session_streams
-            .remove(connection_id)
-            .ok_or_else(|| {
-                "no live TLS stream for connection (handshake may not have completed or stream \
+        let stream = self.session_streams.remove(connection_id).ok_or_else(|| {
+            "no live TLS stream for connection (handshake may not have completed or stream \
                  already taken)"
-                    .to_string()
-            })?;
+                .to_string()
+        })?;
         // keys aren't needed for TlsOnly cipher mode, but we remove
         // them from the stash so state is consistent post-spawn.
         let _keys = self.derived_keys.remove(connection_id);
@@ -921,9 +916,7 @@ impl SoftEtherService {
                         return if fatal {
                             reconnect::AttemptOutcome::Fatal(format!("{}: {}", phase, e))
                         } else {
-                            reconnect::AttemptOutcome::Transient(format!(
-                                "{}: {}", phase, e
-                            ))
+                            reconnect::AttemptOutcome::Transient(format!("{}: {}", phase, e))
                         };
                     }
                 };
@@ -981,12 +974,10 @@ impl SoftEtherService {
                             reconnect::SessionDoneOutcome::Fatal(msg)
                         }
                     }
-                    Err(join_err) => {
-                        reconnect::SessionDoneOutcome::Fatal(format!(
-                            "dataplane task panic: {}",
-                            join_err
-                        ))
-                    }
+                    Err(join_err) => reconnect::SessionDoneOutcome::Fatal(format!(
+                        "dataplane task panic: {}",
+                        join_err
+                    )),
                 },
                 Session::Udp(join) => match join.await {
                     Ok(Ok(())) => reconnect::SessionDoneOutcome::Clean,
@@ -1008,12 +999,10 @@ impl SoftEtherService {
                             reconnect::SessionDoneOutcome::Transient(msg)
                         }
                     }
-                    Err(join_err) => {
-                        reconnect::SessionDoneOutcome::Fatal(format!(
-                            "udp_accel task panic: {}",
-                            join_err
-                        ))
-                    }
+                    Err(join_err) => reconnect::SessionDoneOutcome::Fatal(format!(
+                        "udp_accel task panic: {}",
+                        join_err
+                    )),
                 },
             }
         };
@@ -1168,7 +1157,12 @@ async fn softether_handshake_and_auth(
     )
     .await
     .map_err(|_| ("tcp_connect", format!("TCP connect to {} timed out", addr)))?
-    .map_err(|e| ("tcp_connect", format!("TCP connect to {} failed: {}", addr, e)))?;
+    .map_err(|e| {
+        (
+            "tcp_connect",
+            format!("TCP connect to {} failed: {}", addr, e),
+        )
+    })?;
 
     let tls_config = build_rustls_client_config(config.skip_verify.unwrap_or(false))
         .map_err(|e| ("tls_config", e))?;
@@ -1206,7 +1200,12 @@ async fn softether_handshake_and_auth(
         &session_key_32_bytes,
         cipher_name,
     )
-    .map_err(|e| ("key_derivation", format!("session-key derivation failed: {}", e)))?;
+    .map_err(|e| {
+        (
+            "key_derivation",
+            format!("session-key derivation failed: {}", e),
+        )
+    })?;
 
     Ok((server_info, auth_result, keys, tls_stream))
 }
@@ -1276,10 +1275,7 @@ pub fn parse_udp_accel_from_pack(p: &pack::Pack) -> Option<UdpAccelServerInfo> {
     let server_cookie = p.get_int("udp_acceleration_server_cookie").unwrap_or(0);
     let client_cookie = p.get_int("udp_acceleration_client_cookie").unwrap_or(0);
     let use_encryption = p.get_int("udp_acceleration_use_encryption").unwrap_or(1) != 0;
-    let fast_disconnect = p
-        .get_int("udp_accel_fast_disconnect_detect")
-        .unwrap_or(0)
-        != 0;
+    let fast_disconnect = p.get_int("udp_accel_fast_disconnect_detect").unwrap_or(0) != 0;
 
     Some(UdpAccelServerInfo {
         server_ip,
@@ -1506,9 +1502,7 @@ where
 /// Supports `Content-Length`-framed bodies (always used by
 /// `connect.cgi`). Rejects chunked framing and connection-close framing
 /// — the server never uses those on this path.
-async fn read_http_response<S>(
-    stream: &mut S,
-) -> Result<(u16, String, Vec<u8>), String>
+async fn read_http_response<S>(stream: &mut S) -> Result<(u16, String, Vec<u8>), String>
 where
     S: AsyncReadExt + Unpin,
 {
@@ -1521,10 +1515,7 @@ where
         if buf.len() > MAX_HEADER_BYTES {
             return Err("HTTP response headers exceeded 16 KiB limit".into());
         }
-        if let Some(pos) = buf
-            .windows(4)
-            .position(|w| w == b"\r\n\r\n")
-        {
+        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
             break pos + 4;
         }
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -1686,7 +1677,9 @@ impl rustls::client::danger::ServerCertVerifier for DangerousNoVerify {
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.provider.signature_verification_algorithms.supported_schemes()
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
@@ -1864,10 +1857,7 @@ mod tests {
             .expect("self-signed cert");
         let der = cert.serialize_der().expect("serialize cert");
         let key = cert.serialize_private_key_der();
-        (
-            CertificateDer::from(der),
-            PrivateKeyDer::Pkcs8(key.into()),
-        )
+        (CertificateDer::from(der), PrivateKeyDer::Pkcs8(key.into()))
     }
 
     fn build_hello_pack(
@@ -1945,10 +1935,7 @@ mod tests {
                 .ok_or_else(|| "mock: no content-length".to_string())?;
             let mut body = buf[header_end..].to_vec();
             while body.len() < content_length {
-                let n = tls
-                    .read(&mut chunk)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let n = tls.read(&mut chunk).await.map_err(|e| e.to_string())?;
                 if n == 0 {
                     return Err("mock: EOF before body complete".into());
                 }
@@ -2108,10 +2095,7 @@ mod tests {
                     if let Some(pos) = carry.windows(4).position(|w| w == b"\r\n\r\n") {
                         break pos + 4;
                     }
-                    let n = tls
-                        .read(&mut chunk)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    let n = tls.read(&mut chunk).await.map_err(|e| e.to_string())?;
                     if n == 0 {
                         return Err("mock: EOF before headers".into());
                     }
@@ -2120,16 +2104,13 @@ mod tests {
                         return Err("mock: header too big".into());
                     }
                 };
-                let header_text =
-                    String::from_utf8_lossy(&carry[..header_end]).to_string();
+                let header_text = String::from_utf8_lossy(&carry[..header_end]).to_string();
                 let content_length: usize = header_text
                     .lines()
                     .find_map(|l| {
                         let mut p = l.splitn(2, ':');
                         match (p.next(), p.next()) {
-                            (Some(n), Some(v))
-                                if n.eq_ignore_ascii_case("content-length") =>
-                            {
+                            (Some(n), Some(v)) if n.eq_ignore_ascii_case("content-length") => {
                                 v.trim().parse().ok()
                             }
                             _ => None,
@@ -2139,10 +2120,7 @@ mod tests {
                 let mut body: Vec<u8> = carry[header_end..].to_vec();
                 *carry = Vec::new();
                 while body.len() < content_length {
-                    let n = tls
-                        .read(&mut chunk)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    let n = tls.read(&mut chunk).await.map_err(|e| e.to_string())?;
                     if n == 0 {
                         return Err("mock: EOF before body complete".into());
                     }
@@ -2484,19 +2462,15 @@ mod tests {
 
         // Server → "TAP" path: server pushes a batch, client surfaces
         // the frame on the MpscDeviceHandle rx side.
-        let wire = dataplane::encode_plain(&[dataplane::DataFrame::Ethernet(
-            b"hello-from-hub".to_vec(),
-        )])
-        .unwrap();
+        let wire =
+            dataplane::encode_plain(&[dataplane::DataFrame::Ethernet(b"hello-from-hub".to_vec())])
+                .unwrap();
         server_side.write_all(&wire).await.unwrap();
         server_side.flush().await.unwrap();
-        let got = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            dev_handle.rx.recv(),
-        )
-        .await
-        .expect("timeout")
-        .expect("frame");
+        let got = tokio::time::timeout(std::time::Duration::from_millis(500), dev_handle.rx.recv())
+            .await
+            .expect("timeout")
+            .expect("frame");
         assert_eq!(got, b"hello-from-hub");
 
         // "TAP" → server path: client pushes a frame; server reads
@@ -2621,8 +2595,10 @@ mod tests {
             vec![9u8; udp_accel::UDP_ACCEL_COMMON_KEY_SIZE_V1],
         )
         .unwrap();
-        p.add_int("udp_acceleration_server_cookie", 0xDEAD_BEEF).unwrap();
-        p.add_int("udp_acceleration_client_cookie", 0xCAFE_BABE).unwrap();
+        p.add_int("udp_acceleration_server_cookie", 0xDEAD_BEEF)
+            .unwrap();
+        p.add_int("udp_acceleration_client_cookie", 0xCAFE_BABE)
+            .unwrap();
         p.add_int("udp_acceleration_use_encryption", 1).unwrap();
         p.add_int("udp_accel_fast_disconnect_detect", 1).unwrap();
 

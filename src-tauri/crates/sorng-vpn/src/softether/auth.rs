@@ -348,7 +348,8 @@ pub fn build_client_auth_pack(
     let mut p = Pack::new();
 
     // Common header: method + hub + user + authtype.
-    p.add_str("method", "login").map_err(AuthError::EncodeError)?;
+    p.add_str("method", "login")
+        .map_err(AuthError::EncodeError)?;
     p.add_str("hubname", config.hub.as_str())
         .map_err(AuthError::EncodeError)?;
     p.add_str("username", config.username.as_str())
@@ -360,11 +361,7 @@ pub fn build_client_auth_pack(
     match config.method {
         AuthMethod::Anonymous => { /* nothing more */ }
         AuthMethod::Password => {
-            let sp = hash_and_secure_password(
-                &config.password,
-                &config.username,
-                server_random,
-            );
+            let sp = hash_and_secure_password(&config.password, &config.username, server_random);
             p.add_data("secure_password", sp.to_vec())
                 .map_err(AuthError::EncodeError)?;
         }
@@ -376,7 +373,9 @@ pub fn build_client_auth_pack(
             // Not implemented in SE-3 — return an encode-side error
             // rather than building an invalid PACK the server would
             // silently reject.
-            return Err(AuthError::EncodeError(PackError::UnknownValueType(0xFFFF_FFFF)));
+            return Err(AuthError::EncodeError(PackError::UnknownValueType(
+                0xFFFF_FFFF,
+            )));
         }
     }
 
@@ -394,8 +393,7 @@ pub fn build_client_auth_pack(
 
     // Protocol == CEDAR_PROTOCOL_TCP (0). SE-3 is TCP-only;
     // UDP-acceleration is SE-6's concern.
-    p.add_int("protocol", 0)
-        .map_err(AuthError::EncodeError)?;
+    p.add_int("protocol", 0).map_err(AuthError::EncodeError)?;
 
     // Session parameters.
     p.add_int("max_connection", config.max_connection)
@@ -680,7 +678,9 @@ mod tests {
         assert_eq!(decoded.get_int("use_compress"), Some(0));
         assert_eq!(decoded.get_str("hello"), Some("sortOfRemoteNG"));
         assert_eq!(decoded.get_data("unique_id").map(|b| b.len()), Some(20));
-        let sp = decoded.get_data("secure_password").expect("secure_password present");
+        let sp = decoded
+            .get_data("secure_password")
+            .expect("secure_password present");
         assert_eq!(sp.len(), 20);
         // And verify it equals what we'd compute independently.
         let expected = hash_and_secure_password("hunter2", "alice", &random);
