@@ -11,7 +11,8 @@ use tokio::sync::Mutex;
 use super::converter;
 use super::csv_parser;
 use super::csv_writer;
-use super::error::MremotengResult;
+use super::encryption;
+use super::error::{MremotengError, MremotengResult};
 use super::putty_parser;
 use super::rdp_parser;
 use super::types::*;
@@ -134,6 +135,43 @@ impl MremotengService {
         ]
     }
 
+    // ─── Encryption Detection ───────────────────────────────────────
+
+    /// Detect encryption status of an mRemoteNG XML file without full parsing.
+    /// Returns encryption info including whether a password is required.
+    pub fn detect_encryption(xml_content: &str) -> MremotengResult<EncryptionInfo> {
+        let file = xml_parser::parse_xml_metadata_only(xml_content)?;
+        Ok(encryption::build_encryption_info(
+            &file.protected,
+            file.encryption.engine,
+            file.encryption.mode,
+            file.encryption.kdf_iterations,
+            file.encryption.full_file_encryption,
+        ))
+    }
+
+    /// Validate an mRemoteNG XML file and return detailed info including encryption status.
+    pub fn validate_xml_detailed(&self, xml_content: &str) -> MremotengResult<Value> {
+        let file = xml_parser::parse_xml_metadata_only(xml_content)?;
+        let total = count_connections(&file.root.children);
+        let containers = count_containers(&file.root.children);
+        let is_encrypted = !file.protected.is_empty();
+
+        Ok(serde_json::json!({
+            "valid": true,
+            "version": file.conf_version,
+            "name": file.name,
+            "totalConnections": total,
+            "containers": containers,
+            "encrypted": is_encrypted,
+            "fullFileEncryption": file.encryption.full_file_encryption,
+            "requiresPassword": is_encrypted && file.encryption.full_file_encryption,
+            "encryptionEngine": format!("{:?}", file.encryption.engine),
+            "encryptionMode": format!("{:?}", file.encryption.mode),
+            "kdfIterations": file.encryption.kdf_iterations,
+        }))
+    }
+
     // ─── Import Operations ───────────────────────────────────────
 
     /// Import from mRemoteNG XML (confCons.xml).
@@ -142,8 +180,24 @@ impl MremotengService {
         xml_content: &str,
         config: &MrngImportConfig,
     ) -> MremotengResult<MrngImportResult> {
+        // Check if file is encrypted and requires password
+        let encryption_info = Self::detect_encryption(xml_content)?;
+        if encryption_info.requires_password && config.password.as_ref().map_or(true, |p| p.is_empty()) {
+            return Err(MremotengError::EncryptionRequired(
+                "This file is encrypted and requires a password to import".into(),
+            ));
+        }
+
         let password = config.password.as_deref().unwrap_or(&self.default_password);
-        let file = xml_parser::parse_xml(xml_content, password)?;
+        let file = xml_parser::parse_xml(xml_content, password).map_err(|e| {
+            // Convert decryption errors to WrongPassword for better user feedback
+            match e {
+                MremotengError::Decryption(msg) if encryption_info.is_encrypted => {
+                    MremotengError::WrongPassword(msg)
+                }
+                _ => e,
+            }
+        })?;
 
         let connections = file.root.children.clone();
         let total = count_connections(&connections);
@@ -481,6 +535,96 @@ impl MremotengService {
     }
 
     /// Get last export result.
+    pub fn get_last_export(&self) -> Option<&MrngImportResult> {
+        self.last_export.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_encryption_not_encrypted() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let info = detect_encryption(xml).unwrap();
+        assert!(!info.is_encrypted);
+        assert!(!info.full_file_encryption);
+        assert!(!info.requires_password);
+    }
+
+    #[test]
+    fn test_detect_encryption_full_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let info = detect_encryption(xml).unwrap();
+        assert!(info.is_encrypted);
+        assert!(info.full_file_encryption);
+        assert!(info.requires_password);
+        assert_eq!(info.kdf_iterations, 1000);
+    }
+
+    #[test]
+    fn test_detect_encryption_partial_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.6" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="dGVzdA==">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let info = detect_encryption(xml).unwrap();
+        assert!(info.is_encrypted);
+        assert!(!info.full_file_encryption);
+        assert!(!info.requires_password); // Partial encryption doesn't require password for import
+    }
+
+    #[test]
+    fn test_import_xml_requires_password_for_full_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let mut service = MremotengService::new();
+        let config = MrngImportConfig::default(); // No password
+
+        let result = service.import_xml(xml, &config);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MremotengError::EncryptionRequired(_) => {} // Expected
+            e => panic!("Expected EncryptionRequired error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_validate_xml_detailed() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let service = MremotengService::new();
+        let result = service.validate_xml_detailed(xml).unwrap();
+        assert_eq!(result["version"], "2.7");
+        assert_eq!(result["encrypted"], false);
+        assert_eq!(result["fullFileEncryption"], false);
+        assert_eq!(result["requiresPassword"], false);
+        assert_eq!(result["totalConnections"], 1);
+    }
+}
+
+    /// Get last export result.
     pub fn get_last_export(&self) -> Option<&MrngExportResult> {
         self.last_export.as_ref()
     }
@@ -493,6 +637,85 @@ impl MremotengService {
     /// Set the KDF iteration count.
     pub fn set_kdf_iterations(&mut self, iterations: u32) {
         self.kdf_iterations = iterations;
+    }
+
+    #[test]
+    fn test_detect_encryption_not_encrypted() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let info = detect_encryption(xml).unwrap();
+        assert!(!info.is_encrypted);
+        assert!(!info.full_file_encryption);
+        assert!(!info.requires_password);
+    }
+
+    #[test]
+    fn test_detect_encryption_full_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let info = detect_encryption(xml).unwrap();
+        assert!(info.is_encrypted);
+        assert!(info.full_file_encryption);
+        assert!(info.requires_password);
+        assert_eq!(info.kdf_iterations, 1000);
+    }
+
+    #[test]
+    fn test_detect_encryption_partial_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.6" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="dGVzdA==">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let info = detect_encryption(xml).unwrap();
+        assert!(info.is_encrypted);
+        assert!(!info.full_file_encryption);
+        assert!(!info.requires_password);
+    }
+
+    #[test]
+    fn test_import_xml_requires_password_for_full_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let mut service = MremotengService::new();
+        let config = MrngImportConfig::default();
+
+        let result = service.import_xml(xml, &config);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MremotengError::EncryptionRequired(_) => {}
+            e => panic!("Expected EncryptionRequired error, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_validate_xml_detailed() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let service = MremotengService::new();
+        let result = service.validate_xml_detailed(xml).unwrap();
+        assert_eq!(result["version"], "2.7");
+        assert_eq!(result["encrypted"], false);
+        assert_eq!(result["fullFileEncryption"], false);
+        assert_eq!(result["requiresPassword"], false);
+        assert_eq!(result["totalConnections"], 1);
     }
 }
 

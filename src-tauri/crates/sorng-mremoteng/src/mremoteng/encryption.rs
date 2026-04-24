@@ -16,6 +16,7 @@ use rand::Rng;
 use sha1::Sha1;
 
 use super::error::{MremotengError, MremotengResult};
+use super::types::{BlockCipherEngine, BlockCipherMode, EncryptionInfo};
 
 const SALT_SIZE: usize = 16;
 const NONCE_SIZE: usize = 16; // mRemoteNG uses 128-bit nonce (non-standard but matches their code)
@@ -188,6 +189,25 @@ pub fn encrypt_password(
         master_password
     };
     encrypt(plaintext_password, pwd, iterations)
+}
+
+/// Build encryption info from file metadata.
+pub fn build_encryption_info(
+    protected: &str,
+    engine: BlockCipherEngine,
+    mode: BlockCipherMode,
+    kdf_iterations: u32,
+    full_file_encryption: bool,
+) -> EncryptionInfo {
+    let is_encrypted = !protected.is_empty();
+    EncryptionInfo {
+        is_encrypted,
+        full_file_encryption,
+        encryption_engine: engine,
+        encryption_mode: mode,
+        kdf_iterations,
+        requires_password: is_encrypted && full_file_encryption,
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdF9wcm90ZWN0ZWRfZGF0YQ==" ConfVersion="2.6">
+  <Node Name="Production Servers" Type="Container" Expanded="true" Descr="Production environment">
+    <Node Name="Web Server 01" Type="Connection" Descr="Primary web server" Protocol="SSH2" Hostname="web01.prod.example.com" Port="22" Username="deploy" Domain="" Password="" />
+    <Node Name="Web Server 02" Type="Connection" Descr="Secondary web server" Protocol="SSH2" Hostname="web02.prod.example.com" Port="22" Username="deploy" Domain="" Password="" />
+    <Node Name="Windows DC" Type="Connection" Descr="Domain controller" Protocol="RDP" Hostname="dc01.prod.example.com" Port="3389" Username="Administrator" Domain="PROD" Password="" />
+  </Node>
+</Connections>

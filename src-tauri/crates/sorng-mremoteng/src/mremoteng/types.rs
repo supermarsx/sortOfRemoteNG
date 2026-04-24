@@ -790,6 +790,25 @@ pub struct PuttySession {
     pub serial_speed: u32,
 }
 
+// ─── Encryption Info ────────────────────────────────────────────────
+
+/// Information about encryption status of an mRemoteNG file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptionInfo {
+    /// Whether the file is encrypted (Protected field is non-empty)
+    pub is_encrypted: bool,
+    /// Whether the file uses full-file encryption
+    pub full_file_encryption: bool,
+    /// Encryption engine (AES, Serpent, Twofish)
+    pub encryption_engine: BlockCipherEngine,
+    /// Encryption mode (GCM, CCM, EAX)
+    pub encryption_mode: BlockCipherMode,
+    /// KDF iteration count
+    pub kdf_iterations: u32,
+    /// Whether a password is required to decrypt/import
+    pub requires_password: bool,
+}
+
 // ─── Supported Import Formats ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

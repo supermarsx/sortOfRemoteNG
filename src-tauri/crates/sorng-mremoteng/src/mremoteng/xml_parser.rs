@@ -704,8 +704,97 @@ impl From<u32> for MrngProtocol {
     }
 }
 
+/// Parse only the root Connections element metadata without decrypting or parsing nodes.
+/// Useful for checking encryption status before attempting full import.
+pub fn parse_xml_metadata_only(xml_content: &str) -> MremotengResult<MrngConnectionFile> {
+    let mut reader = Reader::from_str(xml_content);
+    reader.config_mut().trim_text(true);
+
+    let mut file = MrngConnectionFile::default();
+    let mut found_connections = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) => {
+                let name_bytes = e.name();
+                let tag_name = str::from_utf8(name_bytes.as_ref())
+                    .map_err(|_| MremotengError::XmlParse("Invalid UTF-8 in tag name".into()))?;
+
+                if tag_name == "Connections" {
+                    parse_connections_element(e, &mut file)?;
+                    found_connections = true;
+                    break; // We have what we need, stop parsing
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(MremotengError::XmlParse(format!(
+                    "XML error at position {}: {}",
+                    reader.buffer_position(),
+                    e
+                )))
+            }
+            _ => {}
+        }
+    }
+
+    if !found_connections {
+        return Err(MremotengError::XmlParse(
+            "No <Connections> root element found".into(),
+        ));
+    }
+
+    Ok(file)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_xml_metadata_only_encrypted() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let file = parse_xml_metadata_only(xml).unwrap();
+        assert_eq!(file.conf_version, "2.6");
+        assert_eq!(file.name, "Connections");
+        assert_eq!(file.protected, "dGVzdA==");
+        assert!(file.encryption.full_file_encryption);
+        assert_eq!(file.encryption.kdf_iterations, 1000);
+    }
+
+    #[test]
+    fn test_parse_xml_metadata_only_not_encrypted() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.7" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let file = parse_xml_metadata_only(xml).unwrap();
+        assert_eq!(file.conf_version, "2.7");
+        assert_eq!(file.protected, "");
+        assert!(!file.encryption.full_file_encryption);
+    }
+
+    #[test]
+    fn test_parse_xml_metadata_only_partial_encryption() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.6" EncryptionEngine="AES"
+ BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" Protected="dGVzdA==">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#;
+
+        let file = parse_xml_metadata_only(xml).unwrap();
+        // Protected is non-empty but FullFileEncryption is false = partial encryption
+        assert_eq!(file.protected, "dGVzdA==");
+        assert!(!file.encryption.full_file_encryption);
+    }
+
     use super::*;
 
     #[test]

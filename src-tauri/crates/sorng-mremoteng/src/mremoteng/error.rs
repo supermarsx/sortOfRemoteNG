@@ -17,6 +17,10 @@ pub enum MremotengError {
     Encryption(String),
     /// Decryption error (wrong password, corrupted data)
     Decryption(String),
+    /// Encryption required but no password provided
+    EncryptionRequired(String),
+    /// Wrong password provided for encrypted file
+    WrongPassword(String),
     /// File I/O error
     Io(String),
     /// Invalid configuration version
@@ -40,6 +44,8 @@ impl fmt::Display for MremotengError {
             Self::PuttyImport(msg) => write!(f, "PuTTY import error: {}", msg),
             Self::Encryption(msg) => write!(f, "Encryption error: {}", msg),
             Self::Decryption(msg) => write!(f, "Decryption error: {}", msg),
+            Self::EncryptionRequired(msg) => write!(f, "Encryption required: {}", msg),
+            Self::WrongPassword(msg) => write!(f, "Wrong password: {}", msg),
             Self::Io(msg) => write!(f, "I/O error: {}", msg),
             Self::UnsupportedVersion(msg) => write!(f, "Unsupported version: {}", msg),
             Self::MissingField(msg) => write!(f, "Missing field: {}", msg),
