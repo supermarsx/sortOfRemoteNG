@@ -66,8 +66,11 @@ export class SSH2Client extends BaseSSHClient {
         this.callbacks.onError?.('SSH2Client is not supported in the browser');
         return;
       }
-      // Import ssh2 dynamically (ignored by Vite to avoid bundling)
-      const { Client } = await import(/* @vite-ignore */ 'ssh2');
+      // Resolve ssh2 at runtime only so browser builds do not try to bundle or
+      // type-resolve this Node-only dependency.
+      const { Client } = (await Function(
+        'return import("ssh2")',
+      )()) as { Client: new () => any };
       this.connection = new Client();
 
       const connectionConfig: any = {

@@ -2,10 +2,22 @@ import React, { useState } from "react";
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { HardDrive, Info, Plus, Trash2, FolderOpen, Lock, Power, PowerOff, Pencil, Check } from "lucide-react";
-import { RDPConnectionSettings, RdpDriveRedirection } from "../../../types/connection/connection";
+import { ClipboardDirection, RDPConnectionSettings, RdpDriveRedirection, RdpPrinterOutputMode } from "../../../types/connection/connection";
 import { SettingsManager } from "../../../utils/settings/settingsManager";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Select } from "../../ui/forms";
+
+const CLIPBOARD_DIRECTION_OPTIONS: Array<{ value: ClipboardDirection; label: string }> = [
+  { value: "bidirectional", label: "Bidirectional" },
+  { value: "client-to-server", label: "Local to remote only" },
+  { value: "server-to-client", label: "Remote to local only" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const PRINTER_OUTPUT_MODE_OPTIONS: Array<{ value: RdpPrinterOutputMode; label: string }> = [
+  { value: "spool-file", label: "Save spool file locally" },
+  { value: "native-print", label: "Send to OS printer, keep spool fallback" },
+];
 
 /** Shared drive mapping list + add-drive UI used by both per-connection and global settings. */
 export const DriveMappingEditor: React.FC<{
@@ -199,6 +211,42 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
         </div>
         );
       })}
+
+      <div>
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+          Clipboard Direction
+          <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Control whether clipboard data may flow from local to remote, remote to local, both, or neither." />
+        </label>
+        <Select
+          value={rdp.deviceRedirection?.clipboardDirection ?? ""}
+          onChange={(v: string) => updateRdp("deviceRedirection", {
+            clipboardDirection: (v === "" ? undefined : v) as ClipboardDirection | undefined,
+          })}
+          options={[
+            { value: "", label: "Use global default" },
+            ...CLIPBOARD_DIRECTION_OPTIONS,
+          ]}
+          className={CSS.select}
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+          Printer Output Mode
+          <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Choose whether redirected print jobs stay as local spool files or are also handed off to the host OS printer subsystem." />
+        </label>
+        <Select
+          value={rdp.deviceRedirection?.printerOutputMode ?? ""}
+          onChange={(v: string) => updateRdp("deviceRedirection", {
+            printerOutputMode: (v === "" ? undefined : v) as RdpPrinterOutputMode | undefined,
+          })}
+          options={[
+            { value: "", label: "Use global default" },
+            ...PRINTER_OUTPUT_MODE_OPTIONS,
+          ]}
+          className={CSS.select}
+        />
+      </div>
 
       {/* Virtual Drive Mappings */}
       <div className="mt-4 pt-4 border-t border-[var(--color-border)]">

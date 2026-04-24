@@ -163,6 +163,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
     mgr.rdpSettings?.deviceRedirection?.fileDragDrop ??
     mgr.settings?.enableFileDragDropToRdp ??
     true;
+  const canvasAriaLabel = `Remote desktop session to ${session.hostname}. Press Ctrl+Alt+End to release keyboard focus.`;
 
   const handleDragOver = React.useCallback((e: React.DragEvent) => {
     if (!mgr.isConnected) return;
@@ -409,7 +410,9 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
     <canvas
       ref={mgr.canvasRef}
       data-testid="rdp-canvas"
-      className="border border-[var(--color-border)]"
+      className="border border-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+      aria-label={canvasAriaLabel}
+      aria-keyshortcuts="Control+Alt+End"
       style={{
         cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.pointerStyle,
         imageRendering: 'auto',

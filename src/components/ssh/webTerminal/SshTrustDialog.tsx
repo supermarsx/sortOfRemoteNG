@@ -15,14 +15,18 @@ function SshTrustDialog({ mgr }: { mgr: WebTerminalMgr }) {
           ? mgr.sshTrustPrompt.stored
           : undefined
       }
-      onAccept={() => {
+      onAccept={(remember) => {
         mgr.setSshTrustPrompt(null);
-        mgr.sshTrustResolveRef.current?.(true);
+        mgr.sshTrustResolveRef.current?.(
+          mgr.sshTrustPrompt?.status === "first-use" && remember === false
+            ? "accept_once"
+            : "accept_and_save",
+        );
         mgr.sshTrustResolveRef.current = null;
       }}
       onReject={() => {
         mgr.setSshTrustPrompt(null);
-        mgr.sshTrustResolveRef.current?.(false);
+        mgr.sshTrustResolveRef.current?.("reject");
         mgr.sshTrustResolveRef.current = null;
       }}
     />

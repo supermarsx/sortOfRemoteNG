@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
+use tokio::sync::oneshot;
 
 pub mod automation;
 pub mod diagnostics;
@@ -34,6 +35,12 @@ lazy_static::lazy_static! {
 // Global storage for active highlight rule-sets (per session)
 lazy_static::lazy_static! {
     pub static ref ACTIVE_HIGHLIGHTS: StdMutex<HashMap<String, types::HighlightState>> = StdMutex::new(HashMap::new());
+}
+
+// Global storage for pending host-key trust prompts keyed by provisional session id.
+lazy_static::lazy_static! {
+    pub static ref PENDING_HOST_KEY_PROMPTS: StdMutex<HashMap<String, oneshot::Sender<types::SshHostKeyPromptDecision>>> =
+        StdMutex::new(HashMap::new());
 }
 
 // Global storage for active FTP tunnels

@@ -40,7 +40,7 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
             Gateway Port: {rdp.gateway?.port ?? 443}
             <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="HTTPS port of the RD Gateway. Default is 443." />
           </label>
-          <NumberInput value={rdp.gateway?.port ?? 443} onChange={(v: number) => updateRdp("gateway", { port: v })} className="CSS.input" min={1} max={65535} />
+          <NumberInput value={rdp.gateway?.port ?? 443} onChange={(v: number) => updateRdp("gateway", { port: v })} className={CSS.input} min={1} max={65535} />
         </div>
 
         <div>

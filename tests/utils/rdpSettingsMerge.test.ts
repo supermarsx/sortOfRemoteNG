@@ -61,6 +61,7 @@ describe('mergeRdpSettings', () => {
 
     it('deviceRedirection matches compile-time defaults', () => {
       expect(result.deviceRedirection?.clipboard).toBe(true);
+      expect(result.deviceRedirection?.clipboardDirection).toBe('bidirectional');
       expect(result.deviceRedirection?.printers).toBe(false);
       expect(result.deviceRedirection?.ports).toBe(false);
       expect(result.deviceRedirection?.smartCards).toBe(false);
@@ -1117,7 +1118,9 @@ describe('mergeRdpSettings', () => {
     it('all device redirection fields from globals', () => {
       const result = mergeRdpSettings(undefined, {
         clipboardRedirection: false,
+        clipboardDirection: 'server-to-client',
         printerRedirection: true,
+        printerOutputMode: 'native-print',
         portRedirection: true,
         smartCardRedirection: true,
         webAuthnRedirection: true,
@@ -1126,7 +1129,9 @@ describe('mergeRdpSettings', () => {
         audioInputRedirection: true,
       });
       expect(result.deviceRedirection?.clipboard).toBe(false);
+      expect(result.deviceRedirection?.clipboardDirection).toBe('server-to-client');
       expect(result.deviceRedirection?.printers).toBe(true);
+      expect(result.deviceRedirection?.printerOutputMode).toBe('native-print');
       expect(result.deviceRedirection?.ports).toBe(true);
       expect(result.deviceRedirection?.smartCards).toBe(true);
       expect(result.deviceRedirection?.webAuthn).toBe(true);
@@ -1140,7 +1145,9 @@ describe('mergeRdpSettings', () => {
         {
           deviceRedirection: {
             clipboard: true,
+            clipboardDirection: 'client-to-server',
             printers: false,
+            printerOutputMode: 'spool-file',
             ports: false,
             smartCards: false,
             webAuthn: false,
@@ -1151,7 +1158,9 @@ describe('mergeRdpSettings', () => {
         },
         {
           clipboardRedirection: false,
+          clipboardDirection: 'server-to-client',
           printerRedirection: true,
+          printerOutputMode: 'native-print',
           portRedirection: true,
           smartCardRedirection: true,
           webAuthnRedirection: true,
@@ -1161,7 +1170,9 @@ describe('mergeRdpSettings', () => {
         },
       );
       expect(result.deviceRedirection?.clipboard).toBe(true);
+      expect(result.deviceRedirection?.clipboardDirection).toBe('client-to-server');
       expect(result.deviceRedirection?.printers).toBe(false);
+      expect(result.deviceRedirection?.printerOutputMode).toBe('spool-file');
       expect(result.deviceRedirection?.ports).toBe(false);
       expect(result.deviceRedirection?.smartCards).toBe(false);
       expect(result.deviceRedirection?.webAuthn).toBe(false);
@@ -1176,7 +1187,9 @@ describe('mergeRdpSettings', () => {
         printerRedirection: false,
       });
       expect(result.deviceRedirection?.clipboard).toBe(false);
+      expect(result.deviceRedirection?.clipboardDirection).toBe(DEFAULT_RDP_SETTINGS.deviceRedirection?.clipboardDirection);
       expect(result.deviceRedirection?.printers).toBe(false);
+      expect(result.deviceRedirection?.printerOutputMode).toBe(DEFAULT_RDP_SETTINGS.deviceRedirection?.printerOutputMode);
     });
   });
 

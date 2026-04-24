@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RDPClient from "../../src/components/rdp/RDPClient";
 import { ConnectionSession } from "../../src/types/connection/connection";
@@ -257,6 +257,17 @@ describe("RDPClient", () => {
       expect(canvas).toBeInTheDocument();
     });
 
+    it("should expose an accessible canvas label and release shortcut", () => {
+      renderWithProviders(mockSession);
+
+      const canvas = screen.getByTestId("rdp-canvas");
+      expect(canvas).toHaveAttribute(
+        "aria-label",
+        "Remote desktop session to 192.168.1.100. Press Ctrl+Alt+End to release keyboard focus.",
+      );
+      expect(canvas).toHaveAttribute("aria-keyshortcuts", "Control+Alt+End");
+    });
+
     it("should set canvas dimensions from desktop size event", async () => {
       renderWithProviders(mockSession);
 
@@ -274,6 +285,27 @@ describe("RDPClient", () => {
         expect(canvas.width).toBe(1920);
         expect(canvas.height).toBe(1080);
       });
+    });
+
+    it("should release canvas focus on Ctrl+Alt+End without sending input", () => {
+      renderWithProviders(mockSession);
+
+      const canvas = screen.getByTestId("rdp-canvas") as HTMLCanvasElement;
+      canvas.focus();
+      expect(document.activeElement).toBe(canvas);
+
+      fireEvent.keyDown(canvas, {
+        key: "End",
+        code: "End",
+        ctrlKey: true,
+        altKey: true,
+      });
+
+      expect(document.activeElement).not.toBe(canvas);
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "rdp_send_input",
+        expect.anything(),
+      );
     });
   });
 

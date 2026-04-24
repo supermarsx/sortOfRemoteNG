@@ -7,7 +7,20 @@ import {
 import { Toggle } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import { DriveMappingEditor } from "../../../connectionEditor/rdpOptions/DeviceRedirectionSection";
-import type { RdpDriveRedirection } from "../../../../types/connection/connection";
+import type { ClipboardDirection, RdpDriveRedirection, RdpPrinterOutputMode } from "../../../../types/connection/connection";
+import { selectClass } from "./selectClass";
+
+const CLIPBOARD_DIRECTION_OPTIONS: Array<{ value: ClipboardDirection; label: string }> = [
+  { value: "bidirectional", label: "Bidirectional" },
+  { value: "client-to-server", label: "Local to remote only" },
+  { value: "server-to-client", label: "Remote to local only" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const PRINTER_OUTPUT_MODE_OPTIONS: Array<{ value: RdpPrinterOutputMode; label: string }> = [
+  { value: "spool-file", label: "Save spool file locally" },
+  { value: "native-print", label: "Send to OS printer, keep spool fallback" },
+];
 
 const devices: { key: keyof Rdp; label: string; description: string; defaultVal: boolean; icon: React.ReactNode }[] = [
   { key: "clipboardRedirection", label: "Clipboard", description: "Share clipboard between local and remote for copy/paste", defaultVal: true, icon: <Copy size={16} /> },
@@ -42,6 +55,38 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         settingKey={`rdpDefaults.${d.key}`}
       />
     ))}
+
+    <div className="mt-3 space-y-1">
+      <label className="text-xs font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
+        Clipboard Direction
+        <InfoTooltip text="Default clipboard flow policy for RDP sessions. Per-connection settings can override this." />
+      </label>
+      <select
+        className={selectClass}
+        value={rdp.clipboardDirection ?? "bidirectional"}
+        onChange={(event) => update({ clipboardDirection: event.target.value as ClipboardDirection })}
+      >
+        {CLIPBOARD_DIRECTION_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+
+    <div className="mt-3 space-y-1">
+      <label className="text-xs font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
+        Printer Output Mode
+        <InfoTooltip text="Default delivery mode for redirected print jobs. Native print still keeps the local spool file as a fallback artifact." />
+      </label>
+      <select
+        className={selectClass}
+        value={rdp.printerOutputMode ?? "spool-file"}
+        onChange={(event) => update({ printerOutputMode: event.target.value as RdpPrinterOutputMode })}
+      >
+        {PRINTER_OUTPUT_MODE_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
 
     <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
       <h5 className="text-xs font-medium text-[var(--color-textSecondary)] mb-2 flex items-center gap-1.5">

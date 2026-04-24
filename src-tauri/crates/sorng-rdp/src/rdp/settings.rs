@@ -71,6 +71,8 @@ pub struct RdpInputPayload {
 #[serde(rename_all = "camelCase")]
 pub struct RdpDeviceRedirectionPayload {
     pub clipboard: Option<bool>,
+    pub clipboard_direction: Option<ClipboardDirection>,
+    pub printer_output_mode: Option<PrinterOutputMode>,
     pub drive_redirection: Option<bool>,
     pub printers: Option<bool>,
     pub ports: Option<bool>,
@@ -90,6 +92,44 @@ pub struct DriveRedirectionPayload {
     pub read_only: Option<bool>,
     pub enabled: Option<bool>,
     pub preferred_letter: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClipboardDirection {
+    Bidirectional,
+    ClientToServer,
+    ServerToClient,
+    Disabled,
+}
+
+impl Default for ClipboardDirection {
+    fn default() -> Self {
+        Self::Bidirectional
+    }
+}
+
+impl ClipboardDirection {
+    pub fn allows_client_to_server(self) -> bool {
+        matches!(self, Self::Bidirectional | Self::ClientToServer)
+    }
+
+    pub fn allows_server_to_client(self) -> bool {
+        matches!(self, Self::Bidirectional | Self::ServerToClient)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrinterOutputMode {
+    SpoolFile,
+    NativePrint,
+}
+
+impl Default for PrinterOutputMode {
+    fn default() -> Self {
+        Self::SpoolFile
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -385,6 +425,8 @@ pub struct ResolvedSettings {
     pub reconnect_on_network_loss: bool,
     // Device redirection
     pub clipboard_enabled: bool,
+    pub clipboard_direction: ClipboardDirection,
+    pub printer_output_mode: PrinterOutputMode,
     pub drive_redirection_enabled: bool,
     pub printers_enabled: bool,
     pub ports_enabled: bool,
@@ -411,6 +453,11 @@ impl ResolvedSettings {
         let gw = payload.gateway.as_ref();
         let hv = payload.hyperv.as_ref();
         let nego = payload.negotiation.as_ref();
+        let clipboard_direction = payload
+            .device_redirection
+            .as_ref()
+            .and_then(|d| d.clipboard_direction)
+            .unwrap_or_default();
 
         let w = display.and_then(|d| d.width).unwrap_or(width);
         let h = display.and_then(|d| d.height).unwrap_or(height);
@@ -443,7 +490,7 @@ impl ResolvedSettings {
                 .audio
                 .as_ref()
                 .and_then(|a| a.playback_mode.as_deref())
-                .map(|m| m != "disabled")
+                .map(|m| m == "local")
                 .unwrap_or(true),
             enable_audio_recording: payload
                 .audio
@@ -600,7 +647,14 @@ impl ResolvedSettings {
                 .device_redirection
                 .as_ref()
                 .and_then(|d| d.clipboard)
-                .unwrap_or(true),
+                .unwrap_or(true)
+                && clipboard_direction != ClipboardDirection::Disabled,
+            clipboard_direction,
+            printer_output_mode: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.printer_output_mode)
+                .unwrap_or_default(),
             drive_redirection_enabled: payload
                 .device_redirection
                 .as_ref()

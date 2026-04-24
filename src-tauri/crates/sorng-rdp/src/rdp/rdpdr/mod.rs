@@ -19,7 +19,7 @@ use crate::ironrdp::pdu::gcc::ChannelName;
 use crate::ironrdp::pdu::PduResult;
 use sorng_core::events::DynEventEmitter;
 
-use super::settings::DriveRedirectionConfig;
+use super::settings::{DriveRedirectionConfig, PrinterOutputMode};
 use self::filesystem::FileSystemDevice;
 use self::printer::PrinterDevice;
 use self::serial::SerialDevice;
@@ -53,6 +53,7 @@ pub struct RdpdrClient {
     client_id: u32,
     drives: Vec<DriveRedirectionConfig>,
     device_flags: DeviceFlags,
+    printer_output_mode: PrinterOutputMode,
     fs_devices: HashMap<u32, FileSystemDevice>,
     printer_devices: HashMap<u32, PrinterDevice>,
     serial_devices: HashMap<u32, SerialDevice>,
@@ -80,6 +81,7 @@ impl RdpdrClient {
         emitter: DynEventEmitter,
         drives: Vec<DriveRedirectionConfig>,
         device_flags: DeviceFlags,
+        printer_output_mode: PrinterOutputMode,
     ) -> Self {
         Self {
             session_id,
@@ -90,6 +92,7 @@ impl RdpdrClient {
             client_id: 0,
             drives,
             device_flags,
+            printer_output_mode,
             fs_devices: HashMap::new(),
             printer_devices: HashMap::new(),
             serial_devices: HashMap::new(),
@@ -228,7 +231,7 @@ impl RdpdrClient {
                         .join("print-jobs");
                     let printer = PrinterDevice::new(
                         printer_id, "sortOfRemote PDF", output_dir,
-                        self.session_id.clone(), self.emitter.clone(),
+                        self.session_id.clone(), self.emitter.clone(), self.printer_output_mode,
                     );
                     let device_data = printer.build_device_data();
                     buf.extend_from_slice(&RDPDR_DTYP_PRINT.to_le_bytes());
@@ -823,9 +826,10 @@ impl RdpdrDvcProcessor {
         emitter: DynEventEmitter,
         drives: Vec<DriveRedirectionConfig>,
         device_flags: DeviceFlags,
+        printer_output_mode: PrinterOutputMode,
     ) -> Self {
         Self {
-            inner: RdpdrClient::new(session_id, emitter, drives, device_flags),
+            inner: RdpdrClient::new(session_id, emitter, drives, device_flags, printer_output_mode),
         }
     }
 }
@@ -861,6 +865,38 @@ impl crate::ironrdp_dvc::DvcProcessor for RdpdrDvcProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use sorng_core::events::{AppEventEmitter, DynEventEmitter};
+
+    #[derive(Default)]
+    struct RecordingEmitter {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl AppEventEmitter for RecordingEmitter {
+        fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+            self.events
+                .lock()
+                .expect("recording emitter lock poisoned")
+                .push((event.to_string(), payload));
+            Ok(())
+        }
+    }
+
+    fn rdpsnd_wave2_payload(pcm: &[u8]) -> Vec<u8> {
+        let body_size = 12 + pcm.len() as u16;
+        let mut payload = Vec::with_capacity(4 + body_size as usize);
+        payload.push(SNDC_WAVE2);
+        payload.push(0);
+        payload.extend_from_slice(&body_size.to_le_bytes());
+        payload.extend_from_slice(&1u16.to_le_bytes());
+        payload.extend_from_slice(&0u16.to_le_bytes());
+        payload.push(7);
+        payload.extend_from_slice(&[0u8; 7]);
+        payload.extend_from_slice(pcm);
+        payload
+    }
 
     fn cfg(name: &str, letter: Option<char>) -> DriveRedirectionConfig {
         DriveRedirectionConfig {
@@ -911,5 +947,44 @@ mod tests {
         let drives = vec![cfg("A", Some('C')), cfg("B", Some('D'))];
         let result = resolve_drive_letters(&drives);
         assert_eq!(result, vec![(0, 'C'), (1, 'D')]);
+    }
+
+    #[test]
+    fn rdpsnd_emits_audio_events_when_local_playback_is_enabled() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let dyn_emitter: DynEventEmitter = emitter.clone();
+        let mut client = RdpsndClient::new("session-audio".to_string(), dyn_emitter, true);
+
+        let messages = client
+            .process(&rdpsnd_wave2_payload(&[0x00, 0x00, 0x10, 0x00]))
+            .expect("rdpsnd WAVE2 processing should succeed");
+
+        assert_eq!(messages.len(), 1, "rdpsnd should still ACK the audio block");
+
+        let events = emitter.events.lock().expect("recording emitter lock poisoned");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "rdp://audio-data");
+        assert_eq!(events[0].1["sessionId"], "session-audio");
+    }
+
+    #[test]
+    fn rdpsnd_suppresses_audio_events_when_local_playback_is_disabled() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let dyn_emitter: DynEventEmitter = emitter.clone();
+        let mut client = RdpsndClient::new("session-audio".to_string(), dyn_emitter, false);
+
+        let messages = client
+            .process(&rdpsnd_wave2_payload(&[0x00, 0x00, 0x10, 0x00]))
+            .expect("rdpsnd WAVE2 processing should succeed");
+
+        assert_eq!(messages.len(), 1, "rdpsnd should ACK even when playback is suppressed");
+        assert!(
+            emitter
+                .events
+                .lock()
+                .expect("recording emitter lock poisoned")
+                .is_empty(),
+            "disabled playback must not emit frontend audio events"
+        );
     }
 }

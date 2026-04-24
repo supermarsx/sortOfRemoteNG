@@ -375,9 +375,27 @@ export interface RdpInputSettings {
   magnifierDefaultZoom?: number;
 }
 
+export const ClipboardDirections = [
+  'bidirectional',
+  'client-to-server',
+  'server-to-client',
+  'disabled',
+] as const;
+export type ClipboardDirection = (typeof ClipboardDirections)[number];
+
+export const RdpPrinterOutputModes = [
+  'spool-file',
+  'native-print',
+] as const;
+export type RdpPrinterOutputMode = (typeof RdpPrinterOutputModes)[number];
+
 export interface RdpDeviceRedirection {
   /** Clipboard redirection */
   clipboard?: boolean;
+  /** Clipboard transfer direction policy */
+  clipboardDirection?: ClipboardDirection;
+  /** Printer delivery mode for redirected jobs */
+  printerOutputMode?: RdpPrinterOutputMode;
   /** Enable drive/folder redirection */
   driveRedirection?: boolean;
   /** Drive/folder redirection (list of local paths to share) */
@@ -750,6 +768,8 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
   },
   deviceRedirection: {
     clipboard: true,
+    clipboardDirection: 'bidirectional',
+    printerOutputMode: 'spool-file',
     driveRedirection: false,
     drives: [],
     printers: false,

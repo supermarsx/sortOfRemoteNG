@@ -4,9 +4,10 @@
 //! Tauri events and a shared state object.  Supports both text clipboard
 //! (CF_UNICODETEXT) and file transfer (FileGroupDescriptorW / FileContents).
 
-use std::sync::{Arc, Mutex};
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
+use super::settings::ClipboardDirection;
 use crate::ironrdp_cliprdr::backend::CliprdrBackend;
 use crate::ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FileContentsRequest,
@@ -62,16 +63,18 @@ pub struct ClipboardState {
     pub file_bytes_transferred: u64,
     /// When true, clipboard operations are suppressed (runtime toggle).
     pub disabled: bool,
+    /// Session-level clipboard direction policy.
+    pub direction: ClipboardDirection,
 }
 
 impl Default for ClipboardState {
     fn default() -> Self {
-        Self::new()
+        Self::new(ClipboardDirection::default())
     }
 }
 
 impl ClipboardState {
-    pub fn new() -> Self {
+    pub fn new(direction: ClipboardDirection) -> Self {
         Self {
             local_text: None,
             remote_formats: Vec::new(),
@@ -82,7 +85,16 @@ impl ClipboardState {
             pending_file_contents_request: None,
             file_bytes_transferred: 0,
             disabled: false,
+            direction,
         }
+    }
+
+    pub fn allows_client_to_server(&self) -> bool {
+        !self.disabled && self.direction.allows_client_to_server()
+    }
+
+    pub fn allows_server_to_client(&self) -> bool {
+        !self.disabled && self.direction.allows_server_to_client()
     }
 }
 
@@ -168,8 +180,24 @@ impl CliprdrBackend for AppCliprdrBackend {
             self.session_id,
             available_formats.len()
         );
-        if let Ok(mut state) = self.state.lock() {
-            state.remote_formats = available_formats.to_vec();
+        let allowed = if let Ok(mut state) = self.state.lock() {
+            if !state.allows_server_to_client() {
+                state.remote_formats.clear();
+                false
+            } else {
+                state.remote_formats = available_formats.to_vec();
+                true
+            }
+        } else {
+            false
+        };
+
+        if !allowed {
+            log::info!(
+                "CLIPRDR session {}: ignoring remote clipboard formats due to direction policy",
+                self.session_id
+            );
+            return;
         }
 
         // Check if CF_UNICODETEXT is among the available formats
@@ -205,6 +233,20 @@ impl CliprdrBackend for AppCliprdrBackend {
         if response.is_error() {
             log::warn!(
                 "CLIPRDR session {}: received error format data response",
+                self.session_id
+            );
+            return;
+        }
+
+        let allowed = self
+            .state
+            .lock()
+            .map(|state| state.allows_server_to_client())
+            .unwrap_or(false);
+
+        if !allowed {
+            log::info!(
+                "CLIPRDR session {}: dropping clipboard data response due to direction policy",
                 self.session_id
             );
             return;
@@ -299,5 +341,31 @@ pub fn encode_file_list_response(files: &[StagedFile]) -> OwnedFormatDataRespons
             log::error!("Failed to encode file list: {e}");
             OwnedFormatDataResponse::new_error()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipboard_state_honors_direction_policy() {
+        let mut state = ClipboardState::new(ClipboardDirection::ServerToClient);
+
+        assert!(!state.allows_client_to_server());
+        assert!(state.allows_server_to_client());
+
+        state.disabled = true;
+
+        assert!(!state.allows_client_to_server());
+        assert!(!state.allows_server_to_client());
+    }
+
+    #[test]
+    fn clipboard_state_default_is_bidirectional() {
+        let state = ClipboardState::default();
+
+        assert!(state.allows_client_to_server());
+        assert!(state.allows_server_to_client());
     }
 }

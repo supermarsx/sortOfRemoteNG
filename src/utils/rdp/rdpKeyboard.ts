@@ -27,7 +27,7 @@ export function keyToScancode(e: KeyboardEvent): { scancode: number; extended: b
     KeyG: [0x22, false], KeyH: [0x23, false], KeyJ: [0x24, false],
     KeyK: [0x25, false], KeyL: [0x26, false], Semicolon: [0x27, false],
     Quote: [0x28, false], Backquote: [0x29, false], ShiftLeft: [0x2A, false],
-    Backslash: [0x2B, false], KeyZ: [0x2C, false], KeyX: [0x2D, false],
+    Backslash: [0x2B, false], IntlBackslash: [0x56, false], KeyZ: [0x2C, false], KeyX: [0x2D, false],
     KeyC: [0x2E, false], KeyV: [0x2F, false], KeyB: [0x30, false],
     KeyN: [0x31, false], KeyM: [0x32, false], Comma: [0x33, false],
     Period: [0x34, false], Slash: [0x35, false], ShiftRight: [0x36, false],

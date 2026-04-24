@@ -80,6 +80,8 @@ export function mergeRdpSettings(
     deviceRedirection: {
       ...base.deviceRedirection,
       clipboard: g.clipboardRedirection ?? base.deviceRedirection?.clipboard,
+      clipboardDirection: g.clipboardDirection ?? base.deviceRedirection?.clipboardDirection,
+      printerOutputMode: g.printerOutputMode ?? base.deviceRedirection?.printerOutputMode,
       printers: g.printerRedirection ?? base.deviceRedirection?.printers,
       ports: g.portRedirection ?? base.deviceRedirection?.ports,
       smartCards: g.smartCardRedirection ?? base.deviceRedirection?.smartCards,

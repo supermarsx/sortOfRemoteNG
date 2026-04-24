@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
+import { AlertTriangle, Key, Fingerprint, Trash2, Pencil } from "lucide-react";
 import { PasswordInput, Textarea} from '../ui/forms';
 import { InfoTooltip } from '../ui/InfoTooltip';
 import { Connection } from "../../types/connection/connection";
@@ -52,12 +52,26 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
             <Select value={formData.authType ?? "password"} onChange={(v: string) => setFormData({ ...formData, authType: v as any })} options={[{ value: "password", label: "Password" }, { value: "key", label: "Private Key" }]} variant="form" />
           </div>
           <label className="sor-form-inline-check">
-            <Checkbox checked={formData.ignoreSshSecurityErrors ?? true} onChange={(v: boolean) => setFormData({
+            <Checkbox checked={formData.ignoreSshSecurityErrors ?? false} onChange={(v: boolean) => setFormData({
                   ...formData,
                   ignoreSshSecurityErrors: v,
                 })} variant="form" />
             <span>Ignore SSH security errors (host keys/certs) <InfoTooltip text="When enabled, host key mismatches and certificate errors are silently ignored. Convenient but less secure." /></span>
           </label>
+          {(formData.ignoreSshSecurityErrors ?? false) && (
+            <div className="rounded-lg border border-error/50 bg-error/10 px-3 py-2 text-sm text-error">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">SSH identity verification is disabled.</p>
+                  <p className="text-error/90">
+                    Host key mismatches and untrusted identities will be accepted without verification.
+                    Use this only for disposable lab systems or known test environments.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <div>
             <label className="sor-form-label">Host Key Trust Policy <InfoTooltip text="Determines how unknown or changed host keys are handled for this connection." /></label>
             <Select value={formData.sshTrustPolicy ?? ""} onChange={(v: string) => setFormData({

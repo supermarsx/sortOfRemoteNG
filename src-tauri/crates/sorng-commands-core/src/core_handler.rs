@@ -42,6 +42,7 @@ pub fn is_command(command: &str) -> bool {
             | "trust_get_verification_stats"
             | "trust_get_summary"
             | "connect_ssh"
+            | "ssh_respond_to_host_key_prompt"
             | "start_shell"
             | "execute_command"
             | "execute_command_interactive"
@@ -79,6 +80,7 @@ pub fn is_command(command: &str) -> bool {
             | "reconnect_rdp_session"
             | "rdp_get_thumbnail"
             | "rdp_save_screenshot"
+            | "rdp_cert_trust_respond"
             | "rdp_clipboard_copy"
             | "rdp_clipboard_copy_files"
             | "rdp_clipboard_paste"
@@ -1112,6 +1114,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         trust_store_commands::trust_get_verification_stats,
         trust_store_commands::trust_get_summary,
         ssh_commands::connect_ssh,
+        ssh_commands::ssh_respond_to_host_key_prompt,
         ssh_commands::start_shell,
         ssh_commands::execute_command,
         ssh_commands::execute_command_interactive,
@@ -1149,6 +1152,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         rdp_commands::reconnect_rdp_session,
         rdp_commands::rdp_get_thumbnail,
         rdp_commands::rdp_save_screenshot,
+        rdp_commands::rdp_cert_trust_respond,
         rdp_commands::rdp_clipboard_copy,
         rdp_commands::rdp_clipboard_copy_files,
         rdp_commands::rdp_clipboard_paste,

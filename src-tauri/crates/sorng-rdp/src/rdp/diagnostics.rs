@@ -26,6 +26,10 @@ pub fn run_diagnostics(
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 ) -> DiagnosticReport {
+    // Library callers and tests can invoke diagnostics without going through
+    // the Tauri app bootstrap that normally installs the rustls provider.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let run_start = Instant::now();
     let mut steps: Vec<DiagnosticStep> = Vec::new();
     let mut resolved_ip: Option<String> = None;

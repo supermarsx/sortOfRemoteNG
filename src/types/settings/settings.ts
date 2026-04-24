@@ -10,6 +10,7 @@ import type { CloudSyncConfig } from './cloudSyncSettings';
 import type { OpenVPNConfig } from './vpnSettings';
 import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings';
 import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
+import type { ClipboardDirection, RdpPrinterOutputMode } from '../connection/connection';
 
 export const Themes = [
   "dark",
@@ -726,8 +727,12 @@ export interface RdpGlobalDefaultsConfig {
   // ─── Device redirection defaults ─────────────────────────
   /** Enable clipboard redirection by default */
   clipboardRedirection: boolean;
+  /** Default clipboard transfer direction */
+  clipboardDirection: ClipboardDirection;
   /** Enable printer redirection by default */
   printerRedirection: boolean;
+  /** Default redirected-printer delivery mode */
+  printerOutputMode: RdpPrinterOutputMode;
   /** Enable serial/COM port redirection by default */
   portRedirection: boolean;
   /** Enable smart card redirection by default */

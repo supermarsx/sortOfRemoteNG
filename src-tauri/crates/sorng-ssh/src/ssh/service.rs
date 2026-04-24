@@ -15,7 +15,75 @@ use super::automation::process_automation_output;
 use super::highlighting::process_highlight_output;
 use super::recording::{record_input, record_output, record_resize};
 use super::types::*;
-use super::{MAX_BUFFER_SIZE, TERMINAL_BUFFERS};
+use super::{MAX_BUFFER_SIZE, PENDING_HOST_KEY_PROMPTS, TERMINAL_BUFFERS};
+
+fn host_key_type_label(host_key_type: ssh2::HostKeyType) -> &'static str {
+    match host_key_type {
+        ssh2::HostKeyType::Rsa => "ssh-rsa",
+        ssh2::HostKeyType::Dss => "ssh-dss",
+        ssh2::HostKeyType::Ecdsa256 => "ecdsa-sha2-nistp256",
+        ssh2::HostKeyType::Ecdsa384 => "ecdsa-sha2-nistp384",
+        ssh2::HostKeyType::Ecdsa521 => "ecdsa-sha2-nistp521",
+        ssh2::HostKeyType::Ed25519 => "ssh-ed25519",
+        _ => "unknown",
+    }
+}
+
+fn host_key_bits(raw_key: &[u8], host_key_type: ssh2::HostKeyType) -> Option<u32> {
+    match host_key_type {
+        ssh2::HostKeyType::Rsa => Some((raw_key.len() as u32).saturating_mul(8)),
+        ssh2::HostKeyType::Ed25519 => Some(256),
+        ssh2::HostKeyType::Ecdsa256 => Some(256),
+        ssh2::HostKeyType::Ecdsa384 => Some(384),
+        ssh2::HostKeyType::Ecdsa521 => Some(521),
+        _ => None,
+    }
+}
+
+fn build_host_key_info(raw_key: &[u8], host_key_type: ssh2::HostKeyType) -> SshHostKeyInfo {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(raw_key);
+
+    SshHostKeyInfo {
+        fingerprint: hex::encode(hasher.finalize()),
+        key_type: Some(host_key_type_label(host_key_type).to_string()),
+        key_bits: host_key_bits(raw_key, host_key_type),
+        public_key: Some(base64::engine::general_purpose::STANDARD.encode(raw_key)),
+    }
+}
+
+struct HostKeyPersistenceContext<'a> {
+    config: &'a SshConnectionConfig,
+    known_hosts_path: &'a str,
+    host_key: &'a [u8],
+    key_type: ssh2::HostKeyType,
+    replace_existing: bool,
+}
+
+fn known_host_entry_name(host: &str, port: u16) -> String {
+    if port == 22 {
+        host.to_string()
+    } else {
+        format!("[{}]:{}", host, port)
+    }
+}
+
+fn known_host_cleanup_names(host: &str, port: u16) -> Vec<String> {
+    if port == 22 {
+        vec![host.to_string(), format!("[{}]:22", host)]
+    } else {
+        vec![format!("[{}]:{}", host, port)]
+    }
+}
+
+pub(crate) fn known_host_key_format(
+    host_key_type: ssh2::HostKeyType,
+) -> ssh2::KnownHostKeyFormat {
+    host_key_type.into()
+}
 
 /// Generate a TOTP code from a secret
 pub fn generate_totp_code(secret: &str) -> Result<String, String> {
@@ -286,7 +354,7 @@ impl SshService {
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
         if config.strict_host_key_checking {
-            self.verify_host_key(&mut sess, &config)?;
+            self.verify_host_key(&session_id, &mut sess, &config).await?;
         }
 
         self.authenticate_session(&mut sess, &config)?;
@@ -1461,8 +1529,9 @@ impl SshService {
         Ok(())
     }
 
-    fn verify_host_key(
+    async fn verify_host_key(
         &self,
+        session_id: &str,
         session: &mut Session,
         config: &SshConnectionConfig,
     ) -> Result<(), String> {
@@ -1475,18 +1544,21 @@ impl SshService {
         });
 
         let (host_key, key_type) = session.host_key().ok_or("No host key available")?;
+        let host_key = host_key.to_vec();
+        let host_key_info = build_host_key_info(&host_key, key_type);
 
-        let mut known_hosts = session
-            .known_hosts()
-            .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
+        let check_result = {
+            let mut known_hosts = session
+                .known_hosts()
+                .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
 
-        // Load the known_hosts file (ignore errors if file doesn't exist yet)
-        let _ = known_hosts.read_file(
-            Path::new(&known_hosts_path),
-            ssh2::KnownHostFileKind::OpenSSH,
-        );
+            let _ = known_hosts.read_file(
+                Path::new(&known_hosts_path),
+                ssh2::KnownHostFileKind::OpenSSH,
+            );
 
-        let check_result = known_hosts.check_port(&config.host, config.port, host_key);
+            known_hosts.check_port(&config.host, config.port, &host_key)
+        };
 
         match check_result {
             ssh2::CheckResult::Match => {
@@ -1494,40 +1566,40 @@ impl SshService {
                 Ok(())
             }
             ssh2::CheckResult::NotFound => {
-                // Key not in known_hosts — add it
-                let type_mask = match key_type {
-                    ssh2::HostKeyType::Rsa => ssh2::KnownHostKeyFormat::SshRsa,
-                    ssh2::HostKeyType::Dss => ssh2::KnownHostKeyFormat::SshDss,
-                    ssh2::HostKeyType::Ecdsa256
-                    | ssh2::HostKeyType::Ecdsa384
-                    | ssh2::HostKeyType::Ecdsa521 => ssh2::KnownHostKeyFormat::SshDss,
-                    ssh2::HostKeyType::Ed25519 => ssh2::KnownHostKeyFormat::SshDss,
-                    _ => ssh2::KnownHostKeyFormat::SshRsa,
+                let decision = self
+                    .prompt_for_host_key_decision(
+                        session_id,
+                        config,
+                        &host_key_info,
+                        SshHostKeyPromptStatus::FirstUse,
+                    )
+                    .await?;
+                let persistence = HostKeyPersistenceContext {
+                    config,
+                    known_hosts_path: &known_hosts_path,
+                    host_key: &host_key,
+                    key_type,
+                    replace_existing: false,
                 };
-                let host_with_port = if config.port != 22 {
-                    format!("[{}]:{}", config.host, config.port)
-                } else {
-                    config.host.clone()
-                };
-                let _ = known_hosts.add(
-                    &host_with_port,
-                    host_key,
-                    "Added by SortOfRemoteNG",
-                    type_mask,
-                );
-                // Best-effort write
-                if let Some(parent) = Path::new(&known_hosts_path).parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                let _ = known_hosts.write_file(Path::new(&known_hosts_path), ssh2::KnownHostFileKind::OpenSSH);
-                log::info!("Host key for {} added to known_hosts", config.host);
-                Ok(())
+                self.apply_host_key_decision(session, &persistence, decision)
             }
             ssh2::CheckResult::Mismatch => {
-                Err(format!(
-                    "Host key verification failed for {}: key mismatch — the server's host key has changed",
-                    config.host
-                ))
+                let decision = self
+                    .prompt_for_host_key_decision(
+                        session_id,
+                        config,
+                        &host_key_info,
+                        SshHostKeyPromptStatus::Mismatch,
+                    )
+                    .await?;
+                let persistence = HostKeyPersistenceContext {
+                    config,
+                    known_hosts_path: &known_hosts_path,
+                    host_key: &host_key,
+                    key_type,
+                    replace_existing: true,
+                };
+                self.apply_host_key_decision(session, &persistence, decision)
             }
             ssh2::CheckResult::Failure => {
                 Err(format!(
@@ -1538,15 +1610,174 @@ impl SshService {
         }
     }
 
+    async fn prompt_for_host_key_decision(
+        &self,
+        session_id: &str,
+        config: &SshConnectionConfig,
+        host_key_info: &SshHostKeyInfo,
+        status: SshHostKeyPromptStatus,
+    ) -> Result<SshHostKeyPromptDecision, String> {
+        self.prompt_for_host_key_decision_with_timeout(
+            session_id,
+            config,
+            host_key_info,
+            status,
+            Duration::from_secs(120),
+        )
+        .await
+    }
+
+    async fn prompt_for_host_key_decision_with_timeout(
+        &self,
+        session_id: &str,
+        config: &SshConnectionConfig,
+        host_key_info: &SshHostKeyInfo,
+        status: SshHostKeyPromptStatus,
+        timeout: Duration,
+    ) -> Result<SshHostKeyPromptDecision, String> {
+        let emitter = self
+            .event_emitter
+            .clone()
+            .ok_or_else(|| "No event emitter configured for host-key verification".to_string())?;
+        let (decision_tx, decision_rx) = tokio::sync::oneshot::channel();
+
+        {
+            let mut pending = PENDING_HOST_KEY_PROMPTS
+                .lock()
+                .map_err(|e| format!("Failed to lock host-key prompt map: {}", e))?;
+            pending.insert(session_id.to_string(), decision_tx);
+        }
+
+        let payload = SshHostKeyPromptEvent {
+            session_id: session_id.to_string(),
+            host: config.host.clone(),
+            port: config.port,
+            username: config.username.clone(),
+            status,
+            fingerprint: host_key_info.fingerprint.clone(),
+            key_type: host_key_info.key_type.clone(),
+            key_bits: host_key_info.key_bits,
+            public_key: host_key_info.public_key.clone(),
+        };
+
+        let payload = serde_json::to_value(payload)
+            .map_err(|e| format!("Failed to serialize host-key prompt payload: {}", e))?;
+        if let Err(error) = emitter.emit_event("ssh://host-key-prompt", payload) {
+            let mut pending = PENDING_HOST_KEY_PROMPTS
+                .lock()
+                .map_err(|e| format!("Failed to lock host-key prompt map: {}", e))?;
+            pending.remove(session_id);
+            return Err(format!("Failed to emit host-key prompt: {}", error));
+        }
+
+        match tokio::time::timeout(timeout, decision_rx).await {
+            Ok(Ok(decision)) => Ok(decision),
+            Ok(Err(_)) => Err(format!(
+                "Host key verification failed for {}: prompt response channel closed",
+                config.host
+            )),
+            Err(_) => {
+                let mut pending = PENDING_HOST_KEY_PROMPTS
+                    .lock()
+                    .map_err(|e| format!("Failed to lock host-key prompt map: {}", e))?;
+                pending.remove(session_id);
+                Err(format!(
+                    "Host key verification timed out for {} after waiting for user confirmation",
+                    config.host
+                ))
+            }
+        }
+    }
+
+    fn apply_host_key_decision(
+        &self,
+        session: &mut Session,
+        persistence: &HostKeyPersistenceContext<'_>,
+        decision: SshHostKeyPromptDecision,
+    ) -> Result<(), String> {
+        match decision {
+            SshHostKeyPromptDecision::AcceptOnce => Ok(()),
+            SshHostKeyPromptDecision::AcceptAndSave => self.persist_host_key(session, persistence),
+            SshHostKeyPromptDecision::Reject => Err(format!(
+                "Host key verification failed for {}: key rejected by user",
+                persistence.config.host
+            )),
+        }
+    }
+
+    fn persist_host_key(
+        &self,
+        session: &mut Session,
+        persistence: &HostKeyPersistenceContext<'_>,
+    ) -> Result<(), String> {
+        let mut known_hosts = session
+            .known_hosts()
+            .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
+
+        let _ = known_hosts.read_file(
+            Path::new(persistence.known_hosts_path),
+            ssh2::KnownHostFileKind::OpenSSH,
+        );
+
+        if persistence.replace_existing {
+            let cleanup_names =
+                known_host_cleanup_names(&persistence.config.host, persistence.config.port);
+            let existing_hosts = known_hosts
+                .hosts()
+                .map_err(|e| format!("Failed to enumerate known_hosts entries: {}", e))?;
+
+            for host in existing_hosts {
+                if let Some(name) = host.name() {
+                    if cleanup_names.iter().any(|candidate| candidate == name) {
+                        known_hosts
+                            .remove(&host)
+                            .map_err(|e| format!("Failed to replace existing known_hosts entry: {}", e))?;
+                    }
+                }
+            }
+        }
+
+        known_hosts
+            .add(
+                &known_host_entry_name(&persistence.config.host, persistence.config.port),
+                persistence.host_key,
+                "Added by SortOfRemoteNG",
+                known_host_key_format(persistence.key_type),
+            )
+            .map_err(|e| format!("Failed to add host key to known_hosts: {}", e))?;
+
+        if let Some(parent) = Path::new(persistence.known_hosts_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create known_hosts directory: {}", e))?;
+        }
+
+        known_hosts
+            .write_file(
+                Path::new(persistence.known_hosts_path),
+                ssh2::KnownHostFileKind::OpenSSH,
+            )
+            .map_err(|e| format!("Failed to write known_hosts file: {}", e))?;
+
+        log::info!(
+            "Host key for {} {} in known_hosts",
+            persistence.config.host,
+            if persistence.replace_existing {
+                "updated"
+            } else {
+                "added"
+            }
+        );
+        Ok(())
+    }
+
     fn start_keep_alive(
         &self,
         session_id: String,
         interval_secs: u64,
     ) -> tokio::task::JoinHandle<()> {
         // We need to send a keepalive from the SSH session, but the session
-        // is behind the service mutex. The keepalive_send() call on the
-        // Session object is the correct approach. We just log here since the
-        // session's own keepalive is configured via session.set_keepalive().
+        // is behind the service mutex. The ssh2 session is already configured
+        // via set_keepalive(); this task exists to keep observable activity.
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(interval_secs));
             loop {
@@ -3485,7 +3716,248 @@ impl SshService {
         }
         payload_size >= config.adaptive.min_payload_bytes
     }
+}
 
+#[cfg(test)]
+mod host_key_prompt_tests {
+    use super::*;
+    use serde_json::json;
+    use sorng_core::events::{AppEventEmitter, DynEventEmitter};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct RecordingEmitter {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl AppEventEmitter for RecordingEmitter {
+        fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+            self.events
+                .lock()
+                .expect("recording emitter mutex poisoned")
+                .push((event.to_string(), payload));
+            Ok(())
+        }
+    }
+
+    fn test_service(emitter: DynEventEmitter) -> SshService {
+        SshService {
+            sessions: HashMap::new(),
+            connection_pool: HashMap::new(),
+            known_hosts: HashMap::new(),
+            shells: HashMap::new(),
+            event_emitter: Some(emitter),
+        }
+    }
+
+    fn test_config() -> SshConnectionConfig {
+        serde_json::from_value(json!({
+            "host": "example.com",
+            "port": 22,
+            "username": "tester",
+            "password": null,
+            "private_key_path": null,
+            "private_key_passphrase": null,
+            "jump_hosts": [],
+            "proxy_config": null,
+            "proxy_chain": null,
+            "mixed_chain": null,
+            "openvpn_config": null,
+            "connect_timeout": 15,
+            "keep_alive_interval": 30,
+            "strict_host_key_checking": true,
+            "known_hosts_path": null,
+            "totp_secret": null,
+            "keyboard_interactive_responses": []
+        }))
+        .expect("valid ssh config json")
+    }
+
+    fn test_host_key_info() -> SshHostKeyInfo {
+        SshHostKeyInfo {
+            fingerprint: "SHA256:test-fingerprint".to_string(),
+            key_type: Some("ssh-ed25519".to_string()),
+            key_bits: Some(256),
+            public_key: Some("AAAAC3NzaC1lZDI1NTE5AAAAITestKey".to_string()),
+        }
+    }
+
+    fn clear_pending_prompt(session_id: &str) {
+        PENDING_HOST_KEY_PROMPTS
+            .lock()
+            .expect("pending host-key prompt map poisoned")
+            .remove(session_id);
+    }
+
+    async fn wait_for_pending_prompt(session_id: &str) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let contains_session = PENDING_HOST_KEY_PROMPTS
+                    .lock()
+                    .expect("pending host-key prompt map poisoned")
+                    .contains_key(session_id);
+                if contains_session {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("pending host-key prompt never appeared");
+    }
+
+    fn respond_to_prompt(session_id: &str, decision: SshHostKeyPromptDecision) {
+        let sender = PENDING_HOST_KEY_PROMPTS
+            .lock()
+            .expect("pending host-key prompt map poisoned")
+            .remove(session_id)
+            .expect("expected pending host-key prompt sender");
+        sender.send(decision).expect("decision receiver should still be waiting");
+    }
+
+    #[tokio::test]
+    async fn prompt_for_host_key_decision_emits_payload_and_accepts_save() {
+        clear_pending_prompt("session-accept-save");
+
+        let emitter = Arc::new(RecordingEmitter::default());
+        let service = test_service(emitter.clone());
+        let config = test_config();
+        let session_id = "session-accept-save".to_string();
+
+        let prompt_task = tokio::spawn(async move {
+            service
+                .prompt_for_host_key_decision_with_timeout(
+                    &session_id,
+                    &config,
+                    &test_host_key_info(),
+                    SshHostKeyPromptStatus::FirstUse,
+                    Duration::from_secs(1),
+                )
+                .await
+        });
+
+        wait_for_pending_prompt("session-accept-save").await;
+
+        let events = emitter
+            .events
+            .lock()
+            .expect("recording emitter mutex poisoned");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "ssh://host-key-prompt");
+        assert_eq!(events[0].1["session_id"], "session-accept-save");
+        assert_eq!(events[0].1["host"], "example.com");
+        assert_eq!(events[0].1["status"], "first_use");
+        assert_eq!(events[0].1["fingerprint"], "SHA256:test-fingerprint");
+        drop(events);
+
+        respond_to_prompt(
+            "session-accept-save",
+            SshHostKeyPromptDecision::AcceptAndSave,
+        );
+
+        assert_eq!(
+            prompt_task.await.expect("prompt task should complete"),
+            Ok(SshHostKeyPromptDecision::AcceptAndSave),
+        );
+        clear_pending_prompt("session-accept-save");
+    }
+
+    #[tokio::test]
+    async fn prompt_for_host_key_decision_accept_once_roundtrips() {
+        clear_pending_prompt("session-accept-once");
+
+        let emitter = Arc::new(RecordingEmitter::default());
+        let service = test_service(emitter);
+        let config = test_config();
+        let session_id = "session-accept-once".to_string();
+
+        let prompt_task = tokio::spawn(async move {
+            service
+                .prompt_for_host_key_decision_with_timeout(
+                    &session_id,
+                    &config,
+                    &test_host_key_info(),
+                    SshHostKeyPromptStatus::FirstUse,
+                    Duration::from_secs(1),
+                )
+                .await
+        });
+
+        wait_for_pending_prompt("session-accept-once").await;
+        respond_to_prompt(
+            "session-accept-once",
+            SshHostKeyPromptDecision::AcceptOnce,
+        );
+
+        assert_eq!(
+            prompt_task.await.expect("prompt task should complete"),
+            Ok(SshHostKeyPromptDecision::AcceptOnce),
+        );
+        clear_pending_prompt("session-accept-once");
+    }
+
+    #[tokio::test]
+    async fn prompt_for_host_key_decision_reject_roundtrips() {
+        clear_pending_prompt("session-reject");
+
+        let emitter = Arc::new(RecordingEmitter::default());
+        let service = test_service(emitter);
+        let config = test_config();
+        let session_id = "session-reject".to_string();
+
+        let prompt_task = tokio::spawn(async move {
+            service
+                .prompt_for_host_key_decision_with_timeout(
+                    &session_id,
+                    &config,
+                    &test_host_key_info(),
+                    SshHostKeyPromptStatus::Mismatch,
+                    Duration::from_secs(1),
+                )
+                .await
+        });
+
+        wait_for_pending_prompt("session-reject").await;
+        respond_to_prompt("session-reject", SshHostKeyPromptDecision::Reject);
+
+        assert_eq!(
+            prompt_task.await.expect("prompt task should complete"),
+            Ok(SshHostKeyPromptDecision::Reject),
+        );
+        clear_pending_prompt("session-reject");
+    }
+
+    #[tokio::test]
+    async fn prompt_for_host_key_decision_times_out_and_clears_pending_entry() {
+        clear_pending_prompt("session-timeout");
+
+        let emitter = Arc::new(RecordingEmitter::default());
+        let service = test_service(emitter);
+        let config = test_config();
+
+        let result = service
+            .prompt_for_host_key_decision_with_timeout(
+                "session-timeout",
+                &config,
+                &test_host_key_info(),
+                SshHostKeyPromptStatus::FirstUse,
+                Duration::from_millis(10),
+            )
+            .await;
+
+        let error = result.expect_err("prompt should time out without a response");
+        assert!(error.contains("timed out"));
+        assert!(
+            !PENDING_HOST_KEY_PROMPTS
+                .lock()
+                .expect("pending host-key prompt map poisoned")
+                .contains_key("session-timeout")
+        );
+        clear_pending_prompt("session-timeout");
+    }
+}
+
+impl SshService {
     /// Update running compression statistics after data transfer.
     pub fn update_compression_stats(
         stats: &mut SshCompressionStats,

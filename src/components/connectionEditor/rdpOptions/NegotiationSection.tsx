@@ -51,7 +51,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
             <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Maximum number of connection attempts before giving up. Each retry tries the next protocol in the strategy." />
           </label>
           <label className="flex items-center gap-2 mb-1">
-            <Checkbox checked={rdp.negotiation?.maxRetries != null} onChange={(v: boolean) => updateRdp("negotiation", { maxRetries: v ? 3 : undefined })} className="CSS.checkbox" />
+            <Checkbox checked={rdp.negotiation?.maxRetries != null} onChange={(v: boolean) => updateRdp("negotiation", { maxRetries: v ? 3 : undefined })} className={CSS.checkbox} />
             <span className="text-xs text-[var(--color-textMuted)]">Override (uncheck to use global default)</span>
           </label>
           {rdp.negotiation?.maxRetries != null && (
@@ -73,7 +73,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
             <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Milliseconds to wait between retry attempts. Increase if the server needs time to reset after a failed attempt." />
           </label>
           <label className="flex items-center gap-2 mb-1">
-            <Checkbox checked={rdp.negotiation?.retryDelayMs != null} onChange={(v: boolean) => updateRdp("negotiation", { retryDelayMs: v ? 1000 : undefined })} className="CSS.checkbox" />
+            <Checkbox checked={rdp.negotiation?.retryDelayMs != null} onChange={(v: boolean) => updateRdp("negotiation", { retryDelayMs: v ? 1000 : undefined })} className={CSS.checkbox} />
             <span className="text-xs text-[var(--color-textMuted)]">Override (uncheck to use global default)</span>
           </label>
           {rdp.negotiation?.retryDelayMs != null && (
@@ -119,7 +119,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
       </div>
 
       <label className={`${CSS.label} mt-2`}>
-        <Checkbox checked={rdp.negotiation?.useRoutingToken ?? false} onChange={(v: boolean) => updateRdp("negotiation", { useRoutingToken: v })} className="CSS.checkbox" />
+        <Checkbox checked={rdp.negotiation?.useRoutingToken ?? false} onChange={(v: boolean) => updateRdp("negotiation", { useRoutingToken: v })} className={CSS.checkbox} />
         <span>Use routing token format (instead of cookie)</span>
       </label>
     </div>

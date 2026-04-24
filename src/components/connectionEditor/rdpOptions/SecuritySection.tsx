@@ -20,7 +20,7 @@ const SecuritySection: React.FC<
     {/* CredSSP Master Toggle */}
     <div className="pb-2 mb-2 border-b border-[var(--color-border)]/60">
       <label className={CSS.label}>
-        <Checkbox checked={rdp.security?.useCredSsp ?? true} onChange={(v: boolean) => updateRdp("security", { useCredSsp: v })} className="CSS.checkbox" />
+        <Checkbox checked={rdp.security?.useCredSsp ?? true} onChange={(v: boolean) => updateRdp("security", { useCredSsp: v })} className={CSS.checkbox} />
         <span className="font-medium">Use CredSSP</span>
       </label>
       <p className="text-xs text-[var(--color-textMuted)] ml-5 mt-0.5">
@@ -30,7 +30,7 @@ const SecuritySection: React.FC<
     </div>
 
     <label className={CSS.label}>
-      <Checkbox checked={rdp.security?.enableNla ?? true} onChange={(v: boolean) => updateRdp("security", { enableNla: v })} className="CSS.checkbox" disabled={!(rdp.security?.useCredSsp ?? true)} />
+      <Checkbox checked={rdp.security?.enableNla ?? true} onChange={(v: boolean) => updateRdp("security", { enableNla: v })} className={CSS.checkbox} disabled={!(rdp.security?.useCredSsp ?? true)} />
       <span
         className={!(rdp.security?.useCredSsp ?? true) ? "opacity-50" : ""}
       >
@@ -39,24 +39,24 @@ const SecuritySection: React.FC<
     </label>
 
     <label className={CSS.label}>
-      <Checkbox checked={rdp.security?.enableTls ?? true} onChange={(v: boolean) => updateRdp("security", { enableTls: v })} className="CSS.checkbox" />
+      <Checkbox checked={rdp.security?.enableTls ?? true} onChange={(v: boolean) => updateRdp("security", { enableTls: v })} className={CSS.checkbox} />
       <span>Enable TLS (legacy graphical logon)</span>
     </label>
 
     <label className={CSS.label}>
-      <Checkbox checked={rdp.security?.autoLogon ?? false} onChange={(v: boolean) => updateRdp("security", { autoLogon: v })} className="CSS.checkbox" />
+      <Checkbox checked={rdp.security?.autoLogon ?? false} onChange={(v: boolean) => updateRdp("security", { autoLogon: v })} className={CSS.checkbox} />
       <span>Auto logon (send credentials in INFO packet)</span>
     </label>
 
     <label className={CSS.label}>
-      <Checkbox checked={rdp.security?.enableServerPointer ?? true} onChange={(v: boolean) => updateRdp("security", { enableServerPointer: v })} className="CSS.checkbox" />
+      <Checkbox checked={rdp.security?.enableServerPointer ?? true} onChange={(v: boolean) => updateRdp("security", { enableServerPointer: v })} className={CSS.checkbox} />
       <span>Server-side pointer rendering</span>
     </label>
 
     <label className={CSS.label}>
       <Checkbox checked={rdp.security?.pointerSoftwareRendering ?? true} onChange={(v: boolean) => updateRdp("security", {
-            pointerSoftwareRendering: v,
-          })} className="CSS.checkbox" />
+        pointerSoftwareRendering: v,
+          })} className={CSS.checkbox} />
       <span>Software pointer rendering</span>
     </label>
 
@@ -107,12 +107,12 @@ const SecuritySection: React.FC<
         </div>
 
         <label className={CSS.label}>
-          <Checkbox checked={rdp.security?.allowHybridEx ?? false} onChange={(v: boolean) => updateRdp("security", { allowHybridEx: v })} className="CSS.checkbox" />
+          <Checkbox checked={rdp.security?.allowHybridEx ?? false} onChange={(v: boolean) => updateRdp("security", { allowHybridEx: v })} className={CSS.checkbox} />
           <span>Allow HYBRID_EX protocol (Early User Auth Result)</span>
         </label>
 
         <label className={CSS.label}>
-          <Checkbox checked={rdp.security?.nlaFallbackToTls ?? true} onChange={(v: boolean) => updateRdp("security", { nlaFallbackToTls: v })} className="CSS.checkbox" />
+          <Checkbox checked={rdp.security?.nlaFallbackToTls ?? true} onChange={(v: boolean) => updateRdp("security", { nlaFallbackToTls: v })} className={CSS.checkbox} />
           <span>Allow NLA fallback to TLS on failure</span>
         </label>
 
@@ -141,28 +141,28 @@ const SecuritySection: React.FC<
             ["pku2uEnabled", false, "PKU2U"],
           ] as [string, boolean, string][]).map(([key, def, label]) => (
             <label key={key} className={CSS.label}>
-              <Checkbox checked={(rdp.security?.[key as keyof NonNullable<RDPConnectionSettings["security"]>] as boolean | undefined) ?? def} onChange={(v: boolean) => updateRdp("security", { [key]: v })} className="CSS.checkbox" />
+              <Checkbox checked={(rdp.security?.[key as keyof NonNullable<RDPConnectionSettings["security"]>] as boolean | undefined) ?? def} onChange={(v: boolean) => updateRdp("security", { [key]: v })} className={CSS.checkbox} />
               <span>{label}</span>
             </label>
           ))}
         </div>
 
         <label className={CSS.label}>
-          <Checkbox checked={rdp.security?.restrictedAdmin ?? false} onChange={(v: boolean) => updateRdp("security", { restrictedAdmin: v })} className="CSS.checkbox" />
+          <Checkbox checked={rdp.security?.restrictedAdmin ?? false} onChange={(v: boolean) => updateRdp("security", { restrictedAdmin: v })} className={CSS.checkbox} />
           <span>Restricted Admin (no credential delegation)</span>
         </label>
 
         <label className={CSS.label}>
           <Checkbox checked={rdp.security?.remoteCredentialGuard ?? false} onChange={(v: boolean) => updateRdp("security", {
                 remoteCredentialGuard: v,
-              })} className="CSS.checkbox" />
+              })} className={CSS.checkbox} />
           <span>Remote Credential Guard</span>
         </label>
 
         <label className={CSS.label}>
           <Checkbox checked={rdp.security?.enforceServerPublicKeyValidation ?? true} onChange={(v: boolean) => updateRdp("security", {
                 enforceServerPublicKeyValidation: v,
-              })} className="CSS.checkbox" />
+              })} className={CSS.checkbox} />
           <span>Enforce server public key validation</span>
         </label>
 
@@ -195,7 +195,7 @@ const SecuritySection: React.FC<
                   v === ""
                     ? undefined
                     : (v as "validate" | "warn" | "ignore"),
-              })} options={[{ value: "", label: "Use global default" }, { value: "validate", label: "Validate (reject untrusted)" }, { value: "warn", label: "Warn (prompt on untrusted)" }, { value: "ignore", label: "Ignore (accept all)" }]} className="CSS.select" />
+              })} options={[{ value: "", label: "Use global default" }, { value: "validate", label: "Validate (reject untrusted)" }, { value: "warn", label: "Warn (prompt on untrusted)" }, { value: "ignore", label: "Ignore (accept all)" }]} className={CSS.select} />
         </div>
 
         <div>
@@ -234,7 +234,7 @@ const SecuritySection: React.FC<
                     | "always-ask"
                     | "always-trust"
                     | "strict"),
-          })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} className="CSS.select" />
+          })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} className={CSS.select} />
     </div>
 
     {/* Trusted certificates */}

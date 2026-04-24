@@ -363,7 +363,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   // Trust & Verification
   enableAutocomplete: false,
   tlsTrustPolicy: 'tofu',
-  sshTrustPolicy: 'tofu',
+  sshTrustPolicy: 'always-ask',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
 
@@ -485,7 +485,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     localCursor: 'local' as const,
     // Device redirection
     clipboardRedirection: true,
+    clipboardDirection: 'bidirectional',
     printerRedirection: false,
+    printerOutputMode: 'spool-file',
     portRedirection: false,
     smartCardRedirection: false,
     webAuthnRedirection: false,

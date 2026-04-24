@@ -24,9 +24,7 @@ import { ManagedScript, getDefaultScripts, OSTag } from "../../components/record
 import {
   verifyIdentity,
   trustIdentity,
-  getStoredIdentity,
   getEffectiveTrustPolicy,
-  formatFingerprint,
   type SshHostKeyIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
@@ -39,6 +37,18 @@ type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
 type SshOutputEvent = { session_id: string; data: string };
 type SshErrorEvent = { session_id: string; message: string };
 type SshClosedEvent = { session_id: string };
+type HostKeyPromptDecision = "accept_once" | "accept_and_save" | "reject";
+type SshHostKeyPromptEvent = {
+  session_id: string;
+  host: string;
+  port: number;
+  username: string;
+  status: "first_use" | "mismatch";
+  fingerprint: string;
+  key_type: string | null;
+  key_bits: number | null;
+  public_key: string | null;
+};
 
 /* ── Hook ──────────────────────────────────────────────────────── */
 
@@ -104,7 +114,7 @@ export function useWebTerminal(
   const [showKeyPopup, setShowKeyPopup] = useState(false);
   const [hostKeyIdentity, setHostKeyIdentity] = useState<SshHostKeyIdentity | null>(null);
   const [sshTrustPrompt, setSshTrustPrompt] = useState<TrustVerifyResult | null>(null);
-  const sshTrustResolveRef = useRef<((accept: boolean) => void) | null>(null);
+  const sshTrustResolveRef = useRef<((decision: HostKeyPromptDecision) => void) | null>(null);
   const keyPopupRef = useRef<HTMLDivElement>(null);
   const totpBtnRef = useRef<HTMLDivElement>(null);
   const [showTotpPanel, setShowTotpPanel] = useState(false);
@@ -459,7 +469,10 @@ export function useWebTerminal(
     }
     if (force) sshSessionId.current = null;
 
-    const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? true;
+    const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? false;
+    const sshTrustPolicy = getEffectiveTrustPolicy(currentConnection.sshTrustPolicy, settings.sshTrustPolicy);
+    const strictHostKeyChecking = !ignoreHostKey && sshTrustPolicy !== "always-trust";
+    isConnecting.current = true;
     setStatusState("connecting");
     setError("");
     if (typeof (termRef.current as any).reset === "function") {
@@ -475,8 +488,9 @@ export function useWebTerminal(
 
     const authMethod = currentConnection.authType || (currentConnection.privateKey ? "key" : "password");
     writeLine(`\x1b[90mAuth: ${authMethod}\x1b[0m`);
-    writeLine(`\x1b[90mHost key checking: ${ignoreHostKey ? "disabled (ignore errors)" : "enabled"}\x1b[0m`);
+    writeLine(`\x1b[90mHost key checking: ${strictHostKeyChecking ? "enabled" : "disabled"}\x1b[0m`);
 
+    let unlistenHostKeyPrompt: (() => void) | null = null;
     try {
       // Try reattaching to existing backend session
       if (currentSession.backendSessionId && !force) {
@@ -546,6 +560,95 @@ export function useWebTerminal(
 
       const tcpOptions = sshTerminalConfig?.tcpOptions;
 
+      unlistenHostKeyPrompt = await listen<SshHostKeyPromptEvent>(
+        "ssh://host-key-prompt",
+        async (event) => {
+          const payload = event.payload;
+          const expectedPort = currentConnection.port || 22;
+          const expectedUsername = currentConnection.username || "";
+          if (
+            payload.host !== currentSession.hostname ||
+            payload.port !== expectedPort ||
+            payload.username !== expectedUsername
+          ) {
+            return;
+          }
+
+          const identity: SshHostKeyIdentity = {
+            fingerprint: payload.fingerprint,
+            keyType: payload.key_type ?? undefined,
+            keyBits: payload.key_bits ?? undefined,
+            firstSeen: new Date().toISOString(),
+            lastSeen: new Date().toISOString(),
+            publicKey: payload.public_key ?? undefined,
+          };
+          setHostKeyIdentity(identity);
+
+          const connectionId = currentConnection.id;
+          const verification = verifyIdentity(
+            currentSession.hostname,
+            expectedPort,
+            "ssh",
+            identity,
+            connectionId,
+          );
+          const isMismatchPrompt = payload.status === "mismatch" || verification.status === "mismatch";
+
+          writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${payload.fingerprint}\x1b[0m`);
+          writeLine(`\x1b[90mKey type: ${payload.key_type ?? "unknown"}\x1b[0m`);
+
+          if (verification.status === "trusted" && !isMismatchPrompt) {
+            writeLine("\x1b[32mHost key matches stored identity\x1b[0m");
+            await invoke("ssh_respond_to_host_key_prompt", {
+              sessionId: payload.session_id,
+              decision: "accept_and_save",
+            });
+            return;
+          }
+
+          if ((verification.status === "first-use" || isMismatchPrompt) && sshTrustPolicy === "strict") {
+            writeLine("\x1b[31mConnection rejected: strict host-key policy requires pre-approved identities\x1b[0m");
+            await invoke("ssh_respond_to_host_key_prompt", {
+              sessionId: payload.session_id,
+              decision: "reject",
+            });
+            return;
+          }
+
+          if (isMismatchPrompt) {
+            writeLine("\x1b[31;1m*** WARNING: HOST KEY HAS CHANGED! ***\x1b[0m");
+          } else {
+            writeLine("\x1b[33mNew host key — user confirmation required\x1b[0m");
+          }
+
+          const decision = await new Promise<HostKeyPromptDecision>((resolve) => {
+            sshTrustResolveRef.current = resolve;
+            setSshTrustPrompt(verification);
+          });
+
+          if (decision === "accept_and_save") {
+            trustIdentity(
+              currentSession.hostname,
+              expectedPort,
+              "ssh",
+              identity,
+              true,
+              connectionId,
+            );
+            writeLine("\x1b[32mHost key accepted and memorized\x1b[0m");
+          } else if (decision === "accept_once") {
+            writeLine("\x1b[33mHost key accepted for this session only\x1b[0m");
+          } else {
+            writeLine("\x1b[31mConnection aborted by user\x1b[0m");
+          }
+
+          await invoke("ssh_respond_to_host_key_prompt", {
+            sessionId: payload.session_id,
+            decision,
+          });
+        },
+      );
+
       const sshConfig: Record<string, unknown> = {
         host: currentSession.hostname,
         port: currentConnection.port || 22,
@@ -557,7 +660,7 @@ export function useWebTerminal(
         openvpn_config: resolved?.openvpn_config ?? null,
         connect_timeout: tcpOptions?.connectionTimeout ?? currentConnection.sshConnectTimeout ?? 30,
         keep_alive_interval: tcpOptions?.tcpKeepAlive ? (tcpOptions?.keepAliveInterval ?? currentConnection.sshKeepAliveInterval ?? 60) : null,
-        strict_host_key_checking: !ignoreHostKey,
+        strict_host_key_checking: strictHostKeyChecking,
         known_hosts_path: currentConnection.sshKnownHostsPath || null,
         tcp_no_delay: tcpOptions?.tcpNoDelay ?? true,
         tcp_keepalive: tcpOptions?.tcpKeepAlive ?? true,
@@ -631,67 +734,11 @@ export function useWebTerminal(
       }
 
       const sessionId = await invoke<string>("connect_ssh", { config: sshConfig });
+      unlistenHostKeyPrompt?.();
+      unlistenHostKeyPrompt = null;
       sshSessionId.current = sessionId;
       dispatch({ type: "UPDATE_SESSION", payload: { ...currentSession, backendSessionId: sessionId } });
       writeLine("\x1b[32mSSH connection established\x1b[0m");
-
-      /* ── host key trust verification ── */
-      const sshTrustPolicy = getEffectiveTrustPolicy(currentConnection.sshTrustPolicy, settings.sshTrustPolicy);
-      if (sshTrustPolicy !== "always-trust") {
-        try {
-          const keyInfo = await invoke<{ fingerprint: string; key_type: string | null; key_bits: number | null; public_key: string | null }>("get_ssh_host_key_info", { sessionId });
-          const now = new Date().toISOString();
-          const identity: SshHostKeyIdentity = {
-            fingerprint: keyInfo.fingerprint,
-            keyType: keyInfo.key_type ?? undefined,
-            keyBits: keyInfo.key_bits ?? undefined,
-            firstSeen: now,
-            lastSeen: now,
-            publicKey: keyInfo.public_key ?? undefined,
-          };
-          setHostKeyIdentity(identity);
-
-          const sshPort = currentConnection.port || 22;
-          const connId = currentConnection.id;
-          const result = verifyIdentity(currentSession.hostname, sshPort, "ssh", identity, connId);
-
-          if (result.status === "first-use" && sshTrustPolicy === "tofu") {
-            trustIdentity(currentSession.hostname, sshPort, "ssh", identity, false, connId);
-            writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
-            writeLine(`\x1b[90mKey type: ${keyInfo.key_type ?? "unknown"}\x1b[0m`);
-            writeLine("\x1b[33mHost key memorized (Trust-On-First-Use)\x1b[0m");
-          } else if (result.status === "trusted") {
-            writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
-            writeLine("\x1b[32mHost key matches stored identity\x1b[0m");
-          } else {
-            writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
-            if (result.status === "mismatch") {
-              writeLine("\x1b[31;1m*** WARNING: HOST KEY HAS CHANGED! ***\x1b[0m");
-            } else {
-              writeLine("\x1b[33mNew host key — user confirmation required\x1b[0m");
-            }
-
-            const accepted = await new Promise<boolean>((resolve) => {
-              sshTrustResolveRef.current = resolve;
-              setSshTrustPrompt(result);
-            });
-
-            if (!accepted) {
-              await invoke("disconnect_ssh", { sessionId }).catch(() => {});
-              sshSessionId.current = null;
-              setStatusState("error");
-              setError("Connection aborted: host key not trusted by user.");
-              writeLine("\x1b[31mConnection aborted by user\x1b[0m");
-              return;
-            }
-
-            trustIdentity(currentSession.hostname, sshPort, "ssh", identity, true, connId);
-            writeLine("\x1b[32mHost key accepted and memorized\x1b[0m");
-          }
-        } catch (err) {
-          writeLine(`\x1b[33mCould not retrieve host key info: ${err}\x1b[0m`);
-        }
-      }
 
       const shellId = await invoke<string>("start_shell", { sessionId });
       dispatch({ type: "UPDATE_SESSION", payload: { ...currentSession, backendSessionId: sessionId, shellId } });
@@ -727,6 +774,10 @@ export function useWebTerminal(
       writeLine(`\x1b[31m${classification.friendly}\x1b[0m`);
       writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
       writeLine(`\x1b[90mRaw error: ${details.message}\x1b[0m`);
+    } finally {
+      isConnecting.current = false;
+      unlistenHostKeyPrompt?.();
+      sshTrustResolveRef.current = null;
     }
   },
   // eslint-disable-next-line react-hooks/exhaustive-deps -- all used functions are listed; refs read at call time

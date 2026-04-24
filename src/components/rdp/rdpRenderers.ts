@@ -262,6 +262,7 @@ class WebGLRenderer implements FrameRenderer {
   readonly name: string;
   readonly type: FrontendRendererType = 'webgl';
   readonly tripleBuffered: boolean;
+  private static readonly INIT_TIMEOUT_MS = 2000;
   private gl: WebGLRenderingContext | WebGL2RenderingContext;
   private program: WebGLProgram;
   private dirty = false;
@@ -287,7 +288,6 @@ class WebGLRenderer implements FrameRenderer {
     // With desynchronized=true, the browser can display the canvas mid-paint,
     // showing a mix of old and new regions — classic ghosting artifacts.
     const gl2 = canvas.getContext('webgl2', {
-      antialias: false,
       desynchronized: false,
       preserveDrawingBuffer: true,
     }) as WebGL2RenderingContext | null;
@@ -512,6 +512,8 @@ const WGPU_FRAG = /* wgsl */ `
   }
 `;
 
+const WEBGPU_INIT_TIMEOUT_MS = 2000;
+
 class WebGPURenderer implements FrameRenderer {
   readonly name = 'WebGPU';
   readonly type: FrontendRendererType = 'webgpu';
@@ -530,6 +532,7 @@ class WebGPURenderer implements FrameRenderer {
   private dirty = false;
   private ready = false;
   private initFailed = false;
+  private initCancelled = false;
   // Fallback renderer used when async init fails
   private fallback: Canvas2DRenderer | null = null;
   // Queued paints that arrive before async init completes (no cap — init
@@ -537,38 +540,72 @@ class WebGPURenderer implements FrameRenderer {
   private pendingPaints: { x: number; y: number; w: number; h: number; rgba: Uint8Array }[] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
-    this.initAsync().catch((e) => {
-      console.error('WebGPU init failed, falling back to Canvas2D:', e);
-      this.initFailed = true;
-      try {
-        // Unconfigure WebGPU context if it was acquired, so Canvas2D can work
-        if (this.ctx) {
-          try { this.ctx.unconfigure(); } catch { /* ignore */ }
-        }
-        // Force a fresh context by resetting canvas dimensions
-        const w = canvas.width;
-        const h = canvas.height;
-        canvas.width = 0;
-        canvas.width = w;
-        canvas.height = h;
-        this.fallback = new Canvas2DRenderer(canvas);
-        // Flush pending paints to the fallback
-        for (const p of this.pendingPaints) {
-          this.fallback.paintRegion(p.x, p.y, p.w, p.h, new Uint8ClampedArray(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength));
-        }
-        this.fallback.present();
-      } catch (e2) {
-        console.error('Canvas2D fallback also failed:', e2);
+    const timeoutHandle = window.setTimeout(() => {
+      this.initCancelled = true;
+      this.activateFallback(
+        new Error(`WebGPU init timed out after ${WEBGPU_INIT_TIMEOUT_MS}ms`),
+        'timeout',
+      );
+    }, WEBGPU_INIT_TIMEOUT_MS);
+
+    this.initAsync()
+      .then(() => {
+        window.clearTimeout(timeoutHandle);
+      })
+      .catch((e) => {
+        window.clearTimeout(timeoutHandle);
+        this.activateFallback(e, 'error');
+      });
+  }
+
+  private activateFallback(error: unknown, reason: 'timeout' | 'error'): void {
+    if (this.initFailed) return;
+
+    console.error('WebGPU init failed, falling back to Canvas2D:', error);
+    this.initFailed = true;
+    try {
+      // Unconfigure WebGPU context if it was acquired, so Canvas2D can work
+      if (this.ctx) {
+        try { this.ctx.unconfigure(); } catch { /* ignore */ }
       }
-      this.pendingPaints = [];
-    });
+      // Force a fresh context by resetting canvas dimensions
+      const w = this.canvas.width;
+      const h = this.canvas.height;
+      this.canvas.width = 0;
+      this.canvas.width = w;
+      this.canvas.height = h;
+      this.fallback = new Canvas2DRenderer(this.canvas);
+      for (const p of this.pendingPaints) {
+        this.fallback.paintRegion(
+          p.x,
+          p.y,
+          p.w,
+          p.h,
+          new Uint8ClampedArray(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength),
+        );
+      }
+      this.fallback.present();
+      window.dispatchEvent(
+        new CustomEvent('rdp:webgpu-fallback', {
+          detail: {
+            reason,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      );
+    } catch (e2) {
+      console.error('Canvas2D fallback also failed:', e2);
+    }
+    this.pendingPaints = [];
   }
 
   private async initAsync(): Promise<void> {
     if (!navigator.gpu) throw new Error('WebGPU: navigator.gpu not available');
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('WebGPU: no adapter');
+    if (this.initCancelled) return;
     this.device = await adapter.requestDevice();
+    if (this.initCancelled) return;
 
     const ctx = this.canvas.getContext('webgpu');
     if (!ctx) {
@@ -578,6 +615,7 @@ class WebGPURenderer implements FrameRenderer {
       );
     }
     this.ctx = ctx as GPUCanvasContext;
+    if (this.initCancelled) return;
     const format = navigator.gpu.getPreferredCanvasFormat();
     this.ctx.configure({
       device: this.device,
@@ -616,6 +654,7 @@ class WebGPURenderer implements FrameRenderer {
     });
 
     this.allocTexture(this.canvas.width || 1920, this.canvas.height || 1080);
+  if (this.initCancelled) return;
     this.ready = true;
     console.log(`[WebGPU] initAsync OK: tex=${this.texW}x${this.texH}, canvas=${this.canvas.width}x${this.canvas.height}, pending=${this.pendingPaints.length}, format=${format}`);
 
@@ -753,6 +792,11 @@ function createPaintWorkerBlob(): Blob {
   const code = `
     let ctx = null;
     let w = 0, h = 0;
+
+    function toDataView(data) {
+      if (data instanceof ArrayBuffer) return new DataView(data);
+      return new DataView(data.buffer, data.byteOffset, data.byteLength);
+    }
 
     self.onmessage = (e) => {
       const msg = e.data;
@@ -929,6 +973,11 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
     let decoderConfigured = false;
     let frameCount = 0;
     const HW_ACCEL = '${hwAccel}';
+
+    function toDataView(data) {
+      if (data instanceof ArrayBuffer) return new DataView(data);
+      return new DataView(data.buffer, data.byteOffset, data.byteLength);
+    }
 
     // ── WebGL2 setup ───────────────────────────────────────────────────
     const VS = \`#version 300 es

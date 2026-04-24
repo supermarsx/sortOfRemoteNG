@@ -927,6 +927,37 @@ pub struct SshHostKeyInfo {
     pub public_key: Option<String>,
 }
 
+/// Why the frontend is being asked to confirm a host key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshHostKeyPromptStatus {
+    FirstUse,
+    Mismatch,
+}
+
+/// User response to a host-key verification prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshHostKeyPromptDecision {
+    AcceptOnce,
+    AcceptAndSave,
+    Reject,
+}
+
+/// Payload sent to the frontend when SSH needs an explicit host-key decision.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshHostKeyPromptEvent {
+    pub session_id: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub status: SshHostKeyPromptStatus,
+    pub fingerprint: String,
+    pub key_type: Option<String>,
+    pub key_bits: Option<u32>,
+    pub public_key: Option<String>,
+}
+
 // ===============================
 // Service State Type
 // ===============================

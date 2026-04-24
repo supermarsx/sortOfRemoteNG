@@ -15,7 +15,7 @@
 
 /** How to handle first-time identity encounters. */
 export type TrustPolicy =
-  | 'tofu'            // Trust On First Use — accept + memorize silently
+  | 'tofu'            // Trust On First Use — prompt once, then remember accepted identities
   | 'always-ask'      // Always ask the user before trusting
   | 'always-trust'    // Accept anything without checking
   | 'strict';         // Reject if not pre-approved (manual pinning)
@@ -367,7 +367,7 @@ export function formatFingerprint(fp: string): string {
  */
 export function getEffectiveTrustPolicy(
   connectionPolicy: TrustPolicy | undefined,
-  globalPolicy: TrustPolicy,
+  globalPolicy: TrustPolicy | undefined,
 ): TrustPolicy {
-  return connectionPolicy ?? globalPolicy;
+  return connectionPolicy ?? globalPolicy ?? 'always-ask';
 }

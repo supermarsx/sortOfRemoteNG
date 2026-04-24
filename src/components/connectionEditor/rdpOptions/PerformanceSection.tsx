@@ -42,7 +42,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               connectionSpeed: speed as RDPConnectionSettings["performance"] extends { connectionSpeed?: infer T } ? T : never,
             });
           }
-        }} options={[{ value: "modem", label: "Modem (56 Kbps)" }, { value: "broadband-low", label: "Broadband (Low)" }, { value: "broadband-high", label: "Broadband (High)" }, { value: "wan", label: "WAN" }, { value: "lan", label: "LAN (10 Mbps+)" }, { value: "auto-detect", label: "Auto-detect" }]} className="CSS.select" />
+        }} options={[{ value: "modem", label: "Modem (56 Kbps)" }, { value: "broadband-low", label: "Broadband (Low)" }, { value: "broadband-high", label: "Broadband (High)" }, { value: "wan", label: "WAN" }, { value: "lan", label: "LAN (10 Mbps+)" }, { value: "auto-detect", label: "Auto-detect" }]} className={CSS.select} />
     </div>
 
     {/* Visual experience */}
@@ -61,7 +61,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       ["enableDesktopComposition", false, "Enable desktop composition (Aero)"],
     ] as [string, boolean, string][]).map(([key, def, label]) => (
       <label key={key} className={CSS.label}>
-        <Checkbox checked={(rdp.performance?.[key as keyof NonNullable<RDPConnectionSettings["performance"]>] as boolean | undefined) ?? def} onChange={(v: boolean) => updateRdp("performance", { [key]: v })} className="CSS.checkbox" />
+        <Checkbox checked={(rdp.performance?.[key as keyof NonNullable<RDPConnectionSettings["performance"]>] as boolean | undefined) ?? def} onChange={(v: boolean) => updateRdp("performance", { [key]: v })} className={CSS.checkbox} />
         <span>{label}</span>
       </label>
     ))}
@@ -83,7 +83,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               | "softbuffer"
               | "wgpu"
               | "webview",
-          })} disabled={backendBypassed} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="CSS.select" />
+          })} disabled={backendBypassed} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className={CSS.select} />
     </div>
 
     {/* Frontend renderer */}
@@ -125,7 +125,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
                 { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" },
                 { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" },
                 { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" },
-              ]} className="CSS.select" />
+              ]} className={CSS.select} />
     </div>
 
     {/* Frame delivery */}
@@ -145,7 +145,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
     </div>
 
     <label className={CSS.label}>
-      <Checkbox checked={rdp.performance?.frameBatching ?? true} onChange={(v: boolean) => updateRdp("performance", { frameBatching: v })} className="CSS.checkbox" />
+      <Checkbox checked={rdp.performance?.frameBatching ?? true} onChange={(v: boolean) => updateRdp("performance", { frameBatching: v })} className={CSS.checkbox} />
       <span>Frame batching (combine dirty regions)</span>
     </label>
 
@@ -165,7 +165,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
     <label className={CSS.label}>
       <Checkbox checked={rdp.performance?.persistentBitmapCaching ?? false} onChange={(v: boolean) => updateRdp("performance", {
             persistentBitmapCaching: v,
-          })} className="CSS.checkbox" />
+          })} className={CSS.checkbox} />
       <span>Persistent bitmap caching</span>
     </label>
 
@@ -182,7 +182,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
     <label className={CSS.label}>
       <Checkbox checked={rdp.performance?.codecs?.enableCodecs ?? true} onChange={(v: boolean) => updateRdp("performance", {
             codecs: { ...rdp.performance?.codecs, enableCodecs: v },
-          })} className="CSS.checkbox" />
+          })} className={CSS.checkbox} />
       <span className="font-medium">Enable bitmap codec negotiation</span>
     </label>
 
@@ -191,7 +191,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
         <label className={`${CSS.label} ml-4`}>
           <Checkbox checked={rdp.performance?.codecs?.remoteFx ?? true} onChange={(v: boolean) => updateRdp("performance", {
                 codecs: { ...rdp.performance?.codecs, remoteFx: v },
-              })} className="CSS.checkbox" />
+              })} className={CSS.checkbox} />
           <span>RemoteFX (RFX)</span>
           <span className="text-xs text-[var(--color-textMuted)] ml-1">
             — DWT + RLGR entropy, best quality/compression
@@ -216,7 +216,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
           <label className={CSS.label}>
             <Checkbox checked={gfxEnabled} onChange={(v: boolean) => updateRdp("performance", {
                   codecs: { ...rdp.performance?.codecs, enableGfx: v },
-                })} className="CSS.checkbox" />
+                })} className={CSS.checkbox} />
             <span>RDPGFX (H.264 Hardware Decode)</span>
             <span className="text-xs text-[var(--color-textMuted)] ml-1">
               — lowest bandwidth &amp; CPU via GPU decode
@@ -249,7 +249,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
                       updates.frontendRenderer = "webcodecs-worker";
                     }
                     updateRdp("performance", updates);
-                  }} className="CSS.checkbox" />
+                  }} className={CSS.checkbox} />
               <span>NAL Passthrough (WebCodecs Decode)</span>
               <span className="text-xs text-[var(--color-textMuted)] ml-1">
                 — skip backend decode, send H.264 to frontend

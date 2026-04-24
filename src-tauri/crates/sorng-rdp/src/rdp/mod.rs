@@ -1,4 +1,5 @@
 pub mod clipboard;
+pub mod cert_trust;
 pub mod errors;
 pub mod rdpdr;
 pub mod frame_channel;

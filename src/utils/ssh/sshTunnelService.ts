@@ -218,7 +218,7 @@ class SSHTunnelService {
           openvpn_config: null,
           connect_timeout: override?.connectTimeout ?? sshConnection.sshConnectTimeout ?? 30,
           keep_alive_interval: override?.keepAliveInterval ?? sshConnection.sshKeepAliveInterval ?? 60,
-          strict_host_key_checking: override?.strictHostKeyChecking ?? !sshConnection.ignoreSshSecurityErrors ?? false,
+          strict_host_key_checking: override?.strictHostKeyChecking ?? !(sshConnection.ignoreSshSecurityErrors ?? false),
           known_hosts_path: override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
           tcp_no_delay: override?.tcpNoDelay ?? true,
           tcp_keepalive: override?.tcpKeepAlive ?? true,

@@ -19,8 +19,8 @@ const InputSection: React.FC<
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Absolute sends real screen coordinates; Relative sends delta movement. Use Absolute unless the remote app requires raw mouse input." />
       </label>
       <Select value={rdp.input?.mouseMode ?? ""} onChange={(v: string) => updateRdp("input", {
-            mouseMode: v === "" ? undefined : (v as "relative" | "absolute"),
-          })} options={[{ value: "", label: "Use global default" }, { value: "absolute", label: "Absolute (real mouse position)" }, { value: "relative", label: "Relative (virtual mouse delta)" }]} className="CSS.select" />
+        mouseMode: v === "" ? undefined : (v as "relative" | "absolute"),
+          })} options={[{ value: "", label: "Use global default" }, { value: "absolute", label: "Absolute (real mouse position)" }, { value: "relative", label: "Relative (virtual mouse delta)" }]} className={CSS.select} />
     </div>
 
     <div>
@@ -59,8 +59,8 @@ const InputSection: React.FC<
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Physical keyboard type reported to the server. Most modern keyboards are IBM Enhanced (101/102 key)." />
       </label>
       <Select value={rdp.input?.keyboardType ?? "ibm-enhanced"} onChange={(v: string) => updateRdp("input", {
-            keyboardType: v as "ibm-enhanced",
-          })} options={[{ value: "ibm-pc-xt", label: "IBM PC/XT (83 key)" }, { value: "olivetti", label: "Olivetti (102 key)" }, { value: "ibm-pc-at", label: "IBM PC/AT (84 key)" }, { value: "ibm-enhanced", label: "IBM Enhanced (101/102 key)" }, { value: "nokia1050", label: "Nokia 1050" }, { value: "nokia9140", label: "Nokia 9140" }, { value: "japanese", label: "Japanese" }]} className="CSS.select" />
+        keyboardType: v as "ibm-enhanced",
+          })} options={[{ value: "ibm-pc-xt", label: "IBM PC/XT (83 key)" }, { value: "olivetti", label: "Olivetti (102 key)" }, { value: "ibm-pc-at", label: "IBM PC/AT (84 key)" }, { value: "ibm-enhanced", label: "IBM Enhanced (101/102 key)" }, { value: "nokia1050", label: "Nokia 1050" }, { value: "nokia9140", label: "Nokia 9140" }, { value: "japanese", label: "Japanese" }]} className={CSS.select} />
     </div>
 
     <div>
@@ -69,8 +69,8 @@ const InputSection: React.FC<
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Realtime sends each input event immediately; Batched groups events to reduce packet count at the cost of slight latency." />
       </label>
       <Select value={rdp.input?.inputPriority ?? "realtime"} onChange={(v: string) => updateRdp("input", {
-            inputPriority: v as "realtime" | "batched",
-          })} options={[{ value: "realtime", label: "Realtime (send immediately)" }, { value: "batched", label: "Batched (group events)" }]} className="CSS.select" />
+        inputPriority: v as "realtime" | "batched",
+          })} options={[{ value: "realtime", label: "Realtime (send immediately)" }, { value: "batched", label: "Batched (group events)" }]} className={CSS.select} />
     </div>
 
     {rdp.input?.inputPriority === "batched" && (

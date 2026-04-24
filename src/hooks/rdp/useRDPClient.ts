@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { debugLog } from '../../utils/core/debugLogger';
 import { ConnectionSession, Connection } from '../../types/connection/connection';
-import { RDPConnectionSettings, DEFAULT_RDP_SETTINGS } from '../../types/connection/connection';
+import { ClipboardDirection, RDPConnectionSettings, DEFAULT_RDP_SETTINGS } from '../../types/connection/connection';
 import { mergeRdpSettings } from '../../utils/rdp/rdpSettingsMerge';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -131,9 +131,27 @@ export function useRDPClient(session: ConnectionSession) {
   const localCursorMode = rdpSettings.input?.localCursor ?? 'remote';
 
   const perfLabel = rdpSettings.performance?.connectionSpeed ?? 'broadband-high';
-  const audioEnabled = rdpSettings.audio?.playbackMode !== 'disabled';
+  const audioEnabled = (rdpSettings.audio?.playbackMode ?? 'local') === 'local';
   const clipboardEnabled = rdpSettings.deviceRedirection?.clipboard ?? true;
+  const clipboardDirection = rdpSettings.deviceRedirection?.clipboardDirection ?? 'bidirectional';
+  const clipboardCanSendToRemote = clipboardEnabled && (
+    clipboardDirection === 'bidirectional' || clipboardDirection === 'client-to-server'
+  );
+  const clipboardCanReceiveFromRemote = clipboardEnabled && (
+    clipboardDirection === 'bidirectional' || clipboardDirection === 'server-to-client'
+  );
   const colorDepth = rdpSettings.display?.colorDepth ?? 32;
+
+  const isCanvasReleaseCombo = useCallback((event: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'altKey'>) => {
+    return event.ctrlKey && event.altKey && (event.code === 'End' || event.key === 'End');
+  }, []);
+
+  const isClipboardDirectionEnabled = useCallback((direction: ClipboardDirection) => {
+    const current = rdpSettingsRef.current.deviceRedirection?.clipboardDirection ?? 'bidirectional';
+    const enabled = rdpSettingsRef.current.deviceRedirection?.clipboard ?? true;
+    if (!enabled) return false;
+    return current === 'bidirectional' || current === direction;
+  }, []);
 
   // ─── Handlers ──────────────────────────────────────────────────────
 
@@ -274,7 +292,7 @@ export function useRDPClient(session: ConnectionSession) {
     // If CLIPRDR is active, request clipboard text from the remote session.
     // The response arrives as an rdp://clipboard-data event which writes to
     // navigator.clipboard automatically.  Fall back to screenshot capture.
-    if (isConnected && sessionIdRef.current && clipboardEnabled) {
+    if (isConnected && sessionIdRef.current && clipboardCanReceiveFromRemote) {
       try {
         await invoke('rdp_clipboard_paste', { sessionId: sessionIdRef.current });
         return;
@@ -283,16 +301,17 @@ export function useRDPClient(session: ConnectionSession) {
       }
     }
     await handleScreenshotToClipboard();
-  }, [handleScreenshotToClipboard, isConnected, clipboardEnabled]);
+  }, [handleScreenshotToClipboard, isConnected, clipboardCanReceiveFromRemote]);
 
   const handlePasteFromClipboard = useCallback(async () => {
     if (!isConnected || !sessionIdRef.current) return;
+    if (!clipboardCanSendToRemote) return;
     try {
       const text = await navigator.clipboard.readText();
       if (!text) return;
 
       // Use CLIPRDR protocol when available (proper clipboard redirection)
-      if (clipboardEnabled) {
+      if (clipboardCanSendToRemote) {
         try {
           await invoke('rdp_clipboard_copy', { sessionId: sessionIdRef.current, text });
           return;
@@ -314,7 +333,7 @@ export function useRDPClient(session: ConnectionSession) {
     } catch (e) {
       console.error('Paste from clipboard failed:', e);
     }
-  }, [isConnected, clipboardEnabled]);
+  }, [isConnected, clipboardCanSendToRemote]);
 
   const handleSendKeys = useCallback((combo: string) => {
     if (!isConnected || !sessionIdRef.current) return;
@@ -1057,7 +1076,7 @@ export function useRDPClient(session: ConnectionSession) {
     track(listen<{ session_id: string; has_text: boolean }>('rdp://clipboard-formats', (event) => {
       const cf = event.payload;
       if (cf.session_id !== sessionIdRef.current) return;
-      if (cf.has_text) {
+      if (cf.has_text && isClipboardDirectionEnabled('server-to-client')) {
         // Auto-request the text data from the remote clipboard
         invoke('rdp_clipboard_paste', { sessionId: cf.session_id }).catch((e) => console.error("RDP clipboard paste failed:", e));
       }
@@ -1067,7 +1086,7 @@ export function useRDPClient(session: ConnectionSession) {
     track(listen<{ session_id: string; text: string }>('rdp://clipboard-data', (event) => {
       const cd = event.payload;
       if (cd.session_id !== sessionIdRef.current) return;
-      if (cd.text) {
+      if (cd.text && isClipboardDirectionEnabled('server-to-client')) {
         navigator.clipboard.writeText(cd.text).catch((e) => {
           console.warn('Failed to write remote clipboard to local:', e);
         });
@@ -1087,6 +1106,7 @@ export function useRDPClient(session: ConnectionSession) {
     }>('rdp://audio-data', (event) => {
       const d = event.payload;
       if (d.sessionId !== sessionIdRef.current) return;
+      if ((rdpSettingsRef.current.audio?.playbackMode ?? 'local') !== 'local') return;
 
       if (!audioCtx) {
         audioCtx = new AudioContext({ sampleRate: d.sampleRate });
@@ -1149,7 +1169,7 @@ export function useRDPClient(session: ConnectionSession) {
       unlisteners.forEach(fn => fn());
       if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
     };
-  }, []);
+  }, [isClipboardDirectionEnabled]);
 
   // ─── Connect on mount, disconnect on unmount ───────────────────────
 
@@ -1481,6 +1501,14 @@ export function useRDPClient(session: ConnectionSession) {
   }, [isConnected, mouseEnabled, scaleCoords, sendInput, scrollSpeed, smoothScroll]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (isCanvasReleaseCombo(e.nativeEvent)) {
+      e.preventDefault();
+      canvasRef.current?.blur();
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      return;
+    }
     if (!isConnected || !keyboardEnabled) return;
     e.preventDefault();
 
@@ -1488,9 +1516,10 @@ export function useRDPClient(session: ConnectionSession) {
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: true, extended: scan.extended }], true);
     }
-  }, [isConnected, keyboardEnabled, sendInput]);
+  }, [isCanvasReleaseCombo, isConnected, keyboardEnabled, sendInput]);
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
+    if (isCanvasReleaseCombo(e.nativeEvent)) return;
     if (!isConnected || !keyboardEnabled) return;
     e.preventDefault();
 
@@ -1498,7 +1527,7 @@ export function useRDPClient(session: ConnectionSession) {
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: false, extended: scan.extended }], true);
     }
-  }, [isConnected, keyboardEnabled, sendInput]);
+  }, [isCanvasReleaseCombo, isConnected, keyboardEnabled, sendInput]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

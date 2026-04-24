@@ -10,6 +10,7 @@ mod commands {
     // Tauri types used unqualified in commands_cmds.rs
     pub use tauri::AppHandle;
     pub use tauri::ipc::{Channel, InvokeResponseBody};
+    pub use tauri::Manager;
 
     /// Adapter: wraps a Tauri `Channel<InvokeResponseBody>` as a `FrameChannel`.
     pub struct TauriFrameChannel(pub Channel<InvokeResponseBody>);

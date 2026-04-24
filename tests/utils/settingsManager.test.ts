@@ -62,6 +62,22 @@ describe('SettingsManager loadSettings', () => {
     expect(settings.networkDiscovery.hostnameTtl).toBe(300000);
     expect(settings.networkDiscovery.macTtl).toBe(300000);
   });
+
+  it('defaults SSH trust policy to always-ask while preserving explicit stored values', async () => {
+    await IndexedDbService.setItem('mremote-settings', {
+      theme: 'dark',
+    } as any);
+
+    const manager = SettingsManager.getInstance();
+    const settings = await manager.loadSettings();
+    expect(settings.sshTrustPolicy).toBe('always-ask');
+
+    await manager.saveSettings({ sshTrustPolicy: 'strict' });
+    SettingsManager.resetInstance();
+
+    const reloaded = await SettingsManager.getInstance().loadSettings();
+    expect(reloaded.sshTrustPolicy).toBe('strict');
+  });
 });
 
 describe('SettingsManager.benchmarkKeyDerivation', () => {

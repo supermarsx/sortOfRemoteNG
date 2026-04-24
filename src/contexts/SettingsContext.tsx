@@ -285,7 +285,7 @@ export const defaultSettings: GlobalSettings = {
   // Trust & Verification
   enableAutocomplete: false,
   tlsTrustPolicy: 'tofu',
-  sshTrustPolicy: 'tofu',
+  sshTrustPolicy: 'always-ask',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
   // Windows Remote Management Tools
@@ -395,7 +395,9 @@ export const defaultSettings: GlobalSettings = {
     localCursor: 'local' as const,
     // Device redirection
     clipboardRedirection: true,
+    clipboardDirection: 'bidirectional',
     printerRedirection: false,
+    printerOutputMode: 'spool-file',
     portRedirection: false,
     smartCardRedirection: false,
     webAuthnRedirection: false,

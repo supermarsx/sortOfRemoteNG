@@ -1,4 +1,5 @@
 use super::commands::*;
+use secrecy::SecretString;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +108,9 @@ pub async fn connect_rdp(
     let settings = ResolvedSettings::from_payload(&payload, requested_width, requested_height);
     let actual_width = settings.width;
     let actual_height = settings.height;
+    let cert_validation_mode = crate::rdp::cert_trust::ServerCertValidationMode::from_payload(&payload);
+
+    crate::rdp::cert_trust::initialize_store_path(app_handle.path().app_data_dir().ok());
 
     let session = RdpSession {
         id: session_id.clone(),
@@ -125,6 +129,7 @@ pub async fn connect_rdp(
 
     let stats = Arc::new(RdpSessionStats::new());
     let stats_clone = Arc::clone(&stats);
+    let password = SecretString::new(password);
 
     let sid = session_id.clone();
     let h = host.clone();
@@ -144,6 +149,12 @@ pub async fn connect_rdp(
 
     // Wrap the Tauri AppHandle as a DynEventEmitter for the crate-layer API.
     let emitter = app_handle_to_emitter(&ah);
+    let trust_context = crate::rdp::cert_trust::SessionPromptContext::new(
+        session_id.clone(),
+        cert_validation_mode,
+        crate::rdp::cert_trust::default_prompt_timeout(),
+        emitter.clone(),
+    );
     // Wrap the Tauri Channel as a DynFrameChannel.
     let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel(frame_channel));
 
@@ -190,6 +201,7 @@ pub async fn connect_rdp(
 
     // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
+        let _trust_guard = crate::rdp::cert_trust::bind_session_prompt_context(trust_context);
         run_rdp_session(
             sid,
             h,
@@ -214,7 +226,7 @@ pub async fn connect_rdp(
         cmd_tx,
         stats,
         _handle: handle,
-        cached_password: password.clone(),
+        cached_password: password,
         cached_domain: domain.clone(),
     };
 
@@ -589,6 +601,43 @@ pub async fn get_rdp_logs(
     } else {
         Ok(service.log_buffer.iter().cloned().collect())
     }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpCertTrustResponsePayload {
+    pub session_id: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub fingerprint: String,
+    pub decision: String,
+    #[serde(default)]
+    pub remember: bool,
+}
+
+#[tauri::command]
+pub async fn rdp_cert_trust_respond(
+    payload: RdpCertTrustResponsePayload,
+) -> Result<(), String> {
+    let approve = match payload.decision.trim().to_ascii_lowercase().as_str() {
+        "approve" | "accept" | "trust" | "yes" => true,
+        "reject" | "deny" | "no" => false,
+        _ => {
+            return Err(
+                "decision must be one of: approve, accept, trust, yes, reject, deny, no"
+                    .to_string(),
+            )
+        }
+    };
+
+    crate::rdp::cert_trust::submit_prompt_response(
+        payload.session_id,
+        payload.host,
+        payload.port,
+        payload.fingerprint,
+        approve,
+        payload.remember,
+    )
 }
 
 /// Advertise local clipboard text to the remote RDP session via CLIPRDR.

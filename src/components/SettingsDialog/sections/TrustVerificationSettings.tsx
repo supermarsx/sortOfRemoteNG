@@ -36,7 +36,7 @@ const POLICY_OPTIONS: { value: string; label: string; description: string }[] =
       value: "tofu",
       label: "Trust On First Use (TOFU)",
       description:
-        "Silently accept on first connection, warn if it changes later.",
+        "Prompt on first connection, then remember accepted identities and warn on later changes.",
     },
     {
       value: "always-ask",
@@ -93,7 +93,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           SSH Host Key Policy
         </h4>
       </div>
-      <Select value={mgr.settings.sshTrustPolicy ?? "tofu"} onChange={(v: string) =>
+      <Select value={mgr.settings.sshTrustPolicy ?? "always-ask"} onChange={(v: string) =>
           mgr.updateSettings({
             sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
           })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
@@ -127,11 +127,9 @@ const PolicyExplanations: React.FC = () => (
         </span>
         <p className="mt-0.5">
           The first time you connect to a host, its certificate or host key is
-          automatically accepted and stored. On subsequent connections the
-          stored identity is compared — if it changed you will see a warning so
-          you can decide whether the change is expected (e.g. a certificate
-          renewal) or suspicious. This is the recommended default for most
-          users.
+          shown to you and you decide whether to continue. If you choose to
+          remember it, subsequent connections compare against the stored
+          identity and warn if it changes later.
         </p>
       </div>
       <div>

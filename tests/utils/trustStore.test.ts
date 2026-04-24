@@ -5,6 +5,7 @@ import {
   removeIdentity,
   getStoredIdentity,
   getAllTrustRecords,
+  getEffectiveTrustPolicy,
 } from "../../src/utils/auth/trustStore";
 import type { SshHostKeyIdentity, CertIdentity } from "../../src/utils/auth/trustStore";
 
@@ -113,6 +114,16 @@ describe("trustStore", () => {
 
       expect(getStoredIdentity("host", 22, "ssh")).toBeUndefined();
       expect(getStoredIdentity("host", 22, "ssh", "conn-1")).toBeDefined();
+    });
+  });
+
+  describe("getEffectiveTrustPolicy", () => {
+    it("falls back to always-ask when no connection or global policy is set", () => {
+      expect(getEffectiveTrustPolicy(undefined, undefined)).toBe("always-ask");
+    });
+
+    it("prefers connection policy over global policy", () => {
+      expect(getEffectiveTrustPolicy("strict", "always-ask")).toBe("strict");
     });
   });
 });

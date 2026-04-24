@@ -27,6 +27,7 @@ disabled_commands!(
     rdp_get_thumbnail,
     rdp_save_screenshot,
     get_rdp_logs,
+    rdp_cert_trust_respond,
     rdp_clipboard_copy,
     rdp_clipboard_copy_files,
     rdp_clipboard_paste,

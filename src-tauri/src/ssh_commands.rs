@@ -23,10 +23,9 @@ mod types {
 }
 mod service {
     pub use crate::ssh::service::*;
-    
 }
 mod automation {
-    
+
     pub use crate::ssh::types::*;
     pub use crate::ssh::{ACTIVE_AUTOMATIONS, TERMINAL_BUFFERS};
     pub use chrono::Utc;
@@ -51,13 +50,13 @@ mod proxy_command {
     pub use std::time::Duration;
 }
 mod recording {
-    
+
     pub use crate::ssh::types::*;
     pub use crate::ssh::ACTIVE_RECORDINGS;
     pub use chrono::Utc;
 }
 mod tunnels {
-    
+
     pub use crate::ssh::types::*;
     pub use crate::ssh::{FTP_TUNNELS, RDP_TUNNELS, VNC_TUNNELS};
     pub use chrono::Utc;
@@ -66,17 +65,13 @@ mod tunnels {
 mod fido2 {
     pub use crate::ssh::fido2::*;
 }
-mod sk_keys {
-    
-}
+mod sk_keys {}
 mod x11 {
-    pub use crate::ssh::x11::*;
     pub use crate::ssh::types::*;
+    pub use crate::ssh::x11::*;
 }
 // Shims for crate-root-level modules
-mod script {
-    
-}
+mod script {}
 mod script_stub {
     pub use crate::script::*;
     pub const DISABLED_MESSAGE: &str =
@@ -84,6 +79,24 @@ mod script_stub {
 }
 mod ssh3 {
     pub use crate::ssh3::*;
+}
+
+#[tauri::command]
+pub fn ssh_respond_to_host_key_prompt(
+    session_id: String,
+    decision: crate::ssh::SshHostKeyPromptDecision,
+) -> Result<(), String> {
+    let sender = {
+        let mut pending = crate::ssh::PENDING_HOST_KEY_PROMPTS
+            .lock()
+            .map_err(|e| format!("Failed to lock host-key prompt map: {}", e))?;
+        pending.remove(&session_id)
+    }
+    .ok_or_else(|| format!("No pending host-key prompt found for session {}", session_id))?;
+
+    sender
+        .send(decision)
+        .map_err(|_| format!("Host-key prompt for session {} is no longer active", session_id))
 }
 
 // ── Include command wrappers ───────────────────────────────────────────
@@ -136,16 +149,16 @@ mod ssh3_inner {
 }
 
 // ── Re-exports ─────────────────────────────────────────────────────────
-pub(crate) use commands_inner::*;
 pub(crate) use automation_inner::*;
+pub(crate) use commands_inner::*;
 pub(crate) use diagnostics_inner::*;
 pub(crate) use highlighting_inner::*;
 pub(crate) use proxy_command_inner::*;
 pub(crate) use recording_inner::*;
-pub(crate) use tunnels_inner::*;
-pub(crate) use x11_inner::*;
 #[cfg(feature = "script-engine")]
 pub(crate) use script_inner::*;
 #[cfg(not(feature = "script-engine"))]
 pub(crate) use script_stub_inner::*;
 pub(crate) use ssh3_inner::*;
+pub(crate) use tunnels_inner::*;
+pub(crate) use x11_inner::*;

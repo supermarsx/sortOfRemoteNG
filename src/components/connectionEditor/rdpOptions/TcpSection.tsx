@@ -18,7 +18,7 @@ const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Maximum seconds to wait for the initial TCP connection. Increase for high-latency or unreliable networks." />
       </label>
       <label className="flex items-center gap-2 mb-1">
-        <Checkbox checked={rdp.tcp?.connectTimeoutSecs != null} onChange={(v: boolean) => updateRdp("tcp", { connectTimeoutSecs: v ? 10 : undefined })} className="CSS.checkbox" />
+        <Checkbox checked={rdp.tcp?.connectTimeoutSecs != null} onChange={(v: boolean) => updateRdp("tcp", { connectTimeoutSecs: v ? 10 : undefined })} className={CSS.checkbox} />
         <span className="text-xs text-[var(--color-textMuted)]">Override (uncheck to use global default)</span>
       </label>
       {rdp.tcp?.connectTimeoutSecs != null && (
@@ -49,7 +49,7 @@ const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
           <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Seconds between keep-alive probes. Lower values detect dead connections faster but add network overhead." />
         </label>
         <label className="flex items-center gap-2 mb-1">
-          <Checkbox checked={rdp.tcp?.keepAliveIntervalSecs != null} onChange={(v: boolean) => updateRdp("tcp", { keepAliveIntervalSecs: v ? 60 : undefined })} className="CSS.checkbox" />
+          <Checkbox checked={rdp.tcp?.keepAliveIntervalSecs != null} onChange={(v: boolean) => updateRdp("tcp", { keepAliveIntervalSecs: v ? 60 : undefined })} className={CSS.checkbox} />
           <span className="text-xs text-[var(--color-textMuted)]">Override (uncheck to use global default)</span>
         </label>
         {rdp.tcp?.keepAliveIntervalSecs != null && (

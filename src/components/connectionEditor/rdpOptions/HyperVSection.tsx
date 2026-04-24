@@ -9,7 +9,7 @@ const HyperVSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     icon={<Server size={14} className="text-primary" />}
   >
     <label className={CSS.label}>
-      <Checkbox checked={rdp.hyperv?.useVmId ?? false} onChange={(v: boolean) => updateRdp("hyperv", { useVmId: v })} className="CSS.checkbox" />
+      <Checkbox checked={rdp.hyperv?.useVmId ?? false} onChange={(v: boolean) => updateRdp("hyperv", { useVmId: v })} className={CSS.checkbox} />
       <span className="font-medium">Connect via VM ID</span>
     </label>
     <p className="text-xs text-[var(--color-textMuted)] ml-5 -mt-1">
@@ -52,7 +52,7 @@ const HyperVSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
 
     <div className="pt-2 mt-2 border-t border-[var(--color-border)]/60 space-y-1">
       <label className={CSS.label}>
-        <Checkbox checked={rdp.hyperv?.enhancedSessionMode ?? false} onChange={(v: boolean) => updateRdp("hyperv", { enhancedSessionMode: v })} className="CSS.checkbox" />
+        <Checkbox checked={rdp.hyperv?.enhancedSessionMode ?? false} onChange={(v: boolean) => updateRdp("hyperv", { enhancedSessionMode: v })} className={CSS.checkbox} />
         <span>Enhanced Session Mode</span>
       </label>
       <p className="text-xs text-[var(--color-textMuted)] ml-5">

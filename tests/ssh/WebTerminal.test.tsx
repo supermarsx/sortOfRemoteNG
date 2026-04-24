@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WebTerminal } from "../../src/components/ssh/WebTerminal";
 import { ConnectionSession } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { getStoredIdentity } from "../../src/utils/auth/trustStore";
 
 const mockConnection = {
   id: "test-connection",
@@ -89,8 +90,25 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 }));
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
 
 const mockInvoke = vi.mocked(tauriInvoke);
+const mockListen = vi.mocked(tauriListen);
+let hostKeyPromptListener:
+  | ((event: {
+      payload: {
+        session_id: string;
+        host: string;
+        port: number;
+        username: string;
+        status: "first_use" | "mismatch";
+        fingerprint: string;
+        key_type: string | null;
+        key_bits: number | null;
+        public_key: string | null;
+      };
+    }) => Promise<void>)
+  | undefined;
 
 // Mock useConnections hook
 vi.mock("../../src/contexts/useConnections", () => ({
@@ -125,7 +143,15 @@ describe("WebTerminal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDispatch.mockClear();
+    hostKeyPromptListener = undefined;
+    localStorage.clear();
     mockInvoke.mockResolvedValue("test-session-id");
+    mockListen.mockImplementation(async (event, callback) => {
+      if (event === "ssh://host-key-prompt") {
+        hostKeyPromptListener = callback as typeof hostKeyPromptListener;
+      }
+      return () => {};
+    });
   });
 
   describe("SSH Connection", () => {
@@ -171,7 +197,7 @@ describe("WebTerminal", () => {
             // Optimized values for faster connections
             connect_timeout: 15,
             keep_alive_interval: 30,
-            strict_host_key_checking: false,
+            strict_host_key_checking: true,
             known_hosts_path: null,
             tcp_no_delay: true,
             tcp_keepalive: true,
@@ -254,6 +280,155 @@ describe("WebTerminal", () => {
           screen.getByText("Connection refused - please check the host and port"),
         ).toBeInTheDocument();
       });
+    });
+
+    it("prompts on first-use host keys and stores them after accept-and-save", async () => {
+      let resolveConnect: ((sessionId: string) => void) | undefined;
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "connect_ssh") {
+          return new Promise<string>((resolve) => {
+            resolveConnect = resolve;
+          });
+        }
+
+        if (command === "ssh_respond_to_host_key_prompt") {
+          if ((args as { decision: string }).decision === "accept_and_save") {
+            resolveConnect?.("ssh-session-123");
+          }
+          return Promise.resolve(undefined);
+        }
+
+        if (command === "start_shell") {
+          return Promise.resolve("shell-123");
+        }
+
+        return Promise.resolve(undefined);
+      });
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(hostKeyPromptListener).toBeDefined();
+      });
+
+      await act(async () => {
+        void hostKeyPromptListener?.({
+          payload: {
+            session_id: "prompt-session-123",
+            host: "192.168.1.100",
+            port: 22,
+            username: "testuser",
+            status: "first_use",
+            fingerprint: "SHA256:new-host-key",
+            key_type: "ssh-ed25519",
+            key_bits: 256,
+            public_key: "AAAAC3NzaC1lZDI1NTE5AAAAITestPublicKey",
+          },
+        });
+      });
+
+      expect(
+        await screen.findByText("Unknown Host Key"),
+      ).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("checkbox", {
+          name: /remember and trust for future connections/i,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /accept & continue/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+          sessionId: "prompt-session-123",
+          decision: "accept_and_save",
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      expect(
+        getStoredIdentity("192.168.1.100", 22, "ssh", "test-connection")?.identity.fingerprint,
+      ).toBe("SHA256:new-host-key");
+    });
+
+    it("aborts the connection when the user rejects a first-use host key", async () => {
+      let rejectConnect: ((error?: unknown) => void) | undefined;
+
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "connect_ssh") {
+          return new Promise<string>((_, reject) => {
+            rejectConnect = reject;
+          });
+        }
+
+        if (command === "ssh_respond_to_host_key_prompt") {
+          if ((args as { decision: string }).decision === "reject") {
+            rejectConnect?.(new Error("Host key verification failed: key rejected by user"));
+          }
+          return Promise.resolve(undefined);
+        }
+
+        if (command === "start_shell") {
+          return Promise.resolve("shell-123");
+        }
+
+        return Promise.resolve(undefined);
+      });
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(hostKeyPromptListener).toBeDefined();
+      });
+
+      await act(async () => {
+        void hostKeyPromptListener?.({
+          payload: {
+            session_id: "prompt-session-reject",
+            host: "192.168.1.100",
+            port: 22,
+            username: "testuser",
+            status: "first_use",
+            fingerprint: "SHA256:reject-host-key",
+            key_type: "ssh-ed25519",
+            key_bits: 256,
+            public_key: "AAAAC3NzaC1lZDI1NTE5AAAAIRejectPublicKey",
+          },
+        });
+      });
+
+      const dialogTitle = await screen.findByText("Unknown Host Key");
+      expect(dialogTitle).toBeInTheDocument();
+      const modal = dialogTitle.closest('[role="dialog"]') ?? dialogTitle.parentElement?.parentElement?.parentElement;
+      expect(modal).toBeTruthy();
+
+      fireEvent.click(
+        within(modal as HTMLElement).getByRole("button", { name: /^disconnect$/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
+          sessionId: "prompt-session-reject",
+          decision: "reject",
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(
+          screen.getByText("Host key verification failed - server may have changed"),
+        ).toBeInTheDocument();
+      });
+
+      expect(
+        getStoredIdentity("192.168.1.100", 22, "ssh", "test-connection"),
+      ).toBeUndefined();
     });
   });
 

@@ -56,21 +56,8 @@ fn test_config() -> SshConnectionConfig {
         ssh_version: "2".to_string(),
         preferred_ciphers: Vec::new(),
         preferred_macs: Vec::new(),
-        preferred_kex: vec![
-            "curve25519-sha256".to_string(),
-            "curve25519-sha256@libssh.org".to_string(),
-            "ecdh-sha2-nistp256".to_string(),
-            "ecdh-sha2-nistp384".to_string(),
-            "ecdh-sha2-nistp521".to_string(),
-            "diffie-hellman-group14-sha256".to_string(),
-        ],
-        preferred_host_key_algorithms: vec![
-            "ssh-ed25519".to_string(),
-            "ecdsa-sha2-nistp256".to_string(),
-            "rsa-sha2-512".to_string(),
-            "rsa-sha2-256".to_string(),
-            "ssh-rsa".to_string(),
-        ],
+        preferred_kex: Vec::new(),
+        preferred_host_key_algorithms: Vec::new(),
         x11_forwarding: None,
         proxy_command: None,
         pty_type: None,
@@ -97,7 +84,11 @@ async fn ssh_connect_exec_disconnect_golden_path() {
 
     // ── exec ─────────────────────────────────────────────────────────────
     let output = svc
-        .execute_command(&session_id, "echo sorng-golden-path".to_string(), Some(10_000))
+        .execute_command(
+            &session_id,
+            "echo sorng-golden-path".to_string(),
+            Some(10_000),
+        )
         .await
         .expect("exec of `echo` failed");
     assert!(

@@ -8,9 +8,11 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
+use std::process::Command;
 
 use sorng_core::events::DynEventEmitter;
 
+use super::super::settings::PrinterOutputMode;
 use super::pdu::*;
 
 /// A single redirected printer device.
@@ -20,6 +22,7 @@ pub struct PrinterDevice {
     output_dir: PathBuf,
     emitter: DynEventEmitter,
     session_id: String,
+    output_mode: PrinterOutputMode,
     open_jobs: HashMap<u32, PrintJob>,
     next_file_id: u32,
 }
@@ -37,6 +40,7 @@ impl PrinterDevice {
         output_dir: PathBuf,
         session_id: String,
         emitter: DynEventEmitter,
+        output_mode: PrinterOutputMode,
     ) -> Self {
         // Ensure output directory exists
         let _ = fs::create_dir_all(&output_dir);
@@ -46,6 +50,7 @@ impl PrinterDevice {
             output_dir,
             emitter,
             session_id,
+            output_mode,
             open_jobs: HashMap::new(),
             next_file_id: 1,
         }
@@ -138,8 +143,22 @@ impl PrinterDevice {
     }
 
     fn handle_close(&mut self, file_id: u32) -> (u32, Vec<u8>) {
-        if let Some(job) = self.open_jobs.remove(&file_id) {
+        if let Some(mut job) = self.open_jobs.remove(&file_id) {
+            let _ = job.file.flush();
+            let _ = job.file.sync_all();
             drop(job.file);
+
+            let native_print_error = if self.output_mode == PrinterOutputMode::NativePrint {
+                try_native_print(&job.path).err()
+            } else {
+                None
+            };
+            let delivered_mode = if native_print_error.is_none() && self.output_mode == PrinterOutputMode::NativePrint {
+                "native-print"
+            } else {
+                "spool-file"
+            };
+
             log::info!(
                 "RDPDR printer {}: print job complete -> {:?} ({} bytes)",
                 self.session_id, job.path, job.bytes_written
@@ -150,9 +169,43 @@ impl PrinterDevice {
                 "filePath": job.path.to_string_lossy(),
                 "fileName": job.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
                 "size": job.bytes_written,
+                "deliveryMode": delivered_mode,
+                "nativePrintRequested": self.output_mode == PrinterOutputMode::NativePrint,
+                "nativePrintError": native_print_error,
             }));
         }
         (STATUS_SUCCESS, vec![0u8; 5]) // padding per spec
+    }
+}
+
+fn try_native_print(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = "try { Start-Process -FilePath $args[0] -Verb Print -PassThru | Wait-Process -Timeout 10; exit 0 } catch { Write-Error $_; exit 1 }";
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .arg(path.as_os_str())
+            .status()
+            .map_err(|error| format!("failed to launch native print command: {error}"))?;
+
+        if status.success() {
+            return Ok(());
+        }
+
+        return Err(format!("native print command exited with status {status}"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        for command in ["lpr", "lp"] {
+            match Command::new(command).arg(path.as_os_str()).status() {
+                Ok(status) if status.success() => return Ok(()),
+                Ok(_) => continue,
+                Err(_) => continue,
+            }
+        }
+
+        Err("no native print command succeeded (tried lpr, lp)".to_string())
     }
 }
 

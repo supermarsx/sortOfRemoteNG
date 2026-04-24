@@ -36,7 +36,9 @@ pub async fn start_shell(
     session_id: String,
 ) -> Result<String, String> {
     let mut ssh = state.lock().await;
-    let emitter = ssh.event_emitter.clone()
+    let emitter = ssh
+        .event_emitter
+        .clone()
         .ok_or_else(|| "No event emitter configured".to_string())?;
     ssh.start_shell(&session_id, emitter).await
 }
@@ -289,7 +291,9 @@ pub async fn reattach_session(
         return Ok(shell.id.clone());
     }
 
-    let emitter = ssh.event_emitter.clone()
+    let emitter = ssh
+        .event_emitter
+        .clone()
         .ok_or_else(|| "No event emitter configured".to_string())?;
     ssh.start_shell(&session_id, emitter).await
 }

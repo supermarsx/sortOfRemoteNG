@@ -3,10 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ironrdp_blocking::Framed;
+use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 
+use super::cert_trust::{self, ChainStatus, PresentedCertificate};
 use super::{RdpTlsConfig, RdpTlsStream};
 
 // ---- Network client for CredSSP HTTP requests ----
@@ -132,72 +134,101 @@ impl crate::ironrdp::connector::sspi::network_client::NetworkClient for Blocking
 // ---- TLS upgrade helper ----
 
 #[derive(Debug)]
-struct NoCertificateVerification;
-
-impl ServerCertVerifier for NoCertificateVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::ED25519,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-        ]
-    }
+struct PromptingVerifier {
+    inner: Arc<WebPkiServerVerifier>,
 }
 
-pub fn build_tls_config(
-    accept_invalid_certs: bool,
-) -> Result<RdpTlsConfig, Box<dyn std::error::Error + Send + Sync>> {
-    let mut config = if accept_invalid_certs {
-        rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
-            .with_no_client_auth()
-    } else {
+impl PromptingVerifier {
+    fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let mut roots = rustls::RootCertStore::empty();
         let cert_result = rustls_native_certs::load_native_certs();
         for cert in cert_result.certs {
             roots.add(cert)?;
         }
 
-        rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth()
-    };
+        let inner = WebPkiServerVerifier::builder(Arc::new(roots)).build()?;
+        Ok(Self { inner })
+    }
+}
+
+impl ServerCertVerifier for PromptingVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: rustls::pki_types::UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        let port = cert_trust::current_tls_port().ok_or_else(|| {
+            rustls::Error::General("missing TLS trust context for server port".to_string())
+        })?;
+        let host = server_name_to_string(server_name);
+        let cert_details = extract_cert_details_from_der(end_entity.as_ref()).map_err(|error| {
+            rustls::Error::General(format!("failed to inspect server certificate: {error}"))
+        })?;
+        let presented = PresentedCertificate {
+            host,
+            port,
+            fingerprint: cert_details.fingerprint.clone(),
+            subject: cert_details.subject.clone(),
+            issuer: cert_details.issuer.clone(),
+            valid_from: cert_details.valid_from.clone(),
+            valid_to: cert_details.valid_to.clone(),
+            serial: cert_details.serial.clone(),
+            signature_algorithm: cert_details.signature_algorithm.clone(),
+            san: cert_details.san.clone(),
+            pem: cert_details.pem.clone(),
+        };
+
+        match self
+            .inner
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+        {
+            Ok(_) => cert_trust::evaluate_presented_certificate(presented, ChainStatus::Valid)
+                .map(|_| ServerCertVerified::assertion())
+                .map_err(|error| rustls::Error::General(error.to_string())),
+            Err(chain_error) => {
+                let chain_status = ChainStatus::Invalid(chain_error.to_string());
+                match cert_trust::evaluate_presented_certificate(presented, chain_status) {
+                    Ok(_) => Ok(ServerCertVerified::assertion()),
+                    Err(cert_trust::CertTrustError::InvalidChain(_)) => Err(chain_error),
+                    Err(error) => Err(rustls::Error::General(error.to_string())),
+                }
+            }
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
+pub fn build_tls_config(
+    _accept_invalid_certs: bool,
+) -> Result<RdpTlsConfig, Box<dyn std::error::Error + Send + Sync>> {
+    let mut config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PromptingVerifier::new()?))
+        .with_no_client_auth();
 
     // Disable TLS session resumption.  RDP servers perform a non-standard
     // TLS upgrade mid-protocol; when rustls tries to resume a cached session
@@ -221,12 +252,17 @@ pub fn tls_upgrade(
         Some(config) => config,
         None => build_tls_config(true)?,
     };
+    let peer_port = stream
+        .peer_addr()
+        .map(|addr| addr.port())
+        .map_err(|error| format!("Failed to inspect TLS peer address: {error}"))?;
 
     let server_name = ServerName::try_from(server_name.to_owned())
         .map_err(|_| format!("Invalid TLS server name: {server_name}"))?;
     let mut client = rustls::ClientConnection::new(tls_config, server_name)
         .map_err(|e| format!("TLS client creation failed: {e}"))?;
     let mut tcp_stream = stream;
+    let _trust_context = cert_trust::enter_tls_handshake_context(peer_port);
     client
         .complete_io(&mut tcp_stream)
         .map_err(|e| format!("TLS handshake failed: {e}"))?;
@@ -265,16 +301,12 @@ pub fn extract_server_public_key(
 
 /// Extract SHA-256 fingerprint of the server's TLS certificate
 pub fn extract_cert_fingerprint(tls_stream: &RdpTlsStream) -> Option<String> {
-    use sha2::{Digest, Sha256};
-
     let der = tls_stream
         .conn
         .peer_certificates()
         .and_then(|certs| certs.first())
         .map(|cert| cert.as_ref().to_vec())?;
-    let hash = Sha256::digest(&der);
-    let hex: Vec<String> = hash.iter().map(|b| format!("{b:02x}")).collect();
-    Some(hex.join(":"))
+    Some(fingerprint_from_der(&der))
 }
 
 /// Full certificate details extracted from the server's TLS certificate.
@@ -293,22 +325,26 @@ pub struct RdpCertDetails {
 
 /// Extract full certificate details from the server's TLS certificate.
 pub fn extract_cert_details(tls_stream: &RdpTlsStream) -> Option<RdpCertDetails> {
-    use base64::Engine;
-    use sha2::{Digest, Sha256};
-    use x509_cert::der::Decode;
-
     let der = tls_stream
         .conn
         .peer_certificates()
         .and_then(|certs| certs.first())
         .map(|cert| cert.as_ref().to_vec())?;
 
+    extract_cert_details_from_der(&der).ok()
+}
+
+fn extract_cert_details_from_der(
+    der: &[u8],
+) -> Result<RdpCertDetails, Box<dyn std::error::Error + Send + Sync>> {
+    use base64::Engine;
+    use x509_cert::der::Decode;
+
     // Fingerprint
-    let hash = Sha256::digest(&der);
-    let fingerprint: String = hash.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":");
+    let fingerprint = fingerprint_from_der(der);
 
     // PEM encode
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&der);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(der);
     let pem = format!(
         "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
         b64.as_bytes()
@@ -319,12 +355,12 @@ pub fn extract_cert_details(tls_stream: &RdpTlsStream) -> Option<RdpCertDetails>
     );
 
     // Parse X.509
-    let cert = match x509_cert::Certificate::from_der(&der) {
+    let cert = match x509_cert::Certificate::from_der(der) {
         Ok(c) => c,
         Err(e) => {
             log::warn!("Failed to parse X.509 certificate for details: {e}");
             // Return minimal info with just the fingerprint and PEM
-            return Some(RdpCertDetails {
+            return Ok(RdpCertDetails {
                 fingerprint,
                 subject: String::new(),
                 issuer: String::new(),
@@ -363,7 +399,7 @@ pub fn extract_cert_details(tls_stream: &RdpTlsStream) -> Option<RdpCertDetails>
     // Subject Alternative Names
     let san = extract_san(tbs);
 
-    Some(RdpCertDetails {
+    Ok(RdpCertDetails {
         fingerprint,
         subject,
         issuer,
@@ -374,6 +410,27 @@ pub fn extract_cert_details(tls_stream: &RdpTlsStream) -> Option<RdpCertDetails>
         san,
         pem,
     })
+}
+
+fn fingerprint_from_der(der: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let hash = Sha256::digest(der);
+    hash.iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+fn server_name_to_string(server_name: &ServerName<'_>) -> String {
+    match server_name {
+        ServerName::DnsName(name) => name.as_ref().to_string(),
+        ServerName::IpAddress(addr) => match addr {
+            rustls::pki_types::IpAddr::V4(v4) => std::net::Ipv4Addr::from(*v4).to_string(),
+            rustls::pki_types::IpAddr::V6(v6) => std::net::Ipv6Addr::from(*v6).to_string(),
+        },
+        _ => "<unsupported-server-name>".to_string(),
+    }
 }
 
 /// Format an X.509 Time value to an ISO 8601 string.

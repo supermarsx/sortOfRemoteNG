@@ -12,6 +12,7 @@ use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use crate::ironrdp::session::image::DecodedImage;
 use crate::ironrdp::session::{ActiveStage, ActiveStageOutput};
 use crate::ironrdp_blocking::Framed;
+use secrecy::{ExposeSecret, SecretString};
 use sorng_core::events::DynEventEmitter;
 use super::clipboard::{self, SharedClipboardState};
 use super::frame_channel::DynFrameChannel;
@@ -20,7 +21,7 @@ use tokio::sync::mpsc;
 use super::frame_delivery::*;
 use super::frame_store::SharedFrameStoreState;
 use super::network::{extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
-use super::settings::{build_bitmap_codecs, ResolvedSettings};
+use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
 use super::{RdpTlsConfig, RdpTlsStream};
@@ -176,7 +177,7 @@ pub fn run_rdp_session(
     host: String,
     port: u16,
     username: String,
-    password: String,
+    password: SecretString,
     domain: Option<String>,
     settings: ResolvedSettings,
     event_emitter: DynEventEmitter,
@@ -199,7 +200,7 @@ pub fn run_rdp_session(
             &host,
             port,
             &username,
-            &password,
+            password.expose_secret(),
             domain.as_deref(),
             &settings,
             &event_emitter,
@@ -217,7 +218,7 @@ pub fn run_rdp_session(
             &host,
             port,
             &username,
-            &password,
+            password.expose_secret(),
             domain.as_deref(),
             &settings,
             &event_emitter,
@@ -326,6 +327,31 @@ pub fn build_negotiation_combos(
     }
 }
 
+
+#[doc(hidden)]
+pub fn effective_drive_redirections(settings: &ResolvedSettings) -> Vec<DriveRedirectionConfig> {
+    if settings.drive_redirection_enabled {
+        settings.drive_redirections.clone()
+    } else {
+        Vec::new()
+    }
+}
+
+#[doc(hidden)]
+pub fn should_register_rdpdr(settings: &ResolvedSettings) -> bool {
+    (settings.drive_redirection_enabled && !settings.drive_redirections.is_empty())
+        || settings.printers_enabled
+        || settings.ports_enabled
+        || settings.smart_cards_enabled
+}
+
+fn rdpdr_device_flags(settings: &ResolvedSettings) -> super::rdpdr::DeviceFlags {
+    super::rdpdr::DeviceFlags {
+        printers: settings.printers_enabled,
+        ports: settings.ports_enabled,
+        smart_cards: settings.smart_cards_enabled,
+    }
+}
 /// Auto-detect negotiation: retry with different protocol combinations until
 /// one works or all are exhausted.
 ///
@@ -779,11 +805,9 @@ fn establish_rdp_connection(
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
     let mut connector = ClientConnector::new(config, server_socket_addr);
 
-    // Check if RDPDR devices are configured (used for both SVC and DVC registration)
-    let has_rdpdr_devices = !settings.drive_redirections.is_empty()
-        || settings.printers_enabled
-        || settings.ports_enabled
-        || settings.smart_cards_enabled;
+    let redirected_drives = effective_drive_redirections(settings);
+    let has_rdpdr_devices = should_register_rdpdr(settings);
+    let rdpdr_device_flags = rdpdr_device_flags(settings);
 
     // -- Register RDPGFX Dynamic Virtual Channel (H.264 hardware decode) --
     let gfx_frame_rx = if settings.gfx_enabled {
@@ -800,12 +824,9 @@ fn establish_rdp_connection(
             let rdpdr_dvc = super::rdpdr::RdpdrDvcProcessor::new(
                 session_id.to_string(),
                 event_emitter.clone(),
-                if settings.drive_redirection_enabled { settings.drive_redirections.clone() } else { settings.drive_redirections.clone() },
-                super::rdpdr::DeviceFlags {
-                    printers: settings.printers_enabled,
-                    ports: settings.ports_enabled,
-                    smart_cards: settings.smart_cards_enabled,
-                },
+                redirected_drives.clone(),
+                rdpdr_device_flags.clone(),
+                settings.printer_output_mode,
             );
             drdynvc = drdynvc.with_dynamic_channel(rdpdr_dvc);
             log::info!("RDP session {session_id}: RDPDR DVC processor registered");
@@ -829,12 +850,9 @@ fn establish_rdp_connection(
         let rdpdr_dvc = super::rdpdr::RdpdrDvcProcessor::new(
             session_id.to_string(),
             event_emitter.clone(),
-            settings.drive_redirections.clone(),
-            super::rdpdr::DeviceFlags {
-                printers: settings.printers_enabled,
-                ports: settings.ports_enabled,
-                smart_cards: settings.smart_cards_enabled,
-            },
+            redirected_drives.clone(),
+            rdpdr_device_flags.clone(),
+            settings.printer_output_mode,
         );
         let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(rdpdr_dvc);
         if settings.enable_audio_recording {
@@ -851,7 +869,9 @@ fn establish_rdp_connection(
 
     // -- Register CLIPRDR Static Virtual Channel (clipboard redirection) --
     let clipboard_state: Option<SharedClipboardState> = if settings.clipboard_enabled {
-        let clip_state = Arc::new(Mutex::new(clipboard::ClipboardState::new()));
+        let clip_state = Arc::new(Mutex::new(clipboard::ClipboardState::new(
+            settings.clipboard_direction,
+        )));
         let backend = clipboard::AppCliprdrBackend::new(
             session_id.to_string(),
             event_emitter.clone(),
@@ -870,12 +890,9 @@ fn establish_rdp_connection(
         let rdpdr_client = super::rdpdr::RdpdrClient::new(
             session_id.to_string(),
             event_emitter.clone(),
-            settings.drive_redirections.clone(),
-            super::rdpdr::DeviceFlags {
-                printers: settings.printers_enabled,
-                ports: settings.ports_enabled,
-                smart_cards: settings.smart_cards_enabled,
-            },
+            redirected_drives.clone(),
+            rdpdr_device_flags,
+            settings.printer_output_mode,
         );
         connector.attach_static_channel(rdpdr_client);
         // Windows Server requires rdpsnd to complete format negotiation
@@ -887,12 +904,12 @@ fn establish_rdp_connection(
         ));
         log::info!(
             "RDP session {session_id}: RDPDR SVC registered ({} drives, printers={}, ports={}, smartcards={})",
-            settings.drive_redirections.len(),
+            redirected_drives.len(),
             settings.printers_enabled,
             settings.ports_enabled,
             settings.smart_cards_enabled,
         );
-        for (i, d) in settings.drive_redirections.iter().enumerate() {
+        for (i, d) in redirected_drives.iter().enumerate() {
             log::info!(
                 "RDP session {session_id}: drive[{i}] name='{}' path='{}' readOnly={} preferredLetter={:?}",
                 d.name, d.path, d.read_only, d.preferred_letter,
@@ -1436,8 +1453,19 @@ fn run_active_session_loop(
                 }
                 Ok(RdpCommand::ClipboardCopy(text)) => {
                     if let Some(ref clip_state) = est.clipboard_state {
-                        if let Ok(mut state) = clip_state.lock() {
-                            state.local_text = Some(text);
+                        let allowed = if let Ok(mut state) = clip_state.lock() {
+                            let allowed = state.allows_client_to_server();
+                            state.local_text = if allowed { Some(text.clone()) } else { None };
+                            allowed
+                        } else {
+                            false
+                        };
+
+                        if !allowed {
+                            log::info!(
+                                "RDP session {session_id}: blocked local-to-remote clipboard copy by direction policy"
+                            );
+                            continue;
                         }
                         // Advertise CF_UNICODETEXT to the server
                         if let Some(cliprdr) = est.active_stage
@@ -1462,6 +1490,19 @@ fn run_active_session_loop(
                     }
                 }
                 Ok(RdpCommand::ClipboardPaste) => {
+                    let allowed = est
+                        .clipboard_state
+                        .as_ref()
+                        .and_then(|clip_state| clip_state.lock().ok().map(|state| state.allows_server_to_client()))
+                        .unwrap_or(false);
+
+                    if !allowed {
+                        log::info!(
+                            "RDP session {session_id}: blocked remote-to-local clipboard paste by direction policy"
+                        );
+                        continue;
+                    }
+
                     if let Some(cliprdr) = est.active_stage
                         .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                     {
@@ -1483,14 +1524,29 @@ fn run_active_session_loop(
                 Ok(RdpCommand::ClipboardCopyFiles(entries)) => {
                     if let Some(ref clip_state) = est.clipboard_state {
                         // Store staged files and reset progress
-                        if let Ok(mut state) = clip_state.lock() {
-                            state.staged_files = entries.iter().map(|e| clipboard::StagedFile {
-                                name: e.name.clone(),
-                                size: e.size,
-                                path: e.path.clone(),
-                                is_directory: e.is_directory,
-                            }).collect();
+                        let allowed = if let Ok(mut state) = clip_state.lock() {
+                            let allowed = state.allows_client_to_server();
+                            state.staged_files = if allowed {
+                                entries.iter().map(|e| clipboard::StagedFile {
+                                    name: e.name.clone(),
+                                    size: e.size,
+                                    path: e.path.clone(),
+                                    is_directory: e.is_directory,
+                                }).collect()
+                            } else {
+                                Vec::new()
+                            };
                             state.file_bytes_transferred = 0;
+                            allowed
+                        } else {
+                            false
+                        };
+
+                        if !allowed {
+                            log::info!(
+                                "RDP session {session_id}: blocked local-to-remote file clipboard copy by direction policy"
+                            );
+                            continue;
                         }
                         // Advertise FileGroupDescriptorW format to server
                         if let Some(cliprdr) = est.active_stage
@@ -1966,15 +2022,21 @@ fn run_active_session_loop(
             };
             if let Some(request) = pending {
                 let is_file_list = request.format == crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::FILEGROUPDESCRIPTORW_ID);
-                let (local_text, staged_files) = {
+                let (local_text, staged_files, allowed) = {
                     let state = clip_state.lock().expect("lock poisoned");
-                    (state.local_text.clone(), state.staged_files.clone())
+                    (
+                        state.local_text.clone(),
+                        state.staged_files.clone(),
+                        state.allows_client_to_server(),
+                    )
                 };
 
                 if let Some(cliprdr) = est.active_stage
                     .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                 {
-                    let response = if is_file_list && !staged_files.is_empty() {
+                    let response = if !allowed {
+                        crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_error()
+                    } else if is_file_list && !staged_files.is_empty() {
                         clipboard::encode_file_list_response(&staged_files)
                     } else if let Some(ref text) = local_text {
                         crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_data(
@@ -2004,14 +2066,19 @@ fn run_active_session_loop(
                 state.pending_file_contents_request.take()
             };
             if let Some(request) = pending_fcr {
-                let staged_files = clip_state.lock().expect("lock poisoned").staged_files.clone();
+                let (staged_files, allowed) = {
+                    let state = clip_state.lock().expect("lock poisoned");
+                    (state.staged_files.clone(), state.allows_client_to_server())
+                };
                 if let Some(file) = staged_files.get(request.index as usize) {
                     if let Some(cliprdr) = est.active_stage
                         .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                     {
                         use crate::ironrdp_cliprdr::pdu::FileContentsFlags;
 
-                        let response = if request.flags.contains(FileContentsFlags::SIZE) {
+                        let response = if !allowed {
+                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(request.stream_id)
+                        } else if request.flags.contains(FileContentsFlags::SIZE) {
                             crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_size_response(
                                 request.stream_id, file.size,
                             )

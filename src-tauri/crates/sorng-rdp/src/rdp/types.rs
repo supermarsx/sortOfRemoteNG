@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use super::frame_channel::DynFrameChannel;
 use super::wake_channel::WakeSender;
@@ -170,7 +171,7 @@ pub struct RdpActiveConnection {
     pub _handle: tokio::task::JoinHandle<()>,
     /// Cached password for automatic reconnection (CredSSP re-auth).
     #[allow(dead_code)]
-    pub cached_password: String,
+    pub cached_password: SecretString,
     /// Cached domain for automatic reconnection.
     #[allow(dead_code)]
     pub cached_domain: Option<String>,
