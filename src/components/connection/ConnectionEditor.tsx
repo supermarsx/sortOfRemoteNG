@@ -547,59 +547,60 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             })} variant="form" min={1} max={65535} data-testid="editor-port" />
       </div>
     </div>
-    {/* Username + Password row */}
-    <div className="grid grid-cols-2 gap-2">
-      <div>
-        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-          Username
-          <InfoTooltip text={
-            p === 'rdp' ? 'Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).'
-            : p === 'ssh' ? 'SSH login username. Used for password or key-based authentication.'
-            : p === 'winrm' ? 'Account for WinRM Basic auth. Domain accounts use the Domain field below.'
-            : p === 'vnc' ? 'VNC authentication usually only needs a password, not a username.'
-            : 'Username for authentication with the remote service.'
-          } />
-        </label>
-        <input
-          type="text"
-          data-testid="editor-username"
-          value={mgr.formData.username || ""}
-          onChange={(e) =>
-            mgr.setFormData({ ...mgr.formData, username: e.target.value })
-          }
-          className="sor-form-input text-sm"
-          placeholder={
-            p === 'rdp' ? 'Administrator'
-            : p === 'ssh' ? 'root'
-            : p === 'winrm' ? 'Administrator'
-            : p === 'vnc' ? '(optional)'
-            : 'admin'
-          }
-        />
+    {p !== 'ssh' && (
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+            Username
+            <InfoTooltip text={
+              p === 'rdp' ? 'Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).'
+              : p === 'ssh' ? 'SSH login username. Used for password or key-based authentication.'
+              : p === 'winrm' ? 'Account for WinRM Basic auth. Domain accounts use the Domain field below.'
+              : p === 'vnc' ? 'VNC authentication usually only needs a password, not a username.'
+              : 'Username for authentication with the remote service.'
+            } />
+          </label>
+          <input
+            type="text"
+            data-testid="editor-username"
+            value={mgr.formData.username || ""}
+            onChange={(e) =>
+              mgr.setFormData({ ...mgr.formData, username: e.target.value })
+            }
+            className="sor-form-input text-sm"
+            placeholder={
+              p === 'rdp' ? 'Administrator'
+              : p === 'ssh' ? 'root'
+              : p === 'winrm' ? 'Administrator'
+              : p === 'vnc' ? '(optional)'
+              : 'admin'
+            }
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+            Password
+            <InfoTooltip text={
+              p === 'rdp' ? 'Windows account password. Sent via CredSSP/NLA during the RDP handshake.'
+              : p === 'ssh' ? 'SSH password. Leave empty if using key-based authentication.'
+              : p === 'winrm' ? 'Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security).'
+              : p === 'vnc' ? 'VNC server password. Most VNC servers only use password authentication.'
+              : 'Password for authentication with the remote service.'
+            } />
+          </label>
+          <PasswordInput
+            data-testid="editor-password"
+            value={mgr.formData.password || ""}
+            onChange={(e) =>
+              mgr.setFormData({ ...mgr.formData, password: e.target.value })
+            }
+            isSaved={!mgr.isNewConnection && !!mgr.formData.password}
+            className="sor-form-input text-sm"
+            placeholder="••••••••"
+          />
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-          Password
-          <InfoTooltip text={
-            p === 'rdp' ? 'Windows account password. Sent via CredSSP/NLA during the RDP handshake.'
-            : p === 'ssh' ? 'SSH password. Leave empty if using key-based authentication.'
-            : p === 'winrm' ? 'Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security).'
-            : p === 'vnc' ? 'VNC server password. Most VNC servers only use password authentication.'
-            : 'Password for authentication with the remote service.'
-          } />
-        </label>
-        <PasswordInput
-          data-testid="editor-password"
-          value={mgr.formData.password || ""}
-          onChange={(e) =>
-            mgr.setFormData({ ...mgr.formData, password: e.target.value })
-          }
-          isSaved={!mgr.isNewConnection && !!mgr.formData.password}
-          className="sor-form-input text-sm"
-          placeholder="••••••••"
-        />
-      </div>
-    </div>
+    )}
   </div>
   );
 };
@@ -610,7 +611,11 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
 const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-3 space-y-2">
-    <SSHOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+    <SSHOptions
+      formData={mgr.formData}
+      setFormData={mgr.setFormData}
+      sshSecretManager={mgr.sshSecrets}
+    />
     <HTTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <CloudProviderOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <RDPOptions formData={mgr.formData} setFormData={mgr.setFormData} />

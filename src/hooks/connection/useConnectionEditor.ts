@@ -111,6 +111,24 @@ const DEFAULT_FORM: Partial<Connection> = {
   httpHeaders: {},
 };
 
+type ManagedSshSecretField = "password" | "passphrase" | "privateKey";
+
+export interface ManagedSshSecretsController {
+  passwordInputRef: React.RefObject<HTMLInputElement | null>;
+  passphraseInputRef: React.RefObject<HTMLInputElement | null>;
+  privateKeyInputRef: React.RefObject<HTMLTextAreaElement | null>;
+  hasPassword: boolean;
+  hasPassphrase: boolean;
+  hasPrivateKey: boolean;
+  handlePasswordChange: (value: string) => void;
+  handlePassphraseChange: (value: string) => void;
+  handlePrivateKeyChange: (value: string) => void;
+  getPassword: () => string;
+  getPassphrase: () => string;
+  getPrivateKey: () => string;
+  clearAll: () => void;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Hook
    ═══════════════════════════════════════════════════════════════ */
@@ -133,6 +151,159 @@ export function useConnectionEditor(
   const autoSaveTimerRef = useRef<number | null>(null);
   const isInitializedRef = useRef(false);
   const originalDataRef = useRef<string>("");
+  const sshPasswordRef = useRef(
+    connection?.protocol === "ssh" ? connection.password || "" : "",
+  );
+  const sshPassphraseRef = useRef(
+    connection?.protocol === "ssh" ? connection.passphrase || "" : "",
+  );
+  const sshPrivateKeyRef = useRef(
+    connection?.protocol === "ssh" ? connection.privateKey || "" : "",
+  );
+  const sshTotpSecretRef = useRef(
+    connection?.protocol === "ssh" ? connection.totpSecret || "" : "",
+  );
+  const sshProxyCommandPasswordRef = useRef(
+    connection?.protocol === "ssh"
+      ? connection.sshConnectionConfigOverride?.proxyCommandPassword || ""
+      : "",
+  );
+  const sshPasswordInputRef = useRef<HTMLInputElement | null>(null);
+  const sshPassphraseInputRef = useRef<HTMLInputElement | null>(null);
+  const sshPrivateKeyInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [hasSshPassword, setHasSshPassword] = useState(
+    sshPasswordRef.current.length > 0,
+  );
+  const [hasSshPassphrase, setHasSshPassphrase] = useState(
+    sshPassphraseRef.current.length > 0,
+  );
+  const [hasSshPrivateKey, setHasSshPrivateKey] = useState(
+    sshPrivateKeyRef.current.length > 0,
+  );
+  const [sshSecretRevision, setSshSecretRevision] = useState(0);
+
+  const syncManagedSshInputs = useCallback(() => {
+    if (sshPasswordInputRef.current) {
+      sshPasswordInputRef.current.value = sshPasswordRef.current;
+    }
+
+    if (sshPassphraseInputRef.current) {
+      sshPassphraseInputRef.current.value = sshPassphraseRef.current;
+    }
+
+    if (sshPrivateKeyInputRef.current) {
+      sshPrivateKeyInputRef.current.value = sshPrivateKeyRef.current;
+    }
+  }, []);
+
+  const setManagedSshSecret = useCallback(
+    (
+      field: ManagedSshSecretField,
+      value: string,
+      options?: { touch?: boolean },
+    ) => {
+      switch (field) {
+        case "password":
+          sshPasswordRef.current = value;
+          setHasSshPassword(value.length > 0);
+          if (sshPasswordInputRef.current && sshPasswordInputRef.current.value !== value) {
+            sshPasswordInputRef.current.value = value;
+          }
+          break;
+        case "passphrase":
+          sshPassphraseRef.current = value;
+          setHasSshPassphrase(value.length > 0);
+          if (
+            sshPassphraseInputRef.current &&
+            sshPassphraseInputRef.current.value !== value
+          ) {
+            sshPassphraseInputRef.current.value = value;
+          }
+          break;
+        case "privateKey":
+          sshPrivateKeyRef.current = value;
+          setHasSshPrivateKey(value.length > 0);
+          if (sshPrivateKeyInputRef.current && sshPrivateKeyInputRef.current.value !== value) {
+            sshPrivateKeyInputRef.current.value = value;
+          }
+          break;
+      }
+
+      if (options?.touch !== false) {
+        setSshSecretRevision((current) => current + 1);
+      }
+    },
+    [],
+  );
+
+  const hydrateManagedSshSecrets = useCallback(
+    (values: Record<ManagedSshSecretField, string>) => {
+      setManagedSshSecret("password", values.password, { touch: false });
+      setManagedSshSecret("passphrase", values.passphrase, { touch: false });
+      setManagedSshSecret("privateKey", values.privateKey, { touch: false });
+    },
+    [setManagedSshSecret],
+  );
+
+  const clearManagedSshSecrets = useCallback(
+    (options?: { touch?: boolean }) => {
+      hydrateManagedSshSecrets({
+        password: "",
+        passphrase: "",
+        privateKey: "",
+      });
+      sshTotpSecretRef.current = "";
+      sshProxyCommandPasswordRef.current = "";
+
+      if (options?.touch) {
+        setSshSecretRevision((current) => current + 1);
+      }
+    },
+    [hydrateManagedSshSecrets],
+  );
+
+  const sanitizeSshConnectionOverride = useCallback(
+    (override: Connection["sshConnectionConfigOverride"]) => {
+      if (!override) {
+        return undefined;
+      }
+
+      const { proxyCommandPassword: _, ...rest } = override;
+      return Object.keys(rest).length > 0 ? rest : undefined;
+    },
+    [],
+  );
+
+  const mergeManagedSshSecrets = useCallback((data: Partial<Connection>) => {
+    if (data.protocol !== "ssh") {
+      return data;
+    }
+
+    const sshConnectionConfigOverride =
+      data.sshConnectionConfigOverride || sshProxyCommandPasswordRef.current
+        ? {
+            ...(data.sshConnectionConfigOverride || {}),
+            ...(sshProxyCommandPasswordRef.current
+              ? { proxyCommandPassword: sshProxyCommandPasswordRef.current }
+              : {}),
+          }
+        : undefined;
+
+    return {
+      ...data,
+      password: sshPasswordRef.current,
+      passphrase: sshPassphraseRef.current,
+      privateKey: sshPrivateKeyRef.current,
+      totpSecret: sshTotpSecretRef.current,
+      sshConnectionConfigOverride,
+    };
+  }, []);
+
+  const buildEditorSnapshot = useCallback((data: Partial<Connection>) => {
+    const snapshot = mergeManagedSshSecrets(data);
+
+    return JSON.stringify(snapshot);
+  }, [mergeManagedSshSecrets]);
 
   // ── Derived ───────────────────────────────────────────────────
   const allTags = useMemo(
@@ -198,10 +369,27 @@ export function useConnectionEditor(
   // ── Effects ───────────────────────────────────────────────────
   useEffect(() => {
     if (connection) {
+      const isSshConnection = connection.protocol === "ssh";
+
+      if (isSshConnection) {
+        hydrateManagedSshSecrets({
+          password: connection.password || "",
+          passphrase: connection.passphrase || "",
+          privateKey: connection.privateKey || "",
+        });
+        sshTotpSecretRef.current = connection.totpSecret || "";
+        sshProxyCommandPasswordRef.current =
+          connection.sshConnectionConfigOverride?.proxyCommandPassword || "";
+      } else {
+        clearManagedSshSecrets();
+      }
+
       const resolved = {
         ...connection,
-        privateKey: connection.privateKey || "",
-        passphrase: connection.passphrase || "",
+        password: isSshConnection ? "" : connection.password || "",
+        privateKey: isSshConnection ? "" : connection.privateKey || "",
+        passphrase: isSshConnection ? "" : connection.passphrase || "",
+        totpSecret: isSshConnection ? "" : connection.totpSecret || "",
         ignoreSshSecurityErrors: connection.ignoreSshSecurityErrors ?? false,
         sshConnectTimeout: connection.sshConnectTimeout ?? 30,
         sshKeepAliveInterval: connection.sshKeepAliveInterval ?? 60,
@@ -211,9 +399,12 @@ export function useConnectionEditor(
         basicAuthPassword: connection.basicAuthPassword || "",
         basicAuthRealm: connection.basicAuthRealm || "",
         httpHeaders: connection.httpHeaders || {},
+        sshConnectionConfigOverride: isSshConnection
+          ? sanitizeSshConnectionOverride(connection.sshConnectionConfigOverride)
+          : connection.sshConnectionConfigOverride,
       };
       setFormData(resolved);
-      originalDataRef.current = JSON.stringify(resolved);
+      originalDataRef.current = buildEditorSnapshot(resolved);
       // Mark as initialized on the *next* effect cycle so the auto-save
       // effect that fires from the setFormData re-render still sees false.
       isInitializedRef.current = false;
@@ -221,33 +412,63 @@ export function useConnectionEditor(
         isInitializedRef.current = true;
       });
     } else {
+      clearManagedSshSecrets();
       const initial = { ...DEFAULT_FORM, cloudProvider: undefined };
       setFormData(initial);
-      originalDataRef.current = JSON.stringify(initial);
+      originalDataRef.current = buildEditorSnapshot(initial);
       isInitializedRef.current = false;
     }
     setAutoSaveStatus("idle");
-  }, [connection, isOpen]);
+  }, [
+    buildEditorSnapshot,
+    clearManagedSshSecrets,
+    connection,
+    hydrateManagedSshSecrets,
+    isOpen,
+    sanitizeSshConnectionOverride,
+  ]);
+
+  useEffect(() => {
+    if (formData.protocol === "ssh" && isOpen) {
+      syncManagedSshInputs();
+    }
+  }, [formData.authType, formData.protocol, isOpen, sshSecretRevision, syncManagedSshInputs]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      clearManagedSshSecrets();
+    }
+  }, [clearManagedSshSecrets, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      clearManagedSshSecrets();
+    };
+  }, [clearManagedSshSecrets]);
 
   const buildConnectionData = useCallback((): Connection => {
     const now = new Date().toISOString();
+    const effectiveFormData = mergeManagedSshSecrets(formData);
+
     // enableWinrmTools, sshConnectionConfigOverride, etc.) are always
     // persisted without having to enumerate them individually.
     return {
       ...(connection || {}),
-      ...formData,
+      ...effectiveFormData,
       id: connection?.id || generateId(),
-      name: formData.name || "New Connection",
-      protocol: formData.protocol as Connection["protocol"],
-      hostname: formData.hostname || "",
-      port: formData.port || getDefaultPort(formData.protocol as string),
-      isGroup: formData.isGroup || false,
-      tags: formData.tags || [],
+      name: effectiveFormData.name || "New Connection",
+      protocol: effectiveFormData.protocol as Connection["protocol"],
+      hostname: effectiveFormData.hostname || "",
+      port:
+        effectiveFormData.port ||
+        getDefaultPort(effectiveFormData.protocol as string),
+      isGroup: effectiveFormData.isGroup || false,
+      tags: effectiveFormData.tags || [],
       order: connection?.order ?? Date.now(),
       createdAt: connection?.createdAt || now,
       updatedAt: now,
     } as Connection;
-  }, [formData, connection]);
+  }, [formData, connection, mergeManagedSshSecrets]);
 
   // Auto-save effect
   useEffect(() => {
@@ -267,7 +488,7 @@ export function useConnectionEditor(
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [formData, connection, settings.autoSaveEnabled, buildConnectionData, dispatch]);
+  }, [formData, connection, settings.autoSaveEnabled, buildConnectionData, dispatch, sshSecretRevision]);
 
   // ── Handlers ──────────────────────────────────────────────────
   const handleSubmit = useCallback(
@@ -276,7 +497,7 @@ export function useConnectionEditor(
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
       // Detect whether anything actually changed
-      const hasChanges = JSON.stringify(formData) !== originalDataRef.current;
+      const hasChanges = buildEditorSnapshot(formData) !== originalDataRef.current;
 
       if (connection) {
         if (!hasChanges) {
@@ -287,7 +508,7 @@ export function useConnectionEditor(
         dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
         toast.success(`"${connectionData.name}" saved`);
         // Update the baseline so subsequent saves detect new changes correctly
-        originalDataRef.current = JSON.stringify(formData);
+        originalDataRef.current = buildEditorSnapshot(formData);
       } else {
         const connectionData = buildConnectionData();
         dispatch({ type: "ADD_CONNECTION", payload: connectionData });
@@ -295,7 +516,7 @@ export function useConnectionEditor(
         onClose();
       }
     },
-    [buildConnectionData, connection, dispatch, onClose, formData, toast],
+    [buildConnectionData, buildEditorSnapshot, connection, dispatch, onClose, formData, toast],
   );
 
   const handleTagsChange = useCallback(
@@ -304,15 +525,68 @@ export function useConnectionEditor(
   );
 
   const handleProtocolChange = useCallback((protocol: string) => {
+    const nextProtocol = protocol as Connection["protocol"];
+    const nextAuthType = ["http", "https"].includes(protocol)
+      ? "basic"
+      : "password";
+
+    if (formData.protocol === "ssh" && nextProtocol !== "ssh") {
+      const carriedPassword = sshPasswordRef.current;
+      clearManagedSshSecrets();
+      setFormData((prev) => ({
+        ...prev,
+        protocol: nextProtocol,
+        port: getDefaultPort(protocol),
+        authType: nextAuthType,
+        password: carriedPassword,
+        passphrase: "",
+        privateKey: "",
+        totpSecret: "",
+        sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+          prev.sshConnectionConfigOverride,
+        ),
+      }));
+      return;
+    }
+
+    if (formData.protocol !== "ssh" && nextProtocol === "ssh") {
+      hydrateManagedSshSecrets({
+        password: typeof formData.password === "string" ? formData.password : "",
+        passphrase:
+          typeof formData.passphrase === "string" ? formData.passphrase : "",
+        privateKey:
+          typeof formData.privateKey === "string" ? formData.privateKey : "",
+      });
+      sshTotpSecretRef.current =
+        typeof formData.totpSecret === "string" ? formData.totpSecret : "";
+      sshProxyCommandPasswordRef.current =
+        formData.sshConnectionConfigOverride?.proxyCommandPassword || "";
+      setFormData((prev) => ({
+        ...prev,
+        protocol: nextProtocol,
+        port: getDefaultPort(protocol),
+        authType: nextAuthType,
+        password: "",
+        passphrase: "",
+        privateKey: "",
+        totpSecret: "",
+        sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+          prev.sshConnectionConfigOverride,
+        ),
+      }));
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
-      protocol: protocol as Connection["protocol"],
+      protocol: nextProtocol,
       port: getDefaultPort(protocol),
-      authType: ["http", "https"].includes(protocol) ? "basic" : "password",
+      authType: nextAuthType,
     }));
-  }, []);
+  }, [clearManagedSshSecrets, formData.passphrase, formData.password, formData.privateKey, formData.protocol, formData.sshConnectionConfigOverride, formData.totpSecret, hydrateManagedSshSecrets, sanitizeSshConnectionOverride]);
 
   const handleResetToDefaults = useCallback(() => {
+    clearManagedSshSecrets();
     setFormData((prev) => ({
       ...DEFAULT_FORM,
       id: prev.id,
@@ -321,7 +595,35 @@ export function useConnectionEditor(
       protocol: prev.protocol,
       port: getDefaultPort(prev.protocol as string),
     }));
-  }, []);
+  }, [clearManagedSshSecrets]);
+
+  const sshSecrets = useMemo<ManagedSshSecretsController>(
+    () => ({
+      passwordInputRef: sshPasswordInputRef,
+      passphraseInputRef: sshPassphraseInputRef,
+      privateKeyInputRef: sshPrivateKeyInputRef,
+      hasPassword: hasSshPassword,
+      hasPassphrase: hasSshPassphrase,
+      hasPrivateKey: hasSshPrivateKey,
+      handlePasswordChange: (value: string) =>
+        setManagedSshSecret("password", value),
+      handlePassphraseChange: (value: string) =>
+        setManagedSshSecret("passphrase", value),
+      handlePrivateKeyChange: (value: string) =>
+        setManagedSshSecret("privateKey", value),
+      getPassword: () => sshPasswordRef.current,
+      getPassphrase: () => sshPassphraseRef.current,
+      getPrivateKey: () => sshPrivateKeyRef.current,
+      clearAll: () => clearManagedSshSecrets({ touch: true }),
+    }),
+    [
+      clearManagedSshSecrets,
+      hasSshPassphrase,
+      hasSshPassword,
+      hasSshPrivateKey,
+      setManagedSshSecret,
+    ],
+  );
 
   const toggleSection = useCallback(
     (section: keyof typeof expandedSections) => {
@@ -339,6 +641,7 @@ export function useConnectionEditor(
     availableGroups,
     selectableGroups,
     isNewConnection,
+    sshSecrets,
     settings,
     connection,
     handleSubmit,
