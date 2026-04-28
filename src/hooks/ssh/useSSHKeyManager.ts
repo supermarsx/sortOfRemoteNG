@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -62,9 +62,46 @@ export function useSSHKeyManager(
   // Generate form state
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyType, setNewKeyType] = useState<"ed25519" | "rsa">("ed25519");
-  const [newKeyPassphrase, setNewKeyPassphrase] = useState("");
-  const [confirmPassphrase, setConfirmPassphrase] = useState("");
+  const newKeyPassphraseRef = useRef("");
+  const confirmPassphraseRef = useRef("");
+  const newKeyPassphraseInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmPassphraseInputRef = useRef<HTMLInputElement | null>(null);
+  const [hasNewKeyPassphrase, setHasNewKeyPassphrase] = useState(false);
   const [generating, setGenerating] = useState(false);
+
+  const scrubPassphraseRefs = useCallback(() => {
+    newKeyPassphraseRef.current = "";
+    confirmPassphraseRef.current = "";
+
+    if (newKeyPassphraseInputRef.current) {
+      newKeyPassphraseInputRef.current.value = "";
+    }
+
+    if (confirmPassphraseInputRef.current) {
+      confirmPassphraseInputRef.current.value = "";
+    }
+  }, []);
+
+  const clearPassphraseInputs = useCallback(() => {
+    scrubPassphraseRefs();
+    setHasNewKeyPassphrase(false);
+  }, [scrubPassphraseRefs]);
+
+  const handleNewKeyPassphraseChange = useCallback((value: string) => {
+    newKeyPassphraseRef.current = value;
+    setHasNewKeyPassphrase(value.length > 0);
+
+    if (!value) {
+      confirmPassphraseRef.current = "";
+      if (confirmPassphraseInputRef.current) {
+        confirmPassphraseInputRef.current.value = "";
+      }
+    }
+  }, []);
+
+  const handleConfirmPassphraseChange = useCallback((value: string) => {
+    confirmPassphraseRef.current = value;
+  }, []);
 
   /* ---- persistence ---- */
   const saveKeysMetadata = useCallback(async (keysToSave: SSHKey[]) => {
@@ -107,9 +144,19 @@ export function useSSHKeyManager(
   useEffect(() => {
     if (isOpen) {
       loadKeys();
+    } else {
+      setShowGenerateForm(false);
+      setNewKeyName("");
+      setNewKeyType("ed25519");
+      clearPassphraseInputs();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadKeys is stable, only re-run when dialog opens
-  }, [isOpen]);
+  }, [clearPassphraseInputs, isOpen, loadKeys]);
+
+  useEffect(() => {
+    return () => {
+      scrubPassphraseRefs();
+    };
+  }, [scrubPassphraseRefs]);
 
   /* ---- generate to file ---- */
   const handleGenerateToFile = useCallback(async () => {
@@ -150,12 +197,15 @@ export function useSSHKeyManager(
 
   /* ---- generate key (managed) ---- */
   const handleGenerateKey = useCallback(async () => {
+    let passphrase = newKeyPassphraseRef.current;
+    let confirmation = confirmPassphraseRef.current;
+
     if (!newKeyName.trim()) {
       setError("Key name is required");
       return;
     }
 
-    if (newKeyPassphrase && newKeyPassphrase !== confirmPassphrase) {
+    if (passphrase && passphrase !== confirmation) {
       setError("Passphrases do not match");
       return;
     }
@@ -169,7 +219,7 @@ export function useSSHKeyManager(
         {
           keyType: newKeyType,
           bits: newKeyType === "rsa" ? 4096 : undefined,
-          passphrase: newKeyPassphrase || undefined,
+          passphrase: passphrase || undefined,
         },
       );
 
@@ -189,7 +239,7 @@ export function useSSHKeyManager(
         privateKeyPath,
         fingerprint: calculateFingerprint(publicKey),
         createdAt: new Date(),
-        hasPassphrase: !!newKeyPassphrase,
+        hasPassphrase: !!passphrase,
       };
 
       const updatedKeys = [...keys, newKey];
@@ -200,21 +250,15 @@ export function useSSHKeyManager(
       setShowGenerateForm(false);
       setNewKeyName("");
       setNewKeyType("ed25519");
-      setNewKeyPassphrase("");
-      setConfirmPassphrase("");
+      clearPassphraseInputs();
     } catch (err) {
       setError(`Failed to generate key: ${err}`);
     } finally {
+      passphrase = "";
+      confirmation = "";
       setGenerating(false);
     }
-  }, [
-    newKeyName,
-    newKeyType,
-    newKeyPassphrase,
-    confirmPassphrase,
-    keys,
-    saveKeysMetadata,
-  ]);
+  }, [clearPassphraseInputs, keys, newKeyName, newKeyType, saveKeysMetadata]);
 
   /* ---- import ---- */
   const handleImportKey = useCallback(async () => {
@@ -357,9 +401,9 @@ export function useSSHKeyManager(
   const resetGenerateForm = useCallback(() => {
     setShowGenerateForm(false);
     setNewKeyName("");
-    setNewKeyPassphrase("");
-    setConfirmPassphrase("");
-  }, []);
+    setNewKeyType("ed25519");
+    clearPassphraseInputs();
+  }, [clearPassphraseInputs]);
 
   return {
     /* keys */
@@ -375,10 +419,11 @@ export function useSSHKeyManager(
     setNewKeyName,
     newKeyType,
     setNewKeyType,
-    newKeyPassphrase,
-    setNewKeyPassphrase,
-    confirmPassphrase,
-    setConfirmPassphrase,
+    hasNewKeyPassphrase,
+    newKeyPassphraseInputRef,
+    confirmPassphraseInputRef,
+    handleNewKeyPassphraseChange,
+    handleConfirmPassphraseChange,
     generating,
     resetGenerateForm,
 

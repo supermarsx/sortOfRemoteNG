@@ -29,6 +29,7 @@ import {
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
 import { resolveChainConfig, type ResolvedChainConfig } from '../../utils/ssh/resolveChainConfig';
+import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 
 /* ── Internal types ────────────────────────────────────────────── */
@@ -402,10 +403,16 @@ export function useWebTerminal(
 
   const formatErrorDetails = useCallback((err: unknown) => {
     if (err instanceof Error)
-      return { message: err.message || "Unknown error", name: err.name || "Error", stack: err.stack || "" };
-    if (typeof err === "string") return { message: err, name: "Error", stack: "" };
-    try { return { message: JSON.stringify(err), name: "Error", stack: "" }; } catch {
-      return { message: String(err), name: "Error", stack: "" };
+      return {
+        message: redactSecrets(err.message || "Unknown error"),
+        name: err.name || "Error",
+        stack: redactSecrets(err.stack || ""),
+      };
+    if (typeof err === "string") return { message: redactSecrets(err), name: "Error", stack: "" };
+    try {
+      return { message: redactSecrets(JSON.stringify(err)), name: "Error", stack: "" };
+    } catch {
+      return { message: redactSecrets(String(err)), name: "Error", stack: "" };
     }
   }, []);
 
@@ -491,6 +498,10 @@ export function useWebTerminal(
     writeLine(`\x1b[90mHost key checking: ${strictHostKeyChecking ? "enabled" : "disabled"}\x1b[0m`);
 
     let unlistenHostKeyPrompt: (() => void) | null = null;
+    let sshPassword: string | null = null;
+    let privateKeyPassphrase: string | null = null;
+    let totpSecret: string | null = null;
+    let proxyCommandPassword: string | null = null;
     try {
       // Try reattaching to existing backend session
       if (currentSession.backendSessionId && !force) {
@@ -559,6 +570,7 @@ export function useWebTerminal(
       }
 
       const tcpOptions = sshTerminalConfig?.tcpOptions;
+      proxyCommandPassword = sshConnectionConfig.proxyCommandPassword || null;
 
       unlistenHostKeyPrompt = await listen<SshHostKeyPromptEvent>(
         "ssh://host-key-prompt",
@@ -702,7 +714,7 @@ export function useWebTerminal(
               proxy_host: sshConnectionConfig.proxyCommandHost || null,
               proxy_port: sshConnectionConfig.proxyCommandPort || null,
               proxy_username: sshConnectionConfig.proxyCommandUsername || null,
-              proxy_password: sshConnectionConfig.proxyCommandPassword || null,
+              proxy_password: proxyCommandPassword,
               proxy_type: sshConnectionConfig.proxyCommandProxyType || null,
               timeout_secs: sshConnectionConfig.proxyCommandTimeout || null,
             }
@@ -712,20 +724,24 @@ export function useWebTerminal(
       switch (authMethod) {
         case "password":
           if (!currentConnection.password) throw new Error("Password authentication requires a password");
-          sshConfig.password = currentConnection.password;
+          sshPassword = currentConnection.password;
+          sshConfig.password = sshPassword;
           sshConfig.private_key_path = null;
           sshConfig.private_key_passphrase = null;
           break;
         case "key":
           if (!currentConnection.privateKey) throw new Error("Key authentication requires a key path");
+          privateKeyPassphrase = currentConnection.passphrase || null;
           sshConfig.password = null;
           sshConfig.private_key_path = currentConnection.privateKey;
-          sshConfig.private_key_passphrase = currentConnection.passphrase || null;
+          sshConfig.private_key_passphrase = privateKeyPassphrase;
           break;
         case "totp":
           if (!currentConnection.password || !currentConnection.totpSecret) throw new Error("TOTP requires password and TOTP secret");
-          sshConfig.password = currentConnection.password;
-          sshConfig.totp_secret = currentConnection.totpSecret;
+          sshPassword = currentConnection.password;
+          totpSecret = currentConnection.totpSecret;
+          sshConfig.password = sshPassword;
+          sshConfig.totp_secret = totpSecret;
           sshConfig.private_key_path = null;
           sshConfig.private_key_passphrase = null;
           break;
@@ -775,6 +791,10 @@ export function useWebTerminal(
       writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
       writeLine(`\x1b[90mRaw error: ${details.message}\x1b[0m`);
     } finally {
+      sshPassword = null;
+      privateKeyPassphrase = null;
+      totpSecret = null;
+      proxyCommandPassword = null;
       isConnecting.current = false;
       unlistenHostKeyPrompt?.();
       sshTrustResolveRef.current = null;

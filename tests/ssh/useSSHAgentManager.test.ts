@@ -50,6 +50,9 @@ describe("useSSHAgentManager", () => {
     expect(result.current.error).toBeNull();
     expect(result.current.keys).toEqual([]);
     expect(result.current.activeTab).toBe("overview");
+    expect("lockPassphrase" in result.current).toBe(false);
+    expect("setLockPassphrase" in result.current).toBe(false);
+    expect(result.current.hasLockPassphrase).toBe(false);
   });
 
   // ── Auto-load when open ───────────────────────────────────────────

@@ -113,20 +113,20 @@ const GenerateKeyForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("sshKeyManager.passphrase", "Passphrase (Optional)")}
           </label>
           <PasswordInput
-            value={mgr.newKeyPassphrase}
-            onChange={(e) => mgr.setNewKeyPassphrase(e.target.value)}
+            ref={mgr.newKeyPassphraseInputRef}
+            onChange={(e) => mgr.handleNewKeyPassphraseChange(e.target.value)}
             placeholder="Optional passphrase"
             className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
-        {mgr.newKeyPassphrase && (
+        {mgr.hasNewKeyPassphrase && (
           <div>
             <label className="block text-sm font-medium mb-1">
               {t("sshKeyManager.confirmPassphrase", "Confirm Passphrase")}
             </label>
             <PasswordInput
-              value={mgr.confirmPassphrase}
-              onChange={(e) => mgr.setConfirmPassphrase(e.target.value)}
+              ref={mgr.confirmPassphraseInputRef}
+              onChange={(e) => mgr.handleConfirmPassphraseChange(e.target.value)}
               placeholder="Confirm passphrase"
               className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
             />

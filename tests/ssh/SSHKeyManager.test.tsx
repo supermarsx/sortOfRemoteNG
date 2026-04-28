@@ -101,6 +101,43 @@ describe("SSHKeyManager", () => {
     expect(screen.getByText("Generate Key")).toBeInTheDocument();
   });
 
+  it("passes the typed passphrase into managed key generation", async () => {
+    vi.mocked(invoke).mockResolvedValue([
+      "PRIVATE KEY",
+      "ssh-ed25519 AAAA managed-key",
+    ] as [string, string]);
+
+    render(
+      <SSHKeyManager isOpen={true} onClose={() => {}} onSelectKey={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByText("Generate Key"));
+    fireEvent.change(screen.getByPlaceholderText("my-server-key"), {
+      target: { value: "prod-key" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Optional passphrase"), {
+      target: { value: "top-secret" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Confirm passphrase"), {
+      target: { value: "top-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Generate$/i }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("generate_ssh_key", {
+        keyType: "ed25519",
+        bits: undefined,
+        passphrase: "top-secret",
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByPlaceholderText("Confirm passphrase"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("imports SSH key from file", async () => {
     vi.mocked(open).mockResolvedValue("/path/to/key");
     vi.mocked(readTextFile).mockResolvedValue("ssh-rsa AAAA... imported-key");

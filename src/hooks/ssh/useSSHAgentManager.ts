@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -153,7 +153,24 @@ export function useSSHAgentManager(isOpen: boolean) {
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
 
   // Lock
-  const [lockPassphrase, setLockPassphrase] = useState("");
+  const lockPassphraseRef = useRef("");
+  const lockPassphraseInputRef = useRef<HTMLInputElement | null>(null);
+  const [hasLockPassphrase, setHasLockPassphrase] = useState(false);
+
+  const clearLockPassphrase = useCallback(() => {
+    lockPassphraseRef.current = "";
+    if (lockPassphraseInputRef.current) {
+      lockPassphraseInputRef.current.value = "";
+    }
+    setHasLockPassphrase(false);
+  }, []);
+
+  const handleLockPassphraseChange = useCallback((value: string) => {
+    lockPassphraseRef.current = value;
+    setHasLockPassphrase(value.length > 0);
+  }, []);
+
+  const getLockPassphrase = useCallback(() => lockPassphraseRef.current, []);
 
   // ── Data Loaders ───────────────────────────────────────
 
@@ -457,6 +474,18 @@ export function useSSHAgentManager(isOpen: boolean) {
     }
   }, [isOpen, activeTab, loadAudit]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      clearLockPassphrase();
+    }
+  }, [clearLockPassphrase, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      clearLockPassphrase();
+    };
+  }, [clearLockPassphrase]);
+
   // ── Return ─────────────────────────────────────────────
 
   return {
@@ -479,8 +508,11 @@ export function useSSHAgentManager(isOpen: boolean) {
     removeAllKeys,
 
     // Lock
-    lockPassphrase,
-    setLockPassphrase,
+    lockPassphraseInputRef,
+    hasLockPassphrase,
+    handleLockPassphraseChange,
+    clearLockPassphrase,
+    getLockPassphrase,
     lockAgent,
     unlockAgent,
 

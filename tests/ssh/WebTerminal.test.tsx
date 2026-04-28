@@ -282,6 +282,26 @@ describe("WebTerminal", () => {
       });
     });
 
+    it("redacts secrets from raw SSH error details", async () => {
+      mockInvoke.mockRejectedValueOnce(
+        new Error("Authentication failed: password=testpass"),
+      );
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockTerminal.writeln).toHaveBeenCalledWith(
+          "\x1b[90mRaw error: Authentication failed: password=[redacted]\x1b[0m",
+        );
+      });
+
+      expect(
+        mockTerminal.writeln.mock.calls.some(
+          ([value]) => typeof value === "string" && value.includes("testpass"),
+        ),
+      ).toBe(false);
+    });
+
     it("prompts on first-use host keys and stores them after accept-and-save", async () => {
       let resolveConnect: ((sessionId: string) => void) | undefined;
 

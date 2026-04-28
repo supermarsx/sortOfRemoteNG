@@ -204,8 +204,8 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="flex items-end gap-2">
           <div className="flex-1">
             <PasswordInput
-              value={mgr.lockPassphrase}
-              onChange={(e) => mgr.setLockPassphrase(e.target.value)}
+              ref={mgr.lockPassphraseInputRef}
+              onChange={(e) => mgr.handleLockPassphraseChange(e.target.value)}
               placeholder={t("sshAgent.lock.passphrase", "Passphrase")}
               className="w-full"
             />
@@ -213,10 +213,10 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {!s?.locked ? (
             <button
               onClick={() => {
-                mgr.lockAgent(mgr.lockPassphrase);
-                mgr.setLockPassphrase("");
+                mgr.lockAgent(mgr.getLockPassphrase());
+                mgr.clearLockPassphrase();
               }}
-              disabled={!mgr.lockPassphrase}
+              disabled={!mgr.hasLockPassphrase}
               className="flex items-center gap-1 px-3 py-2 bg-warning text-[var(--color-text)] rounded-md hover:bg-warning/90 disabled:opacity-50"
             >
               <Lock className="w-4 h-4" />
@@ -225,10 +225,10 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           ) : (
             <button
               onClick={() => {
-                mgr.unlockAgent(mgr.lockPassphrase);
-                mgr.setLockPassphrase("");
+                mgr.unlockAgent(mgr.getLockPassphrase());
+                mgr.clearLockPassphrase();
               }}
-              disabled={!mgr.lockPassphrase}
+              disabled={!mgr.hasLockPassphrase}
               className="flex items-center gap-1 px-3 py-2 bg-success text-[var(--color-text)] rounded-md hover:bg-success/90 disabled:opacity-50"
             >
               <Unlock className="w-4 h-4" />

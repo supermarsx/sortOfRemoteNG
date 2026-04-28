@@ -6,6 +6,7 @@ import { Connection } from "../../types/connection/connection";
 import { SSHKeyManager } from "../ssh/SSHKeyManager";
 import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
 import { SSHConnectionOverrides } from "./SSHConnectionOverrides";
+import type { ManagedSshSecretsController } from "../../hooks/connection/useConnectionEditor";
 import {
   getAllTrustRecords,
   removeIdentity,
@@ -20,13 +21,29 @@ import { Checkbox, NumberInput, Select } from '../ui/forms';
 interface SSHOptionsProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+  sshSecretManager?: ManagedSshSecretsController;
 }
 
 export const SSHOptions: React.FC<SSHOptionsProps> = ({
   formData,
   setFormData,
+  sshSecretManager,
 }) => {
-  const mgr = useSSHOptions(formData, setFormData);
+  const mgr = useSSHOptions(
+    formData,
+    setFormData,
+    sshSecretManager?.handlePrivateKeyChange,
+  );
+  const usesManagedSshSecrets = formData.protocol === "ssh" && !!sshSecretManager;
+  const passwordValue = usesManagedSshSecrets
+    ? sshSecretManager?.getPassword() ?? ""
+    : formData.password || "";
+  const privateKeyValue = usesManagedSshSecrets
+    ? sshSecretManager?.getPrivateKey() ?? ""
+    : formData.privateKey || "";
+  const passphraseValue = usesManagedSshSecrets
+    ? sshSecretManager?.getPassphrase() ?? ""
+    : formData.passphrase || "";
 
   if (formData.isGroup || mgr.isHttpProtocol) return null;
 
@@ -36,6 +53,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
         <label className="sor-form-label">Username <InfoTooltip text="The SSH username used to authenticate with the remote host." /></label>
         <input
           type="text"
+          data-testid={formData.protocol === "ssh" ? "editor-username" : undefined}
           value={formData.username || ""}
           onChange={(e) =>
             setFormData({ ...formData, username: e.target.value })
@@ -202,14 +220,29 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
       {formData.authType === "password" && (
         <div>
           <label className="sor-form-label">Password <InfoTooltip text="The password used for SSH password authentication." /></label>
-          <PasswordInput
-            value={formData.password || ""}
-            onChange={(e) =>
-              setFormData({ ...formData, password: e.target.value })
-            }
-            className="sor-form-input"
-            placeholder="Password"
-          />
+          {usesManagedSshSecrets ? (
+            <PasswordInput
+              ref={sshSecretManager.passwordInputRef}
+              data-testid={formData.protocol === "ssh" ? "editor-password" : undefined}
+              value={passwordValue}
+              onChange={(e) =>
+                sshSecretManager.handlePasswordChange(e.target.value)
+              }
+              isSaved={!!formData.id && sshSecretManager.hasPassword}
+              className="sor-form-input"
+              placeholder="Password"
+            />
+          ) : (
+            <PasswordInput
+              data-testid={formData.protocol === "ssh" ? "editor-password" : undefined}
+              value={passwordValue}
+              onChange={(e) =>
+                setFormData({ ...formData, password: e.target.value })
+              }
+              className="sor-form-input"
+              placeholder="Password"
+            />
+          )}
         </div>
       )}
 
@@ -230,10 +263,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
               </button>
             </div>
             <Textarea
-              value={formData.privateKey || ""}
-              onChange={(v) =>
-                setFormData({ ...formData, privateKey: v })
-              }
+              ref={usesManagedSshSecrets ? sshSecretManager.privateKeyInputRef : undefined}
+              value={privateKeyValue}
+              onChange={usesManagedSshSecrets
+                ? sshSecretManager.handlePrivateKeyChange
+                : (v) => setFormData({ ...formData, privateKey: v })}
               rows={4}
               className="resize-none"
               placeholder="-----BEGIN PRIVATE KEY-----"
@@ -247,14 +281,27 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
           </div>
           <div>
             <label className="sor-form-label">Passphrase (optional) <InfoTooltip text="Decryption passphrase for the private key, if the key is encrypted." /></label>
-            <PasswordInput
-              value={formData.passphrase || ""}
-              onChange={(e) =>
-                setFormData({ ...formData, passphrase: e.target.value })
-              }
-              className="sor-form-input"
-              placeholder="Passphrase"
-            />
+            {usesManagedSshSecrets ? (
+              <PasswordInput
+                ref={sshSecretManager.passphraseInputRef}
+                value={passphraseValue}
+                onChange={(e) =>
+                  sshSecretManager.handlePassphraseChange(e.target.value)
+                }
+                isSaved={!!formData.id && sshSecretManager.hasPassphrase}
+                className="sor-form-input"
+                placeholder="Passphrase"
+              />
+            ) : (
+              <PasswordInput
+                value={passphraseValue}
+                onChange={(e) =>
+                  setFormData({ ...formData, passphrase: e.target.value })
+                }
+                className="sor-form-input"
+                placeholder="Passphrase"
+              />
+            )}
           </div>
         </>
       )}
