@@ -1,0 +1,11 @@
+[package]
+name = "sorng-opkssh-vendor"
+version = "0.1.0"
+edition = "2021"
+description = "Workspace dylib contract wrapper for optional OPKSSH metadata and bundle staging"
+
+[lib]
+crate-type = ["dylib", "rlib"]
+
+[dev-dependencies]
+serde_json = { workspace = true }
