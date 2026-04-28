@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use secrecy::SecretString;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -457,7 +458,7 @@ async fn connect_ssh(
         host: req.host,
         port: req.port,
         username: req.username,
-        password: req.password,
+        password: req.password.map(SecretString::new),
         private_key_path: req.key_path,
         private_key_passphrase: None,
         jump_hosts: Vec::new(),

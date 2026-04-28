@@ -69,6 +69,7 @@ pub fn is_command(command: &str) -> bool {
             | "attach_rdp_session"
             | "detach_rdp_session"
             | "rdp_send_input"
+            | "rdp_set_desktop_size"
             | "rdp_get_frame_data"
             | "get_rdp_session_info"
             | "list_rdp_sessions"
@@ -707,30 +708,29 @@ pub fn is_command(command: &str) -> bool {
             | "rdp_probe"
             | "check_all_connections"
             | "cancel_check_run"
-    )
-    || {
+    ) || {
         #[cfg(feature = "vpn-softether")]
         {
             matches!(
                 command,
                 // ── SoftEther (7) ────────────────────────────────────────
                 "create_softether_connection"
-                | "connect_softether"
-                | "disconnect_softether"
-                | "get_softether_connection"
-                | "list_softether_connections"
-                | "delete_softether_connection"
-                | "update_softether_connection"
+                    | "connect_softether"
+                    | "disconnect_softether"
+                    | "get_softether_connection"
+                    | "list_softether_connections"
+                    | "delete_softether_connection"
+                    | "update_softether_connection"
             )
         }
         #[cfg(not(feature = "vpn-softether"))]
         {
             false
         }
-    }
-    || matches!(command,
-            // ── SMB (16) ─────────────────────────────────────────────
-            "smb_connect"
+    } || matches!(
+        command,
+        // ── SMB (16) ─────────────────────────────────────────────
+        "smb_connect"
             | "smb_disconnect"
             | "smb_disconnect_all"
             | "smb_list_sessions"
@@ -858,8 +858,7 @@ pub fn is_command(command: &str) -> bool {
             | "openvpn_get_default_reconnect"
             | "openvpn_set_default_routing"
             | "openvpn_set_default_dns"
-    )
-    || {
+    ) || {
         // ── Serial / RS-232 (31) ─────────────────────────────────
         // Gated behind the `protocol-serial` (static/vendored) and
         // `protocol-serial-dynamic` (runtime driver probe, default
@@ -872,46 +871,46 @@ pub fn is_command(command: &str) -> bool {
             matches!(
                 command,
                 "serial_scan_ports"
-                | "serial_connect"
-                | "serial_disconnect"
-                | "serial_disconnect_all"
-                | "serial_send_raw"
-                | "serial_send_line"
-                | "serial_send_char"
-                | "serial_send_hex"
-                | "serial_send_break"
-                | "serial_set_dtr"
-                | "serial_set_rts"
-                | "serial_read_control_lines"
-                | "serial_reconfigure"
-                | "serial_set_line_ending"
-                | "serial_set_local_echo"
-                | "serial_flush"
-                | "serial_get_session_info"
-                | "serial_list_sessions"
-                | "serial_get_stats"
-                | "serial_send_at_command"
-                | "serial_get_modem_info"
-                | "serial_get_signal_quality"
-                | "serial_modem_init"
-                | "serial_modem_dial"
-                | "serial_modem_hangup"
-                | "serial_get_modem_profiles"
-                | "serial_start_logging"
-                | "serial_stop_logging"
-                | "serial_get_baud_rates"
-                | "serial_hex_to_bytes"
-                | "serial_bytes_to_hex"
+                    | "serial_connect"
+                    | "serial_disconnect"
+                    | "serial_disconnect_all"
+                    | "serial_send_raw"
+                    | "serial_send_line"
+                    | "serial_send_char"
+                    | "serial_send_hex"
+                    | "serial_send_break"
+                    | "serial_set_dtr"
+                    | "serial_set_rts"
+                    | "serial_read_control_lines"
+                    | "serial_reconfigure"
+                    | "serial_set_line_ending"
+                    | "serial_set_local_echo"
+                    | "serial_flush"
+                    | "serial_get_session_info"
+                    | "serial_list_sessions"
+                    | "serial_get_stats"
+                    | "serial_send_at_command"
+                    | "serial_get_modem_info"
+                    | "serial_get_signal_quality"
+                    | "serial_modem_init"
+                    | "serial_modem_dial"
+                    | "serial_modem_hangup"
+                    | "serial_get_modem_profiles"
+                    | "serial_start_logging"
+                    | "serial_stop_logging"
+                    | "serial_get_baud_rates"
+                    | "serial_hex_to_bytes"
+                    | "serial_bytes_to_hex"
             )
         }
         #[cfg(not(any(feature = "protocol-serial", feature = "protocol-serial-dynamic")))]
         {
             false
         }
-    }
-    || matches!(command,
-            // ── TOTP (36) ─────────────────────────────────────────────
-            "totp_add_entry"
+    } || matches!(
+        command,
+        // ── TOTP (36) ─────────────────────────────────────────────
+        "totp_add_entry"
             | "totp_create_entry"
             | "totp_get_entry"
             | "totp_update_entry"
@@ -951,8 +950,7 @@ pub fn is_command(command: &str) -> bool {
             | "totp_compute_code"
             | "totp_build_otpauth_uri"
             | "totp_generate_backup_codes"
-    )
-    || {
+    ) || {
         // ── PowerShell Remoting (53) ─────────────────────────────────
         // Gated behind the `ops` feature because `sorng_powershell` is
         // re-exported via `sorng-app-domains-ops`.
@@ -961,66 +959,65 @@ pub fn is_command(command: &str) -> bool {
             matches!(
                 command,
                 "ps_new_session"
-                | "ps_get_session"
-                | "ps_list_sessions"
-                | "ps_disconnect_session"
-                | "ps_reconnect_session"
-                | "ps_remove_session"
-                | "ps_remove_all_sessions"
-                | "ps_invoke_command"
-                | "ps_invoke_command_fanout"
-                | "ps_stop_command"
-                | "ps_enter_session"
-                | "ps_execute_interactive_line"
-                | "ps_tab_complete"
-                | "ps_exit_session"
-                | "ps_copy_to_session"
-                | "ps_copy_from_session"
-                | "ps_get_transfer_progress"
-                | "ps_cancel_transfer"
-                | "ps_list_transfers"
-                | "ps_new_cim_session"
-                | "ps_get_cim_instances"
-                | "ps_invoke_cim_method"
-                | "ps_remove_cim_session"
-                | "ps_test_dsc_configuration"
-                | "ps_get_dsc_configuration"
-                | "ps_start_dsc_configuration"
-                | "ps_get_dsc_resources"
-                | "ps_register_jea_endpoint"
-                | "ps_unregister_jea_endpoint"
-                | "ps_list_jea_endpoints"
-                | "ps_create_jea_role_capability"
-                | "ps_list_vms"
-                | "ps_invoke_command_vm"
-                | "ps_copy_to_vm"
-                | "ps_get_session_configurations"
-                | "ps_register_session_configuration"
-                | "ps_unregister_session_configuration"
-                | "ps_enable_session_configuration"
-                | "ps_disable_session_configuration"
-                | "ps_set_session_configuration"
-                | "ps_get_winrm_config"
-                | "ps_get_trusted_hosts"
-                | "ps_set_trusted_hosts"
-                | "ps_test_wsman"
-                | "ps_diagnose_connection"
-                | "ps_check_winrm_service"
-                | "ps_check_firewall_rules"
-                | "ps_measure_latency"
-                | "ps_get_certificate_info"
-                | "ps_get_stats"
-                | "ps_get_events"
-                | "ps_clear_events"
-                | "ps_cleanup"
+                    | "ps_get_session"
+                    | "ps_list_sessions"
+                    | "ps_disconnect_session"
+                    | "ps_reconnect_session"
+                    | "ps_remove_session"
+                    | "ps_remove_all_sessions"
+                    | "ps_invoke_command"
+                    | "ps_invoke_command_fanout"
+                    | "ps_stop_command"
+                    | "ps_enter_session"
+                    | "ps_execute_interactive_line"
+                    | "ps_tab_complete"
+                    | "ps_exit_session"
+                    | "ps_copy_to_session"
+                    | "ps_copy_from_session"
+                    | "ps_get_transfer_progress"
+                    | "ps_cancel_transfer"
+                    | "ps_list_transfers"
+                    | "ps_new_cim_session"
+                    | "ps_get_cim_instances"
+                    | "ps_invoke_cim_method"
+                    | "ps_remove_cim_session"
+                    | "ps_test_dsc_configuration"
+                    | "ps_get_dsc_configuration"
+                    | "ps_start_dsc_configuration"
+                    | "ps_get_dsc_resources"
+                    | "ps_register_jea_endpoint"
+                    | "ps_unregister_jea_endpoint"
+                    | "ps_list_jea_endpoints"
+                    | "ps_create_jea_role_capability"
+                    | "ps_list_vms"
+                    | "ps_invoke_command_vm"
+                    | "ps_copy_to_vm"
+                    | "ps_get_session_configurations"
+                    | "ps_register_session_configuration"
+                    | "ps_unregister_session_configuration"
+                    | "ps_enable_session_configuration"
+                    | "ps_disable_session_configuration"
+                    | "ps_set_session_configuration"
+                    | "ps_get_winrm_config"
+                    | "ps_get_trusted_hosts"
+                    | "ps_set_trusted_hosts"
+                    | "ps_test_wsman"
+                    | "ps_diagnose_connection"
+                    | "ps_check_winrm_service"
+                    | "ps_check_firewall_rules"
+                    | "ps_measure_latency"
+                    | "ps_get_certificate_info"
+                    | "ps_get_stats"
+                    | "ps_get_events"
+                    | "ps_clear_events"
+                    | "ps_cleanup"
             )
         }
         #[cfg(not(feature = "ops"))]
         {
             false
         }
-    }
-    || {
+    } || {
         // ── Backup Verify (35) ────────────────────────────────────────
         // Gated behind `ops` because `sorng_backup_verify` is re-exported
         // via `sorng-app-domains-ops`.
@@ -1029,40 +1026,40 @@ pub fn is_command(command: &str) -> bool {
             matches!(
                 command,
                 "backup_verify_get_overview"
-                | "backup_verify_list_policies"
-                | "backup_verify_get_policy"
-                | "backup_verify_create_policy"
-                | "backup_verify_update_policy"
-                | "backup_verify_delete_policy"
-                | "backup_verify_list_catalog"
-                | "backup_verify_get_catalog_entry"
-                | "backup_verify_add_catalog_entry"
-                | "backup_verify_delete_catalog_entry"
-                | "backup_verify_verify_backup"
-                | "backup_verify_trigger_backup"
-                | "backup_verify_cancel_job"
-                | "backup_verify_list_running_jobs"
-                | "backup_verify_list_queued_jobs"
-                | "backup_verify_get_job_history"
-                | "backup_verify_compute_sha256"
-                | "backup_verify_generate_manifest"
-                | "backup_verify_run_dr_drill"
-                | "backup_verify_get_drill_history"
-                | "backup_verify_generate_compliance_report"
-                | "backup_verify_get_compliance_history"
-                | "backup_verify_list_replicas"
-                | "backup_verify_add_replica"
-                | "backup_verify_remove_replica"
-                | "backup_verify_start_replication"
-                | "backup_verify_get_replication_status"
-                | "backup_verify_get_replication_overview"
-                | "backup_verify_enforce_retention"
-                | "backup_verify_get_retention_forecast"
-                | "backup_verify_set_immutability_lock"
-                | "backup_verify_check_immutability"
-                | "backup_verify_configure_notifications"
-                | "backup_verify_send_test_notification"
-                | "backup_verify_test_channel"
+                    | "backup_verify_list_policies"
+                    | "backup_verify_get_policy"
+                    | "backup_verify_create_policy"
+                    | "backup_verify_update_policy"
+                    | "backup_verify_delete_policy"
+                    | "backup_verify_list_catalog"
+                    | "backup_verify_get_catalog_entry"
+                    | "backup_verify_add_catalog_entry"
+                    | "backup_verify_delete_catalog_entry"
+                    | "backup_verify_verify_backup"
+                    | "backup_verify_trigger_backup"
+                    | "backup_verify_cancel_job"
+                    | "backup_verify_list_running_jobs"
+                    | "backup_verify_list_queued_jobs"
+                    | "backup_verify_get_job_history"
+                    | "backup_verify_compute_sha256"
+                    | "backup_verify_generate_manifest"
+                    | "backup_verify_run_dr_drill"
+                    | "backup_verify_get_drill_history"
+                    | "backup_verify_generate_compliance_report"
+                    | "backup_verify_get_compliance_history"
+                    | "backup_verify_list_replicas"
+                    | "backup_verify_add_replica"
+                    | "backup_verify_remove_replica"
+                    | "backup_verify_start_replication"
+                    | "backup_verify_get_replication_status"
+                    | "backup_verify_get_replication_overview"
+                    | "backup_verify_enforce_retention"
+                    | "backup_verify_get_retention_forecast"
+                    | "backup_verify_set_immutability_lock"
+                    | "backup_verify_check_immutability"
+                    | "backup_verify_configure_notifications"
+                    | "backup_verify_send_test_notification"
+                    | "backup_verify_test_channel"
             )
         }
         #[cfg(not(feature = "ops"))]
@@ -1141,6 +1138,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         rdp_commands::attach_rdp_session,
         rdp_commands::detach_rdp_session,
         rdp_commands::rdp_send_input,
+        rdp_commands::rdp_set_desktop_size,
         rdp_commands::rdp_get_frame_data,
         rdp_commands::get_rdp_session_info,
         rdp_commands::list_rdp_sessions,

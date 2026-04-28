@@ -465,6 +465,10 @@ fn is_command_b(command: &str) -> bool {
             | "warpgate_update_parameters"
             | "opkssh_check_binary"
             | "opkssh_get_download_url"
+            | "opkssh_start_login"
+            | "opkssh_get_login_operation"
+            | "opkssh_await_login"
+            | "opkssh_cancel_login"
             | "opkssh_login"
             | "opkssh_list_keys"
             | "opkssh_remove_key"
@@ -1764,6 +1768,10 @@ fn build_b() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         // OpenPubkey SSH (opkssh) commands
         opkssh_commands::opkssh_check_binary,
         opkssh_commands::opkssh_get_download_url,
+        opkssh_commands::opkssh_start_login,
+        opkssh_commands::opkssh_get_login_operation,
+        opkssh_commands::opkssh_await_login,
+        opkssh_commands::opkssh_cancel_login,
         opkssh_commands::opkssh_login,
         opkssh_commands::opkssh_list_keys,
         opkssh_commands::opkssh_remove_key,

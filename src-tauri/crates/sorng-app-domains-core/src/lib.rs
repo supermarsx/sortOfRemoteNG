@@ -30,6 +30,7 @@ pub use sorng_network::wol;
 pub use sorng_probes as probes;
 
 pub use sorng_sftp::sftp;
+pub use sorng_ssh::redact_secrets;
 pub use sorng_ssh::script;
 pub use sorng_ssh::ssh;
 pub use sorng_ssh::ssh3;
@@ -42,12 +43,12 @@ pub use sorng_rdp::h264;
 pub use sorng_rdp::rdp;
 
 pub use sorng_ftp::ftp;
-pub use sorng_smb::smb;
 pub use sorng_protocols::db;
 pub use sorng_protocols::http;
 pub use sorng_protocols::raw_socket;
 pub use sorng_protocols::rlogin;
 pub use sorng_serial::serial;
+pub use sorng_smb::smb;
 pub use sorng_telnet::telnet;
 pub use sorng_vnc::vnc;
 
@@ -58,12 +59,12 @@ pub use sorng_spice::spice;
 pub use sorng_x2go::x2go;
 pub use sorng_xdmcp::xdmcp;
 
+pub use sorng_openvpn as openvpn_dedicated;
 pub use sorng_vpn::chaining;
 pub use sorng_vpn::ikev2;
 pub use sorng_vpn::ipsec;
 pub use sorng_vpn::l2tp;
 pub use sorng_vpn::openvpn;
-pub use sorng_openvpn as openvpn_dedicated;
 pub use sorng_vpn::pptp;
 pub use sorng_vpn::proxy;
 #[cfg(feature = "vpn-softether")]
