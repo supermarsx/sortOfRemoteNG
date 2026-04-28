@@ -6,6 +6,7 @@ import SSHOptions from "../../src/components/connectionEditor/SSHOptions";
 import HTTPOptions from "../../src/components/connectionEditor/HTTPOptions";
 import CloudProviderOptions from "../../src/components/connectionEditor/CloudProviderOptions";
 import { Connection } from "../../src/types/connection/connection";
+import type { ManagedSshSecretsController } from "../../src/hooks/connection/useConnectionEditor";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
@@ -85,6 +86,71 @@ describe("ConnectionEditor subcomponents", () => {
     expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-form-select",
     );
+  });
+
+  it("keeps the SSH password field controlled when managed secrets take over", () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const sshSecretManager: ManagedSshSecretsController = {
+      passwordInputRef: { current: null },
+      passphraseInputRef: { current: null },
+      privateKeyInputRef: { current: null },
+      hasPassword: true,
+      hasPassphrase: false,
+      hasPrivateKey: false,
+      handlePasswordChange: vi.fn(),
+      handlePassphraseChange: vi.fn(),
+      handlePrivateKeyChange: vi.fn(),
+      getPassword: () => "stored-password",
+      getPassphrase: () => "",
+      getPrivateKey: () => "",
+      clearAll: vi.fn(),
+    };
+
+    try {
+      const { rerender } = render(
+        <SSHOptions
+          formData={{
+            ...baseData,
+            protocol: "rdp",
+            authType: "password",
+            password: "plain-password",
+          }}
+          setFormData={() => {}}
+          sshSecretManager={sshSecretManager}
+        />,
+      );
+
+      rerender(
+        <SSHOptions
+          formData={{
+            ...baseData,
+            protocol: "ssh",
+            authType: "password",
+            password: "",
+          }}
+          setFormData={() => {}}
+          sshSecretManager={sshSecretManager}
+        />,
+      );
+
+      expect(screen.getByTestId("editor-password")).toHaveValue("stored-password");
+      expect(
+        consoleErrorSpy.mock.calls.some((call) =>
+          call.some(
+            (arg) =>
+              typeof arg === "string" &&
+              arg.includes(
+                "A component is changing a controlled input to be uncontrolled",
+              ),
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it("shows basic auth fields in HTTPOptions", () => {

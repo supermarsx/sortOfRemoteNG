@@ -1190,6 +1190,10 @@ const AppContent: React.FC = () => {
         connections={state.connections}
         setShowQuickConnect={setShowQuickConnect}
         setShowCollectionSelector={setShowCollectionSelector}
+        openImportExport={() => {
+          setImportExportInitialTab('export');
+          setShowImportExport(true);
+        }}
         setShowSettings={handleOpenSettings}
         setRdpPanelOpen={toolShowSetters.current.rdpSessions}
         setShowInternalProxyManager={toolShowSetters.current.internalProxy}

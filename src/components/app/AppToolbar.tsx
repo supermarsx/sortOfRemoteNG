@@ -46,6 +46,7 @@ interface AppToolbarProps {
   connections: Connection[];
   setShowQuickConnect: (v: boolean) => void;
   setShowCollectionSelector: (v: boolean) => void;
+  openImportExport: () => void;
   setShowSettings: (v: boolean) => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setShowInternalProxyManager: (v: boolean) => void;
@@ -85,6 +86,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   connections,
   setShowQuickConnect,
   setShowCollectionSelector,
+  openImportExport,
   setShowSettings,
   setRdpPanelOpen,
   setShowInternalProxyManager,
@@ -222,6 +224,17 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               data-testid="toolbar-collection"
             >
               <Database size={14} />
+            </button>
+          )}
+          {appSettings.showImportExportIcon && (
+            <button
+              onClick={openImportExport}
+              disabled={noCollection}
+              className="app-bar-button p-2"
+              title={t("toolbar.importExport", "Import / Export")}
+              data-testid="toolbar-import-export"
+            >
+              <ArrowUpDown size={14} />
             </button>
           )}
           {appSettings.showSettingsIcon && (
