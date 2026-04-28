@@ -115,21 +115,42 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
         <label className="text-xs text-[var(--color-textSecondary)]">
           Fallback mode <InfoTooltip text="When precomputed assets should be used instead of the live loader" />
         </label>
-        <div className="flex flex-wrap gap-3">
-          {MODE_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="le-precomputed-mode"
-                checked={le.precomputed.mode === opt.value}
-                onChange={() => setPrecomputed({ mode: opt.value })}
-                className="sor-settings-radio"
-              />
-              <span className="text-sm text-[var(--color-textSecondary)]">
-                {opt.label} <InfoTooltip text={opt.help} />
-              </span>
-            </label>
-          ))}
+        <div
+          role="radiogroup"
+          aria-label="Fallback mode"
+          className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] p-1 gap-1 flex-wrap"
+        >
+          {MODE_OPTIONS.map((opt) => {
+            const active = le.precomputed.mode === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setPrecomputed({ mode: opt.value })}
+                className={[
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium',
+                  'transition-colors duration-150 outline-none',
+                  'focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-input)]',
+                  active
+                    ? 'bg-[var(--color-accent)] text-[var(--color-onAccent,#fff)] shadow-sm'
+                    : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]',
+                ].join(' ')}
+                title={opt.help}
+              >
+                <span
+                  aria-hidden="true"
+                  className={[
+                    'inline-block w-2 h-2 rounded-full',
+                    active ? 'bg-[var(--color-onAccent,#fff)]' : 'bg-[var(--color-border)]',
+                  ].join(' ')}
+                />
+                {opt.label}
+                <InfoTooltip text={opt.help} />
+              </button>
+            );
+          })}
         </div>
       </div>
 
