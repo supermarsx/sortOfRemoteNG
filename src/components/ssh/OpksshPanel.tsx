@@ -21,12 +21,64 @@ const OPKSSH_TABS: ReadonlyArray<{ key: OpksshTab; icon: React.FC<any>; label: s
   { key: "audit", icon: ClipboardList, label: "opkssh.audit" },
 ];
 
+function formatLoginElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export const OpksshPanel: React.FC<OpksshPanelProps> = ({
   isOpen,
   onClose,
 }) => {
   const { t } = useTranslation();
   const mgr = useOpkssh(isOpen);
+  const runtime = mgr.runtimeStatus ?? mgr.overallStatus?.runtime ?? null;
+  const rolloutSignal = mgr.rolloutSignal ?? null;
+  const runtimeLabel = !runtime?.activeBackend
+    ? t("opkssh.runtimeUnavailable", "No runtime available")
+    : runtime.activeBackend === "cli"
+      ? runtime.usingFallback
+        ? t("opkssh.runtimeCliFallback", "CLI fallback active")
+        : t("opkssh.runtimeCli", "CLI runtime active")
+      : t("opkssh.runtimeLibrary", "Library runtime active");
+  const runtimeMessage = runtime?.message
+    || (runtime?.library.availability !== "available"
+      ? t(
+          "opkssh.runtimeLibraryPlanned",
+          "The in-process OPKSSH library backend is planned but not linked in this build.",
+        )
+      : null);
+  const visibleRuntimeMessage = runtimeMessage !== rolloutSignal?.fallbackReason
+    ? runtimeMessage
+    : null;
+  const loginOperation = mgr.loginOperation;
+  const showLoginLifecycleCard = Boolean(
+    mgr.loginPhase === "cancelling"
+      || mgr.loginWaitTimedOut
+      || loginOperation?.status === "running"
+      || loginOperation?.status === "cancelled",
+  );
+  const loginLifecycleTitle = mgr.loginPhase === "cancelling"
+    ? t("opkssh.loginCancelling", "Cancelling local wait")
+    : mgr.loginWaitTimedOut
+      ? t("opkssh.loginStillWaiting", "Login is still waiting on the provider")
+      : loginOperation?.status === "cancelled"
+        ? t("opkssh.loginCancelledLocal", "Login wait cancelled locally")
+        : t("opkssh.loginInProgress", "Login in progress");
+  const loginLifecycleClasses = mgr.loginWaitTimedOut
+    || mgr.loginPhase === "cancelling"
+    || loginOperation?.status === "cancelled"
+    ? "border-warning/30 bg-warning/10"
+    : "border-[var(--color-border)] bg-[var(--color-surfaceHover)]";
+  const loginLifecycleMessage = mgr.loginNotice
+    || (loginOperation?.status === "running"
+      ? t(
+          "opkssh.loginLifecycleRunning",
+          "OPKSSH is waiting on the system browser and provider-owned callback flow.",
+        )
+      : null);
 
   if (!isOpen) return null;
 
@@ -88,6 +140,106 @@ export const OpksshPanel: React.FC<OpksshPanelProps> = ({
             <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
               <span>{mgr.error}</span>
+            </div>
+          )}
+          {runtime && (
+            <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)] p-3 text-xs text-[var(--color-textSecondary)]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-[var(--color-text)]">
+                  {t("opkssh.runtime", "Local runtime")}
+                </span>
+                <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[10px] text-[var(--color-text)]">
+                  {runtimeLabel}
+                </span>
+                <span>
+                  {t("opkssh.runtimeMode", "Rollout mode")}: {rolloutSignal?.preferredMode ?? runtime.mode}
+                </span>
+              </div>
+              {visibleRuntimeMessage && <p className="mt-2">{visibleRuntimeMessage}</p>}
+              {rolloutSignal?.fallbackReason && (
+                <p className="mt-2">
+                  <span className="font-medium text-[var(--color-text)]">
+                    {t("opkssh.fallbackReason", "Fallback reason")}
+                  </span>
+                  {": "}
+                  {rolloutSignal.fallbackReason}
+                </p>
+              )}
+              {rolloutSignal && (
+                <p className="mt-2">
+                  <span className="font-medium text-[var(--color-text)]">
+                    {t("opkssh.cliRetirement", "CLI retirement")}
+                  </span>
+                  {": "}
+                  {rolloutSignal.cliRetirementMessage}
+                </p>
+              )}
+              <p className="mt-2">
+                {t(
+                  "opkssh.callbackOwnershipNote",
+                  "Browser callback listener bind and shutdown remain provider-owned in this slice.",
+                )}
+              </p>
+            </div>
+          )}
+          {showLoginLifecycleCard && (
+            <div className={`mb-4 rounded-lg border p-3 text-xs text-[var(--color-textSecondary)] ${loginLifecycleClasses}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-[var(--color-text)]">
+                  {loginLifecycleTitle}
+                </span>
+                {loginOperation?.provider && (
+                  <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[10px] text-[var(--color-text)]">
+                    {loginOperation.provider}
+                  </span>
+                )}
+                {loginOperation?.status === "running" && (
+                  <span>
+                    {t("opkssh.loginElapsed", "Elapsed")}: {formatLoginElapsed(mgr.loginElapsedMs)}
+                  </span>
+                )}
+              </div>
+              {loginLifecycleMessage && <p className="mt-2">{loginLifecycleMessage}</p>}
+              {(loginOperation?.status === "running" || mgr.loginWaitTimedOut) && !loginOperation?.browserUrl && (
+                <p className="mt-2 text-[10px] text-[var(--color-textMuted)]">
+                  {t(
+                    "opkssh.browserLaunchLimitation",
+                    "If the system browser did not open, this app cannot detect that failure directly because OPKSSH/provider owns browser launch and callback handling in this slice.",
+                  )}
+                </p>
+              )}
+              {loginOperation?.status === "running" && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {mgr.loginWaitTimedOut && (
+                    <button
+                      className="text-xs px-3 py-1.5 rounded bg-success hover:bg-success/90 text-[var(--color-text)] transition-colors"
+                      onClick={() => {
+                        void mgr.continueLoginWait();
+                      }}
+                    >
+                      {t("opkssh.keepWaiting", "Keep waiting")}
+                    </button>
+                  )}
+                  <button
+                    className="text-xs px-3 py-1.5 rounded bg-[var(--color-surface)] hover:bg-[var(--color-surfaceHover)] text-[var(--color-text)] border border-[var(--color-border)] transition-colors"
+                    onClick={() => {
+                      void mgr.refreshLoginOperation();
+                    }}
+                  >
+                    {t("opkssh.refreshLoginStatus", "Refresh login status")}
+                  </button>
+                  {loginOperation.canCancel && (
+                    <button
+                      className="text-xs px-3 py-1.5 rounded border border-warning/40 bg-warning/10 text-[var(--color-text)] hover:bg-warning/20 transition-colors"
+                      onClick={() => {
+                        void mgr.cancelLogin();
+                      }}
+                    >
+                      {t("opkssh.cancelLocalWait", "Cancel local wait")}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {renderTab()}

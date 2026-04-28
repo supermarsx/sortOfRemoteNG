@@ -161,7 +161,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
           <div className="space-y-2 mb-3">
             {config.providers.map((p, i) => (
               <div
-                key={`provider-${p.issuer}`}
+                key={`provider-${p.issuer}-${p.clientId}-${p.expirationPolicy}-${i}`}
                 className="flex items-center justify-between p-2 rounded bg-black/10 border border-[var(--color-border)] text-xs"
               >
                 <div>
@@ -172,7 +172,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
                 </div>
                 <button
                   className="p-1 rounded text-error hover:bg-error/10 transition-colors"
-                  onClick={() => mgr.removeServerProvider(sessionId, p.issuer)}
+                  onClick={() => mgr.removeServerProvider(sessionId, p)}
                   title={t("opkssh.removeProvider", "Remove provider")}
                 >
                   <Trash2 size={12} />

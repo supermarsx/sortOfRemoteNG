@@ -8,6 +8,7 @@ import {
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpksshPanel } from "../../src/components/ssh/OpksshPanel";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import * as useOpksshModule from "../../src/hooks/ssh/useOpkssh";
 import type {
   OpksshBinaryStatus,
   OpksshKey,
@@ -118,6 +119,18 @@ afterEach(() => {
   delete (window as any).__TAURI_INTERNALS__;
 });
 
+const makeBackendStatus = (overrides: Record<string, unknown> = {}) => ({
+  kind: "cli",
+  available: true,
+  availability: "available",
+  version: "0.13.0",
+  path: "/usr/local/bin/opkssh",
+  message: null,
+  providerOwnsCallbackListener: true,
+  providerOwnsCallbackShutdown: true,
+  ...overrides,
+});
+
 const makeBinaryStatus = (installed = true): OpksshBinaryStatus => ({
   installed,
   path: installed ? "/usr/local/bin/opkssh" : null,
@@ -127,7 +140,78 @@ const makeBinaryStatus = (installed = true): OpksshBinaryStatus => ({
   downloadUrl: installed
     ? null
     : "https://github.com/openpubkey/opkssh/releases/download/v0.13.0/opkssh-linux-amd64",
+  backend: makeBackendStatus({
+    available: installed,
+    availability: installed ? "available" : "unavailable",
+    version: installed ? "0.13.0" : null,
+    path: installed ? "/usr/local/bin/opkssh" : null,
+    message: installed ? null : "CLI fallback not found.",
+  }),
 });
+
+const makeRuntimeStatus = (overrides: Record<string, unknown> = {}) => {
+  const cli =
+    (overrides.cli as OpksshBinaryStatus | undefined)
+    ?? makeBinaryStatus(true);
+
+  return {
+    mode: "auto",
+    activeBackend: cli.installed ? "cli" : null,
+    usingFallback: cli.installed,
+    library: makeBackendStatus({
+      kind: "library",
+      available: false,
+      availability: "planned",
+      version: null,
+      path: null,
+      message: "The in-process OPKSSH library backend is not linked in this build.",
+    }),
+    cli,
+    message: cli.installed
+      ? "Using CLI fallback until the in-process library backend is linked."
+      : "No OPKSSH runtime is currently available. The in-process library path is not linked yet and the CLI fallback was not found.",
+    ...overrides,
+  };
+};
+
+const makeRolloutSignal = (runtime = makeRuntimeStatus()) => {
+  if (!runtime.activeBackend) {
+    return {
+      preferredMode: runtime.mode,
+      activeBackend: runtime.activeBackend,
+      usingFallback: runtime.usingFallback,
+      fallbackReason: null,
+      cliRetirementDecision: "blocked-no-runtime",
+      cliRetirementMessage:
+        "CLI retirement is blocked: this build cannot prove a working wrapped OPKSSH runtime yet.",
+    };
+  }
+
+  if (runtime.activeBackend === "cli") {
+    return {
+      preferredMode: runtime.mode,
+      activeBackend: runtime.activeBackend,
+      usingFallback: runtime.usingFallback,
+      fallbackReason: runtime.mode === "cli"
+        ? "CLI mode is explicitly selected for the current release-cycle fallback seam."
+        : runtime.message,
+      cliRetirementDecision: "retain-cli-fallback",
+      cliRetirementMessage: runtime.mode === "cli"
+        ? "CLI retirement is deferred: this build is still running in explicit CLI mode for the current rollout seam."
+        : "CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
+    };
+  }
+
+  return {
+    preferredMode: runtime.mode,
+    activeBackend: runtime.activeBackend,
+    usingFallback: runtime.usingFallback,
+    fallbackReason: null,
+    cliRetirementDecision: "defer-until-evidence",
+    cliRetirementMessage:
+      "CLI retirement is still deferred: this seam can prove runtime selection, but it does not yet encode bundle/install evidence for removing fallback.",
+  };
+};
 
 const makeKey = (overrides: Partial<OpksshKey> = {}): OpksshKey => ({
   id: "key-1",
@@ -144,7 +228,11 @@ const makeKey = (overrides: Partial<OpksshKey> = {}): OpksshKey => ({
 });
 
 const makeStatus = (opts: Partial<OpksshStatus> = {}): OpksshStatus => ({
-  binary: makeBinaryStatus(),
+  runtime: opts.runtime ?? makeRuntimeStatus({ cli: opts.binary ?? makeBinaryStatus() }),
+  binary:
+    (opts.runtime as { cli?: OpksshBinaryStatus } | undefined)?.cli
+    ?? opts.binary
+    ?? makeBinaryStatus(),
   activeKeys: [makeKey()],
   clientConfig: null,
   lastLogin: null,
@@ -208,6 +296,84 @@ const makeAuditResult = (): AuditResult => ({
   totalCount: 2,
   rawOutput: "",
 });
+
+const makeLoginOperation = (
+  overrides: Partial<Record<string, unknown>> = {},
+) => ({
+  id: "operation-1",
+  status: "succeeded",
+  provider: "google",
+  runtime: makeRuntimeStatus(),
+  browserUrl: null,
+  canCancel: false,
+  message: "Login successful",
+  result: {
+    success: true,
+    keyPath: "/home/user/.ssh/id_ecdsa",
+    identity: "user@example.com",
+    provider: "google",
+    expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+    message: "Login successful",
+    rawOutput: "",
+  } satisfies OpksshLoginResult,
+  startedAt: "2026-04-01T00:00:00Z",
+  finishedAt: "2026-04-01T00:00:05Z",
+  ...overrides,
+});
+
+const makeMgr = (overrides: Record<string, unknown> = {}) => {
+  const runtime = makeRuntimeStatus();
+  return {
+    activeTab: "overview",
+    setActiveTab: vi.fn(),
+    isLoading: false,
+    isLoggingIn: false,
+    isLoadingServer: false,
+    isLoadingAudit: false,
+    error: null,
+    setError: vi.fn(),
+    binaryStatus: runtime.cli,
+    runtimeStatus: runtime,
+    overallStatus: makeStatus({ runtime }),
+    rolloutSignal: makeRolloutSignal(runtime),
+    checkBinary: vi.fn(),
+    refreshStatus: vi.fn(),
+    loginOptions: {},
+    setLoginOptions: vi.fn(),
+    login: vi.fn(),
+    loginOperation: null,
+    loginPhase: "idle",
+    loginWaitTimedOut: false,
+    loginNotice: null,
+    loginElapsedMs: 0,
+    refreshLoginOperation: vi.fn(),
+    continueLoginWait: vi.fn(),
+    cancelLogin: vi.fn(),
+    lastLoginResult: null,
+    activeKeys: [makeKey()],
+    refreshKeys: vi.fn(),
+    removeKey: vi.fn(),
+    clientConfig: makeClientConfig(),
+    refreshClientConfig: vi.fn(),
+    updateClientConfig: vi.fn(),
+    buildEnvString: vi.fn(),
+    wellKnownProviders: [],
+    refreshWellKnownProviders: vi.fn(),
+    sshSessions: mockSshSessions.filter((session) => session.protocol === "ssh"),
+    selectedSessionId: "session-1",
+    setSelectedSessionId: vi.fn(),
+    serverConfigs: {},
+    refreshServerConfig: vi.fn(),
+    addServerIdentity: vi.fn(),
+    removeServerIdentity: vi.fn(),
+    addServerProvider: vi.fn(),
+    removeServerProvider: vi.fn(),
+    installOnServer: vi.fn(),
+    auditResults: {},
+    runAudit: vi.fn(),
+    ...overrides,
+  };
+};
 
 const renderPanel = async (isOpen = true) => {
   let result: ReturnType<typeof render>;
@@ -342,11 +508,38 @@ describe("OpksshPanel", () => {
       });
     });
 
+    it("should surface the runtime fallback banner", async () => {
+      await renderPanel();
+      expect(screen.getByText("Local runtime")).toBeInTheDocument();
+      expect(screen.getByText("CLI fallback active")).toBeInTheDocument();
+      expect(screen.getByText("Rollout mode: auto")).toBeInTheDocument();
+      expect(
+        screen.getByText((_, element) =>
+          element?.textContent === "Fallback reason: Using CLI fallback until the in-process library backend is linked.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText((_, element) =>
+          element?.textContent === "CLI retirement: CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Browser callback listener bind and shutdown remain provider-owned in this slice.",
+        ),
+      ).toBeInTheDocument();
+    });
+
     it("should show download link when binary not installed", async () => {
+      const binary = makeBinaryStatus(false);
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "opkssh_get_status")
           return Promise.resolve(
-            makeStatus({ binary: makeBinaryStatus(false), activeKeys: [] }),
+            makeStatus({
+              runtime: makeRuntimeStatus({ cli: binary, activeBackend: null, usingFallback: false }),
+              binary,
+              activeKeys: [],
+            }),
           );
         if (cmd === "opkssh_well_known_providers") return Promise.resolve([]);
         return Promise.resolve(null);
@@ -397,19 +590,21 @@ describe("OpksshPanel", () => {
     });
 
     it("should call login on button click", async () => {
+      const started = makeLoginOperation({
+        status: "running",
+        canCancel: true,
+        result: null,
+        finishedAt: null,
+        message: "Using CLI fallback until the in-process library backend is linked.",
+      });
+      const completed = makeLoginOperation({
+        id: started.id,
+      });
       mockInvoke.mockImplementation((cmd: string) => {
         if (cmd === "opkssh_get_status") return Promise.resolve(makeStatus());
         if (cmd === "opkssh_well_known_providers") return Promise.resolve([]);
-        if (cmd === "opkssh_login")
-          return Promise.resolve({
-            success: true,
-            keyPath: "/home/user/.ssh/id_ecdsa",
-            identity: "user@example.com",
-            provider: "google",
-            expiresAt: new Date(Date.now() + 86400_000).toISOString(),
-            message: "Login successful",
-            rawOutput: "",
-          } satisfies OpksshLoginResult);
+        if (cmd === "opkssh_start_login") return Promise.resolve(started);
+        if (cmd === "opkssh_await_login") return Promise.resolve(completed);
         if (cmd === "opkssh_list_keys") return Promise.resolve([makeKey()]);
         return Promise.resolve(null);
       });
@@ -425,10 +620,108 @@ describe("OpksshPanel", () => {
       });
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith(
-          "opkssh_login",
+          "opkssh_start_login",
           expect.any(Object),
         );
       });
+      expect(mockInvoke).toHaveBeenCalledWith("opkssh_get_login_operation", {
+        operationId: started.id,
+      });
+    });
+
+    it("should show truthful timeout and local-cancel actions while login is still running", async () => {
+      const continueLoginWait = vi.fn();
+      const refreshLoginOperation = vi.fn();
+      const cancelLogin = vi.fn();
+      const runtime = makeRuntimeStatus();
+      const useOpksshSpy = vi
+        .spyOn(useOpksshModule, "useOpkssh")
+        .mockReturnValue(
+          makeMgr({
+            activeTab: "login",
+            runtimeStatus: runtime,
+            overallStatus: makeStatus({ runtime }),
+            rolloutSignal: makeRolloutSignal(runtime),
+            isLoggingIn: true,
+            loginPhase: "timedOut",
+            loginWaitTimedOut: true,
+            loginElapsedMs: 91_000,
+            loginNotice:
+              "The app stopped actively waiting after 90s. OPKSSH may still be waiting on the system browser or provider-owned callback. Keep waiting, refresh the snapshot, or cancel the local wait.",
+            loginOperation: makeLoginOperation({
+              status: "running",
+              result: null,
+              canCancel: true,
+              finishedAt: null,
+              message: "Waiting for browser callback",
+            }),
+            continueLoginWait,
+            refreshLoginOperation,
+            cancelLogin,
+          }) as any,
+        );
+
+      try {
+        await renderPanel();
+
+        expect(
+          screen.getByText("Login is still waiting on the provider"),
+        ).toBeInTheDocument();
+        expect(screen.getByText("Keep waiting")).toBeInTheDocument();
+        expect(screen.getByText("Refresh login status")).toBeInTheDocument();
+        expect(screen.getByText("Cancel local wait")).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            "If the system browser did not open, this app cannot detect that failure directly because OPKSSH/provider owns browser launch and callback handling in this slice.",
+          ),
+        ).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText("Keep waiting"));
+        fireEvent.click(screen.getByText("Refresh login status"));
+        fireEvent.click(screen.getByText("Cancel local wait"));
+
+        expect(continueLoginWait).toHaveBeenCalledTimes(1);
+        expect(refreshLoginOperation).toHaveBeenCalledTimes(1);
+        expect(cancelLogin).toHaveBeenCalledTimes(1);
+      } finally {
+        useOpksshSpy.mockRestore();
+      }
+    });
+
+    it("should show explicit CLI mode and deferred retirement when rollout is pinned to CLI", async () => {
+      const runtime = makeRuntimeStatus({
+        mode: "cli",
+        activeBackend: "cli",
+        usingFallback: false,
+        message: "CLI runtime active",
+      });
+      const useOpksshSpy = vi
+        .spyOn(useOpksshModule, "useOpkssh")
+        .mockReturnValue(
+          makeMgr({
+            runtimeStatus: runtime,
+            overallStatus: makeStatus({ runtime }),
+            rolloutSignal: makeRolloutSignal(runtime),
+          }) as any,
+        );
+
+      try {
+        await renderPanel();
+
+        expect(screen.getByText("Rollout mode: cli")).toBeInTheDocument();
+        expect(
+          screen.getByText((_, element) =>
+            element?.textContent === "Fallback reason: CLI mode is explicitly selected for the current release-cycle fallback seam.",
+          ),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText((_, element) =>
+            element?.textContent === "CLI retirement: CLI retirement is deferred: this build is still running in explicit CLI mode for the current rollout seam.",
+          ),
+        ).toBeInTheDocument();
+      } finally {
+        useOpksshSpy.mockRestore();
+      }
     });
   });
 
@@ -609,6 +902,7 @@ describe("opkssh types", () => {
       platform: "linux",
       arch: "x86_64",
       downloadUrl: null,
+      backend: makeBackendStatus(),
     };
     expect(status.installed).toBe(true);
     expect(status.version).toBe("0.13.0");

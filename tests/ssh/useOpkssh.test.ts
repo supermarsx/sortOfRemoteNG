@@ -39,6 +39,18 @@ const mockInvoke = vi.mocked(invoke);
 
 // ── Helpers ──────────────────────────────────────────────
 
+const makeBackendStatus = (overrides: Record<string, unknown> = {}) => ({
+  kind: "cli",
+  available: true,
+  availability: "available",
+  version: "0.4.0",
+  path: "/usr/local/bin/opkssh",
+  message: null,
+  providerOwnsCallbackListener: true,
+  providerOwnsCallbackShutdown: true,
+  ...overrides,
+});
+
 const makeBinaryStatus = (overrides: Record<string, unknown> = {}) => ({
   installed: true,
   path: "/usr/local/bin/opkssh",
@@ -46,37 +58,73 @@ const makeBinaryStatus = (overrides: Record<string, unknown> = {}) => ({
   platform: "linux",
   arch: "x86_64",
   downloadUrl: null,
+  backend: makeBackendStatus(),
   ...overrides,
 });
 
+const makeRuntimeStatus = (overrides: Record<string, unknown> = {}) => {
+  const cli =
+    (overrides.cli as ReturnType<typeof makeBinaryStatus> | undefined)
+    ?? makeBinaryStatus();
+
+  return {
+    mode: "auto",
+    activeBackend: cli.installed ? "cli" : null,
+    usingFallback: cli.installed,
+    library: makeBackendStatus({
+      kind: "library",
+      available: false,
+      availability: "planned",
+      version: null,
+      path: null,
+      message: "The in-process OPKSSH library backend is not linked in this build.",
+    }),
+    cli,
+    message: cli.installed
+      ? "Using CLI fallback until the in-process library backend is linked."
+      : "No OPKSSH runtime is currently available. The in-process library path is not linked yet and the CLI fallback was not found.",
+    ...overrides,
+  };
+};
+
 const makeOverallStatus = (overrides: Record<string, unknown> = {}) => ({
+  runtime: makeRuntimeStatus(),
   binary: makeBinaryStatus(),
   activeKeys: [makeKey()],
   clientConfig: makeClientConfig(),
+  lastLogin: null,
+  lastError: null,
   ...overrides,
 });
 
 const makeKey = (overrides: Record<string, unknown> = {}) => ({
   id: "key-1",
+  path: "/home/user/.ssh/id_ecdsa",
+  publicKeyPath: "/home/user/.ssh/id_ecdsa.pub",
   identity: "user@example.com",
-  issuer: "https://accounts.google.com",
-  keyPath: "/home/user/.ssh/id_ecdsa",
+  provider: "google",
+  createdAt: "2026-03-31T00:00:00Z",
   expiresAt: "2026-04-01T00:00:00Z",
+  isExpired: false,
+  algorithm: "ecdsa-sha2-nistp256",
+  fingerprint: "SHA256:abc123",
   ...overrides,
 });
 
 const makeClientConfig = (overrides: Record<string, unknown> = {}) => ({
+  configPath: "/home/user/.opk/config.yml",
   providers: [],
   defaultProvider: null,
-  keyDirectory: "/home/user/.opk",
   ...overrides,
 });
 
 const makeServerConfig = (overrides: Record<string, unknown> = {}) => ({
   installed: true,
   version: "0.4.0",
-  authIdEntries: [],
-  providerEntries: [],
+  providers: [],
+  globalAuthIds: [],
+  userAuthIds: [],
+  sshdConfigSnippet: null,
   ...overrides,
 });
 
@@ -88,6 +136,20 @@ const makeLoginResult = (overrides: Record<string, unknown> = {}) => ({
   expiresAt: "2026-04-01T00:00:00Z",
   message: "Login successful",
   rawOutput: "ok",
+  ...overrides,
+});
+
+const makeLoginOperation = (overrides: Record<string, unknown> = {}) => ({
+  id: "operation-1",
+  status: "succeeded",
+  provider: "google",
+  runtime: makeRuntimeStatus(),
+  browserUrl: null,
+  canCancel: false,
+  message: "Login successful",
+  result: makeLoginResult(),
+  startedAt: "2026-04-01T00:00:00Z",
+  finishedAt: "2026-04-01T00:00:05Z",
   ...overrides,
 });
 
@@ -119,13 +181,20 @@ describe("useOpkssh", () => {
     expect(result.current.isLoadingAudit).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.binaryStatus).toBeNull();
+    expect(result.current.runtimeStatus).toBeNull();
     expect(result.current.overallStatus).toBeNull();
+    expect(result.current.rolloutSignal).toBeNull();
     expect(result.current.activeKeys).toEqual([]);
     expect(result.current.clientConfig).toBeNull();
     expect(result.current.serverConfigs).toEqual({});
     expect(result.current.auditResults).toEqual({});
     expect(result.current.wellKnownProviders).toEqual([]);
+    expect(result.current.loginOperation).toBeNull();
     expect(result.current.lastLoginResult).toBeNull();
+    expect(result.current.loginPhase).toBe("idle");
+    expect(result.current.loginWaitTimedOut).toBe(false);
+    expect(result.current.loginNotice).toBeNull();
+    expect(result.current.loginElapsedMs).toBe(0);
   });
 
   it("filters SSH sessions from all sessions", () => {
@@ -211,8 +280,6 @@ describe("useOpkssh", () => {
 
   it("refreshStatus sets overall status, binary, keys and config", async () => {
     const status = makeOverallStatus();
-    // First two calls are from the useEffect auto-refresh when isOpen
-    mockInvoke.mockResolvedValue(undefined as never);
 
     const { result } = renderHook(() => useOpkssh(false));
 
@@ -225,9 +292,58 @@ describe("useOpkssh", () => {
     expect(mockInvoke).toHaveBeenCalledWith("opkssh_get_status");
     expect(result.current.overallStatus).toEqual(status);
     expect(result.current.binaryStatus).toEqual(status.binary);
+    expect(result.current.runtimeStatus).toEqual(status.runtime);
+    expect(result.current.rolloutSignal).toEqual({
+      preferredMode: "auto",
+      activeBackend: "cli",
+      usingFallback: true,
+      fallbackReason: "Using CLI fallback until the in-process library backend is linked.",
+      cliRetirementDecision: "retain-cli-fallback",
+      cliRetirementMessage:
+        "CLI retirement is deferred: the wrapped contract is still running on CLI fallback, so keep it visible for at least one release cycle.",
+    });
     expect(result.current.activeKeys).toEqual(status.activeKeys);
     expect(result.current.clientConfig).toEqual(status.clientConfig);
     expect(result.current.isLoading).toBe(false);
+  });
+
+  it("derives a defer-until-evidence rollout signal when the library runtime is selected", async () => {
+    const runtime = makeRuntimeStatus({
+      mode: "library",
+      activeBackend: "library",
+      usingFallback: false,
+      library: makeBackendStatus({
+        kind: "library",
+        available: true,
+        availability: "available",
+        version: "0.4.0-lib",
+        path: "C:/wrapped/opkssh.dll",
+        message: null,
+      }),
+      message: "Library runtime active",
+    });
+    const status = makeOverallStatus({
+      runtime,
+      binary: makeBinaryStatus(),
+    });
+
+    const { result } = renderHook(() => useOpkssh(false));
+
+    mockInvoke.mockResolvedValueOnce(status as never);
+
+    await act(async () => {
+      await result.current.refreshStatus();
+    });
+
+    expect(result.current.rolloutSignal).toEqual({
+      preferredMode: "library",
+      activeBackend: "library",
+      usingFallback: false,
+      fallbackReason: null,
+      cliRetirementDecision: "defer-until-evidence",
+      cliRetirementMessage:
+        "CLI retirement is still deferred: this seam can prove runtime selection, but it does not yet encode bundle/install evidence for removing fallback.",
+    });
   });
 
   it("refreshStatus sets error on failure", async () => {
@@ -244,14 +360,26 @@ describe("useOpkssh", () => {
 
   // ── login ────────────────────────────────────────────
 
-  it("login invokes opkssh_login with provided options and refreshes keys on success", async () => {
+  it("login polls operation snapshots and refreshes keys on success", async () => {
     const loginResult = makeLoginResult();
+    const started = makeLoginOperation({
+      status: "running",
+      result: null,
+      canCancel: true,
+      finishedAt: null,
+      message: "Using CLI fallback until the in-process library backend is linked.",
+    });
+    const completed = makeLoginOperation({
+      id: started.id,
+      result: loginResult,
+    });
     const keys = [makeKey()];
 
     const { result } = renderHook(() => useOpkssh(false));
 
     mockInvoke
-      .mockResolvedValueOnce(loginResult as never) // opkssh_login
+      .mockResolvedValueOnce(started as never) // opkssh_start_login
+      .mockResolvedValueOnce(completed as never) // opkssh_get_login_operation
       .mockResolvedValueOnce(keys as never); // opkssh_list_keys (refreshKeys)
 
     const opts = { provider: "google" };
@@ -260,11 +388,17 @@ describe("useOpkssh", () => {
       ret = await result.current.login(opts as any);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("opkssh_login", { options: opts });
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_start_login", { options: opts });
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_get_login_operation", {
+      operationId: started.id,
+    });
     expect(ret).toEqual(loginResult);
+    expect(result.current.loginOperation).toEqual(completed);
+    expect(result.current.runtimeStatus).toEqual(completed.runtime);
     expect(result.current.lastLoginResult).toEqual(loginResult);
     expect(result.current.activeKeys).toEqual(keys);
     expect(result.current.isLoggingIn).toBe(false);
+    expect(result.current.loginWaitTimedOut).toBe(false);
   });
 
   it("login sets error on failure and returns null", async () => {
@@ -285,6 +419,19 @@ describe("useOpkssh", () => {
 
   it("login uses loginOptions from state when no opts provided", async () => {
     const loginResult = makeLoginResult();
+    const started = makeLoginOperation({
+      id: "operation-2",
+      status: "running",
+      provider: "microsoft",
+      result: null,
+      canCancel: true,
+      finishedAt: null,
+    });
+    const completed = makeLoginOperation({
+      id: started.id,
+      provider: "microsoft",
+      result: loginResult,
+    });
     const { result } = renderHook(() => useOpkssh(false));
 
     act(() => {
@@ -292,16 +439,139 @@ describe("useOpkssh", () => {
     });
 
     mockInvoke
-      .mockResolvedValueOnce(loginResult as never)
+      .mockResolvedValueOnce(started as never)
+      .mockResolvedValueOnce(completed as never)
       .mockResolvedValueOnce([] as never);
 
     await act(async () => {
       await result.current.login();
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("opkssh_login", {
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_start_login", {
       options: { provider: "microsoft" },
     });
+  });
+
+  it("login times out locally but keeps the running operation visible", async () => {
+    const started = makeLoginOperation({
+      status: "running",
+      result: null,
+      canCancel: true,
+      finishedAt: null,
+      message: "Waiting for browser callback",
+    });
+    const { result } = renderHook(() =>
+      useOpkssh(false, { loginWaitTimeoutMs: 0 }),
+    );
+
+    mockInvoke
+      .mockResolvedValueOnce(started as never)
+      .mockResolvedValueOnce(started as never);
+
+    let ret: any;
+    await act(async () => {
+      ret = await result.current.login({ provider: "google" } as any);
+    });
+
+    expect(ret).toBeNull();
+    expect(result.current.isLoggingIn).toBe(true);
+    expect(result.current.loginPhase).toBe("timedOut");
+    expect(result.current.loginWaitTimedOut).toBe(true);
+    expect(result.current.loginOperation?.status).toBe("running");
+    expect(result.current.loginNotice).toContain("provider-owned callback");
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_get_login_operation", {
+      operationId: started.id,
+    });
+  });
+
+  it("cancelLogin ends a timed-out local wait without fabricating a failed login result", async () => {
+    const started = makeLoginOperation({
+      status: "running",
+      result: null,
+      canCancel: true,
+      finishedAt: null,
+      message: "Waiting for browser callback",
+    });
+    const cancelled = makeLoginOperation({
+      id: started.id,
+      status: "cancelled",
+      result: null,
+      canCancel: false,
+      finishedAt: "2026-04-01T00:00:05Z",
+      message:
+        "Login wait cancelled locally. Callback listener bind/shutdown remain provider-owned in this Phase C slice, so external browser/provider activity may still continue.",
+    });
+    const { result } = renderHook(() =>
+      useOpkssh(false, { loginWaitTimeoutMs: 0 }),
+    );
+
+    mockInvoke
+      .mockResolvedValueOnce(started as never)
+      .mockResolvedValueOnce(started as never);
+
+    await act(async () => {
+      await result.current.login({ provider: "google" } as any);
+    });
+
+    mockInvoke.mockResolvedValueOnce(cancelled as never);
+
+    await act(async () => {
+      await result.current.cancelLogin();
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_cancel_login", {
+      operationId: started.id,
+    });
+    expect(result.current.isLoggingIn).toBe(false);
+    expect(result.current.loginWaitTimedOut).toBe(false);
+    expect(result.current.loginOperation).toEqual(cancelled);
+    expect(result.current.lastLoginResult).toBeNull();
+    expect(result.current.loginNotice).toContain("provider-owned");
+  });
+
+  it("continueLoginWait resumes a timed-out operation and settles on success", async () => {
+    const loginResult = makeLoginResult();
+    const started = makeLoginOperation({
+      status: "running",
+      result: null,
+      canCancel: true,
+      finishedAt: null,
+      message: "Waiting for browser callback",
+    });
+    const completed = makeLoginOperation({
+      id: started.id,
+      status: "succeeded",
+      canCancel: false,
+      finishedAt: "2026-04-01T00:00:05Z",
+      result: loginResult,
+    });
+    const keys = [makeKey()];
+    const { result } = renderHook(() =>
+      useOpkssh(false, { loginWaitTimeoutMs: 0 }),
+    );
+
+    mockInvoke
+      .mockResolvedValueOnce(started as never)
+      .mockResolvedValueOnce(started as never);
+
+    await act(async () => {
+      await result.current.login({ provider: "google" } as any);
+    });
+
+    mockInvoke
+      .mockResolvedValueOnce(completed as never)
+      .mockResolvedValueOnce(keys as never);
+
+    let resumed: any;
+    await act(async () => {
+      resumed = await result.current.continueLoginWait();
+    });
+
+    expect(resumed).toEqual(loginResult);
+    expect(result.current.isLoggingIn).toBe(false);
+    expect(result.current.loginWaitTimedOut).toBe(false);
+    expect(result.current.lastLoginResult).toEqual(loginResult);
+    expect(result.current.activeKeys).toEqual(keys);
   });
 
   // ── Key management ───────────────────────────────────
@@ -320,12 +590,17 @@ describe("useOpkssh", () => {
     expect(result.current.activeKeys).toEqual(keys);
   });
 
-  it("removeKey invokes opkssh_remove_key and refreshes keys", async () => {
+  it("removeKey resolves ids to key paths before calling the backend", async () => {
     const { result } = renderHook(() => useOpkssh(false));
 
     mockInvoke
+      .mockResolvedValueOnce(makeOverallStatus() as never) // opkssh_get_status
       .mockResolvedValueOnce(undefined as never) // opkssh_remove_key
       .mockResolvedValueOnce([] as never); // opkssh_list_keys
+
+    await act(async () => {
+      await result.current.refreshStatus();
+    });
 
     let success: boolean | undefined;
     await act(async () => {
@@ -334,7 +609,7 @@ describe("useOpkssh", () => {
 
     expect(success).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith("opkssh_remove_key", {
-      keyId: "key-1",
+      keyPath: "/home/user/.ssh/id_ecdsa",
     });
   });
 
@@ -449,14 +724,15 @@ describe("useOpkssh", () => {
       await result.current.refreshServerConfig("sess-1");
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith(
-      "opkssh_server_read_config_script",
-      { sessionId: "backend-1" },
-    );
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_server_read_config_script");
     expect(mockInvoke).toHaveBeenCalledWith("execute_command", {
       sessionId: "backend-1",
       command: "read-script",
       timeout: 15000,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_parse_server_config", {
+      sessionId: "sess-1",
+      rawOutput: "raw output",
     });
     expect(result.current.serverConfigs["sess-1"]).toEqual(serverConfig);
     expect(result.current.isLoadingServer).toBe(false);
@@ -496,9 +772,11 @@ describe("useOpkssh", () => {
 
     expect(success).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith("opkssh_build_add_identity_cmd", {
-      principal: "root",
-      identity: "user@example.com",
-      issuer: "https://accounts.google.com",
+      entry: {
+        principal: "root",
+        identity: "user@example.com",
+        issuer: "https://accounts.google.com",
+      },
     });
   });
 
@@ -519,6 +797,14 @@ describe("useOpkssh", () => {
     });
 
     expect(success).toBe(false);
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_build_remove_identity_cmd", {
+      entry: {
+        identity: "user@example.com",
+        issuer: "https://accounts.google.com",
+        principal: "root",
+      },
+      userLevel: false,
+    });
     expect(result.current.error).toContain("Failed to remove identity");
   });
 
@@ -540,15 +826,17 @@ describe("useOpkssh", () => {
         "sess-1",
         "https://accounts.google.com",
         "client-123",
-        { maxLifetime: 86400 } as any,
+        "24h" as any,
       );
     });
 
     expect(success).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith("opkssh_build_add_provider_cmd", {
-      issuer: "https://accounts.google.com",
-      clientId: "client-123",
-      expirationPolicy: { maxLifetime: 86400 },
+      entry: {
+        issuer: "https://accounts.google.com",
+        clientId: "client-123",
+        expirationPolicy: "24h",
+      },
     });
   });
 
@@ -566,13 +854,21 @@ describe("useOpkssh", () => {
     await act(async () => {
       success = await result.current.removeServerProvider(
         "sess-1",
-        "https://accounts.google.com",
+        {
+          issuer: "https://accounts.google.com",
+          clientId: "client-123",
+          expirationPolicy: "24h",
+        } as any,
       );
     });
 
     expect(success).toBe(true);
     expect(mockInvoke).toHaveBeenCalledWith("opkssh_build_remove_provider_cmd", {
-      issuer: "https://accounts.google.com",
+      entry: {
+        issuer: "https://accounts.google.com",
+        clientId: "client-123",
+        expirationPolicy: "24h",
+      },
     });
   });
 
@@ -634,6 +930,10 @@ describe("useOpkssh", () => {
     expect(mockInvoke).toHaveBeenCalledWith("opkssh_build_audit_cmd", {
       principal: "root",
       limit: 50,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_parse_audit_output", {
+      sessionId: "sess-1",
+      rawOutput: "audit output",
     });
   });
 
@@ -705,5 +1005,50 @@ describe("useOpkssh", () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.lastLoginResult).toBeNull();
+  });
+
+  it("keeps a running login operation visible when the panel closes", async () => {
+    const started = makeLoginOperation({
+      status: "running",
+      result: null,
+      canCancel: true,
+      finishedAt: null,
+      message: "Waiting for browser callback",
+    });
+    const { result, rerender } = renderHook(
+      ({ isOpen }) => useOpkssh(isOpen, { loginWaitTimeoutMs: 0 }),
+      { initialProps: { isOpen: true } },
+    );
+
+    mockInvoke.mockImplementation(async (command: string) => {
+      switch (command) {
+        case "opkssh_status":
+          return makeOverallStatus();
+        case "opkssh_list_keys":
+          return [];
+        case "opkssh_get_client_config":
+          return makeClientConfig();
+        case "opkssh_well_known_providers":
+          return [];
+        case "opkssh_start_login":
+          return started;
+        case "opkssh_get_login_operation":
+          return started;
+        default:
+          throw new Error(`Unexpected command: ${command}`);
+      }
+    });
+
+    await act(async () => {
+      await result.current.login({ provider: "google" } as any);
+    });
+
+    await act(async () => {
+      rerender({ isOpen: false });
+    });
+
+    expect(result.current.loginOperation?.status).toBe("running");
+    expect(result.current.loginNotice).toContain("running in the background");
+    expect(result.current.isLoggingIn).toBe(true);
   });
 });

@@ -3,7 +3,27 @@
  * Mirrors the Rust types in src-tauri/crates/sorng-opkssh/src/types.rs.
  */
 
-// ── Binary / Installation ───────────────────────────────────────────
+// ── Runtime / Installation ──────────────────────────────────────────
+
+export type OpksshBackendMode = "auto" | "library" | "cli";
+
+export type OpksshBackendKind = "library" | "cli";
+
+export type OpksshRuntimeAvailability =
+  | "available"
+  | "planned"
+  | "unavailable";
+
+export interface OpksshBackendStatus {
+  kind: OpksshBackendKind;
+  available: boolean;
+  availability: OpksshRuntimeAvailability;
+  version: string | null;
+  path: string | null;
+  message: string | null;
+  providerOwnsCallbackListener: boolean;
+  providerOwnsCallbackShutdown: boolean;
+}
 
 export interface OpksshBinaryStatus {
   installed: boolean;
@@ -12,6 +32,16 @@ export interface OpksshBinaryStatus {
   platform: string;
   arch: string;
   downloadUrl: string | null;
+  backend: OpksshBackendStatus;
+}
+
+export interface OpksshRuntimeStatus {
+  mode: OpksshBackendMode;
+  activeBackend: OpksshBackendKind | null;
+  usingFallback: boolean;
+  library: OpksshBackendStatus;
+  cli: OpksshBinaryStatus;
+  message: string | null;
 }
 
 // ── Provider Aliases ────────────────────────────────────────────────
@@ -110,6 +140,25 @@ export interface OpksshLoginResult {
   expiresAt: string | null;
   message: string;
   rawOutput: string;
+}
+
+export type OpksshLoginOperationStatus =
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export interface OpksshLoginOperation {
+  id: string;
+  status: OpksshLoginOperationStatus;
+  provider: string | null;
+  runtime: OpksshRuntimeStatus;
+  browserUrl: string | null;
+  canCancel: boolean;
+  message: string | null;
+  result: OpksshLoginResult | null;
+  startedAt: string;
+  finishedAt: string | null;
 }
 
 // ── Key Management ──────────────────────────────────────────────────
@@ -228,6 +277,7 @@ export interface ServerInstallResult {
 // ── Overall Status ──────────────────────────────────────────────────
 
 export interface OpksshStatus {
+  runtime: OpksshRuntimeStatus;
   binary: OpksshBinaryStatus;
   activeKeys: OpksshKey[];
   clientConfig: OpksshClientConfig | null;

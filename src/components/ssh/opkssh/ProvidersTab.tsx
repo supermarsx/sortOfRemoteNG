@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings, Plus, Trash2, Save, RefreshCw, Copy } from "lucide-react";
 import type { OpksshMgr } from "./types";
@@ -16,19 +16,34 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
   const [newAlias, setNewAlias] = useState("");
   const [newIssuer, setNewIssuer] = useState("");
   const [newClientId, setNewClientId] = useState("");
-  const [newSecret, setNewSecret] = useState("");
   const [newScopes, setNewScopes] = useState("");
+  const newSecretRef = useRef("");
+  const newSecretInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Env string display ─────────────────────────────────
   const [envString, setEnvString] = useState<string | null>(null);
 
+  const clearNewSecret = useCallback(() => {
+    newSecretRef.current = "";
+    if (newSecretInputRef.current) {
+      newSecretInputRef.current.value = "";
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearNewSecret();
+    };
+  }, [clearNewSecret]);
+
   const handleAddProvider = async () => {
     if (!config || !newAlias || !newIssuer || !newClientId) return;
+    const clientSecret = newSecretRef.current;
     const provider: CustomProvider = {
       alias: newAlias,
       issuer: newIssuer,
       clientId: newClientId,
-      ...(newSecret && { clientSecret: newSecret }),
+      ...(clientSecret && { clientSecret }),
       ...(newScopes && { scopes: newScopes }),
     };
     const updated = {
@@ -40,7 +55,7 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
       setNewAlias("");
       setNewIssuer("");
       setNewClientId("");
-      setNewSecret("");
+      clearNewSecret();
       setNewScopes("");
     }
   };
@@ -96,6 +111,12 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
               {t("opkssh.defaultProvider", "Default provider")}: {config.defaultProvider}
             </div>
           )}
+          <div className="mt-2 text-[var(--color-textSecondary)]">
+            {t(
+              "opkssh.plaintextSecretNotice",
+              "Client secrets stored in ~/.opk/config.yml remain plaintext in this slice.",
+            )}
+          </div>
         </div>
       )}
 
@@ -190,10 +211,12 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
               />
               <input
                 type="password"
+                ref={newSecretInputRef}
                 className="px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
                 placeholder={t("opkssh.secret", "Secret (optional)")}
-                value={newSecret}
-                onChange={(e) => setNewSecret(e.target.value)}
+                onChange={(e) => {
+                  newSecretRef.current = e.target.value;
+                }}
               />
               <input
                 type="text"
