@@ -28,6 +28,40 @@ export const parseCSVLine = (line: string): string[] => {
   return values;
 };
 
+const getDefaultPort = (protocol: string): number => {
+  const defaults: Record<string, number> = {
+    RDP: 3389,
+    SSH1: 22,
+    SSH2: 22,
+    SSH: 22,
+    TELNET: 23,
+    RLOGIN: 513,
+    VNC: 5900,
+    HTTP: 80,
+    HTTPS: 443,
+    FTP: 21,
+    SFTP: 22,
+  };
+
+  return defaults[String(protocol).trim().toUpperCase()] || 3389;
+};
+
+const parsePortOrDefault = (portValue: unknown, protocol: string): number => {
+  if (typeof portValue === 'number') {
+    return Number.isFinite(portValue) && portValue > 0
+      ? portValue
+      : getDefaultPort(protocol);
+  }
+
+  const normalizedPort = String(portValue ?? '').trim();
+  if (!normalizedPort) return getDefaultPort(protocol);
+
+  const parsedPort = Number.parseInt(normalizedPort, 10);
+  return Number.isFinite(parsedPort) && parsedPort > 0
+    ? parsedPort
+    : getDefaultPort(protocol);
+};
+
 export const importFromCSV = async (content: string): Promise<Connection[]> => {
   const lines = content.split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) throw new Error('CSV file must have headers and at least one data row');
@@ -44,12 +78,14 @@ export const importFromCSV = async (content: string): Promise<Connection[]> => {
       conn[header] = values[index];
     });
 
+    const protocol = (conn.Protocol?.toLowerCase() || 'rdp') as Connection['protocol'];
+
     connections.push({
       id: conn.ID || generateId(),
       name: conn.Name || 'Imported Connection',
-      protocol: (conn.Protocol?.toLowerCase() || 'rdp') as Connection['protocol'],
+      protocol,
       hostname: conn.Hostname || '',
-      port: parseInt(conn.Port || '3389'),
+      port: parsePortOrDefault(conn.Port, protocol),
       username: conn.Username || undefined,
       domain: conn.Domain || undefined,
       description: conn.Description || undefined,
@@ -195,6 +231,7 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
     if (nodeType === 'Container') {
       // This is a folder
       const folderId = generateId();
+      const expanded = (node.getAttribute('Expanded') || '').toLowerCase() === 'true';
       folderIdMap.set(node, folderId);
       
       connections.push({
@@ -204,6 +241,7 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
         hostname: '',
         port: 0,
         isGroup: true,
+        expanded,
         parentId: parentId,
         description: node.getAttribute('Descr') || undefined,
         tags: [],
@@ -218,7 +256,7 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
       // This is a connection
       const protocol = node.getAttribute('Protocol') || 'RDP';
       const hostname = node.getAttribute('Hostname') || '';
-      const port = parseInt(node.getAttribute('Port') || '0') || getDefaultPort(protocol);
+      const port = parsePortOrDefault(node.getAttribute('Port'), protocol);
       const username = node.getAttribute('Username') || undefined;
       const domain = node.getAttribute('Domain') || undefined;
       const description = node.getAttribute('Descr') || node.getAttribute('Description') || undefined;
@@ -407,9 +445,6 @@ export const importFromMobaXterm = async (content: string): Promise<Connection[]
         const [, name, typeNum, params] = match;
         const parts = params.split('%');
         const hostname = parts[0] || '';
-        const port = parseInt(parts[1]) || 22;
-        const username = parts[2] || undefined;
-        
         // Map MobaXterm session types
         const protocolMap: Record<string, Connection['protocol']> = {
           '0': 'ssh',    // SSH
@@ -424,11 +459,14 @@ export const importFromMobaXterm = async (content: string): Promise<Connection[]
           '9': 'telnet', // Serial (→ telnet)
           '10': 'ssh',   // WSL
         };
+        const protocol = protocolMap[typeNum] || 'ssh';
+        const port = parsePortOrDefault(parts[1], protocol);
+        const username = parts[2] || undefined;
         
         connections.push({
           id: generateId(),
           name: name,
-          protocol: protocolMap[typeNum] || 'ssh',
+          protocol,
           hostname: hostname,
           port: port,
           username: username,
@@ -495,13 +533,15 @@ const createPuTTYConnection = (name: string, props: Record<string, string>): Con
     'rlogin': 'rlogin',
     'raw': 'telnet',
   };
+
+  const protocol = protocolMap[props.Protocol?.toLowerCase() || 'ssh'] || 'ssh';
   
   return {
     id: generateId(),
     name: name,
-    protocol: protocolMap[props.Protocol?.toLowerCase() || 'ssh'] || 'ssh',
-    hostname: props.HostName || '',
-    port: parseInt(props.PortNumber || '22'),
+    protocol,
+    hostname: props.HostName,
+    port: parsePortOrDefault(props.PortNumber, protocol),
     username: props.UserName || undefined,
     isGroup: false,
     tags: [],
@@ -550,7 +590,7 @@ export const importFromTermius = async (content: string): Promise<Connection[]> 
         name: host.label || host.address || 'Unnamed',
         protocol: 'ssh',
         hostname: host.address || '',
-        port: host.port || 22,
+        port: parsePortOrDefault(host.port, 'ssh'),
         username,
         isGroup: false,
         parentId: host.group_id ? groupMap.get(host.group_id) : undefined,
@@ -612,7 +652,7 @@ export const importFromRoyalTS = async (content: string): Promise<Connection[]> 
           name: obj.Name || obj.URI || 'Unnamed',
           protocol,
           hostname: obj.URI || obj.ComputerName || '',
-          port: obj.Port || getDefaultPort(protocol.toUpperCase()),
+          port: parsePortOrDefault(obj.Port, protocol),
           username: obj.CredentialUsername || obj.Username || undefined,
           domain: obj.CredentialDomain || undefined,
           description: obj.Description || undefined,
@@ -651,7 +691,7 @@ export const importFromSecureCRT = async (content: string): Promise<Connection[]
     const name = nameParts[nameParts.length - 1] || nameAttr;
 
     let hostname = '';
-    let port = 22;
+    let rawPort: string | undefined;
     let username = '';
     let protocol: Connection['protocol'] = 'ssh';
 
@@ -678,9 +718,11 @@ export const importFromSecureCRT = async (content: string): Promise<Connection[]
       const key = intMatch[1];
       const value = intMatch[2];
       if (key === '[SSH2] Port' || key === 'Port') {
-        port = parseInt(value) || 22;
+        rawPort = value;
       }
     }
+
+    const port = parsePortOrDefault(rawPort, protocol);
 
     if (hostname || name) {
       connections.push({
@@ -709,22 +751,27 @@ export const importFromJSON = async (content: string): Promise<Connection[]> => 
   
   // Handle array format
   if (Array.isArray(data)) {
-    return data.map(conn => ({
-      id: conn.id || generateId(),
-      name: conn.name || 'Imported Connection',
-      protocol: (conn.protocol?.toLowerCase() || 'rdp') as Connection['protocol'],
-      hostname: conn.hostname || conn.host || '',
-      port: parseInt(conn.port || '3389'),
-      username: conn.username || undefined,
-      password: conn.password || undefined,
-      domain: conn.domain || undefined,
-      description: conn.description || undefined,
-      parentId: conn.parentId || undefined,
-      isGroup: conn.isGroup || conn.isFolder || false,
-      tags: conn.tags || [],
-      createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
-      updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
-    }));
+    return data.map(conn => {
+      const protocol = (conn.protocol?.toLowerCase() || 'rdp') as Connection['protocol'];
+
+      return {
+        ...conn,
+        protocol,
+        id: conn.id || generateId(),
+        name: conn.name || 'Imported Connection',
+        hostname: conn.hostname || conn.host || '',
+        port: parsePortOrDefault(conn.port, protocol),
+        username: conn.username || undefined,
+        password: conn.password || undefined,
+        domain: conn.domain || undefined,
+        description: conn.description || undefined,
+        parentId: conn.parentId || undefined,
+        isGroup: conn.isGroup || conn.isFolder || false,
+        tags: conn.tags || [],
+        createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
+        updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
+      } as Connection;
+    });
   }
   
   // Handle object with connections array
@@ -733,26 +780,6 @@ export const importFromJSON = async (content: string): Promise<Connection[]> => 
   }
 
   throw new Error('Invalid JSON format: expected array or object with connections array');
-};
-
-/**
- * Get default port for a protocol
- */
-const getDefaultPort = (protocol: string): number => {
-  const defaults: Record<string, number> = {
-    'RDP': 3389,
-    'SSH1': 22,
-    'SSH2': 22,
-    'SSH': 22,
-    'Telnet': 23,
-    'Rlogin': 513,
-    'VNC': 5900,
-    'HTTP': 80,
-    'HTTPS': 443,
-    'FTP': 21,
-    'SFTP': 22,
-  };
-  return defaults[protocol] || 3389;
 };
 
 /**

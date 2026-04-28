@@ -57,16 +57,48 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
 }));
 
 vi.mock("../../src/components/ImportExport/ExportTab", () => ({
-  default: ({ handleExport }: { handleExport: () => void }) => (
+  default: ({
+    handleExport,
+    config,
+    onConfigChange,
+  }: {
+    handleExport: () => void;
+    config: {
+      format: string;
+      includePasswords: boolean;
+      encrypted: boolean;
+      password: string;
+    };
+    onConfigChange: (update: {
+      format?: string;
+      includePasswords?: boolean;
+      encrypted?: boolean;
+      password?: string;
+    }) => void;
+  }) => (
     <div>
       <div data-testid="export-tab-content">export-content</div>
+      <div data-testid="export-tab-config">
+        {`${config.format}|${String(config.includePasswords)}|${String(config.encrypted)}|${config.password}`}
+      </div>
       <button onClick={handleExport}>run-export</button>
+      <button onClick={() => onConfigChange({ format: "csv" })}>set-format</button>
+      <button onClick={() => onConfigChange({ includePasswords: true })}>
+        set-include-passwords
+      </button>
+      <button onClick={() => onConfigChange({ encrypted: true })}>set-encrypted</button>
+      <button onClick={() => onConfigChange({ password: "top-secret" })}>set-password</button>
     </div>
   ),
 }));
 
 vi.mock("../../src/components/ImportExport/ImportTab", () => ({
-  default: () => <div data-testid="import-tab-content">import-content</div>,
+  default: ({ confirmImport }: { confirmImport: () => void | Promise<void> }) => (
+    <div data-testid="import-tab-content">
+      import-content
+      <button onClick={() => void confirmImport()}>confirm-import</button>
+    </div>
+  ),
 }));
 
 describe("ImportExport dialog", () => {
@@ -85,6 +117,16 @@ describe("ImportExport dialog", () => {
     render(<ImportExport isOpen onClose={() => {}} />);
     expect(screen.getByText("Import / Export Connections")).toBeInTheDocument();
     expect(screen.getByTestId("export-tab-content")).toBeInTheDocument();
+  });
+
+  it("uses the requested initial tab and wires confirmImport into the import tab", () => {
+    render(<ImportExport isOpen initialTab="import" onClose={() => {}} />);
+
+    expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "confirm-import" }));
+
+    expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
   });
 
   it("switches tabs between export and import", () => {
@@ -110,6 +152,46 @@ describe("ImportExport dialog", () => {
 
     expect(importTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("import-tab-content")).toBeInTheDocument();
+  });
+
+  it("supports Home, End, ArrowLeft, and ArrowUp tab navigation", () => {
+    render(<ImportExport isOpen onClose={() => {}} />);
+
+    const exportTab = screen.getByRole("tab", { name: "Export" });
+    const importTab = screen.getByRole("tab", { name: "Import" });
+
+    fireEvent.keyDown(exportTab, { key: "End" });
+    expect(importTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(importTab, { key: "Home" });
+    expect(exportTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(importTab);
+    fireEvent.keyDown(importTab, { key: "ArrowLeft" });
+    expect(exportTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(importTab);
+    fireEvent.keyDown(importTab, { key: "ArrowUp" });
+    expect(exportTab).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("updates export config through ExportTab callbacks", () => {
+    render(<ImportExport isOpen onClose={() => {}} />);
+
+    expect(screen.getByTestId("export-tab-config")).toHaveTextContent(
+      "json|false|false|",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "set-format" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "set-include-passwords" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "set-encrypted" }));
+    fireEvent.click(screen.getByRole("button", { name: "set-password" }));
+
+    expect(screen.getByTestId("export-tab-config")).toHaveTextContent(
+      "csv|true|true|top-secret",
+    );
   });
 
   it("closes on Escape and backdrop click", () => {

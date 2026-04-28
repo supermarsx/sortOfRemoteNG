@@ -1,117 +1,116 @@
+import { readFileSync } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { S } from '../../helpers/selectors';
 import { resetAppState, createCollection, openImportExport } from '../../helpers/app';
 
-const fixturesDir = path.resolve(__dirname, '../../helpers/fixtures');
+const fixturesDir = fileURLToPath(new URL('../../helpers/fixtures', import.meta.url));
 
-async function importFixture(filename: string): Promise<void> {
+async function openImportTab(): Promise<void> {
   await openImportExport();
 
   const importTab = await $(S.importTab);
+  await importTab.waitForClickable({ timeout: 5_000 });
   await importTab.click();
 
-  const fileInput = await $(S.importFileInput);
-  const fixturePath = path.resolve(fixturesDir, filename);
-  await fileInput.setValue(fixturePath);
-
-  const preview = await $(S.importPreview);
-  await preview.waitForDisplayed({ timeout: 10_000 });
+  await (await $(S.importFileInput)).waitForExist({ timeout: 10_000 });
 }
 
-async function confirmImport(): Promise<void> {
-  const confirmBtn = await $(S.importConfirm);
-  await confirmBtn.click();
-  await browser.pause(1000);
+async function stubPrompt(response: string | null): Promise<void> {
+  await browser.execute((nextResponse: string | null) => {
+    const win = window as any;
+    win.__promptCalls = [];
+    win.prompt = (message?: string) => {
+      win.__promptCalls.push(String(message ?? ''));
+      return nextResponse;
+    };
+  }, response);
 }
 
-describe('Import Encrypted mRemoteNG Files', () => {
+async function getPromptCalls(): Promise<string[]> {
+  return (await browser.execute(() => (window as any).__promptCalls ?? [])) as string[];
+}
+
+async function injectVirtualFile(
+  content: string,
+  filename: string,
+  mimeType: string,
+): Promise<void> {
+  await browser.execute(
+    (selector: string, fileName: string, fileContent: string, type: string) => {
+      const input = document.querySelector(selector) as HTMLInputElement | null;
+      if (!input) {
+        throw new Error(`Input not found for selector: ${selector}`);
+      }
+
+      const file = new File([new Blob([fileContent], { type })], fileName, { type });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+
+      Object.defineProperty(input, 'files', {
+        value: dataTransfer.files,
+        configurable: true,
+      });
+
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    S.importFileInput,
+    filename,
+    content,
+    mimeType,
+  );
+
+  await (await $(S.importPreview)).waitForDisplayed({ timeout: 10_000 });
+}
+
+async function injectFixtureAs(sourceFilename: string, injectedFilename: string): Promise<void> {
+  const content = readFileSync(path.resolve(fixturesDir, sourceFilename), 'utf8');
+  await injectVirtualFile(content, injectedFilename, 'application/json');
+}
+
+describe('Import Encryption Detection', () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Import Encrypted Test');
-    const tree = await $(S.connectionTree);
-    await tree.waitForExist({ timeout: 10_000 });
+    await createCollection('Import Encryption Detection');
+    await (await $(S.connectionTree)).waitForDisplayed({ timeout: 10_000 });
   });
 
-  it('should detect and import partially encrypted mRemoteNG XML without password (password fields remain encrypted)', async () => {
-    // Partially encrypted files can be imported without password
-    // The encrypted password fields will remain as-is (encrypted strings)
-    await importFixture('mremoteng-encrypted-partial.xml');
+  it('does not prompt for decryption on ordinary JSON imports', async () => {
+    await openImportTab();
+    await stubPrompt('unused');
+    await injectFixtureAs('connections.json', 'connections.json');
 
     const previewText = await (await $(S.importPreview)).getText();
-    // Should show 3 connections
-    expect(previewText).toMatch(/3/);
+    const promptCalls = await getPromptCalls();
 
-    await confirmImport();
-
-    const treeItems = await $$(S.connectionItem);
-    expect(treeItems.length).toBeGreaterThanOrEqual(3);
+    expect(previewText).toContain('Import Successful');
+    expect(previewText).toContain('Found 5 connections ready to import.');
+    expect(promptCalls).toHaveLength(0);
   });
 
-  it('should detect fully encrypted mRemoteNG XML and require password', async () => {
-    // Fully encrypted files should trigger password prompt
-    const fileInput = await $(S.importFileInput);
-    const fixturePath = path.resolve(fixturesDir, 'mremoteng-encrypted-full.xml');
-    await fileInput.setValue(fixturePath);
+  it('prompts when the filename contains .encrypted. and fails if the prompt is cancelled', async () => {
+    await openImportTab();
+    await stubPrompt(null);
+    await injectFixtureAs('connections.json', 'connections.encrypted.json');
 
-    // Wait for password dialog to appear
-    const passwordDialog = await $(S.passwordDialog);
-    await passwordDialog.waitForDisplayed({ timeout: 10_000 });
-    
-    expect(await passwordDialog.isDisplayed()).toBe(true);
+    const previewText = await (await $(S.importPreview)).getText();
+    const promptCalls = await getPromptCalls();
+
+    expect(promptCalls).toEqual(['Enter decryption password:']);
+    expect(previewText).toContain('Import Failed');
+    expect(previewText).toContain('Password required for encrypted file');
   });
 
-  it('should import fully encrypted file with correct password', async () => {
-    // Note: The fixture uses a test encrypted blob
-    // In real usage, this would be a properly encrypted file
-    // For now, we test the detection flow
-    
-    const fileInput = await $(S.importFileInput);
-    const fixturePath = path.resolve(fixturesDir, 'mremoteng-encrypted-full.xml');
-    await fileInput.setValue(fixturePath);
+  it('prompts when the extension itself is .encrypted and surfaces decrypt failures', async () => {
+    await openImportTab();
+    await stubPrompt('WrongPassword123');
+    await injectFixtureAs('connections.json', 'connections.json.encrypted');
 
-    // Password dialog should appear
-    const passwordDialog = await $(S.passwordDialog);
-    await passwordDialog.waitForDisplayed({ timeout: 10_000 });
+    const previewText = await (await $(S.importPreview)).getText();
+    const promptCalls = await getPromptCalls();
 
-    // Enter password (the fixture uses a known test pattern)
-    const passwordInput = await $(S.passwordInput);
-    await passwordInput.setValue('test');
-    
-    const submitBtn = await $(S.passwordSubmit);
-    await submitBtn.click();
-    await browser.pause(1000);
-
-    // Either import succeeds or wrong password error
-    // Both are valid test outcomes for the fixture
-    const treeItems = await $$(S.connectionItem);
-    // May or may not have items depending on decryption
-    expect(treeItems.length).toBeGreaterThanOrEqual(0);
-  });
-
-  it('should show error for wrong password on fully encrypted file', async () => {
-    const fileInput = await $(S.importFileInput);
-    const fixturePath = path.resolve(fixturesDir, 'mremoteng-encrypted-full.xml');
-    await fileInput.setValue(fixturePath);
-
-    const passwordDialog = await $(S.passwordDialog);
-    await passwordDialog.waitForDisplayed({ timeout: 10_000 });
-
-    // Enter wrong password
-    const passwordInput = await $(S.passwordInput);
-    await passwordInput.setValue('WrongPassword123');
-    
-    const submitBtn = await $(S.passwordSubmit);
-    await submitBtn.click();
-    await browser.pause(1000);
-
-    // Error should be shown
-    const errorExists = await browser.execute(() => {
-      const el = document.querySelector(
-        '[data-testid="password-error"], [role="alert"], .error-message',
-      );
-      return el !== null;
-    });
-
-    expect(errorExists).toBe(true);
+    expect(promptCalls).toEqual(['Enter decryption password:']);
+    expect(previewText).toContain('Import Failed');
+    expect(previewText).toContain('Failed to decrypt file. Check your password.');
   });
 });

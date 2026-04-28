@@ -101,6 +101,19 @@ export function useImportExport({
     });
   };
 
+  const normalizeVpnImportData = (value: unknown): ImportVpnData | undefined => {
+    if (!value || typeof value !== 'object') return undefined;
+
+    const candidate = value as Partial<Record<keyof ImportVpnData, unknown>>;
+
+    return {
+      openvpn: Array.isArray(candidate.openvpn) ? candidate.openvpn : [],
+      wireguard: Array.isArray(candidate.wireguard) ? candidate.wireguard : [],
+      tailscale: Array.isArray(candidate.tailscale) ? candidate.tailscale : [],
+      zerotier: Array.isArray(candidate.zerotier) ? candidate.zerotier : [],
+    };
+  };
+
   // ── Export ───────────────────────────────────────────────────
 
   const exportToXML = (): string => {
@@ -170,6 +183,7 @@ export function useImportExport({
       let content: string;
       let filename: string;
       let mimeType: string;
+      const shouldUsePasswordEncryption = exportEncrypted && Boolean(exportPassword);
 
       const currentCollection = collectionManager.getCurrentCollection();
       if (!currentCollection) throw new Error('No collection selected');
@@ -179,7 +193,7 @@ export function useImportExport({
           content = await collectionManager.exportCollection(
             currentCollection.id,
             includePasswords,
-            exportEncrypted ? exportPassword : undefined,
+            shouldUsePasswordEncryption ? exportPassword : undefined,
           );
 
           // Enrich with VPN connections and tunnel chain templates
@@ -232,7 +246,7 @@ export function useImportExport({
           throw new Error('Unsupported export format');
       }
 
-      if (exportEncrypted && exportPassword && exportFormat !== 'json') {
+      if (shouldUsePasswordEncryption && exportFormat !== 'json') {
         content = await encryptWithPassword(content, exportPassword);
         filename = filename.replace(/\.[^.]+$/, '.encrypted$&');
       }
@@ -243,7 +257,7 @@ export function useImportExport({
         'info',
         'Data exported',
         undefined,
-        `Exported ${state.connections.length} connections to ${exportFormat.toUpperCase()}${exportEncrypted ? ' (encrypted)' : ''}`,
+        `Exported ${state.connections.length} connections to ${exportFormat.toUpperCase()}${shouldUsePasswordEncryption ? ' (encrypted)' : ''}`,
       );
     } catch (error) {
       console.error('Export failed:', error);
@@ -300,6 +314,7 @@ export function useImportExport({
       const detectedFormat = detectImportFormat(processedContent, filename);
       const connections = await importConnections(
         processedContent,
+        filename,
         detectedFormat,
       );
       console.log(`Import format detected: ${getFormatName(detectedFormat)}`);
@@ -310,14 +325,7 @@ export function useImportExport({
       if (detectedFormat === 'json') {
         try {
           const parsed = JSON.parse(processedContent);
-          if (parsed.vpnConnections) {
-            vpnConnections = {
-              openvpn: parsed.vpnConnections.openvpn ?? [],
-              wireguard: parsed.vpnConnections.wireguard ?? [],
-              tailscale: parsed.vpnConnections.tailscale ?? [],
-              zerotier: parsed.vpnConnections.zerotier ?? [],
-            };
-          }
+          vpnConnections = normalizeVpnImportData(parsed.vpnConnections);
           if (Array.isArray(parsed.tunnelChainTemplates)) {
             tunnelChainTemplates = parsed.tunnelChainTemplates;
           }
