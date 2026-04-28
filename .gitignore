@@ -61,3 +61,8 @@ e2e/screenshots/failure-*.png
 *.key.pub
 /.copilot
 /target-copilot-rdp-check
+
+# OPKSSH vendor bundle staging outputs
+/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/sorng_opkssh_vendor.dll
+/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/libsorng_opkssh_vendor.dylib
+/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/libsorng_opkssh_vendor.so
