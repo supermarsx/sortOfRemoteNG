@@ -2,8 +2,123 @@
 //!
 //! Manage `/etc/opk/providers`, `/etc/opk/auth_id`, and `~/.opk/auth_id`
 //! on remote servers via SSH command execution.
+//!
+//! These helpers stay on the admin side of the seam. They intentionally keep
+//! remote policy edits and installation in CLI fallback territory instead of
+//! broadening the client login contract. The backend now renders those admin
+//! commands through small `sh -c` wrappers with positional arguments where that
+//! meaningfully reduces inline shell interpolation risk, but the transport is
+//! still the generic SSH shell path for the first shipping version.
 
 use crate::types::*;
+
+enum ServerAdminAction<'a> {
+    AddIdentity(&'a AuthIdEntry),
+    RemoveIdentity {
+        entry: &'a AuthIdEntry,
+        user_level: bool,
+    },
+    AddProvider(&'a ProviderEntry),
+    RemoveProvider(&'a ProviderEntry),
+    Install(&'a ServerInstallOptions),
+}
+
+impl ServerAdminAction<'_> {
+    fn render(self) -> String {
+        match self {
+            ServerAdminAction::AddIdentity(entry) => {
+                let issuer = normalize_issuer_alias(&entry.issuer);
+                render_sudo_sh_command(
+                    r#"opkssh add "$1" "$2" "$3""#,
+                    &[&entry.principal, &entry.identity, &issuer],
+                )
+            }
+            ServerAdminAction::RemoveIdentity { entry, user_level } => {
+                let script = if user_level {
+                    r#"file="${HOME}/.opk/auth_id"
+principal="$1"
+identity="$2"
+issuer="$3"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+awk -v principal="$principal" -v identity="$identity" -v issuer="$issuer" '
+function join_from(start, out, idx) {
+    out = ""
+    for (idx = start; idx <= NF; idx++) {
+        out = out (idx == start ? "" : OFS) $idx
+    }
+    return out
+}
+{
+    if ($0 ~ /^[[:space:]]*#/ || NF == 0) {
+        print
+        next
+    }
+    if ($1 == principal && $2 == identity && (issuer == "" || join_from(3) == issuer)) {
+        next
+    }
+    print
+}
+' "$file" > "$tmp" && cat "$tmp" > "$file""#
+                } else {
+                    r#"file="/etc/opk/auth_id"
+principal="$1"
+identity="$2"
+issuer="$3"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+awk -v principal="$principal" -v identity="$identity" -v issuer="$issuer" '
+function join_from(start, out, idx) {
+    out = ""
+    for (idx = start; idx <= NF; idx++) {
+        out = out (idx == start ? "" : OFS) $idx
+    }
+    return out
+}
+{
+    if ($0 ~ /^[[:space:]]*#/ || NF == 0) {
+        print
+        next
+    }
+    if ($1 == principal && $2 == identity && (issuer == "" || join_from(3) == issuer)) {
+        next
+    }
+    print
+}
+' "$file" > "$tmp" && cat "$tmp" > "$file""#
+                };
+                let args = [
+                    entry.principal.as_str(),
+                    entry.identity.as_str(),
+                    entry.issuer.as_str(),
+                ];
+                if user_level {
+                    render_sh_command(script, &args)
+                } else {
+                    render_sudo_sh_command(script, &args)
+                }
+            }
+            ServerAdminAction::AddProvider(entry) => {
+                let line = render_provider_line(entry);
+                render_sudo_sh_command(
+                    r#"printf '%s\n' "$1" >> /etc/opk/providers"#,
+                    &[&line],
+                )
+            }
+            ServerAdminAction::RemoveProvider(entry) => {
+                let line = render_provider_line(entry);
+                render_sudo_sh_command(
+                    r#"line="$1"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+awk -v line="$line" '$0 != line { print }' /etc/opk/providers > "$tmp" && cat "$tmp" > /etc/opk/providers"#,
+                    &[&line],
+                )
+            }
+            ServerAdminAction::Install(opts) => build_install_command_inner(opts),
+        }
+    }
+}
 
 /// Build a shell script to read the server's opkssh configuration.
 pub fn build_read_config_script() -> String {
@@ -52,21 +167,21 @@ echo "===OPKSSH_CONFIG_END==="
 /// Parse the server config output.
 pub fn parse_server_config(raw: &str) -> ServerOpksshConfig {
     let extract = |begin: &str, end: &str| -> String {
-        let start = raw.find(begin).map(|i| i + begin.len()).unwrap_or(0);
-        let stop = raw.find(end).unwrap_or(raw.len());
-        if start < stop {
-            raw[start..stop].trim().to_string()
-        } else {
-            String::new()
-        }
+        let Some(start_index) = raw.find(begin).map(|index| index + begin.len()) else {
+            return String::new();
+        };
+        let Some(stop_offset) = raw[start_index..].find(end) else {
+            return String::new();
+        };
+        raw[start_index..start_index + stop_offset].trim().to_string()
     };
 
     let version_section = extract("===VERSION_BEGIN===", "===VERSION_END===");
     let installed = version_section.contains("installed:true");
     let version = version_section
         .lines()
-        .find(|l| !l.contains("installed:") && !l.trim().is_empty())
-        .map(|l| l.trim().to_string());
+        .find(|line| !line.contains("installed:") && !line.trim().is_empty())
+        .map(|line| line.trim().to_string());
 
     let providers_raw = extract("===PROVIDERS_BEGIN===", "===PROVIDERS_END===");
     let providers = parse_providers(&providers_raw);
@@ -80,6 +195,7 @@ pub fn parse_server_config(raw: &str) -> ServerOpksshConfig {
     let sshd_snippet = extract("===SSHD_CONFIG_BEGIN===", "===SSHD_CONFIG_END===");
     let sshd_config_snippet = if sshd_snippet.contains("# no opkssh")
         || sshd_snippet.contains("# sshd_config not found")
+        || sshd_snippet.trim().is_empty()
     {
         None
     } else {
@@ -99,40 +215,36 @@ pub fn parse_server_config(raw: &str) -> ServerOpksshConfig {
 /// Parse `/etc/opk/providers` content.
 fn parse_providers(content: &str) -> Vec<ProviderEntry> {
     let mut entries = Vec::new();
+
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
+
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.len() >= 3 {
-            let expiration = match parts[2] {
-                "12h" => ExpirationPolicy::TwelveHours,
-                "24h" => ExpirationPolicy::TwentyFourHours,
-                "48h" => ExpirationPolicy::FortyEightHours,
-                "1week" => ExpirationPolicy::OneWeek,
-                "oidc" => ExpirationPolicy::Oidc,
-                "oidc-refreshed" => ExpirationPolicy::OidcRefreshed,
-                _ => ExpirationPolicy::TwentyFourHours,
-            };
             entries.push(ProviderEntry {
                 issuer: parts[0].to_string(),
                 client_id: parts[1].to_string(),
-                expiration_policy: expiration,
+                expiration_policy: parse_expiration_policy(parts[2]),
             });
         }
     }
+
     entries
 }
 
 /// Parse an `auth_id` file content.
 fn parse_auth_ids(content: &str) -> Vec<AuthIdEntry> {
     let mut entries = Vec::new();
+
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
+
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.len() >= 3 {
             entries.push(AuthIdEntry {
@@ -141,7 +253,6 @@ fn parse_auth_ids(content: &str) -> Vec<AuthIdEntry> {
                 issuer: parts[2..].join(" "),
             });
         } else if parts.len() == 2 {
-            // Issuer may be implied or missing
             entries.push(AuthIdEntry {
                 principal: parts[0].to_string(),
                 identity: parts[1].to_string(),
@@ -149,101 +260,117 @@ fn parse_auth_ids(content: &str) -> Vec<AuthIdEntry> {
             });
         }
     }
+
     entries
 }
 
 /// Build the command to add an authorized identity on the server.
 pub fn build_add_identity_command(entry: &AuthIdEntry) -> String {
-    // Resolve common alias patterns
-    let issuer_arg = match entry.issuer.as_str() {
-        i if i.contains("accounts.google.com") => "google".to_string(),
-        i if i.contains("login.microsoftonline.com") => "azure".to_string(),
-        i if i.contains("gitlab.com") => "gitlab".to_string(),
-        other => other.to_string(),
-    };
-
-    format!(
-        "sudo opkssh add {} {} {}",
-        shell_escape(&entry.principal),
-        shell_escape(&entry.identity),
-        shell_escape(&issuer_arg)
-    )
+    ServerAdminAction::AddIdentity(entry).render()
 }
 
 /// Build the command to remove an authorized identity.
 /// opkssh does not have a native remove command, so we edit the auth_id file directly.
 pub fn build_remove_identity_command(entry: &AuthIdEntry, user_level: bool) -> String {
-    let file = if user_level {
-        "~/.opk/auth_id"
-    } else {
-        "/etc/opk/auth_id"
-    };
-
-    let pattern = format!(
-        "{}\\s+{}\\s+{}",
-        regex_escape(&entry.principal),
-        regex_escape(&entry.identity),
-        regex_escape(&entry.issuer)
-    );
-
-    if user_level {
-        format!("sed -i '/{}/d' {}", pattern, file)
-    } else {
-        format!("sudo sed -i '/{}/d' {}", pattern, file)
-    }
+    ServerAdminAction::RemoveIdentity { entry, user_level }.render()
 }
 
 /// Build the command to add a provider entry to `/etc/opk/providers`.
 pub fn build_add_provider_command(entry: &ProviderEntry) -> String {
-    format!(
-        "echo '{} {} {}' | sudo tee -a /etc/opk/providers > /dev/null",
-        entry.issuer, entry.client_id, entry.expiration_policy
-    )
+    ServerAdminAction::AddProvider(entry).render()
 }
 
 /// Build the command to remove a provider entry from `/etc/opk/providers`.
 pub fn build_remove_provider_command(entry: &ProviderEntry) -> String {
-    let pattern = regex_escape(&entry.issuer);
-    format!("sudo sed -i '/{}/d' /etc/opk/providers", pattern)
+    ServerAdminAction::RemoveProvider(entry).render()
 }
 
 /// Build the server install script command.
 pub fn build_install_command(opts: &ServerInstallOptions) -> String {
+    ServerAdminAction::Install(opts).render()
+}
+
+fn parse_expiration_policy(value: &str) -> ExpirationPolicy {
+    match value {
+        "12h" => ExpirationPolicy::TwelveHours,
+        "24h" => ExpirationPolicy::TwentyFourHours,
+        "48h" => ExpirationPolicy::FortyEightHours,
+        "1week" => ExpirationPolicy::OneWeek,
+        "oidc" => ExpirationPolicy::Oidc,
+        "oidc-refreshed" => ExpirationPolicy::OidcRefreshed,
+        _ => ExpirationPolicy::TwentyFourHours,
+    }
+}
+
+fn normalize_issuer_alias(issuer: &str) -> String {
+    match issuer {
+        value if value.contains("accounts.google.com") => "google".to_string(),
+        value if value.contains("login.microsoftonline.com") => "azure".to_string(),
+        value if value.contains("gitlab.com") => "gitlab".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn render_provider_line(entry: &ProviderEntry) -> String {
+    format!(
+        "{} {} {}",
+        entry.issuer, entry.client_id, entry.expiration_policy
+    )
+}
+
+fn build_install_command_inner(opts: &ServerInstallOptions) -> String {
     if opts.use_install_script {
-        r#"wget -qO- "https://raw.githubusercontent.com/openpubkey/opkssh/main/scripts/install-linux.sh" | sudo bash"#.to_string()
-    } else if let Some(ref url) = opts.custom_binary_url {
-        format!(
-            "curl -L {} -o /tmp/opkssh && chmod +x /tmp/opkssh && sudo mv /tmp/opkssh /usr/local/bin/opkssh",
-            url
+        r#"wget -qO- "https://raw.githubusercontent.com/openpubkey/opkssh/main/scripts/install-linux.sh" | sudo bash"#
+            .to_string()
+    } else if let Some(url) = opts.custom_binary_url.as_ref().filter(|url| !url.trim().is_empty()) {
+        render_sh_command(
+            r#"curl -L "$1" -o /tmp/opkssh && chmod +x /tmp/opkssh && sudo mv /tmp/opkssh /usr/local/bin/opkssh"#,
+            &[url],
         )
     } else {
-        // Auto-detect architecture and download
         r#"ARCH=$(uname -m); case "$ARCH" in aarch64|arm64) URL="https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-linux-arm64" ;; *) URL="https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-linux-amd64" ;; esac; curl -L "$URL" -o /tmp/opkssh && chmod +x /tmp/opkssh && sudo mv /tmp/opkssh /usr/local/bin/opkssh && echo "opkssh installed successfully""#.to_string()
     }
 }
 
+fn render_sh_command(script: &str, args: &[&str]) -> String {
+    render_shell_command(None, script, args)
+}
+
+fn render_sudo_sh_command(script: &str, args: &[&str]) -> String {
+    render_shell_command(Some("sudo"), script, args)
+}
+
+fn render_shell_command(prefix: Option<&str>, script: &str, args: &[&str]) -> String {
+    let mut parts = Vec::with_capacity(args.len() + 4 + usize::from(prefix.is_some()));
+    if let Some(prefix) = prefix {
+        parts.push(prefix.to_string());
+    }
+    parts.push("sh".to_string());
+    parts.push("-c".to_string());
+    parts.push(shell_escape(script));
+    parts.push("sh".to_string());
+    for arg in args {
+        parts.push(shell_escape(arg));
+    }
+    parts.join(" ")
+}
+
 /// Simple shell escaping for arguments.
-fn shell_escape(s: &str) -> String {
-    if s.contains(' ') || s.contains('\'') || s.contains('"') || s.contains('\\') {
-        format!("'{}'", s.replace('\'', "'\\''"))
+fn shell_escape(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+
+    if value.chars().all(is_shell_safe_char) {
+        value.to_string()
     } else {
-        s.to_string()
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 }
 
-/// Escape special regex characters for sed patterns.
-fn regex_escape(s: &str) -> String {
-    let special = [
-        '/', '.', '*', '[', ']', '(', ')', '{', '}', '\\', '+', '?', '|', '^', '$',
-    ];
-    let mut result = String::with_capacity(s.len() * 2);
-    for c in s.chars() {
-        if special.contains(&c) {
-            result.push('\\');
-        }
-        result.push(c);
-    }
-    result
+fn is_shell_safe_char(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(character, '_' | '-' | '/' | '.' | ':' | '@' | '%' | '+' | '=' | ',')
 }
 
 #[cfg(test)]
@@ -289,7 +416,68 @@ dev bob@microsoft.com https://login.microsoftonline.com/tenant/v2.0
             issuer: "https://accounts.google.com".into(),
         };
         let cmd = build_add_identity_command(&entry);
-        assert_eq!(cmd, "sudo opkssh add root alice@gmail.com google");
+        assert!(cmd.starts_with("sudo sh -c "));
+        assert!(cmd.contains("opkssh add \"$1\" \"$2\" \"$3\""));
+        assert!(cmd.ends_with(" sh root alice@gmail.com google"));
+    }
+
+    #[test]
+    fn test_build_remove_identity_command_without_explicit_issuer() {
+        let entry = AuthIdEntry {
+            principal: "root".into(),
+            identity: "alice@gmail.com".into(),
+            issuer: String::new(),
+        };
+
+        let cmd = build_remove_identity_command(&entry, true);
+        assert!(cmd.starts_with("sh -c "));
+        assert!(cmd.contains("${HOME}/.opk/auth_id"));
+        assert!(cmd.contains("awk -v principal="));
+        assert!(cmd.contains("cat \"$tmp\" > \"$file\""));
+        assert!(cmd.ends_with(" sh root alice@gmail.com ''"));
+    }
+
+    #[test]
+    fn test_build_add_provider_command_uses_literal_line_argument() {
+        let entry = ProviderEntry {
+            issuer: "https://accounts.google.com".into(),
+            client_id: "abc123".into(),
+            expiration_policy: ExpirationPolicy::TwentyFourHours,
+        };
+
+        let cmd = build_add_provider_command(&entry);
+        assert!(cmd.starts_with("sudo sh -c "));
+        assert!(cmd.contains("/etc/opk/providers"));
+        assert!(cmd.contains("$1"));
+        assert!(cmd.ends_with(" sh 'https://accounts.google.com abc123 24h'"));
+    }
+
+    #[test]
+    fn test_build_remove_provider_command_matches_full_line_literally() {
+        let entry = ProviderEntry {
+            issuer: "https://accounts.google.com".into(),
+            client_id: "abc123".into(),
+            expiration_policy: ExpirationPolicy::TwentyFourHours,
+        };
+
+        let cmd = build_remove_provider_command(&entry);
+        assert!(cmd.starts_with("sudo sh -c "));
+        assert!(cmd.contains("awk -v line=\"$line\""));
+        assert!(cmd.contains("/etc/opk/providers"));
+        assert!(cmd.ends_with(" sh 'https://accounts.google.com abc123 24h'"));
+    }
+
+    #[test]
+    fn test_build_install_command_uses_positional_url_argument() {
+        let cmd = build_install_command(&ServerInstallOptions {
+            session_id: String::new(),
+            use_install_script: false,
+            custom_binary_url: Some("https://example.com/opkssh binary".into()),
+        });
+
+        assert!(cmd.starts_with("sh -c "));
+        assert!(cmd.contains("curl -L \"$1\" -o /tmp/opkssh"));
+        assert!(cmd.ends_with(" sh 'https://example.com/opkssh binary'"));
     }
 
     #[test]

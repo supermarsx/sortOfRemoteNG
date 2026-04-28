@@ -9,8 +9,10 @@
 //!
 //! ## Key Capabilities
 //!
-//! - **Binary Management** — Detect installed `opkssh`, check version, download
-//!   latest release for the current platform (Windows / macOS / Linux, x86_64 / ARM64)
+//! - **Runtime Management** — Resolve the active backend runtime, report
+//!   library-vs-CLI availability, detect installed `opkssh` CLI fallback, and
+//!   download the latest release for the current platform (Windows / macOS /
+//!   Linux, x86_64 / ARM64)
 //! - **OIDC Login** — Trigger `opkssh login` with optional provider, custom key
 //!   file name, and scopes.  Captures the generated SSH key path and token info.
 //! - **Key Lifecycle** — List generated opkssh keys, inspect expiry, detect stale
@@ -24,8 +26,8 @@
 //! - **Server Installation** — Execute the opkssh server install script via SSH,
 //!   or generate the manual install commands.
 //! - **Audit** — Parse `opkssh audit` output for identity and access reviews.
-//! - **Status & Diagnostics** — Health checks, version info, provider listing,
-//!   connection verification.
+//! - **Status & Diagnostics** — Runtime-first health checks, backend mode,
+//!   version info, provider listing, and connection verification.
 //!
 //! ## Architecture
 //!

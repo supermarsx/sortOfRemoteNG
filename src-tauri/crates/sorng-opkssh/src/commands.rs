@@ -4,10 +4,122 @@
 // Registered in the main Tauri `generate_handler![]` macro.
 
 use super::service::OpksshServiceState;
+use super::login;
 use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
+
+async fn reconcile_service_with_operation(
+    service_state: &OpksshServiceState,
+    operation: &login::OpksshLoginOperation,
+) {
+    let mut svc = service_state.lock().await;
+    svc.track_login_operation(operation);
+}
+
+async fn clear_missing_operation_tracking(
+    service_state: &OpksshServiceState,
+    operation_id: &str,
+) {
+    let mut svc = service_state.lock().await;
+    svc.clear_tracked_login_operation_if_matches(Some(operation_id));
+}
+
+async fn active_login_operation(
+    service_state: &OpksshServiceState,
+) -> CmdResult<Option<login::OpksshLoginOperation>> {
+    let tracked_operation_id = {
+        let svc = service_state.lock().await;
+        svc.tracked_login_operation_id().map(str::to_string)
+    };
+
+    let Some(operation_id) = tracked_operation_id else {
+        return Ok(None);
+    };
+
+    match login::get_login_operation(&operation_id).await? {
+        Some(operation) => {
+            reconcile_service_with_operation(service_state, &operation).await;
+            if operation.status == login::OpksshLoginOperationStatus::Running {
+                Ok(Some(operation))
+            } else {
+                Ok(None)
+            }
+        }
+        None => {
+            clear_missing_operation_tracking(service_state, &operation_id).await;
+            Ok(None)
+        }
+    }
+}
+
+pub(crate) async fn start_login_operation_command(
+    service_state: OpksshServiceState,
+    options: OpksshLoginOptions,
+) -> CmdResult<login::OpksshLoginOperation> {
+    if let Some(active_operation) = active_login_operation(&service_state).await? {
+        let message = {
+            let mut svc = service_state.lock().await;
+            svc.concurrent_login_message(&active_operation)
+        };
+        return Err(message);
+    }
+
+    let operation = login::start_login_operation(service_state.clone(), options).await?;
+    reconcile_service_with_operation(&service_state, &operation).await;
+    Ok(operation)
+}
+
+pub(crate) async fn get_login_operation_command(
+    service_state: OpksshServiceState,
+    operation_id: String,
+) -> CmdResult<Option<login::OpksshLoginOperation>> {
+    match login::get_login_operation(&operation_id).await? {
+        Some(operation) => {
+            reconcile_service_with_operation(&service_state, &operation).await;
+            Ok(Some(operation))
+        }
+        None => {
+            clear_missing_operation_tracking(&service_state, &operation_id).await;
+            Ok(None)
+        }
+    }
+}
+
+pub(crate) async fn await_login_operation_command(
+    service_state: OpksshServiceState,
+    operation_id: String,
+) -> CmdResult<login::OpksshLoginOperation> {
+    let operation = login::await_login_operation(&operation_id).await?;
+    reconcile_service_with_operation(&service_state, &operation).await;
+    Ok(operation)
+}
+
+pub(crate) async fn cancel_login_operation_command(
+    service_state: OpksshServiceState,
+    operation_id: String,
+) -> CmdResult<login::OpksshLoginOperation> {
+    let operation = login::cancel_login_operation(&operation_id).await?;
+    reconcile_service_with_operation(&service_state, &operation).await;
+    Ok(operation)
+}
+
+pub(crate) async fn login_command(
+    service_state: OpksshServiceState,
+    options: OpksshLoginOptions,
+) -> CmdResult<OpksshLoginResult> {
+    let operation = start_login_operation_command(service_state.clone(), options).await?;
+    let completed = await_login_operation_command(service_state, operation.id).await?;
+
+    if let Some(result) = completed.result {
+        return Ok(result);
+    }
+
+    Err(completed
+        .message
+        .unwrap_or_else(|| "OPKSSH login did not produce a result".to_string()))
+}
 
 // ── Binary Management ───────────────────────────────────────────────
 
@@ -28,14 +140,49 @@ pub async fn opkssh_get_download_url() -> CmdResult<String> {
 
 // ── OIDC Login ──────────────────────────────────────────────────────
 
+/// Start an OPKSSH login operation that can later be polled, awaited, or cancelled.
+#[tauri::command]
+pub async fn opkssh_start_login(
+    state: State<'_, OpksshServiceState>,
+    options: OpksshLoginOptions,
+) -> CmdResult<login::OpksshLoginOperation> {
+    start_login_operation_command(state.inner().clone(), options).await
+}
+
+/// Get the latest snapshot for an OPKSSH login operation.
+#[tauri::command]
+pub async fn opkssh_get_login_operation(
+    state: State<'_, OpksshServiceState>,
+    operation_id: String,
+) -> CmdResult<Option<login::OpksshLoginOperation>> {
+    get_login_operation_command(state.inner().clone(), operation_id).await
+}
+
+/// Await completion of an OPKSSH login operation.
+#[tauri::command]
+pub async fn opkssh_await_login(
+    state: State<'_, OpksshServiceState>,
+    operation_id: String,
+) -> CmdResult<login::OpksshLoginOperation> {
+    await_login_operation_command(state.inner().clone(), operation_id).await
+}
+
+/// Cancel an OPKSSH login operation.
+#[tauri::command]
+pub async fn opkssh_cancel_login(
+    state: State<'_, OpksshServiceState>,
+    operation_id: String,
+) -> CmdResult<login::OpksshLoginOperation> {
+    cancel_login_operation_command(state.inner().clone(), operation_id).await
+}
+
 /// Execute `opkssh login` to authenticate via OIDC.
 #[tauri::command]
 pub async fn opkssh_login(
     state: State<'_, OpksshServiceState>,
     options: OpksshLoginOptions,
 ) -> CmdResult<OpksshLoginResult> {
-    let mut svc = state.lock().await;
-    svc.login(options).await
+    login_command(state.inner().clone(), options).await
 }
 
 // ── Key Management ──────────────────────────────────────────────────
