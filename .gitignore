@@ -61,6 +61,21 @@ e2e/screenshots/failure-*.png
 *.key.pub
 /.copilot
 /target-copilot-rdp-check
+/target-copilot-opkssh-proof
+
+# Scratch backup copies of source files (rename / delete instead of leaving around)
+*.rs.bak
+*_old.rs
+*_orig.rs
+*_new.rs
+*_clean.rs
+
+# SSH key material accidentally generated into the source tree.
+# These are short filenames produced by `ssh-keygen -f -f`; the project's
+# real keys never live here, so any -f / -f.pub / -f.pin file is junk.
+/src-tauri/crates/sorng-ssh/-f
+/src-tauri/crates/sorng-ssh/-f.pub
+/src-tauri/crates/sorng-ssh/-f.pin
 
 # OPKSSH vendor bundle staging outputs
 /src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/*/sorng_opkssh_vendor.dll
