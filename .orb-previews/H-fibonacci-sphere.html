@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Orb H — Fibonacci sphere (golden spiral)</title>
+<style>
+  :root {
+    --bg: #06070d;
+    --fg: #d8e4ff;
+    --muted: #5a6a8a;
+    --grid: #0f1626;
+    --color-accent: #ffcc00;
+    --orb-accent: var(--color-accent);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%; background: var(--bg); color: var(--fg);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  body {
+    display: grid; place-items: center;
+    background-image:
+      radial-gradient(var(--grid) 1px, transparent 1px),
+      radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px;
+    background-position: 0 0, 12px 12px;
+    overflow: hidden;
+  }
+  .stage { display: grid; gap: 48px; justify-items: center; perspective: 1400px; }
+  h1 {
+    font-weight: 500; font-size: 13px; letter-spacing: .28em; text-transform: uppercase;
+    color: var(--orb-accent); margin: 0 0 10px;
+    text-shadow: 0 0 12px var(--orb-accent);
+  }
+  .desc { color: var(--muted); font-size: 12px; max-width: 600px; text-align: center; line-height: 1.6; }
+  .controls {
+    display: flex; gap: 22px; align-items: center; flex-wrap: wrap;
+    justify-content: center; margin-top: 18px;
+    color: var(--muted); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .controls label { display: inline-flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { accent-color: var(--orb-accent); }
+  .controls .val { color: var(--orb-accent); min-width: 3.2em; text-align: right; }
+  .accents { display: flex; gap: 10px; }
+  .accents button {
+    width: 22px; height: 22px; border-radius: 50%; border: 1px solid #222a3d;
+    cursor: pointer; padding: 0; background: var(--c); box-shadow: 0 0 8px var(--c);
+  }
+  .row { display: flex; gap: 80px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .swatch { display: grid; justify-items: center; }
+  .label { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-top: 18px; text-align: center; }
+
+  /* ====================== Orb H — Fibonacci sphere ====================== */
+  /* Pure golden-angle distribution. Dots stay put on the sphere — what
+     animates is a brightness phase that travels through the index sequence,
+     lighting up dot i, then i+1, then i+2... which traces the golden spirals. */
+  .scene {
+    width: var(--s, 320px);
+    height: var(--s, 320px);
+    perspective: 1200px;
+    transform: rotateX(18deg);
+    color: var(--orb-accent);
+  }
+  .sphere {
+    width: 100%; height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    animation: h-spin var(--spin, 24s) linear infinite;
+  }
+  .sphere span {
+    --d: calc(var(--s, 320px) / 110);
+    --scale: 1;
+    position: absolute;
+    top: 50%; left: 50%;
+    width: calc(var(--d) * var(--scale));
+    height: calc(var(--d) * var(--scale));
+    margin: calc(var(--d) * var(--scale) * -0.5) 0 0 calc(var(--d) * var(--scale) * -0.5);
+    border-radius: 50%;
+    background: currentColor;
+    transform-style: preserve-3d;
+    transform: var(--t);
+    opacity: var(--br, .08);
+    box-shadow:
+      0 0 calc(var(--d) * var(--glow, .4)) currentColor,
+      0 0 calc(var(--d) * var(--glow, .4) * 2.6) color-mix(in srgb, currentColor 70%, transparent),
+      0 0 calc(var(--d) * var(--glow, .4) * 5)   color-mix(in srgb, currentColor 35%, transparent);
+    will-change: opacity, width, height;
+  }
+  @keyframes h-spin {
+    0%   { transform: rotateY(0deg); }
+    100% { transform: rotateY(360deg); }
+  }
+
+  .xs { --s: 80px; }
+  .sm { --s: 120px; }
+  .md { --s: 180px; }
+  .lg { --s: 360px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div style="text-align:center">
+      <h1>Orb H · Fibonacci sphere</h1>
+      <p class="desc">Points placed by golden-angle increment (θ = i·2π/φ, y = i/n·2−1) — the classic Fibonacci sphere. A brightness phase rolls through the index sequence, so the golden spirals light up one after another like phosphor traces.</p>
+      <div class="controls">
+        <label>dots <input id="dots" type="range" min="100" max="1500" step="50" value="700" /> <span class="val" id="dotsVal">700</span></label>
+        <label>trail <input id="trail" type="range" min="2" max="60" step="1" value="18" /> <span class="val" id="trailVal">18%</span></label>
+        <label>arms <input id="arms" type="range" min="1" max="6" step="1" value="2" /> <span class="val" id="armsVal">2</span></label>
+        <label>speed <input id="speed" type="range" min="0" max="30" step="1" value="10" /> <span class="val" id="speedVal">10</span></label>
+        <label>spin <input id="spin" type="range" min="4" max="60" step="1" value="24" /> <span class="val" id="spinVal">24s</span></label>
+        <span class="accents">
+          <button style="--c:#ffcc00" onclick="setAccent('#ffcc00')"></button>
+          <button style="--c:#00f0ff" onclick="setAccent('#00f0ff')"></button>
+          <button style="--c:#ff2bd6" onclick="setAccent('#ff2bd6')"></button>
+          <button style="--c:#a855f7" onclick="setAccent('#a855f7')"></button>
+          <button style="--c:#39ff7a" onclick="setAccent('#39ff7a')"></button>
+          <button style="--c:#ff5555" onclick="setAccent('#ff5555')"></button>
+        </span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="swatch">
+        <div class="scene lg"><div class="sphere" data-orb-h></div></div>
+        <div class="label">primary · 360</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="swatch"><div class="scene xs"><div class="sphere" data-orb-h></div></div><div class="label">xs · 80</div></div>
+      <div class="swatch"><div class="scene sm"><div class="sphere" data-orb-h></div></div><div class="label">sm · 120</div></div>
+      <div class="swatch"><div class="scene md"><div class="sphere" data-orb-h></div></div><div class="label">md · 180</div></div>
+    </div>
+  </div>
+
+<script>
+  const TAU = Math.PI * 2;
+  const PHI = (1 + Math.sqrt(5)) / 2;          // golden ratio
+  const GOLDEN_ANGLE = TAU / (PHI * PHI);      // ≈ 137.5° in radians
+
+  function fibonacciSphere(n) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const y = 1 - (i / (n - 1)) * 2;         // y from 1 to -1
+      const r = Math.sqrt(1 - y * y);
+      const theta = i * GOLDEN_ANGLE;          // golden-angle increment
+      const x = Math.cos(theta) * r;
+      const z = Math.sin(theta) * r;
+      pts.push({ x, y, z });
+    }
+    return pts;
+  }
+
+  /** @type {Map<HTMLElement, {radius:number, pts:any[], dots:HTMLElement[]}>} */
+  const orbs = new Map();
+
+  function rebuild(sphere) {
+    const radius = sphere.getBoundingClientRect().width / 2;
+    const n = +document.getElementById("dots").value;
+    const pts = fibonacciSphere(n);
+    sphere.innerHTML = "";
+    const dots = [];
+    for (let i = 0; i < n; i++) {
+      const dot = document.createElement("span");
+      const x = pts[i].x * radius;
+      const y = pts[i].y * radius;
+      const z = pts[i].z * radius;
+      dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`;
+      sphere.appendChild(dot);
+      dots.push(dot);
+    }
+    orbs.set(sphere, { radius, pts, dots });
+  }
+
+  // brightness phase: a 0..1 cursor moves through indices; each dot is bright
+  // when its (i/n) is near the cursor (within "trail" width). multiple "arms"
+  // = multiple cursors offset evenly.
+  let t0 = performance.now();
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    const trailW = +document.getElementById("trail").value / 100;
+    const arms   = +document.getElementById("arms").value;
+    const speed  = +document.getElementById("speed").value / 10;
+
+    orbs.forEach(({ pts, dots }) => {
+      const n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const f = i / n;                       // 0..1 along the spiral
+        let best = 0;
+        for (let a = 0; a < arms; a++) {
+          const cursor = ((t * speed * 0.1) + a / arms) % 1;
+          // shortest distance on the unit circle
+          let d = Math.abs(f - cursor);
+          if (d > 0.5) d = 1 - d;
+          // gaussian-ish falloff
+          const k = Math.max(0, 1 - d / trailW);
+          const g = k * k;                     // 0..1
+          if (g > best) best = g;
+        }
+        const peak = Math.pow(best, 2);                // sharper falloff
+        const br = 0.06 + 0.94 * peak;
+        const glow = 0.4 + 5.0 * peak;
+        const dot = dots[i];
+        dot.style.opacity = br.toFixed(3);
+        dot.style.setProperty("--glow", glow.toFixed(2));
+        dot.style.setProperty("--scale", (1 + 1.6 * peak).toFixed(2));
+      }
+    });
+
+    requestAnimationFrame(frame);
+  }
+
+  function setAccent(c) { document.documentElement.style.setProperty("--orb-accent", c); }
+
+  function bind(id, valId, suffix = "") {
+    document.getElementById(id).addEventListener("input", e => {
+      document.getElementById(valId).textContent = e.target.value + suffix;
+    });
+  }
+  bind("trail", "trailVal", "%");
+  bind("arms",  "armsVal");
+  bind("speed", "speedVal");
+  document.getElementById("dots").addEventListener("input", e => {
+    document.getElementById("dotsVal").textContent = e.target.value;
+    document.querySelectorAll("[data-orb-h]").forEach(rebuild);
+  });
+  document.getElementById("spin").addEventListener("input", e => {
+    document.getElementById("spinVal").textContent = e.target.value + "s";
+    document.querySelectorAll(".sphere").forEach(s => s.style.setProperty("--spin", e.target.value + "s"));
+  });
+
+  window.addEventListener("load", () => {
+    document.querySelectorAll("[data-orb-h]").forEach(rebuild);
+    requestAnimationFrame(frame);
+  });
+</script>
+</body>
+</html>

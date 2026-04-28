@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Orb F — Aurora bloom (OpenAI-style)</title>
+<style>
+  :root {
+    --bg: #06070d;
+    --fg: #d8e4ff;
+    --muted: #5a6a8a;
+    --grid: #0f1626;
+    --color-accent: #7aa2ff;
+    --orb-accent: var(--color-accent);
+    --orb-accent-2: #b48cff;
+    --orb-accent-3: #62e6c4;
+    --orb-accent-4: #ff7ad9;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%; background: var(--bg); color: var(--fg);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  body {
+    display: grid; place-items: center;
+    background-image:
+      radial-gradient(var(--grid) 1px, transparent 1px),
+      radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px;
+    background-position: 0 0, 12px 12px;
+    overflow: hidden;
+  }
+  .stage { display: grid; gap: 56px; justify-items: center; }
+  h1 {
+    font-weight: 500; font-size: 13px; letter-spacing: .28em; text-transform: uppercase;
+    color: var(--orb-accent); margin: 0 0 10px;
+    text-shadow: 0 0 12px var(--orb-accent);
+  }
+  .desc { color: var(--muted); font-size: 12px; max-width: 560px; text-align: center; line-height: 1.6; }
+  .accents { display: flex; gap: 10px; margin-top: 14px; justify-content: center; }
+  .accents button {
+    width: 22px; height: 22px; border-radius: 50%; border: 1px solid #222a3d;
+    cursor: pointer; padding: 0; background: var(--c); box-shadow: 0 0 8px var(--c);
+  }
+  .row { display: flex; gap: 80px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .swatch { display: grid; justify-items: center; }
+  .label { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-top: 18px; text-align: center; }
+
+  /* ====================== Orb F — aurora bloom ====================== */
+  /* A glassy sphere with four soft color blobs drifting & morphing inside,
+     a slow chromatic shimmer, and an outer bloom halo. No dots, no edges —
+     organic, breathing, OpenAI-orb-ish. */
+  .orb-f {
+    --s: 280px;
+    width: var(--s);
+    height: var(--s);
+    position: relative;
+    border-radius: 50%;
+    isolation: isolate;
+  }
+
+  /* outer aura (soft halo) */
+  .orb-f::before {
+    content: "";
+    position: absolute;
+    inset: -22%;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, var(--orb-accent) 0%, transparent 55%);
+    filter: blur(calc(var(--s) * 0.18));
+    opacity: 0.55;
+    animation: f-aura 7s ease-in-out infinite;
+    z-index: 0;
+  }
+
+  /* the glass sphere body */
+  .orb-f .sphere {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 30% 25%,
+        color-mix(in srgb, var(--orb-accent) 65%, white) 0%,
+        color-mix(in srgb, var(--orb-accent) 40%, #06070d) 35%,
+        #04050a 85%);
+    box-shadow:
+      0 0 calc(var(--s) * 0.15) color-mix(in srgb, var(--orb-accent) 55%, transparent),
+      inset 0 0 calc(var(--s) * 0.25) rgba(0,0,0,.55),
+      inset 0 0 0 1px color-mix(in srgb, var(--orb-accent) 30%, transparent);
+    z-index: 1;
+  }
+
+  /* the morphing blobs inside */
+  .orb-f .blob {
+    position: absolute;
+    width: 80%;
+    height: 80%;
+    border-radius: 50%;
+    filter: blur(calc(var(--s) * 0.16));
+    mix-blend-mode: screen;
+    opacity: 0.85;
+  }
+  .orb-f .b1 {
+    background: radial-gradient(circle, var(--orb-accent) 0%, transparent 60%);
+    animation: f-drift1 11s ease-in-out infinite;
+  }
+  .orb-f .b2 {
+    background: radial-gradient(circle, var(--orb-accent-2) 0%, transparent 60%);
+    animation: f-drift2 14s ease-in-out infinite;
+  }
+  .orb-f .b3 {
+    background: radial-gradient(circle, var(--orb-accent-3) 0%, transparent 60%);
+    animation: f-drift3 17s ease-in-out infinite;
+  }
+  .orb-f .b4 {
+    background: radial-gradient(circle, var(--orb-accent-4) 0%, transparent 60%);
+    animation: f-drift4 13s ease-in-out infinite;
+  }
+
+  /* glassy specular highlight on top of everything */
+  .orb-f .gloss {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+      radial-gradient(ellipse 55% 35% at 35% 25%, rgba(255,255,255,0.55) 0%, transparent 60%),
+      radial-gradient(circle at 50% 50%, transparent 55%, rgba(0,0,0,0.35) 100%);
+    pointer-events: none;
+    z-index: 3;
+    animation: f-gloss 9s ease-in-out infinite;
+  }
+
+  /* a slow chromatic breathing on the whole sphere */
+  .orb-f .sphere { animation: f-breathe 6s ease-in-out infinite; }
+
+  @keyframes f-breathe {
+    0%, 100% { filter: hue-rotate(0deg)   brightness(1); }
+    50%      { filter: hue-rotate(20deg)  brightness(1.08); }
+  }
+  @keyframes f-aura {
+    0%, 100% { transform: scale(1);    opacity: 0.5; }
+    50%      { transform: scale(1.12); opacity: 0.75; }
+  }
+  @keyframes f-gloss {
+    0%, 100% { opacity: 0.95; transform: translate(0, 0); }
+    50%      { opacity: 0.7;  transform: translate(2%, -1%); }
+  }
+
+  /* organic drift — irregular keyframes so blobs never sync */
+  @keyframes f-drift1 {
+    0%   { transform: translate(-10%,  -5%) scale(1.0); }
+    20%  { transform: translate( 18%,  10%) scale(1.2); }
+    45%  { transform: translate( -8%,  22%) scale(0.9); }
+    65%  { transform: translate( 20%, -14%) scale(1.1); }
+    85%  { transform: translate( -4%,   4%) scale(1.05); }
+    100% { transform: translate(-10%,  -5%) scale(1.0); }
+  }
+  @keyframes f-drift2 {
+    0%   { transform: translate( 18%,  12%) scale(1.1); }
+    25%  { transform: translate(-22%,  -4%) scale(0.95); }
+    55%  { transform: translate(  6%, -18%) scale(1.25); }
+    80%  { transform: translate(-12%,  20%) scale(0.9); }
+    100% { transform: translate( 18%,  12%) scale(1.1); }
+  }
+  @keyframes f-drift3 {
+    0%   { transform: translate(  4%, -22%) scale(1.0); }
+    30%  { transform: translate( 22%,   8%) scale(1.15); }
+    60%  { transform: translate(-18%,  18%) scale(0.85); }
+    85%  { transform: translate( -2%, -10%) scale(1.1); }
+    100% { transform: translate(  4%, -22%) scale(1.0); }
+  }
+  @keyframes f-drift4 {
+    0%   { transform: translate(-22%,  20%) scale(0.95); }
+    35%  { transform: translate( 14%,  18%) scale(1.2); }
+    70%  { transform: translate( 22%, -14%) scale(0.9); }
+    100% { transform: translate(-22%,  20%) scale(0.95); }
+  }
+
+  .xs { --s: 80px; }
+  .sm { --s: 120px; }
+  .md { --s: 180px; }
+  .lg { --s: 280px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div style="text-align:center">
+      <h1>Orb F · Aurora bloom</h1>
+      <p class="desc">Glassy sphere with four soft color blobs drifting & morphing inside on different periods, an outer aura that breathes, and a slow chromatic hue-rotate. No edges, no dots — organic and ethereal, OpenAI-orb adjacent.</p>
+      <div class="accents">
+        <button style="--c:#7aa2ff" onclick="setAccent('#7aa2ff','#b48cff','#62e6c4','#ff7ad9')"></button>
+        <button style="--c:#00f0ff" onclick="setAccent('#00f0ff','#a855f7','#39ff7a','#ff2bd6')"></button>
+        <button style="--c:#ff2bd6" onclick="setAccent('#ff2bd6','#7aa2ff','#ffcc00','#a855f7')"></button>
+        <button style="--c:#a855f7" onclick="setAccent('#a855f7','#00f0ff','#ff2bd6','#62e6c4')"></button>
+        <button style="--c:#39ff7a" onclick="setAccent('#39ff7a','#00f0ff','#ffcc00','#a855f7')"></button>
+        <button style="--c:#ffcc00" onclick="setAccent('#ffcc00','#ff5555','#ff2bd6','#7aa2ff')"></button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="swatch">
+        <div class="orb-f lg">
+          <div class="sphere">
+            <div class="blob b1"></div>
+            <div class="blob b2"></div>
+            <div class="blob b3"></div>
+            <div class="blob b4"></div>
+          </div>
+          <div class="gloss"></div>
+        </div>
+        <div class="label">primary · 280</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="swatch">
+        <div class="orb-f xs">
+          <div class="sphere"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
+          <div class="gloss"></div>
+        </div>
+        <div class="label">xs · 80</div>
+      </div>
+      <div class="swatch">
+        <div class="orb-f sm">
+          <div class="sphere"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
+          <div class="gloss"></div>
+        </div>
+        <div class="label">sm · 120</div>
+      </div>
+      <div class="swatch">
+        <div class="orb-f md">
+          <div class="sphere"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
+          <div class="gloss"></div>
+        </div>
+        <div class="label">md · 180</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function setAccent(a, b, c, d) {
+    const r = document.documentElement;
+    r.style.setProperty("--orb-accent",   a);
+    r.style.setProperty("--orb-accent-2", b);
+    r.style.setProperty("--orb-accent-3", c);
+    r.style.setProperty("--orb-accent-4", d);
+  }
+</script>
+</body>
+</html>

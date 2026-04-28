@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/><title>Orb X6 — Wireframe icosahedron</title>
+<style>
+:root{--bg:#06070d;--fg:#d8e4ff;--muted:#5a6a8a;--grid:#0f1626;--orb-accent:#00f0ff}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font-family:"JetBrains Mono",ui-monospace,monospace}
+body{display:grid;place-items:center;overflow:hidden;background-image:radial-gradient(var(--grid) 1px,transparent 1px),radial-gradient(var(--grid) 1px,transparent 1px);background-size:24px 24px,24px 24px;background-position:0 0,12px 12px}
+.stage{display:grid;gap:48px;justify-items:center}
+h1{font-weight:500;font-size:13px;letter-spacing:.28em;text-transform:uppercase;color:var(--orb-accent);margin:0 0 10px;text-shadow:0 0 12px var(--orb-accent)}
+.desc{color:var(--muted);font-size:12px;max-width:600px;text-align:center;line-height:1.6}
+.controls{display:flex;gap:22px;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:18px;color:var(--muted);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.controls label{display:inline-flex;align-items:center;gap:8px}.controls input[type=range]{accent-color:var(--orb-accent)}.controls .val{color:var(--orb-accent);min-width:3.2em;text-align:right}
+.row{display:flex;gap:80px;align-items:center;flex-wrap:wrap;justify-content:center}.swatch{display:grid;justify-items:center}
+.label{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-top:18px;text-align:center}
+.scene{width:var(--s,380px);height:var(--s,380px);perspective:1300px;transform:rotateX(20deg);color:var(--orb-accent)}
+.sphere{width:100%;height:100%;position:relative;transform-style:preserve-3d;animation:s var(--spin,18s) linear infinite}
+.sphere span{--d:calc(var(--s,380px)/100);--scale:1;position:absolute;top:50%;left:50%;width:calc(var(--d)*var(--scale));height:calc(var(--d)*var(--scale));margin:calc(var(--d)*var(--scale)*-.5) 0 0 calc(var(--d)*var(--scale)*-.5);border-radius:50%;background:currentColor;transform-style:preserve-3d;transform:var(--t);opacity:var(--br,.5);box-shadow:0 0 calc(4px*var(--glow,1)) currentColor,0 0 calc(10px*var(--glow,1)) color-mix(in srgb,currentColor 60%,transparent)}
+.sphere span.vert{--d:calc(var(--s,380px)/40)}
+@keyframes s{to{transform:rotateY(360deg)}}
+.lg{--s:380px}.md{--s:180px}.sm{--s:120px}.xs{--s:80px}
+</style></head><body>
+<div class="stage">
+<div style="text-align:center"><h1>Orb X6 · Wireframe icosahedron</h1>
+<p class="desc">12 vertices + 30 edges of an icosahedron, each edge sampled with dots. Brightness pulses travel along the edges from vertex to vertex like a circuit lighting up.</p>
+<div class="controls">
+<label>per edge <input id="n" type="range" min="6" max="40" step="2" value="20"/><span class="val" id="nVal">20</span></label>
+<label>trail <input id="tr" type="range" min="3" max="40" step="1" value="14"/><span class="val" id="trVal">14%</span></label>
+<label>speed <input id="sd" type="range" min="1" max="30" step="1" value="14"/><span class="val" id="sdVal">14</span></label>
+</div></div>
+<div class="row"><div class="swatch"><div class="scene lg"><div class="sphere" data-orb></div></div><div class="label">primary · 380</div></div></div>
+<div class="row"><div class="swatch"><div class="scene xs"><div class="sphere" data-orb></div></div><div class="label">xs · 80</div></div>
+<div class="swatch"><div class="scene sm"><div class="sphere" data-orb></div></div><div class="label">sm · 120</div></div>
+<div class="swatch"><div class="scene md"><div class="sphere" data-orb></div></div><div class="label">md · 180</div></div></div>
+</div>
+<script>
+const PHI=(1+Math.sqrt(5))/2;
+// 12 vertices of an icosahedron, normalized to unit sphere
+const verts=[[-1,PHI,0],[1,PHI,0],[-1,-PHI,0],[1,-PHI,0],[0,-1,PHI],[0,1,PHI],[0,-1,-PHI],[0,1,-PHI],[PHI,0,-1],[PHI,0,1],[-PHI,0,-1],[-PHI,0,1]].map(([a,b,c])=>{const m=Math.sqrt(a*a+b*b+c*c);return[a/m,b/m,c/m]});
+// 30 edges of the icosahedron
+const edges=[[0,1],[0,5],[0,7],[0,10],[0,11],[1,5],[1,7],[1,8],[1,9],[2,3],[2,4],[2,6],[2,10],[2,11],[3,4],[3,6],[3,8],[3,9],[4,5],[4,9],[4,11],[5,9],[5,11],[6,7],[6,8],[6,10],[7,8],[7,10],[8,9],[10,11]];
+const orbs=new Map();
+function build(sphere){const radius=sphere.getBoundingClientRect().width/2*0.92;const n=+document.getElementById('n').value;sphere.innerHTML='';const items=[];
+// vertex dots
+for(let v=0;v<verts.length;v++){const [a,b,c]=verts[v];const dot=document.createElement('span');dot.classList.add('vert');dot.style.transform=`translate3d(${(a*radius).toFixed(2)}px,${(b*radius).toFixed(2)}px,${(c*radius).toFixed(2)}px)`;sphere.appendChild(dot);items.push({el:dot,f:0,vert:true})}
+// edge sample dots
+for(let e=0;e<edges.length;e++){const [i,j]=edges[e];const A=verts[i],B=verts[j];for(let k=1;k<n;k++){const u=k/n;const x=A[0]*(1-u)+B[0]*u,y=A[1]*(1-u)+B[1]*u,z=A[2]*(1-u)+B[2]*u;const m=Math.sqrt(x*x+y*y+z*z);const dot=document.createElement('span');dot.style.transform=`translate3d(${(x/m*radius).toFixed(2)}px,${(y/m*radius).toFixed(2)}px,${(z/m*radius).toFixed(2)}px)`;sphere.appendChild(dot);items.push({el:dot,f:(e+u)/edges.length,vert:false})}}
+orbs.set(sphere,items)}
+let t0=performance.now();
+function frame(now){const t=(now-t0)/1000,trailW=+document.getElementById('tr').value/100,speed=+document.getElementById('sd').value/10;
+const cursor=(t*speed*0.05)%1;
+orbs.forEach(items=>{for(const it of items){if(it.vert){const peak=0.5+0.5*Math.sin(t*3+it.f*7);it.el.style.opacity=(0.4+0.6*peak).toFixed(3);it.el.style.setProperty('--glow',(1+3*peak).toFixed(2));it.el.style.setProperty('--scale',(1+0.4*peak).toFixed(2));continue}let d=Math.abs(it.f-cursor);if(d>0.5)d=1-d;const k=Math.max(0,1-d/trailW);const peak=Math.pow(k,2);it.el.style.opacity=(0.06+0.94*peak).toFixed(3);it.el.style.setProperty('--glow',(0.3+5*peak).toFixed(2));it.el.style.setProperty('--scale',(1+1.6*peak).toFixed(2))}});requestAnimationFrame(frame)}
+['tr','sd'].forEach(id=>document.getElementById(id).addEventListener('input',e=>{document.getElementById(id+'Val').textContent=e.target.value+(id==='tr'?'%':'')}));
+document.getElementById('n').addEventListener('input',e=>{document.getElementById('nVal').textContent=e.target.value;document.querySelectorAll('[data-orb]').forEach(build)});
+window.addEventListener('load',()=>{document.querySelectorAll('[data-orb]').forEach(build);requestAnimationFrame(frame)});
+</script></body></html>

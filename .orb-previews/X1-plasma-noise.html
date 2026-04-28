@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/><title>Orb X1 — Plasma noise</title>
+<style>
+:root{--bg:#06070d;--fg:#d8e4ff;--muted:#5a6a8a;--grid:#0f1626;--orb-accent:#00f0ff;--orb-accent-2:#ff2bd6;}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font-family:"JetBrains Mono",ui-monospace,monospace}
+body{display:grid;place-items:center;overflow:hidden;background-image:radial-gradient(var(--grid) 1px,transparent 1px),radial-gradient(var(--grid) 1px,transparent 1px);background-size:24px 24px,24px 24px;background-position:0 0,12px 12px}
+.stage{display:grid;gap:48px;justify-items:center}
+h1{font-weight:500;font-size:13px;letter-spacing:.28em;text-transform:uppercase;color:var(--orb-accent);margin:0 0 10px;text-shadow:0 0 12px var(--orb-accent)}
+.desc{color:var(--muted);font-size:12px;max-width:600px;text-align:center;line-height:1.6}
+.controls{display:flex;gap:22px;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:18px;color:var(--muted);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.controls label{display:inline-flex;align-items:center;gap:8px}
+.controls input[type=range]{accent-color:var(--orb-accent)}.controls .val{color:var(--orb-accent);min-width:3.2em;text-align:right}
+.row{display:flex;gap:80px;align-items:center;flex-wrap:wrap;justify-content:center}.swatch{display:grid;justify-items:center}
+.label{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-top:18px;text-align:center}
+.scene{width:var(--s,360px);height:var(--s,360px);perspective:1200px;transform:rotateX(15deg);color:var(--orb-accent)}
+.sphere{width:100%;height:100%;position:relative;transform-style:preserve-3d;animation:s var(--spin,30s) linear infinite}
+.sphere span{--d:calc(var(--s,360px)/120);--scale:1;position:absolute;top:50%;left:50%;width:calc(var(--d)*var(--scale));height:calc(var(--d)*var(--scale));margin:calc(var(--d)*var(--scale)*-.5) 0 0 calc(var(--d)*var(--scale)*-.5);border-radius:50%;background:var(--c,currentColor);transform-style:preserve-3d;transform:var(--t);opacity:var(--br,.08);box-shadow:0 0 calc(2px*var(--glow,1)) var(--c,currentColor),0 0 calc(6px*var(--glow,1)) color-mix(in srgb,var(--c,currentColor) 65%,transparent),0 0 calc(12px*var(--glow,1)) color-mix(in srgb,var(--c,currentColor) 30%,transparent)}
+@keyframes s{to{transform:rotateY(360deg)}}
+.lg{--s:380px}.md{--s:180px}.sm{--s:120px}.xs{--s:80px}
+</style></head><body>
+<div class="stage">
+<div style="text-align:center"><h1>Orb X1 · Plasma noise</h1>
+<p class="desc">Fibonacci-distributed dots whose brightness is sampled from a 3D simplex-ish noise field that flows through them. Two color channels blend so the orb looks alive — no cursors, no waves, just turbulence.</p>
+<div class="controls">
+<label>dots <input id="n" type="range" min="200" max="1500" step="50" value="900"/><span class="val" id="nVal">900</span></label>
+<label>scale <input id="sc" type="range" min="1" max="40" step="1" value="14"/><span class="val" id="scVal">14</span></label>
+<label>flow <input id="fl" type="range" min="1" max="40" step="1" value="12"/><span class="val" id="flVal">12</span></label>
+</div></div>
+<div class="row"><div class="swatch"><div class="scene lg"><div class="sphere" data-orb></div></div><div class="label">primary · 380</div></div></div>
+<div class="row"><div class="swatch"><div class="scene xs"><div class="sphere" data-orb></div></div><div class="label">xs · 80</div></div>
+<div class="swatch"><div class="scene sm"><div class="sphere" data-orb></div></div><div class="label">sm · 120</div></div>
+<div class="swatch"><div class="scene md"><div class="sphere" data-orb></div></div><div class="label">md · 180</div></div></div>
+</div>
+<script>
+const TAU=Math.PI*2;
+function fib(n){const p=[],phi=(1+Math.sqrt(5))/2;for(let i=0;i<n;i++){const y=1-(i/(n-1))*2,r=Math.sqrt(1-y*y),t=TAU*i/phi;p.push({x:Math.cos(t)*r,y,z:Math.sin(t)*r})}return p}
+// fast value noise via three sin layers — not real simplex but visually dense
+function noise(x,y,z,t){return Math.sin(x*1.7+t*1.3)*Math.sin(y*1.9-t*0.8)*Math.sin(z*2.1+t*0.6)+0.5*Math.sin((x+y)*2.3+t*1.7)*Math.sin((y-z)*2.7-t*1.1)+0.25*Math.sin(x*5+y*3+z*4+t*2)}
+const orbs=new Map();
+function build(s){const r=s.getBoundingClientRect().width/2,n=+document.getElementById('n').value,pts=fib(n);s.innerHTML='';const items=[];for(let i=0;i<n;i++){const dot=document.createElement('span');const x=pts[i].x*r,y=pts[i].y*r,z=pts[i].z*r;dot.style.transform=`translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,${z.toFixed(2)}px)`;s.appendChild(dot);items.push({el:dot,p:pts[i]})}orbs.set(s,items)}
+let t0=performance.now();
+function frame(now){const t=(now-t0)/1000,sc=+document.getElementById('sc').value/10,fl=+document.getElementById('fl').value/10;
+orbs.forEach(items=>{for(const it of items){const v=noise(it.p.x*sc,it.p.y*sc,it.p.z*sc,t*fl);const norm=Math.max(0,Math.min(1,(v+1.5)/3));const peak=Math.pow(norm,3);it.el.style.opacity=(0.05+0.95*peak).toFixed(3);it.el.style.setProperty('--glow',(0.3+5*peak).toFixed(2));it.el.style.setProperty('--scale',(0.7+2*peak).toFixed(2));it.el.style.setProperty('--c',norm>0.55?'var(--orb-accent)':'var(--orb-accent-2)')}});requestAnimationFrame(frame)}
+['n','sc','fl'].forEach(id=>document.getElementById(id).addEventListener('input',e=>{document.getElementById(id+'Val').textContent=e.target.value;if(id==='n')document.querySelectorAll('[data-orb]').forEach(build)}));
+window.addEventListener('load',()=>{document.querySelectorAll('[data-orb]').forEach(build);requestAnimationFrame(frame)});
+</script></body></html>

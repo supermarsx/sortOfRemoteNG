@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Orb B — Orbiting dot trails</title>
+<style>
+  :root {
+    --bg: #06070d;
+    --fg: #d8e4ff;
+    --muted: #5a6a8a;
+    --grid: #0f1626;
+    --color-accent: #ff2bd6;        /* magenta */
+    --orb-accent: var(--color-accent);
+    --orb-accent-2: #00f0ff;        /* split-tone, optional */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "JetBrains Mono", ui-monospace, monospace; }
+  body {
+    display: grid; place-items: center;
+    background-image:
+      radial-gradient(var(--grid) 1px, transparent 1px),
+      radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+  .stage { display: grid; gap: 56px; justify-items: center; }
+  .row { display: flex; gap: 64px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .label { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-top: 14px; text-align: center; }
+  .swatch { display: grid; justify-items: center; }
+  h1 { font-weight: 500; font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: var(--orb-accent); margin: 0 0 10px; text-shadow: 0 0 12px var(--orb-accent); }
+  .desc { color: var(--muted); font-size: 12px; max-width: 540px; text-align: center; line-height: 1.6; }
+  .accents { display: flex; gap: 10px; margin-top: 18px; }
+  .accents button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #222a3d; cursor: pointer; padding: 0; background: var(--c); box-shadow: 0 0 8px var(--c); }
+
+  /* ======================  Orb B — orbiting dot trails  ====================== */
+  .orb-b {
+    position: relative;
+    width: var(--s, 96px); height: var(--s, 96px);
+    color: var(--orb-accent);
+    display: inline-block;
+  }
+  /* etched outer ring with tick dashes */
+  .orb-b::before {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background:
+      conic-gradient(from 0deg, currentColor 0 2deg, transparent 2deg 12deg) center / 100% 100%;
+    -webkit-mask: radial-gradient(circle, transparent calc(50% - 1px), black calc(50% - 1px), black 50%, transparent 50%);
+            mask: radial-gradient(circle, transparent calc(50% - 1px), black calc(50% - 1px), black 50%, transparent 50%);
+    opacity: .35;
+  }
+  /* dotted core */
+  .orb-b .core {
+    position: absolute; inset: 36%;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow:
+      0 0 calc(var(--s, 96px) * 0.18) currentColor,
+      0 0 calc(var(--s, 96px) * 0.4)  currentColor,
+      inset 0 0 calc(var(--s, 96px) * 0.05) #fff;
+    animation: b-corebeat 1.4s steps(2, end) infinite;
+  }
+  .orb-b .ring { position: absolute; inset: 0; }
+  .orb-b .ring.r1 { animation: b-r1 1.6s linear infinite; }
+  .orb-b .ring.r2 { animation: b-r2 2.4s linear infinite; }
+  .orb-b .ring.r3 { animation: b-r3 3.6s linear infinite; }
+
+  /* mote = leading dot + trailing dot streak */
+  .orb-b .mote, .orb-b .mote::before, .orb-b .mote::after {
+    position: absolute;
+    border-radius: 50%;
+  }
+  .orb-b .mote {
+    top: 0; left: 50%;
+    width: calc(var(--s, 96px) * 0.13); height: calc(var(--s, 96px) * 0.13);
+    margin-left: calc(var(--s, 96px) * -0.065);
+    background: currentColor;
+    box-shadow: 0 0 calc(var(--s, 96px) * 0.22) currentColor;
+  }
+  .orb-b .mote::before {
+    content: "";
+    width: 60%; height: 60%; left: 20%;
+    background: currentColor; opacity: .55;
+    transform: translateY(180%);
+    box-shadow: 0 0 8px currentColor;
+  }
+  .orb-b .mote::after {
+    content: "";
+    width: 35%; height: 35%; left: 32.5%;
+    background: currentColor; opacity: .25;
+    transform: translateY(440%);
+  }
+
+  /* alt-color motes (split-tone) */
+  .orb-b .ring.r2 .mote { color: var(--orb-accent-2); top: auto; bottom: 0; }
+  .orb-b .ring.r2 .mote::before { transform: translateY(-180%); }
+  .orb-b .ring.r2 .mote::after  { transform: translateY(-440%); }
+  .orb-b .ring.r3 .mote { top: 50%; left: 0; margin: calc(var(--s, 96px) * -0.065) 0 0; }
+
+  @keyframes b-r1 { to { transform: rotate(360deg);} }
+  @keyframes b-r2 { from { transform: rotate(140deg);} to { transform: rotate(-220deg);} }
+  @keyframes b-r3 { from { transform: rotate(260deg);} to { transform: rotate(620deg);} }
+  @keyframes b-corebeat {
+    0%, 100% { transform: scale(1);   filter: brightness(1.1); }
+    50%      { transform: scale(.78); filter: brightness(.7); }
+  }
+
+  .xs { --s: 24px; }
+  .sm { --s: 40px; }
+  .md { --s: 64px; }
+  .lg { --s: 96px; }
+  .xl { --s: 144px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div style="text-align:center">
+      <h1>Orb B · Orbiting dot trails</h1>
+      <p class="desc">Three rings of comet-dots orbit a stuttering core, tick-marked outer rim. Split-tone (accent + cyan) for that synthwave vibe.</p>
+      <div class="accents">
+        <button style="--c:#ff2bd6" onclick="document.documentElement.style.setProperty('--orb-accent','#ff2bd6')"></button>
+        <button style="--c:#00f0ff" onclick="document.documentElement.style.setProperty('--orb-accent','#00f0ff')"></button>
+        <button style="--c:#a855f7" onclick="document.documentElement.style.setProperty('--orb-accent','#a855f7')"></button>
+        <button style="--c:#39ff7a" onclick="document.documentElement.style.setProperty('--orb-accent','#39ff7a')"></button>
+        <button style="--c:#ffcc00" onclick="document.documentElement.style.setProperty('--orb-accent','#ffcc00')"></button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="swatch">
+        <span class="orb-b xs">
+          <span class="core"></span>
+          <span class="ring r1"><span class="mote"></span></span>
+          <span class="ring r2"><span class="mote"></span></span>
+          <span class="ring r3"><span class="mote"></span></span>
+        </span><div class="label">xs · 24</div>
+      </div>
+      <div class="swatch">
+        <span class="orb-b sm">
+          <span class="core"></span>
+          <span class="ring r1"><span class="mote"></span></span>
+          <span class="ring r2"><span class="mote"></span></span>
+          <span class="ring r3"><span class="mote"></span></span>
+        </span><div class="label">sm · 40</div>
+      </div>
+      <div class="swatch">
+        <span class="orb-b md">
+          <span class="core"></span>
+          <span class="ring r1"><span class="mote"></span></span>
+          <span class="ring r2"><span class="mote"></span></span>
+          <span class="ring r3"><span class="mote"></span></span>
+        </span><div class="label">md · 64</div>
+      </div>
+      <div class="swatch">
+        <span class="orb-b lg">
+          <span class="core"></span>
+          <span class="ring r1"><span class="mote"></span></span>
+          <span class="ring r2"><span class="mote"></span></span>
+          <span class="ring r3"><span class="mote"></span></span>
+        </span><div class="label">lg · 96</div>
+      </div>
+      <div class="swatch">
+        <span class="orb-b xl">
+          <span class="core"></span>
+          <span class="ring r1"><span class="mote"></span></span>
+          <span class="ring r2"><span class="mote"></span></span>
+          <span class="ring r3"><span class="mote"></span></span>
+        </span><div class="label">xl · 144</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

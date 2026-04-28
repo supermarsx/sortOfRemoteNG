@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Orb E5 — Pulsing latitude bands</title>
+<style>
+  :root {
+    --bg: #06070d; --fg: #d8e4ff; --muted: #5a6a8a; --grid: #0f1626;
+    --color-accent: #ff5555; --orb-accent: var(--color-accent);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); font-family: "JetBrains Mono", ui-monospace, monospace; }
+  body { display: grid; place-items: center; overflow: hidden;
+    background-image: radial-gradient(var(--grid) 1px, transparent 1px), radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px; background-position: 0 0, 12px 12px; }
+  .stage { display: grid; gap: 48px; justify-items: center; }
+  h1 { font-weight: 500; font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: var(--orb-accent); margin: 0 0 10px; text-shadow: 0 0 12px var(--orb-accent); }
+  .desc { color: var(--muted); font-size: 12px; max-width: 600px; text-align: center; line-height: 1.6; }
+  .controls { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; justify-content: center; margin-top: 18px; color: var(--muted); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+  .controls label { display: inline-flex; align-items: center; gap: 8px; }
+  .controls input[type=range] { accent-color: var(--orb-accent); }
+  .controls .val { color: var(--orb-accent); min-width: 3.2em; text-align: right; }
+  .accents { display: flex; gap: 10px; }
+  .accents button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #222a3d; cursor: pointer; padding: 0; background: var(--c); box-shadow: 0 0 8px var(--c); }
+  .row { display: flex; gap: 80px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .swatch { display: grid; justify-items: center; }
+  .label { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-top: 18px; text-align: center; }
+
+  .scene { width: var(--s, 320px); height: var(--s, 320px); perspective: 1200px; transform: rotateX(15deg); color: var(--orb-accent); }
+  .sphere { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; animation: e5-spin var(--spin, 14s) linear infinite; }
+  .sphere span {
+    --d: calc(var(--s, 320px) / 100);
+    --scale: 1;
+    position: absolute; top: 50%; left: 50%;
+    width: calc(var(--d) * var(--scale));
+    height: calc(var(--d) * var(--scale));
+    margin: calc(var(--d) * var(--scale) * -0.5) 0 0 calc(var(--d) * var(--scale) * -0.5);
+    border-radius: 50%;
+    background: currentColor;
+    transform-style: preserve-3d;
+    transform: var(--t);
+    opacity: var(--br, .08);
+    box-shadow: 0 0 calc(var(--d) * var(--glow, .8)) currentColor,
+                0 0 calc(var(--d) * var(--glow, .8) * 2.6) color-mix(in srgb, currentColor 70%, transparent),
+                0 0 calc(var(--d) * var(--glow, .8) * 5) color-mix(in srgb, currentColor 35%, transparent);
+    will-change: opacity, width, height;
+  }
+  @keyframes e5-spin { 0% { transform: rotateY(0); } 100% { transform: rotateY(360deg); } }
+  .lg { --s: 360px; } .md { --s: 180px; } .sm { --s: 120px; } .xs { --s: 80px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div style="text-align:center">
+      <h1>Orb E5 · Pulsing latitude bands</h1>
+      <p class="desc">Dots placed evenly per latitude (denser at the equator). A cosine wave sweeps pole-to-pole — bands of brightness travel north and south, like Saturn rings on a sphere.</p>
+      <div class="controls">
+        <label>rings <input id="rings" type="range" min="10" max="60" step="1" value="28" /> <span class="val" id="ringsVal">28</span></label>
+        <label>per ring <input id="per" type="range" min="6" max="60" step="1" value="22" /> <span class="val" id="perVal">22</span></label>
+        <label>bands <input id="bands" type="range" min="1" max="8" step="1" value="3" /> <span class="val" id="bandsVal">3</span></label>
+        <label>width <input id="width" type="range" min="3" max="40" step="1" value="12" /> <span class="val" id="widthVal">12%</span></label>
+        <label>speed <input id="speed" type="range" min="1" max="40" step="1" value="12" /> <span class="val" id="speedVal">12</span></label>
+        <span class="accents">
+          <button style="--c:#ff5555" onclick="setAccent('#ff5555')"></button>
+          <button style="--c:#00f0ff" onclick="setAccent('#00f0ff')"></button>
+          <button style="--c:#ff2bd6" onclick="setAccent('#ff2bd6')"></button>
+          <button style="--c:#a855f7" onclick="setAccent('#a855f7')"></button>
+          <button style="--c:#39ff7a" onclick="setAccent('#39ff7a')"></button>
+          <button style="--c:#ffcc00" onclick="setAccent('#ffcc00')"></button>
+        </span>
+      </div>
+    </div>
+    <div class="row"><div class="swatch"><div class="scene lg"><div class="sphere" data-orb></div></div><div class="label">primary · 360</div></div></div>
+    <div class="row">
+      <div class="swatch"><div class="scene xs"><div class="sphere" data-orb></div></div><div class="label">xs · 80</div></div>
+      <div class="swatch"><div class="scene sm"><div class="sphere" data-orb></div></div><div class="label">sm · 120</div></div>
+      <div class="swatch"><div class="scene md"><div class="sphere" data-orb></div></div><div class="label">md · 180</div></div>
+    </div>
+  </div>
+<script>
+  const TAU = Math.PI * 2;
+  const orbs = new Map();
+  function rebuild(sphere) {
+    const radius = sphere.getBoundingClientRect().width / 2;
+    const rings = +document.getElementById("rings").value;
+    const perEq = +document.getElementById("per").value;
+    sphere.innerHTML = "";
+    const items = [];
+    for (let r = 0; r < rings; r++) {
+      const phi = (r + 0.5) / rings * Math.PI;       // 0..π
+      const ringR = Math.sin(phi);                    // 0..1
+      const count = Math.max(3, Math.round(perEq * ringR));
+      for (let j = 0; j < count; j++) {
+        const theta = (j / count) * TAU + (r * 0.4);  // small offset so rings don't align
+        const x = radius * ringR * Math.cos(theta);
+        const z = radius * ringR * Math.sin(theta);
+        const y = radius * Math.cos(phi);
+        const dot = document.createElement("span");
+        dot.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, ${z.toFixed(2)}px)`;
+        sphere.appendChild(dot);
+        items.push({ el: dot, lat: phi / Math.PI });   // 0..1 from north to south
+      }
+    }
+    orbs.set(sphere, items);
+  }
+  let t0 = performance.now();
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    const bands = +document.getElementById("bands").value;
+    const width = +document.getElementById("width").value / 100;
+    const speed = +document.getElementById("speed").value / 10;
+    orbs.forEach(items => {
+      for (const it of items) {
+        let best = 0;
+        for (let a = 0; a < bands; a++) {
+          const cursor = ((t * speed * 0.1) + a / bands) % 1;
+          let d = Math.abs(it.lat - cursor); if (d > 0.5) d = 1 - d;
+          const k = Math.max(0, 1 - d / width);
+          const g = k * k;
+          if (g > best) best = g;
+        }
+        const peak = Math.pow(best, 2);
+        it.el.style.opacity = (0.06 + 0.94 * peak).toFixed(3);
+        it.el.style.setProperty("--glow", (0.4 + 5 * peak).toFixed(2));
+        it.el.style.setProperty("--scale", (1 + 1.8 * peak).toFixed(2));
+      }
+    });
+    requestAnimationFrame(frame);
+  }
+  function setAccent(c) { document.documentElement.style.setProperty("--orb-accent", c); }
+  function bind(id, valId, suffix = "") { document.getElementById(id).addEventListener("input", e => { document.getElementById(valId).textContent = e.target.value + suffix; }); }
+  bind("bands","bandsVal"); bind("width","widthVal","%"); bind("speed","speedVal");
+  ["rings","per"].forEach(id => document.getElementById(id).addEventListener("input", e => {
+    document.getElementById(id+"Val").textContent = e.target.value;
+    document.querySelectorAll("[data-orb]").forEach(rebuild);
+  }));
+  window.addEventListener("load", () => {
+    document.querySelectorAll("[data-orb]").forEach(rebuild);
+    requestAnimationFrame(frame);
+  });
+</script>
+</body>
+</html>

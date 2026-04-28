@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Orb D — Particle storm</title>
+<style>
+  :root {
+    --bg: #06070d;
+    --fg: #d8e4ff;
+    --muted: #5a6a8a;
+    --grid: #0f1626;
+    --color-accent: #39ff7a;        /* matrix green */
+    --orb-accent: var(--color-accent);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "JetBrains Mono", ui-monospace, monospace; }
+  body {
+    display: grid; place-items: center;
+    background-image:
+      radial-gradient(var(--grid) 1px, transparent 1px),
+      radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+  .stage { display: grid; gap: 56px; justify-items: center; }
+  .row { display: flex; gap: 64px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .label { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-top: 14px; text-align: center; }
+  .swatch { display: grid; justify-items: center; }
+  h1 { font-weight: 500; font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: var(--orb-accent); margin: 0 0 10px; text-shadow: 0 0 12px var(--orb-accent); }
+  .desc { color: var(--muted); font-size: 12px; max-width: 540px; text-align: center; line-height: 1.6; }
+  .accents { display: flex; gap: 10px; margin-top: 18px; }
+  .accents button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #222a3d; cursor: pointer; padding: 0; background: var(--c); box-shadow: 0 0 8px var(--c); }
+
+  /* ======================  Orb D — particle storm  ====================== */
+  .orb-d {
+    position: relative;
+    width: var(--s, 96px); height: var(--s, 96px);
+    border-radius: 50%;
+    color: var(--orb-accent);
+    display: inline-block;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--orb-accent) 14%, #06070d) 0%, #04050a 85%);
+    box-shadow:
+      0 0 calc(var(--s, 96px) * 0.4) color-mix(in srgb, var(--orb-accent) 65%, transparent),
+      inset 0 0 calc(var(--s, 96px) * 0.18) rgba(0,0,0,.9),
+      inset 0 0 0 1px color-mix(in srgb, var(--orb-accent) 55%, transparent);
+  }
+  /* base dot field that drifts (dot grid offset) */
+  .orb-d::before {
+    content: "";
+    position: absolute; inset: -20%;
+    background:
+      radial-gradient(circle, currentColor 1px, transparent 1.6px) 0 0 / calc(var(--s, 96px) * 0.07) calc(var(--s, 96px) * 0.07);
+    -webkit-mask: radial-gradient(circle at 50% 50%, black 50%, transparent 78%);
+            mask: radial-gradient(circle at 50% 50%, black 50%, transparent 78%);
+    opacity: .55;
+    animation: d-drift 6s linear infinite, d-pulse 2.4s ease-in-out infinite;
+    mix-blend-mode: screen;
+  }
+  /* second dot layer counter-drifting at different scale */
+  .orb-d::after {
+    content: "";
+    position: absolute; inset: -20%;
+    background:
+      radial-gradient(circle, currentColor 1.2px, transparent 1.8px) 0 0 / calc(var(--s, 96px) * 0.13) calc(var(--s, 96px) * 0.13);
+    -webkit-mask: radial-gradient(circle at 50% 50%, black 35%, transparent 75%);
+            mask: radial-gradient(circle at 50% 50%, black 35%, transparent 75%);
+    opacity: .8;
+    animation: d-drift-rev 9s linear infinite;
+    mix-blend-mode: screen;
+  }
+  /* hot center pixel + ring */
+  .orb-d .core {
+    position: absolute; left: 50%; top: 50%;
+    width: calc(var(--s, 96px) * 0.14); height: calc(var(--s, 96px) * 0.14);
+    margin: calc(var(--s, 96px) * -0.07) 0 0 calc(var(--s, 96px) * -0.07);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 0 calc(var(--s, 96px) * 0.18) currentColor,
+      0 0 calc(var(--s, 96px) * 0.45) currentColor;
+    animation: d-corebeat 1.2s steps(2, end) infinite;
+  }
+
+  @keyframes d-drift {
+    0%   { background-position: 0 0; }
+    100% { background-position: calc(var(--s, 96px) * 0.7) calc(var(--s, 96px) * -0.5); }
+  }
+  @keyframes d-drift-rev {
+    0%   { background-position: 0 0; }
+    100% { background-position: calc(var(--s, 96px) * -0.9) calc(var(--s, 96px) * 0.6); }
+  }
+  @keyframes d-pulse {
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.5); }
+  }
+  @keyframes d-corebeat {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(.6); opacity: .7; }
+  }
+
+  .xs { --s: 24px; }
+  .sm { --s: 40px; }
+  .md { --s: 64px; }
+  .lg { --s: 96px; }
+  .xl { --s: 144px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div style="text-align:center">
+      <h1>Orb D · Particle storm</h1>
+      <p class="desc">Two counter-drifting dot fields with a hot white pixel core. Densest of the four — best for hero / splash loaders.</p>
+      <div class="accents">
+        <button style="--c:#39ff7a" onclick="document.documentElement.style.setProperty('--orb-accent','#39ff7a')"></button>
+        <button style="--c:#00f0ff" onclick="document.documentElement.style.setProperty('--orb-accent','#00f0ff')"></button>
+        <button style="--c:#ff2bd6" onclick="document.documentElement.style.setProperty('--orb-accent','#ff2bd6')"></button>
+        <button style="--c:#a855f7" onclick="document.documentElement.style.setProperty('--orb-accent','#a855f7')"></button>
+        <button style="--c:#ffcc00" onclick="document.documentElement.style.setProperty('--orb-accent','#ffcc00')"></button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="swatch"><span class="orb-d xs"><span class="core"></span></span><div class="label">xs · 24</div></div>
+      <div class="swatch"><span class="orb-d sm"><span class="core"></span></span><div class="label">sm · 40</div></div>
+      <div class="swatch"><span class="orb-d md"><span class="core"></span></span><div class="label">md · 64</div></div>
+      <div class="swatch"><span class="orb-d lg"><span class="core"></span></span><div class="label">lg · 96</div></div>
+      <div class="swatch"><span class="orb-d xl"><span class="core"></span></span><div class="label">xl · 144</div></div>
+    </div>
+  </div>
+</body>
+</html>
