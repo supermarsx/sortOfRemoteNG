@@ -118,7 +118,7 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
         <div
           role="radiogroup"
           aria-label="Fallback mode"
-          className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] p-1.5 gap-2 flex-wrap"
+          className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] p-1 gap-2 flex-wrap"
         >
           {MODE_OPTIONS.map((opt) => {
             const active = le.precomputed.mode === opt.value;
