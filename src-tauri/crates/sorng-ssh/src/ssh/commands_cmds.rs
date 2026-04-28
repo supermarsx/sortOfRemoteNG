@@ -1,12 +1,16 @@
 use super::types::*;
 
+fn redact_result<T>(result: Result<T, String>) -> Result<T, String> {
+    crate::ssh_commands::redact_ssh_command_result(result)
+}
+
 #[tauri::command]
 pub async fn connect_ssh(
     state: tauri::State<'_, SshServiceState>,
     config: SshConnectionConfig,
 ) -> Result<String, String> {
     let mut ssh = state.lock().await;
-    ssh.connect_ssh(config).await
+    redact_result(ssh.connect_ssh(config).await)
 }
 
 #[tauri::command]
@@ -17,7 +21,7 @@ pub async fn execute_command(
     timeout: Option<u64>,
 ) -> Result<String, String> {
     let mut ssh = state.lock().await;
-    ssh.execute_command(&session_id, command, timeout).await
+    redact_result(ssh.execute_command(&session_id, command, timeout).await)
 }
 
 #[tauri::command]
@@ -27,7 +31,7 @@ pub async fn execute_command_interactive(
     command: String,
 ) -> Result<String, String> {
     let mut ssh = state.lock().await;
-    ssh.execute_command_interactive(&session_id, command).await
+    redact_result(ssh.execute_command_interactive(&session_id, command).await)
 }
 
 #[tauri::command]
@@ -40,7 +44,7 @@ pub async fn start_shell(
         .event_emitter
         .clone()
         .ok_or_else(|| "No event emitter configured".to_string())?;
-    ssh.start_shell(&session_id, emitter).await
+    redact_result(ssh.start_shell(&session_id, emitter).await)
 }
 
 #[tauri::command]
@@ -50,7 +54,7 @@ pub async fn send_ssh_input(
     data: String,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.send_shell_input(&session_id, data).await
+    redact_result(ssh.send_shell_input(&session_id, data).await)
 }
 
 #[tauri::command]
@@ -61,7 +65,7 @@ pub async fn resize_ssh_shell(
     rows: u32,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.resize_shell(&session_id, cols, rows).await
+    redact_result(ssh.resize_shell(&session_id, cols, rows).await)
 }
 
 #[tauri::command]
@@ -71,7 +75,7 @@ pub async fn setup_port_forward(
     config: PortForwardConfig,
 ) -> Result<String, String> {
     let mut ssh = state.lock().await;
-    ssh.setup_port_forward(&session_id, config).await
+    redact_result(ssh.setup_port_forward(&session_id, config).await)
 }
 
 #[tauri::command]
@@ -81,7 +85,7 @@ pub async fn list_directory(
     path: String,
 ) -> Result<Vec<String>, String> {
     let mut ssh = state.lock().await;
-    let entries = ssh.list_directory(&session_id, &path).await?;
+    let entries = redact_result(ssh.list_directory(&session_id, &path).await)?;
     Ok(entries.into_iter().map(|e| e.path.to_string()).collect())
 }
 
@@ -93,8 +97,10 @@ pub async fn upload_file(
     remote_path: String,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.upload_file(&session_id, &local_path, &remote_path)
-        .await
+    redact_result(
+        ssh.upload_file(&session_id, &local_path, &remote_path)
+            .await,
+    )
 }
 
 #[tauri::command]
@@ -105,8 +111,10 @@ pub async fn download_file(
     local_path: String,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.download_file(&session_id, &remote_path, &local_path)
-        .await
+    redact_result(
+        ssh.download_file(&session_id, &remote_path, &local_path)
+            .await,
+    )
 }
 
 #[tauri::command]
@@ -115,7 +123,7 @@ pub async fn disconnect_ssh(
     session_id: String,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.disconnect_ssh(&session_id).await
+    redact_result(ssh.disconnect_ssh(&session_id).await)
 }
 
 #[tauri::command]
@@ -124,7 +132,7 @@ pub async fn get_session_info(
     session_id: String,
 ) -> Result<SshSessionInfo, String> {
     let ssh = state.lock().await;
-    ssh.get_session_info(&session_id).await
+    redact_result(ssh.get_session_info(&session_id).await)
 }
 
 #[tauri::command]
@@ -143,8 +151,10 @@ pub async fn execute_script(
     interpreter: Option<String>,
 ) -> Result<super::types::ScriptExecutionResult, String> {
     let mut ssh = state.lock().await;
-    ssh.execute_script(&session_id, &script, interpreter.as_deref())
-        .await
+    redact_result(
+        ssh.execute_script(&session_id, &script, interpreter.as_deref())
+            .await,
+    )
 }
 
 #[tauri::command]
@@ -156,8 +166,10 @@ pub async fn transfer_file_scp(
     direction: TransferDirection,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.transfer_file_scp(&session_id, &local_path, &remote_path, direction)
-        .await
+    redact_result(
+        ssh.transfer_file_scp(&session_id, &local_path, &remote_path, direction)
+            .await,
+    )
 }
 
 #[tauri::command]
@@ -166,7 +178,7 @@ pub async fn get_system_info(
     session_id: String,
 ) -> Result<SystemInfo, String> {
     let mut ssh = state.lock().await;
-    ssh.get_system_info(&session_id).await
+    redact_result(ssh.get_system_info(&session_id).await)
 }
 
 #[tauri::command]
@@ -176,7 +188,7 @@ pub async fn monitor_process(
     process_name: String,
 ) -> Result<Vec<ProcessInfo>, String> {
     let mut ssh = state.lock().await;
-    ssh.monitor_process(&session_id, &process_name).await
+    redact_result(ssh.monitor_process(&session_id, &process_name).await)
 }
 
 #[tauri::command]
@@ -188,13 +200,15 @@ pub async fn update_ssh_session_auth(
     private_key_passphrase: Option<String>,
 ) -> Result<(), String> {
     let mut ssh = state.lock().await;
-    ssh.update_session_auth(
-        &session_id,
-        password,
-        private_key_path,
-        private_key_passphrase,
+    redact_result(
+        ssh.update_session_auth(
+            &session_id,
+            password,
+            private_key_path,
+            private_key_passphrase,
+        )
+        .await,
     )
-    .await
 }
 
 #[tauri::command]
@@ -204,8 +218,10 @@ pub async fn validate_ssh_key_file(
     passphrase: Option<String>,
 ) -> Result<bool, String> {
     let ssh = state.lock().await;
-    ssh.validate_key_file(&key_path, passphrase.as_deref())
-        .await
+    redact_result(
+        ssh.validate_key_file(&key_path, passphrase.as_deref())
+            .await,
+    )
 }
 
 #[tauri::command]
@@ -214,7 +230,7 @@ pub async fn test_ssh_connection(
     config: SshConnectionConfig,
 ) -> Result<String, String> {
     let ssh = state.lock().await;
-    ssh.test_ssh_connection(config).await
+    redact_result(ssh.test_ssh_connection(config).await)
 }
 
 #[tauri::command]
@@ -225,7 +241,7 @@ pub async fn generate_ssh_key(
     passphrase: Option<String>,
 ) -> Result<(String, String), String> {
     let ssh = state.lock().await;
-    ssh.generate_ssh_key(&key_type, bits, passphrase).await
+    redact_result(ssh.generate_ssh_key(&key_type, bits, passphrase).await)
 }
 
 /// Get the terminal buffer for a session
@@ -295,7 +311,7 @@ pub async fn reattach_session(
         .event_emitter
         .clone()
         .ok_or_else(|| "No event emitter configured".to_string())?;
-    ssh.start_shell(&session_id, emitter).await
+    redact_result(ssh.start_shell(&session_id, emitter).await)
 }
 
 /// Validate a mixed chain configuration and return per-hop info.
@@ -303,7 +319,7 @@ pub async fn reattach_session(
 pub fn validate_mixed_chain(
     chain: super::types::MixedChainConfig,
 ) -> Result<super::types::MixedChainStatus, String> {
-    super::service::SshService::validate_mixed_chain(&chain)
+    redact_result(super::service::SshService::validate_mixed_chain(&chain))
 }
 
 /// Convert legacy jump_hosts list into a MixedChainConfig.
@@ -329,7 +345,7 @@ pub async fn test_mixed_chain_connection(
     config: super::types::SshConnectionConfig,
 ) -> Result<String, String> {
     let ssh = state.lock().await;
-    ssh.test_ssh_connection(config).await
+    redact_result(ssh.test_ssh_connection(config).await)
 }
 
 /// Check whether the system supports security-key (FIDO2/U2F) SSH key types.
@@ -342,7 +358,7 @@ pub async fn check_fido2_support() -> Result<super::fido2::SkSupportStatus, Stri
 #[tauri::command]
 pub async fn list_fido2_devices() -> Result<Vec<super::fido2::Fido2DeviceInfo>, String> {
     let provider = super::fido2::OpenSshSkProvider::new();
-    super::fido2::Fido2Provider::enumerate_devices(&provider).await
+    redact_result(super::fido2::Fido2Provider::enumerate_devices(&provider).await)
 }
 
 /// Generate a FIDO2 security-key SSH key pair (ed25519-sk or ecdsa-sk).
@@ -354,7 +370,7 @@ pub async fn generate_sk_ssh_key(
     request: super::types::SkKeyGenerationRequest,
 ) -> Result<super::types::SkKeyGenerationResponse, String> {
     let ssh = state.lock().await;
-    ssh.generate_sk_key_full(request).await
+    redact_result(ssh.generate_sk_key_full(request).await)
 }
 
 /// List resident (discoverable) credentials stored on a FIDO2 authenticator.
@@ -364,12 +380,14 @@ pub async fn list_fido2_resident_credentials(
     pin: Option<String>,
 ) -> Result<Vec<super::types::Fido2ResidentCredentialInfo>, String> {
     let provider = super::fido2::OpenSshSkProvider::new();
-    let creds = super::fido2::Fido2Provider::list_resident_credentials(
-        &provider,
-        device_path.as_deref(),
-        pin.as_deref(),
-    )
-    .await?;
+    let creds = redact_result(
+        super::fido2::Fido2Provider::list_resident_credentials(
+            &provider,
+            device_path.as_deref(),
+            pin.as_deref(),
+        )
+        .await,
+    )?;
 
     Ok(creds
         .into_iter()
@@ -388,9 +406,9 @@ pub async fn list_fido2_resident_credentials(
 /// Detect whether a given key file is an SK (security-key) type and return its algorithm.
 #[tauri::command]
 pub async fn detect_sk_key_type(key_path: String) -> Result<Option<String>, String> {
-    let content = tokio::fs::read_to_string(&key_path)
-        .await
-        .map_err(|e| format!("Failed to read key file: {}", e))?;
+    let content = tokio::fs::read_to_string(&key_path).await.map_err(|e| {
+        crate::ssh_commands::redact_ssh_command_error(format!("Failed to read key file: {}", e))
+    })?;
 
     Ok(super::fido2::detect_sk_algorithm(&content).map(|a| a.as_openssh_str().to_string()))
 }
@@ -401,9 +419,9 @@ pub async fn validate_ssh_key_file_extended(
     key_path: String,
     _passphrase: Option<String>,
 ) -> Result<SshKeyFileInfo, String> {
-    let content = tokio::fs::read_to_string(&key_path)
-        .await
-        .map_err(|e| format!("Failed to read key file: {}", e))?;
+    let content = tokio::fs::read_to_string(&key_path).await.map_err(|e| {
+        crate::ssh_commands::redact_ssh_command_error(format!("Failed to read key file: {}", e))
+    })?;
 
     let is_sk = super::fido2::is_sk_private_key(&content);
     let sk_algorithm = super::fido2::detect_sk_algorithm(&content);

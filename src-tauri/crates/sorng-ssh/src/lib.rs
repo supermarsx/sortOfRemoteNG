@@ -16,6 +16,7 @@ pub fn conn_span(conn_id: &str) -> tracing::Span {
     tracing::info_span!(target: "sorng_ssh::conn", "conn", proto = "ssh", conn_id = %conn_id)
 }
 
+pub mod redact;
 #[cfg(feature = "script-engine")]
 pub mod script;
 #[cfg(not(feature = "script-engine"))]
@@ -23,3 +24,5 @@ pub mod script;
 pub mod script;
 pub mod ssh;
 pub mod ssh3;
+
+pub use redact::redact_secrets;

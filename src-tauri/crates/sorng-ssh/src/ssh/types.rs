@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use secrecy::SecretString;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -262,9 +263,11 @@ pub struct SshConnectionConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
-    pub password: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub password: Option<SecretString>,
     pub private_key_path: Option<String>,
-    pub private_key_passphrase: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub private_key_passphrase: Option<SecretString>,
     pub jump_hosts: Vec<JumpHostConfig>,
     pub proxy_config: Option<ProxyConfig>,
     /// Proxy chain for routing through multiple proxies
@@ -279,11 +282,11 @@ pub struct SshConnectionConfig {
     pub strict_host_key_checking: bool,
     pub known_hosts_path: Option<String>,
     // TOTP/MFA support for keyboard-interactive auth
-    #[serde(default)]
-    pub totp_secret: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub totp_secret: Option<SecretString>,
     // Keyboard-interactive responses (pre-configured answers for MFA prompts)
-    #[serde(default)]
-    pub keyboard_interactive_responses: Vec<String>,
+    #[serde(skip_serializing, default)]
+    pub keyboard_interactive_responses: Vec<SecretString>,
     // Agent forwarding
     #[serde(default)]
     pub agent_forwarding: bool,
@@ -337,8 +340,8 @@ pub struct SshConnectionConfig {
     #[serde(default)]
     pub sk_device_path: Option<String>,
     /// Optional PIN to unlock the FIDO2 authenticator.
-    #[serde(default)]
-    pub sk_pin: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub sk_pin: Option<SecretString>,
     /// SK application / relying-party ID override (default: "ssh:").
     #[serde(default)]
     pub sk_application: Option<String>,
@@ -350,7 +353,8 @@ pub struct ProxyConfig {
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
-    pub password: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub password: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -400,20 +404,21 @@ pub struct JumpHostConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
-    pub password: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub password: Option<SecretString>,
     pub private_key_path: Option<String>,
     /// Passphrase for the private key (if encrypted)
-    #[serde(default)]
-    pub private_key_passphrase: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub private_key_passphrase: Option<SecretString>,
     /// Enable SSH agent forwarding through this hop
     #[serde(default)]
     pub agent_forwarding: bool,
     /// TOTP secret for keyboard-interactive auth on this hop
-    #[serde(default)]
-    pub totp_secret: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub totp_secret: Option<SecretString>,
     /// Pre-configured responses for keyboard-interactive prompts
-    #[serde(default)]
-    pub keyboard_interactive_responses: Vec<String>,
+    #[serde(skip_serializing, default)]
+    pub keyboard_interactive_responses: Vec<SecretString>,
     /// Per-hop cipher preferences
     #[serde(default)]
     pub preferred_ciphers: Vec<String>,
@@ -1073,8 +1078,8 @@ pub struct ProxyCommandConfig {
     #[serde(default)]
     pub proxy_username: Option<String>,
     /// Proxy password (for templates that support auth).
-    #[serde(default)]
-    pub proxy_password: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub proxy_password: Option<SecretString>,
     /// Proxy type hint used by some templates (socks4 / socks5 / http).
     #[serde(default)]
     pub proxy_type: Option<String>,
@@ -1216,8 +1221,8 @@ pub struct SkKeyGenerationRequest {
     #[serde(default = "default_sk_application")]
     pub application: String,
     /// Passphrase to protect the private key file.
-    #[serde(default)]
-    pub passphrase: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub passphrase: Option<SecretString>,
     /// Whether to create a resident (discoverable) credential.
     #[serde(default)]
     pub resident: bool,
@@ -1231,8 +1236,8 @@ pub struct SkKeyGenerationRequest {
     #[serde(default)]
     pub device_path: Option<String>,
     /// Optional PIN.
-    #[serde(default)]
-    pub pin: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub pin: Option<SecretString>,
     /// Key comment.
     #[serde(default)]
     pub comment: Option<String>,
@@ -1278,6 +1283,10 @@ pub struct Fido2ResidentCredentialInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn secret(value: &str) -> SecretString {
+        SecretString::new(value.to_string())
+    }
 
     #[test]
     fn ssh_connection_config_default_fields() {
@@ -1335,26 +1344,24 @@ mod tests {
             host: "target.internal".to_string(),
             port: 22,
             username: "admin".to_string(),
-            password: Some("pass".to_string()),
+            password: Some(secret("pass")),
             private_key_path: None,
             private_key_passphrase: None,
-            jump_hosts: vec![
-                JumpHostConfig {
-                    host: "jump.example.com".to_string(),
-                    port: 22,
-                    username: "jumpuser".to_string(),
-                    password: Some("jumppass".to_string()),
-                    private_key_path: None,
-                    private_key_passphrase: None,
-                    agent_forwarding: false,
-                    totp_secret: None,
-                    keyboard_interactive_responses: vec![],
-                    preferred_ciphers: vec![],
-                    preferred_macs: vec![],
-                    preferred_kex: vec![],
-                    preferred_host_key_algorithms: vec![],
-                },
-            ],
+            jump_hosts: vec![JumpHostConfig {
+                host: "jump.example.com".to_string(),
+                port: 22,
+                username: "jumpuser".to_string(),
+                password: Some(secret("jumppass")),
+                private_key_path: None,
+                private_key_passphrase: None,
+                agent_forwarding: false,
+                totp_secret: None,
+                keyboard_interactive_responses: vec![],
+                preferred_ciphers: vec![],
+                preferred_macs: vec![],
+                preferred_kex: vec![],
+                preferred_host_key_algorithms: vec![],
+            }],
             proxy_config: None,
             proxy_chain: None,
             mixed_chain: None,
@@ -1394,7 +1401,10 @@ mod tests {
         // Both should coexist
         assert!(config.openvpn_config.is_some());
         assert_eq!(config.jump_hosts.len(), 1);
-        assert_eq!(config.openvpn_config.as_ref().unwrap().connection_id, "vpn-1");
+        assert_eq!(
+            config.openvpn_config.as_ref().unwrap().connection_id,
+            "vpn-1"
+        );
         assert_eq!(config.jump_hosts[0].host, "jump.example.com");
     }
 
@@ -1516,7 +1526,7 @@ mod tests {
                     host: "socks1.test".to_string(),
                     port: 1080,
                     username: Some("user1".to_string()),
-                    password: Some("pass1".to_string()),
+                    password: Some(secret("pass1")),
                 },
                 ProxyConfig {
                     proxy_type: ProxyType::Http,
@@ -1533,9 +1543,11 @@ mod tests {
         let json = serde_json::to_string(&chain).unwrap();
         let deserialized: ProxyChainConfig = serde_json::from_str(&json).unwrap();
 
+        assert!(!json.contains("pass1"));
         assert_eq!(deserialized.proxies.len(), 2);
         assert!(matches!(deserialized.mode, ProxyChainMode::Strict));
         assert_eq!(deserialized.hop_timeout_ms, 10000);
+        assert!(deserialized.proxies[0].password.is_none());
     }
 
     #[test]
@@ -1563,10 +1575,10 @@ mod tests {
             username: "user".to_string(),
             password: None,
             private_key_path: Some("/path/to/key".to_string()),
-            private_key_passphrase: Some("keypass".to_string()),
+            private_key_passphrase: Some(secret("keypass")),
             agent_forwarding: true,
-            totp_secret: Some("JBSWY3DPEHPK3PXP".to_string()),
-            keyboard_interactive_responses: vec!["yes".to_string(), "123456".to_string()],
+            totp_secret: Some(secret("JBSWY3DPEHPK3PXP")),
+            keyboard_interactive_responses: vec![secret("yes"), secret("123456")],
             preferred_ciphers: vec!["aes256-gcm@openssh.com".to_string()],
             preferred_macs: vec!["hmac-sha2-256".to_string()],
             preferred_kex: vec!["curve25519-sha256".to_string()],
@@ -1576,10 +1588,88 @@ mod tests {
         let json = serde_json::to_string(&jump).unwrap();
         let parsed: JumpHostConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(parsed.totp_secret, Some("JBSWY3DPEHPK3PXP".to_string()));
-        assert_eq!(parsed.keyboard_interactive_responses.len(), 2);
+        assert!(!json.contains("keypass"));
+        assert!(!json.contains("JBSWY3DPEHPK3PXP"));
+        assert!(!json.contains("123456"));
+        assert!(parsed.password.is_none());
+        assert!(parsed.private_key_passphrase.is_none());
+        assert!(parsed.totp_secret.is_none());
+        assert!(parsed.keyboard_interactive_responses.is_empty());
         assert!(parsed.agent_forwarding);
         assert_eq!(parsed.preferred_ciphers, vec!["aes256-gcm@openssh.com"]);
+    }
+
+    #[test]
+    fn ssh_connection_config_serialization_redacts_secret_fields() {
+        let config = SshConnectionConfig {
+            host: "example.com".to_string(),
+            port: 22,
+            username: "user".to_string(),
+            password: Some(secret("password123")),
+            private_key_path: Some("/keys/id_ed25519".to_string()),
+            private_key_passphrase: Some(secret("keypass")),
+            jump_hosts: vec![],
+            proxy_config: Some(ProxyConfig {
+                proxy_type: ProxyType::Socks5,
+                host: "proxy.example.com".to_string(),
+                port: 1080,
+                username: Some("proxy-user".to_string()),
+                password: Some(secret("proxy-pass")),
+            }),
+            proxy_chain: None,
+            mixed_chain: None,
+            openvpn_config: None,
+            connect_timeout: Some(10),
+            keep_alive_interval: Some(30),
+            strict_host_key_checking: true,
+            known_hosts_path: None,
+            totp_secret: Some(secret("JBSWY3DPEHPK3PXP")),
+            keyboard_interactive_responses: vec![secret("654321")],
+            agent_forwarding: false,
+            tcp_no_delay: true,
+            tcp_keepalive: true,
+            keepalive_probes: 2,
+            ip_protocol: "auto".to_string(),
+            compression: false,
+            compression_level: 6,
+            compression_config: SshCompressionConfig::default(),
+            ssh_version: "auto".to_string(),
+            preferred_ciphers: vec![],
+            preferred_macs: vec![],
+            preferred_kex: vec![],
+            preferred_host_key_algorithms: vec![],
+            x11_forwarding: None,
+            proxy_command: Some(ProxyCommandConfig {
+                command: None,
+                template: Some(ProxyCommandTemplate::Ncat),
+                proxy_host: Some("proxy.example.com".to_string()),
+                proxy_port: Some(1080),
+                proxy_username: Some("proxy-user".to_string()),
+                proxy_password: Some(secret("proxy-command-pass")),
+                proxy_type: Some("socks5".to_string()),
+                timeout_secs: Some(15),
+            }),
+            pty_type: None,
+            environment: HashMap::new(),
+            sk_auth: true,
+            sk_device_path: Some("/dev/hidraw0".to_string()),
+            sk_pin: Some(secret("0000")),
+            sk_application: Some("ssh:".to_string()),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+
+        for leaked in [
+            "password123",
+            "keypass",
+            "proxy-pass",
+            "proxy-command-pass",
+            "JBSWY3DPEHPK3PXP",
+            "654321",
+            "0000",
+        ] {
+            assert!(!json.contains(leaked), "serialized config leaked {leaked}");
+        }
     }
 
     #[test]

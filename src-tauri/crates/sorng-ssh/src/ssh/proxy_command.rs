@@ -22,6 +22,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
+use secrecy::ExposeSecret;
+
 use super::types::*;
 
 // ── Global ProxyCommand state ─────────────────────────────────────────
@@ -130,7 +132,7 @@ pub fn build_command_string(
             );
             if let (Some(user), Some(pass)) = (&config.proxy_username, &config.proxy_password) {
                 let safe_user = validate_shell_safe(user)?;
-                let safe_pass = validate_shell_safe(pass)?;
+                let safe_pass = validate_shell_safe(pass.expose_secret())?;
                 cmd.push_str(&format!("--proxy-auth {}:{} ", safe_user, safe_pass));
             }
             cmd.push_str(&format!("{} {}", safe_host, port));
@@ -150,7 +152,7 @@ pub fn build_command_string(
             let mut cmd = format!("connect {} {}:{} ", flag, proxy_host, proxy_port);
             if let (Some(user), Some(pass)) = (&config.proxy_username, &config.proxy_password) {
                 let safe_user = validate_shell_safe(user)?;
-                let safe_pass = validate_shell_safe(pass)?;
+                let safe_pass = validate_shell_safe(pass.expose_secret())?;
                 // connect uses -P for proxy password — set auth via env in practice
                 cmd = format!(
                     "connect {} {}:{}@{}:{} ",

@@ -1,4 +1,5 @@
 use chrono::Utc;
+use secrecy::{ExposeSecret, SecretString};
 use sorng_core::events::DynEventEmitter;
 use ssh2::{KeyboardInteractivePrompt, MethodType, Prompt, Session};
 use std::collections::HashMap;
@@ -79,9 +80,7 @@ fn known_host_cleanup_names(host: &str, port: u16) -> Vec<String> {
     }
 }
 
-pub(crate) fn known_host_key_format(
-    host_key_type: ssh2::HostKeyType,
-) -> ssh2::KnownHostKeyFormat {
+pub(crate) fn known_host_key_format(host_key_type: ssh2::HostKeyType) -> ssh2::KnownHostKeyFormat {
     host_key_type.into()
 }
 
@@ -127,7 +126,11 @@ fn prepare_uploaded_script(script: &str, interpreter: &str) -> String {
     if script.starts_with("#!") {
         script.to_string()
     } else {
-        format!("#!{}\n{}", shebang_path_for_interpreter(interpreter), script)
+        format!(
+            "#!{}\n{}",
+            shebang_path_for_interpreter(interpreter),
+            script
+        )
     }
 }
 
@@ -230,9 +233,7 @@ impl SshService {
         })
     }
 
-    fn resume_shell_io(
-        pause_handle: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
-    ) {
+    fn resume_shell_io(pause_handle: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>) {
         if let Some(counter) = pause_handle {
             let _ = counter.fetch_update(
                 std::sync::atomic::Ordering::AcqRel,
@@ -354,7 +355,8 @@ impl SshService {
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
         if config.strict_host_key_checking {
-            self.verify_host_key(&session_id, &mut sess, &config).await?;
+            self.verify_host_key(&session_id, &mut sess, &config)
+                .await?;
         }
 
         self.authenticate_session(&mut sess, &config)?;
@@ -481,7 +483,11 @@ impl SshService {
 
         if response[1] == 0x02 {
             let username = proxy_config.username.as_deref().unwrap_or("");
-            let password = proxy_config.password.as_deref().unwrap_or("");
+            let password = proxy_config
+                .password
+                .as_ref()
+                .map(|secret| secret.expose_secret().as_str())
+                .unwrap_or("");
 
             let mut auth_request = vec![0x01];
             auth_request.push(username.len() as u8);
@@ -643,7 +649,7 @@ impl SshService {
         let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
 
         if let (Some(username), Some(password)) = (&proxy_config.username, &proxy_config.password) {
-            let credentials = format!("{}:{}", username, password);
+            let credentials = format!("{}:{}", username, password.expose_secret());
             let encoded = data_encoding::BASE64.encode(credentials.as_bytes());
             request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
         }
@@ -799,7 +805,11 @@ impl SshService {
 
         if response[1] == 0x02 {
             let username = proxy_config.username.as_deref().unwrap_or("");
-            let password = proxy_config.password.as_deref().unwrap_or("");
+            let password = proxy_config
+                .password
+                .as_ref()
+                .map(|secret| secret.expose_secret().as_str())
+                .unwrap_or("");
 
             let mut auth = vec![0x01];
             auth.push(username.len() as u8);
@@ -1266,23 +1276,18 @@ impl SshService {
                         private_key_path
                     );
 
-                    // If SK PIN is configured, set it in the environment for ssh-sk-helper
-                    // SAFETY: set_var is not thread-safe but is required by ssh-sk-helper.
-                    // This is acceptable because SK key auth is serialised behind the
-                    // service mutex and ssh-sk-helper reads these synchronously.
-                    if let Some(ref pin) = config.sk_pin {
-                        unsafe {
-                            std::env::set_var("SSH_SK_PIN", pin);
-                        }
-                    }
-                    if let Some(ref app) = config.sk_application {
-                        unsafe {
-                            std::env::set_var("SSH_SK_APPLICATION", app);
-                        }
+                    if config.sk_pin.is_some() || config.sk_application.is_some() {
+                        log::warn!(
+                            "SK key auth for {} is relying on the system OpenSSH helper prompt; backend SSH_SK_* env injection is disabled to avoid cross-session secret leakage.",
+                            private_key_path
+                        );
                     }
                 }
 
-                let passphrase = config.private_key_passphrase.as_deref();
+                let passphrase = config
+                    .private_key_passphrase
+                    .as_ref()
+                    .map(|secret| secret.expose_secret().as_str());
 
                 if session
                     .userauth_pubkey_file(
@@ -1293,11 +1298,6 @@ impl SshService {
                     )
                     .is_ok()
                 {
-                    // Clean up SK env vars
-                    unsafe {
-                        std::env::remove_var("SSH_SK_PIN");
-                        std::env::remove_var("SSH_SK_APPLICATION");
-                    }
                     return Ok(());
                 }
             }
@@ -1306,7 +1306,7 @@ impl SshService {
         // Try password authentication if password is provided
         if let Some(password) = &config.password {
             if session
-                .userauth_password(&config.username, password)
+                .userauth_password(&config.username, password.expose_secret())
                 .is_ok()
             {
                 return Ok(());
@@ -1319,9 +1319,9 @@ impl SshService {
             || !config.keyboard_interactive_responses.is_empty()
         {
             struct KeyboardInteractiveHandler {
-                password: Option<String>,
-                totp_secret: Option<String>,
-                responses: Vec<String>,
+                password: Option<SecretString>,
+                totp_secret: Option<SecretString>,
+                responses: Vec<SecretString>,
             }
 
             impl KeyboardInteractivePrompt for KeyboardInteractiveHandler {
@@ -1344,25 +1344,25 @@ impl SshService {
                                 || prompt_lower.contains("mfa")
                             {
                                 if let Some(ref secret) = self.totp_secret {
-                                    if let Ok(code) = generate_totp_code(secret) {
+                                    if let Ok(code) = generate_totp_code(secret.expose_secret()) {
                                         return code;
                                     }
                                 }
                                 for resp in &self.responses {
-                                    if !resp.is_empty() {
-                                        return resp.clone();
+                                    if !resp.expose_secret().is_empty() {
+                                        return resp.expose_secret().to_string();
                                     }
                                 }
                             }
 
                             if prompt_lower.contains("password") {
                                 if let Some(ref pwd) = self.password {
-                                    return pwd.clone();
+                                    return pwd.expose_secret().to_string();
                                 }
                             }
 
                             if let Some(ref pwd) = self.password {
-                                return pwd.clone();
+                                return pwd.expose_secret().to_string();
                             }
 
                             String::new()
@@ -1400,7 +1400,10 @@ impl SshService {
     ) -> Result<(), String> {
         // 1. Public key
         if let Some(private_key_path) = &jump_config.private_key_path {
-            let passphrase = jump_config.private_key_passphrase.as_deref();
+            let passphrase = jump_config
+                .private_key_passphrase
+                .as_ref()
+                .map(|secret| secret.expose_secret().as_str());
             if session
                 .userauth_pubkey_file(
                     &jump_config.username,
@@ -1417,7 +1420,7 @@ impl SshService {
         // 2. Password
         if let Some(password) = &jump_config.password {
             if session
-                .userauth_password(&jump_config.username, password)
+                .userauth_password(&jump_config.username, password.expose_secret())
                 .is_ok()
             {
                 return Ok(());
@@ -1430,9 +1433,9 @@ impl SshService {
             || !jump_config.keyboard_interactive_responses.is_empty()
         {
             struct JumpKbdHandler {
-                password: Option<String>,
-                totp_secret: Option<String>,
-                responses: Vec<String>,
+                password: Option<SecretString>,
+                totp_secret: Option<SecretString>,
+                responses: Vec<SecretString>,
             }
 
             impl KeyboardInteractivePrompt for JumpKbdHandler {
@@ -1456,13 +1459,13 @@ impl SshService {
                                 || lower.contains("mfa")
                             {
                                 if let Some(ref secret) = self.totp_secret {
-                                    if let Ok(code) = generate_totp_code(secret) {
+                                    if let Ok(code) = generate_totp_code(secret.expose_secret()) {
                                         return code;
                                     }
                                 }
                                 for r in &self.responses {
-                                    if !r.is_empty() {
-                                        return r.clone();
+                                    if !r.expose_secret().is_empty() {
+                                        return r.expose_secret().to_string();
                                     }
                                 }
                             }
@@ -1470,11 +1473,14 @@ impl SshService {
                             // Password
                             if lower.contains("password") {
                                 if let Some(ref p) = self.password {
-                                    return p.clone();
+                                    return p.expose_secret().to_string();
                                 }
                             }
 
-                            self.password.clone().unwrap_or_default()
+                            self.password
+                                .as_ref()
+                                .map(|password| password.expose_secret().to_string())
+                                .unwrap_or_default()
                         })
                         .collect()
                 }
@@ -1515,7 +1521,7 @@ impl SshService {
             .ok_or("Session not found")?;
 
         if let Some(password) = password {
-            session.config.password = Some(password);
+            session.config.password = Some(SecretString::new(password));
         }
 
         if let Some(private_key_path) = private_key_path {
@@ -1523,7 +1529,7 @@ impl SshService {
         }
 
         if let Some(passphrase) = private_key_passphrase {
-            session.config.private_key_passphrase = Some(passphrase);
+            session.config.private_key_passphrase = Some(SecretString::new(passphrase));
         }
 
         Ok(())
@@ -1601,12 +1607,10 @@ impl SshService {
                 };
                 self.apply_host_key_decision(session, &persistence, decision)
             }
-            ssh2::CheckResult::Failure => {
-                Err(format!(
-                    "Host key verification failed for {}: internal error checking known_hosts",
-                    config.host
-                ))
-            }
+            ssh2::CheckResult::Failure => Err(format!(
+                "Host key verification failed for {}: internal error checking known_hosts",
+                config.host
+            )),
         }
     }
 
@@ -1729,9 +1733,9 @@ impl SshService {
             for host in existing_hosts {
                 if let Some(name) = host.name() {
                     if cleanup_names.iter().any(|candidate| candidate == name) {
-                        known_hosts
-                            .remove(&host)
-                            .map_err(|e| format!("Failed to replace existing known_hosts entry: {}", e))?;
+                        known_hosts.remove(&host).map_err(|e| {
+                            format!("Failed to replace existing known_hosts entry: {}", e)
+                        })?;
                     }
                 }
             }
@@ -1898,7 +1902,7 @@ impl SshService {
         let provider = OpenSshSkProvider::new();
         let opts = SkKeyGenOptions {
             algorithm,
-            passphrase,
+            passphrase: passphrase.map(SecretString::new),
             ..Default::default()
         };
 
@@ -3343,9 +3347,10 @@ impl SshService {
             // ── 2. Execute the script file ──────────────────────────────
             //   Run it and capture exit code separately so we always get
             //   the real exit code even if the script outputs nothing.
-            let exec_command = wrap_script_invocation_with_exit_sentinel(
-                &build_script_invocation(&remote_path, interpreter),
-            );
+            let exec_command = wrap_script_invocation_with_exit_sentinel(&build_script_invocation(
+                &remote_path,
+                interpreter,
+            ));
 
             let mut exec_ch = session
                 .session
@@ -3812,7 +3817,9 @@ mod host_key_prompt_tests {
             .expect("pending host-key prompt map poisoned")
             .remove(session_id)
             .expect("expected pending host-key prompt sender");
-        sender.send(decision).expect("decision receiver should still be waiting");
+        sender
+            .send(decision)
+            .expect("decision receiver should still be waiting");
     }
 
     #[tokio::test]
@@ -3884,10 +3891,7 @@ mod host_key_prompt_tests {
         });
 
         wait_for_pending_prompt("session-accept-once").await;
-        respond_to_prompt(
-            "session-accept-once",
-            SshHostKeyPromptDecision::AcceptOnce,
-        );
+        respond_to_prompt("session-accept-once", SshHostKeyPromptDecision::AcceptOnce);
 
         assert_eq!(
             prompt_task.await.expect("prompt task should complete"),
@@ -3947,12 +3951,10 @@ mod host_key_prompt_tests {
 
         let error = result.expect_err("prompt should time out without a response");
         assert!(error.contains("timed out"));
-        assert!(
-            !PENDING_HOST_KEY_PROMPTS
-                .lock()
-                .expect("pending host-key prompt map poisoned")
-                .contains_key("session-timeout")
-        );
+        assert!(!PENDING_HOST_KEY_PROMPTS
+            .lock()
+            .expect("pending host-key prompt map poisoned")
+            .contains_key("session-timeout"));
         clear_pending_prompt("session-timeout");
     }
 }
@@ -4061,10 +4063,7 @@ mod tests {
 
     #[test]
     fn shell_socket_timeout_message_is_treated_as_transient() {
-        let error = std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Timed out waiting on socket",
-        );
+        let error = std::io::Error::new(std::io::ErrorKind::Other, "Timed out waiting on socket");
         assert!(super::is_transient_shell_io_error(&error));
     }
 

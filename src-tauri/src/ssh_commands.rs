@@ -81,22 +81,38 @@ mod ssh3 {
     pub use crate::ssh3::*;
 }
 
+pub(crate) fn redact_ssh_command_error(error: String) -> String {
+    crate::redact_secrets(&error, &[])
+}
+
+pub(crate) fn redact_ssh_command_result<T>(result: Result<T, String>) -> Result<T, String> {
+    result.map_err(redact_ssh_command_error)
+}
+
 #[tauri::command]
 pub fn ssh_respond_to_host_key_prompt(
     session_id: String,
     decision: crate::ssh::SshHostKeyPromptDecision,
 ) -> Result<(), String> {
     let sender = {
-        let mut pending = crate::ssh::PENDING_HOST_KEY_PROMPTS
-            .lock()
-            .map_err(|e| format!("Failed to lock host-key prompt map: {}", e))?;
+        let mut pending = crate::ssh::PENDING_HOST_KEY_PROMPTS.lock().map_err(|e| {
+            redact_ssh_command_error(format!("Failed to lock host-key prompt map: {}", e))
+        })?;
         pending.remove(&session_id)
     }
-    .ok_or_else(|| format!("No pending host-key prompt found for session {}", session_id))?;
+    .ok_or_else(|| {
+        redact_ssh_command_error(format!(
+            "No pending host-key prompt found for session {}",
+            session_id
+        ))
+    })?;
 
-    sender
-        .send(decision)
-        .map_err(|_| format!("Host-key prompt for session {} is no longer active", session_id))
+    sender.send(decision).map_err(|_| {
+        redact_ssh_command_error(format!(
+            "Host-key prompt for session {} is no longer active",
+            session_id
+        ))
+    })
 }
 
 // ── Include command wrappers ───────────────────────────────────────────

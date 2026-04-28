@@ -20,6 +20,7 @@
 //! helper binary) or — on platforms with native CTAP support — talks
 //! directly via the HID transport.
 
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -89,14 +90,14 @@ pub struct SkKeyGenOptions {
     #[serde(default = "default_timeout")]
     pub timeout: Duration,
     /// Optional PIN to unlock the authenticator.
-    #[serde(default)]
-    pub pin: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub pin: Option<SecretString>,
     /// Comment to embed in the `.pub` file.
     #[serde(default)]
     pub comment: Option<String>,
     /// Passphrase to encrypt the private-key file at rest (OpenSSH format).
-    #[serde(default)]
-    pub passphrase: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub passphrase: Option<SecretString>,
 }
 
 fn default_application() -> String {
@@ -158,7 +159,7 @@ pub struct SkAssertionOptions {
     /// Optional device path.
     pub device_path: Option<String>,
     /// Optional PIN.
-    pub pin: Option<String>,
+    pub pin: Option<SecretString>,
     /// Timeout for user interaction.
     pub timeout: Duration,
 }
@@ -270,6 +271,17 @@ impl OpenSshSkProvider {
         Self::default()
     }
 
+    fn ssh_keygen_command(&self, pin: Option<&str>) -> tokio::process::Command {
+        let mut cmd = tokio::process::Command::new(self.ssh_keygen());
+        // Never inherit ambient SSH security-key env from the parent process.
+        cmd.env_remove("SSH_SK_PIN");
+        cmd.env_remove("SSH_SK_APPLICATION");
+        if let Some(pin) = pin {
+            cmd.env("SSH_SK_PIN", pin);
+        }
+        cmd
+    }
+
     /// Resolve the ssh-keygen binary path.
     fn ssh_keygen(&self) -> PathBuf {
         self.ssh_keygen_path.clone().unwrap_or_else(|| {
@@ -309,7 +321,10 @@ impl OpenSshSkProvider {
             "-f".to_string(),
             key_file_str.clone(),
             "-N".to_string(),
-            opts.passphrase.clone().unwrap_or_default(),
+            opts.passphrase
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_string())
+                .unwrap_or_default(),
         ];
 
         if opts.application != DEFAULT_SK_APPLICATION {
@@ -348,19 +363,22 @@ impl OpenSshSkProvider {
             args.push(format!("device={}", device));
         }
 
-        let output = tokio::process::Command::new(self.ssh_keygen())
-            .args(&args)
+        let mut cmd = self.ssh_keygen_command(
+            opts.pin
+                .as_ref()
+                .map(|secret| secret.expose_secret().as_str()),
+        );
+        cmd.args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to run ssh-keygen: {}. Ensure OpenSSH 8.2+ is installed.",
-                    e
-                )
-            })?;
+            .stderr(std::process::Stdio::piped());
+
+        let output = cmd.output().await.map_err(|e| {
+            format!(
+                "Failed to run ssh-keygen: {}. Ensure OpenSSH 8.2+ is installed.",
+                e
+            )
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -408,15 +426,11 @@ impl OpenSshSkProvider {
 
         // PIN is prompted interactively by ssh-keygen; we pass it via
         // SSH_SK_PIN env var if available (non-standard but some builds support it).
-        let mut cmd = tokio::process::Command::new(self.ssh_keygen());
+        let mut cmd = self.ssh_keygen_command(pin);
         cmd.args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-
-        if let Some(p) = pin {
-            cmd.env("SSH_SK_PIN", p);
-        }
 
         let output = cmd
             .output()
@@ -590,12 +604,11 @@ impl Fido2Provider for OpenSshSkProvider {
             namespace.clone(),
         ];
 
-        if let Some(ref pin) = opts.pin {
-            // Pass PIN via env
-            std::env::set_var("SSH_SK_PIN", pin);
-        }
-
-        let mut cmd = tokio::process::Command::new(self.ssh_keygen());
+        let mut cmd = self.ssh_keygen_command(
+            opts.pin
+                .as_ref()
+                .map(|secret| secret.expose_secret().as_str()),
+        );
         cmd.args(&args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -802,6 +815,89 @@ pub fn detect_sk_algorithm_pubkey(pubkey_line: &str) -> Option<SkAlgorithm> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::SecretString;
+    use std::path::{Path, PathBuf};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    fn create_fake_ssh_keygen(dir: &Path) -> PathBuf {
+        #[cfg(windows)]
+        let script_path = dir.join("fake-ssh-keygen.cmd");
+        #[cfg(not(windows))]
+        let script_path = dir.join("fake-ssh-keygen.sh");
+
+        #[cfg(windows)]
+        let script = r#"@echo off
+setlocal EnableDelayedExpansion
+
+if "%~1"=="-Y" (
+    <nul set /p =%SSH_SK_PIN%
+    exit /b 0
+)
+
+set "key_file="
+:scan
+if "%~1"=="" goto write_files
+if "%~1"=="-f" (
+    set "key_file=%~2"
+    goto write_files
+)
+shift
+goto scan
+
+:write_files
+if not "%key_file%"=="" (
+    > "%key_file%" <nul set /p =PRIVATE KEY
+    > "%key_file%.pub" <nul set /p =PUBLIC KEY
+    > "%key_file%.pin" <nul set /p =%SSH_SK_PIN%
+)
+
+exit /b 0
+"#;
+
+        #[cfg(not(windows))]
+        let script = r#"#!/bin/sh
+if [ "$1" = "-Y" ]; then
+    printf "%s" "${SSH_SK_PIN:-}"
+    exit 0
+fi
+
+key_file=""
+prev=""
+for arg in "$@"; do
+    if [ "$prev" = "-f" ]; then
+        key_file="$arg"
+        break
+    fi
+    prev="$arg"
+done
+
+if [ -n "$key_file" ]; then
+    printf "%s" "PRIVATE KEY" > "$key_file"
+    printf "%s" "PUBLIC KEY" > "$key_file.pub"
+    printf "%s" "${SSH_SK_PIN:-}" > "$key_file.pin"
+fi
+
+exit 0
+"#;
+
+        std::fs::write(&script_path, script).expect("write fake ssh-keygen");
+        #[cfg(unix)]
+        {
+            let mut permissions = std::fs::metadata(&script_path)
+                .expect("script metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&script_path, permissions).expect("chmod fake ssh-keygen");
+        }
+
+        script_path
+    }
+
+    fn test_public_key() -> SkPublicKey {
+        SkPublicKey::new_ed25519(vec![7; 32], DEFAULT_SK_APPLICATION.to_string())
+    }
 
     #[test]
     fn default_options() {
@@ -863,5 +959,77 @@ mod tests {
         assert!(back.user_presence_required);
         assert!(!back.user_verification_required);
         assert!(back.resident);
+    }
+
+    #[tokio::test]
+    async fn run_ssh_keygen_sk_passes_pin_via_child_env() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let script_path = create_fake_ssh_keygen(tempdir.path());
+        let provider = OpenSshSkProvider {
+            ssh_keygen_path: Some(script_path),
+        };
+        let output_dir = tempfile::tempdir().expect("output dir");
+        let opts = SkKeyGenOptions {
+            pin: Some(SecretString::new("1357".to_string())),
+            ..Default::default()
+        };
+
+        let (private_key, public_key) = provider
+            .run_ssh_keygen_sk(&opts, output_dir.path())
+            .await
+            .expect("run fake ssh-keygen");
+
+        assert_eq!(private_key, "PRIVATE KEY");
+        assert_eq!(public_key, "PUBLIC KEY");
+        assert_eq!(
+            std::fs::read_to_string(output_dir.path().join("sk_key.pin")).expect("pin capture"),
+            "1357"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn sign_scopes_ssh_sk_pin_per_child_process() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let script_path = create_fake_ssh_keygen(tempdir.path());
+        let provider_a = OpenSshSkProvider {
+            ssh_keygen_path: Some(script_path.clone()),
+        };
+        let provider_b = OpenSshSkProvider {
+            ssh_keygen_path: Some(script_path),
+        };
+
+        let opts_a = SkAssertionOptions {
+            public_key: test_public_key(),
+            key_handle: vec![],
+            flags: SkKeyFlags {
+                user_presence_required: true,
+                user_verification_required: false,
+                resident: false,
+            },
+            challenge: b"alpha".to_vec(),
+            device_path: None,
+            pin: Some(SecretString::new("1111".to_string())),
+            timeout: Duration::from_secs(1),
+        };
+        let opts_b = SkAssertionOptions {
+            public_key: test_public_key(),
+            key_handle: vec![],
+            flags: SkKeyFlags {
+                user_presence_required: true,
+                user_verification_required: false,
+                resident: false,
+            },
+            challenge: b"beta".to_vec(),
+            device_path: None,
+            pin: Some(SecretString::new("2222".to_string())),
+            timeout: Duration::from_secs(1),
+        };
+
+        let (result_a, result_b) = tokio::join!(provider_a.sign(&opts_a), provider_b.sign(&opts_b));
+        let result_a = result_a.expect("first sign result");
+        let result_b = result_b.expect("second sign result");
+
+        assert_eq!(result_a.signature.signature, b"1111");
+        assert_eq!(result_b.signature.signature, b"2222");
     }
 }

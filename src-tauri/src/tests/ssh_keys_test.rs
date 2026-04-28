@@ -11,9 +11,15 @@ mod tests {
         assert!(result.is_ok(), "Failed to generate Ed25519 key");
 
         let (private_key, public_key) = result.unwrap();
-        
-        assert!(private_key.contains("OPENSSH PRIVATE KEY"), "Private key should be OpenSSH format");
-        assert!(public_key.contains("ssh-ed25519"), "Public key should be ssh-ed25519");
+
+        assert!(
+            private_key.contains("OPENSSH PRIVATE KEY"),
+            "Private key should be OpenSSH format"
+        );
+        assert!(
+            public_key.contains("ssh-ed25519"),
+            "Public key should be ssh-ed25519"
+        );
     }
 
     #[tokio::test]
@@ -23,7 +29,10 @@ mod tests {
 
         let result = ssh.generate_ssh_key("rsa", Some(2048), None).await;
         // Currently RSA generation is stubbed to error
-        assert!(result.is_err(), "RSA generation should fail as it is not implemented yet");
+        assert!(
+            result.is_err(),
+            "RSA generation should fail as it is not implemented yet"
+        );
     }
 
     #[test]
