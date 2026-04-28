@@ -44,6 +44,22 @@ pub struct RdpDisplayPayload {
     pub magnifier_enabled: Option<bool>,
     pub magnifier_zoom: Option<u32>,
     pub smart_sizing: Option<bool>,
+    #[cfg(feature = "rdp-multimon")]
+    pub monitor_layout: Option<Vec<RdpMonitorLayoutPayload>>,
+}
+
+#[cfg(feature = "rdp-multimon")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpMonitorLayoutPayload {
+    pub is_primary: Option<bool>,
+    pub left: Option<i32>,
+    pub top: Option<i32>,
+    pub width: u32,
+    pub height: u32,
+    pub desktop_scale_factor: Option<u32>,
+    pub physical_width: Option<u32>,
+    pub physical_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -98,8 +114,11 @@ pub struct DriveRedirectionPayload {
 #[serde(rename_all = "kebab-case")]
 pub enum ClipboardDirection {
     Bidirectional,
+    #[serde(alias = "c2s")]
     ClientToServer,
+    #[serde(alias = "s2c")]
     ServerToClient,
+    #[serde(alias = "none")]
     Disabled,
 }
 
@@ -116,6 +135,91 @@ impl ClipboardDirection {
 
     pub fn allows_server_to_client(self) -> bool {
         matches!(self, Self::Bidirectional | Self::ServerToClient)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_bitmap_codecs, ClipboardDirection, RdpSettingsPayload, ResolvedSettings};
+
+    fn parse_clipboard_direction(value: &str) -> ClipboardDirection {
+        serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
+            "deviceRedirection": {
+                "clipboardDirection": value
+            }
+        }))
+        .expect("clipboard direction payload")
+        .device_redirection
+        .and_then(|device| device.clipboard_direction)
+        .expect("clipboard direction")
+    }
+
+    #[test]
+    fn clipboard_direction_accepts_persisted_aliases() {
+        assert_eq!(parse_clipboard_direction("bidirectional"), ClipboardDirection::Bidirectional);
+        assert_eq!(parse_clipboard_direction("client-to-server"), ClipboardDirection::ClientToServer);
+        assert_eq!(parse_clipboard_direction("c2s"), ClipboardDirection::ClientToServer);
+        assert_eq!(parse_clipboard_direction("server-to-client"), ClipboardDirection::ServerToClient);
+        assert_eq!(parse_clipboard_direction("s2c"), ClipboardDirection::ServerToClient);
+        assert_eq!(parse_clipboard_direction("disabled"), ClipboardDirection::Disabled);
+        assert_eq!(parse_clipboard_direction("none"), ClipboardDirection::Disabled);
+    }
+
+    #[test]
+    fn remote_fx_requests_still_resolve_to_no_advertised_codec() {
+        let payload = serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
+            "performance": {
+                "codecs": {
+                    "enableCodecs": true,
+                    "remoteFx": true,
+                    "remoteFxEntropy": "rlgr1"
+                }
+            }
+        }))
+        .expect("remote fx payload");
+
+        let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
+
+        assert!(settings.codecs_enabled);
+        assert!(!settings.remotefx_enabled);
+        assert_eq!(settings.remotefx_entropy, "rlgr1");
+        assert!(build_bitmap_codecs(&settings).0.is_empty());
+    }
+
+    #[cfg(feature = "rdp-multimon")]
+    #[test]
+    fn monitor_layout_payload_is_carried_into_resolved_settings() {
+        let payload = serde_json::from_value::<RdpSettingsPayload>(serde_json::json!({
+            "display": {
+                "monitorLayout": [
+                    {
+                        "isPrimary": true,
+                        "left": 0,
+                        "top": 0,
+                        "width": 1920,
+                        "height": 1080
+                    },
+                    {
+                        "isPrimary": false,
+                        "left": 1920,
+                        "top": 0,
+                        "width": 1600,
+                        "height": 900
+                    }
+                ]
+            }
+        }))
+        .expect("monitor layout payload");
+
+        let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
+        let layout = settings
+            .explicit_monitor_layout
+            .as_ref()
+            .expect("explicit monitor layout");
+
+        assert_eq!(layout.len(), 2);
+        assert_eq!(layout[0].is_primary, Some(true));
+        assert_eq!(layout[1].left, Some(1920));
     }
 }
 
@@ -157,9 +261,9 @@ pub struct RdpPerformancePayload {
 pub struct RdpCodecPayload {
     /// Enable bitmap codec negotiation (when false, only raw/RLE bitmaps)
     pub enable_codecs: Option<bool>,
-    /// Enable RemoteFX (RFX) codec
+    /// Persisted for forward compatibility; currently de-advertised until an RFX decoder exists.
     pub remote_fx: Option<bool>,
-    /// RemoteFX entropy algorithm: "rlgr1" or "rlgr3"
+    /// Persisted for forward compatibility while RemoteFX remains disabled.
     pub remote_fx_entropy: Option<String>,
     /// Enable RDPGFX (H.264 hardware decode) via Dynamic Virtual Channel
     pub enable_gfx: Option<bool>,
@@ -327,6 +431,17 @@ pub fn build_bitmap_codecs(
     BitmapCodecs(codecs)
 }
 
+const REMOTEFX_DECODER_AVAILABLE: bool = false;
+
+fn resolve_remotefx_enabled(perf: Option<&RdpPerformancePayload>) -> bool {
+    let requested = perf
+        .and_then(|p| p.codecs.as_ref())
+        .and_then(|c| c.remote_fx)
+        .unwrap_or(true);
+
+    requested && REMOTEFX_DECODER_AVAILABLE
+}
+
 /// Map frontend keyboard type string to IronRDP enum
 pub fn parse_keyboard_type(s: &str) -> crate::ironrdp::pdu::gcc::KeyboardType {
     match s {
@@ -349,6 +464,8 @@ pub struct ResolvedSettings {
     pub color_depth: u32,
     pub desktop_scale_factor: u32,
     pub lossy_compression: bool,
+    #[cfg(feature = "rdp-multimon")]
+    pub explicit_monitor_layout: Option<Vec<RdpMonitorLayoutPayload>>,
     pub enable_tls: bool,
     pub enable_credssp: bool,
     pub use_credssp: bool,
@@ -462,6 +579,9 @@ impl ResolvedSettings {
         let w = display.and_then(|d| d.width).unwrap_or(width);
         let h = display.and_then(|d| d.height).unwrap_or(height);
 
+        #[cfg(feature = "rdp-multimon")]
+        let explicit_monitor_layout = display.and_then(|d| d.monitor_layout.clone());
+
         let performance_flags = perf.map(build_performance_flags).unwrap_or_else(|| {
             PerformanceFlags::DISABLE_WALLPAPER
                 | PerformanceFlags::DISABLE_FULLWINDOWDRAG
@@ -482,6 +602,8 @@ impl ResolvedSettings {
             color_depth: display.and_then(|d| d.color_depth).unwrap_or(32),
             desktop_scale_factor: display.and_then(|d| d.desktop_scale_factor).unwrap_or(100),
             lossy_compression: display.and_then(|d| d.lossy_compression).unwrap_or(true),
+            #[cfg(feature = "rdp-multimon")]
+            explicit_monitor_layout,
             enable_tls: sec.and_then(|s| s.enable_tls).unwrap_or(true),
             enable_credssp: use_credssp_master && enable_credssp_nla,
             use_credssp: use_credssp_master,
@@ -572,10 +694,7 @@ impl ResolvedSettings {
                 .and_then(|p| p.codecs.as_ref())
                 .and_then(|c| c.enable_codecs)
                 .unwrap_or(true),
-            remotefx_enabled: perf
-                .and_then(|p| p.codecs.as_ref())
-                .and_then(|c| c.remote_fx)
-                .unwrap_or(true),
+            remotefx_enabled: resolve_remotefx_enabled(perf),
             remotefx_entropy: perf
                 .and_then(|p| p.codecs.as_ref())
                 .and_then(|c| c.remote_fx_entropy.clone())

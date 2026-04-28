@@ -89,12 +89,54 @@ impl ClipboardState {
         }
     }
 
+    pub fn apply_local_advertisement_policy(&mut self) -> bool {
+        let allowed = self.allows_client_to_server();
+        if !allowed {
+            self.clear_local_clipboard_offer();
+        }
+
+        allowed
+    }
+
+    pub fn store_remote_formats(&mut self, available_formats: &[ClipboardFormat]) -> bool {
+        if !self.allows_server_to_client() {
+            self.clear_remote_clipboard_snapshot();
+            return false;
+        }
+
+        self.remote_formats = available_formats.to_vec();
+        true
+    }
+
+    pub fn queue_format_data_request(&mut self, request: FormatDataRequest) -> bool {
+        let allowed = self.apply_local_advertisement_policy();
+        self.pending_data_request = Some(request);
+        allowed
+    }
+
+    pub fn queue_file_contents_request(&mut self, request: FileContentsRequest) -> bool {
+        let allowed = self.apply_local_advertisement_policy();
+        self.pending_file_contents_request = Some(request);
+        allowed
+    }
+
     pub fn allows_client_to_server(&self) -> bool {
         !self.disabled && self.direction.allows_client_to_server()
     }
 
     pub fn allows_server_to_client(&self) -> bool {
         !self.disabled && self.direction.allows_server_to_client()
+    }
+
+    fn clear_local_clipboard_offer(&mut self) {
+        self.local_text = None;
+        self.staged_files.clear();
+        self.file_bytes_transferred = 0;
+    }
+
+    fn clear_remote_clipboard_snapshot(&mut self) {
+        self.remote_formats.clear();
+        self.remote_text = None;
     }
 }
 
@@ -172,6 +214,15 @@ impl CliprdrBackend for AppCliprdrBackend {
             "CLIPRDR session {}: format list requested (init phase)",
             self.session_id
         );
+
+        if let Ok(mut state) = self.state.lock() {
+            if !state.apply_local_advertisement_policy() {
+                log::info!(
+                    "CLIPRDR session {}: suppressing local clipboard advertisement due to direction policy",
+                    self.session_id
+                );
+            }
+        }
     }
 
     fn on_remote_copy(&mut self, available_formats: &[ClipboardFormat]) {
@@ -181,13 +232,7 @@ impl CliprdrBackend for AppCliprdrBackend {
             available_formats.len()
         );
         let allowed = if let Ok(mut state) = self.state.lock() {
-            if !state.allows_server_to_client() {
-                state.remote_formats.clear();
-                false
-            } else {
-                state.remote_formats = available_formats.to_vec();
-                true
-            }
+            state.store_remote_formats(available_formats)
         } else {
             false
         };
@@ -225,7 +270,13 @@ impl CliprdrBackend for AppCliprdrBackend {
             request.format
         );
         if let Ok(mut state) = self.state.lock() {
-            state.pending_data_request = Some(request);
+            let allowed = state.queue_format_data_request(request);
+            if !allowed {
+                log::info!(
+                    "CLIPRDR session {}: rejecting local clipboard data request due to direction policy",
+                    self.session_id
+                );
+            }
         }
     }
 
@@ -241,7 +292,13 @@ impl CliprdrBackend for AppCliprdrBackend {
         let allowed = self
             .state
             .lock()
-            .map(|state| state.allows_server_to_client())
+            .map(|mut state| {
+                let allowed = state.allows_server_to_client();
+                if !allowed {
+                    state.clear_remote_clipboard_snapshot();
+                }
+                allowed
+            })
             .unwrap_or(false);
 
         if !allowed {
@@ -281,7 +338,13 @@ impl CliprdrBackend for AppCliprdrBackend {
             self.session_id, request.index, request.flags, request.position, request.requested_size
         );
         if let Ok(mut state) = self.state.lock() {
-            state.pending_file_contents_request = Some(request);
+            let allowed = state.queue_file_contents_request(request);
+            if !allowed {
+                log::info!(
+                    "CLIPRDR session {}: rejecting local clipboard file request due to direction policy",
+                    self.session_id
+                );
+            }
         }
     }
 
@@ -347,6 +410,47 @@ pub fn encode_file_list_response(files: &[StagedFile]) -> OwnedFormatDataRespons
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ironrdp_cliprdr::pdu::FileContentsFlags;
+
+    fn sample_format() -> ClipboardFormat {
+        ClipboardFormat::new(ClipboardFormatId::new(CF_UNICODETEXT))
+    }
+
+    fn sample_format_request() -> FormatDataRequest {
+        FormatDataRequest {
+            format: ClipboardFormatId::new(CF_UNICODETEXT),
+        }
+    }
+
+    fn sample_file_request() -> FileContentsRequest {
+        FileContentsRequest {
+            stream_id: 7,
+            index: 0,
+            flags: FileContentsFlags::empty(),
+            position: 0,
+            requested_size: 64,
+            data_id: None,
+        }
+    }
+
+    fn staged_file() -> StagedFile {
+        StagedFile {
+            name: "example.txt".to_string(),
+            size: 12,
+            path: "C:/tmp/example.txt".to_string(),
+            is_directory: false,
+        }
+    }
+
+    fn populated_state(direction: ClipboardDirection) -> ClipboardState {
+        let mut state = ClipboardState::new(direction);
+        state.local_text = Some("local".to_string());
+        state.remote_text = Some("remote".to_string());
+        state.remote_formats = vec![sample_format()];
+        state.staged_files = vec![staged_file()];
+        state.file_bytes_transferred = 12;
+        state
+    }
 
     #[test]
     fn clipboard_state_honors_direction_policy() {
@@ -367,5 +471,91 @@ mod tests {
 
         assert!(state.allows_client_to_server());
         assert!(state.allows_server_to_client());
+    }
+
+    #[test]
+    fn clipboard_direction_bidirectional_keeps_clipboard_flows_available() {
+        let mut state = populated_state(ClipboardDirection::Bidirectional);
+
+        assert!(state.apply_local_advertisement_policy());
+        assert_eq!(state.local_text.as_deref(), Some("local"));
+        assert_eq!(state.staged_files.len(), 1);
+
+        assert!(state.store_remote_formats(&[sample_format()]));
+        assert_eq!(state.remote_formats.len(), 1);
+        assert_eq!(state.remote_text.as_deref(), Some("remote"));
+
+        assert!(state.queue_format_data_request(sample_format_request()));
+        assert!(state.pending_data_request.is_some());
+        assert_eq!(state.local_text.as_deref(), Some("local"));
+
+        assert!(state.queue_file_contents_request(sample_file_request()));
+        assert!(state.pending_file_contents_request.is_some());
+        assert_eq!(state.staged_files.len(), 1);
+    }
+
+    #[test]
+    fn clipboard_direction_client_to_server_rejects_remote_formats_only() {
+        let mut state = populated_state(ClipboardDirection::ClientToServer);
+
+        assert!(state.apply_local_advertisement_policy());
+        assert_eq!(state.local_text.as_deref(), Some("local"));
+        assert_eq!(state.staged_files.len(), 1);
+
+        assert!(!state.store_remote_formats(&[sample_format()]));
+        assert!(state.remote_formats.is_empty());
+        assert!(state.remote_text.is_none());
+
+        assert!(state.queue_format_data_request(sample_format_request()));
+        assert!(state.pending_data_request.is_some());
+        assert_eq!(state.local_text.as_deref(), Some("local"));
+
+        assert!(state.queue_file_contents_request(sample_file_request()));
+        assert!(state.pending_file_contents_request.is_some());
+        assert_eq!(state.staged_files.len(), 1);
+    }
+
+    #[test]
+    fn clipboard_direction_server_to_client_rejects_local_clipboard_requests() {
+        let mut state = populated_state(ClipboardDirection::ServerToClient);
+
+        assert!(!state.apply_local_advertisement_policy());
+        assert!(state.local_text.is_none());
+        assert!(state.staged_files.is_empty());
+        assert_eq!(state.file_bytes_transferred, 0);
+
+        assert!(state.store_remote_formats(&[sample_format()]));
+        assert_eq!(state.remote_formats.len(), 1);
+        assert_eq!(state.remote_text.as_deref(), Some("remote"));
+
+        assert!(!state.queue_format_data_request(sample_format_request()));
+        assert!(state.pending_data_request.is_some());
+        assert!(state.local_text.is_none());
+
+        assert!(!state.queue_file_contents_request(sample_file_request()));
+        assert!(state.pending_file_contents_request.is_some());
+        assert!(state.staged_files.is_empty());
+    }
+
+    #[test]
+    fn clipboard_direction_disabled_rejects_all_clipboard_flows() {
+        let mut state = populated_state(ClipboardDirection::Disabled);
+
+        assert!(!state.apply_local_advertisement_policy());
+        assert!(state.local_text.is_none());
+        assert!(state.staged_files.is_empty());
+        assert_eq!(state.file_bytes_transferred, 0);
+
+        assert!(!state.store_remote_formats(&[sample_format()]));
+        assert!(state.remote_formats.is_empty());
+        assert!(state.remote_text.is_none());
+
+        assert!(!state.queue_format_data_request(sample_format_request()));
+        assert!(state.pending_data_request.is_some());
+        assert!(state.local_text.is_none());
+
+        assert!(!state.queue_file_contents_request(sample_file_request()));
+        assert!(state.pending_file_contents_request.is_some());
+        assert!(state.staged_files.is_empty());
     }
 }

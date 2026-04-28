@@ -33,3 +33,8 @@ disabled_commands!(
     rdp_clipboard_paste,
     rdp_toggle_feature,
 );
+
+#[tauri::command]
+pub async fn rdp_set_desktop_size() -> Result<serde_json::Value, String> {
+    Err("RDP feature is not enabled. Rebuild with --features rdp".into())
+}

@@ -152,6 +152,8 @@ pub enum RdpCommand {
     ClipboardCopyFiles(Vec<ClipboardFileEntry>),
     /// Toggle a session feature on/off at runtime.
     ToggleFeature { feature: String, enabled: bool },
+    /// Request a dynamic desktop resize via the Display Control DVC.
+    SetDesktopSize { width: u16, height: u16 },
 }
 
 /// File entry for clipboard file transfer.

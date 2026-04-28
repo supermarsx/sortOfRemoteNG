@@ -11,6 +11,21 @@ pub struct ClipboardFilePayload {
     pub is_directory: bool,
 }
 
+#[derive(Clone, Copy, serde::Serialize)]
+pub struct RdpDesktopSizePayload {
+    pub width: u16,
+    pub height: u16,
+}
+
+fn normalize_desktop_size(width: u32, height: u32) -> RdpDesktopSizePayload {
+    let (width, height) = ironrdp_displaycontrol::pdu::MonitorLayoutEntry::adjust_display_size(width, height);
+
+    RdpDesktopSizePayload {
+        width: width as u16,
+        height: height as u16,
+    }
+}
+
 /// Detect the current Windows keyboard layout and return the HKL (low 16 bits
 /// = keyboard layout ID which is the value IronRDP's `keyboard_layout` expects).
 #[tauri::command]
@@ -467,6 +482,34 @@ pub async fn rdp_send_input(
     } else {
         Err(format!("RDP session {session_id} not found"))
     }
+}
+
+#[tauri::command]
+pub async fn rdp_set_desktop_size(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    width: u32,
+    height: u32,
+) -> Result<RdpDesktopSizePayload, String> {
+    let normalized = normalize_desktop_size(width, height);
+
+    let mut service = state.lock().await;
+    let conn = service
+        .connections
+        .get_mut(&session_id)
+        .ok_or_else(|| format!("Session {session_id} not found"))?;
+
+    conn.cmd_tx
+        .send(RdpCommand::SetDesktopSize {
+            width: normalized.width,
+            height: normalized.height,
+        })
+        .map_err(|_| "Session command channel closed".to_string())?;
+
+    conn.session.desktop_width = normalized.width;
+    conn.session.desktop_height = normalized.height;
+
+    Ok(normalized)
 }
 
 /// Fetch raw RGBA pixel data for a rectangular region of the RDP session's

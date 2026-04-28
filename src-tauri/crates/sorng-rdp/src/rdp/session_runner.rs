@@ -25,6 +25,8 @@ use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSetti
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
 use super::{RdpTlsConfig, RdpTlsStream};
+#[cfg(feature = "rdp-multimon")]
+use super::multimon::build_display_control_messages;
 use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 
 // ---- Session log helper ----
@@ -139,7 +141,9 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
 // ---- Session loop exit reason ----
 
 /// Why the active session loop stopped.  Used to decide whether to reconnect.
-enum SessionLoopExit {
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionLoopExit {
     /// User/system requested shutdown — session is done for good.
     Shutdown,
     /// Server closed the connection cleanly (EOF or Terminate PDU).
@@ -163,6 +167,7 @@ struct EstablishedSession {
     image: DecodedImage,
     desktop_width: u16,
     desktop_height: u16,
+    desktop_scale_factor: u32,
     compositor: Option<Box<dyn FrameCompositor>>,
     active_render_backend: String,
     gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxOutput>>,
@@ -809,7 +814,19 @@ fn establish_rdp_connection(
     let has_rdpdr_devices = should_register_rdpdr(settings);
     let rdpdr_device_flags = rdpdr_device_flags(settings);
 
-    // -- Register RDPGFX Dynamic Virtual Channel (H.264 hardware decode) --
+    // -- Register DRDYNVC dynamic virtual channels --
+    #[cfg(feature = "rdp-multimon")]
+    let explicit_monitor_layout = settings.explicit_monitor_layout.clone();
+
+    let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(
+        crate::ironrdp_displaycontrol::client::DisplayControlClient::new(
+            #[cfg(feature = "rdp-multimon")]
+            move |_| Ok(build_display_control_messages(explicit_monitor_layout.as_deref())),
+            #[cfg(not(feature = "rdp-multimon"))]
+            |_| Ok(Vec::new()),
+        ),
+    );
+
     let gfx_frame_rx = if settings.gfx_enabled {
         let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxOutput>();
         let gfx_proc = crate::gfx::processor::GfxProcessor::new(
@@ -817,36 +834,13 @@ fn establish_rdp_connection(
             gfx_tx,
             settings.nal_passthrough,
         );
-        let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
-
-        // Register RDPDR DVC processor (modern Windows servers route RDPDR through DVC)
-        if has_rdpdr_devices {
-            let rdpdr_dvc = super::rdpdr::RdpdrDvcProcessor::new(
-                session_id.to_string(),
-                event_emitter.clone(),
-                redirected_drives.clone(),
-                rdpdr_device_flags.clone(),
-                settings.printer_output_mode,
-            );
-            drdynvc = drdynvc.with_dynamic_channel(rdpdr_dvc);
-            log::info!("RDP session {session_id}: RDPDR DVC processor registered");
-        }
-
-        // Register AUDIN DVC processor for audio input (microphone)
-        if settings.enable_audio_recording {
-            let audin = super::audin::AudinDvcProcessor::new(session_id.to_string(), true);
-            drdynvc = drdynvc.with_dynamic_channel(audin);
-            log::info!("RDP session {session_id}: AUDIN DVC processor registered (audio input)");
-        }
-
-        connector.attach_static_channel(drdynvc);
-        log::info!(
-            "RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled, nal_passthrough={})",
-            settings.nal_passthrough
-        );
+        drdynvc = drdynvc.with_dynamic_channel(gfx_proc);
         Some(gfx_rx)
-    } else if has_rdpdr_devices {
-        // No GFX but have RDPDR devices — create DRDYNVC just for RDPDR
+    } else {
+        None
+    };
+
+    if has_rdpdr_devices {
         let rdpdr_dvc = super::rdpdr::RdpdrDvcProcessor::new(
             session_id.to_string(),
             event_emitter.clone(),
@@ -854,18 +848,21 @@ fn establish_rdp_connection(
             rdpdr_device_flags.clone(),
             settings.printer_output_mode,
         );
-        let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(rdpdr_dvc);
-        if settings.enable_audio_recording {
-            let audin = super::audin::AudinDvcProcessor::new(session_id.to_string(), true);
-            drdynvc = drdynvc.with_dynamic_channel(audin);
-            log::info!("RDP session {session_id}: AUDIN DVC processor registered (no GFX)");
-        }
-        connector.attach_static_channel(drdynvc);
-        log::info!("RDP session {session_id}: RDPDR DVC processor registered (no GFX)");
-        None
-    } else {
-        None
-    };
+        drdynvc = drdynvc.with_dynamic_channel(rdpdr_dvc);
+    }
+
+    if settings.enable_audio_recording {
+        let audin = super::audin::AudinDvcProcessor::new(session_id.to_string(), true);
+        drdynvc = drdynvc.with_dynamic_channel(audin);
+    }
+
+    connector.attach_static_channel(drdynvc);
+    log::info!(
+        "RDP session {session_id}: DRDYNVC registered (display-control=true, gfx={}, rdpdr={}, audin={})",
+        settings.gfx_enabled,
+        has_rdpdr_devices,
+        settings.enable_audio_recording,
+    );
 
     // -- Register CLIPRDR Static Virtual Channel (clipboard redirection) --
     let clipboard_state: Option<SharedClipboardState> = if settings.clipboard_enabled {
@@ -1210,6 +1207,7 @@ fn establish_rdp_connection(
         image,
         desktop_width,
         desktop_height,
+        desktop_scale_factor: settings.desktop_scale_factor,
         compositor,
         active_render_backend,
         gfx_frame_rx,
@@ -1315,6 +1313,7 @@ fn run_active_session_loop(
         let mut should_break = false;
         let mut should_reconnect = false;
         let mut input_dropped = 0u64;
+        let mut requested_resize: Option<(u16, u16)> = None;
         loop {
             match cmd_rx.cmd_rx.try_recv() {
                 Ok(RdpCommand::Shutdown) => {
@@ -1338,6 +1337,9 @@ fn run_active_session_loop(
                     } else {
                         input_dropped += events.len() as u64;
                     }
+                }
+                Ok(RdpCommand::SetDesktopSize { width, height }) => {
+                    requested_resize = Some((width, height));
                 }
                 Ok(RdpCommand::AttachViewer(new_channel)) => {
                     log::info!("RDP session {session_id}: viewer attached (new frame channel)");
@@ -1614,6 +1616,31 @@ fn run_active_session_loop(
             log::warn!(
                 "RDP session {session_id}: dropped {input_dropped} input events (backlog > {INPUT_BACKLOG_LIMIT})"
             );
+        }
+
+        if let Some((width, height)) = requested_resize {
+            match est.active_stage.encode_resize(
+                u32::from(width),
+                u32::from(height),
+                Some(est.desktop_scale_factor),
+                None,
+            ) {
+                Some(Ok(data)) => {
+                    stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                    stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                    if let Err(e) = est.tls_framed.write_all(&data) {
+                        let msg = format!("Write failed: {e}");
+                        emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {msg}"), session_id);
+                        return SessionLoopExit::NetworkError(msg);
+                    }
+                }
+                Some(Err(e)) => {
+                    log::warn!("RDP session {session_id}: display resize encode failed: {e}");
+                }
+                None => {
+                    log::warn!("RDP session {session_id}: display resize unavailable (Display Control DVC not ready)");
+                }
+            }
         }
 
         // Send all coalesced input in a single batch
@@ -2261,6 +2288,240 @@ fn run_active_session_loop(
 
 // ---- Layer 3: Persistent Session Wrapper with Reconnection ----
 
+#[allow(clippy::too_many_arguments)]
+fn run_reconnect_loop<Session, Establish, RunActive, Sleep>(
+    session_id: &str,
+    settings: &ResolvedSettings,
+    event_emitter: &DynEventEmitter,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
+    stats: &Arc<RdpSessionStats>,
+    frame_store: &SharedFrameStoreState,
+    log_sink: &LogSink,
+    mut establish: Establish,
+    mut run_active: RunActive,
+    mut sleep: Sleep,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    Establish: FnMut(
+        &mut crate::rdp::wake_channel::WakeReceiver,
+    ) -> Result<Session, Box<dyn std::error::Error + Send + Sync>>,
+    RunActive: FnMut(
+        &mut Session,
+        &mut crate::rdp::wake_channel::WakeReceiver,
+    ) -> SessionLoopExit,
+    Sleep: FnMut(
+        &mut crate::rdp::wake_channel::WakeReceiver,
+        Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>,
+{
+    let mut reconnect_count: u32 = 0;
+    let reconnect_enabled = settings.reconnect_on_network_loss;
+
+    'session: loop {
+        match cmd_rx.cmd_rx.try_recv() {
+            Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+                return Err("session_shutdown: cancelled before connect".into());
+            }
+            _ => {}
+        }
+
+        let mut established = match establish(cmd_rx) {
+            Ok(established) => {
+                if reconnect_count > 0 {
+                    log::info!(
+                        "RDP session {session_id}: reconnected successfully after {reconnect_count} attempts"
+                    );
+                }
+                reconnect_count = 0;
+                established
+            }
+            Err(error) => {
+                let message = format!("{error}");
+
+                if message.contains("session_shutdown") {
+                    return Err(error);
+                }
+
+                if !reconnect_enabled {
+                    return Err(error);
+                }
+
+                if reconnect_count == 0 {
+                    return Err(error);
+                }
+
+                reconnect_count += 1;
+                log::warn!(
+                    "RDP session {session_id}: reconnect attempt {reconnect_count} failed: {message}"
+                );
+
+                stats.set_phase("reconnecting");
+                let _ = event_emitter.emit_event(
+                    "rdp://status",
+                    serde_json::to_value(&RdpStatusEvent {
+                        session_id: session_id.to_string(),
+                        status: "reconnecting".to_string(),
+                        message: format!("Reconnecting ({reconnect_count})... {message}"),
+                        desktop_width: None,
+                        desktop_height: None,
+                    })
+                    .unwrap_or_default(),
+                );
+
+                sleep(
+                    cmd_rx,
+                    compute_backoff_delay(
+                        reconnect_count,
+                        settings.reconnect_base_delay,
+                        settings.reconnect_max_delay,
+                    ),
+                )?;
+                continue 'session;
+            }
+        };
+
+        stats
+            .frame_count
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+
+        let exit = run_active(&mut established, cmd_rx);
+        drop(established);
+
+        match exit {
+            SessionLoopExit::Shutdown => {
+                emit_log(
+                    event_emitter,
+                    log_sink,
+                    "info",
+                    "Session shut down".to_string(),
+                    session_id,
+                );
+                return Ok(());
+            }
+            SessionLoopExit::ServerClosed => {
+                emit_log(
+                    event_emitter,
+                    log_sink,
+                    "info",
+                    "Server closed connection".to_string(),
+                    session_id,
+                );
+                return Ok(());
+            }
+            SessionLoopExit::ProtocolError(message) => {
+                emit_log(
+                    event_emitter,
+                    log_sink,
+                    "error",
+                    format!("Fatal protocol error: {message}"),
+                    session_id,
+                );
+                return Err(message.into());
+            }
+            SessionLoopExit::NetworkError(message) => {
+                if !reconnect_enabled {
+                    emit_log(
+                        event_emitter,
+                        log_sink,
+                        "error",
+                        format!("Network error (reconnect disabled): {message}"),
+                        session_id,
+                    );
+                    return Err(message.into());
+                }
+                reconnect_count += 1;
+                log::info!("RDP session {session_id}: will reconnect ({reconnect_count}): {message}");
+                emit_log(
+                    event_emitter,
+                    log_sink,
+                    "warn",
+                    format!("Reconnecting ({reconnect_count}): {message}"),
+                    session_id,
+                );
+            }
+            SessionLoopExit::ReconnectRequested => {
+                reconnect_count += 1;
+                log::info!(
+                    "RDP session {session_id}: will reconnect ({reconnect_count}): manual reconnect"
+                );
+                emit_log(
+                    event_emitter,
+                    log_sink,
+                    "info",
+                    format!("Manual reconnect ({reconnect_count})"),
+                    session_id,
+                );
+            }
+        }
+
+        stats.set_phase("reconnecting");
+        let _ = event_emitter.emit_event(
+            "rdp://status",
+            serde_json::to_value(&RdpStatusEvent {
+                session_id: session_id.to_string(),
+                status: "reconnecting".to_string(),
+                message: format!("Reconnecting ({reconnect_count})..."),
+                desktop_width: None,
+                desktop_height: None,
+            })
+            .unwrap_or_default(),
+        );
+
+        frame_store.reinit(session_id, 0, 0);
+        sleep(
+            cmd_rx,
+            compute_backoff_delay(
+                reconnect_count,
+                settings.reconnect_base_delay,
+                settings.reconnect_max_delay,
+            ),
+        )?;
+    }
+}
+
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn run_reconnect_loop_for_test<Session, Establish, RunActive, Sleep>(
+    session_id: &str,
+    password: &str,
+    settings: &ResolvedSettings,
+    event_emitter: &DynEventEmitter,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
+    stats: &Arc<RdpSessionStats>,
+    frame_store: &SharedFrameStoreState,
+    log_sink: &LogSink,
+    mut establish: Establish,
+    run_active: RunActive,
+    sleep: Sleep,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    Establish: FnMut(
+        &str,
+        &mut crate::rdp::wake_channel::WakeReceiver,
+    ) -> Result<Session, Box<dyn std::error::Error + Send + Sync>>,
+    RunActive: FnMut(
+        &mut Session,
+        &mut crate::rdp::wake_channel::WakeReceiver,
+    ) -> SessionLoopExit,
+    Sleep: FnMut(
+        &mut crate::rdp::wake_channel::WakeReceiver,
+        Duration,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>,
+{
+    run_reconnect_loop(
+        session_id,
+        settings,
+        event_emitter,
+        cmd_rx,
+        stats,
+        frame_store,
+        log_sink,
+        move |cmd_rx| establish(password, cmd_rx),
+        run_active,
+        sleep,
+    )
+}
+
 /// The main session function with automatic reconnection on network errors.
 /// This function **never returns** on network errors — it loops indefinitely,
 /// reconnecting with exponential backoff, until a `Shutdown` command arrives
@@ -2283,177 +2544,47 @@ fn run_rdp_session_inner(
     frame_channel: &DynFrameChannel,
     log_sink: &LogSink,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut reconnect_count: u32 = 0;
-    let reconnect_enabled = settings.reconnect_on_network_loss;
-
-    'session: loop {
-        // Check for shutdown before (re)connecting
-        match cmd_rx.cmd_rx.try_recv() {
-            Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
-                return Err("session_shutdown: cancelled before connect".into());
-            }
-            _ => {}
-        }
-
-        // Establish connection (TCP + TLS + CredSSP + capability exchange)
-        let mut established = match establish_rdp_connection(
-            session_id,
-            host,
-            port,
-            username,
-            password,
-            domain,
-            settings,
-            event_emitter,
-            cmd_rx,
-            stats,
-            cached_tls_connector.clone(),
-            cached_http_client.clone(),
-            frame_store,
-            log_sink,
-        ) {
-            Ok(est) => {
-                // Successful connect — reset reconnect counter
-                if reconnect_count > 0 {
-                    log::info!(
-                        "RDP session {session_id}: reconnected successfully after {reconnect_count} attempts"
-                    );
-                }
-                reconnect_count = 0;
-                est
-            }
-            Err(e) => {
-                let msg = format!("{e}");
-
-                // Shutdown sentinel — always bail immediately
-                if msg.contains("session_shutdown") {
-                    return Err(e);
-                }
-
-                // If reconnection is disabled, fail immediately
-                if !reconnect_enabled {
-                    return Err(e);
-                }
-
-                // On first connect failure (not a reconnect), fail immediately
-                // so the user sees the error (bad credentials, etc.)
-                if reconnect_count == 0 {
-                    return Err(e);
-                }
-
-                // Connection failed during reconnect — keep trying
-                reconnect_count += 1;
-                log::warn!(
-                    "RDP session {session_id}: reconnect attempt {reconnect_count} failed: {msg}"
-                );
-
-                stats.set_phase("reconnecting");
-                let _ = event_emitter.emit_event(
-                    "rdp://status",
-                    serde_json::to_value(&RdpStatusEvent {
-                        session_id: session_id.to_string(),
-                        status: "reconnecting".to_string(),
-                        message: format!("Reconnecting ({reconnect_count})... {msg}"),
-                        desktop_width: None,
-                        desktop_height: None,
-                    }).unwrap_or_default(),
-                );
-
-                sleep_with_shutdown_check(
-                    cmd_rx,
-                    compute_backoff_delay(
-                        reconnect_count,
-                        settings.reconnect_base_delay,
-                        settings.reconnect_max_delay,
-                    ),
-                )?;
-                continue 'session;
-            }
-        };
-
-        // Reset frame counter so the first frame triggers a full-frame sync
-        stats.frame_count.store(0, std::sync::atomic::Ordering::Relaxed);
-
-        // Run the active session loop
-        let exit = run_active_session_loop(
-            session_id,
-            &mut established,
-            settings,
-            event_emitter,
-            cmd_rx,
-            stats,
-            frame_store,
-            frame_channel,
-            log_sink,
-        );
-
-        // Drop compositor explicitly before potentially reconnecting
-        if let Some(ref comp) = established.compositor {
-            log::info!(
-                "RDP session {session_id}: dropping compositor '{}'",
-                comp.name()
-            );
-        }
-        drop(established);
-
-        match exit {
-            SessionLoopExit::Shutdown => {
-                emit_log(event_emitter, log_sink, "info", "Session shut down".to_string(), session_id);
-                return Ok(());
-            }
-            SessionLoopExit::ServerClosed => {
-                emit_log(event_emitter, log_sink, "info", "Server closed connection".to_string(), session_id);
-                return Ok(());
-            }
-            SessionLoopExit::ProtocolError(msg) => {
-                emit_log(event_emitter, log_sink, "error", format!("Fatal protocol error: {msg}"), session_id);
-                return Err(msg.into());
-            }
-            SessionLoopExit::NetworkError(msg) => {
-                if !reconnect_enabled {
-                    emit_log(event_emitter, log_sink, "error", format!("Network error (reconnect disabled): {msg}"), session_id);
-                    return Err(msg.into());
-                }
-                reconnect_count += 1;
-                log::info!("RDP session {session_id}: will reconnect ({reconnect_count}): {msg}");
-                emit_log(event_emitter, log_sink, "warn", format!("Reconnecting ({reconnect_count}): {msg}"), session_id);
-            }
-            SessionLoopExit::ReconnectRequested => {
-                reconnect_count += 1;
-                log::info!(
-                    "RDP session {session_id}: will reconnect ({reconnect_count}): manual reconnect"
-                );
-                emit_log(event_emitter, log_sink, "info", format!("Manual reconnect ({reconnect_count})"), session_id);
-            }
-        }
-
-        // Shared reconnection logic for NetworkError and ReconnectRequested
-        stats.set_phase("reconnecting");
-        let _ = event_emitter.emit_event(
-            "rdp://status",
-            serde_json::to_value(&RdpStatusEvent {
-                session_id: session_id.to_string(),
-                status: "reconnecting".to_string(),
-                message: format!("Reconnecting ({reconnect_count})..."),
-                desktop_width: None,
-                desktop_height: None,
-            }).unwrap_or_default(),
-        );
-
-        // Preserve the framebuffer shape but clear stale pixel data so
-        // dirty-rect deltas from the new connection don't ghost over old content.
-        frame_store.reinit(session_id, 0, 0);
-        // Sleep with exponential backoff, checking for shutdown.
-        sleep_with_shutdown_check(
-            cmd_rx,
-            compute_backoff_delay(
-                reconnect_count,
-                settings.reconnect_base_delay,
-                settings.reconnect_max_delay,
-            ),
-        )?;
-        continue 'session;
-    }
+    run_reconnect_loop(
+        session_id,
+        settings,
+        event_emitter,
+        cmd_rx,
+        stats,
+        frame_store,
+        log_sink,
+        |cmd_rx| {
+            establish_rdp_connection(
+                session_id,
+                host,
+                port,
+                username,
+                password,
+                domain,
+                settings,
+                event_emitter,
+                cmd_rx,
+                stats,
+                cached_tls_connector.clone(),
+                cached_http_client.clone(),
+                frame_store,
+                log_sink,
+            )
+        },
+        |established, cmd_rx| {
+            run_active_session_loop(
+                session_id,
+                established,
+                settings,
+                event_emitter,
+                cmd_rx,
+                stats,
+                frame_store,
+                frame_channel,
+                log_sink,
+            )
+        },
+        |cmd_rx, delay| sleep_with_shutdown_check(cmd_rx, delay),
+    )
 }
 
 // ---- Helper functions ----

@@ -6,6 +6,8 @@ pub mod frame_channel;
 mod frame_delivery;
 pub mod frame_store;
 pub mod input;
+#[cfg(feature = "rdp-multimon")]
+pub mod multimon;
 mod network;
 pub mod session_poller;
 pub mod session_runner;

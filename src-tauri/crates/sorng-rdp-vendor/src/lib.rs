@@ -12,6 +12,7 @@ pub extern crate ironrdp_cliprdr_native;
 pub extern crate ironrdp_core;
 pub extern crate ironrdp_dvc;
 pub extern crate ironrdp_svc;
+pub use ironrdp::displaycontrol as ironrdp_displaycontrol;
 
 pub mod yuv_convert;
 

@@ -26,6 +26,14 @@ mf-decode = [
 ]
 # PNG snapshot encoding (rdp_get_frame_data as PNG)
 snapshot = ["dep:png"]
+# Opt-in native serial redirection backend for RDPDR COM ports.
+rdp-serial = ["dep:serialport"]
+# Opt-in marker for Docker-backed RDPDR integration tests in
+# `tests/rdpdr_e2e.rs`. When disabled, the live harness stays out of normal
+# `cargo test` runs.
+docker-e2e = []
+# Backend-only explicit monitor layout scaffold for Display Control.
+rdp-multimon = []
 
 [dependencies]
 # ── sorng crates (always statically linked) ──────────────────────────
@@ -59,6 +67,7 @@ secrecy = "0.8"
 
 # ── Heavy optional deps (backend decode / snapshot) ──────────────────
 png = { version = "0.17", optional = true }
+serialport = { version = "4", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -3,6 +3,7 @@ pub use std::sync::Arc;
 pub use std::time::Duration;
 
 pub use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
+pub use crate::ironrdp_displaycontrol;
 pub use tokio::sync::mpsc;
 pub use uuid::Uuid;
 

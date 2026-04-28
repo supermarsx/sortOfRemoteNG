@@ -11,6 +11,7 @@ pub(crate) use sorng_rdp_vendor::ironrdp_cliprdr;
 #[allow(unused_imports)]
 pub(crate) use sorng_rdp_vendor::ironrdp_cliprdr_native;
 pub(crate) use sorng_rdp_vendor::ironrdp_core;
+pub use sorng_rdp_vendor::ironrdp_displaycontrol;
 pub(crate) use sorng_rdp_vendor::ironrdp_dvc;
 #[allow(unused_imports)]
 pub(crate) use sorng_rdp_vendor::ironrdp_svc;

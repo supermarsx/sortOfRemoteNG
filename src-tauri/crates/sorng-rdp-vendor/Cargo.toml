@@ -15,7 +15,7 @@ default = ["software-decode"]
 software-decode = ["dep:openh264"]
 
 [dependencies]
-ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input", "core"] }
+ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input", "core", "displaycontrol"] }
 ironrdp-blocking = "0.8"
 ironrdp-svc = "0.6"
 ironrdp-dvc = "0.5"
