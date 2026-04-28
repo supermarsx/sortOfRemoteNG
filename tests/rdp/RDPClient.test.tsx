@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RDPClient from "../../src/components/rdp/RDPClient";
 import { ConnectionSession } from "../../src/types/connection/connection";
@@ -33,6 +33,47 @@ vi.mock("@tauri-apps/api/event", () => ({
     },
   ),
 }));
+
+class MockResizeObserver {
+  static instances: MockResizeObserver[] = [];
+
+  private readonly observed = new Set<Element>();
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    MockResizeObserver.instances.push(this);
+  }
+
+  observe(target: Element) {
+    this.observed.add(target);
+  }
+
+  unobserve(target: Element) {
+    this.observed.delete(target);
+  }
+
+  disconnect() {
+    this.observed.clear();
+  }
+
+  static reset() {
+    MockResizeObserver.instances = [];
+  }
+
+  static emitAll(width: number, height: number) {
+    for (const instance of MockResizeObserver.instances) {
+      const entries = Array.from(instance.observed).map((target) => ({
+        target,
+        contentRect: { width, height },
+      })) as ResizeObserverEntry[];
+
+      if (entries.length > 0) {
+        instance.callback(entries, instance as unknown as ResizeObserver);
+      }
+    }
+  }
+}
+
+globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
 // Mock Tauri window API (getCurrentWindow)
 vi.mock("@tauri-apps/api/window", () => ({
@@ -117,14 +158,16 @@ function emitStatus(
 ) {
   const handler = mockListeners["rdp://status"];
   if (handler) {
-    handler({
-      payload: {
-        session_id: sessionId,
-        status,
-        message,
-        desktop_width: desktopWidth,
-        desktop_height: desktopHeight,
-      },
+    act(() => {
+      handler({
+        payload: {
+          session_id: sessionId,
+          status,
+          message,
+          desktop_width: desktopWidth,
+          desktop_height: desktopHeight,
+        },
+      });
     });
   }
 }
@@ -143,11 +186,13 @@ describe("RDPClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
+    MockResizeObserver.reset();
     // Default mock: list_rdp_sessions returns empty array (no existing session),
     // then connect_rdp returns a session ID.
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "list_rdp_sessions") return [];
       if (cmd === "detect_keyboard_layout") return 0x0409;
+      if (cmd === "rdp_set_desktop_size") return { width: 1280, height: 720 };
       return "rdp-session-123";
     });
 
@@ -278,12 +323,46 @@ describe("RDPClient", () => {
         );
       });
 
-      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await act(async () => {
+        emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      });
 
       await waitFor(() => {
         const canvas = document.querySelector("canvas") as HTMLCanvasElement;
         expect(canvas.width).toBe(1920);
         expect(canvas.height).toBe(1080);
+      });
+    });
+
+    it("should request backend desktop resize when the connected container changes size", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        MockResizeObserver.emitAll(1280, 720);
+      });
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "rdp_set_desktop_size",
+          {
+            sessionId: "rdp-session-123",
+            width: 1280,
+            height: 720,
+          },
+        );
       });
     });
 

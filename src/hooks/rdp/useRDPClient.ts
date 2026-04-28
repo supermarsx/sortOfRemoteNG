@@ -1224,13 +1224,38 @@ export function useRDPClient(session: ConnectionSession) {
 
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        setDesktopSize({ width: w, height: h });
-        pipelineRef.current!.resize(w, h);
-        if (!pipelineRef.current!.isCanvasTransferred()) {
-          const c = canvasRef.current;
-          const fb = pipelineRef.current!.getFrameBuffer();
-          if (c && fb) fb.blitFull(c);
+        const applyResize = (nextWidth: number, nextHeight: number) => {
+          setDesktopSize({ width: nextWidth, height: nextHeight });
+
+          const pipeline = pipelineRef.current;
+          if (!pipeline) return;
+
+          pipeline.resize(nextWidth, nextHeight);
+          if (!pipeline.isCanvasTransferred()) {
+            const c = canvasRef.current;
+            const fb = pipeline.getFrameBuffer();
+            if (c && fb) fb.blitFull(c);
+          }
+        };
+
+        const sid = sessionIdRef.current;
+        if (!sid) {
+          applyResize(w, h);
+          return;
         }
+
+        invoke<{ width?: number; height?: number }>('rdp_set_desktop_size', {
+          sessionId: sid,
+          width: w,
+          height: h,
+        })
+          .then((normalized) => {
+            applyResize(normalized.width ?? w, normalized.height ?? h);
+          })
+          .catch((error) => {
+            debugLog(`Desktop resize sync error: ${error}`);
+            applyResize(w, h);
+          });
       }, 150);
     });
 
