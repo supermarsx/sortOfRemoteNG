@@ -3,7 +3,7 @@ import en from "../../src/i18n/locales/en.json";
 import de from "../../src/i18n/locales/de.json";
 import es from "../../src/i18n/locales/es.json";
 import fr from "../../src/i18n/locales/fr.json";
-import it from "../../src/i18n/locales/it.json";
+import itLocale from "../../src/i18n/locales/it.json";
 import ja from "../../src/i18n/locales/ja.json";
 import ko from "../../src/i18n/locales/ko.json";
 import ptPT from "../../src/i18n/locales/pt-PT.json";
@@ -27,7 +27,7 @@ describe("collectionCenter locale parity", () => {
     de,
     es,
     fr,
-    it,
+    it: itLocale,
     ja,
     ko,
     "pt-PT": ptPT,
