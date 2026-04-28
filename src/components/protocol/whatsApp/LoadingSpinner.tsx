@@ -1,9 +1,8 @@
-
 import React from "react";
-import { Loader2 } from "lucide-react";
-const LoadingSpinner: React.FC = () => (
-  <Loader2 size={16} className="animate-spin text-primary" />
-);
+import { LoadingElement } from "../../ui/display/loadingElement";
 
+const LoadingSpinner: React.FC = () => (
+  <LoadingElement size="md" ariaLabel="Loading" />
+);
 
 export default LoadingSpinner;

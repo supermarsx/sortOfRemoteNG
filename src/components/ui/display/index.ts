@@ -4,6 +4,16 @@ export type { SparklineProps, MiniBarChartProps, TrendIndicatorProps } from './C
 export { ConnectingSpinner } from './ConnectingSpinner';
 export type { ConnectingSpinnerProps } from './ConnectingSpinner';
 
+export { LoadingElement } from './loadingElement';
+export type {
+  LoadingElementProps,
+  LoadingElementType,
+  LoadingElementSize,
+  LoadingElementSettings,
+  VariantConfig,
+  VariantConfigMap,
+} from './loadingElement';
+
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
