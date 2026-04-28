@@ -23,6 +23,7 @@ import {
   LucideIcon,
 } from "lucide-react";
 import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig } from "../../types/settings/settings";
+import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../ui/display/loadingElement/defaults";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition
@@ -162,6 +163,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "animationsEnabled",
     "animationDuration",
     "reduceMotion",
+    "loadingElement",
   ],
   layout: [
     "persistWindowSize",
@@ -303,6 +305,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
   showTransparencyToggle: false,
+  loadingElement: DEFAULT_LOADING_ELEMENT_SETTINGS,
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,

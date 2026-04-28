@@ -10,6 +10,7 @@ import {
   defaultDiagnosticsConfig,
   defaultMemoryWatchdogSettings,
 } from '../../types/settings/settings';
+import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../../components/ui/display/loadingElement/defaults';
 import { SecureStorage } from '../storage/storage';
 import { IndexedDbService } from '../storage/indexedDbService';
 import { generateId } from '../core/id';
@@ -161,6 +162,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
   showTransparencyToggle: false,
+
+  loadingElement: DEFAULT_LOADING_ELEMENT_SETTINGS,
 
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,

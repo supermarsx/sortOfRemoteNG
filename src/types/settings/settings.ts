@@ -235,6 +235,9 @@ export interface GlobalSettings {
   windowTransparencyOpacity: number;
   showTransparencyToggle: boolean;
 
+  // Loading Element — see src/components/ui/display/loadingElement/types.ts
+  loadingElement: import('../../components/ui/display/loadingElement/types').LoadingElementSettings;
+
   // Secondary Bar Toggles
   showQuickConnectIcon: boolean;
   showCollectionSwitcherIcon: boolean;

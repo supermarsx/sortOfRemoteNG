@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig, defaultDiagnosticsConfig, defaultMemoryWatchdogSettings } from '../types/settings/settings';
 import { SettingsManager } from '../utils/settings/settingsManager';
+import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../components/ui/display/loadingElement/defaults';
 
 interface SettingsContextType {
   settings: GlobalSettings;
@@ -115,6 +116,7 @@ export const defaultSettings: GlobalSettings = {
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
   showTransparencyToggle: false,
+  loadingElement: DEFAULT_LOADING_ELEMENT_SETTINGS,
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,
