@@ -13,8 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci
       - run: npm run format
   lint:
@@ -23,8 +23,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci
       - run: npm run lint
   test:
@@ -33,8 +33,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci
       - run: npm test -- --run --coverage
       - uses: actions/upload-artifact@v4
@@ -107,6 +107,135 @@ jobs:
           workspaces: src-tauri
       - name: cargo check (default — Kafka excluded; MSYS64 cmake issue, see crate README)
         run: cargo check --workspace --exclude sorng-kafka
+
+  # ── t8-e19 + t8-e21: wrapped OPKSSH contract + optional staging gate ──
+  # Phase E is proceeding under the relaxed dylink recommendation. This
+  # lane verifies both the default CLI-fallback contract and the explicit
+  # metadata-wrapper build gate, then exercises the staging helper in both
+  # disabled and enabled modes so Tauri resource-copy truth stays aligned
+  # with the optional bundle contract.
+  rust-opkssh-targeted:
+    name: OPKSSH targeted (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    env:
+      SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: windows
+          - os: macos-latest
+            target: macos
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out pinned OPKSSH source (193d79871f3bad3cd27cfb94734c265773a99c9b)
+        uses: actions/checkout@v4
+        with:
+          repository: openpubkey/opkssh
+          ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
+          fetch-depth: 1
+          path: .ci/opkssh-source
+      - name: Install Go toolchain for embedded OPKSSH bridge
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.12"
+          cache-dependency-path: .ci/opkssh-source/go.sum
+      - name: Pin MSVC host toolchain (explicit)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: rustup set default-host x86_64-pc-windows-msvc
+      - name: Install Rust toolchain (non-Windows)
+        if: runner.os != 'Windows'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (Windows MSVC)
+        if: runner.os == 'Windows'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-msvc
+      - name: Verify MSVC host active
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          rustc -vV
+          rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo test (OPKSSH default wrapper contract)
+        run: cargo test -p sorng-opkssh --tests -- --nocapture
+      - name: cargo test (OPKSSH vendored-wrapper feature contract)
+        run: cargo test -p sorng-opkssh --tests --features vendored-wrapper -- --nocapture
+      - name: cargo check (app feature forwards OPKSSH vendored wrapper)
+        run: cargo check -p app --features opkssh-vendored-wrapper
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: verify OPKSSH vendor staging defaults to disabled cleanup
+        run: node ../scripts/stage-opkssh-vendor.mjs --disable
+      - name: stage OPKSSH vendor artifact into the Tauri resource tree
+        run: node ../scripts/stage-opkssh-vendor.mjs --enable
+
+  # ── t7-e19: targeted RDP gate across Linux + Windows ───────────────
+  # This keeps the Phase C RDP surface blocking in normal CI without
+  # depending on Docker: explicit app `rdp` feature build, input PDU
+  # goldens, reconnect regression, and the deterministic RDPDR harness.
+  # The live ignored RDP golden-path / RDPDR smoke stays in e2e.yml.
+  rust-rdp-targeted:
+    name: RDP targeted (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: windows
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin MSVC host toolchain (explicit)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: rustup set default-host x86_64-pc-windows-msvc
+      - name: Install Rust toolchain (Linux)
+        if: runner.os == 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (Windows MSVC)
+        if: runner.os == 'Windows'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-msvc
+      - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config libssl-dev
+      - name: Verify MSVC host active
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          rustc -vV
+          rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo check (-p app --features rdp)
+        run: cargo check -p app --features rdp
+      - name: cargo test (RDP input goldens)
+        run: cargo test -p sorng-rdp --lib input::tests
+      - name: cargo test (RDP reconnect regression)
+        run: cargo test -p sorng-rdp --test reconnect -- --nocapture
+      - name: cargo test (RDPDR deterministic harness)
+        run: cargo test -p sorng-rdp --features docker-e2e --test rdpdr_e2e -- --nocapture
 
   # ── t3-e2: feature-flag cleanup + -D warnings gate (R4) ────────────
   # The two jobs below are owned by executor t3-e2 and are DISJOINT

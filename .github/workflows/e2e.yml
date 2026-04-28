@@ -10,12 +10,15 @@ name: Docker e2e (nightly)
 #
 # Trigger:
 #   - schedule: nightly at 03:00 UTC
+#   - push: post-merge gate on `main`
 #   - workflow_dispatch: manual run
 #   - pull_request with the `e2e` label (opt-in per-PR run)
 
 on:
   schedule:
     - cron: "0 3 * * *"
+  push:
+    branches: [main]
   workflow_dispatch: {}
   pull_request:
     types: [labeled, synchronize, reopened]
@@ -42,6 +45,10 @@ env:
   FTP_TEST_PORT: "2121"
   FTP_TEST_USER: testuser
   FTP_TEST_PASSWORD: testpass
+  RDP_HOST: 127.0.0.1
+  RDP_PORT: "13389"
+  RDP_USER: ubuntu
+  RDP_PASSWORD: ubuntu
   SMB_HOST: 127.0.0.1
   SMB_PORT: "1445"
   SMB_USER: sorngtest
@@ -84,6 +91,18 @@ jobs:
             build-essential pkg-config libssl-dev \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
             librsvg2-dev libsoup-3.0-dev libsamba-policy-dev || true
+
+      # ── t8-e19: wrapped-contract + packaging-truthfulness smoke ────
+      # Keep nightly/manual evidence aligned with the relaxed dylink ADR:
+      # the current product path is the wrapped Rust seam plus CLI fallback,
+      # not a bundled OPKSSH shared-library artifact.
+      - name: OPKSSH wrapped-contract smoke (t8-e19)
+        id: test-opkssh-contract
+        continue-on-error: true
+        working-directory: src-tauri
+        run: |
+          cargo test -p sorng-opkssh --tests -- --nocapture \
+            2>&1 | tee ../e2e-opkssh-contract.log
 
       - name: Prepare compose .env
         working-directory: e2e
@@ -165,13 +184,23 @@ jobs:
 
       - name: RDP golden path (t3-e7)
         id: test-rdp
-        continue-on-error: true
         working-directory: src-tauri
         run: |
           cargo test -p sorng-rdp --test golden_path \
             -- --ignored --nocapture 2>&1 | tee ../e2e-rdp.log
 
+      - name: RDPDR live smoke (t7-e16)
+        if: always()
+        id: test-rdpdr-live
+        working-directory: src-tauri
+        run: |
+          cargo test -p sorng-rdp --features docker-e2e \
+            --test rdpdr_e2e live_rdpdr_docker_harness \
+            -- --ignored --nocapture --test-threads=1 \
+            2>&1 | tee ../e2e-rdpdr-live.log
+
       - name: VNC golden path (t3-e7)
+        if: always()
         id: test-vnc
         continue-on-error: true
         working-directory: src-tauri
@@ -181,6 +210,7 @@ jobs:
 
       # ── t3-e8: SoftEther e2e ───────────────────────────────────────
       - name: SoftEther e2e (t3-e8)
+        if: always()
         id: test-softether
         continue-on-error: true
         working-directory: src-tauri
@@ -191,6 +221,7 @@ jobs:
 
       # ── t3-e5: FTP wiring smoke ───────────────────────────────────
       - name: FTP wire smoke (t3-e5)
+        if: always()
         id: test-ftp
         continue-on-error: true
         working-directory: src-tauri
@@ -216,10 +247,12 @@ jobs:
         with:
           name: e2e-test-output
           path: |
+            e2e-opkssh-contract.log
             e2e-ssh.log
             e2e-sftp.log
             e2e-smb.log
             e2e-rdp.log
+            e2e-rdpdr-live.log
             e2e-vnc.log
             e2e-softether.log
             e2e-ftp.log
@@ -250,20 +283,24 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| test | outcome |" >> $GITHUB_STEP_SUMMARY
           echo "|------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| opkssh wrapped contract (t8-e19) | ${{ steps.test-opkssh-contract.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ssh (t3-e6) | ${{ steps.test-ssh.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| sftp (t3-e6) | ${{ steps.test-sftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| smb (t3-e7) | ${{ steps.test-smb.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| rdp (t3-e7) | ${{ steps.test-rdp.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| rdpdr live (t7-e16) | ${{ steps.test-rdpdr-live.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| vnc (t3-e7) | ${{ steps.test-vnc.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| softether (t3-e8) | ${{ steps.test-softether.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ftp (t3-e5) | ${{ steps.test-ftp.outcome }} |" >> $GITHUB_STEP_SUMMARY
           # Fail the job if any test step failed.
           fails=0
           for o in \
+            "${{ steps.test-opkssh-contract.outcome }}" \
             "${{ steps.test-ssh.outcome }}" \
             "${{ steps.test-sftp.outcome }}" \
             "${{ steps.test-smb.outcome }}" \
             "${{ steps.test-rdp.outcome }}" \
+            "${{ steps.test-rdpdr-live.outcome }}" \
             "${{ steps.test-vnc.outcome }}" \
             "${{ steps.test-softether.outcome }}" \
             "${{ steps.test-ftp.outcome }}"; do
