@@ -29,17 +29,12 @@ pub async fn mrng_get_export_formats() -> Result<Vec<Value>, String> {
 // ─── Encryption Detection ───────────────────────────────────────
 
 #[tauri::command]
-pub async fn mrng_detect_encryption(
-    xml_content: String,
-) -> Result<EncryptionInfo, String> {
-    super::service::MremotengService::detect_encryption(&xml_content)
-        .map_err(|e| e.to_string())
+pub async fn mrng_detect_encryption(xml_content: String) -> Result<EncryptionInfo, String> {
+    super::service::MremotengService::detect_encryption(&xml_content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn mrng_validate_xml_detailed(
-    xml_content: String,
-) -> Result<Value, String> {
+pub async fn mrng_validate_xml_detailed(xml_content: String) -> Result<Value, String> {
     let svc = super::service::MremotengService::new();
     let svc = svc.lock().await;
     svc.validate_xml_detailed(&xml_content)

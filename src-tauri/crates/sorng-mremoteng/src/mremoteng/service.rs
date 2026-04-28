@@ -182,7 +182,9 @@ impl MremotengService {
     ) -> MremotengResult<MrngImportResult> {
         // Check if file is encrypted and requires password
         let encryption_info = Self::detect_encryption(xml_content)?;
-        if encryption_info.requires_password && config.password.as_ref().map_or(true, |p| p.is_empty()) {
+        if encryption_info.requires_password
+            && config.password.as_ref().map_or(true, |p| p.is_empty())
+        {
             return Err(MremotengError::EncryptionRequired(
                 "This file is encrypted and requires a password to import".into(),
             ));
@@ -529,14 +531,61 @@ impl MremotengService {
         }))
     }
 
+    /// Get last import result.
+    pub fn get_last_import(&self) -> Option<&MrngImportResult> {
+        self.last_import.as_ref()
+    }
 
+    /// Get last export result.
+    pub fn get_last_export(&self) -> Option<&MrngExportResult> {
+        self.last_export.as_ref()
+    }
 
+    /// Set the default password for operations.
+    pub fn set_default_password(&mut self, password: &str) {
+        self.default_password = password.to_string();
+    }
 
+    /// Set the KDF iteration count.
+    pub fn set_kdf_iterations(&mut self, iterations: u32) {
+        self.kdf_iterations = iterations;
+    }
+}
+
+fn count_connections(nodes: &[MrngConnectionInfo]) -> usize {
+    let mut count = 0;
+    for node in nodes {
+        if node.node_type == MrngNodeType::Connection {
+            count += 1;
+        }
+        count += count_connections(&node.children);
+    }
+    count
+}
+
+fn count_containers(nodes: &[MrngConnectionInfo]) -> usize {
+    let mut count = 0;
+    for node in nodes {
+        if node.node_type == MrngNodeType::Container {
+            count += 1;
+        }
+        count += count_containers(&node.children);
+    }
+    count
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_service() -> MremotengService {
+        MremotengService {
+            default_password: String::new(),
+            kdf_iterations: 1000,
+            last_import: None,
+            last_export: None,
+        }
+    }
 
     #[test]
     fn test_detect_encryption_not_encrypted() {
@@ -546,7 +595,7 @@ mod tests {
     <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
 </Connections>"#;
 
-        let info = detect_encryption(xml).unwrap();
+        let info = MremotengService::detect_encryption(xml).unwrap();
         assert!(!info.is_encrypted);
         assert!(!info.full_file_encryption);
         assert!(!info.requires_password);
@@ -560,7 +609,7 @@ mod tests {
     <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
 </Connections>"#;
 
-        let info = detect_encryption(xml).unwrap();
+        let info = MremotengService::detect_encryption(xml).unwrap();
         assert!(info.is_encrypted);
         assert!(info.full_file_encryption);
         assert!(info.requires_password);
@@ -575,7 +624,7 @@ mod tests {
     <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
 </Connections>"#;
 
-        let info = detect_encryption(xml).unwrap();
+        let info = MremotengService::detect_encryption(xml).unwrap();
         assert!(info.is_encrypted);
         assert!(!info.full_file_encryption);
         assert!(!info.requires_password); // Partial encryption doesn't require password for import
@@ -589,7 +638,7 @@ mod tests {
     <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
 </Connections>"#;
 
-        let mut service = MremotengService::new();
+        let mut service = test_service();
         let config = MrngImportConfig::default(); // No password
 
         let result = service.import_xml(xml, &config);
@@ -608,7 +657,7 @@ mod tests {
     <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
 </Connections>"#;
 
-        let service = MremotengService::new();
+        let service = test_service();
         let result = service.validate_xml_detailed(xml).unwrap();
         assert_eq!(result["version"], "2.7");
         assert_eq!(result["encrypted"], false);
@@ -617,5 +666,3 @@ mod tests {
         assert_eq!(result["totalConnections"], 1);
     }
 }
-
-
