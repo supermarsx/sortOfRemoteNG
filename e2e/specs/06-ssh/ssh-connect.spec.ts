@@ -1,6 +1,17 @@
 import { S } from '../../helpers/selectors';
 import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
 import { startContainers, stopContainers, SSH_PORT, waitForContainer } from '../../helpers/docker';
+import { selectCustomOption } from '../../helpers/forms';
+import {
+  countTextOccurrences,
+  getSshTerminalText,
+  openConnectionItem,
+  waitForConnectionItem,
+  waitForSessionTab,
+  waitForSshConnected,
+  waitForSshDisconnected,
+  waitForSshTerminalText,
+} from '../../helpers/ssh';
 
 async function createSSHConnection(name: string): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
@@ -15,8 +26,7 @@ async function createSSHConnection(name: string): Promise<void> {
   const hostnameInput = await $(S.editorHostname);
   await hostnameInput.setValue('localhost');
 
-  const protocolSelect = await $(S.editorProtocol);
-  await protocolSelect.selectByVisibleText('SSH');
+  await selectCustomOption(S.editorProtocol, ['SSH (Secure Shell)', 'SSH']);
 
   const portInput = await $(S.editorPort);
   await portInput.clearValue();
@@ -30,20 +40,13 @@ async function createSSHConnection(name: string): Promise<void> {
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
-  await browser.pause(500);
+  await waitForConnectionItem(name);
 }
 
-async function connectToSSH(): Promise<void> {
-  const tree = await $(S.connectionTree);
-  const item = await tree.$(S.connectionItem);
-  await item.doubleClick();
-
-  const terminal = await $(S.sshTerminal);
-  await terminal.waitForDisplayed({ timeout: 15_000 });
-}
-
-async function waitForPrompt(): Promise<void> {
-  await browser.pause(3000);
+async function connectToSSH(name: string): Promise<void> {
+  await openConnectionItem(name);
+  await waitForSshConnected();
+  await waitForSessionTab(name);
 }
 
 async function typeCommand(cmd: string): Promise<void> {
@@ -55,12 +58,12 @@ async function typeCommand(cmd: string): Promise<void> {
 
 describe('SSH Connect', () => {
   before(async () => {
-    startContainers();
+    startContainers(['test-ssh']);
     await waitForContainer('ssh', SSH_PORT, 30_000);
   });
 
   after(async () => {
-    stopContainers();
+    stopContainers(['test-ssh']);
   });
 
   beforeEach(async () => {
@@ -73,85 +76,97 @@ describe('SSH Connect', () => {
   });
 
   it('should connect to SSH server and show terminal', async () => {
-    await createSSHConnection('Test SSH');
-    await connectToSSH();
+    const connectionName = 'Test SSH';
+    await createSSHConnection(connectionName);
+    await connectToSSH(connectionName);
 
     const terminal = await $(S.sshTerminal);
     expect(await terminal.isDisplayed()).toBe(true);
   });
 
-  it('should show shell prompt after connecting', async () => {
-    await createSSHConnection('Test SSH');
-    await connectToSSH();
-    await waitForPrompt();
+  it('should show a connected shell state after connecting', async () => {
+    const connectionName = 'Test SSH';
+    await createSSHConnection(connectionName);
+    await connectToSSH(connectionName);
 
-    const terminal = await $(S.sshTerminal);
-    const text = await terminal.getText();
-    // Shell prompt typically contains $ or the username
-    expect(text.length).toBeGreaterThan(0);
+    const text = await getSshTerminalText();
+    expect(text).toContain('Shell started successfully');
+    expect(text).toContain('Connected');
   });
 
   it('should execute whoami and show correct user', async () => {
-    await createSSHConnection('Test SSH');
-    await connectToSSH();
-    await waitForPrompt();
+    const connectionName = 'Test SSH';
+    await createSSHConnection(connectionName);
+    await connectToSSH(connectionName);
 
+    const beforeText = await getSshTerminalText();
+    const initialUserMatches = countTextOccurrences(beforeText, 'testuser');
     await typeCommand('whoami');
-    await browser.pause(2000);
 
-    const terminal = await $(S.sshTerminal);
-    const text = await terminal.getText();
-    expect(text).toContain('testuser');
+    const text = await waitForSshTerminalText(['testuser'], {
+      previousText: beforeText,
+      minOccurrences: {
+        testuser: initialUserMatches + 1,
+      },
+      timeoutMsg: 'Expected whoami to print the SSH username',
+    });
+
+    expect(countTextOccurrences(text, 'testuser')).toBeGreaterThanOrEqual(initialUserMatches + 1);
   });
 
   it('should execute ls / and show common directories', async () => {
-    await createSSHConnection('Test SSH');
-    await connectToSSH();
-    await waitForPrompt();
+    const connectionName = 'Test SSH';
+    await createSSHConnection(connectionName);
+    await connectToSSH(connectionName);
 
+    const beforeText = await getSshTerminalText();
     await typeCommand('ls /');
-    await browser.pause(2000);
 
-    const terminal = await $(S.sshTerminal);
-    const text = await terminal.getText();
+    const text = await waitForSshTerminalText(['bin', 'etc'], {
+      previousText: beforeText,
+      timeoutMsg: 'Expected ls / to list common root directories',
+    });
+
     expect(text).toContain('bin');
     expect(text).toContain('etc');
   });
 
   it('should disconnect from SSH session', async () => {
-    await createSSHConnection('Test SSH');
-    await connectToSSH();
-    await waitForPrompt();
+    const connectionName = 'Test SSH';
+    await createSSHConnection(connectionName);
+    await connectToSSH(connectionName);
 
     const disconnectBtn = await $(S.terminalDisconnect);
     await disconnectBtn.click();
-    await browser.pause(1000);
 
-    // Terminal should no longer be active
+    const text = await waitForSshDisconnected();
+
     const terminal = await $(S.sshTerminal);
-    const isStillDisplayed = await terminal.isDisplayed().catch(() => false);
-    // Either terminal disappears or tab shows disconnected state
-    const tabs = await $$(S.sessionTab);
-    if ((await tabs.length) > 0) {
-      // Session tab still exists but terminal may be gone
-      expect(true).toBe(true);
-    } else {
-      expect(isStillDisplayed).toBe(false);
-    }
+    const reconnectBtn = await $(S.terminalReconnect);
+
+    expect(await terminal.isDisplayed()).toBe(true);
+    expect(await disconnectBtn.isEnabled()).toBe(false);
+    expect(await reconnectBtn.isDisplayed()).toBe(true);
+    expect(text).toContain('Disconnected from SSH session');
+    expect(text).toContain('Idle');
   });
 
-  it('should show tab in disconnected state after disconnect', async () => {
-    await createSSHConnection('Test SSH');
-    await connectToSSH();
-    await waitForPrompt();
+  it('should keep the session tab available for reconnect after disconnect', async () => {
+    const connectionName = 'Test SSH';
+    await createSSHConnection(connectionName);
+    await connectToSSH(connectionName);
 
     const disconnectBtn = await $(S.terminalDisconnect);
     await disconnectBtn.click();
-    await browser.pause(1000);
+    await waitForSshDisconnected();
+    await waitForSessionTab(connectionName);
 
-    // After disconnect the session tab should reflect the state change
     const tabs = await $$(S.sessionTab);
-    // Session terminated without crash
-    expect(tabs.length).toBeGreaterThanOrEqual(0);
+    const tabTexts = await tabs.map((tab) => tab.getText());
+    const reconnectBtn = await $(S.terminalReconnect);
+
+    expect(tabTexts.some((text) => text.includes(connectionName))).toBe(true);
+    expect(await reconnectBtn.isDisplayed()).toBe(true);
+    expect(await reconnectBtn.isEnabled()).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import net from 'net';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 export const SSH_PORT = 2222;
 export const RDP_PORT = 13389;
@@ -9,16 +10,29 @@ export const HTTP_PORT = 8443;
 export const MYSQL_PORT = 13306;
 export const FTP_PORT = 2121;
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COMPOSE_FILE = path.resolve(__dirname, '../docker-compose.yml');
 
-export function startContainers(): void {
-  execSync(`docker compose -f "${COMPOSE_FILE}" up -d`, {
+function formatServices(services?: string[]): string {
+  if (!services || services.length === 0) {
+    return '';
+  }
+
+  return ` ${services.map((service) => `"${service}"`).join(' ')}`;
+}
+
+export function startContainers(services?: string[]): void {
+  execSync(`docker compose -f "${COMPOSE_FILE}" up -d${formatServices(services)}`, {
     stdio: 'inherit',
   });
 }
 
-export function stopContainers(): void {
-  execSync(`docker compose -f "${COMPOSE_FILE}" down`, {
+export function stopContainers(services?: string[]): void {
+  const command = services && services.length > 0
+    ? `docker compose -f "${COMPOSE_FILE}" rm -sf${formatServices(services)}`
+    : `docker compose -f "${COMPOSE_FILE}" down`;
+
+  execSync(command, {
     stdio: 'inherit',
   });
 }

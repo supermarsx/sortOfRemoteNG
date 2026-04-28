@@ -6,6 +6,11 @@ import TauriDriverService from './helpers/tauri-service';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const windowsTarget = process.env.CARGO_BUILD_TARGET ?? 'x86_64-pc-windows-gnu';
+const tauriDriverPort = Number.parseInt(process.env.TAURI_DRIVER_PORT ?? '4444', 10);
+const connectionRetryTimeout = Number.parseInt(
+  process.env.WDIO_CONNECTION_RETRY_TIMEOUT ?? '120000',
+  10,
+);
 
 const tauriBinaryCandidates = [
   path.resolve(__dirname, '../src-tauri/target/release/app.exe'),
@@ -31,7 +36,7 @@ const tauriBinaryPath =
 export const config = {
   runner: 'local',
   hostname: '127.0.0.1',
-  port: 4444,
+  port: tauriDriverPort,
   path: '/',
   autoCompileOpts: {
     tsNodeOpts: {
@@ -63,7 +68,7 @@ export const config = {
   reporters: ['spec'],
 
   waitforTimeout: 15_000,
-  connectionRetryTimeout: 30_000,
+  connectionRetryTimeout,
   connectionRetryCount: 3,
 
   async before() {

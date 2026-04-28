@@ -48,6 +48,8 @@ export const S = {
   collectionName: '[data-testid="collection-name"]',
   collectionPassword: '[data-testid="collection-password"]',
   collectionConfirm: '[data-testid="collection-confirm"]',
+  collectionActionsTrigger: '[data-testid="collection-actions-trigger"]',
+  collectionActionMenu: '[data-testid="collection-action-menu"]',
 
   // Dialogs
   confirmDialog: '[data-testid="confirm-dialog"]',

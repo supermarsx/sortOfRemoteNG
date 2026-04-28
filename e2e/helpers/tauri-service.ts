@@ -4,7 +4,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 
-const DRIVER_PORT = 4444;
+const DRIVER_PORT = Number.parseInt(process.env.TAURI_DRIVER_PORT ?? '4444', 10);
 const DRIVER_START_TIMEOUT_MS = 30_000;
 const DRIVER_INSTALL_HINT =
   'cargo install tauri-driver --version 2.0.5 --locked';
@@ -93,7 +93,7 @@ export default class TauriDriverService {
     driverArgs: string[];
   } {
     const driverCommand = this.resolveDriverCommand();
-    const driverArgs: string[] = [];
+    const driverArgs: string[] = ['--port', String(DRIVER_PORT)];
 
     const nativeDriverPath = this.resolveNativeDriverPath();
     if (nativeDriverPath) {
