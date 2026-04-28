@@ -26,7 +26,7 @@ export const VariantConfigPanel: React.FC<Props> = ({ mgr }) => {
       <h5 className="text-sm font-medium text-[var(--color-text)]">
         {currentDescriptor.label} parameters
       </h5>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {currentDescriptor.paramSchema.fields.map((field) => (
           <FieldRow key={field.key} field={field} value={config[field.key]} onChange={(v) => update(field.key, v)} />
         ))}

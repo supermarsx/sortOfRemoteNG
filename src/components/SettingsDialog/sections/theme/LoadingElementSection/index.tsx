@@ -20,7 +20,7 @@ export const LoadingElementSection: React.FC<LoadingElementSectionProps> = ({
   const mgr = useLoadingElementSettings(settings, updateSettings);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <SectionHeading
         icon={<CircleDotDashed className="w-5 h-5" />}
         title="Loading Element"
