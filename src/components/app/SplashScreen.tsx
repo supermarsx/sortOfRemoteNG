@@ -2,8 +2,6 @@ import React from 'react';
 import { Monitor, Loader2 } from 'lucide-react';
 import { useSplashScreen } from '../../hooks/window/useSplashScreen';
 
-type Mgr = ReturnType<typeof useSplashScreen>;
-
 interface SplashScreenProps {
   isLoading: boolean;
   progress: number;
@@ -33,14 +31,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, progress,
       {/* Logo and Content */}
       <div className="relative z-10 flex flex-col items-center">
         {/* Animated Logo */}
-        <div className="relative mb-8">
+        <div className="relative mb-8 w-24 h-24">
           <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
           <div className="relative w-24 h-24 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center shadow-2xl shadow-primary/30">
             <Monitor size={48} className="text-[var(--color-text)]" />
           </div>
-          {/* Rotating ring */}
-          <div className="absolute -inset-3 border-2 border-primary/30 rounded-3xl animate-spin" style={{ animationDuration: '3s' }} />
-          <div className="absolute -inset-5 border border-accent/20 rounded-[2rem] animate-spin" style={{ animationDuration: '4s', animationDirection: 'reverse' }} />
         </div>
 
         {/* App Name */}
