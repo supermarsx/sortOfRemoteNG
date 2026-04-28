@@ -19,6 +19,7 @@ import {
 import { ConnectionSession } from '../../types/connection/connection';
 import { useHTTPViewer } from '../../hooks/protocol/useHTTPViewer';
 import { StatusBar } from '../ui/display';
+import { LoadingElement } from '../ui/display/loadingElement';
 import RDPTotpPanel from '../rdp/RDPTotpPanel';
 
 interface HTTPViewerProps {
@@ -46,7 +47,7 @@ function ErrorScreen({ m }: { m: Mgr }) {
 function ConnectingScreen({ m }: { m: Mgr }) {
   return (
     <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)]">
-      <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
+      <div className="mb-4"><LoadingElement size={48} ariaLabel="Connecting" /></div>
       <h2 className="text-lg font-medium">Connecting...</h2>
       <p className="text-[var(--color-textSecondary)] text-sm mt-2">{m.buildTargetUrl()}</p>
     </div>

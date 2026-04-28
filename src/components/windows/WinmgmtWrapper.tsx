@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import { ConnectionSession, WinrmConnectionSettings } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useWinmgmtSession } from "../../hooks/windows/useWinmgmtSession";
-import { Loader2, Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff } from "lucide-react";
+import { LoadingElement } from "../ui/display/loadingElement";
 import WinmgmtErrorScreen from "./WinmgmtErrorScreen";
 
 interface WinmgmtWrapperProps {
@@ -124,7 +125,7 @@ const WinmgmtWrapper: React.FC<WinmgmtWrapperProps> = ({
   if (loading && !isConnected) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 bg-[var(--color-background)]">
-        <Loader2 size={32} className="animate-spin text-[var(--color-accent)]" />
+        <LoadingElement size={40} ariaLabel="Connecting" />
         <p className="text-sm text-[var(--color-textSecondary)]">
           Connecting to {session.hostname}…
         </p>

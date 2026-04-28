@@ -1,6 +1,7 @@
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield, RefreshCw } from 'lucide-react';
+import { Monitor, Terminal, AlertCircle, ExternalLink, Shield, RefreshCw } from 'lucide-react';
+import { LoadingElement } from '../ui/display/loadingElement';
 import { ConnectionSession } from '../../types/connection/connection';
 import { isToolProtocol } from '../app/toolSession';
 import { isWinmgmtProtocol } from '../windows/WindowsToolPanel.helpers';
@@ -133,7 +134,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
       case 'connecting':
         return (
           <div className="flex flex-col items-center justify-center h-full text-[var(--color-textSecondary)]">
-            <Loader2 size={48} className="animate-spin mb-4" />
+            <div className="mb-4"><LoadingElement size={48} ariaLabel="Connecting" /></div>
             <h3 className="text-lg font-medium mb-2">Connecting...</h3>
             <p className="text-sm text-center">
               Establishing {session.protocol.toUpperCase()} connection to {session.hostname}
