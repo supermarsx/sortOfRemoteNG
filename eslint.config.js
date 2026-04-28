@@ -37,4 +37,18 @@ export default tseslint.config(
       "@next/next/no-img-element": "off", // Tauri/Vite app, not Next.js — no Image component available
     },
   },
+  {
+    files: ["src/hooks/ssh/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "VariableDeclarator[id.type='ArrayPattern'][id.elements.0.type='Identifier'][id.elements.0.name=/^(?!has)[A-Za-z0-9_]*(password|passphrase|secret)[A-Za-z0-9_]*$/i][init.type='CallExpression'][init.callee.name='useState']",
+          message:
+            "Do not store SSH secrets in React state. Use refs and explicit scrubbing instead.",
+        },
+      ],
+    },
+  },
 );
