@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertCircle, XCircle } from 'lucide-react';
 import { cx } from '../lib/cx';
+import { redactSecrets } from '../../../utils/errors/redact';
 
 export interface ErrorBannerProps {
   /** Error message to display. If null/empty, nothing is rendered. */
@@ -25,6 +26,8 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
 }) => {
   if (!error) return null;
 
+  const safeError = redactSecrets(error);
+
   return (
     <div
       className={cx(
@@ -37,7 +40,7 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
     >
       <div className={cx('flex items-center', compact ? 'space-x-1.5' : 'space-x-2')}>
         <AlertCircle size={compact ? 12 : 14} />
-        <span className={compact ? 'truncate' : undefined}>{error}</span>
+        <span className={compact ? 'truncate' : undefined}>{safeError}</span>
       </div>
       <button onClick={onClear} className={cx('hover:text-error', compact && 'flex-shrink-0')}>
         <XCircle size={compact ? 12 : 14} />

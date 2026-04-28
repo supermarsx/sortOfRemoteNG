@@ -23,6 +23,18 @@ describe("ErrorBanner", () => {
     expect(screen.getByText("Connection failed")).toBeDefined();
   });
 
+  it("redacts secrets before rendering", () => {
+    render(
+      <ErrorBanner
+        error="proxyCommandPassword=super-secret"
+        onClear={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("proxyCommandPassword=[redacted]")).toBeDefined();
+    expect(screen.queryByText(/super-secret/)).toBeNull();
+  });
+
   it("calls onClear when dismiss button is clicked", () => {
     const onClear = vi.fn();
     render(<ErrorBanner error="Error" onClear={onClear} />);

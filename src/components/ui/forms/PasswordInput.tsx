@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, InputHTMLAttributes } from 'react';
+import React, { forwardRef, useState, useRef, useEffect, useCallback, useMemo, InputHTMLAttributes } from 'react';
 import { Eye, EyeOff, Lock } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
 
@@ -24,13 +24,13 @@ export interface PasswordInputProps
  * maskCharacter, lockSavedPasswords, etc.) but can be overridden
  * per-instance via the `revealable` and `isSaved` props.
  */
-export const PasswordInput: React.FC<PasswordInputProps> = ({
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(({
   revealable,
   isSaved,
   className,
   style,
   ...rest
-}) => {
+}, ref) => {
   const { settings } = useSettings();
   const pr = settings.passwordReveal ?? {
     enabled: true,
@@ -150,6 +150,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
     <div className="relative w-full">
       <input
         {...rest}
+        ref={ref}
         type={visible ? 'text' : 'password'}
         className={`${className ?? ''} ${showButton ? 'pr-9' : ''}`}
         style={mergedStyle}
@@ -190,6 +191,8 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
       )}
     </div>
   );
-};
+});
+
+PasswordInput.displayName = 'PasswordInput';
 
 export default PasswordInput;
