@@ -5,6 +5,7 @@ import { GlobalSettings, Theme } from "../../../types/settings/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
 import { useThemeSettings, formatLabel } from "../../../hooks/settings/useThemeSettings";
 import { Checkbox, NumberInput, Slider, Select, Textarea} from '../../ui/forms';
+import { LoadingElementSection } from './theme/LoadingElementSection';
 
 type Mgr = ReturnType<typeof useThemeSettings>;
 
@@ -198,6 +199,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
       <GlowSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
       <TransparencySection mgr={mgr} settings={settings} updateSettings={updateSettings} />
       <AnimationsSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
+      <LoadingElementSection settings={settings} updateSettings={updateSettings} />
       <CustomCssSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
     </div>
   );
