@@ -13,8 +13,11 @@ export function useAccentColor(fallback: string): string {
     const body = document.body;
     const update = () => setColor(readAccent(fallback));
     update();
+    // ThemeManager writes the active accent into <body style="--color-accent: …">
+    // — observing only the style attribute keeps this hook from running on
+    // every unrelated body class flip in the rest of the app.
     const obs = new MutationObserver(update);
-    obs.observe(body, { attributes: true, attributeFilter: ['style', 'class'] });
+    obs.observe(body, { attributes: true, attributeFilter: ['style'] });
     return () => obs.disconnect();
   }, [fallback]);
 
