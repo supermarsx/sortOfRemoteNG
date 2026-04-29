@@ -232,6 +232,20 @@ export interface VariantDescriptor<T extends LoadingElementType = LoadingElement
   supportsCanvas: boolean;
   /** Variant has any rAF-driven animation; if false the variant is pure CSS. */
   hasRaf: boolean;
+  /**
+   * Fraction of the variant's box that geometry can bleed past — driven by
+   * 3D perspective, peak-scale pulses, and box-shadow halos. Used by the
+   * dispatcher to pick a per-variant render scale instead of a one-size
+   * shrink. 0 = no bleed (pure 2D, e.g. ring); 0.4 = heavy 3D bleed
+   * (lissajous, fibonacci sphere). Defaults to 0.4 when omitted.
+   */
+  boundsBleed?: number;
+  /**
+   * Variant's preferred render mode when settings.renderMode === 'auto'.
+   * Variants without a `dots` field don't get the auto-by-dot-count heuristic
+   * for free, so this lets each variant declare its own preference.
+   */
+  recommendedRenderMode?: 'dom' | 'canvas';
   /** Default config — used as the seed for both settings and call-site overrides. */
   defaultConfig: VariantConfigMap[T];
   /** Optional preset library shown in the settings dropdown. */

@@ -15,6 +15,9 @@ interface Props {
 export const VariantConfigPanel: React.FC<Props> = ({ mgr }) => {
   const { le, currentDescriptor, setVariantConfig } = mgr;
   const currentType = currentDescriptor.type as LoadingElementType;
+  // Schema-driven access reads fields by string key, so we need an
+  // indexable view of the union-typed config. The cast is contained
+  // to read-only access; writes go through the typed setVariantConfig.
   const config = le.perType[currentType] as unknown as Record<string, unknown>;
 
   const update = (key: string, value: unknown) => {

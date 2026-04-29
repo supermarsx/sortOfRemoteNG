@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSettings } from '../../contexts/SettingsContext';
 import { hashConfig } from '../../components/ui/display/loadingElement/runtime/configHash';
 import { recordLoadingElement } from '../../components/ui/display/loadingElement/runtime/recorder';
+import { mergeVariantConfig } from '../../components/ui/display/loadingElement/LoadingElement';
 import { REGISTRY } from '../../components/ui/display/loadingElement/registry';
 import {
   ALL_LOADING_ELEMENT_TYPES,
@@ -141,9 +142,7 @@ export function useLoadingElementAssets(): UseLoadingElementAssetsReturn {
   const currentConfigFor = useCallback(
     (type: LoadingElementType): VariantConfig => {
       const desc = REGISTRY[type];
-      const seed = (desc?.defaultConfig ?? {}) as unknown as Record<string, unknown>;
-      const stored = (leRef.current?.perType?.[type] ?? {}) as unknown as Record<string, unknown>;
-      return { ...seed, ...stored } as unknown as VariantConfig;
+      return mergeVariantConfig(desc.defaultConfig, leRef.current?.perType?.[type], undefined);
     },
     [],
   );
@@ -254,13 +253,14 @@ export function useLoadingElementAssets(): UseLoadingElementAssetsReturn {
   const generateAll = useCallback(
     async (types?: LoadingElementType[]): Promise<void> => {
       requireTauri();
-      const list = types ?? ALL_LOADING_ELEMENT_TYPES;
+      const list = (types ?? ALL_LOADING_ELEMENT_TYPES).filter(
+        (t) => REGISTRY[t]?.supportsCanvas !== false,
+      );
       for (const t of list) {
         try {
           await generate(t);
         } catch (err) {
-          // Surface but don't abort the batch — variants without canvas mode
-          // will reject; we still want the others to bake.
+          // Surface but don't abort the batch.
           // eslint-disable-next-line no-console
           console.warn(`[loading-element] precompute failed for ${t}:`, err);
         }
@@ -274,6 +274,7 @@ export function useLoadingElementAssets(): UseLoadingElementAssetsReturn {
     if (!cur) return;
     const have = cur.precomputed.assets ?? {};
     const missing = ALL_LOADING_ELEMENT_TYPES.filter((t) => {
+      if (REGISTRY[t]?.supportsCanvas === false) return false;
       const entry = have[t];
       if (!entry) return true;
       return entry.configHash !== hashConfig(currentConfigFor(t));

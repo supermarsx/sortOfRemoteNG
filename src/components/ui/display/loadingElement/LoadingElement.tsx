@@ -35,6 +35,23 @@ function deepMerge<T extends Record<string, unknown>>(base: T, over: Partial<T>)
   return { ...base, ...over };
 }
 
+/**
+ * Merge a variant's default config with the user's stored config and any
+ * per-call override into a single VariantConfig. The unsafe casts live
+ * here because VariantConfig is a non-discriminated union — TS can't
+ * unify the spread of different union members on its own.
+ */
+export function mergeVariantConfig(
+  defaultConfig: VariantConfig,
+  stored: VariantConfig | undefined,
+  over: Partial<VariantConfig> | undefined,
+): VariantConfig {
+  const seed = defaultConfig as unknown as Record<string, unknown>;
+  const s = (stored ?? {}) as unknown as Record<string, unknown>;
+  const o = (over ?? {}) as unknown as Record<string, unknown>;
+  return { ...seed, ...s, ...o } as unknown as VariantConfig;
+}
+
 const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   type,
   config,
@@ -70,13 +87,15 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   const resolvedColor = color
     ?? (le?.followsAccentColor ? accent : (le?.customColor ?? accent));
 
-  // Merge config: variant default ← settings.perType[type] ← per-call override
-  const mergedConfig = useMemo(() => {
-    const seed = finalDesc.defaultConfig as unknown as Record<string, unknown>;
-    const stored = (le?.perType?.[finalDesc.type] ?? {}) as unknown as Record<string, unknown>;
-    const over = (config ?? {}) as unknown as Record<string, unknown>;
-    return { ...seed, ...stored, ...over } as unknown as VariantConfig;
-  }, [finalDesc, le?.perType, config]);
+  // Merge config: variant default ← settings.perType[type] ← per-call override.
+  // The cast chain is isolated here on purpose — VariantConfig is a non-
+  // discriminated union; TS can't unify spread of different union members.
+  // Refactoring to a discriminated union is a larger change; this single
+  // helper keeps the unsafe casts contained.
+  const mergedConfig = useMemo(
+    () => mergeVariantConfig(finalDesc.defaultConfig, le?.perType?.[finalDesc.type], config),
+    [finalDesc, le?.perType, config],
+  );
 
   // Auto / dom / canvas — variants that don't support canvas always go DOM
   const requestedRender = le?.renderMode ?? 'auto';
@@ -85,7 +104,8 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
     if (!finalDesc.supportsCanvas) return 'dom';
     if (requestedRender === 'dom') return 'dom';
     if (requestedRender === 'canvas') return 'canvas';
-    // auto: canvas above 250 effective dots, else DOM
+    // auto: variant-declared preference wins, then dot-count heuristic
+    if (finalDesc.recommendedRenderMode) return finalDesc.recommendedRenderMode;
     const effectiveDots = (mergedConfig as { dots?: number }).dots ?? 0;
     return effectiveDots > 250 ? 'canvas' : 'dom';
   })();
@@ -146,25 +166,27 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
     paused: boolean; reducedMotion: boolean; className?: string; ariaLabel?: string;
   }>;
 
-  // Render the variant at ~58% of its slot. Wide wrapper margin gives every
-  // variant comfortable padding even with peak-scale pulses + 3D projection
-  // bleed + glow halos — nothing touches the wrapper edge under normal
-  // conditions. Wrapper itself stays overflow:visible so soft glow can
-  // still extend beyond when the parent allows.
-  const SAFE_SCALE = 0.58;
-  const renderSize = Math.max(8, Math.round(effectiveSizePx * SAFE_SCALE));
+  // Per-variant safe scale — each variant declares how much its geometry
+  // can bleed past its declared box (3D perspective, peak-scale pulses,
+  // glow halos). 1 - bleed gives the renderable fraction. Variants that
+  // don't bleed at all (Ring) fill their slot entirely; 3D variants
+  // (Lissajous, Fibonacci sphere, Ripple) shrink to ~0.6× to keep their
+  // bleed inside the wrapper.
+  const bleed = Math.max(0, Math.min(0.7, finalDesc.boundsBleed ?? 0.4));
+  const renderSize = Math.max(8, Math.round(effectiveSizePx * (1 - bleed)));
 
-  // Global glow — layered drop-shadow filter applied to the variant's
-  // rendering. Works uniformly on DOM, SVG, and canvas. At 0 the filter
-  // is omitted entirely so there's no extra GPU cost; at 1 a soft halo;
-  // at 3 a heavy bloom. The drop-shadow color falls back to the resolved
-  // loader color when no explicit glowColor is set in settings.
+  // Global glow — three layered drop-shadows scaled smoothly by intensity.
+  // At 0 the filter is omitted entirely (no GPU cost). Above 0 all three
+  // layers always render so there's no visual click at any threshold;
+  // each layer's blur radius scales linearly with intensity, so a low
+  // intensity yields a tight subtle halo and a high intensity yields a
+  // heavy bloom — same shape, different magnitude.
   const glowI = Math.max(0, le?.glowIntensity ?? 1);
   const glowColor = (le?.glowColor && le.glowColor.trim()) || resolvedColor;
   const glowFilter = glowI > 0
     ? `drop-shadow(0 0 ${(glowI * 3).toFixed(1)}px ${glowColor})`
     + ` drop-shadow(0 0 ${(glowI * 8).toFixed(1)}px ${glowColor})`
-    + (glowI > 1.4 ? ` drop-shadow(0 0 ${(glowI * 16).toFixed(1)}px ${glowColor})` : '')
+    + ` drop-shadow(0 0 ${(glowI * 16).toFixed(1)}px ${glowColor})`
     : undefined;
 
   return (
@@ -172,12 +194,13 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
       ref={ref}
       className={className}
       style={{
-        display: 'inline-block',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         width: effectiveSizePx,
         height: effectiveSizePx,
         position: 'relative',
         overflow: 'visible',
-        lineHeight: 0,
       }}
     >
       <div
