@@ -1,8 +1,3 @@
-// NOTE: `useLoadingElementAssets` is delivered by a separate batch. The
-// import path resolves at build time once that hook lands; until then this
-// file may show a missing-module diagnostic in editors but is intentionally
-// wired this way per the feature plan.
-
 import React from 'react';
 import { Trash2, RotateCw, Sparkles } from 'lucide-react';
 import { NumberInput, Select } from '../../../../ui/forms';
@@ -15,7 +10,6 @@ import {
 import { REGISTRY } from '../../../../ui/display/loadingElement/registry';
 import { hashConfig } from '../../../../ui/display/loadingElement/runtime/configHash';
 import type { UseLoadingElementSettings } from '../../../../../hooks/settings/useLoadingElementSettings';
-// eslint-disable-next-line import/no-unresolved
 import { useLoadingElementAssets } from '../../../../../hooks/settings/useLoadingElementAssets';
 
 interface Props {
@@ -47,18 +41,9 @@ function formatKB(bytes: number | undefined): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-interface AssetsApi {
-  inFlight?: Partial<Record<LoadingElementType, boolean>>;
-  generate: (type: LoadingElementType) => Promise<void> | void;
-  clear: (type: LoadingElementType) => Promise<void> | void;
-  generateAll: () => Promise<void> | void;
-  generateMissing: () => Promise<void> | void;
-  clearAll: () => Promise<void> | void;
-}
-
 export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
   const { le, setPrecomputed } = mgr;
-  const assets = (useLoadingElementAssets?.() ?? null) as AssetsApi | null;
+  const assets = useLoadingElementAssets();
 
   return (
     <div className="sor-settings-card">
@@ -195,9 +180,11 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
             {ALL_LOADING_ELEMENT_TYPES.map((type) => {
               const entry = le.precomputed.assets[type];
               const currentHash = hashConfig(le.perType[type]);
-              let status: '✓ ready' | '⚠ stale' | '— none' = '— none';
-              if (entry) status = entry.configHash === currentHash ? '✓ ready' : '⚠ stale';
-              const inFlight = !!assets?.inFlight?.[type];
+              const supported = REGISTRY[type].supportsCanvas;
+              let status: '✓ ready' | '⚠ stale' | '— none' | 'unsupported' = '— none';
+              if (!supported) status = 'unsupported';
+              else if (entry) status = entry.configHash === currentHash ? '✓ ready' : '⚠ stale';
+              const inFlight = assets?.inFlight?.has?.(type) ?? false;
               return (
                 <tr key={type} className="border-t border-[var(--color-border)]">
                   <td className="px-2 py-1.5 text-[var(--color-text)]">
@@ -206,6 +193,10 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
                   <td className="px-2 py-1.5">
                     {inFlight ? (
                       <span className="text-[var(--color-textMuted)]">…generating</span>
+                    ) : status === 'unsupported' ? (
+                      <span className="text-[var(--color-textMuted)] italic" title="Pure CSS variants can't currently be precomputed.">
+                        not supported
+                      </span>
                     ) : (
                       <span
                         className={
@@ -227,10 +218,10 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
                     <div className="inline-flex items-center gap-1">
                       <button
                         type="button"
-                        title="Regenerate"
+                        title={supported ? 'Regenerate' : 'This variant is pure CSS — precompute is not currently supported.'}
                         onClick={() => assets?.generate(type)}
-                        disabled={!assets || inFlight}
-                        className="p-1 rounded border border-[var(--color-border)] bg-[var(--color-input)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] disabled:opacity-50"
+                        disabled={!assets || inFlight || !supported}
+                        className="p-1 rounded border border-[var(--color-border)] bg-[var(--color-input)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <RotateCw className="w-3.5 h-3.5" />
                       </button>
@@ -239,7 +230,7 @@ export const PrecomputedAssetsPanel: React.FC<Props> = ({ mgr }) => {
                         title="Delete"
                         onClick={() => assets?.clear(type)}
                         disabled={!assets || !entry || inFlight}
-                        className="p-1 rounded border border-[var(--color-border)] bg-[var(--color-input)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] disabled:opacity-50"
+                        className="p-1 rounded border border-[var(--color-border)] bg-[var(--color-input)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
