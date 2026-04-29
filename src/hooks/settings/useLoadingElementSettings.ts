@@ -25,6 +25,8 @@ type CommonPatch = Partial<
     LoadingElementSettings,
     | 'followsAccentColor'
     | 'customColor'
+    | 'glowIntensity'
+    | 'glowColor'
     | 'pauseWhenOffScreen'
     | 'pauseWhenWindowHidden'
     | 'reducedMotionMode'
@@ -96,6 +98,8 @@ export function useLoadingElementSettings(
       const next: Partial<LoadingElementSettings> = {};
       if (patch.followsAccentColor !== undefined) next.followsAccentColor = patch.followsAccentColor;
       if (patch.customColor !== undefined) next.customColor = patch.customColor;
+      if (patch.glowIntensity !== undefined) next.glowIntensity = patch.glowIntensity;
+      if (patch.glowColor !== undefined) next.glowColor = patch.glowColor;
       if (patch.pauseWhenOffScreen !== undefined) next.pauseWhenOffScreen = patch.pauseWhenOffScreen;
       if (patch.pauseWhenWindowHidden !== undefined) next.pauseWhenWindowHidden = patch.pauseWhenWindowHidden;
       if (patch.reducedMotionMode !== undefined) next.reducedMotionMode = patch.reducedMotionMode as ReducedMotionMode;

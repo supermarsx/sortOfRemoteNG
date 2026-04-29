@@ -1,5 +1,5 @@
 import React from 'react';
-import { Checkbox, Select } from '../../../../ui/forms';
+import { Checkbox, NumberInput, Select, Slider } from '../../../../ui/forms';
 import { InfoTooltip } from '../../../../ui/InfoTooltip';
 import type {
   ReducedMotionMode,
@@ -53,6 +53,56 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
         />
         <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded">
           {le.customColor}
+        </span>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-[var(--color-textSecondary)]">
+          Glow intensity{' '}
+          <InfoTooltip text="Global drop-shadow halo applied on top of the variant's own glow. 0 disables the extra glow entirely; 3 is heavy bloom." />
+        </label>
+        <div className="flex items-center gap-3">
+          <Slider
+            value={le.glowIntensity ?? 1}
+            onChange={(v: number) => setCommon({ glowIntensity: v })}
+            min={0}
+            max={3}
+            step={0.05}
+            variant="full"
+            className="flex-1"
+          />
+          <NumberInput
+            value={Number((le.glowIntensity ?? 1).toFixed(2))}
+            onChange={(v: number) => setCommon({ glowIntensity: v })}
+            min={0}
+            max={3}
+            step={0.05}
+            className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <label className="text-xs text-[var(--color-textSecondary)] w-32">
+          Glow color{' '}
+          <InfoTooltip text="Color of the drop-shadow halo. Empty = follow the loader color." />
+        </label>
+        <input
+          type="color"
+          value={le.glowColor && le.glowColor.startsWith('#') ? le.glowColor : (le.customColor || '#00f0ff')}
+          onChange={(e) => setCommon({ glowColor: e.target.value })}
+          className="w-10 h-8 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
+        />
+        <button
+          type="button"
+          onClick={() => setCommon({ glowColor: '' })}
+          className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-input)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)]"
+          title="Clear — let glow follow the loader color"
+        >
+          Match loader
+        </button>
+        <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded">
+          {le.glowColor || '(loader)'}
         </span>
       </div>
 
