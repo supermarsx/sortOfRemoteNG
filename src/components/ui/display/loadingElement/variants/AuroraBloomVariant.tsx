@@ -155,6 +155,7 @@ export const descriptor: VariantDescriptor<'auroraBloom'> = {
   minRecommendedSize: 32,
   supportsCanvas: false,
   hasRaf: false,
+  boundsBleed: 0.1,
   defaultConfig: DEFAULT_AURORA_BLOOM,
   presets: [
     { id: 'classic', label: 'Classic', config: {} },

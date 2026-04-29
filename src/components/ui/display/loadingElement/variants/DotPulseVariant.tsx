@@ -152,6 +152,7 @@ export const descriptor: VariantDescriptor<'dotPulse'> = {
   minRecommendedSize: 24,
   supportsCanvas: false,
   hasRaf: false,
+  boundsBleed: 0.05,
   defaultConfig: DEFAULT_DOT_PULSE,
   presets: [
     { id: 'default',  label: 'Default',  config: DEFAULT_DOT_PULSE },

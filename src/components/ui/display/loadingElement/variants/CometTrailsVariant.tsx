@@ -185,6 +185,7 @@ export const descriptor: VariantDescriptor<'cometTrails'> = {
   minRecommendedSize: 24,
   supportsCanvas: false,
   hasRaf: false,
+  boundsBleed: 0.08,
   defaultConfig: DEFAULT_COMET_TRAILS,
   presets: [
     { id: 'default',   label: 'Default',   config: DEFAULT_COMET_TRAILS },

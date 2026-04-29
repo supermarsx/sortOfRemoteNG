@@ -152,6 +152,7 @@ export const descriptor: VariantDescriptor<'tvStatic'> = {
   minRecommendedSize: 32,
   supportsCanvas: true,
   hasRaf: true,
+  boundsBleed: 0.1,
   defaultConfig: DEFAULT_TV_STATIC,
   presets: [
     { id: 'classic', label: 'Classic', config: {} },

@@ -128,6 +128,7 @@ export const descriptor: VariantDescriptor<'hologram'> = {
   minRecommendedSize: 32,
   supportsCanvas: false,
   hasRaf: false,
+  boundsBleed: 0.05,
   defaultConfig: DEFAULT_HOLOGRAM,
   presets: [
     { id: 'default', label: 'Default', config: DEFAULT_HOLOGRAM },

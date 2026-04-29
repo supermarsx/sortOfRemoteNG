@@ -162,6 +162,7 @@ export const descriptor: VariantDescriptor<'phyllotaxis'> = {
   minRecommendedSize: 32,
   supportsCanvas: true,
   hasRaf: true,
+  boundsBleed: 0.05,
   defaultConfig: DEFAULT_PHYLLOTAXIS,
   presets: [
     { id: 'classic', label: 'Classic', config: {} },

@@ -69,6 +69,8 @@ export const descriptor: VariantDescriptor<'ring'> = {
   minRecommendedSize: 12,
   supportsCanvas: false,
   hasRaf: false,
+  boundsBleed: 0,
+  recommendedRenderMode: 'dom',
   defaultConfig: DEFAULT_RING,
   presets: [{ id: 'classic', label: 'Classic', config: {} }],
   paramSchema: {

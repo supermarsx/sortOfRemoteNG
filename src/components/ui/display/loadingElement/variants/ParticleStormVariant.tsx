@@ -143,6 +143,7 @@ export const descriptor: VariantDescriptor<'particleStorm'> = {
   minRecommendedSize: 24,
   supportsCanvas: false,
   hasRaf: false,
+  boundsBleed: 0.05,
   defaultConfig: DEFAULT_PARTICLE_STORM,
   presets: [
     { id: 'default', label: 'Default', config: DEFAULT_PARTICLE_STORM },
