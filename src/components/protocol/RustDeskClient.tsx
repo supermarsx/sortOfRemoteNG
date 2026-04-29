@@ -103,7 +103,6 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
           <ConnectingSpinner
             message="Connecting to RustDesk..."
             detail={session.hostname}
-            color="border-warning"
           />
         )}
         
