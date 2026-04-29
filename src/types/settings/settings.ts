@@ -8,6 +8,7 @@ export * from '../ssh/sshSettings';
 import type { BackupConfig } from './backupSettings';
 import type { CloudSyncConfig } from './cloudSyncSettings';
 import type { OpenVPNConfig } from './vpnSettings';
+import type { LoadingElementSettings } from '../../components/ui/display/loadingElement/types';
 import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings';
 import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
 import type { ClipboardDirection, RdpPrinterOutputMode } from '../connection/connection';
@@ -236,7 +237,7 @@ export interface GlobalSettings {
   showTransparencyToggle: boolean;
 
   // Loading Element — see src/components/ui/display/loadingElement/types.ts
-  loadingElement: import('../../components/ui/display/loadingElement/types').LoadingElementSettings;
+  loadingElement: LoadingElementSettings;
 
   // Secondary Bar Toggles
   showQuickConnectIcon: boolean;
