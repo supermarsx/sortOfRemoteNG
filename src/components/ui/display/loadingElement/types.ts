@@ -142,6 +142,15 @@ export interface LoadingElementSettings {
   defaultType: LoadingElementType;
   followsAccentColor: boolean;
   customColor: string;
+  /**
+   * Global glow multiplier applied as a layered drop-shadow on the
+   * variant's rendering. 0 = no extra glow (variant's own glow only),
+   * 1 = default soft halo, 3 = intense bloom. Works uniformly across
+   * every variant, DOM and canvas.
+   */
+  glowIntensity: number;
+  /** Glow color. When undefined / empty, follows the resolved loader color. */
+  glowColor: string;
   pauseWhenOffScreen: boolean;
   pauseWhenWindowHidden: boolean;
   reducedMotionMode: ReducedMotionMode;

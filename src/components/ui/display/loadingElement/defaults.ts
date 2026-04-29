@@ -58,6 +58,8 @@ export const DEFAULT_LOADING_ELEMENT_SETTINGS: LoadingElementSettings = {
   defaultType: 'lissajous',
   followsAccentColor: true,
   customColor: '#00f0ff',
+  glowIntensity: 1.0,
+  glowColor: '',
   pauseWhenOffScreen: true,
   pauseWhenWindowHidden: true,
   reducedMotionMode: 'auto',

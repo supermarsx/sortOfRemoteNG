@@ -152,6 +152,19 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
   const SAFE_SCALE = 0.58;
   const renderSize = Math.max(8, Math.round(effectiveSizePx * SAFE_SCALE));
 
+  // Global glow — layered drop-shadow filter applied to the variant's
+  // rendering. Works uniformly on DOM, SVG, and canvas. At 0 the filter
+  // is omitted entirely so there's no extra GPU cost; at 1 a soft halo;
+  // at 3 a heavy bloom. The drop-shadow color falls back to the resolved
+  // loader color when no explicit glowColor is set in settings.
+  const glowI = Math.max(0, le?.glowIntensity ?? 1);
+  const glowColor = (le?.glowColor && le.glowColor.trim()) || resolvedColor;
+  const glowFilter = glowI > 0
+    ? `drop-shadow(0 0 ${(glowI * 3).toFixed(1)}px ${glowColor})`
+    + ` drop-shadow(0 0 ${(glowI * 8).toFixed(1)}px ${glowColor})`
+    + (glowI > 1.4 ? ` drop-shadow(0 0 ${(glowI * 16).toFixed(1)}px ${glowColor})` : '')
+    : undefined;
+
   return (
     <div
       ref={ref}
@@ -174,6 +187,7 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
           justifyContent: 'center',
           pointerEvents: 'none',
           overflow: 'visible',
+          filter: glowFilter,
         }}
       >
         <Variant
