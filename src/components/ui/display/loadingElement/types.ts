@@ -151,6 +151,12 @@ export interface LoadingElementSettings {
   glowIntensity: number;
   /** Glow color. When undefined / empty, follows the resolved loader color. */
   glowColor: string;
+  /**
+   * Global size multiplier applied on top of the consumer-requested size.
+   * 1 = no change, 0.5 = half size, 2 = double. Lets users dial down or up
+   * every loader app-wide without each call site changing.
+   */
+  sizeScale: number;
   pauseWhenOffScreen: boolean;
   pauseWhenWindowHidden: boolean;
   reducedMotionMode: ReducedMotionMode;

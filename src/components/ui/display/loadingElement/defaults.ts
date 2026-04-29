@@ -60,6 +60,7 @@ export const DEFAULT_LOADING_ELEMENT_SETTINGS: LoadingElementSettings = {
   customColor: '#00f0ff',
   glowIntensity: 1.0,
   glowColor: '',
+  sizeScale: 1.0,
   pauseWhenOffScreen: true,
   pauseWhenWindowHidden: true,
   reducedMotionMode: 'auto',

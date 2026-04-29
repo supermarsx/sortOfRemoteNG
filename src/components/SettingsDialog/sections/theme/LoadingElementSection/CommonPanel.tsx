@@ -58,6 +58,32 @@ export const CommonPanel: React.FC<Props> = ({ mgr }) => {
 
       <div className="space-y-1">
         <label className="text-xs text-[var(--color-textSecondary)]">
+          Size scale{' '}
+          <InfoTooltip text="Global multiplier applied on top of the size each call site requests. 1 = no change, 0.5 = half, 2 = double." />
+        </label>
+        <div className="flex items-center gap-3">
+          <Slider
+            value={le.sizeScale ?? 1}
+            onChange={(v: number) => setCommon({ sizeScale: v })}
+            min={0.5}
+            max={2}
+            step={0.05}
+            variant="full"
+            className="flex-1"
+          />
+          <NumberInput
+            value={Number((le.sizeScale ?? 1).toFixed(2))}
+            onChange={(v: number) => setCommon({ sizeScale: v })}
+            min={0.25}
+            max={3}
+            step={0.05}
+            className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-[var(--color-textSecondary)]">
           Glow intensity{' '}
           <InfoTooltip text="Global drop-shadow halo applied on top of the variant's own glow. 0 disables the extra glow entirely; 3 is heavy bloom." />
         </label>

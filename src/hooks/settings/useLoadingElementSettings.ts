@@ -27,6 +27,7 @@ type CommonPatch = Partial<
     | 'customColor'
     | 'glowIntensity'
     | 'glowColor'
+    | 'sizeScale'
     | 'pauseWhenOffScreen'
     | 'pauseWhenWindowHidden'
     | 'reducedMotionMode'
@@ -100,6 +101,7 @@ export function useLoadingElementSettings(
       if (patch.customColor !== undefined) next.customColor = patch.customColor;
       if (patch.glowIntensity !== undefined) next.glowIntensity = patch.glowIntensity;
       if (patch.glowColor !== undefined) next.glowColor = patch.glowColor;
+      if (patch.sizeScale !== undefined) next.sizeScale = patch.sizeScale;
       if (patch.pauseWhenOffScreen !== undefined) next.pauseWhenOffScreen = patch.pauseWhenOffScreen;
       if (patch.pauseWhenWindowHidden !== undefined) next.pauseWhenWindowHidden = patch.pauseWhenWindowHidden;
       if (patch.reducedMotionMode !== undefined) next.reducedMotionMode = patch.reducedMotionMode as ReducedMotionMode;

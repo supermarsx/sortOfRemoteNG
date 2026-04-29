@@ -55,7 +55,9 @@ const InternalLoadingElement: React.FC<LoadingElementProps> = ({
 
   // Resolve type — prop wins, then settings default, then lissajous
   const effectiveType: LoadingElementType = (type ?? le?.defaultType ?? 'lissajous') as LoadingElementType;
-  const effectiveSizePx = resolveSize(size);
+  const requestedSizePx = resolveSize(size);
+  const sizeScale = Math.max(0.25, le?.sizeScale ?? 1);
+  const effectiveSizePx = Math.max(8, Math.round(requestedSizePx * sizeScale));
 
   // Auto-fallback to ring when below the variant's recommended size (e.g. a
   // particle storm rendered at 16px just becomes a fuzzy dot — useless).
