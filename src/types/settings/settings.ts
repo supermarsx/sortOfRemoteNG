@@ -1145,6 +1145,7 @@ export interface ToolDisplayModes {
   vpnEditor: 'tab';
   tunnelChainEditor: 'tab';
   tunnelProfileEditor: 'tab';
+  bulkEditor: 'tab';
 }
 
 export interface SettingsDialogConfig {

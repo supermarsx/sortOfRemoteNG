@@ -55,6 +55,7 @@ interface AppDialogsProps {
   passwordDialogMode: "setup" | "unlock";
   passwordError: string;
   importExportInitialTab: "import" | "export";
+  collectionSelectorInitialTab?: "collections" | "connections" | "proxies";
   diagnosticsConnection: Connection | null;
   setDiagnosticsConnection: (c: Connection | null) => void;
   hasStoragePassword: boolean;
@@ -95,6 +96,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     passwordDialogMode,
     passwordError,
     importExportInitialTab,
+    collectionSelectorInitialTab,
     diagnosticsConnection,
     setDiagnosticsConnection,
     hasStoragePassword,
@@ -136,6 +138,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         isOpen={showCollectionSelector}
         onCollectionSelect={handleCollectionSelect}
         onClose={() => setShowCollectionSelector(false)}
+        initialTab={collectionSelectorInitialTab}
       />
 
       <QuickConnect

@@ -1,7 +1,6 @@
 import React from 'react';
 import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ConnectionTree } from './ConnectionTree';
-import { BulkConnectionEditor } from './BulkConnectionEditor';
 import { Connection } from '../../types/connection/connection';
 import { useSidebar } from '../../hooks/connection/useSidebar';
 import { Checkbox, Select } from '../ui/forms';
@@ -107,7 +106,7 @@ const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
-const SidebarToolbar: React.FC<{ mgr: Mgr; onNewConnection: () => void; noCollection: boolean }> = ({ mgr, onNewConnection, noCollection }) => (
+const SidebarToolbar: React.FC<{ mgr: Mgr; onNewConnection: () => void; noCollection: boolean; onOpenBulkEditor?: () => void }> = ({ mgr, onNewConnection, noCollection, onOpenBulkEditor }) => (
   <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center space-x-1">
     <button onClick={onNewConnection} disabled={noCollection} className="p-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-primary" title={mgr.t('connections.new')} data-testid="toolbar-new-connection">
       <Plus size={14} />
@@ -116,7 +115,7 @@ const SidebarToolbar: React.FC<{ mgr: Mgr; onNewConnection: () => void; noCollec
       <FolderPlus size={14} />
     </button>
     <div className="flex-1" />
-    <button onClick={() => mgr.setShowBulkEditor(true)} disabled={noCollection} className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed" title="Bulk Edit">
+    <button onClick={() => onOpenBulkEditor?.()} disabled={noCollection || !onOpenBulkEditor} className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors disabled:opacity-35 disabled:cursor-not-allowed" title="Bulk Edit">
       <TableProperties size={14} />
     </button>
   </div>
@@ -138,6 +137,7 @@ interface SidebarProps {
   onShowPasswordDialog: () => void;
   enableConnectionReorder: boolean;
   onOpenImport?: () => void;
+  onOpenBulkEditor?: () => void;
   noCollection: boolean;
 }
 
@@ -154,6 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onActivateSession,
   enableConnectionReorder,
   onOpenImport,
+  onOpenBulkEditor,
   noCollection,
 }) => {
   const mgr = useSidebar();
@@ -167,7 +168,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {!mgr.state.sidebarCollapsed && (
           <>
             <SearchBar mgr={mgr} />
-            <SidebarToolbar mgr={mgr} onNewConnection={onNewConnection} noCollection={noCollection} />
+            <SidebarToolbar mgr={mgr} onNewConnection={onNewConnection} noCollection={noCollection} onOpenBulkEditor={onOpenBulkEditor} />
 
             <ConnectionTree
               onConnect={onConnect}
@@ -186,11 +187,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <BulkConnectionEditor
-        isOpen={mgr.showBulkEditor}
-        onClose={() => mgr.setShowBulkEditor(false)}
-        onEditConnection={onEditConnection}
-      />
     </>
   );
 };

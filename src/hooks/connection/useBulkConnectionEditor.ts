@@ -216,9 +216,8 @@ export function useBulkConnectionEditor(
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
-      if (e.key === 'Escape') {
-        if (editingCell) cancelEdit();
-        else onClose();
+      if (e.key === 'Escape' && editingCell) {
+        cancelEdit();
       }
       if (e.key === 'Enter' && editingCell) saveEdit();
       if (e.key === 'Tab' && editingCell) {
@@ -237,9 +236,8 @@ export function useBulkConnectionEditor(
   const handleEditInFullEditor = useCallback(
     (connection: Connection) => {
       onEditConnection?.(connection);
-      onClose();
     },
-    [onEditConnection, onClose],
+    [onEditConnection],
   );
 
   return {

@@ -10,7 +10,6 @@ export function useSidebar() {
   const { state, dispatch } = useConnections();
   const [showFilters, setShowFilters] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
-  const [showBulkEditor, setShowBulkEditor] = useState(false);
   const [isStorageEncrypted, setIsStorageEncrypted] = useState(false);
 
   useEffect(() => {
@@ -106,8 +105,6 @@ export function useSidebar() {
     setShowFilters,
     showSortMenu,
     setShowSortMenu,
-    showBulkEditor,
-    setShowBulkEditor,
     isStorageEncrypted,
     isStorageUnlocked,
     isFavoritesActive,

@@ -220,7 +220,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowCollectionSelector(true)}
               className="app-bar-button p-2"
-              title={t("toolbar.switchCollection", "Switch Collection")}
+              title={t("toolbar.switchCollection", "Collections")}
               data-testid="toolbar-collection"
             >
               <Database size={14} />
@@ -321,7 +321,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowBulkSSH(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t('bulkSsh.title', 'Bulk SSH Commander')}
+              title={t('bulkSsh.title', 'Bulk SSH')}
             >
               <Terminal size={14} />
             </button>

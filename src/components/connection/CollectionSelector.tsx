@@ -36,15 +36,23 @@ interface CollectionSelectorProps {
     password?: string,
   ) => Promise<void> | void;
   onClose: () => void;
+  initialTab?: "collections" | "connections" | "proxies";
 }
 
 export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   isOpen,
   onCollectionSelect,
   onClose,
+  initialTab,
 }) => {
   const { t } = useTranslation();
   const mgr = useCollectionSelector(isOpen, onCollectionSelect);
+
+  React.useEffect(() => {
+    if (isOpen && initialTab) {
+      mgr.setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab, mgr.setActiveTab]);
 
   if (!isOpen) return null;
 

@@ -1,13 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  X, Search, Trash2, Copy, Check, ChevronDown, ChevronUp,
+  Search, Trash2, Copy, ChevronDown, ChevronUp,
   FolderOpen, Server, Globe, Database, Terminal, Monitor,
   CheckSquare, Square, Minus, Star, RefreshCw, Edit3, KeyRound,
 } from 'lucide-react';
 import { Connection } from '../../types/connection/connection';
-import { Modal } from '../ui/overlays/Modal';
-import { DialogHeader } from '../ui/overlays/DialogHeader';
 import {
   useBulkConnectionEditor,
   type BulkConnectionEditorMgr,
@@ -38,15 +36,19 @@ const protocolIcons: Record<string, React.ReactNode> = {
 
 function BulkEditorHeader({ mgr }: { mgr: BulkConnectionEditorMgr }) {
   return (
-    <DialogHeader
-      icon={RefreshCw}
-      iconColor="text-primary"
-      iconBg="bg-primary/20"
-      title="Bulk Connection Editor"
-      subtitle={`${mgr.connections.length} connections • Double-click any cell to edit`}
-      onClose={mgr.onClose}
-      className="relative z-10 bg-[var(--color-surface)]"
-    />
+    <div className="relative z-10 flex items-center gap-3 px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="p-2 bg-primary/20 rounded-lg">
+        <RefreshCw size={16} className="text-primary" />
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-base font-semibold text-[var(--color-text)] leading-tight">
+          Bulk Connection Editor
+        </h2>
+        <p className="text-xs text-[var(--color-textSecondary)] truncate">
+          {mgr.connections.length} connections • Double-click any cell to edit
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -374,7 +376,7 @@ function BulkEditorFooter({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">Enter</kbd> to save
         </span>
         <span>
-          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">Esc</kbd> to close
+          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">Esc</kbd> to cancel edit
         </span>
       </div>
     </div>
@@ -429,30 +431,15 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
   if (!isOpen) return null;
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      closeOnEscape={false}
-      backdropClassName="bg-black/60 backdrop-blur-sm"
-      panelClassName="relative max-w-6xl rounded-xl border border-[var(--color-border)] shadow-2xl shadow-primary/10 h-[85vh] overflow-hidden"
-      contentClassName="relative bg-[var(--color-surface)]"
-      dataTestId="bulk-editor"
+    <div
+      className="relative h-full flex flex-col bg-[var(--color-surface)] overflow-hidden"
+      data-testid="bulk-editor"
     >
-      <div className="relative flex flex-1 min-h-0 flex-col">
-        {/* Scattered glow effect */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute w-[300px] h-[200px] bg-primary/[0.08] rounded-full blur-[100px] top-[15%] left-[10%]" />
-          <div className="absolute w-[250px] h-[250px] bg-info/[0.06] rounded-full blur-[120px] top-[40%] left-[35%]" />
-          <div className="absolute w-[280px] h-[180px] bg-primary/[0.06] rounded-full blur-[100px] top-[60%] right-[15%]" />
-          <div className="absolute w-[200px] h-[200px] bg-primary/[0.05] rounded-full blur-[80px] top-[25%] right-[25%]" />
-        </div>
-
-        <BulkEditorHeader mgr={mgr} />
-        <BulkEditorToolbar mgr={mgr} />
-        <ConnectionTable mgr={mgr} />
-        <BulkEditorFooter mgr={mgr} />
-        <DeleteConfirmDialog mgr={mgr} />
-      </div>
-    </Modal>
+      <BulkEditorHeader mgr={mgr} />
+      <BulkEditorToolbar mgr={mgr} />
+      <ConnectionTable mgr={mgr} />
+      <BulkEditorFooter mgr={mgr} />
+      <DeleteConfirmDialog mgr={mgr} />
+    </div>
   );
 };

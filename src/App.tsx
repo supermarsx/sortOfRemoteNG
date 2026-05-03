@@ -67,6 +67,7 @@ const AppContent: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
   const [showImportExport, setShowImportExport] = useState(false);
   const [importExportInitialTab, setImportExportInitialTab] = useState<'export' | 'import'>('export');
+  const [collectionSelectorInitialTab, setCollectionSelectorInitialTab] = useState<'collections' | 'connections' | 'proxies' | undefined>(undefined);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
   // isRdpPanelResizing is in useResizeHandlers hook
   const [showErrorLog, setShowErrorLog] = useState(false);
@@ -230,7 +231,7 @@ const AppContent: React.FC = () => {
       'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
       'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
       'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
-      'connectionEditor',
+      'connectionEditor', 'bulkEditor',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
@@ -1131,9 +1132,10 @@ const AppContent: React.FC = () => {
           onActivateSession={setActiveSessionId}
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
+          onOpenBulkEditor={() => toolShowSetters.current.bulkEditor(true)}
           onOpenImport={() => {
-            setImportExportInitialTab('import');
-            setShowImportExport(true);
+            setCollectionSelectorInitialTab('connections');
+            setShowCollectionSelector(true);
           }}
           noCollection={!collectionManager.getCurrentCollection()}
         />
@@ -1189,10 +1191,13 @@ const AppContent: React.FC = () => {
         collectionManager={collectionManager}
         connections={state.connections}
         setShowQuickConnect={setShowQuickConnect}
-        setShowCollectionSelector={setShowCollectionSelector}
+        setShowCollectionSelector={(v) => {
+          if (v) setCollectionSelectorInitialTab('collections');
+          setShowCollectionSelector(v);
+        }}
         openImportExport={() => {
-          setImportExportInitialTab('export');
-          setShowImportExport(true);
+          setCollectionSelectorInitialTab('connections');
+          setShowCollectionSelector(true);
         }}
         setShowSettings={handleOpenSettings}
         setRdpPanelOpen={toolShowSetters.current.rdpSessions}
@@ -1253,7 +1258,7 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} />}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} />}
                 showTabBar={false}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
@@ -1324,6 +1329,7 @@ const AppContent: React.FC = () => {
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}
         importExportInitialTab={importExportInitialTab}
+        collectionSelectorInitialTab={collectionSelectorInitialTab}
         diagnosticsConnection={diagnosticsConnection}
         setDiagnosticsConnection={setDiagnosticsConnection}
         hasStoragePassword={hasStoragePassword}

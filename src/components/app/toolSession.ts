@@ -34,6 +34,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   vpnEditor: "VPN Connection",
   tunnelChainEditor: "Tunnel Chain Editor",
   tunnelProfileEditor: "Tunnel Profile",
+  bulkEditor: "Bulk Editor",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>

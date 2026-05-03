@@ -128,6 +128,10 @@ const TunnelProfileEditorPanel = dynamic(
   () => import("../network/proxyChainMenu/TunnelProfileEditorPanel"),
   { ssr: false },
 );
+const BulkConnectionEditor = dynamic(
+  () => import("../connection/BulkConnectionEditor").then((m) => m.BulkConnectionEditor),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -136,13 +140,14 @@ interface ToolTabViewerProps {
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
   onReconnect?: (connection: import("../../types/connection/connection").Connection) => void;
+  onEditConnection?: (connection: import("../../types/connection/connection").Connection) => void;
 }
 
 /**
  * Renders the appropriate tool component inside a session tab.
  * Used by SessionViewer when the session protocol starts with "tool:".
  */
-export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect }) => {
+export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect, onEditConnection }) => {
   const { state } = useConnections();
   const { settings } = useSettings();
   const toolKey = getToolKeyFromProtocol(session.protocol);
@@ -183,6 +188,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, 
       {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
       {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
       {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
+      {toolKey === 'bulkEditor' && (
+        <BulkConnectionEditor isOpen onClose={onClose} onEditConnection={onEditConnection} />
+      )}
       {toolKey === 'connectionEditor' && (
         <FeatureErrorBoundary
           boundaryKey={session.connectionId}

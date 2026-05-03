@@ -51,6 +51,7 @@ interface SessionViewerProps {
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
   onReconnect?: (connection: import("../../types/connection/connection").Connection) => void;
+  onEditConnection?: (connection: import("../../types/connection/connection").Connection) => void;
 }
 
 /** Generic themed error view for non-RDP protocols. */
@@ -87,7 +88,7 @@ const GenericErrorView: React.FC<{ session: ConnectionSession }> = ({ session })
   </div>
 );
 
-export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSession, onActivateSession, onReattachSession, onDetachToWindow, onReconnect }) => {
+export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSession, onActivateSession, onReattachSession, onDetachToWindow, onReconnect, onEditConnection }) => {
   const renderContent = () => {
     // Tool tabs render their own component
     if (isToolProtocol(session.protocol)) {
@@ -98,6 +99,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
           onReattachSession={onReattachSession}
           onDetachToWindow={onDetachToWindow}
           onReconnect={onReconnect}
+          onEditConnection={onEditConnection}
         />
       );
     }

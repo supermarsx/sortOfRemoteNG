@@ -338,7 +338,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="w-full p-4 space-y-6">
+        <div className="max-w-3xl mx-auto p-4 space-y-6">
           {/* Heading */}
           <div>
             <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
