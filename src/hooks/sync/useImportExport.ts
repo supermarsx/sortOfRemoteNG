@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Connection } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -14,6 +15,10 @@ import {
   importConnections,
   detectImportFormat,
   getFormatName,
+  detectMRemoteNGEncryption,
+  decryptMRemoteNGXml,
+  verifyMRemoteNGPassword,
+  MREMOTENG_DEFAULT_MASTER_PASSWORD,
 } from '../../components/ImportExport/utils';
 import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
@@ -42,6 +47,46 @@ export function useImportExport({
   const [importFilename, setImportFilename] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // In-app password prompt state. `pendingPasswordRequest` carries the
+  // resolver for the awaiting import flow; the dialog UI lives in
+  // ImportExport/index.tsx and calls submit/cancel here.
+  const [passwordPrompt, setPasswordPrompt] = useState<{
+    title: string;
+    description: string;
+    error?: string;
+  } | null>(null);
+  const pendingPasswordResolverRef = useRef<((value: string | null) => void) | null>(null);
+
+  const requestPassword = (opts: {
+    title: string;
+    description: string;
+    error?: string;
+  }): Promise<string | null> => {
+    // Cancel any in-flight prompt before queuing a new one.
+    if (pendingPasswordResolverRef.current) {
+      pendingPasswordResolverRef.current(null);
+      pendingPasswordResolverRef.current = null;
+    }
+    setPasswordPrompt(opts);
+    return new Promise<string | null>((resolve) => {
+      pendingPasswordResolverRef.current = resolve;
+    });
+  };
+
+  const submitPasswordPrompt = (value: string) => {
+    const resolve = pendingPasswordResolverRef.current;
+    pendingPasswordResolverRef.current = null;
+    setPasswordPrompt(null);
+    resolve?.(value);
+  };
+
+  const cancelPasswordPrompt = () => {
+    const resolve = pendingPasswordResolverRef.current;
+    pendingPasswordResolverRef.current = null;
+    setPasswordPrompt(null);
+    resolve?.(null);
+  };
 
   const collectionManager = CollectionManager.getInstance();
   const settingsManager = SettingsManager.getInstance();
@@ -280,7 +325,10 @@ export function useImportExport({
         filename.includes('.encrypted.') ||
         filename.split('.').pop()?.toLowerCase() === 'encrypted'
       ) {
-        const password = prompt('Enter decryption password:');
+        const password = await requestPassword({
+          title: 'Decrypt import file',
+          description: 'This file is encrypted. Enter the password used during export to decrypt it.',
+        });
         if (!password) throw new Error('Password required for encrypted file');
         let decrypted: string | null = null;
         // Try new WebCrypto format first (salt.iv.ciphertext).
@@ -312,11 +360,85 @@ export function useImportExport({
       }
 
       const detectedFormat = detectImportFormat(processedContent, filename);
-      const connections = await importConnections(
-        processedContent,
-        filename,
-        detectedFormat,
-      );
+      let connections: Connection[];
+      if (detectedFormat === 'mremoteng') {
+        const enc = detectMRemoteNGEncryption(processedContent);
+        if (enc.isEncrypted) {
+          // Step 1: figure out which master password to use by validating
+          // against the file's `Protected` sentinel. If the user never set a
+          // master password, the literal `mR3m` decrypts everything; only
+          // prompt when the file uses a custom master.
+          const defaultCheck = await verifyMRemoteNGPassword(
+            processedContent,
+            MREMOTENG_DEFAULT_MASTER_PASSWORD,
+          );
+
+          let masterPassword: string | null = null;
+          if (defaultCheck.valid) {
+            masterPassword = MREMOTENG_DEFAULT_MASTER_PASSWORD;
+          } else {
+            // Custom master password set — prompt and re-validate.
+            let attemptError: string | undefined;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const candidate = await requestPassword({
+                title: 'Encrypted mRemoteNG file',
+                description:
+                  'Enter the mRemoteNG master password used to encrypt this export.',
+                error: attemptError,
+              });
+              if (!candidate) break;
+              const check = await verifyMRemoteNGPassword(
+                processedContent,
+                candidate,
+              );
+              if (check.valid) {
+                masterPassword = candidate;
+                break;
+              }
+              attemptError = 'Incorrect master password — try again.';
+            }
+          }
+
+          if (!masterPassword) {
+            throw new Error('Password required for encrypted mRemoteNG file');
+          }
+
+          // Step 2: actual decryption. With the password validated this can
+          // only fail on cipher-mode incompatibility or corrupted bodies.
+          let decryptedXml: string;
+          try {
+            decryptedXml = await decryptMRemoteNGXml(
+              processedContent,
+              masterPassword,
+            );
+          } catch (e) {
+            throw new Error(
+              `Failed to decrypt mRemoteNG file: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+
+          connections = await importConnections(
+            decryptedXml,
+            filename,
+            detectedFormat,
+          );
+          console.log(
+            `[mRemoteNG] decrypted import returned ${connections.length} connections (master=${defaultCheck.valid ? 'default mR3m' : 'user-supplied'})`,
+          );
+        } else {
+          connections = await importConnections(
+            processedContent,
+            filename,
+            detectedFormat,
+          );
+        }
+      } else {
+        connections = await importConnections(
+          processedContent,
+          filename,
+          detectedFormat,
+        );
+      }
       console.log(`Import format detected: ${getFormatName(detectedFormat)}`);
 
       // Extract VPN connections and tunnel chain templates from JSON imports
@@ -414,6 +536,17 @@ export function useImportExport({
       toast.error('Import failed. Check the console for details.');
     } finally {
       setIsProcessing(false);
+      // Clear the file input so re-selecting the same file fires onChange again
+      // (browsers suppress change events when the value is unchanged, so a user
+      // who cancels the password prompt and re-picks the same file would
+      // otherwise see nothing happen).
+      if (event.target) {
+        try {
+          (event.target as HTMLInputElement).value = '';
+        } catch {
+          // ignored — some test harnesses make .value read-only
+        }
+      }
     }
   };
 
@@ -534,5 +667,8 @@ export function useImportExport({
     handleFileSelect,
     confirmImport,
     cancelImport,
+    passwordPrompt,
+    submitPasswordPrompt,
+    cancelPasswordPrompt,
   };
 }

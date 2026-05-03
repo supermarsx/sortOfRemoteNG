@@ -118,8 +118,10 @@ export type ImportFormat =
  * Detect import format from file content
  */
 export const detectImportFormat = (content: string, filename?: string): ImportFormat => {
-  const trimmed = content.trim();
-  
+  // Strip BOM and whitespace.
+  const trimmed = content.replace(/^﻿/, '').trim();
+  let extIsXml = false;
+
   // Check filename extension first
   if (filename) {
     const lower = filename.toLowerCase();
@@ -130,10 +132,18 @@ export const detectImportFormat = (content: string, filename?: string): ImportFo
     if (ext === 'rdg') return 'rdcman';
     if (ext === 'reg') return 'putty';
     if (ext === 'ini' && lower.includes('moba')) return 'mobaxterm';
+    if (ext === 'xml') extIsXml = true;
   }
 
-  // mRemoteNG detection - look for their specific XML structure
-  if (trimmed.includes('<Connections') && trimmed.includes('ConfVersion')) {
+  // mRemoteNG detection - the <Connections> root tag is distinctive.
+  // ConfVersion is usually present but absent in some encrypted exports,
+  // so we accept either marker.
+  if (
+    trimmed.includes('<Connections') &&
+    (trimmed.includes('ConfVersion') ||
+      trimmed.includes('FullFileEncryption') ||
+      trimmed.includes('Protected='))
+  ) {
     return 'mremoteng';
   }
   
@@ -173,13 +183,22 @@ export const detectImportFormat = (content: string, filename?: string): ImportFo
     if (trimmed.includes('Node') && (trimmed.includes('Protocol=') || trimmed.includes('Hostname='))) {
       return 'mremoteng';
     }
+    // A bare <Connections>…</Connections> wrapper (e.g. fully-encrypted body
+    // with no plaintext ConfVersion) is still mRemoteNG.
+    if (trimmed.includes('<Connections')) {
+      return 'mremoteng';
+    }
   }
-  
+
   // Generic JSON check
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     return 'json';
   }
-  
+
+  // .xml filename without a matched signature: assume mRemoteNG rather than
+  // falling through to CSV (which would otherwise eat encrypted XML blobs).
+  if (extIsXml) return 'mremoteng';
+
   // Default to CSV
   return 'csv';
 };
@@ -204,6 +223,459 @@ const mapMRemoteNGProtocol = (protocol: string): Connection['protocol'] => {
     'Winbox': 'rdp',        // MikroTik Winbox → rdp
   };
   return protocolMap[protocol] || 'rdp';
+};
+
+/**
+ * Inspect an mRemoteNG XML payload for encryption metadata on the
+ * `<Connections>` root element.
+ *
+ * - `fullFileEncryption`: the body of `<Connections>` is a single encrypted
+ *   blob — children cannot be parsed without the password.
+ * - `protected`: a non-empty `Protected` attribute means a password is
+ *   recorded; per-attribute encryption is in use even without full-file
+ *   encryption.
+ */
+export interface MRemoteNGEncryptionInfo {
+  isEncrypted: boolean;
+  fullFileEncryption: boolean;
+  requiresPassword: boolean;
+}
+
+// mRemoteNG's hardcoded master password used when the user never sets one.
+// See upstream `Runtime.EncryptionKey` / cryptography provider.
+export const MREMOTENG_DEFAULT_MASTER_PASSWORD = 'mR3m';
+
+// Plaintext stored in the `Protected` attribute. Decrypts to one of these
+// strings depending on whether a custom master password was set:
+//   - "ThisIsNotProtected"  → no master password set; default `mR3m` works
+//   - "ThisIsProtected"     → user set a custom master password
+const PROTECTED_PLAINTEXT_NO_PASSWORD = 'ThisIsNotProtected';
+const PROTECTED_PLAINTEXT_PASSWORD = 'ThisIsProtected';
+
+// Wire format constants for AES-256-GCM (the only cipher implemented here).
+// Layout per upstream `AeadCryptographyProvider.cs`:
+//   [ salt (16) ] [ nonce (16) ] [ ciphertext ‖ tag (16) ]   then base64
+const MRNG_SALT_SIZE = 16;
+const MRNG_NONCE_SIZE = 16;
+const MRNG_TAG_SIZE = 16;
+
+const decodeBase64 = (b64: string): Uint8Array => {
+  const clean = b64.replace(/\s+/g, '');
+  const bin = atob(clean);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+};
+
+const encodeBase64 = (bytes: Uint8Array): string => {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+};
+
+/**
+ * Convert a password to bytes the way BouncyCastle's
+ * `PbeParametersGenerator.Pkcs5PasswordToBytes` does: take the low byte of
+ * each UTF-16 code unit. mRemoteNG's `Pkcs5S2KeyGenerator` calls this before
+ * feeding the bytes to PBKDF2, so we MUST match it exactly — not UTF-8 — or
+ * non-ASCII passwords (e.g. "passwört") will derive a different key.
+ *
+ * For any pure-ASCII password this is identical to UTF-8; for Latin-1 the
+ * low-byte truncation is the same as ISO-8859-1; for code points > 0xFF
+ * BouncyCastle silently loses the high bits and so do we.
+ */
+function pkcs5PasswordToBytes(password: string): Uint8Array {
+  const out = new Uint8Array(password.length);
+  for (let i = 0; i < password.length; i++) {
+    out[i] = password.charCodeAt(i) & 0xff;
+  }
+  return out;
+}
+
+async function deriveMRemoteNGKey(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+  usages: KeyUsage[] = ['decrypt'],
+): Promise<CryptoKey> {
+  const passKey = await crypto.subtle.importKey(
+    'raw',
+    pkcs5PasswordToBytes(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey'],
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', hash: 'SHA-1', salt, iterations },
+    passKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    usages,
+  );
+}
+
+/**
+ * Decrypt a single base64-encoded mRemoteNG ciphertext (Protected attribute,
+ * per-field Password, or full-file body). The output is the raw plaintext
+ * bytes — caller decides whether to UTF-8 decode.
+ */
+async function decryptMRemoteNGBlob(
+  payloadB64: string,
+  password: string,
+  iterations: number,
+): Promise<Uint8Array> {
+  const data = decodeBase64(payloadB64);
+  const minLen = MRNG_SALT_SIZE + MRNG_NONCE_SIZE + MRNG_TAG_SIZE;
+  if (data.length < minLen) {
+    throw new Error(
+      `mRemoteNG ciphertext is too short (${data.length} bytes; need ≥ ${minLen})`,
+    );
+  }
+  const salt = data.slice(0, MRNG_SALT_SIZE);
+  const nonce = data.slice(MRNG_SALT_SIZE, MRNG_SALT_SIZE + MRNG_NONCE_SIZE);
+  const ciphertext = data.slice(MRNG_SALT_SIZE + MRNG_NONCE_SIZE);
+  const key = await deriveMRemoteNGKey(password, salt, iterations);
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: nonce, tagLength: MRNG_TAG_SIZE * 8 },
+    key,
+    ciphertext,
+  );
+  return new Uint8Array(plain);
+}
+
+/**
+ * Encrypt a plaintext buffer in mRemoteNG's wire format. Used by tests
+ * (and potentially future export) to round-trip our own implementation.
+ */
+export async function encryptMRemoteNGBlob(
+  plaintext: Uint8Array | string,
+  password: string,
+  iterations: number,
+): Promise<string> {
+  const bytes =
+    typeof plaintext === 'string'
+      ? new TextEncoder().encode(plaintext)
+      : plaintext;
+  const salt = crypto.getRandomValues(new Uint8Array(MRNG_SALT_SIZE));
+  const nonce = crypto.getRandomValues(new Uint8Array(MRNG_NONCE_SIZE));
+  const key = await deriveMRemoteNGKey(password, salt, iterations, ['encrypt']);
+  const ct = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: nonce, tagLength: MRNG_TAG_SIZE * 8 },
+      key,
+      bytes,
+    ),
+  );
+  const out = new Uint8Array(salt.length + nonce.length + ct.length);
+  out.set(salt, 0);
+  out.set(nonce, salt.length);
+  out.set(ct, salt.length + nonce.length);
+  return encodeBase64(out);
+}
+
+/**
+ * Reject mRemoteNG files using cipher/mode combinations we can't decrypt in
+ * the browser. WebCrypto only exposes AES-GCM; CCM/EAX would need a JS-side
+ * implementation, and Serpent/Twofish would need a full block-cipher polyfill.
+ *
+ * Throws with a descriptive error on anything other than AES/GCM.
+ */
+function assertSupportedMRemoteNGCipher(root: Element): void {
+  const engine = (root.getAttribute('EncryptionEngine') || 'AES').toUpperCase();
+  const mode = (root.getAttribute('BlockCipherMode') || 'GCM').toUpperCase();
+  if (engine === 'AES' && mode === 'GCM') return;
+  if (engine !== 'AES') {
+    throw new Error(
+      `Unsupported mRemoteNG block cipher "${engine}". Only AES is implemented in this build (Serpent and Twofish would require a JS polyfill).`,
+    );
+  }
+  throw new Error(
+    `Unsupported mRemoteNG block-cipher mode "${mode}". Only GCM is implemented in this build (CCM and EAX would require a JS polyfill).`,
+  );
+}
+
+/**
+ * Verify a candidate master password by decrypting the file's `Protected`
+ * attribute and checking it matches one of the known plaintext sentinels.
+ *
+ * Returns:
+ *   - `valid: true, isDefaultMaster: true`  → user never set a master, the
+ *     literal "mR3m" decrypts everything in the file.
+ *   - `valid: true, isDefaultMaster: false` → user set a custom master and
+ *     `password` is correct.
+ *   - `valid: false` → wrong password (or file uses an unsupported cipher).
+ */
+export interface MRemoteNGPasswordCheck {
+  valid: boolean;
+  isDefaultMaster: boolean;
+  iterations: number;
+  hasProtected: boolean;
+}
+
+export async function verifyMRemoteNGPassword(
+  content: string,
+  password: string,
+): Promise<MRemoteNGPasswordCheck> {
+  const doc = new DOMParser().parseFromString(content, 'text/xml');
+  const root = doc.querySelector('Connections');
+  if (!root) throw new Error('Not an mRemoteNG file (no <Connections> root)');
+  const iterations = Math.max(
+    1,
+    parseInt(root.getAttribute('KdfIterations') || '1000', 10),
+  );
+  const protectedB64 = (root.getAttribute('Protected') || '').trim();
+  if (!protectedB64) {
+    return { valid: true, isDefaultMaster: true, iterations, hasProtected: false };
+  }
+  try {
+    const plain = await decryptMRemoteNGBlob(protectedB64, password, iterations);
+    const text = new TextDecoder().decode(plain);
+    if (text === PROTECTED_PLAINTEXT_NO_PASSWORD) {
+      return { valid: true, isDefaultMaster: true, iterations, hasProtected: true };
+    }
+    if (text === PROTECTED_PLAINTEXT_PASSWORD) {
+      return { valid: true, isDefaultMaster: false, iterations, hasProtected: true };
+    }
+    // Decryption succeeded but plaintext is unrecognised — that's still a
+    // wrong password unless the sentinel changes upstream.
+    return { valid: false, isDefaultMaster: false, iterations, hasProtected: true };
+  } catch {
+    return { valid: false, isDefaultMaster: false, iterations, hasProtected: true };
+  }
+}
+
+// All per-field encrypted attributes on `<Node>` in mRemoteNG (per upstream
+// `XmlConnectionsDeserializer`):
+//   - `Password`           — added in ConfVersion ≥ 0.2 (always)
+//   - `VNCProxyPassword`   — added in ConfVersion ≥ 1.7
+//   - `RDGatewayPassword`  — added in ConfVersion ≥ 2.2
+const MRNG_PER_FIELD_PASSWORD_ATTRS = [
+  'Password',
+  'VNCProxyPassword',
+  'RDGatewayPassword',
+];
+
+/**
+ * Decrypt every per-field encrypted attribute on `<Node>` elements in the
+ * given XML document, mutating it in place. Empty values are left as-is.
+ * Decryption failures on individual fields are swallowed (the attribute is
+ * left untouched) so a partial parse still yields useful structure.
+ */
+async function decryptPerFieldPasswords(
+  doc: Document,
+  password: string,
+  iterations: number,
+): Promise<void> {
+  const nodes = Array.from(doc.querySelectorAll('Node'));
+  for (const node of nodes) {
+    for (const attr of MRNG_PER_FIELD_PASSWORD_ATTRS) {
+      const enc = node.getAttribute(attr);
+      if (!enc) continue;
+      try {
+        const plain = await decryptMRemoteNGBlob(enc, password, iterations);
+        node.setAttribute(attr, new TextDecoder().decode(plain));
+      } catch {
+        // Leave the attribute untouched on failure.
+      }
+    }
+  }
+}
+
+/**
+ * Decrypt an mRemoteNG XML using the supplied master password. Handles both
+ * full-file encryption (entire `<Connections>` body is one blob) and
+ * per-field-only encryption (individual `Password` attributes are blobs).
+ *
+ * Returns XML where `<Node>` elements are plaintext and (where possible)
+ * `Password` attributes are decrypted. Verifies the password against the
+ * `Protected` attribute first; throws on mismatch with a clear error.
+ *
+ * Only AES-256-GCM is implemented — Serpent / Twofish / CCM / EAX variants
+ * fall through with an explicit error so callers can surface "unsupported".
+ */
+export async function decryptMRemoteNGXml(
+  content: string,
+  password: string,
+): Promise<string> {
+  const doc = new DOMParser().parseFromString(content, 'text/xml');
+  const root = doc.querySelector('Connections');
+  if (!root) throw new Error('Not an mRemoteNG file (no <Connections> root)');
+
+  assertSupportedMRemoteNGCipher(root);
+  const iterations = Math.max(
+    1,
+    parseInt(root.getAttribute('KdfIterations') || '1000', 10),
+  );
+  const fullFileAttr = (root.getAttribute('FullFileEncryption') || '').toLowerCase();
+  const fullFileEncryption = fullFileAttr === 'true' || fullFileAttr === '1';
+
+  // Validate password against the Protected sentinel before doing any work.
+  const protectedB64 = (root.getAttribute('Protected') || '').trim();
+  if (protectedB64) {
+    const check = await verifyMRemoteNGPassword(content, password);
+    if (!check.valid) {
+      throw new Error('Incorrect master password');
+    }
+  }
+
+  if (fullFileEncryption) {
+    const body = (root.textContent || '').trim();
+    if (!body) throw new Error('FullFileEncryption is on but body is empty');
+    const innerBytes = await decryptMRemoteNGBlob(body, password, iterations);
+    const innerXml = new TextDecoder().decode(innerBytes);
+    // Rebuild a parseable document, preserving the original root attributes
+    // so any post-processing can still see them.
+    const wrapped = `<?xml version="1.0" encoding="utf-8"?><Connections ConfVersion="${root.getAttribute('ConfVersion') || '2.6'}">${innerXml}</Connections>`;
+    const innerDoc = new DOMParser().parseFromString(wrapped, 'text/xml');
+    const parseError = innerDoc.querySelector('parsererror');
+    if (parseError) {
+      throw new Error(
+        'Decrypted body is not valid XML — file may be from an unsupported mRemoteNG version',
+      );
+    }
+    await decryptPerFieldPasswords(innerDoc, password, iterations);
+    return new XMLSerializer().serializeToString(innerDoc);
+  }
+
+  // No full-file encryption — just decrypt per-field Password attributes.
+  await decryptPerFieldPasswords(doc, password, iterations);
+  return new XMLSerializer().serializeToString(doc);
+}
+
+/**
+ * Encrypt every per-field password attribute on `<Node>` elements in the
+ * given XML document, mutating it in place. Empty values are left as-is.
+ */
+async function encryptPerFieldPasswords(
+  doc: Document,
+  password: string,
+  iterations: number,
+): Promise<void> {
+  const nodes = Array.from(doc.querySelectorAll('Node'));
+  for (const node of nodes) {
+    for (const attr of MRNG_PER_FIELD_PASSWORD_ATTRS) {
+      const plain = node.getAttribute(attr);
+      if (!plain) continue;
+      const ct = await encryptMRemoteNGBlob(plain, password, iterations);
+      node.setAttribute(attr, ct);
+    }
+  }
+}
+
+export interface EncryptMRemoteNGOptions {
+  /** Master password to encrypt with. Use `mR3m` for the no-master case. */
+  password: string;
+  /** PBKDF2 iterations to record in the file header. mRemoteNG's minimum is 1000. */
+  iterations?: number;
+  /** When true, encrypt the entire `<Node>` tree as one blob. */
+  fullFileEncryption?: boolean;
+  /** Existing root attributes to preserve (Name, Export, etc.). */
+  rootAttributes?: Record<string, string>;
+}
+
+/**
+ * Build an mRemoteNG-format encrypted XML file from a plaintext `<Connections>`
+ * document. Produces output that round-trips through `decryptMRemoteNGXml`,
+ * including:
+ *   - `Protected` attribute set to the canonical sentinel (`ThisIsNotProtected`
+ *     for `mR3m`, `ThisIsProtected` for any other password).
+ *   - All `EncryptionEngine`, `BlockCipherMode`, `KdfIterations`,
+ *     `FullFileEncryption` headers populated to match upstream conventions.
+ *   - Every per-field `Password` / `VNCProxyPassword` / `RDGatewayPassword`
+ *     attribute encrypted before serialization.
+ *   - When `fullFileEncryption` is set, the entire `<Node>` tree is replaced
+ *     by one base64 blob inside the root.
+ *
+ * The input must be a `<Connections>…</Connections>` XML string with `<Node>`
+ * children; attributes other than the encryption headers are preserved.
+ */
+export async function encryptMRemoteNGXml(
+  plainXml: string,
+  opts: EncryptMRemoteNGOptions,
+): Promise<string> {
+  const password = opts.password;
+  if (!password) throw new Error('encryptMRemoteNGXml requires a password');
+  const iterations = Math.max(1000, opts.iterations ?? 1000);
+
+  const doc = new DOMParser().parseFromString(plainXml, 'text/xml');
+  const parseError = doc.querySelector('parsererror');
+  if (parseError) throw new Error('Input is not valid XML');
+  const root = doc.querySelector('Connections');
+  if (!root) throw new Error('Input must have a <Connections> root');
+
+  // Preserve any caller-supplied root attributes, then overwrite the
+  // encryption headers so the file is self-describing.
+  if (opts.rootAttributes) {
+    for (const [k, v] of Object.entries(opts.rootAttributes)) {
+      root.setAttribute(k, v);
+    }
+  }
+  if (!root.hasAttribute('Name')) root.setAttribute('Name', 'Connections');
+  if (!root.hasAttribute('Export')) root.setAttribute('Export', 'false');
+  if (!root.hasAttribute('ConfVersion')) root.setAttribute('ConfVersion', '2.6');
+  root.setAttribute('EncryptionEngine', 'AES');
+  root.setAttribute('BlockCipherMode', 'GCM');
+  root.setAttribute('KdfIterations', String(iterations));
+  root.setAttribute(
+    'FullFileEncryption',
+    opts.fullFileEncryption ? 'true' : 'false',
+  );
+
+  // Generate the Protected sentinel for this master.
+  const sentinel =
+    password === MREMOTENG_DEFAULT_MASTER_PASSWORD
+      ? 'ThisIsNotProtected'
+      : 'ThisIsProtected';
+  const protectedB64 = await encryptMRemoteNGBlob(sentinel, password, iterations);
+  root.setAttribute('Protected', protectedB64);
+
+  // Always encrypt per-field passwords, regardless of full-file mode (real
+  // mRemoteNG files always do; the full-file mode just adds a wrapper on top).
+  await encryptPerFieldPasswords(doc, password, iterations);
+
+  if (opts.fullFileEncryption) {
+    // Serialize the inner content (children of <Connections>) and replace it
+    // with a single encrypted blob.
+    const inner = Array.from(root.childNodes)
+      .map((n) => new XMLSerializer().serializeToString(n))
+      .join('');
+    while (root.firstChild) root.removeChild(root.firstChild);
+    const ct = await encryptMRemoteNGBlob(inner, password, iterations);
+    root.appendChild(doc.createTextNode(ct));
+  }
+
+  return new XMLSerializer().serializeToString(doc);
+}
+
+export const detectMRemoteNGEncryption = (
+  content: string,
+): MRemoteNGEncryptionInfo => {
+  const empty: MRemoteNGEncryptionInfo = {
+    isEncrypted: false,
+    fullFileEncryption: false,
+    requiresPassword: false,
+  };
+  try {
+    const doc = new DOMParser().parseFromString(content, 'text/xml');
+    const root = doc.querySelector('Connections');
+    if (!root) return empty;
+    const fullFileAttr = (root.getAttribute('FullFileEncryption') || '').toLowerCase();
+    const fullFileEncryption = fullFileAttr === 'true' || fullFileAttr === '1';
+    const protectedAttr = (root.getAttribute('Protected') || '').trim();
+    const hasProtected = protectedAttr.length > 0;
+    const childNodeCount = root.querySelectorAll(':scope > Node').length;
+    // Full-file encryption: body is one encrypted blob, no <Node> children present
+    // (or the file explicitly advertises FullFileEncryption="true").
+    const requiresPassword =
+      fullFileEncryption || (hasProtected && childNodeCount === 0);
+    return {
+      isEncrypted: hasProtected || fullFileEncryption,
+      fullFileEncryption: fullFileEncryption || requiresPassword,
+      requiresPassword,
+    };
+  } catch {
+    return empty;
+  }
 };
 
 /**

@@ -5,6 +5,7 @@ import ExportTab, { type ExportConfig } from "./ExportTab";
 import ImportTab from "./ImportTab";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
+import PasswordPromptDialog from "./PasswordPromptDialog";
 
 const TAB_ORDER = ["export", "import"] as const;
 
@@ -103,6 +104,17 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 }) => {
   const mgr = useImportExport({ isOpen, onClose, initialTab });
 
+  const passwordPromptNode = (
+    <PasswordPromptDialog
+      isOpen={!!mgr.passwordPrompt}
+      title={mgr.passwordPrompt?.title ?? ""}
+      description={mgr.passwordPrompt?.description ?? ""}
+      error={mgr.passwordPrompt?.error}
+      onSubmit={mgr.submitPasswordPrompt}
+      onCancel={mgr.cancelPasswordPrompt}
+    />
+  );
+
   const content = (
     <div className={embedded ? "" : "relative flex flex-1 min-h-0 flex-col"}>
       {!embedded && (
@@ -158,18 +170,28 @@ export const ImportExport: React.FC<ImportExportProps> = ({
   );
 
   if (!isOpen && !embedded) return null;
-  if (embedded) return content;
+  if (embedded) {
+    return (
+      <>
+        {content}
+        {passwordPromptNode}
+      </>
+    );
+  }
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      backdropClassName="bg-black/50"
-      panelClassName="max-w-2xl rounded-xl overflow-hidden"
-      contentClassName="bg-[var(--color-surface)]"
-      dataTestId="import-export-dialog"
-    >
-      {content}
-    </Modal>
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        backdropClassName="bg-black/50"
+        panelClassName="max-w-2xl rounded-xl overflow-hidden"
+        contentClassName="bg-[var(--color-surface)]"
+        dataTestId="import-export-dialog"
+      >
+        {content}
+      </Modal>
+      {passwordPromptNode}
+    </>
   );
 };

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -146,7 +146,38 @@ vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
 const mockPrompt = vi.fn();
 const mockTauriInvoke = vi.fn();
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => mockTauriInvoke(...args),
+}));
+
 import { useImportExport } from "../../src/hooks/sync/useImportExport";
+
+// Drives the in-app password prompt for tests. Calls handleFileSelect, waits
+// until the hook's `passwordPrompt` state appears, then submits or cancels.
+async function selectFileWithPrompt(
+  result: { current: ReturnType<typeof useImportExport> },
+  event: React.ChangeEvent<HTMLInputElement>,
+  prompts: (string | null)[],
+) {
+  let pending: Promise<void> | undefined;
+  await act(async () => {
+    pending = result.current.handleFileSelect(event);
+  });
+  for (const value of prompts) {
+    await waitFor(() => {
+      if (!result.current.passwordPrompt) {
+        throw new Error("passwordPrompt not shown yet");
+      }
+    });
+    await act(async () => {
+      if (value === null) result.current.cancelPasswordPrompt();
+      else result.current.submitPasswordPrompt(value);
+    });
+  }
+  await act(async () => {
+    await pending;
+  });
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -851,7 +882,6 @@ describe("useImportExport", () => {
   });
 
   it("handleFileSelect falls back to legacy Tauri decryption for .encrypted files", async () => {
-    mockPrompt.mockReturnValueOnce("legacy-pass");
     mockIsWebCryptoPayload.mockReturnValueOnce(true);
     mockDecryptWithPassword.mockRejectedValueOnce(new Error("bad webcrypto payload"));
     mockTauriInvoke.mockResolvedValueOnce('{"connections":[{"id":"legacy-1"}]}');
@@ -869,9 +899,7 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, ["legacy-pass"]);
 
     expect(mockDecryptWithPassword).toHaveBeenCalledWith(
       "legacy-ciphertext",
@@ -892,7 +920,6 @@ describe("useImportExport", () => {
   });
 
   it("handleFileSelect uses legacy invoke directly when encrypted data is not WebCrypto", async () => {
-    mockPrompt.mockReturnValueOnce("legacy-only-pass");
     mockIsWebCryptoPayload.mockReturnValueOnce(false);
     mockTauriInvoke.mockResolvedValueOnce('{"connections":[{"id":"legacy-2"}]}');
     mockDetectImportFormat.mockReturnValueOnce("json");
@@ -909,9 +936,7 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, ["legacy-only-pass"]);
 
     expect(mockDecryptWithPassword).not.toHaveBeenCalled();
     expect(mockTauriInvoke).toHaveBeenCalledWith(
@@ -928,7 +953,6 @@ describe("useImportExport", () => {
   });
 
   it("handleFileSelect surfaces an error when encrypted imports are missing a password", async () => {
-    mockPrompt.mockReturnValueOnce(null);
     const { result } = renderImportExport();
 
     const file = new File(["ciphertext"], "cancelled.encrypted", {
@@ -938,9 +962,7 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, [null]);
 
     expect(result.current.importResult).toMatchObject({
       success: false,
@@ -952,9 +974,8 @@ describe("useImportExport", () => {
   });
 
   it("handleFileSelect reports decrypt failures when no legacy invoke is available", async () => {
-    mockPrompt.mockReturnValueOnce("no-backend-pass");
     mockIsWebCryptoPayload.mockReturnValueOnce(false);
-    vi.stubGlobal("__TAURI__", {});
+    mockTauriInvoke.mockRejectedValueOnce(new Error("not registered"));
 
     const { result } = renderImportExport();
 
@@ -965,22 +986,18 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, ["no-backend-pass"]);
 
     expect(result.current.importResult).toMatchObject({
       success: false,
       errors: ["Failed to decrypt file. Check your password."],
     });
-    expect(mockTauriInvoke).not.toHaveBeenCalled();
     expect(mockToast.error).toHaveBeenCalledWith(
       "Import failed. Check the file format and try again.",
     );
   });
 
   it("handleFileSelect reports decrypt failures when the legacy invoke throws", async () => {
-    mockPrompt.mockReturnValueOnce("legacy-throws");
     mockIsWebCryptoPayload.mockReturnValueOnce(false);
     mockTauriInvoke.mockRejectedValueOnce(new Error("legacy decrypt exploded"));
 
@@ -993,9 +1010,7 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, ["legacy-throws"]);
 
     expect(result.current.importResult).toMatchObject({
       success: false,
@@ -1011,7 +1026,6 @@ describe("useImportExport", () => {
   });
 
   it("handleFileSelect rejects encrypted imports when both decrypt paths return empty strings", async () => {
-    mockPrompt.mockReturnValueOnce("empty-cipher");
     mockIsWebCryptoPayload.mockReturnValueOnce(true);
     mockDecryptWithPassword.mockResolvedValueOnce("");
     mockTauriInvoke.mockResolvedValueOnce("");
@@ -1025,9 +1039,7 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, ["empty-cipher"]);
 
     expect(result.current.importResult).toMatchObject({
       success: false,
@@ -1294,7 +1306,6 @@ describe("useImportExport", () => {
 
   it("confirmImport restores VPNs and tunnel chains from encrypted JSON imports", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    mockPrompt.mockReturnValueOnce("decrypt-me");
     mockDecryptWithPassword.mockResolvedValueOnce(
       JSON.stringify({
         vpnConnections: {
@@ -1339,9 +1350,7 @@ describe("useImportExport", () => {
       target: { files: [file] },
     } as unknown as React.ChangeEvent<HTMLInputElement>;
 
-    await act(async () => {
-      await result.current.handleFileSelect(event);
-    });
+    await selectFileWithPrompt(result, event, ["decrypt-me"]);
 
     expect(result.current.importResult).toMatchObject({
       success: true,
