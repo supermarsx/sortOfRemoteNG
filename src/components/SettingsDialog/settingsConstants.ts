@@ -20,6 +20,7 @@ import {
   ListVideo,
   RotateCcw,
   Activity,
+  Info,
   LucideIcon,
 } from "lucide-react";
 import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig } from "../../types/settings/settings";
@@ -61,6 +62,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "diagnostics", labelKey: "Diagnostics", icon: Activity },
   { id: "advanced", labelKey: "settings.advanced", icon: Code },
   { id: "recovery", labelKey: "Recovery", icon: RotateCcw },
+  { id: "about", labelKey: "About", icon: Info },
 ];
 
 /* ═══════════════════════════════════════════════════════════════

@@ -4,6 +4,7 @@ import type { GlobalSettings } from "../../src/types/settings/settings";
 import MacroSettings from "../../src/components/SettingsDialog/sections/MacroSettings";
 import RecordingSettings from "../../src/components/SettingsDialog/sections/RecordingSettings";
 import WebBrowserSettings from "../../src/components/SettingsDialog/sections/WebBrowserSettings";
+import AboutSettings from "../../src/components/SettingsDialog/sections/AboutSettings";
 
 vi.mock("../../src/utils/recording/macroService", () => ({
   loadMacros: vi.fn().mockResolvedValue([{ id: "m1" }]),
@@ -133,5 +134,37 @@ describe("Settings sections centralization", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ proxyKeepaliveEnabled: true }),
     );
+  });
+
+  it("renders the About credits surface with project and dependency credits", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockClear();
+
+    render(<AboutSettings />);
+
+    expect(screen.getByText("About")).toBeInTheDocument();
+    expect(screen.getByText("Application Description")).toBeInTheDocument();
+    expect(screen.getByText(/desktop remote-operations workbench/i)).toBeInTheDocument();
+    expect(screen.getByText("Remote Session Hub")).toBeInTheDocument();
+    expect(screen.getByText("Automation & Observability")).toBeInTheDocument();
+    expect(screen.getAllByText("Mariana Mota").length).toBeGreaterThan(0);
+    expect(screen.getByText("React")).toBeInTheDocument();
+    expect(screen.getByText("Tauri")).toBeInTheDocument();
+    expect(screen.getByText("Tokio")).toBeInTheDocument();
+    expect(screen.getByText("WebdriverIO")).toBeInTheDocument();
+    const reactRepoLink = screen.getByRole("link", { name: "Open React repository" });
+    expect(reactRepoLink).toHaveAttribute(
+      "href",
+      "https://github.com/facebook/react",
+    );
+    expect(screen.getByRole("link", { name: "Open WebdriverIO repository" })).toHaveAttribute(
+      "href",
+      "https://github.com/webdriverio/webdriverio",
+    );
+    fireEvent.click(reactRepoLink);
+    expect(invoke).toHaveBeenCalledWith("open_url_external", {
+      url: "https://github.com/facebook/react",
+    });
+    expect(screen.getAllByText("MIT").length).toBeGreaterThan(0);
   });
 });

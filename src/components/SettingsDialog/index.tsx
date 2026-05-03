@@ -30,6 +30,7 @@ import BackendSettings from "./sections/BackendSettings";
 import RecordingSettings from "./sections/RecordingSettings";
 import MacroSettings from "./sections/MacroSettings";
 import DiagnosticsSettings from "./sections/DiagnosticsSettings";
+import AboutSettings from "./sections/AboutSettings";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
@@ -233,6 +234,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           <AdvancedSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "recovery" && <RecoverySettings onClose={() => {}} />}
+        {mgr.activeTab === "about" && <AboutSettings />}
 
         {/* Sentinel for scroll-to-bottom detection */}
         <div ref={mgr.bottomSentinelRef} className="h-px" />

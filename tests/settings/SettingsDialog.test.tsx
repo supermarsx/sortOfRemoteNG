@@ -216,6 +216,10 @@ vi.mock("../../src/components/SettingsDialog/sections/DiagnosticsSettings", () =
   __esModule: true,
   default: () => <div data-testid="section-diagnostics" />,
 }));
+vi.mock("../../src/components/SettingsDialog/sections/AboutSettings", () => ({
+  __esModule: true,
+  default: () => <div data-testid="section-about" />,
+}));
 
 describe("SettingsDialog", () => {
   beforeAll(() => {
@@ -257,6 +261,7 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("Behavior")).toBeInTheDocument();
     expect(screen.getByText("settings.theme")).toBeInTheDocument();
     expect(screen.getByText("settings.security")).toBeInTheDocument();
+    expect(screen.getByText("About")).toBeInTheDocument();
   });
 
   it("switches to Behavior tab when clicked", async () => {
@@ -287,6 +292,20 @@ describe("SettingsDialog", () => {
 
     expect(screen.queryByTestId("section-general")).not.toBeInTheDocument();
     expect(screen.getByTestId("section-theme")).toBeInTheDocument();
+  });
+
+  it("switches to About tab when clicked", async () => {
+    render(
+      <ToastProvider>
+        <SettingsDialog isOpen onClose={() => {}} />
+      </ToastProvider>,
+    );
+    await screen.findByTestId("section-general");
+
+    fireEvent.click(screen.getByText("About"));
+
+    expect(screen.queryByTestId("section-general")).not.toBeInTheDocument();
+    expect(screen.getByTestId("section-about")).toBeInTheDocument();
   });
 
   it("calls onClose when close button is clicked", async () => {
