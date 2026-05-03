@@ -62,8 +62,8 @@ proptest = "1"
 default = []
 # Gate the SoftEther VPN client (PACK codec, watermark/auth handshake,
 # session-key derivation, TAP dataplane, supervisor, reconnect, UDP
-# accel) behind an opt-in feature. Off by default in 1.0 — enable with
-# `--features vpn-softether`. The SE-1..7 test suite
+# accel) behind an opt-in feature for bare crate builds. The app-level
+# `full` release feature set enables this through `vpn-softether`. The SE-1..7 test suite
 # (`tests/softether_e2e.rs`) lives behind this flag as well.
 vpn-softether = []
 # t3-e8 (2026-04-20): opt-in gate for Docker-backed SoftEther e2e tests

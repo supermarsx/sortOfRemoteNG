@@ -8,7 +8,7 @@ mod types {
 
 #[allow(dead_code)]
 mod inner {
-    include!("../crates/sorng-consul/src/commands.rs");
+    include!("../../sorng-consul/src/commands.rs");
 }
 
 #[allow(unused_imports)]

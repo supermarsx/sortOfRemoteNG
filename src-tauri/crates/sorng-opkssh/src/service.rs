@@ -27,8 +27,7 @@ fn backend_mode_from_env() -> OpksshBackendMode {
         invalid => {
             warn!(
                 "Ignoring unsupported {} value '{}'; falling back to auto.",
-                BACKEND_MODE_ENV,
-                invalid,
+                BACKEND_MODE_ENV, invalid,
             );
             OpksshBackendMode::Auto
         }
@@ -159,7 +158,9 @@ impl OpksshService {
 
     /// Derive the current rollout posture from the runtime-first status model.
     pub fn current_rollout_signal(&self) -> Option<OpksshRolloutSignal> {
-        self.runtime_status.as_ref().map(Self::rollout_signal_for_runtime)
+        self.runtime_status
+            .as_ref()
+            .map(Self::rollout_signal_for_runtime)
     }
 
     /// Convert the current wrapped runtime contract into an explicit rollout
@@ -309,7 +310,11 @@ impl OpksshService {
             }
             login::OpksshLoginOperationStatus::Succeeded => {
                 self.clear_tracked_login_operation_if_matches(Some(&operation.id));
-                if operation.result.as_ref().is_some_and(|result| result.success) {
+                if operation
+                    .result
+                    .as_ref()
+                    .is_some_and(|result| result.success)
+                {
                     self.last_login = Some(Utc::now());
                     self.last_error = None;
                 } else if let Some(message) = operation.message.clone() {
@@ -336,10 +341,7 @@ impl OpksshService {
         }
     }
 
-    pub fn concurrent_login_message(
-        &mut self,
-        operation: &login::OpksshLoginOperation,
-    ) -> String {
+    pub fn concurrent_login_message(&mut self, operation: &login::OpksshLoginOperation) -> String {
         let message = match operation.provider.as_deref() {
             Some(provider) if !provider.is_empty() => format!(
                 "An OPKSSH login is already running for {provider}. Wait for that browser/provider flow to finish or cancel the local wait before starting another attempt."
@@ -562,9 +564,9 @@ fn resolve_wrapper_client_config_path() -> Result<PathBuf, String> {
 }
 
 fn resolve_wrapper_login_key_path(opts: &OpksshLoginOptions) -> Result<PathBuf, String> {
-    let home_dir = override_home_dir()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| "Failed to resolve the home directory for the OPKSSH login key path".to_string())?;
+    let home_dir = override_home_dir().or_else(dirs::home_dir).ok_or_else(|| {
+        "Failed to resolve the home directory for the OPKSSH login key path".to_string()
+    })?;
 
     let key_name = opts
         .key_file_name
@@ -809,12 +811,18 @@ mod tests {
         let disk = providers::load_client_config(Some(&path))
             .await
             .expect("disk config");
-        assert_eq!(disk.providers[0].client_secret.as_deref(), Some("super-secret"));
+        assert_eq!(
+            disk.providers[0].client_secret.as_deref(),
+            Some("super-secret")
+        );
 
         let disk_after = providers::load_client_config(Some(&path))
             .await
             .expect("disk config after rewrite");
-        assert_eq!(disk_after.providers[0].client_secret.as_deref(), Some("super-secret"));
+        assert_eq!(
+            disk_after.providers[0].client_secret.as_deref(),
+            Some("super-secret")
+        );
         assert_eq!(disk_after.providers[0].client_id, "updated-client");
         let _ = tokio::fs::remove_dir_all(temp_dir).await;
     }
@@ -984,6 +992,8 @@ mod tests {
             signal.cli_retirement_decision,
             OpksshCliRetirementDecision::DeferUntilRuntimeEvidence
         );
-        assert!(signal.cli_retirement_message.contains("bundle/install evidence"));
+        assert!(signal
+            .cli_retirement_message
+            .contains("bundle/install evidence"));
     }
 }

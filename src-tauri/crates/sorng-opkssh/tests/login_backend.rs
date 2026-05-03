@@ -1,9 +1,9 @@
+use serde_json::Value;
 use sorng_opkssh::login;
 use sorng_opkssh::{
     OpksshBackendKind, OpksshBackendMode, OpksshLoginOptions, OpksshRuntimeAvailability,
     OpksshService, OpksshVendorLoadStrategy,
 };
-use serde_json::Value;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -86,7 +86,11 @@ fn fake_cli_path() -> PathBuf {
         let source_path = dir.join("fake_opkssh.rs");
         std::fs::write(&source_path, FAKE_CLI_SOURCE).expect("write fake cli source");
 
-        let output_path = dir.join(if cfg!(windows) { "opkssh.exe" } else { "opkssh" });
+        let output_path = dir.join(if cfg!(windows) {
+            "opkssh.exe"
+        } else {
+            "opkssh"
+        });
         let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
         let status = Command::new(rustc)
             .arg("--edition=2021")
@@ -226,7 +230,11 @@ fn vendor_platform_dir() -> String {
     } else {
         "linux"
     };
-    let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
     format!("{platform}-{arch}")
 }
 
@@ -318,12 +326,7 @@ fn configure_fake_cli_env(home: &Path, key_path: &Path, identity: &str) -> EnvGu
     let fake_cli = fake_cli_path();
     let mut guard = EnvGuard::new();
 
-    let mut paths = vec![
-        fake_cli
-            .parent()
-            .expect("fake cli parent")
-            .to_path_buf(),
-    ];
+    let mut paths = vec![fake_cli.parent().expect("fake cli parent").to_path_buf()];
     if let Some(existing) = std::env::var_os("PATH") {
         paths.extend(std::env::split_paths(&existing));
     }
@@ -418,12 +421,22 @@ async fn service_status_prefers_cli_fallback_over_the_current_library_runtime_co
         .expect("library bundle contract");
     assert!(bundle_contract.dylib_required);
     assert!(bundle_contract.tauri_bundle_configured);
-    assert_eq!(bundle_contract.app_linked, cfg!(feature = "vendored-wrapper"));
-    assert_eq!(bundle_contract.wrapper_abi_version.is_some(), bundle_contract.metadata_queryable);
+    assert_eq!(
+        bundle_contract.app_linked,
+        cfg!(feature = "vendored-wrapper")
+    );
+    assert_eq!(
+        bundle_contract.wrapper_abi_version.is_some(),
+        bundle_contract.metadata_queryable
+    );
     assert_eq!(bundle_contract.artifact_name, vendor_artifact_name());
     assert_eq!(
         bundle_contract.resource_relative_path,
-        format!("opkssh/{}/{}", vendor_platform_dir(), vendor_artifact_name())
+        format!(
+            "opkssh/{}/{}",
+            vendor_platform_dir(),
+            vendor_artifact_name()
+        )
     );
     assert!(PathBuf::from(&bundle_contract.workspace_artifact_path)
         .ends_with(vendor_workspace_artifact_suffix()));
@@ -468,12 +481,9 @@ async fn service_status_prefers_cli_fallback_over_the_current_library_runtime_co
         }
         assert_eq!(status.runtime.library.availability, expected_availability);
         if bundle_contract.login_supported {
-            assert!(status
-                .runtime
-                .library
-                .message
-                .as_deref()
-                .is_some_and(|message| message.contains("execute login through the wrapper/runtime path")));
+            assert!(status.runtime.library.message.as_deref().is_some_and(
+                |message| message.contains("execute login through the wrapper/runtime path")
+            ));
         } else if bundle_contract.config_load_supported {
             assert!(status
                 .runtime
@@ -506,7 +516,10 @@ async fn service_status_prefers_cli_fallback_over_the_current_library_runtime_co
     }
     assert!(status.binary.installed);
     assert_eq!(status.binary.backend.kind, OpksshBackendKind::Cli);
-    assert_eq!(status.binary.path.as_deref(), Some(fake_cli_path().to_string_lossy().as_ref()));
+    assert_eq!(
+        status.binary.path.as_deref(),
+        Some(fake_cli_path().to_string_lossy().as_ref())
+    );
     if library_login_ready {
         assert!(status.runtime.message.is_none());
     } else {
@@ -545,7 +558,10 @@ async fn service_status_can_query_a_runtime_loaded_wrapper_without_claiming_libr
     );
 
     let mut env = configure_fake_cli_env(&home, &key_path, "runtime-wrapper@example.com");
-    env.set(VENDOR_LIBRARY_OVERRIDE_ENV, vendor_path.as_os_str().to_os_string());
+    env.set(
+        VENDOR_LIBRARY_OVERRIDE_ENV,
+        vendor_path.as_os_str().to_os_string(),
+    );
 
     let mut service = OpksshService::new();
     let status = service.get_status().await;
@@ -556,7 +572,10 @@ async fn service_status_can_query_a_runtime_loaded_wrapper_without_claiming_libr
     assert!(!status.runtime.library.available);
     assert!(!status.runtime.library.login_supported);
     assert!(status.runtime.library.config_load_supported);
-    assert_eq!(status.runtime.library.availability, OpksshRuntimeAvailability::Unavailable);
+    assert_eq!(
+        status.runtime.library.availability,
+        OpksshRuntimeAvailability::Unavailable
+    );
     assert_eq!(
         status.runtime.library.path.as_deref(),
         Some(vendor_path.to_string_lossy().as_ref())
@@ -627,7 +646,10 @@ async fn refresh_client_config_uses_a_runtime_loaded_wrapper_when_the_bridge_is_
     );
 
     let mut env = configure_fake_cli_env(&home, &key_path, "config-wrapper@example.com");
-    env.set(VENDOR_LIBRARY_OVERRIDE_ENV, vendor_path.as_os_str().to_os_string());
+    env.set(
+        VENDOR_LIBRARY_OVERRIDE_ENV,
+        vendor_path.as_os_str().to_os_string(),
+    );
     env.set("OPKSSH_DEFAULT", "envdefault");
     env.set(
         "OPKSSH_PROVIDERS",
@@ -694,7 +716,10 @@ async fn library_login_wrapper_returns_a_redacted_result_from_the_operation_path
     );
 
     let mut env = configure_fake_cli_env(&home, &key_path, identity);
-    env.set(VENDOR_LIBRARY_OVERRIDE_ENV, vendor_path.as_os_str().to_os_string());
+    env.set(
+        VENDOR_LIBRARY_OVERRIDE_ENV,
+        vendor_path.as_os_str().to_os_string(),
+    );
     env.set("OPKSSH_FAKE_EXIT_CODE", OsString::from("9"));
 
     let service_state = Arc::new(AsyncMutex::new(OpksshService::new()));
@@ -711,7 +736,10 @@ async fn library_login_wrapper_returns_a_redacted_result_from_the_operation_path
     assert!(result.success);
     assert_eq!(result.provider.as_deref(), Some("google"));
     assert_eq!(result.identity.as_deref(), Some(identity));
-    assert_eq!(result.key_path.as_deref(), Some(key_path.to_string_lossy().as_ref()));
+    assert_eq!(
+        result.key_path.as_deref(),
+        Some(key_path.to_string_lossy().as_ref())
+    );
     assert_eq!(result.message, "Login successful");
     assert!(result.raw_output.is_empty());
     assert_eq!(
@@ -723,7 +751,10 @@ async fn library_login_wrapper_returns_a_redacted_result_from_the_operation_path
     let status = service.get_status().await;
     assert!(status.last_login.is_some());
     assert!(status.last_error.is_none());
-    assert_eq!(status.runtime.active_backend, Some(OpksshBackendKind::Library));
+    assert_eq!(
+        status.runtime.active_backend,
+        Some(OpksshBackendKind::Library)
+    );
     assert!(!status.runtime.using_fallback);
     assert!(status.runtime.library.available);
     assert!(status.runtime.library.login_supported);
@@ -735,8 +766,9 @@ async fn real_vendor_wrapper_override_can_be_loaded_and_queried() {
     let _env_lock = env_lock()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV)
-        .expect("set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test");
+    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
+        "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
+    );
     let home = unique_temp_dir("sorng-opkssh-login-home-real-wrapper");
     let key_path = home.join(".ssh").join("id_ecdsa-real-wrapper");
 
@@ -764,7 +796,10 @@ async fn real_vendor_wrapper_override_can_be_loaded_and_queried() {
     assert!(status.runtime.library.available);
     assert!(status.runtime.library.login_supported);
     assert!(status.runtime.library.config_load_supported);
-    assert_eq!(status.runtime.active_backend, Some(OpksshBackendKind::Library));
+    assert_eq!(
+        status.runtime.active_backend,
+        Some(OpksshBackendKind::Library)
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -773,8 +808,9 @@ async fn real_vendor_wrapper_override_can_refresh_client_config() {
     let _env_lock = env_lock()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV)
-        .expect("set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test");
+    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
+        "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
+    );
     let home = unique_temp_dir("sorng-opkssh-config-home-real-wrapper");
     let key_path = home.join(".ssh").join("id_ecdsa-real-wrapper-config");
     let config_dir = home.join(".opk");
@@ -799,7 +835,10 @@ providers:
     let mut service = OpksshService::new();
     let transport = service.refresh_client_config().await;
 
-    assert_eq!(transport.config_path, config_path.to_string_lossy().as_ref());
+    assert_eq!(
+        transport.config_path,
+        config_path.to_string_lossy().as_ref()
+    );
     assert_eq!(transport.default_provider.as_deref(), Some("google"));
     assert_eq!(transport.providers.len(), 1);
     assert!(transport.provider_secrets_present);
@@ -828,10 +867,13 @@ async fn real_vendor_wrapper_override_surfaces_a_library_login_result_without_cl
     let _env_lock = env_lock()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV)
-        .expect("set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test");
+    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
+        "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
+    );
     let home = unique_temp_dir("sorng-opkssh-login-home-real-wrapper-library-login");
-    let key_path = home.join(".ssh").join("id_ecdsa-real-wrapper-library-login");
+    let key_path = home
+        .join(".ssh")
+        .join("id_ecdsa-real-wrapper-library-login");
 
     let mut env = configure_fake_cli_env(&home, &key_path, "cli-should-not-run@example.com");
     env.set(VENDOR_LIBRARY_OVERRIDE_ENV, override_path);
@@ -852,7 +894,10 @@ async fn real_vendor_wrapper_override_surfaces_a_library_login_result_without_cl
     assert!(!result.success);
     assert_eq!(result.provider.as_deref(), Some("does-not-exist"));
     assert_eq!(result.identity, None);
-    assert_eq!(result.key_path.as_deref(), Some(key_path.to_string_lossy().as_ref()));
+    assert_eq!(
+        result.key_path.as_deref(),
+        Some(key_path.to_string_lossy().as_ref())
+    );
     assert!(!result.message.is_empty());
     assert!(result.raw_output.is_empty());
 
@@ -860,7 +905,10 @@ async fn real_vendor_wrapper_override_surfaces_a_library_login_result_without_cl
     let status = service.get_status().await;
     assert!(status.last_login.is_none());
     assert_eq!(status.last_error.as_deref(), Some(result.message.as_str()));
-    assert_eq!(status.runtime.active_backend, Some(OpksshBackendKind::Library));
+    assert_eq!(
+        status.runtime.active_backend,
+        Some(OpksshBackendKind::Library)
+    );
     assert!(!status.runtime.using_fallback);
     assert!(status.runtime.library.available);
     assert!(status.runtime.library.login_supported);
@@ -868,12 +916,14 @@ async fn real_vendor_wrapper_override_surfaces_a_library_login_result_without_cl
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires SORNG_OPKSSH_VENDOR_LIBRARY to point at a built vendor wrapper"]
-async fn real_vendor_wrapper_override_can_complete_deterministic_fake_oidc_login_without_cli_fallback() {
+async fn real_vendor_wrapper_override_can_complete_deterministic_fake_oidc_login_without_cli_fallback(
+) {
     let _env_lock = env_lock()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV)
-        .expect("set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test");
+    let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
+        "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
+    );
     let home = unique_temp_dir("sorng-opkssh-login-home-real-wrapper-deterministic-success");
     let key_path = home
         .join(".ssh")
@@ -908,7 +958,10 @@ async fn real_vendor_wrapper_override_can_complete_deterministic_fake_oidc_login
         .identity
         .as_deref()
         .is_some_and(|identity| !identity.contains("cli-should-not-run@example.com")));
-    assert_eq!(result.key_path.as_deref(), Some(key_path.to_string_lossy().as_ref()));
+    assert_eq!(
+        result.key_path.as_deref(),
+        Some(key_path.to_string_lossy().as_ref())
+    );
     assert!(result.expires_at.is_some());
     assert_eq!(result.message, "Login successful");
     assert!(result.raw_output.is_empty());
@@ -918,7 +971,10 @@ async fn real_vendor_wrapper_override_can_complete_deterministic_fake_oidc_login
     let status = service.get_status().await;
     assert!(status.last_login.is_some());
     assert!(status.last_error.is_none());
-    assert_eq!(status.runtime.active_backend, Some(OpksshBackendKind::Library));
+    assert_eq!(
+        status.runtime.active_backend,
+        Some(OpksshBackendKind::Library)
+    );
     assert!(!status.runtime.using_fallback);
     assert!(status.runtime.library.available);
     assert!(status.runtime.library.login_supported);
@@ -939,7 +995,10 @@ async fn service_status_honors_backend_mode_from_env_without_disabling_cli_fallb
     compile_fake_vendor_wrapper(&vendor_path, true, true, false, None, false, None);
     let mut env = configure_fake_cli_env(&home, &key_path, "env-mode@example.com");
     env.set("SORNG_OPKSSH_BACKEND", "library");
-    env.set(VENDOR_LIBRARY_OVERRIDE_ENV, vendor_path.as_os_str().to_os_string());
+    env.set(
+        VENDOR_LIBRARY_OVERRIDE_ENV,
+        vendor_path.as_os_str().to_os_string(),
+    );
 
     let mut service = OpksshService::new();
     let status = service.get_status().await;
@@ -984,7 +1043,10 @@ async fn blocking_login_wrapper_returns_a_redacted_result_from_the_operation_pat
     assert!(result.success);
     assert_eq!(result.provider.as_deref(), Some("google"));
     assert_eq!(result.identity.as_deref(), Some(identity));
-    assert_eq!(result.key_path.as_deref(), Some(key_path.to_string_lossy().as_ref()));
+    assert_eq!(
+        result.key_path.as_deref(),
+        Some(key_path.to_string_lossy().as_ref())
+    );
     assert_eq!(result.message, "Login successful");
     assert!(result.raw_output.is_empty());
 

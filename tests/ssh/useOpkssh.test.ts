@@ -232,10 +232,10 @@ describe("useOpkssh", () => {
     expect(result.current.activeTab).toBe("login");
   });
 
-  // ── checkBinary ──────────────────────────────────────
+  // ── checkBinary/runtime status compatibility ─────────
 
-  it("checkBinary invokes opkssh_check_binary and sets binaryStatus", async () => {
-    const status = makeBinaryStatus();
+  it("checkBinary invokes opkssh_get_status and applies the runtime snapshot", async () => {
+    const status = makeOverallStatus();
     mockInvoke.mockResolvedValueOnce(status as never);
 
     const { result } = renderHook(() => useOpkssh(false));
@@ -244,8 +244,12 @@ describe("useOpkssh", () => {
       await result.current.checkBinary();
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("opkssh_check_binary");
-    expect(result.current.binaryStatus).toEqual(status);
+    expect(mockInvoke).toHaveBeenCalledWith("opkssh_get_status");
+    expect(result.current.overallStatus).toEqual(status);
+    expect(result.current.runtimeStatus).toEqual(status.runtime);
+    expect(result.current.binaryStatus).toEqual(status.runtime.cli);
+    expect(result.current.activeKeys).toEqual(status.activeKeys);
+    expect(result.current.clientConfig).toEqual(status.clientConfig);
     expect(result.current.error).toBeNull();
     expect(result.current.isLoading).toBe(false);
   });
@@ -259,7 +263,7 @@ describe("useOpkssh", () => {
       await result.current.checkBinary();
     });
 
-    expect(result.current.error).toContain("Binary check failed");
+    expect(result.current.error).toContain("Runtime status check failed");
     expect(result.current.isLoading).toBe(false);
   });
 

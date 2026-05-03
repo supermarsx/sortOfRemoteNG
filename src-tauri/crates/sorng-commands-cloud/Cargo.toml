@@ -5,7 +5,7 @@ edition = "2021"
 description = "Cloud command handlers — split from app crate to reduce coherence checking time"
 
 [dependencies]
-sorng-app-domains = { path = "../sorng-app-domains", features = ["cloud"] }
+sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-hetzner = { path = "../sorng-hetzner" }
 sorng-oracle-cloud = { path = "../sorng-oracle-cloud" }
 tauri = { workspace = true }

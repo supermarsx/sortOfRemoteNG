@@ -1,4 +1,4 @@
-//! Tauri commands for the SQLite integration.
+/// Tauri commands for the SQLite integration.
 
 use super::sqlite::service::SqliteServiceState;
 use super::sqlite::types::*;

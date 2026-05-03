@@ -11,7 +11,8 @@ sorng-app-domains-ops = { path = "../sorng-app-domains-ops", optional = true }
 sorng-app-domains-platform = { path = "../sorng-app-domains-platform", optional = true }
 
 [features]
-default = ["cloud", "collab", "ops", "platform", "rdp"]
+default = ["lean"]
+lean = []
 cert-auth = ["sorng-app-domains-core/cert-auth"]
 cloud = ["dep:sorng-app-domains-cloud"]
 collab = ["dep:sorng-app-domains-collab"]

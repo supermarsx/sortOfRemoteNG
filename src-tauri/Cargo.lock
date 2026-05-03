@@ -8912,7 +8912,6 @@ dependencies = [
  "sorng-secure-clip",
  "sorng-telegram",
  "sorng-terminal-themes",
- "sorng-totp",
  "sorng-whatsapp",
 ]
 
@@ -8956,6 +8955,7 @@ dependencies = [
  "sorng-ssh",
  "sorng-storage",
  "sorng-telnet",
+ "sorng-totp",
  "sorng-vault",
  "sorng-vnc",
  "sorng-vpn",
@@ -9480,6 +9480,7 @@ dependencies = [
  "sorng-app-domains",
  "sorng-app-shell",
  "sorng-core",
+ "sorng-opkssh",
  "sorng-probes",
  "ssh2",
  "tauri",

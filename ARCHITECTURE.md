@@ -182,7 +182,7 @@ list. To avoid a 1000-line macro in `main.rs`, the workspace is split into
 
 | Family crate | Handler entry point | Gated by feature |
 | --- | --- | --- |
-| `sorng-commands-core` | `core_handler::handler()` | always on (includes `rdp` via sub-feature) |
+| `sorng-commands-core` | `core_handler::handler()` | always on; `lean` keeps the core/serial surface plus legacy AWS/Vercel/Cloudflare glue until that slice moves to `sorng-commands-cloud` |
 | `sorng-commands-ops` | `ops_handler`, `infra_handler`, `mail_handler`, `services_handler` | `ops` |
 | `sorng-commands-cloud` | `cloud_handler::handler()` | `cloud` |
 | `sorng-commands-collab` | `collab_handler::handler()` | `collab` |
@@ -240,21 +240,26 @@ propagate down through `sorng-app-domains` → family/service crates.
 
 | Flag | Default | Purpose |
 | --- | :---: | --- |
-| `ops` | yes | Enable ops family: `sorng-app-domains/ops` + `sorng-commands-ops` + `-infra` + `-mail` + `-services` + `-tools` + `-webservers`. |
-| `cloud` | yes | Enable cloud family: `sorng-app-domains/cloud` + `sorng-commands-cloud`. |
-| `collab` | yes | Collaboration / file-sync: `sorng-app-domains/collab` + `sorng-commands-collab`. |
-| `platform` | yes | Platform-shell extras: `sorng-app-domains/platform` + `sorng-commands-platform`. |
-| `rdp` | yes | RDP client surface (`sorng-app-domains/rdp`, `sorng-commands-core/rdp`). |
+| `lean` | yes | Developer default. Keeps the always-on command crates and dynamic serial wiring while leaving the large ops/collab/platform/RDP/database feature families out unless explicitly requested. Legacy AWS/Vercel/Cloudflare REST and Tauri glue still keeps the cloud domain loaded until that slice moves out of `sorng-commands-core`. |
+| `ops` | no | Enable ops family: `sorng-app-domains/ops` + `sorng-commands-ops` + `-infra` + `-mail` + `-services` + `-tools` + `-webservers`. |
+| `cloud` | no | Enable cloud family: `sorng-app-domains/cloud` + `sorng-commands-cloud`. |
+| `collab` | no | Collaboration / file-sync: `sorng-app-domains/collab` + `sorng-commands-collab`. |
+| `platform` | no | Platform-shell extras: `sorng-app-domains/platform` + `sorng-commands-platform`. |
+| `rdp` | no | RDP client surface (`sorng-app-domains/rdp`, `sorng-commands-core/rdp`). |
 | `rdp-software-decode` | no¹ | Enable Cisco openh264 software H.264 decode in `sorng-rdp-vendor`. |
 | `rdp-mf-decode` | no¹ | Enable Windows Media Foundation hardware H.264 decode (Windows-only). |
 | `rdp-snapshot` | no¹ | PNG snapshot encoding for `rdp_get_frame_data`. |
 | `cert-auth` | no | SSH/RDP certificate-based auth flows. |
 | `db-mongo` / `-mssql` / `-mysql` / `-postgres` / `-redis` / `-sqlite` | no² | Per-database driver gates (link-time opt-in). |
-| `kafka` | no | `sorng-kafka` with `cmake-build` (librdkafka from source — Linux/macOS/Docker path). |
-| `kafka-dynamic` | no | `sorng-kafka` with system `librdkafka` (vcpkg/pacman/brew/winget — required on Windows/MSYS64, mutually exclusive with `kafka`). |
+| `kafka` | no² | `sorng-kafka` with system `librdkafka` dynamic linking (apt/dnf/pacman/brew/vcpkg/winget). |
+| `kafka-dynamic` | no | Alias of `kafka` retained for older CI/release invocations. |
+| `kafka-static` | no | Non-release static librdkafka-from-source path; keep out of production build aliases. |
+| `opkssh-vendored-wrapper` | no² | Link the OPKSSH wrapper crate so release builds can stage and load the native wrapper artifact. |
+| `vpn-softether` | no² | SoftEther dataplane/control and Tauri command surface. |
 | `script-engine` | no | `sorng-ssh/script-engine` — embed rquickjs for SSH runbooks. |
 | `tls-cert-details` | no | Extended cert parsing in `sorng-protocols` via `x509-parser`. |
-| `full` | — | Convenience alias enabling everything above. |
+| `logs-json` | no² | Emit structured JSON tracing lines for release log aggregation. |
+| `full` | — | Release/packaging alias enabling every shippable app-level feature above. It intentionally excludes non-release/test-only gates such as `kafka-static` and lower-crate `docker-e2e`. `npm run tauri:build`, Docker production builds, and the release workflow opt into this explicitly. |
 
 ¹ Enabled by default inside `sorng-rdp` itself; the app-level flag lets Tauri
 builds opt-in/out.
@@ -266,13 +271,12 @@ These are declared on lower crates and plumbed up by in-flight executors:
 
 | Flag | Defined in | Effect |
 | --- | --- | --- |
-| `vpn-softether` | `sorng-vpn` | SoftEther dataplane/control (SE-7). Builds without the heavy FFI when disabled. |
 | `protocol-serial` / `protocol-serial-dynamic` | `sorng-serial` + `sorng-protocols` | Static vs. dyn-dispatch serial driver registration. |
-| `logs-json` | binary + `sorng-core` tracing layer | Switch `tracing-subscriber` fmt layer from human to JSON. |
 
 All flags are **additive** (Cargo convention): enabling one must never remove
-functionality. `kafka` + `kafka-dynamic` is the only documented mutual-
-exclusion and is enforced by README + CI matrix.
+functionality. `--all-features` is not the production shortcut because it also
+pulls non-release or test-only gates such as `kafka-static`; use `full` for
+shipping builds.
 
 ### 6.3 Runtime-equivalent toggles
 

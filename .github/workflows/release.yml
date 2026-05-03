@@ -39,6 +39,7 @@ jobs:
       # Tauri updater signing (graceful: absent => plain bundles, no .sig)
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,6 +64,20 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Check out pinned OPKSSH source (193d79871f3bad3cd27cfb94734c265773a99c9b)
+        uses: actions/checkout@v4
+        with:
+          repository: openpubkey/opkssh
+          ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
+          fetch-depth: 1
+          path: .ci/opkssh-source
+
+      - name: Install Go toolchain for embedded OPKSSH bridge
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.12"
+          cache-dependency-path: .ci/opkssh-source/go.sum
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -77,7 +92,25 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
+            pkg-config \
+            libssl-dev \
+            librdkafka-dev \
             libayatana-appindicator3-dev
+
+      - name: Install macOS librdkafka deps
+        if: matrix.target == 'macos'
+        run: brew install pkg-config librdkafka
+
+      - name: Install Windows librdkafka deps
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = "C:\vcpkg" }
+          & "$vcpkgRoot\vcpkg.exe" install librdkafka:x64-windows
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RDKAFKA_ROOT=$vcpkgRoot\installed\x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install JS deps
         run: npm ci
@@ -150,14 +183,14 @@ jobs:
           APPLE_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}
+          APPLE_SIGNING_IDENTITY: "${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}"
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: 'sortOfRemoteNG ${{ steps.resolve_version.outputs.version }}'
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: false
-          args: --bundles ${{ matrix.bundles }}
+          args: --no-default-features --features full --bundles ${{ matrix.bundles }}
 
       # ----------------------------------------------------------------------
       # Windows: sign .msi/.exe post-bundle via signtool + EV thumbprint.

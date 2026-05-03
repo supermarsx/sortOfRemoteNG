@@ -128,13 +128,11 @@ fn inject_private_endpoint(url: &str) {
     }
 
     // Navigate / create plugins.updater.endpoints.
-    let plugins = root
-        .as_object_mut()
-        .and_then(|o| {
-            o.entry("plugins")
-                .or_insert_with(|| serde_json::json!({}))
-                .as_object_mut()
-        });
+    let plugins = root.as_object_mut().and_then(|o| {
+        o.entry("plugins")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+    });
     let Some(plugins) = plugins else {
         println!("cargo:warning=t3-e39: tauri.conf.json root is not an object; skipping");
         return;
@@ -177,7 +175,5 @@ fn inject_private_endpoint(url: &str) {
         println!("cargo:warning=t3-e39: write tauri.conf.json failed ({e}); skipping");
         return;
     }
-    println!(
-        "cargo:warning=t3-e39: injected private updater endpoint into tauri.conf.json: {url}"
-    );
+    println!("cargo:warning=t3-e39: injected private updater endpoint into tauri.conf.json: {url}");
 }

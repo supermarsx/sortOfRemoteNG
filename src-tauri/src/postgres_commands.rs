@@ -1,4 +1,9 @@
 #[cfg(feature = "db-postgres")]
+mod postgres {
+    pub use crate::postgres::*;
+}
+
+#[cfg(feature = "db-postgres")]
 mod generated {
     include!("../crates/sorng-postgres/src/postgres/commands.rs");
 }

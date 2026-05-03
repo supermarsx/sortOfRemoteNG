@@ -1,4 +1,9 @@
 #[cfg(feature = "db-sqlite")]
+mod sqlite {
+    pub use crate::sqlite::*;
+}
+
+#[cfg(feature = "db-sqlite")]
 mod generated {
     include!("../crates/sorng-sqlite/src/sqlite/commands.rs");
 }

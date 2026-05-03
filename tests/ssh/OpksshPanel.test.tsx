@@ -397,8 +397,6 @@ describe("OpksshPanel", () => {
       switch (cmd) {
         case "opkssh_get_status":
           return Promise.resolve(makeStatus());
-        case "opkssh_check_binary":
-          return Promise.resolve(makeBinaryStatus());
         case "opkssh_list_keys":
           return Promise.resolve([makeKey()]);
         case "opkssh_well_known_providers":
@@ -431,18 +429,18 @@ describe("OpksshPanel", () => {
     it("should not render when isOpen is false", async () => {
       await renderPanel(false);
       expect(
-        screen.queryByText("opkssh Binary"),
+        screen.queryByText("Local OPKSSH Runtime"),
       ).not.toBeInTheDocument();
     });
 
     it("should render when isOpen is true", async () => {
       await renderPanel(true);
-      expect(screen.getByText("opkssh Binary")).toBeInTheDocument();
+      expect(screen.getByText("Local OPKSSH Runtime")).toBeInTheDocument();
     });
 
     it("should show overview tab by default", async () => {
       await renderPanel();
-      expect(screen.getByText("opkssh Binary")).toBeInTheDocument();
+      expect(screen.getByText("Local OPKSSH Runtime")).toBeInTheDocument();
       expect(screen.getByText("Active Keys")).toBeInTheDocument();
       expect(screen.getByText("Quick Actions")).toBeInTheDocument();
     });

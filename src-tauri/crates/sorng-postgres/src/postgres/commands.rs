@@ -1,4 +1,4 @@
-//! Tauri commands for the PostgreSQL integration.
+/// Tauri commands for the PostgreSQL integration.
 
 use super::postgres::service::PostgresServiceState;
 use super::postgres::types::*;

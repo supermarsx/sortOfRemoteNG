@@ -41,7 +41,6 @@ mod about_commands;
 mod bootloader_commands;
 mod ceph_commands;
 mod cicd_commands;
-#[path = "../../../src/consul_commands.rs"]
 mod consul_commands;
 mod cpanel_commands;
 mod cron_commands;

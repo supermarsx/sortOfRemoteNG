@@ -3,8 +3,8 @@
 //! Handle the `opkssh login` flow, which opens a browser for OIDC authentication
 //! and generates an SSH key containing the PK Token.
 
-use crate::types::*;
 use crate::service::OpksshServiceState;
+use crate::types::*;
 use chrono::{DateTime, Duration, Utc};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -60,10 +60,7 @@ fn resolve_operation_provider(opts: &OpksshLoginOptions) -> Option<String> {
     opts.provider.clone().or_else(|| opts.issuer.clone())
 }
 
-fn finalize_operation(
-    snapshot: &mut OpksshLoginOperation,
-    outcome: LoginOperationTaskResult,
-) {
+fn finalize_operation(snapshot: &mut OpksshLoginOperation, outcome: LoginOperationTaskResult) {
     snapshot.finished_at = Some(Utc::now());
     snapshot.can_cancel = false;
 
@@ -96,7 +93,11 @@ fn mark_operation_cancelled(snapshot: &mut OpksshLoginOperation) {
 async fn finalize_if_finished(entry: &SharedLoginOperation) -> Result<(), String> {
     let completed_task = {
         let mut pending = entry.lock().await;
-        if pending.task.as_ref().map_or(false, |task| task.is_finished()) {
+        if pending
+            .task
+            .as_ref()
+            .map_or(false, |task| task.is_finished())
+        {
             pending.task.take()
         } else {
             None
@@ -235,9 +236,9 @@ pub async fn run_login_operation(
         return Ok(result);
     }
 
-    Err(completed.message.unwrap_or_else(|| {
-        "OPKSSH login did not produce a result".to_string()
-    }))
+    Err(completed
+        .message
+        .unwrap_or_else(|| "OPKSSH login did not produce a result".to_string()))
 }
 
 /// Build the command-line arguments for `opkssh login`.
@@ -520,7 +521,10 @@ mod tests {
         assert!(!operation.can_cancel);
         assert!(operation.finished_at.is_some());
         assert_eq!(operation.message.as_deref(), Some("Login successful"));
-        assert!(operation.result.as_ref().is_some_and(|result| result.success));
+        assert!(operation
+            .result
+            .as_ref()
+            .is_some_and(|result| result.success));
     }
 
     #[test]

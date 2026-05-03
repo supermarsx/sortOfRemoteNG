@@ -74,8 +74,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
 
     // PowerShell Remoting service (WinRM + PS7 SSH transport).
     // Hardened CredSSP + Kerberos support added in t1-e07 (commit 1e47b52d).
-    let ps_remoting_state: PsRemotingServiceState =
-        Arc::new(Mutex::new(PsRemotingService::new()));
+    let ps_remoting_state: PsRemotingServiceState = Arc::new(Mutex::new(PsRemotingService::new()));
     app.manage(ps_remoting_state);
 
     let gpg_agent_state: gpg_agent::types::GpgServiceState =
@@ -269,7 +268,6 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
         let kafka_state: KafkaServiceState = kafka::service::new_state();
         app.manage(kafka_state);
     }
-
 
     let locales_dir = app
         .path()

@@ -29,9 +29,8 @@ pub fn well_known_providers() -> Vec<CustomProvider> {
         },
         CustomProvider {
             alias: "microsoft".into(),
-            issuer:
-                "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0"
-                    .into(),
+            issuer: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0"
+                .into(),
             client_id: "096ce0a3-5e72-4da8-9c86-12924b294a01".into(),
             client_secret: None,
             client_secret_present: false,
@@ -41,8 +40,7 @@ pub fn well_known_providers() -> Vec<CustomProvider> {
         CustomProvider {
             alias: "gitlab".into(),
             issuer: "https://gitlab.com".into(),
-            client_id: "8d8b7024572c7fd501f64374dec6bba37096783dfcd792b3988104be08cb6923"
-                .into(),
+            client_id: "8d8b7024572c7fd501f64374dec6bba37096783dfcd792b3988104be08cb6923".into(),
             client_secret: None,
             client_secret_present: false,
             client_secret_redacted: false,
@@ -107,9 +105,7 @@ pub fn resolve_client_config_path(explicit_path: Option<&str>) -> Result<PathBuf
 }
 
 /// Load the typed client config from disk.
-pub async fn load_client_config(
-    explicit_path: Option<&str>,
-) -> Result<OpksshClientConfig, String> {
+pub async fn load_client_config(explicit_path: Option<&str>) -> Result<OpksshClientConfig, String> {
     let path = resolve_client_config_path(explicit_path)?;
     let bytes = tokio::fs::read(&path).await.map_err(|error| {
         format!(
@@ -162,7 +158,10 @@ pub fn create_providers_map(
 
         let key = alias.to_ascii_lowercase();
         if by_alias.contains_key(&key) {
-            return Err(format!("Duplicate opkssh provider alias: {}", provider.alias));
+            return Err(format!(
+                "Duplicate opkssh provider alias: {}",
+                provider.alias
+            ));
         }
 
         by_alias.insert(key, provider.clone());
@@ -351,7 +350,9 @@ fn parse_env_providers(env: &str) -> Vec<CustomProvider> {
 }
 
 /// Write an updated client config to `~/.opk/config.yml`.
-pub async fn write_client_config(config: &OpksshClientConfig) -> Result<OpksshClientConfig, String> {
+pub async fn write_client_config(
+    config: &OpksshClientConfig,
+) -> Result<OpksshClientConfig, String> {
     create_providers_map(&config.providers)?;
 
     let path = resolve_client_config_path(Some(&config.config_path))?;
@@ -537,8 +538,10 @@ fn preserve_existing_client_secrets(
 
 fn apply_env_provider_overrides(config: &mut OpksshClientConfig) {
     if let Ok(env_providers) = std::env::var("OPKSSH_PROVIDERS") {
-        config.providers =
-            merge_provider_sources(config.providers.clone(), parse_env_providers(&env_providers));
+        config.providers = merge_provider_sources(
+            config.providers.clone(),
+            parse_env_providers(&env_providers),
+        );
     }
 
     if let Ok(default_provider) = std::env::var("OPKSSH_DEFAULT") {
@@ -610,7 +613,10 @@ fn render_client_config_yaml(config: &OpksshClientConfig) -> String {
         .as_ref()
         .filter(|value| !value.trim().is_empty())
     {
-        yaml.push_str(&format!("default: {}\n", sanitize_yaml_scalar(default_provider)));
+        yaml.push_str(&format!(
+            "default: {}\n",
+            sanitize_yaml_scalar(default_provider)
+        ));
     }
 
     if !config.providers.is_empty() {
@@ -826,10 +832,18 @@ providers:
         };
 
         let persisted = write_client_config(&updated).await.expect("updated write");
-        assert_eq!(persisted.providers[0].client_secret.as_deref(), Some("super-secret"));
+        assert_eq!(
+            persisted.providers[0].client_secret.as_deref(),
+            Some("super-secret")
+        );
 
-        let reloaded = load_client_config(Some(&path_str)).await.expect("reload config");
-        assert_eq!(reloaded.providers[0].client_secret.as_deref(), Some("super-secret"));
+        let reloaded = load_client_config(Some(&path_str))
+            .await
+            .expect("reload config");
+        assert_eq!(
+            reloaded.providers[0].client_secret.as_deref(),
+            Some("super-secret")
+        );
         assert_eq!(reloaded.providers[0].client_id, "updated-client");
 
         let _ = tokio::fs::remove_dir_all(&temp_dir).await;

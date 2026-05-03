@@ -1,4 +1,7 @@
-#![cfg_attr(test, allow(clippy::assertions_on_constants, clippy::overly_complex_bool_expr))]
+#![cfg_attr(
+    test,
+    allow(clippy::assertions_on_constants, clippy::overly_complex_bool_expr)
+)]
 //! # SortOfRemote NG
 //!
 //! A comprehensive remote connectivity and management application built with Tauri and Rust.
@@ -88,8 +91,7 @@ mod ssh_tunnel_tests;
 /// `conn_span(id)` helper which attaches the `conn_id` field (t3-e23).
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     #[cfg(feature = "logs-json")]
     {
@@ -102,9 +104,7 @@ fn init_tracing() {
     }
     #[cfg(not(feature = "logs-json"))]
     {
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .try_init();
+        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
     }
 }
 

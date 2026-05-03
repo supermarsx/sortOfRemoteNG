@@ -313,9 +313,9 @@ sorng-commands-webservers = { path = "crates/sorng-commands-webservers", optiona
 sorng-commands-cloud = { path = "crates/sorng-commands-cloud", optional = true }
 sorng-commands-platform = { path = "crates/sorng-commands-platform", optional = true }
 sorng-commands-collab = { path = "crates/sorng-commands-collab", optional = true }
-sorng-commands-core = { path = "crates/sorng-commands-core" }
-sorng-commands-sessions = { path = "crates/sorng-commands-sessions" }
-sorng-commands-access = { path = "crates/sorng-commands-access" }
+sorng-commands-core = { path = "crates/sorng-commands-core", default-features = false }
+sorng-commands-sessions = { path = "crates/sorng-commands-sessions", default-features = false }
+sorng-commands-access = { path = "crates/sorng-commands-access", default-features = false }
 
 serde_json = { workspace = true }
 serde = { workspace = true }
@@ -350,17 +350,18 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 [features]
-default = ["cloud", "collab", "ops", "platform", "rdp"]
-full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "ops", "platform", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details"]
+default = ["lean"]
+lean = ["opkssh", "protocol-serial-dynamic"]
+full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "logs-json", "opkssh-vendored-wrapper", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 cert-auth = ["sorng-app-domains/cert-auth"]
 cloud = ["sorng-app-domains/cloud", "dep:sorng-commands-cloud"]
 collab = ["sorng-app-domains/collab", "dep:sorng-commands-collab"]
-db-mongo = ["sorng-app-domains/db-mongo"]
-db-mssql = ["sorng-app-domains/db-mssql"]
-db-mysql = ["sorng-app-domains/db-mysql"]
-db-postgres = ["sorng-app-domains/db-postgres"]
-db-redis = ["sorng-app-domains/db-redis"]
-db-sqlite = ["sorng-app-domains/db-sqlite"]
+db-mongo = ["sorng-app-domains/db-mongo", "sorng-commands-sessions/db-mongo"]
+db-mssql = ["sorng-app-domains/db-mssql", "sorng-commands-sessions/db-mssql"]
+db-mysql = ["sorng-app-domains/db-mysql", "sorng-commands-sessions/db-mysql"]
+db-postgres = ["sorng-app-domains/db-postgres", "sorng-commands-sessions/db-postgres"]
+db-redis = ["sorng-app-domains/db-redis", "sorng-commands-sessions/db-redis"]
+db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-commands-sessions/db-sqlite"]
 # `kafka` dynamic-links against a system-installed librdkafka (t3-e38) —
 # this is the v1.0 default. Users must install librdkafka ≥ 2.x via their
 # OS package manager (apt/dnf/pacman/brew/vcpkg/winget). At runtime the
@@ -377,12 +378,12 @@ kafka-dynamic = ["dep:sorng-kafka", "sorng-kafka/dynamic-linking", "sorng-comman
 # to mixed-slash path mangling — use `kafka` or `kafka-dynamic` there.
 # Opt in explicitly; NOT part of release artifacts.
 kafka-static = ["dep:sorng-kafka", "sorng-kafka/cmake-build", "sorng-commands-ops?/kafka", "sorng-app-domains/kafka"]
-# Optional OPKSSH metadata-wrapper linkage. This does not ship a real Go
-# `libopkssh` runtime yet; it only links the current vendor wrapper stub into
-# the app graph so runtime status can query truthful wrapper metadata. Bundle
-# staging stays separate and opt-in via `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1`
-# (or `npm run stage:opkssh-vendor -- --enable`).
-opkssh-vendored-wrapper = ["dep:sorng-opkssh", "sorng-opkssh/vendored-wrapper"]
+# OPKSSH wrapper linkage for release builds. The native bridge embeds when a
+# pinned OPKSSH checkout and Go toolchain are available; otherwise the wrapper
+# remains metadata-only and runtime status keeps CLI fallback explicit. Tauri
+# and Docker production builds stage the wrapper artifact by default.
+opkssh = ["dep:sorng-opkssh", "sorng-commands-core/opkssh"]
+opkssh-vendored-wrapper = ["opkssh", "sorng-opkssh/vendored-wrapper"]
 ops = ["sorng-app-domains/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
 platform = ["sorng-app-domains/platform", "dep:sorng-commands-platform"]
 rdp = ["sorng-app-domains/rdp", "sorng-commands-core/rdp"]
@@ -391,10 +392,9 @@ rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]
 rdp-snapshot = ["sorng-app-domains/rdp-snapshot"]
 script-engine = ["sorng-app-domains/script-engine"]
 tls-cert-details = ["sorng-app-domains/tls-cert-details"]
-# SoftEther VPN (opt-in). Gates the softether module in sorng-vpn and
-# the 7 Tauri commands (create/connect/disconnect/get/list/delete/update
-# _softether_connection). Off by default in 1.0 — enable with
-# `--features vpn-softether`.
+# SoftEther VPN. Gates the softether module in sorng-vpn and the 7 Tauri
+# commands (create/connect/disconnect/get/list/delete/update
+# _softether_connection). Included in the `full` production feature set.
 vpn-softether = ["sorng-app-domains/vpn-softether", "sorng-commands-core/vpn-softether"]
 # Serial / RS-232 feature split (t3-e4). `protocol-serial` is the
 # static/vendored dev/test variant — driver presence is assumed at

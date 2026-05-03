@@ -951,6 +951,42 @@ pub fn is_command(command: &str) -> bool {
             | "totp_build_otpauth_uri"
             | "totp_generate_backup_codes"
     ) || {
+        #[cfg(feature = "opkssh")]
+        {
+            matches!(
+                command,
+                "opkssh_check_binary"
+                    | "opkssh_get_download_url"
+                    | "opkssh_start_login"
+                    | "opkssh_get_login_operation"
+                    | "opkssh_await_login"
+                    | "opkssh_cancel_login"
+                    | "opkssh_login"
+                    | "opkssh_list_keys"
+                    | "opkssh_remove_key"
+                    | "opkssh_get_client_config"
+                    | "opkssh_update_client_config"
+                    | "opkssh_well_known_providers"
+                    | "opkssh_build_env_string"
+                    | "opkssh_server_read_config_script"
+                    | "opkssh_parse_server_config"
+                    | "opkssh_get_server_config"
+                    | "opkssh_build_add_identity_cmd"
+                    | "opkssh_build_remove_identity_cmd"
+                    | "opkssh_build_add_provider_cmd"
+                    | "opkssh_build_remove_provider_cmd"
+                    | "opkssh_build_install_cmd"
+                    | "opkssh_build_audit_cmd"
+                    | "opkssh_parse_audit_output"
+                    | "opkssh_get_audit_results"
+                    | "opkssh_get_status"
+            )
+        }
+        #[cfg(not(feature = "opkssh"))]
+        {
+            false
+        }
+    } || {
         // ── PowerShell Remoting (53) ─────────────────────────────────
         // Gated behind the `ops` feature because `sorng_powershell` is
         // re-exported via `sorng-app-domains-ops`.
@@ -1110,6 +1146,56 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         trust_store_commands::trust_get_identity_history,
         trust_store_commands::trust_get_verification_stats,
         trust_store_commands::trust_get_summary,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_check_binary,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_get_download_url,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_start_login,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_get_login_operation,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_await_login,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_cancel_login,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_login,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_list_keys,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_remove_key,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_get_client_config,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_update_client_config,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_well_known_providers,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_env_string,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_server_read_config_script,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_parse_server_config,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_get_server_config,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_add_identity_cmd,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_remove_identity_cmd,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_add_provider_cmd,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_remove_provider_cmd,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_install_cmd,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_build_audit_cmd,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_parse_audit_output,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_get_audit_results,
+        #[cfg(feature = "opkssh")]
+        opkssh_commands::inner::opkssh_get_status,
         ssh_commands::connect_ssh,
         ssh_commands::ssh_respond_to_host_key_prompt,
         ssh_commands::start_shell,

@@ -6,4 +6,3 @@ mod rlogin {
 mod inner {
     include!("../crates/sorng-protocols/src/rlogin_cmds.rs");
 }
-

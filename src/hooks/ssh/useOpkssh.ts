@@ -225,6 +225,14 @@ export function useOpkssh(
     [runtimeStatus, overallStatus?.runtime],
   );
 
+  const applyStatusSnapshot = useCallback((status: OpksshStatus) => {
+    setOverallStatus(status);
+    setRuntimeStatus(status.runtime);
+    setBinaryStatus(status.runtime?.cli ?? status.binary);
+    setActiveKeys(status.activeKeys);
+    setClientConfig(status.clientConfig ?? null);
+  }, []);
+
   // ── Auto-select first session ──────────────────────────
   useEffect(() => {
     if (isOpen && !selectedSessionId && sshSessions.length > 0) {
@@ -232,7 +240,7 @@ export function useOpkssh(
     }
   }, [isOpen, selectedSessionId, sshSessions]);
 
-  // ── Binary check ───────────────────────────────────────
+  // ── Runtime status check ────────────────────────────────
   const checkBinary = useCallback(async () => {
     if (!isTauri()) {
       setError("opkssh requires the Tauri runtime.");
@@ -241,22 +249,14 @@ export function useOpkssh(
     try {
       setIsLoading(true);
       setError(null);
-      const status = await invoke<OpksshBinaryStatus>("opkssh_check_binary");
-      setBinaryStatus(status);
-      setRuntimeStatus((current) =>
-        current
-          ? {
-              ...current,
-              cli: status,
-            }
-          : current,
-      );
+      const status = await invoke<OpksshStatus>("opkssh_get_status");
+      applyStatusSnapshot(status);
     } catch (err: any) {
-      setError(`Binary check failed: ${err?.message || err}`);
+      setError(`Runtime status check failed: ${err?.message || err}`);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyStatusSnapshot]);
 
   // ── Get overall status ─────────────────────────────────
   const refreshStatus = useCallback(async () => {
@@ -265,17 +265,13 @@ export function useOpkssh(
       setIsLoading(true);
       setError(null);
       const status = await invoke<OpksshStatus>("opkssh_get_status");
-      setOverallStatus(status);
-      setRuntimeStatus(status.runtime);
-      setBinaryStatus(status.runtime?.cli ?? status.binary);
-      setActiveKeys(status.activeKeys);
-      setClientConfig(status.clientConfig ?? null);
+      applyStatusSnapshot(status);
     } catch (err: any) {
       setError(`Status refresh failed: ${err?.message || err}`);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyStatusSnapshot]);
 
   // ── Key management ─────────────────────────────────────
   const refreshKeys = useCallback(async () => {

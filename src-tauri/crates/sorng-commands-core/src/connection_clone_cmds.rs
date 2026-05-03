@@ -13,12 +13,7 @@ const TOP_LEVEL_SECRETS: &[&str] = &[
     "rustdeskPassword",
 ];
 
-const NESTED_CONTAINERS: &[&str] = &[
-    "cloudProvider",
-    "gatewaySettings",
-    "gateway",
-    "proxyConfig",
-];
+const NESTED_CONTAINERS: &[&str] = &["cloudProvider", "gatewaySettings", "gateway", "proxyConfig"];
 
 const NESTED_SECRET_KEYS: &[&str] = &[
     "password",
@@ -39,10 +34,7 @@ pub fn clone_connection_value(
         .as_object_mut()
         .ok_or_else(|| "connection payload must be a JSON object".to_string())?;
 
-    let src_id = obj
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let src_id = obj.get("id").and_then(|v| v.as_str()).map(String::from);
     let original_name = obj
         .get("name")
         .and_then(|v| v.as_str())
@@ -154,7 +146,10 @@ mod tests {
         assert_eq!(cloud.get("kind").and_then(|v| v.as_str()), Some("aws"));
         let proxy = o.get("proxyConfig").and_then(|v| v.as_object()).unwrap();
         assert!(!proxy.contains_key("proxyPassword"));
-        assert_eq!(proxy.get("host").and_then(|v| v.as_str()), Some("proxy.local"));
+        assert_eq!(
+            proxy.get("host").and_then(|v| v.as_str()),
+            Some("proxy.local")
+        );
     }
 
     #[test]

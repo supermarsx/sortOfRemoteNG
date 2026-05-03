@@ -1,6 +1,5 @@
 mod network {
     pub use crate::network::*;
-    
 }
 
 #[allow(dead_code)]

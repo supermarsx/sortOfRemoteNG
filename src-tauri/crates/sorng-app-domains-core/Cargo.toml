@@ -36,6 +36,7 @@ sorng-sqlite = { path = "../sorng-sqlite", optional = true }
 sorng-ssh = { path = "../sorng-ssh", default-features = false }
 sorng-storage = { path = "../sorng-storage" }
 sorng-telnet = { path = "../sorng-telnet" }
+sorng-totp = { path = "../sorng-totp" }
 sorng-vault = { path = "../sorng-vault" }
 sorng-vnc = { path = "../sorng-vnc" }
 sorng-vpn = { path = "../sorng-vpn" }

@@ -1,4 +1,4 @@
-//! Tauri commands for the Microsoft SQL Server integration.
+/// Tauri commands for the Microsoft SQL Server integration.
 
 use super::mssql::service::MssqlServiceState;
 use super::mssql::types::*;

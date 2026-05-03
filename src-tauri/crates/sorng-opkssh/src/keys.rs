@@ -99,7 +99,9 @@ pub fn build_key_from_material(material: RuntimeKeyMaterial) -> OpksshKey {
         identity: material.identity,
         provider: material.provider,
         created_at,
-        is_expired: expires_at.map(|expires_at| expires_at < Utc::now()).unwrap_or(false),
+        is_expired: expires_at
+            .map(|expires_at| expires_at < Utc::now())
+            .unwrap_or(false),
         expires_at,
         algorithm: material.algorithm.unwrap_or_else(|| "unknown".to_string()),
         fingerprint: material.fingerprint,
@@ -239,7 +241,9 @@ async fn get_key_fingerprint(pub_path: &Path) -> Option<String> {
     {
         Ok(output) if output.status.success() => {
             let out = String::from_utf8_lossy(&output.stdout);
-            out.split_whitespace().nth(1).map(|fingerprint| fingerprint.to_string())
+            out.split_whitespace()
+                .nth(1)
+                .map(|fingerprint| fingerprint.to_string())
         }
         _ => None,
     }
@@ -297,7 +301,9 @@ mod tests {
 
         let private_key = dir.join("id_opkssh");
         let public_key = dir.join("id_opkssh-cert.pub");
-        tokio::fs::write(&private_key, b"private").await.expect("write private key");
+        tokio::fs::write(&private_key, b"private")
+            .await
+            .expect("write private key");
         tokio::fs::write(
             &public_key,
             b"ssh-ed25519-cert-v01@openssh.com AAAA alice@example.com",
@@ -321,7 +327,9 @@ mod tests {
 
         let private_key = dir.join("id_ecdsa");
         let public_key = dir.join("id_ecdsa.pub");
-        tokio::fs::write(&private_key, b"private").await.expect("write private key");
+        tokio::fs::write(&private_key, b"private")
+            .await
+            .expect("write private key");
         tokio::fs::write(&public_key, b"ecdsa-sha2-nistp256 AAAA user@example.com")
             .await
             .expect("write public key");
@@ -339,7 +347,9 @@ mod tests {
 
         let private_key = dir.join("id_opkssh");
         let public_key = dir.join("id_opkssh.pub");
-        tokio::fs::write(&private_key, b"private").await.expect("write private key");
+        tokio::fs::write(&private_key, b"private")
+            .await
+            .expect("write private key");
         tokio::fs::write(
             &public_key,
             b"ssh-ed25519-cert-v01@openssh.com AAAA alice@example.com",

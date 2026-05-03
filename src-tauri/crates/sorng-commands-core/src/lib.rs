@@ -1,5 +1,8 @@
 pub use sorng_app_domains::*;
 
+#[cfg(all(feature = "opkssh", not(feature = "ops")))]
+pub use sorng_opkssh as opkssh;
+
 // t5-e7: connection clone command (in-crate module, not an `include!` shim)
 pub mod connection_clone_cmds;
 
@@ -62,6 +65,9 @@ mod network_commands;
 mod openvpn_commands;
 #[path = "../../../src/openvpn_dedicated_commands.rs"]
 mod openvpn_dedicated_commands;
+#[cfg(feature = "opkssh")]
+#[path = "../../../src/opkssh_commands.rs"]
+mod opkssh_commands;
 #[path = "../../../src/passkey_commands.rs"]
 mod passkey_commands;
 #[cfg(feature = "ops")]

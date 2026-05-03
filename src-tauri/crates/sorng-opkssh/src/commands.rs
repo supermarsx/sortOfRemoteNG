@@ -123,7 +123,7 @@ pub(crate) async fn login_command(
 
 // ── Binary Management ───────────────────────────────────────────────
 
-/// Check if opkssh is installed and get version info.
+/// Refresh runtime selection and return CLI fallback status for legacy callers.
 #[tauri::command]
 pub async fn opkssh_check_binary(
     state: State<'_, OpksshServiceState>,

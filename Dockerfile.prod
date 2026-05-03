@@ -44,60 +44,91 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Stage 1 — builder: Rust + Node toolchain, compiles Rust workspace + Next.js.
+# Stage 1 — chef-base: Rust + Node toolchain shared by dependency and builder stages.
 # -----------------------------------------------------------------------------
-FROM debian:bookworm-slim AS builder
+FROM debian:bookworm-slim AS chef-base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TERM_COLOR=never \
     RUST_BACKTRACE=1 \
-    PATH="/root/.cargo/bin:/usr/local/node/bin:${PATH}" \
+    PATH="/root/.cargo/bin:/usr/local/node/bin:/usr/local/go/bin:${PATH}" \
     NODE_VERSION=20.18.1 \
+    GO_VERSION=1.24.12 \
     RUSTUP_HOME=/root/.rustup \
     CARGO_HOME=/root/.cargo
 
 # System packages required to build Tauri 2 on Debian bookworm.
 # (webkit2gtk-4.1 + soup-3.0 match Tauri 2 defaults.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        curl \
-        file \
-        git \
-        libayatana-appindicator3-dev \
-        libglib2.0-dev \
-        libgtk-3-dev \
-        librsvg2-dev \
-        libsoup-3.0-dev \
-        libssl-dev \
-        libwebkit2gtk-4.1-dev \
-        libxdo-dev \
-        patchelf \
-        pkg-config \
-        wget \
-        xz-utils \
+    build-essential \
+    ca-certificates \
+    curl \
+    file \
+    git \
+    libayatana-appindicator3-dev \
+    libglib2.0-dev \
+    libgtk-3-dev \
+    librdkafka-dev \
+    librsvg2-dev \
+    libsoup-3.0-dev \
+    libssl-dev \
+    libwebkit2gtk-4.1-dev \
+    libxdo-dev \
+    patchelf \
+    pkg-config \
+    wget \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js (pinned) — Next.js 16 needs Node >= 18.18.
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
-        amd64) node_arch=x64 ;; \
-        arm64) node_arch=arm64 ;; \
-        *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
+    amd64) node_arch=x64 ;; \
+    arm64) node_arch=arm64 ;; \
+    *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
     esac; \
     mkdir -p /usr/local/node; \
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" \
-        | tar -xJ --strip-components=1 -C /usr/local/node; \
+    | tar -xJ --strip-components=1 -C /usr/local/node; \
     node --version; \
     npm --version
+
+# Go is required when the OPKSSH vendored wrapper can build the embedded bridge.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+    amd64) go_arch=amd64 ;; \
+    arm64) go_arch=arm64 ;; \
+    *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz" \
+    | tar -xz -C /usr/local; \
+    go version
 
 # Rust stable toolchain (MSVC pinning only matters on Windows; on Linux we
 # use the default GNU target).
 RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile minimal \
+    | sh -s -- -y --default-toolchain stable --profile minimal \
     && rustc --version \
     && cargo --version
+
+RUN cargo install cargo-chef --locked
+
+# -----------------------------------------------------------------------------
+# Stage 2 — cargo-planner: computes a dependency recipe from manifests/source
+# metadata so source-only edits can reuse the cooked Rust dependency layer.
+# -----------------------------------------------------------------------------
+FROM chef-base AS cargo-planner
+
+WORKDIR /build/src-tauri
+COPY src-tauri ./
+RUN cargo chef prepare --recipe-path recipe.json
+
+# -----------------------------------------------------------------------------
+# Stage 3 — builder: compiles Rust workspace + Next.js frontend.
+# -----------------------------------------------------------------------------
+FROM chef-base AS builder
 
 WORKDIR /build
 
@@ -106,30 +137,51 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund --prefer-offline
 
+# Rust deps. Keep this before the full source copy so normal source edits do
+# not invalidate the third-party dependency build.
+WORKDIR /build/src-tauri
+COPY --from=cargo-planner /build/src-tauri/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json -p app --no-default-features --features full
+
+WORKDIR /build
+
 # --- Source copy ---
 COPY . .
+
+# Release builds include the OPKSSH vendored wrapper. Fetch the pinned upstream
+# source so the staged artifact can carry the embedded bridge when supported.
+RUN set -eux; \
+    mkdir -p /build/.ci/opkssh-source; \
+    git init /build/.ci/opkssh-source; \
+    git -C /build/.ci/opkssh-source remote add origin https://github.com/openpubkey/opkssh.git; \
+    git -C /build/.ci/opkssh-source fetch --depth 1 origin 193d79871f3bad3cd27cfb94734c265773a99c9b; \
+    git -C /build/.ci/opkssh-source checkout --detach FETCH_HEAD
 
 # Build the static frontend (Next.js `output: 'export'` → ./out/).
 RUN npm run build
 
+# Stage the native OPKSSH wrapper into the Tauri resource tree used by release builds.
+RUN SORNG_OPKSSH_VENDOR_CHECKOUT=/build/.ci/opkssh-source npm run stage:opkssh-vendor -- --release --enable
+
 # Build the Rust workspace release binary.
-# We build the `app` package (Tauri host). Kafka is excluded from the default
-# feature set per t2/t3 decisions (users supply librdkafka at runtime).
-RUN cargo build --release --manifest-path src-tauri/Cargo.toml -p app \
+# We build the `app` package (Tauri host) with the release/full feature set;
+# bare cargo builds intentionally use the lean developer profile.
+RUN SORNG_OPKSSH_VENDOR_CHECKOUT=/build/.ci/opkssh-source cargo build --release --manifest-path src-tauri/Cargo.toml -p app --no-default-features --features full \
     && ls -la src-tauri/target/release/
 
 # Stage the distributable layout for the runtime image.
 RUN set -eux; \
-    mkdir -p /stage/opt/sortofremoteng/bin /stage/opt/sortofremoteng/frontend; \
+    mkdir -p /stage/opt/sortofremoteng/bin /stage/opt/sortofremoteng/frontend /stage/opt/sortofremoteng/opkssh; \
     cp src-tauri/target/release/app /stage/opt/sortofremoteng/bin/app; \
     strip /stage/opt/sortofremoteng/bin/app || true; \
     cp -r out/. /stage/opt/sortofremoteng/frontend/; \
+    cp -r src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh/. /stage/opt/sortofremoteng/opkssh/; \
     cp license.md /stage/opt/sortofremoteng/LICENSE.md; \
     cp readme.md /stage/opt/sortofremoteng/README.md; \
     du -sh /stage/opt/sortofremoteng
 
 # -----------------------------------------------------------------------------
-# Stage 2 — runtime: slim image carrying the built artifacts.
+# Stage 4 — runtime: slim image carrying the built artifacts.
 #
 # This stage is NOT self-sufficient for GUI execution (see header). It is
 # sized for artifact distribution. To actually run the binary you must
@@ -139,9 +191,9 @@ RUN set -eux; \
 FROM debian:bookworm-slim AS runtime
 
 LABEL org.opencontainers.image.title="sortOfRemoteNG" \
-      org.opencontainers.image.description="Linux build artifacts for sortOfRemoteNG (Tauri 2 desktop app). NOT a headless server — see Dockerfile.prod header." \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="https://github.com/sortofremote/sortOfRemoteNG"
+    org.opencontainers.image.description="Linux build artifacts for sortOfRemoteNG (Tauri 2 desktop app). NOT a headless server — see Dockerfile.prod header." \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.source="https://github.com/sortofremote/sortOfRemoteNG"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -150,11 +202,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 # the 500 MB target and still not suffice without a display server. Callers
 # who want to run the binary should layer their own GUI runtime on top.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        libc6 \
-        libgcc-s1 \
-        libssl3 \
-        libstdc++6 \
+    ca-certificates \
+    libc6 \
+    libgcc-s1 \
+    librdkafka1 \
+    libssl3 \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -169,13 +222,13 @@ WORKDIR /opt/sortofremoteng
 # Default command prints the headless-limitation notice. Override with
 # `docker run ... bash` to inspect, or `docker cp` to extract artifacts.
 CMD ["/bin/sh", "-c", "echo 'sortOfRemoteNG is a desktop (Tauri) app with no headless mode.' && \
-echo 'This image carries build artifacts under /opt/sortofremoteng for' && \
-echo 'distribution/sideload purposes. See Dockerfile.prod header for details.' && \
-echo '' && \
-echo 'Artifacts:' && ls -la /opt/sortofremoteng && \
-echo '' && \
-echo 'Binary (requires webkit2gtk + display server to run):' && \
-ls -la /opt/sortofremoteng/bin/ && \
-echo '' && \
-echo 'Frontend (static export):' && \
-ls /opt/sortofremoteng/frontend/ | head -20"]
+    echo 'This image carries build artifacts under /opt/sortofremoteng for' && \
+    echo 'distribution/sideload purposes. See Dockerfile.prod header for details.' && \
+    echo '' && \
+    echo 'Artifacts:' && ls -la /opt/sortofremoteng && \
+    echo '' && \
+    echo 'Binary (requires webkit2gtk + display server to run):' && \
+    ls -la /opt/sortofremoteng/bin/ && \
+    echo '' && \
+    echo 'Frontend (static export):' && \
+    ls /opt/sortofremoteng/frontend/ | head -20"]

@@ -124,9 +124,9 @@ The artifact form remains intentionally flexible:
 
 Current repo wiring keeps that decision truthful:
 
-- the app may opt into the wrapper build graph with `--features opkssh-vendored-wrapper`, which forwards to `sorng-opkssh/vendored-wrapper`;
-- the linked wrapper currently exposes metadata only and reports no embedded `libopkssh` runtime, so the runtime model still keeps CLI fallback active;
-- bundle staging is separately opt-in through `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1` or `npm run stage:opkssh-vendor -- --enable`, and the default path scrubs stale staged artifacts so packaging is not implied by linkage.
+- the app release `full` feature set now includes `opkssh-vendored-wrapper`, which forwards to `sorng-opkssh/vendored-wrapper`;
+- the linked wrapper embeds the bridge when the pinned OPKSSH checkout and Go toolchain are available, otherwise it truthfully reports metadata-only capability and keeps CLI fallback active;
+- production Tauri/Docker builds stage the wrapper artifact with `--enable`; direct helper use without `--enable` / `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1` still scrubs stale staged artifacts.
 
 If shared libraries are later reintroduced, they must preserve the same narrow seam and pass separate Windows, macOS, and Linux bundling, signing, updater, and rollback validation.
 

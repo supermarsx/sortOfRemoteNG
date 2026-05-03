@@ -37,7 +37,10 @@ providers:
         .expect("load explicit config path");
     assert_eq!(loaded.default_provider.as_deref(), Some("google"));
     assert_eq!(loaded.providers.len(), 2);
-    assert_eq!(loaded.providers[0].client_secret.as_deref(), Some("file-secret"));
+    assert_eq!(
+        loaded.providers[0].client_secret.as_deref(),
+        Some("file-secret")
+    );
 
     let mut service = OpksshService::new();
     service
@@ -45,9 +48,7 @@ providers:
         .await
         .expect("cache explicit config via service");
 
-    let transport = service
-        .get_client_config()
-        .expect("cached redacted config");
+    let transport = service.get_client_config().expect("cached redacted config");
     assert_eq!(transport.default_provider.as_deref(), Some("google"));
     assert_eq!(transport.providers.len(), 2);
     assert!(transport.provider_secrets_present);
@@ -78,7 +79,10 @@ providers:
         .iter()
         .find(|provider| provider.alias == "google")
         .expect("persisted google provider");
-    assert_eq!(persisted_google.client_secret.as_deref(), Some("file-secret"));
+    assert_eq!(
+        persisted_google.client_secret.as_deref(),
+        Some("file-secret")
+    );
     assert_eq!(persisted.default_provider.as_deref(), Some("google"));
 
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;

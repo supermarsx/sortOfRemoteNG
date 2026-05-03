@@ -168,9 +168,9 @@ The current assumptions are:
 
 Current repo implementation note:
 
-- `sorng-opkssh-vendor` can now be linked into the app graph behind `app --features opkssh-vendored-wrapper` / `sorng-opkssh --features vendored-wrapper`;
-- the linked wrapper only exports truthful metadata today and still reports `embedded_runtime = 0`, so the library backend remains unavailable;
-- bundle staging is a separate packaging gate through `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1` or `npm run stage:opkssh-vendor -- --enable`, with the default helper path scrubbing stale staged artifacts.
+- `sorng-opkssh-vendor` is now linked into release app builds through `app --features full` because `full` includes `opkssh-vendored-wrapper`; crate-level `sorng-opkssh --features vendored-wrapper` remains available for targeted checks;
+- the linked wrapper exports truthful metadata and embeds the bridge only when the pinned OPKSSH checkout and Go toolchain are available, so CLI fallback remains explicit when the artifact is metadata-only;
+- production Tauri/Docker builds stage the wrapper artifact with `--enable`; direct helper use without `--enable` / `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1` still scrubs stale staged artifacts.
 
 If later work introduces a C ABI or shared-library artifact, it must preserve the same narrow login-oriented seam and then separately define:
 

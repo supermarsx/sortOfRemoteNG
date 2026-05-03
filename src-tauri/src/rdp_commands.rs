@@ -8,8 +8,8 @@ mod commands {
     pub use crate::rdp::frame_channel::{DynFrameChannel, FrameChannel};
     pub use sorng_core::events::DynEventEmitter;
     // Tauri types used unqualified in commands_cmds.rs
-    pub use tauri::AppHandle;
     pub use tauri::ipc::{Channel, InvokeResponseBody};
+    pub use tauri::AppHandle;
     pub use tauri::Manager;
 
     /// Adapter: wraps a Tauri `Channel<InvokeResponseBody>` as a `FrameChannel`.

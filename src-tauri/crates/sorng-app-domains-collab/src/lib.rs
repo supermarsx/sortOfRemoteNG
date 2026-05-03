@@ -13,5 +13,4 @@ pub use sorng_recording as recording;
 pub use sorng_secure_clip as secure_clip;
 pub use sorng_telegram as telegram;
 pub use sorng_terminal_themes as terminal_themes;
-pub use sorng_totp::totp;
 pub use sorng_whatsapp::whatsapp;

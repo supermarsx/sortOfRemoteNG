@@ -5,9 +5,10 @@ edition = "2021"
 description = "Core command handlers — split from app crate to reduce coherence checking time"
 
 [dependencies]
-sorng-app-domains = { path = "../sorng-app-domains" }
+sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-app-shell = { path = "../sorng-app-shell" }
 sorng-core = { path = "../sorng-core" }
+sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-probes = { path = "../sorng-probes" }
 tauri = { workspace = true }
 serde = { workspace = true }
@@ -43,6 +44,7 @@ rdp = ["sorng-app-domains/rdp"]
 # `sorng_app_domains_ops` and become reachable from `crate::<name>::...`
 # paths inside the shim wrappers under `src-tauri/src/*_commands.rs`.
 ops = ["sorng-app-domains/ops"]
+opkssh = ["dep:sorng-opkssh"]
 script-engine = []
 # Forwards to `sorng-vpn/vpn-softether`. When off, the softether command
 # shim is not compiled and the 7 SoftEther commands are not registered

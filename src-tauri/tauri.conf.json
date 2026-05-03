@@ -7,7 +7,7 @@
     "frontendDist": "../out",
     "devUrl": "http://localhost:3001",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build && npm run stage:opkssh-vendor -- --release"
+    "beforeBuildCommand": "npm run build && npm run stage:opkssh-vendor -- --release --enable"
   },
   "app": {
     "windows": [

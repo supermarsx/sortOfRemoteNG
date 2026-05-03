@@ -100,10 +100,7 @@ function join_from(start, out, idx) {
             }
             ServerAdminAction::AddProvider(entry) => {
                 let line = render_provider_line(entry);
-                render_sudo_sh_command(
-                    r#"printf '%s\n' "$1" >> /etc/opk/providers"#,
-                    &[&line],
-                )
+                render_sudo_sh_command(r#"printf '%s\n' "$1" >> /etc/opk/providers"#, &[&line])
             }
             ServerAdminAction::RemoveProvider(entry) => {
                 let line = render_provider_line(entry);
@@ -173,7 +170,9 @@ pub fn parse_server_config(raw: &str) -> ServerOpksshConfig {
         let Some(stop_offset) = raw[start_index..].find(end) else {
             return String::new();
         };
-        raw[start_index..start_index + stop_offset].trim().to_string()
+        raw[start_index..start_index + stop_offset]
+            .trim()
+            .to_string()
     };
 
     let version_section = extract("===VERSION_BEGIN===", "===VERSION_END===");
@@ -322,7 +321,11 @@ fn build_install_command_inner(opts: &ServerInstallOptions) -> String {
     if opts.use_install_script {
         r#"wget -qO- "https://raw.githubusercontent.com/openpubkey/opkssh/main/scripts/install-linux.sh" | sudo bash"#
             .to_string()
-    } else if let Some(url) = opts.custom_binary_url.as_ref().filter(|url| !url.trim().is_empty()) {
+    } else if let Some(url) = opts
+        .custom_binary_url
+        .as_ref()
+        .filter(|url| !url.trim().is_empty())
+    {
         render_sh_command(
             r#"curl -L "$1" -o /tmp/opkssh && chmod +x /tmp/opkssh && sudo mv /tmp/opkssh /usr/local/bin/opkssh"#,
             &[url],
@@ -370,7 +373,10 @@ fn shell_escape(value: &str) -> String {
 
 fn is_shell_safe_char(character: char) -> bool {
     character.is_ascii_alphanumeric()
-        || matches!(character, '_' | '-' | '/' | '.' | ':' | '@' | '%' | '+' | '=' | ',')
+        || matches!(
+            character,
+            '_' | '-' | '/' | '.' | ':' | '@' | '%' | '+' | '=' | ','
+        )
 }
 
 #[cfg(test)]

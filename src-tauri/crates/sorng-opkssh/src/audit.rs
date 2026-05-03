@@ -322,7 +322,10 @@ fn shell_escape(value: &str) -> String {
 
 fn is_shell_safe_char(character: char) -> bool {
     character.is_ascii_alphanumeric()
-        || matches!(character, '_' | '-' | '/' | '.' | ':' | '@' | '%' | '+' | '=' | ',')
+        || matches!(
+            character,
+            '_' | '-' | '/' | '.' | ':' | '@' | '%' | '+' | '=' | ','
+        )
 }
 
 #[cfg(test)]
@@ -361,9 +364,8 @@ mod tests {
 
     #[test]
     fn test_parse_audit_line_basic() {
-        let entry = parse_cli_audit_line(
-            "alice@gmail.com root https://accounts.google.com login success",
-        );
+        let entry =
+            parse_cli_audit_line("alice@gmail.com root https://accounts.google.com login success");
         assert!(entry.is_some());
         let e = entry.unwrap();
         assert_eq!(e.identity, "alice@gmail.com");
@@ -397,6 +399,9 @@ mod tests {
         assert_eq!(result.entries[0].action, "providers-file");
         assert_eq!(result.entries[1].action, "system-policy");
         assert_eq!(result.entries[1].principal, "auth_id");
-        assert!(result.entries.iter().all(|entry| entry.identity == "ubuntu"));
+        assert!(result
+            .entries
+            .iter()
+            .all(|entry| entry.identity == "ubuntu"));
     }
 }

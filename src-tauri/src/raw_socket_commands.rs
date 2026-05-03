@@ -6,4 +6,3 @@ mod raw_socket {
 mod inner {
     include!("../crates/sorng-protocols/src/raw_socket_cmds.rs");
 }
-

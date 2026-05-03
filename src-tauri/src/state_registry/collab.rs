@@ -19,9 +19,9 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let gdrive_state = gdrive::service::GDriveService::new();
     app.manage(gdrive_state);
 
-    let onedrive_state: OneDriveServiceState = std::sync::Arc::new(
-        tokio::sync::RwLock::new(onedrive::service::OneDriveService::new()),
-    );
+    let onedrive_state: OneDriveServiceState = std::sync::Arc::new(tokio::sync::RwLock::new(
+        onedrive::service::OneDriveService::new(),
+    ));
     app.manage(onedrive_state);
 
     let rec_app_dir = app_dir.to_string_lossy().to_string();

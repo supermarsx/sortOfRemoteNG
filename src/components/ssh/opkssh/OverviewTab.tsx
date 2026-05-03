@@ -20,11 +20,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
 
   return (
     <div className="space-y-4">
-      {/* Binary status card */}
+      {/* Runtime status card */}
       <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2 mb-3">
           <Shield size={14} className="text-success" />
-          {t("opkssh.binaryStatus", "opkssh Binary")}
+          {t("opkssh.runtimeStatus", "Local OPKSSH Runtime")}
         </h3>
 
         {binary ? (
@@ -73,7 +73,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
             disabled={mgr.isLoading}
           >
             <RefreshCw size={12} className={mgr.isLoading ? "animate-spin" : ""} />
-            {t("opkssh.checkBinary", "Check Binary")}
+            {t("opkssh.checkRuntime", "Check Runtime")}
           </button>
         )}
       </div>

@@ -1,6 +1,7 @@
 use crate::ssh::{SshCompressionConfig, SshConnectionConfig, SshServiceState};
 use rquickjs::prelude::Async;
 use rquickjs::{async_with, AsyncContext, AsyncRuntime, Function, Object};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -200,6 +201,12 @@ impl ScriptService {
         script_type: String,
         _context: ScriptContext,
     ) -> Result<ScriptResult, String> {
+        let (code, script_type) = if script_type == "typescript" {
+            (strip_typescript_syntax(&code), "javascript".to_string())
+        } else {
+            (code, script_type)
+        };
+
         match script_type.as_str() {
             "javascript" => {
                 // Security: reject scripts containing dangerous JavaScript patterns.
@@ -275,7 +282,7 @@ impl ScriptService {
                                                                     host,
                                                                     port,
                                                                     username,
-                                                                    password,
+                                                                    password: password.map(SecretString::new),
                                                                     private_key_path: None,
                                                                     private_key_passphrase: None,
                                                                     jump_hosts: vec![],
@@ -388,11 +395,6 @@ impl ScriptService {
                     },
                     Err(e) => Err(format!("Script thread panicked or cancelled: {}", e)),
                 }
-            }
-            "typescript" => {
-                let js_code = strip_typescript_syntax(&code);
-                self.execute_script(js_code, "javascript".to_string(), _context)
-                    .await
             }
             _ => Err(format!("Unsupported script type: {}", script_type)),
         }

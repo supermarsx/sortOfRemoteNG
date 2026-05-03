@@ -50,6 +50,7 @@ pub use sorng_protocols::rlogin;
 pub use sorng_serial::serial;
 pub use sorng_smb::smb;
 pub use sorng_telnet::telnet;
+pub use sorng_totp::totp;
 pub use sorng_vnc::vnc;
 
 // ── Remote-desktop/display protocols (t3-e55) ────────────────────────

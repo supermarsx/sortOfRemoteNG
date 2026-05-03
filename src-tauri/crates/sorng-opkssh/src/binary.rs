@@ -226,7 +226,11 @@ fn vendor_wrapper_candidate_paths(
     }
     candidates.push((
         OpksshVendorLoadStrategy::WorkspaceBundle,
-        vendor_artifact_path_for_root(workspace_bundle_root, &vendor_platform_dir(), vendor_artifact_name()),
+        vendor_artifact_path_for_root(
+            workspace_bundle_root,
+            &vendor_platform_dir(),
+            vendor_artifact_name(),
+        ),
     ));
     candidates
 }
@@ -256,21 +260,28 @@ fn pinned_vendor_library(path: &Path) -> Result<&'static Library, String> {
     // required for the runtime bridge. We intentionally pin successful loads
     // for process lifetime because unloading the real Go-backed bridge can crash
     // on Windows when `FreeLibrary` runs after cgo/Go runtime initialization.
-    let library = unsafe { Library::new(&cache_key) }
-        .map_err(|error| format!("Failed to load OPKSSH vendor wrapper {}: {error}", path.display()))?;
+    let library = unsafe { Library::new(&cache_key) }.map_err(|error| {
+        format!(
+            "Failed to load OPKSSH vendor wrapper {}: {error}",
+            path.display()
+        )
+    })?;
     let leaked = Box::leak(Box::new(library));
     cache.insert(cache_key, leaked as *const Library as usize);
     Ok(leaked)
 }
 
-fn load_vendor_probe_u32(library: &Library, symbol_name: &[u8], path: &Path) -> Result<u32, String> {
+fn load_vendor_probe_u32(
+    library: &Library,
+    symbol_name: &[u8],
+    path: &Path,
+) -> Result<u32, String> {
     // SAFETY: The OPKSSH vendor wrapper exports a narrow, side-effect-free C ABI
     // of zero-arg probe functions that return a u32. We call only those symbols
     // against a handle that stays pinned for the lifetime of the process.
     unsafe {
-        let symbol: libloading::Symbol<'_, VendorProbeFn> = library
-            .get(symbol_name)
-            .map_err(|error| {
+        let symbol: libloading::Symbol<'_, VendorProbeFn> =
+            library.get(symbol_name).map_err(|error| {
                 format!(
                     "Failed to load symbol {} from {}: {error}",
                     String::from_utf8_lossy(symbol_name).trim_end_matches('\0'),
@@ -304,16 +315,12 @@ fn load_vendor_wrapper_from_path(
         load_vendor_probe_u32(&library, b"sorng_opkssh_vendor_embedded_runtime\0", path)? != 0;
     let backend_callable =
         load_vendor_probe_u32(&library, b"sorng_opkssh_vendor_backend_callable\0", path)? != 0;
-    let config_load_supported = load_optional_vendor_probe_u32(
-        &library,
-        b"sorng_opkssh_vendor_config_load_supported\0",
-    )
-    .is_some_and(|supported| supported != 0);
-    let login_supported = load_optional_vendor_probe_u32(
-        &library,
-        b"sorng_opkssh_vendor_login_supported\0",
-    )
-    .is_some_and(|supported| supported != 0);
+    let config_load_supported =
+        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_config_load_supported\0")
+            .is_some_and(|supported| supported != 0);
+    let login_supported =
+        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_login_supported\0")
+            .is_some_and(|supported| supported != 0);
 
     Ok(VendorWrapperRuntimeStatus {
         abi_version,
@@ -334,7 +341,10 @@ fn load_vendor_wrapper_from_path(
 
 fn runtime_loaded_vendor_wrapper_status(workspace_bundle_root: &Path) -> VendorWrapperProbeResult {
     if let Some(override_path) = vendor_override_library_path() {
-        return match load_vendor_wrapper_from_path(&override_path, OpksshVendorLoadStrategy::OverridePath) {
+        return match load_vendor_wrapper_from_path(
+            &override_path,
+            OpksshVendorLoadStrategy::OverridePath,
+        ) {
             Ok(runtime) => VendorWrapperProbeResult {
                 runtime: Some(runtime),
                 load_error: None,
@@ -394,23 +404,21 @@ fn vendor_client_config_from_json(json: &str) -> Result<OpksshClientConfig, Stri
         .map_err(|error| format!("Failed to parse OPKSSH vendor config envelope: {error}"))?;
 
     if !envelope.ok {
-        return Err(
-            envelope
-                .error
-                .unwrap_or_else(|| "OPKSSH vendor config load failed without an error message".to_string()),
-        );
+        return Err(envelope.error.unwrap_or_else(|| {
+            "OPKSSH vendor config load failed without an error message".to_string()
+        }));
     }
 
-    let payload = envelope
-        .config
-        .ok_or_else(|| "OPKSSH vendor config envelope did not include a config payload".to_string())?;
+    let payload = envelope.config.ok_or_else(|| {
+        "OPKSSH vendor config envelope did not include a config payload".to_string()
+    })?;
 
     let providers = payload
         .providers
         .into_iter()
         .map(|provider| {
-            let client_secret = (!provider.client_secret.trim().is_empty())
-                .then_some(provider.client_secret);
+            let client_secret =
+                (!provider.client_secret.trim().is_empty()).then_some(provider.client_secret);
 
             CustomProvider {
                 alias: if provider.aliases.is_empty() {
@@ -430,7 +438,9 @@ fn vendor_client_config_from_json(json: &str) -> Result<OpksshClientConfig, Stri
 
     let mut config = OpksshClientConfig {
         config_path: payload.config_path,
-        default_provider: payload.default_provider.filter(|value| !value.trim().is_empty()),
+        default_provider: payload
+            .default_provider
+            .filter(|value| !value.trim().is_empty()),
         providers,
         provider_secrets_present: false,
         secrets_redacted_for_transport: false,
@@ -446,11 +456,9 @@ fn load_client_config_json_from_library_path(
 ) -> Result<Option<String>, String> {
     let library = pinned_vendor_library(library_path)?;
 
-    let config_load_supported = load_optional_vendor_probe_u32(
-        &library,
-        b"sorng_opkssh_vendor_config_load_supported\0",
-    )
-    .is_some_and(|supported| supported != 0);
+    let config_load_supported =
+        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_config_load_supported\0")
+            .is_some_and(|supported| supported != 0);
     if !config_load_supported {
         return Ok(None);
     }
@@ -508,11 +516,9 @@ fn load_login_json_from_library_path(
 ) -> Result<Option<String>, String> {
     let library = pinned_vendor_library(library_path)?;
 
-    let login_supported = load_optional_vendor_probe_u32(
-        &library,
-        b"sorng_opkssh_vendor_login_supported\0",
-    )
-    .is_some_and(|supported| supported != 0);
+    let login_supported =
+        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_login_supported\0")
+            .is_some_and(|supported| supported != 0);
     if !login_supported {
         return Ok(None);
     }
@@ -670,27 +676,26 @@ fn vendor_login_result_from_json(json: &str) -> Result<OpksshLoginResult, String
         .map_err(|error| format!("Failed to parse OPKSSH vendor login envelope: {error}"))?;
 
     if !envelope.ok {
-        return Err(
-            envelope
-                .error
-                .unwrap_or_else(|| "OPKSSH vendor login failed without an error message".to_string()),
-        );
+        return Err(envelope
+            .error
+            .unwrap_or_else(|| "OPKSSH vendor login failed without an error message".to_string()));
     }
 
-    let payload = envelope
-        .result
-        .ok_or_else(|| "OPKSSH vendor login envelope did not include a result payload".to_string())?;
+    let payload = envelope.result.ok_or_else(|| {
+        "OPKSSH vendor login envelope did not include a result payload".to_string()
+    })?;
 
-    let expires_at = payload
-        .expires_at
-        .as_deref()
-        .and_then(|value| match DateTime::parse_from_rfc3339(value) {
-            Ok(parsed) => Some(parsed.with_timezone(&Utc)),
-            Err(error) => {
-                warn!("Failed to parse OPKSSH vendor login expiry '{value}': {error}");
-                None
-            }
-        });
+    let expires_at =
+        payload
+            .expires_at
+            .as_deref()
+            .and_then(|value| match DateTime::parse_from_rfc3339(value) {
+                Ok(parsed) => Some(parsed.with_timezone(&Utc)),
+                Err(error) => {
+                    warn!("Failed to parse OPKSSH vendor login expiry '{value}': {error}");
+                    None
+                }
+            });
 
     Ok(OpksshLoginResult {
         success: payload.success,
@@ -719,12 +724,17 @@ fn build_vendor_login_request_json(
         create_config: opts.create_config,
         key_path: key_path.to_string_lossy().to_string(),
         provider: if opts.issuer.is_none() && opts.client_id.is_none() {
-            opts.provider.clone().filter(|value| !value.trim().is_empty())
+            opts.provider
+                .clone()
+                .filter(|value| !value.trim().is_empty())
         } else {
             None
         },
         issuer: opts.issuer.clone().filter(|value| !value.trim().is_empty()),
-        client_id: opts.client_id.clone().filter(|value| !value.trim().is_empty()),
+        client_id: opts
+            .client_id
+            .clone()
+            .filter(|value| !value.trim().is_empty()),
         client_secret: opts
             .client_secret
             .clone()
@@ -748,7 +758,9 @@ pub(crate) fn execute_login_from_wrapper(
     let workspace_bundle_root = library_workspace_bundle_root();
 
     match runtime_loaded_login_json(&workspace_bundle_root, &request_json)? {
-        VendorLoginAttempt::Response(json) => return vendor_login_result_from_json(&json).map(Some),
+        VendorLoginAttempt::Response(json) => {
+            return vendor_login_result_from_json(&json).map(Some)
+        }
         VendorLoginAttempt::Unsupported => return Ok(None),
         VendorLoginAttempt::NoRuntimeWrapper => {}
     }
@@ -1055,7 +1067,10 @@ fn library_bundle_contract_message(bundle_contract: &OpksshBundleArtifactStatus)
             bundle_contract.loaded_artifact_path.as_deref(),
         ) {
             (Some(strategy), Some(path)) => {
-                format!("loaded from {path} via {}", vendor_load_strategy_label(strategy))
+                format!(
+                    "loaded from {path} via {}",
+                    vendor_load_strategy_label(strategy)
+                )
             }
             (Some(strategy), None) => {
                 format!("queried through {}", vendor_load_strategy_label(strategy))
@@ -1235,7 +1250,8 @@ fn library_bundle_contract_for_root(workspace_bundle_root: &Path) -> OpksshBundl
         .as_ref()
         .map(|status| status.artifact_name.clone())
         .unwrap_or_else(|| vendor_artifact_name().to_string());
-    let artifact_path = vendor_artifact_path_for_root(workspace_bundle_root, &platform_dir, &artifact_name);
+    let artifact_path =
+        vendor_artifact_path_for_root(workspace_bundle_root, &platform_dir, &artifact_name);
     let artifact_present = artifact_path.is_file();
     let resource_relative_path = queried_wrapper
         .as_ref()
@@ -1400,7 +1416,9 @@ fn select_active_backend(
 }
 
 fn cli_backend_from_path(cli_binary_path: Option<&PathBuf>) -> Option<OpksshBackend> {
-    cli_binary_path.cloned().map(|binary_path| OpksshBackend::Cli { binary_path })
+    cli_binary_path
+        .cloned()
+        .map(|binary_path| OpksshBackend::Cli { binary_path })
 }
 
 /// Run an arbitrary opkssh command and return the raw output.
@@ -1584,11 +1602,12 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         assert!(!bundle_contract.config_load_supported);
         assert_eq!(bundle_contract.load_error, None);
         assert_eq!(bundle_contract.artifact_name, vendor_artifact_name());
-        assert_eq!(bundle_contract.resource_relative_path, vendor_resource_relative_path());
-        assert!(
-            PathBuf::from(&bundle_contract.workspace_artifact_path)
-                .ends_with(PathBuf::from(vendor_platform_dir()).join(vendor_artifact_name()))
+        assert_eq!(
+            bundle_contract.resource_relative_path,
+            vendor_resource_relative_path()
         );
+        assert!(PathBuf::from(&bundle_contract.workspace_artifact_path)
+            .ends_with(PathBuf::from(vendor_platform_dir()).join(vendor_artifact_name())));
         assert!(bundle_contract
             .message
             .as_deref()
@@ -1613,7 +1632,10 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         assert!(!status.available);
         assert!(!status.login_supported);
         assert_eq!(status.availability, OpksshRuntimeAvailability::Unavailable);
-        assert_eq!(status.path.as_deref(), Some(staged_artifact.to_string_lossy().as_ref()));
+        assert_eq!(
+            status.path.as_deref(),
+            Some(staged_artifact.to_string_lossy().as_ref())
+        );
         assert!(status
             .message
             .as_deref()
@@ -1626,7 +1648,10 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         assert_eq!(bundle_contract.load_strategy, None);
         assert_eq!(bundle_contract.loaded_artifact_path, None);
         assert!(bundle_contract.load_error.is_some());
-        assert_eq!(bundle_contract.workspace_artifact_path, staged_artifact.to_string_lossy());
+        assert_eq!(
+            bundle_contract.workspace_artifact_path,
+            staged_artifact.to_string_lossy()
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1646,7 +1671,10 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         assert!(!status.available);
         assert!(!status.login_supported);
         assert_eq!(status.availability, OpksshRuntimeAvailability::Unavailable);
-        assert_eq!(status.path.as_deref(), Some(staged_artifact.to_string_lossy().as_ref()));
+        assert_eq!(
+            status.path.as_deref(),
+            Some(staged_artifact.to_string_lossy().as_ref())
+        );
         assert!(status
             .message
             .as_deref()
@@ -1693,11 +1721,13 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         assert!(status.login_supported);
         assert!(status.config_load_supported);
         assert_eq!(status.availability, OpksshRuntimeAvailability::Available);
-        assert_eq!(status.path.as_deref(), Some(staged_artifact.to_string_lossy().as_ref()));
-        assert!(status
-            .message
-            .as_deref()
-            .is_some_and(|message| message.contains("execute login through the wrapper/runtime path")));
+        assert_eq!(
+            status.path.as_deref(),
+            Some(staged_artifact.to_string_lossy().as_ref())
+        );
+        assert!(status.message.as_deref().is_some_and(
+            |message| message.contains("execute login through the wrapper/runtime path")
+        ));
 
         let bundle_contract = status.bundle_contract.expect("bundle contract");
         assert!(bundle_contract.artifact_present);
@@ -1787,7 +1817,10 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         let status = library_backend_status_from_root(&root);
 
         assert_eq!(status.available, sorng_opkssh_vendor::login_supported());
-        assert_eq!(status.login_supported, sorng_opkssh_vendor::login_supported());
+        assert_eq!(
+            status.login_supported,
+            sorng_opkssh_vendor::login_supported()
+        );
         assert_eq!(
             status.availability,
             if sorng_opkssh_vendor::login_supported() {

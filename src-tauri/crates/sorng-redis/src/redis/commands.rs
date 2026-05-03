@@ -1,4 +1,4 @@
-//! Tauri commands for the Redis integration.
+/// Tauri commands for the Redis integration.
 
 use super::service::RedisServiceState;
 use super::types::*;

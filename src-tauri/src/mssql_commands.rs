@@ -1,4 +1,9 @@
 #[cfg(feature = "db-mssql")]
+mod mssql {
+    pub use crate::mssql::*;
+}
+
+#[cfg(feature = "db-mssql")]
 mod generated {
     include!("../crates/sorng-mssql/src/mssql/commands.rs");
 }

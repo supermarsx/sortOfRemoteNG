@@ -5,7 +5,7 @@ edition = "2021"
 description = "Collab command handlers — split from app crate to reduce coherence checking time"
 
 [dependencies]
-sorng-app-domains = { path = "../sorng-app-domains", features = ["collab"] }
+sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["collab"] }
 tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

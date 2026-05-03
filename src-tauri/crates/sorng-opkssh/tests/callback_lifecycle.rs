@@ -78,7 +78,11 @@ fn fake_cli_path() -> PathBuf {
         let source_path = dir.join("fake_opkssh.rs");
         std::fs::write(&source_path, FAKE_CLI_SOURCE).expect("write fake cli source");
 
-        let output_path = dir.join(if cfg!(windows) { "opkssh.exe" } else { "opkssh" });
+        let output_path = dir.join(if cfg!(windows) {
+            "opkssh.exe"
+        } else {
+            "opkssh"
+        });
         let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
         let status = Command::new(rustc)
             .arg("--edition=2021")
@@ -156,12 +160,7 @@ fn configure_fake_cli_env(home: &Path, key_path: &Path) -> EnvGuard {
     let fake_cli = fake_cli_path();
     let mut guard = EnvGuard::new();
 
-    let mut paths = vec![
-        fake_cli
-            .parent()
-            .expect("fake cli parent")
-            .to_path_buf(),
-    ];
+    let mut paths = vec![fake_cli.parent().expect("fake cli parent").to_path_buf()];
     if let Some(existing) = std::env::var_os("PATH") {
         paths.extend(std::env::split_paths(&existing));
     }
@@ -203,7 +202,10 @@ async fn cancelling_a_login_operation_remains_local_and_keeps_callback_ownership
     let cancelled = login::cancel_login_operation(&started.id)
         .await
         .expect("cancel login operation");
-    assert_eq!(cancelled.status, login::OpksshLoginOperationStatus::Cancelled);
+    assert_eq!(
+        cancelled.status,
+        login::OpksshLoginOperationStatus::Cancelled
+    );
     assert!(!cancelled.can_cancel);
     assert!(cancelled.finished_at.is_some());
     assert!(cancelled.result.is_none());

@@ -1,4 +1,4 @@
-//! Tauri commands for the MySQL / MariaDB integration.
+/// Tauri commands for the MySQL / MariaDB integration.
 
 use super::mysql::service::MysqlServiceState;
 use super::mysql::types::*;

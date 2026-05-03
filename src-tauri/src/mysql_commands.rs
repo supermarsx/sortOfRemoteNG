@@ -1,4 +1,9 @@
 #[cfg(feature = "db-mysql")]
+mod mysql {
+    pub use crate::mysql::*;
+}
+
+#[cfg(feature = "db-mysql")]
 mod generated {
     include!("../crates/sorng-mysql/src/mysql/commands.rs");
 }

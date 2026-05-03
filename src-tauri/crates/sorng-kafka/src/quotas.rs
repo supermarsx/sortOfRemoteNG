@@ -15,11 +15,15 @@ pub async fn list_quotas(
     // For full quota support, the Kafka AdminClient protocol must be used.
 
     let metadata = admin.get_metadata(None)?;
+    let broker_ids: Vec<String> = metadata
+        .brokers()
+        .iter()
+        .map(|broker| broker.id().to_string())
+        .collect();
     let mut quotas = Vec::new();
 
     // Query each broker for quota-related configs
-    for broker in metadata.brokers() {
-        let broker_id = broker.id().to_string();
+    for broker_id in broker_ids {
         let configs = admin
             .describe_configs(&ResourceType::Topic, &broker_id)
             .await
