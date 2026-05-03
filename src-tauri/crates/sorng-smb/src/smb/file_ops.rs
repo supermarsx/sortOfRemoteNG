@@ -182,6 +182,17 @@ mod windows_impl {
             Self
         }
 
+        fn ensure_supported_target(session: &SmbSession) -> SmbResult<()> {
+            if session.config.port == 445 {
+                return Ok(());
+            }
+
+            Err(SmbError::Unsupported(format!(
+                "windows-unc backend does not support non-445 SMB ports (got {}); expose the server on port 445 or validate on a host that can use smbclient",
+                session.config.port
+            )))
+        }
+
         /// Build a Windows UNC path: \\host\share\path.
         /// `path` uses forward slashes from the wire; we normalise.
         fn unc(host: &str, share: &str, path: &str) -> PathBuf {
@@ -263,6 +274,7 @@ mod windows_impl {
     #[async_trait]
     impl OpsBackend for WindowsBackend {
         async fn probe(&self, session: &SmbSession) -> SmbResult<()> {
+            Self::ensure_supported_target(session)?;
             let session = session.clone();
             spawn_blocking(move || Self::net_use_connect(&session))
                 .await
@@ -271,6 +283,7 @@ mod windows_impl {
         }
 
         async fn list_shares(&self, session: &SmbSession) -> SmbResult<Vec<SmbShareInfo>> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             spawn_blocking(move || -> SmbResult<Vec<SmbShareInfo>> {
                 use std::process::Command;
@@ -301,6 +314,7 @@ mod windows_impl {
             share: &str,
             path: &str,
         ) -> SmbResult<Vec<SmbDirEntry>> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -343,6 +357,7 @@ mod windows_impl {
         }
 
         async fn stat(&self, session: &SmbSession, share: &str, path: &str) -> SmbResult<SmbStat> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -373,6 +388,7 @@ mod windows_impl {
             path: &str,
             max_bytes: Option<u64>,
         ) -> SmbResult<SmbReadResult> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -408,6 +424,7 @@ mod windows_impl {
             content_b64: &str,
             overwrite: bool,
         ) -> SmbResult<SmbWriteResult> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -440,6 +457,7 @@ mod windows_impl {
             remote_path: &str,
             local_path: &str,
         ) -> SmbResult<SmbTransferResult> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let remote_s = remote_path.to_string();
@@ -467,6 +485,7 @@ mod windows_impl {
             local_path: &str,
             remote_path: &str,
         ) -> SmbResult<SmbTransferResult> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let remote_s = remote_path.to_string();
@@ -488,6 +507,7 @@ mod windows_impl {
         }
 
         async fn mkdir(&self, session: &SmbSession, share: &str, path: &str) -> SmbResult<()> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -507,6 +527,7 @@ mod windows_impl {
             path: &str,
             recursive: bool,
         ) -> SmbResult<()> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -524,6 +545,7 @@ mod windows_impl {
         }
 
         async fn delete_file(&self, session: &SmbSession, share: &str, path: &str) -> SmbResult<()> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let path_s = path.to_string();
@@ -543,6 +565,7 @@ mod windows_impl {
             from: &str,
             to: &str,
         ) -> SmbResult<()> {
+            Self::ensure_supported_target(session)?;
             let host = session.config.host.clone();
             let share_s = share.to_string();
             let from_s = from.to_string();
@@ -690,6 +713,32 @@ The command completed successfully.
             let encoded = b64::encode(data);
             let decoded = b64::decode(&encoded).unwrap();
             assert_eq!(decoded, data);
+        }
+
+        #[test]
+        fn rejects_non_default_ports_for_windows_unc() {
+            let session = SmbSession::new(
+                "sid".into(),
+                SmbConnectionConfig {
+                    host: "127.0.0.1".into(),
+                    port: 1445,
+                    domain: None,
+                    username: None,
+                    password: None,
+                    workgroup: None,
+                    share: Some("public".into()),
+                    label: None,
+                    disable_plaintext: false,
+                    use_kerberos: false,
+                },
+                "windows-unc",
+            );
+
+            let err = WindowsBackend::ensure_supported_target(&session)
+                .expect_err("non-445 ports should fail before UNC access");
+
+            assert!(matches!(err, SmbError::Unsupported(_)));
+            assert!(err.to_string().contains("non-445 SMB ports"));
         }
     }
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ConnectionSession } from '../../types/connection/connection';
+import { useConnections } from '../../contexts/useConnections';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types (mirror Rust-side `sorng_smb::smb::types`)
@@ -94,13 +95,13 @@ export interface SMBFile {
  * lets the caller navigate directories. All mock data is gone: every
  * call hits the backend via `invoke("smb_*", …)`.
  *
- * The session may carry credentials in its Connection record
- * (resolved by the backend). For now the hook only passes `host`; the
- * backend uses ambient auth (current Windows user on Windows; smbclient
- * with no -U on Unix) unless upstream code explicitly calls `connect`
- * with credentials via a separate setup flow.
+ * The session's saved Connection record supplies the configured host,
+ * port, share, and any stored credentials so custom-port / explicit-auth
+ * SMB connections work without a separate setup flow.
  */
 export function useSMBClient(session: ConnectionSession) {
+  const { state } = useConnections();
+  const connection = state.connections.find(item => item.id === session.connectionId);
   const [currentPath, setCurrentPath] = useState<string>('/');
   const [files, setFiles] = useState<SmbDirEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -125,9 +126,16 @@ export function useSMBClient(session: ConnectionSession) {
       setIsLoading(true);
       setError(null);
       try {
+        const configuredShare = connection?.shareName?.trim();
         const config: SmbConnectionConfig = {
-          host: session.hostname,
-          port: 445,
+          host: connection?.hostname || session.hostname,
+          port: connection?.port ?? 445,
+          domain: connection?.domain ?? null,
+          username: connection?.username ?? null,
+          password: connection?.password ?? null,
+          workgroup: connection?.workgroup ?? null,
+          share: configuredShare || null,
+          label: connection?.name ?? session.name,
           ...configOverride,
         };
         const info = await invoke<SmbSessionInfo>('smb_connect', { config });
@@ -143,7 +151,7 @@ export function useSMBClient(session: ConnectionSession) {
         setIsLoading(false);
       }
     },
-    [session.hostname],
+    [connection, session.hostname, session.name],
   );
 
   const disconnect = useCallback(async () => {
@@ -181,8 +189,13 @@ export function useSMBClient(session: ConnectionSession) {
       });
       setShares(result);
       if (result.length > 0 && !currentShare) {
+        const configuredShare = connection?.shareName?.trim();
+        const preferredShare = configuredShare
+          ? result.find(s => s.name === configuredShare)
+          : undefined;
         // Pick the first non-IPC share as the default; fall back to first.
         const firstUsable =
+          preferredShare ??
           result.find(s => s.shareType !== 'ipc' && !s.isAdmin) ??
           result.find(s => s.shareType !== 'ipc') ??
           result[0];
@@ -195,7 +208,7 @@ export function useSMBClient(session: ConnectionSession) {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, connect, currentShare]);
+  }, [sessionId, connect, currentShare, connection]);
 
   // ── Directory listing ──────────────────────────────────────────────
 

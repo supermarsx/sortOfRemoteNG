@@ -77,6 +77,14 @@ async fn smb_connect_list_disconnect_golden_path() {
         use_kerberos: false,
     };
 
+    if cfg!(windows) && cfg.port != 445 {
+        eprintln!(
+            "SKIP: Windows UNC backend cannot validate SMB over non-445 ports (SMB_PORT={}); expose the share on 445 or run this test on a host using smbclient.",
+            cfg.port
+        );
+        return;
+    }
+
     let mut svc = SmbService::new();
 
     // ── connect ────────────────────────────────────────────────────

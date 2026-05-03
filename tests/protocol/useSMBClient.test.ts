@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import type { ConnectionSession } from '../../src/types/connection/connection';
+import type { Connection, ConnectionSession } from '../../src/types/connection/connection';
 
 // ── Tauri `invoke` mock ────────────────────────────────────────────────────
 //
@@ -10,10 +10,18 @@ import type { ConnectionSession } from '../../src/types/connection/connection';
 type InvokeArgs = Record<string, unknown> | undefined;
 type InvokeFn = (cmd: string, args?: InvokeArgs) => Promise<unknown>;
 
+const { connectionsState } = vi.hoisted(() => ({
+  connectionsState: { connections: [] as any[] },
+}));
+
 let invokeMock: InvokeFn;
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: InvokeArgs) => invokeMock(cmd, args),
+}));
+
+vi.mock('../../src/contexts/useConnections', () => ({
+  useConnections: () => ({ state: connectionsState }),
 }));
 
 import {
@@ -31,6 +39,18 @@ const makeSession = (overrides: Partial<ConnectionSession> = {}): ConnectionSess
   startTime: new Date(),
   protocol: 'smb',
   hostname: '192.168.1.50',
+  ...overrides,
+});
+
+const makeConnection = (overrides: Partial<Connection> = {}): Connection => ({
+  id: 'conn-1',
+  name: 'Test SMB',
+  protocol: 'smb',
+  hostname: '192.168.1.50',
+  port: 445,
+  isGroup: false,
+  createdAt: '2026-04-29T00:00:00.000Z',
+  updatedAt: '2026-04-29T00:00:00.000Z',
   ...overrides,
 });
 
@@ -107,9 +127,35 @@ const defaultInvoke: InvokeFn = async (cmd: string, _args?: InvokeArgs) => {
   }
 };
 
+async function flushHookEffects(cycles = 4) {
+  await act(async () => {
+    for (let index = 0; index < cycles; index += 1) {
+      await Promise.resolve();
+    }
+  });
+}
+
+async function actAndFlush(action: () => void, cycles = 4) {
+  await act(async () => {
+    action();
+    for (let index = 0; index < cycles; index += 1) {
+      await Promise.resolve();
+    }
+  });
+}
+
+async function renderSMBClient(
+  sessionOverrides: Partial<ConnectionSession> = {},
+) {
+  const rendered = renderHook(() => useSMBClient(makeSession(sessionOverrides)));
+  await flushHookEffects();
+  return rendered;
+}
+
 describe('useSMBClient', () => {
   beforeEach(() => {
     invokeMock = vi.fn(defaultInvoke);
+    connectionsState.connections = [makeConnection()];
   });
 
   afterAll(() => {
@@ -118,14 +164,14 @@ describe('useSMBClient', () => {
 
   // ── Initial state & share loading ──────────────────────────────────────
 
-  it('starts with root path and empty files/selection', () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+  it('starts with root path and empty files/selection', async () => {
+    const { result } = await renderSMBClient();
     expect(result.current.currentPath).toBe('/');
     expect(result.current.selectedFiles.size).toBe(0);
   });
 
   it('loads shares on mount via invoke("smb_connect") then invoke("smb_list_shares")', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => {
       expect(result.current.shares.length).toBeGreaterThan(0);
     });
@@ -135,60 +181,93 @@ describe('useSMBClient', () => {
   });
 
   it('loads directory files after shares are loaded', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => {
       expect(result.current.files.length).toBeGreaterThan(0);
     });
     expect(result.current.files.some(f => f.name === 'Windows')).toBe(true);
   });
 
+  it('passes the saved SMB connection config to smb_connect and prefers the configured share', async () => {
+    connectionsState.connections = [
+      makeConnection({
+        port: 1445,
+        username: 'alice',
+        password: 'secret',
+        domain: 'WORK',
+        workgroup: 'WG',
+        shareName: 'D$',
+      }),
+    ];
+
+    const { result } = await renderSMBClient();
+
+    await waitFor(() => {
+      expect(result.current.shares.length).toBeGreaterThan(0);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith('smb_connect', {
+      config: expect.objectContaining({
+        host: '192.168.1.50',
+        port: 1445,
+        username: 'alice',
+        password: 'secret',
+        domain: 'WORK',
+        workgroup: 'WG',
+        share: 'D$',
+        label: 'Test SMB',
+      }),
+    });
+    expect(result.current.currentShare).toBe('D$');
+  });
+
   // ── Navigation ─────────────────────────────────────────────────────────
 
   it('navigateToPath updates currentPath and clears selection', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.shares.length).toBeGreaterThan(0));
 
     act(() => { result.current.handleFileSelect('config.ini'); });
     expect(result.current.selectedFiles.has('config.ini')).toBe(true);
 
-    act(() => { result.current.navigateToPath('/Users'); });
+    await actAndFlush(() => { result.current.navigateToPath('/Users'); });
     expect(result.current.currentPath).toBe('/Users');
     expect(result.current.selectedFiles.size).toBe(0);
   });
 
   it('navigateUp moves to parent directory', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.shares.length).toBeGreaterThan(0));
 
-    act(() => { result.current.navigateToPath('/Users/Admin'); });
+    await actAndFlush(() => { result.current.navigateToPath('/Users/Admin'); });
     expect(result.current.currentPath).toBe('/Users/Admin');
 
-    act(() => { result.current.navigateUp(); });
+    await actAndFlush(() => { result.current.navigateUp(); });
     expect(result.current.currentPath).toBe('/Users');
 
-    act(() => { result.current.navigateUp(); });
+    await actAndFlush(() => { result.current.navigateUp(); });
     expect(result.current.currentPath).toBe('/');
   });
 
   it('navigateUp does nothing at root', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.shares.length).toBeGreaterThan(0));
     expect(result.current.currentPath).toBe('/');
-    act(() => { result.current.navigateUp(); });
+    await actAndFlush(() => { result.current.navigateUp(); });
     expect(result.current.currentPath).toBe('/');
   });
 
   it('handleDoubleClick navigates into directories', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.files.length).toBeGreaterThan(0));
 
     const dir = result.current.files.find(f => f.name === 'Windows')!;
-    act(() => { result.current.handleDoubleClick(dir); });
+    await actAndFlush(() => { result.current.handleDoubleClick(dir); });
     expect(result.current.currentPath).toBe('/Windows');
   });
 
   it('handleDoubleClick does not navigate for files', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.files.length).toBeGreaterThan(0));
 
     const file = result.current.files.find(f => f.entryType === 'file')!;
@@ -200,7 +279,7 @@ describe('useSMBClient', () => {
   // ── File selection ─────────────────────────────────────────────────────
 
   it('handleFileSelect toggles individual file selection', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.files.length).toBeGreaterThan(0));
 
     act(() => { result.current.handleFileSelect('config.ini'); });
@@ -211,7 +290,7 @@ describe('useSMBClient', () => {
   });
 
   it('selectAll selects all files, deselectAll clears', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.files.length).toBeGreaterThan(0));
 
     act(() => { result.current.selectAll(); });
@@ -224,21 +303,21 @@ describe('useSMBClient', () => {
   // ── Share change ───────────────────────────────────────────────────────
 
   it('handleShareChange updates share and resets path', async () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.shares.length).toBeGreaterThan(0));
 
     act(() => { result.current.navigateToPath('/Users'); });
     expect(result.current.currentPath).toBe('/Users');
 
-    act(() => { result.current.handleShareChange('D$'); });
+    await actAndFlush(() => { result.current.handleShareChange('D$'); });
     expect(result.current.currentShare).toBe('D$');
     expect(result.current.currentPath).toBe('/');
   });
 
   // ── formatFileSize ─────────────────────────────────────────────────────
 
-  it('formats file sizes correctly', () => {
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+  it('formats file sizes correctly', async () => {
+    const { result } = await renderSMBClient();
     expect(result.current.formatFileSize(0)).toBe('0 B');
     expect(result.current.formatFileSize(512)).toBe('512 B');
     expect(result.current.formatFileSize(1024)).toBe('1 KB');
@@ -254,7 +333,7 @@ describe('useSMBClient', () => {
       if (cmd === 'smb_connect') throw new Error('NT_STATUS_LOGON_FAILURE');
       throw new Error(`unmocked: ${cmd}`);
     });
-    const { result } = renderHook(() => useSMBClient(makeSession()));
+    const { result } = await renderSMBClient();
     await waitFor(() => expect(result.current.error).toBeTruthy());
     expect(result.current.error).toContain('SMB connect failed');
   });
