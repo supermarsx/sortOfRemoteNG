@@ -3,8 +3,8 @@
 // All `#[tauri::command]` handlers for the OpenPubkey SSH subsystem.
 // Registered in the main Tauri `generate_handler![]` macro.
 
-use super::service::OpksshServiceState;
 use super::login;
+use super::service::OpksshServiceState;
 use super::types::*;
 use tauri::State;
 
@@ -18,10 +18,7 @@ async fn reconcile_service_with_operation(
     svc.track_login_operation(operation);
 }
 
-async fn clear_missing_operation_tracking(
-    service_state: &OpksshServiceState,
-    operation_id: &str,
-) {
+async fn clear_missing_operation_tracking(service_state: &OpksshServiceState, operation_id: &str) {
     let mut svc = service_state.lock().await;
     svc.clear_tracked_login_operation_if_matches(Some(operation_id));
 }

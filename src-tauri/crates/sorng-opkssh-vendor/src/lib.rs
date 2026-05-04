@@ -213,8 +213,10 @@ pub extern "C" fn sorng_opkssh_vendor_free_string(value: *mut c_char) {
 fn string_into_raw(value: String) -> *mut c_char {
     CString::new(value)
         .unwrap_or_else(|_| {
-            CString::new(error_envelope("wrapper response contained an interior NUL byte"))
-                .expect("valid fallback error envelope")
+            CString::new(error_envelope(
+                "wrapper response contained an interior NUL byte",
+            ))
+            .expect("valid fallback error envelope")
         })
         .into_raw()
 }
@@ -330,19 +332,28 @@ mod tests {
         let platform = platform_dir();
         let resource = resource_relative_path();
 
-        assert!(artifact.contains("sorng_opkssh_vendor") || artifact.contains("libsorng_opkssh_vendor"));
+        assert!(
+            artifact.contains("sorng_opkssh_vendor") || artifact.contains("libsorng_opkssh_vendor")
+        );
         assert!(platform.contains('-'));
         assert_eq!(
             resource,
-            format!("{}/{}/{}", SORNG_OPKSSH_VENDOR_RESOURCE_ROOT, platform, artifact)
+            format!(
+                "{}/{}/{}",
+                SORNG_OPKSSH_VENDOR_RESOURCE_ROOT, platform, artifact
+            )
         );
     }
 
     #[test]
     fn exported_contract_flags_match_the_current_bridge_state() {
-        let embedded_runtime_built = option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
+        let embedded_runtime_built =
+            option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
 
-        assert_eq!(sorng_opkssh_vendor_abi_version(), SORNG_OPKSSH_VENDOR_ABI_VERSION);
+        assert_eq!(
+            sorng_opkssh_vendor_abi_version(),
+            SORNG_OPKSSH_VENDOR_ABI_VERSION
+        );
         assert_eq!(
             sorng_opkssh_vendor_embedded_runtime(),
             u32::from(embedded_runtime_built)
@@ -368,8 +379,7 @@ mod tests {
 
     #[test]
     fn client_config_export_returns_a_wrapper_owned_json_envelope() {
-        let config_path = unique_temp_dir("sorng-opkssh-vendor-config")
-            .join("config.yml");
+        let config_path = unique_temp_dir("sorng-opkssh-vendor-config").join("config.yml");
         std::fs::create_dir_all(config_path.parent().expect("config dir"))
             .expect("create config dir");
         std::fs::write(
@@ -385,10 +395,13 @@ providers:
         )
         .expect("write config file");
 
-        let explicit_path = CString::new(config_path.to_string_lossy().to_string())
-            .expect("config path c string");
+        let explicit_path =
+            CString::new(config_path.to_string_lossy().to_string()).expect("config path c string");
         let response = sorng_opkssh_vendor_load_client_config_json(explicit_path.as_ptr());
-        assert!(!response.is_null(), "wrapper should always return a JSON envelope");
+        assert!(
+            !response.is_null(),
+            "wrapper should always return a JSON envelope"
+        );
 
         let envelope = unsafe { CStr::from_ptr(response) }
             .to_string_lossy()
@@ -396,7 +409,8 @@ providers:
         sorng_opkssh_vendor_free_string(response);
 
         let payload: Value = serde_json::from_str(&envelope).expect("parse wrapper envelope");
-        let embedded_runtime_built = option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
+        let embedded_runtime_built =
+            option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
 
         if embedded_runtime_built {
             assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(true));
@@ -428,7 +442,10 @@ providers:
     fn login_export_returns_a_wrapper_owned_json_envelope() {
         let request = CString::new("{}").expect("login request c string");
         let response = sorng_opkssh_vendor_login_json(request.as_ptr());
-        assert!(!response.is_null(), "wrapper should always return a login envelope");
+        assert!(
+            !response.is_null(),
+            "wrapper should always return a login envelope"
+        );
 
         let envelope = unsafe { CStr::from_ptr(response) }
             .to_string_lossy()
@@ -436,7 +453,8 @@ providers:
         sorng_opkssh_vendor_free_string(response);
 
         let payload: Value = serde_json::from_str(&envelope).expect("parse login envelope");
-        let embedded_runtime_built = option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
+        let embedded_runtime_built =
+            option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
 
         if embedded_runtime_built {
             assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(true));
@@ -463,7 +481,8 @@ providers:
 
     #[test]
     fn login_export_can_complete_a_deterministic_fake_oidc_login() {
-        let embedded_runtime_built = option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
+        let embedded_runtime_built =
+            option_env!("SORNG_OPKSSH_VENDOR_EMBEDDED_RUNTIME") == Some("1");
         if !embedded_runtime_built {
             return;
         }
@@ -484,7 +503,10 @@ providers:
         )
         .expect("login request c string");
         let response = sorng_opkssh_vendor_login_json(request.as_ptr());
-        assert!(!response.is_null(), "wrapper should always return a login envelope");
+        assert!(
+            !response.is_null(),
+            "wrapper should always return a login envelope"
+        );
 
         let envelope = unsafe { CStr::from_ptr(response) }
             .to_string_lossy()
