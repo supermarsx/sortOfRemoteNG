@@ -554,7 +554,6 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             Username
             <InfoTooltip text={
               p === 'rdp' ? 'Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).'
-              : p === 'ssh' ? 'SSH login username. Used for password or key-based authentication.'
               : p === 'winrm' ? 'Account for WinRM Basic auth. Domain accounts use the Domain field below.'
               : p === 'vnc' ? 'VNC authentication usually only needs a password, not a username.'
               : 'Username for authentication with the remote service.'
@@ -570,7 +569,6 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             className="sor-form-input text-sm"
             placeholder={
               p === 'rdp' ? 'Administrator'
-              : p === 'ssh' ? 'root'
               : p === 'winrm' ? 'Administrator'
               : p === 'vnc' ? '(optional)'
               : 'admin'
@@ -582,7 +580,6 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             Password
             <InfoTooltip text={
               p === 'rdp' ? 'Windows account password. Sent via CredSSP/NLA during the RDP handshake.'
-              : p === 'ssh' ? 'SSH password. Leave empty if using key-based authentication.'
               : p === 'winrm' ? 'Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security).'
               : p === 'vnc' ? 'VNC server password. Most VNC servers only use password authentication.'
               : 'Password for authentication with the remote service.'
