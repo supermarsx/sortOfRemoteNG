@@ -2,6 +2,7 @@ import type { SectionProps } from "./types";
 import { ErrorPage } from "./ERROR_BASE";
 import React from "react";
 import { WifiOff, RefreshCw } from "lucide-react";
+import { LoadingElement } from "../../ui/display/loadingElement";
 
 const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
   <div className="flex-1 relative">
@@ -29,7 +30,9 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
     {mgr.isLoading && (
       <div className="absolute inset-0 bg-[var(--color-background)] flex items-center justify-center z-10">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <div className="flex justify-center mb-4">
+            <LoadingElement size={48} ariaLabel={`Loading ${mgr.currentUrl}`} />
+          </div>
           <p className="text-[var(--color-textSecondary)] mb-2">
             Loading {mgr.currentUrl}...
           </p>
