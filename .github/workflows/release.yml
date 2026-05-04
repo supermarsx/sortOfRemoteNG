@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g. v1.2.3)'
+        description: "Tag to release (e.g. v1.2.3)"
         required: true
 
 permissions:
@@ -25,13 +25,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
-            bundles: 'appimage,deb'
+            bundles: "appimage,deb"
           - os: macos-14
             target: macos
-            bundles: 'dmg,app'
+            bundles: "dmg,app"
           - os: windows-2022
             target: windows
-            bundles: 'msi,nsis'
+            bundles: "msi,nsis"
     runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ steps.resolve_version.outputs.version }}
@@ -58,8 +58,8 @@ jobs:
       - name: Install Node toolchain
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -186,7 +186,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: "${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}"
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: 'sortOfRemoteNG ${{ steps.resolve_version.outputs.version }}'
+          releaseName: "sortOfRemoteNG ${{ steps.resolve_version.outputs.version }}"
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: false
