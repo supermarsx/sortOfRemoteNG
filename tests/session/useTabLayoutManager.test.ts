@@ -27,12 +27,12 @@ function defaultLayout(): TabLayout {
 // ── Tests ─────────────────────────────────────────────────────
 
 describe('useTabLayoutManager', () => {
-  let onLayoutChange: ReturnType<typeof vi.fn>;
-  let onSessionClose: ReturnType<typeof vi.fn>;
+  let onLayoutChange: ReturnType<typeof vi.fn<(layout: TabLayout) => void>>;
+  let onSessionClose: ReturnType<typeof vi.fn<(sessionId: string) => void>>;
 
   beforeEach(() => {
-    onLayoutChange = vi.fn();
-    onSessionClose = vi.fn();
+    onLayoutChange = vi.fn<(layout: TabLayout) => void>();
+    onSessionClose = vi.fn<(sessionId: string) => void>();
   });
 
   // ── orderedSessions ────────────────────────────────────────

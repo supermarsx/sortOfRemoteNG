@@ -41,11 +41,11 @@ function renderExportTab(overrides?: {
   connections?: Connection[];
   config?: ExportConfig;
   isProcessing?: boolean;
-  onConfigChange?: ReturnType<typeof vi.fn>;
-  handleExport?: ReturnType<typeof vi.fn>;
+  onConfigChange?: (update: Partial<ExportConfig>) => void;
+  handleExport?: () => void;
 }) {
-  const onConfigChange = overrides?.onConfigChange ?? vi.fn();
-  const handleExport = overrides?.handleExport ?? vi.fn();
+  const onConfigChange = overrides?.onConfigChange ?? vi.fn<(update: Partial<ExportConfig>) => void>();
+  const handleExport = overrides?.handleExport ?? vi.fn<() => void>();
 
   const result = render(
     <ExportTab
@@ -107,7 +107,7 @@ describe("ExportTab", () => {
         }}
         onConfigChange={onConfigChange}
         isProcessing={false}
-        handleExport={vi.fn()}
+        handleExport={vi.fn<() => void>()}
       />,
     );
 
@@ -134,7 +134,7 @@ describe("ExportTab", () => {
           encrypted: true,
           password: "",
         }}
-        onConfigChange={vi.fn()}
+        onConfigChange={vi.fn<(update: Partial<ExportConfig>) => void>()}
         isProcessing={false}
         handleExport={handleExport}
       />,
@@ -151,7 +151,7 @@ describe("ExportTab", () => {
           encrypted: true,
           password: "top-secret",
         }}
-        onConfigChange={vi.fn()}
+        onConfigChange={vi.fn<(update: Partial<ExportConfig>) => void>()}
         isProcessing={false}
         handleExport={handleExport}
       />,

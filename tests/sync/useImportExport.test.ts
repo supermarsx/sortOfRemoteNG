@@ -496,7 +496,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls.at(-1)![0] as Blob;
+    const objectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock.calls;
+    const exportedBlob = objectUrlCalls[objectUrlCalls.length - 1][0] as Blob;
     const exportedJson = JSON.parse(await exportedBlob.text());
 
     expect(exportedJson.vpnConnections).toEqual({
@@ -625,7 +626,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const xmlBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls.at(-1)![0] as Blob;
+    const xmlObjectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock.calls;
+    const xmlBlob = xmlObjectUrlCalls[xmlObjectUrlCalls.length - 1][0] as Blob;
     const exportedXml = await xmlBlob.text();
     expect(exportedXml).toContain('Username=""');
     expect(exportedXml).toContain('Tags=""');
@@ -635,7 +637,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const csvBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls.at(-1)![0] as Blob;
+    const csvObjectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock.calls;
+    const csvBlob = csvObjectUrlCalls[csvObjectUrlCalls.length - 1][0] as Blob;
     const exportedCsv = await csvBlob.text();
     expect(exportedCsv).toContain("conn-1,Server A,rdp,10.0.0.1,3389,,CORP,Primary server,,false,");
 
@@ -843,7 +846,10 @@ describe("useImportExport", () => {
 
         readAsText() {
           this.result = '{"connections":[]}';
-          this.onload?.call(this as unknown as FileReader, new ProgressEvent("load"));
+          this.onload?.call(
+            this as unknown as FileReader,
+            new ProgressEvent("load") as ProgressEvent<FileReader>,
+          );
         }
       } as unknown as typeof FileReader,
     );
@@ -1593,7 +1599,10 @@ describe("useImportExport", () => {
         onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
 
         readAsText() {
-          this.onerror?.call(this as unknown as FileReader, new ProgressEvent("error"));
+          this.onerror?.call(
+            this as unknown as FileReader,
+            new ProgressEvent("error") as ProgressEvent<FileReader>,
+          );
         }
       } as unknown as typeof FileReader,
     );

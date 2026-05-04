@@ -13,12 +13,14 @@ export default defineConfig({
       '**/.claude/**',
       '**/e2e/**',
     ],
-    deps: {
-      inline: [
-        '@tauri-apps/plugin-fs',
-        '@tauri-apps/plugin-dialog',
-        '@tauri-apps/api'
-      ]
+    server: {
+      deps: {
+        inline: [
+          '@tauri-apps/plugin-fs',
+          '@tauri-apps/plugin-dialog',
+          '@tauri-apps/api'
+        ]
+      }
     },
     alias: {
       '@tauri-apps/plugin-fs': new URL('./vitest.mocks/tauri-plugin-fs.ts', import.meta.url).pathname,
@@ -38,7 +40,6 @@ export default defineConfig({
         'src/vite-env.d.ts',
         'src/main.tsx',
       ],
-      all: true,
       // RATCHET (t3-e34): floor set at current ~34.7% line coverage minus a
       // 5pt buffer so e40 (bcryptjs→Rust) and e41 (ssh-client retirement)
       // landing can't accidentally red-gate CI. Before 1.0 RC, raise to

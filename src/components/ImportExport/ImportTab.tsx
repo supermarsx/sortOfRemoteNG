@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 interface ImportTabProps {
   isProcessing: boolean;
   handleImport: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   importResult: ImportResult | null;
   handleFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
   confirmImport: () => void | Promise<void>;

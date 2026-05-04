@@ -9,6 +9,9 @@
 
 // ─── Real frame rendering helpers ──────────────────────────────────────────
 
+const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
+  data as Uint8ClampedArray<ArrayBuffer>;
+
 /**
  * Paints a dirty-region RGBA frame onto a canvas context.
  * The `rgba` data must be raw RGBA bytes (Uint8ClampedArray).
@@ -22,7 +25,7 @@ export function paintFrame(
   rgba: Uint8ClampedArray,
 ): void {
   if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
-  const imgData = new ImageData(rgba, width, height);
+  const imgData = new ImageData(asImageDataArray(rgba), width, height);
   ctx.putImageData(imgData, x, y);
 }
 
@@ -112,7 +115,7 @@ export class FrameBuffer {
     rgba: Uint8ClampedArray,
   ): void {
     if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
-    const imgData = new ImageData(rgba, width, height);
+    const imgData = new ImageData(asImageDataArray(rgba), width, height);
     visibleCtx.putImageData(imgData, x, y);
     this.hasPainted = true;
     this.offscreenStale = true;
@@ -142,7 +145,7 @@ export class FrameBuffer {
     rgba: Uint8ClampedArray,
   ): void {
     if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
-    const imgData = new ImageData(rgba, width, height);
+    const imgData = new ImageData(asImageDataArray(rgba), width, height);
     this.ctx.putImageData(imgData, x, y);
     this.hasPainted = true;
     // Expand dirty bounding box

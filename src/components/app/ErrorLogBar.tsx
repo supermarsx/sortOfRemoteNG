@@ -19,7 +19,7 @@ interface ErrorLogBarProps {
   onToggle: () => void;
 }
 
-const LEVEL_ICONS: Record<string, JSX.Element> = {
+const LEVEL_ICONS: Record<string, React.ReactElement> = {
   error: <AlertCircle className="text-error" size={14} />,
   warn: <AlertTriangle className="text-warning" size={14} />,
   info: <Info className="text-primary" size={14} />,

@@ -16,6 +16,9 @@ const invoke = (globalThis as any).__TAURI__?.core?.invoke;
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
+const asBufferSource = (bytes: Uint8Array): BufferSource =>
+  bytes as Uint8Array<ArrayBuffer>;
+
 function toBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   if (typeof Buffer !== "undefined") {
@@ -47,7 +50,7 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
     ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    { name: "PBKDF2", salt: asBufferSource(salt), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
@@ -62,9 +65,9 @@ async function encryptData(plaintext: string, password: string): Promise<string>
   const key = await deriveKey(password, salt);
   const enc = new TextEncoder();
   const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: asBufferSource(iv) },
     key,
-    enc.encode(plaintext),
+    asBufferSource(enc.encode(plaintext)),
   );
   // Format: base64(salt) + "." + base64(iv) + "." + base64(ciphertext)
   return `${toBase64(salt)}.${toBase64(iv)}.${toBase64(ciphertext)}`;
@@ -83,9 +86,9 @@ async function decryptData(payload: string, password: string): Promise<string> {
   const crypto = getCrypto();
   try {
     const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
+      { name: "AES-GCM", iv: asBufferSource(iv) },
       key,
-      data,
+      asBufferSource(data),
     );
     return new TextDecoder().decode(decrypted);
   } catch {

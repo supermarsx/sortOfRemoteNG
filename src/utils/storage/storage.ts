@@ -10,6 +10,9 @@ import { PBKDF2_ITERATIONS } from "../../config";
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
+const asBufferSource = (bytes: Uint8Array): BufferSource =>
+  bytes as Uint8Array<ArrayBuffer>;
+
 const toBase64 = (buffer: ArrayBuffer | Uint8Array): string => {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   if (typeof Buffer !== "undefined") {
@@ -70,7 +73,7 @@ export class SecureStorage {
     return crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
-        salt,
+        salt: asBufferSource(salt),
         iterations: PBKDF2_ITERATIONS, // Number of PBKDF2 iterations from config
         hash: "SHA-256",
       },
@@ -185,9 +188,9 @@ export class SecureStorage {
           const iv = crypto.getRandomValues(new Uint8Array(12)); // Initialization vector for AES-GCM
           const key = await this.deriveKey(this.password, salt); // Derive 256-bit AES key from password
           const encryptedBuffer = await crypto.subtle.encrypt(
-            { name: "AES-GCM", iv },
+            { name: "AES-GCM", iv: asBufferSource(iv) },
             key,
-            encoder.encode(serialized),
+            asBufferSource(encoder.encode(serialized)),
           );
           const encrypted = toBase64(encryptedBuffer);
           await IndexedDbService.setItem(STORAGE_KEY, encrypted);
@@ -251,9 +254,9 @@ export class SecureStorage {
               const iv = fromBase64(parsedSettings.iv); // Retrieve IV for AES-GCM
               const key = await this.deriveKey(this.password as string, salt); // Re-create key using stored salt and password
               const decryptedBuffer = await crypto.subtle.decrypt(
-                { name: "AES-GCM", iv },
+                { name: "AES-GCM", iv: asBufferSource(iv) },
                 key,
-                fromBase64(storedData as string),
+                asBufferSource(fromBase64(storedData as string)),
               );
               const decoded = new TextDecoder().decode(decryptedBuffer);
               return JSON.parse(decoded);

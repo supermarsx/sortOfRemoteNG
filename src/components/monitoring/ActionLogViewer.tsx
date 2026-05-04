@@ -17,7 +17,7 @@ import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { useActionLogViewer } from "../../hooks/monitoring/useActionLogViewer";
 import { EmptyState } from '../ui/display';import { Select } from '../ui/forms';
 
-const LEVEL_ICONS: Record<string, JSX.Element> = {
+const LEVEL_ICONS: Record<string, React.ReactElement> = {
   debug: <Bug className="text-[var(--color-textSecondary)]" size={14} />,
   info: <Info className="text-primary" size={14} />,
   warn: <AlertTriangle className="text-warning" size={14} />,

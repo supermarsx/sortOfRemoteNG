@@ -1,8 +1,9 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
+import type { UserConfig } from 'vite';
 import baseConfig from './vitest.config';
 
 export default mergeConfig(
-  baseConfig,
+  baseConfig as UserConfig,
   defineConfig({
     test: {
       include: [
@@ -14,7 +15,6 @@ export default mergeConfig(
         'tests/sync/useImportExport.test.ts',
       ],
       coverage: {
-        all: true,
         include: [
           'src/hooks/sync/useImportExport.ts',
           'src/components/ImportExport/utils.ts',
@@ -30,5 +30,5 @@ export default mergeConfig(
         },
       },
     },
-  }),
+  }) as UserConfig,
 );

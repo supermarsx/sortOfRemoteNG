@@ -221,7 +221,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # ── Framework ─────────────────────────────────────────────────────────
-tauri = { version = "=2.10.3", features = ["devtools", "webview-data-url"] }
+tauri = { version = "=2.11.0", features = ["devtools", "webview-data-url"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
@@ -290,7 +290,7 @@ name = "app_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
-tauri-build = { version = "=2.5.6", features = [] }
+tauri-build = { version = "=2.6.0", features = [] }
 # Used by build.rs to optionally inject a private updater endpoint
 # (from env var `UPDATER_PRIVATE_ENDPOINT_URL`) into tauri.conf.json's
 # `plugins.updater.endpoints` array at build time. See t3-e39 and
@@ -325,8 +325,8 @@ tracing-subscriber = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-log = "=2.8.0"
 tauri-plugin-autostart = "=2.5.1"
-tauri-plugin-dialog = "=2.6.0"
-tauri-plugin-fs = "=2.4.5"
+tauri-plugin-dialog = "=2.7.1"
+tauri-plugin-fs = "=2.5.1"
 tauri-plugin-updater = "2"
 tokio = { workspace = true }
 dirs = { workspace = true }

@@ -24,16 +24,16 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 function renderImportTab(overrides?: {
   isProcessing?: boolean;
   importResult?: ImportResult | null;
-  handleImport?: ReturnType<typeof vi.fn>;
-  handleFileSelect?: ReturnType<typeof vi.fn>;
-  confirmImport?: ReturnType<typeof vi.fn>;
-  cancelImport?: ReturnType<typeof vi.fn>;
+  handleImport?: () => void;
+  handleFileSelect?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  confirmImport?: () => void | Promise<void>;
+  cancelImport?: () => void;
   detectedFormat?: string;
 }) {
-  const handleImport = overrides?.handleImport ?? vi.fn();
-  const handleFileSelect = overrides?.handleFileSelect ?? vi.fn();
-  const confirmImport = overrides?.confirmImport ?? vi.fn();
-  const cancelImport = overrides?.cancelImport ?? vi.fn();
+  const handleImport = overrides?.handleImport ?? vi.fn<() => void>();
+  const handleFileSelect = overrides?.handleFileSelect ?? vi.fn<(event: React.ChangeEvent<HTMLInputElement>) => void>();
+  const confirmImport = overrides?.confirmImport ?? vi.fn<() => void | Promise<void>>();
+  const cancelImport = overrides?.cancelImport ?? vi.fn<() => void>();
 
   const result = render(
     <ImportTab

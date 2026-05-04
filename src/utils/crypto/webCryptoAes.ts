@@ -10,6 +10,9 @@ import { PBKDF2_ITERATIONS } from '../../config';
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
+const asBufferSource = (bytes: Uint8Array): BufferSource =>
+  bytes as Uint8Array<ArrayBuffer>;
+
 export function toBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   if (typeof Buffer !== 'undefined') {
@@ -41,7 +44,7 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
     ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: asBufferSource(salt), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -59,9 +62,9 @@ export async function encryptWithPassword(
   const key = await deriveKey(password, salt);
   const enc = new TextEncoder();
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: asBufferSource(iv) },
     key,
-    enc.encode(plaintext),
+    asBufferSource(enc.encode(plaintext)),
   );
   return `${toBase64(salt)}.${toBase64(iv)}.${toBase64(ciphertext)}`;
 }
@@ -81,9 +84,9 @@ export async function decryptWithPassword(
   const key = await deriveKey(password, salt);
   const crypto = getCrypto();
   const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: asBufferSource(iv) },
     key,
-    data,
+    asBufferSource(data),
   );
   return new TextDecoder().decode(decrypted);
 }

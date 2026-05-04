@@ -24,6 +24,9 @@ import { useSessionRecorder } from '../recording/useSessionRecorder';
 import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
 
+const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
+  data as Uint8ClampedArray<ArrayBuffer>;
+
 // ─── Hook ────────────────────────────────────────────────────────────
 
 export function useRDPClient(session: ConnectionSession) {
@@ -826,7 +829,7 @@ export function useRDPClient(session: ConnectionSession) {
         srcCanvas.height = state.h;
         const srcCtx = srcCanvas.getContext('2d');
         if (!srcCtx) { setPointerStyle('default'); return; }
-        srcCtx.putImageData(new ImageData(state.rgba, state.w, state.h), 0, 0);
+        srcCtx.putImageData(new ImageData(asImageDataArray(state.rgba), state.w, state.h), 0, 0);
 
         // Scale to target size
         const dstCanvas = document.createElement('canvas');

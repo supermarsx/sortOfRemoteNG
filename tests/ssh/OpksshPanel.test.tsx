@@ -15,6 +15,8 @@ import type {
   OpksshLoginResult,
   OpksshClientConfig,
   OpksshStatus,
+  OpksshBackendStatus,
+  OpksshRuntimeStatus,
   ProviderEntry,
   AuthIdEntry,
   ServerOpksshConfig,
@@ -119,7 +121,9 @@ afterEach(() => {
   delete (window as any).__TAURI_INTERNALS__;
 });
 
-const makeBackendStatus = (overrides: Record<string, unknown> = {}) => ({
+const makeBackendStatus = (
+  overrides: Partial<OpksshBackendStatus> = {},
+): OpksshBackendStatus => ({
   kind: "cli",
   available: true,
   availability: "available",
@@ -149,7 +153,9 @@ const makeBinaryStatus = (installed = true): OpksshBinaryStatus => ({
   }),
 });
 
-const makeRuntimeStatus = (overrides: Record<string, unknown> = {}) => {
+const makeRuntimeStatus = (
+  overrides: Partial<OpksshRuntimeStatus> = {},
+): OpksshRuntimeStatus => {
   const cli =
     (overrides.cli as OpksshBinaryStatus | undefined)
     ?? makeBinaryStatus(true);

@@ -259,6 +259,9 @@ const MRNG_SALT_SIZE = 16;
 const MRNG_NONCE_SIZE = 16;
 const MRNG_TAG_SIZE = 16;
 
+const asBufferSource = (bytes: Uint8Array): BufferSource =>
+  bytes as Uint8Array<ArrayBuffer>;
+
 const decodeBase64 = (b64: string): Uint8Array => {
   const clean = b64.replace(/\s+/g, '');
   const bin = atob(clean);
@@ -300,13 +303,13 @@ async function deriveMRemoteNGKey(
 ): Promise<CryptoKey> {
   const passKey = await crypto.subtle.importKey(
     'raw',
-    pkcs5PasswordToBytes(password),
+    asBufferSource(pkcs5PasswordToBytes(password)),
     { name: 'PBKDF2' },
     false,
     ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', hash: 'SHA-1', salt, iterations },
+    { name: 'PBKDF2', hash: 'SHA-1', salt: asBufferSource(salt), iterations },
     passKey,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -336,9 +339,9 @@ async function decryptMRemoteNGBlob(
   const ciphertext = data.slice(MRNG_SALT_SIZE + MRNG_NONCE_SIZE);
   const key = await deriveMRemoteNGKey(password, salt, iterations);
   const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: nonce, tagLength: MRNG_TAG_SIZE * 8 },
+    { name: 'AES-GCM', iv: asBufferSource(nonce), tagLength: MRNG_TAG_SIZE * 8 },
     key,
-    ciphertext,
+    asBufferSource(ciphertext),
   );
   return new Uint8Array(plain);
 }
@@ -361,9 +364,9 @@ export async function encryptMRemoteNGBlob(
   const key = await deriveMRemoteNGKey(password, salt, iterations, ['encrypt']);
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: nonce, tagLength: MRNG_TAG_SIZE * 8 },
+      { name: 'AES-GCM', iv: asBufferSource(nonce), tagLength: MRNG_TAG_SIZE * 8 },
       key,
-      bytes,
+      asBufferSource(bytes),
     ),
   );
   const out = new Uint8Array(salt.length + nonce.length + ct.length);
