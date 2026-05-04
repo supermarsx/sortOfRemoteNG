@@ -49,7 +49,7 @@
 //! users what to install; the probe is the programmatic surface the UI
 //! can render when it gets the chance.
 
-use crate::error::{KafkaError, KafkaErrorKind};
+use crate::error::KafkaError;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Probe trait + real impl
@@ -246,6 +246,7 @@ impl LibraryProbe for MockProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::KafkaErrorKind;
 
     #[test]
     fn install_hint_for_host_is_non_empty() {

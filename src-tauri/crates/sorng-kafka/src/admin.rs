@@ -23,7 +23,6 @@ struct CliConfig {
     sasl_password: Option<String>,
     ssl_ca_location: Option<String>,
     ssl_cert_location: Option<String>,
-    ssl_key_location: Option<String>,
     ssl_key_password: Option<String>,
 }
 
@@ -37,7 +36,6 @@ impl CliConfig {
             sasl_password: config.sasl_password.clone(),
             ssl_ca_location: config.ssl_ca_location.clone(),
             ssl_cert_location: config.ssl_cert_location.clone(),
-            ssl_key_location: config.ssl_key_location.clone(),
             ssl_key_password: config.ssl_key_password.clone(),
         }
     }
