@@ -1074,6 +1074,23 @@ fn establish_rdp_connection(
                  (6) Group Policy blocking session (e.g. max sessions, user restrictions)."
             );
         }
+
+        // sspi/NTLM "Got empty identity" -> the connection was started with no
+        // username, so CredSSP can't build the auth token. The server then
+        // rejects with InvalidToken. Most users hit this when they save a
+        // connection without filling Username + Password and rely on the
+        // server's logon screen — which only works without NLA.
+        if msg.to_lowercase().contains("empty identity") {
+            msg.push_str(
+                ".  CredSSP/NLA needs a username and password to authenticate \
+                 BEFORE the remote desktop's logon screen is reached, but no \
+                 credentials were supplied for this connection. \
+                 Fix: open the connection's editor and set Username + Password \
+                 (use DOMAIN\\\\user or user@domain for domain accounts), or \
+                 disable NLA (Security → 'Network Level Authentication') if \
+                 the server allows classic-RDP logon at the desktop screen."
+            );
+        }
         emit_log(event_emitter, log_sink, "error", msg.clone(), session_id);
         msg
     })?;

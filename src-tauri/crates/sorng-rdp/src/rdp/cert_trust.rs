@@ -180,7 +180,14 @@ impl fmt::Display for CertTrustError {
                 write!(f, "server certificate validation failed: {message}")
             }
             Self::Rejected => write!(f, "server certificate was rejected"),
-            Self::PromptTimeout => write!(f, "certificate trust prompt timed out"),
+            Self::PromptTimeout => write!(
+                f,
+                "certificate trust prompt timed out — no response received from the UI. \
+                 If this connection's 'Server certificate validation' is set to 'Warn' \
+                 but no prompt was shown, the trust UI is not yet wired up; switch the \
+                 setting to 'Ignore' (auto-accept) or 'Validate' (strict) to avoid the \
+                 prompt path"
+            ),
             Self::PromptUnavailable(message) => write!(f, "{message}"),
             Self::Store(message) => write!(f, "certificate trust store error: {message}"),
             Self::Emit(message) => write!(f, "failed to emit certificate trust prompt: {message}"),
@@ -290,8 +297,28 @@ where
     let existing = store.lookup(&cert.host, cert.port)?;
     if let Some(entry) = existing.as_ref() {
         if entry.fingerprint.eq_ignore_ascii_case(&cert.fingerprint) {
+            // Pinned. Record whether this came from a clean chain or whether
+            // the local store rescued an otherwise-invalid chain — diagnostics
+            // surfaces the difference.
+            set_last_verify_outcome(match &chain_status {
+                ChainStatus::Valid => VerifyOutcome::ChainValid,
+                ChainStatus::Invalid(message) => VerifyOutcome::TrustStorePinned {
+                    chain_error: message.clone(),
+                },
+            });
             return Ok(());
         }
+    }
+
+    // `Ignore` is the user's explicit "don't ask, just trust" setting. We skip
+    // the prompt entirely so the connection isn't gated on a UI handler that
+    // may not exist (the previous behaviour was to emit a prompt event into
+    // the void and then fail with `PromptTimeout` after 60s).
+    // We deliberately do NOT pin the fingerprint here — `Ignore` means "every
+    // time," not "trust on first use," so the cert isn't recorded.
+    if matches!(validation_mode, ServerCertValidationMode::Ignore) {
+        set_last_verify_outcome(VerifyOutcome::ValidationIgnored);
+        return Ok(());
     }
 
     let prompt_payload = CertTrustPrompt {
@@ -327,6 +354,10 @@ where
         store.remember(&cert, existing.as_ref())?;
     }
 
+    set_last_verify_outcome(VerifyOutcome::UserApproved {
+        remembered: decision.remember,
+    });
+
     Ok(())
 }
 
@@ -357,6 +388,38 @@ impl SessionPromptContext {
 thread_local! {
     static SESSION_CONTEXT: RefCell<Option<SessionPromptContext>> = RefCell::new(None);
     static HANDSHAKE_PORT: RefCell<Option<u16>> = RefCell::new(None);
+    static LAST_VERIFY_OUTCOME: RefCell<Option<VerifyOutcome>> = RefCell::new(None);
+}
+
+/// Outcome of the most recent `evaluate_certificate_trust` call on this thread.
+/// Diagnostics consumes this so it can distinguish "TLS passed because the
+/// chain validates" from "TLS passed only because the user pinned the cert in
+/// the local trust store" — the latter must be flagged as a partial pass.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VerifyOutcome {
+    /// Chain validated cleanly against system roots. No store override needed.
+    ChainValid,
+    /// Chain failed but the presented fingerprint matches a local trust-store
+    /// entry. The connection proceeds, but compliance is partial.
+    TrustStorePinned { chain_error: String },
+    /// Validation mode is `Ignore`. The chain wasn't checked / a failure was
+    /// silently accepted because the user opted out of validation entirely.
+    ValidationIgnored,
+    /// The user approved a prompt. May or may not be remembered.
+    UserApproved { remembered: bool },
+}
+
+fn set_last_verify_outcome(outcome: VerifyOutcome) {
+    LAST_VERIFY_OUTCOME.with(|slot| {
+        slot.replace(Some(outcome));
+    });
+}
+
+/// Reads and clears the most recent verification outcome. Diagnostics calls
+/// this immediately after the TLS upgrade returns so each diagnostic step
+/// observes a fresh result.
+pub fn take_last_verify_outcome() -> Option<VerifyOutcome> {
+    LAST_VERIFY_OUTCOME.with(|slot| slot.borrow_mut().take())
 }
 
 pub struct SessionPromptContextGuard {

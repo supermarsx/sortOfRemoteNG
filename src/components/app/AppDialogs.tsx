@@ -36,6 +36,10 @@ const ConnectionDiagnostics = dynamic(
   () => import("../connection/ConnectionDiagnostics").then((module) => module.ConnectionDiagnostics),
   { ssr: false },
 );
+const RDPCertTrustPrompt = dynamic(
+  () => import("../rdp/RDPCertTrustPrompt").then((module) => module.RDPCertTrustPrompt),
+  { ssr: false },
+);
 
 interface AppDialogsProps {
   appSettings: GlobalSettings;
@@ -209,6 +213,8 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         isVisible={showErrorLog || appSettings.showErrorLogBar}
         onToggle={() => setShowErrorLog(!showErrorLog)}
       />
+
+      <RDPCertTrustPrompt />
     </>
   );
 };

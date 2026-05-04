@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::ironrdp::connector::{self, ClientConnector, State as _};
 use crate::ironrdp_blocking::Framed;
 
+use super::cert_trust;
 use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
 use super::settings::ResolvedSettings;
 use super::RdpTlsConfig;
@@ -141,15 +142,77 @@ pub fn run_diagnostics(
                             .unwrap_or_else(|| "Certificate fingerprint unavailable".into())
                     };
 
+                    // Inspect how the cert actually cleared verification. A
+                    // clean chain is a full pass; a trust-store pin or an
+                    // Ignore-mode bypass let the connection through but means
+                    // the chain did not validate against system roots — we
+                    // pass the diagnostic step so the run continues, but mark
+                    // it as `warn` with a detail line so the user can see the
+                    // partial-compliance state at a glance.
+                    let outcome = cert_trust::take_last_verify_outcome();
+                    let (status, message, mut detail_lines) =
+                        match outcome.as_ref() {
+                            Some(cert_trust::VerifyOutcome::TrustStorePinned { chain_error }) => (
+                                "warn",
+                                format!(
+                                    "TLS handshake completed via local trust store \
+                                     (server pubkey: {} bytes)",
+                                    server_public_key.len()
+                                ),
+                                vec![
+                                    "Pinned in trust store: passing this step although \
+                                     chain validation against system roots failed."
+                                        .to_string(),
+                                    format!("Chain error: {chain_error}"),
+                                ],
+                            ),
+                            Some(cert_trust::VerifyOutcome::ValidationIgnored) => (
+                                "warn",
+                                format!(
+                                    "TLS handshake completed (validation disabled, \
+                                     server pubkey: {} bytes)",
+                                    server_public_key.len()
+                                ),
+                                vec![
+                                    "Validation mode is set to 'Ignore' for this connection \
+                                     — the certificate chain was not checked."
+                                        .to_string(),
+                                ],
+                            ),
+                            Some(cert_trust::VerifyOutcome::UserApproved { remembered }) => (
+                                "pass",
+                                format!(
+                                    "TLS handshake completed (user approved, \
+                                     server pubkey: {} bytes)",
+                                    server_public_key.len()
+                                ),
+                                vec![if *remembered {
+                                    "Cert approved by the user and pinned to the local \
+                                     trust store for future connections."
+                                        .to_string()
+                                } else {
+                                    "Cert approved by the user for this session only."
+                                        .to_string()
+                                }],
+                            ),
+                            // `ChainValid` and the unknown/unset case both treat
+                            // a clean handshake as a full pass.
+                            _ => (
+                                "pass",
+                                format!(
+                                    "TLS handshake completed (server pubkey: {} bytes)",
+                                    server_public_key.len()
+                                ),
+                                vec![],
+                            ),
+                        };
+                    detail_lines.push(cert_detail);
                     steps.push(DiagnosticStep {
                         name: "TLS Upgrade".into(),
-                        status: "pass".into(),
-                        message: format!(
-                            "TLS handshake completed (server pubkey: {} bytes)",
-                            server_public_key.len()
-                        ),
+                        status: status.into(),
+                        message,
                         duration_ms: tls_ms,
-                        detail: Some(cert_detail),
+                        detail: Some(detail_lines.join("\n")),
                     });
 
                     let upgraded =
@@ -272,12 +335,19 @@ pub fn run_diagnostics(
                 }
                 Err(e) => {
                     let tls_ms = t.elapsed().as_millis() as u64;
+                    let raw = e.to_string();
+                    // Network::tls_upgrade already prefixes with "TLS handshake failed: ".
+                    // Strip the duplicate so the UI doesn't render it twice.
+                    let inner = raw
+                        .strip_prefix("TLS handshake failed: ")
+                        .unwrap_or(&raw);
+                    let detail = classify_tls_failure(inner);
                     steps.push(DiagnosticStep {
                         name: "TLS Upgrade".into(),
                         status: "fail".into(),
-                        message: format!("TLS handshake failed: {e}"),
+                        message: format!("TLS handshake failed: {inner}"),
                         duration_ms: tls_ms,
-                        detail: Some("The server may not support TLS, or its certificate is invalid. Try disabling TLS in connection settings.".into()),
+                        detail: Some(detail),
                     });
                 }
             }
@@ -966,5 +1036,126 @@ fn classify_finalize_error(err: &str) -> (&'static str, Option<String>) {
         ));
     }
 
+    // sspi/NTLM emits "Got empty identity" when CredSSP starts without a
+    // username — usually because the connection was initiated with no
+    // credentials, or the saved credential record was cleared. NLA can't
+    // proceed with an anonymous identity, so the server rejects with
+    // InvalidToken.
+    if lower.contains("got empty identity") || lower.contains("empty identity") {
+        return ("fail", Some(
+            "CredSSP/NLA requires a username and password, but no identity was \
+             supplied for this connection.\n\n\
+             Fixes:\n\
+             * Open the connection's editor and set Username + Password (or a \
+               saved credential reference).\n\
+             * If you intend to authenticate at the remote desktop's logon \
+               screen instead, disable NLA on this connection (Security → \
+               'Network Level Authentication') so the server falls back to \
+               classic RDP security. Many servers refuse this for security \
+               reasons; if the server enforces NLA you must provide credentials.\n\
+             * For domain accounts use `DOMAIN\\\\user` or `user@domain` so the \
+               domain reaches the server."
+                .into(),
+        ));
+    }
+
+    if lower.contains("invalidtoken") {
+        return ("fail", Some(
+            "CredSSP rejected the authentication token. This usually means the \
+             credentials are wrong, the account is locked, or the negotiated \
+             security package (NTLM/Kerberos) couldn't complete. Verify the \
+             username/password (and domain if applicable), and check that the \
+             account isn't locked or expired on the server."
+                .into(),
+        ));
+    }
+
     ("fail", None)
+}
+
+/// Classify a TLS handshake failure into a user-actionable detail message.
+/// The input should be the inner error text (without any "TLS handshake failed:"
+/// prefix). Returned text is shown in the diagnostic step's detail field and
+/// must distinguish "you can opt to trust this" from "this is a real attack
+/// surface" so the user knows whether it's safe to relax validation.
+fn classify_tls_failure(inner: &str) -> String {
+    let lower = inner.to_lowercase();
+
+    // Trust prompt timed out: backend asked the UI for a decision and never
+    // got one. Today there's no frontend handler for the prompt event, so
+    // every Warn-mode connection to an untrusted host hits this. Tell the
+    // user to switch to Ignore (auto-accept) until the prompt UI ships.
+    if lower.contains("certificate trust prompt timed out")
+        || lower.contains("prompt timeout")
+    {
+        return "The server's certificate isn't trusted, and your connection's 'Server \
+                certificate validation' is set to 'Warn' (prompt-on-first-connect). \
+                The prompt UI didn't respond within the timeout, so the connection \
+                was aborted.\n\n\
+                Open the connection's Security settings and change 'Server certificate \
+                validation' to 'Ignore' if you want to auto-accept this server's cert, \
+                or to 'Validate' (strict) to fail fast without prompting. Verify the \
+                cert fingerprint against the value reported by the server admin before \
+                choosing 'Ignore' on a host you can't physically trust.".into();
+    }
+
+    // Untrusted issuer: typical for self-signed/internal CA. Common and
+    // legitimate in lab/intranet RDP, but it also masks active MITM, so
+    // surface both paths and tell the user how to verify.
+    if lower.contains("unknownissuer") || lower.contains("unknown issuer") {
+        return "The server's certificate is signed by a CA your system doesn't trust \
+                (typically a self-signed or internal CA). This is normal for lab and \
+                intranet RDP hosts.\n\n\
+                If you trust this server: open the connection's Security settings and \
+                set 'Server certificate validation' to 'Warn' (prompts on first connect, \
+                pins the fingerprint) or 'Ignore' (always accepts). Compare the \
+                certificate fingerprint shown in the prompt against the value reported \
+                by the server admin before accepting.\n\n\
+                If you didn't expect this on a host you've connected to before, the \
+                connection may be intercepted -- do NOT relax validation until you've \
+                verified the fingerprint out-of-band.".into();
+    }
+
+    // Hostname mismatch: cert is real but doesn't match what we connected to.
+    // Often a pinhole/NAT issue or a misconfigured cert.
+    if lower.contains("notvalidforname")
+        || lower.contains("not valid for name")
+        || lower.contains("certificatenotvalidforname")
+    {
+        return "The server's certificate is valid, but it isn't issued for the hostname \
+                you connected to. This usually means you're connecting via an IP \
+                address, an alternate DNS name, or a NAT/port-forward that isn't on \
+                the certificate's Subject Alternative Name list.\n\n\
+                Options: connect using the hostname listed on the certificate, ask the \
+                server admin to reissue with the correct SAN, or set 'Server \
+                certificate validation' to 'Warn'/'Ignore' if you've verified the host \
+                identity by other means.".into();
+    }
+
+    // Expired or not-yet-valid certificate.
+    if lower.contains("expired") || lower.contains("notvalidatthistime") {
+        return "The server's certificate has expired (or isn't yet valid). Verify the \
+                local clock first -- a wrong system time is the most common cause. If \
+                the clock is correct, the server admin needs to renew the certificate. \
+                You can temporarily set 'Server certificate validation' to 'Warn' or \
+                'Ignore' to connect, but an expired cert means the server has likely \
+                been neglected; treat with caution.".into();
+    }
+
+    // Server actively rejected our TLS configuration (cipher mismatch, version
+    // mismatch, etc.) -- not a trust issue, a compatibility issue.
+    if lower.contains("handshakefailure") || lower.contains("handshake_failure") {
+        return "The server rejected our TLS configuration during handshake. This is \
+                usually a protocol/cipher mismatch -- common with very old servers \
+                that only speak TLS 1.0/1.1. There is no client-side toggle that \
+                fixes this safely; the server needs to enable a modern TLS version, \
+                or you need to use a different transport (e.g. an RD Gateway).".into();
+    }
+
+    // Generic fallback: server probably isn't speaking TLS at all on this port.
+    "TLS handshake failed before certificate validation. The server likely isn't \
+     speaking TLS on this port (e.g. plain RDP without NLA), or a network device \
+     is intercepting the connection. Verify the port, check whether NLA is required, \
+     and confirm no proxy/firewall is doing TLS inspection."
+        .into()
 }
