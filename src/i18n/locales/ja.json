@@ -19,7 +19,17 @@
     "singleConnection": "単一接続モード",
     "warnOnClose": "閉じる時に警告",
     "warnOnDetachClose": "デタッチされたウィンドウを閉じる前に警告",
-    "warnOnExit": "終了時に警告"
+    "warnOnExit": "終了時に警告",
+    "checkSummaryReachable": "{{count}} 接続可能",
+    "checkSummaryRefused": "{{count}} 拒否",
+    "checkSummaryTimeout": "{{count}} タイムアウト",
+    "checkSummaryError": "{{count}} エラー",
+    "checkRerun": "再実行",
+    "checkRecheckFailed": "失敗を再確認",
+    "checkInitial": "到達性チェックを準備中…",
+    "checkComplete": "完了",
+    "checkAllReachable": "すべてのホストに到達可能",
+    "checkNoneReachable": "到達可能なホストなし"
   },
   "collectionCenter": {
     "title": "コレクションセンター",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Enter暗号化パスワード",
     "exporting": "エクスポート中...",
     "exportButton": "エクスポート接続"
+  },
+  "common": {
+    "close": "閉じる"
   }
 }

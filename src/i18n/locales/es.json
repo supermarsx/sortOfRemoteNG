@@ -19,7 +19,17 @@
     "singleConnection": "Modo de conexión única",
     "warnOnClose": "Avisar al cerrar",
     "warnOnDetachClose": "Avisar antes de cerrar ventanas separadas",
-    "warnOnExit": "Avisar al salir"
+    "warnOnExit": "Avisar al salir",
+    "checkSummaryReachable": "{{count}} accesibles",
+    "checkSummaryRefused": "{{count}} rechazados",
+    "checkSummaryTimeout": "{{count}} tiempo agotado",
+    "checkSummaryError": "{{count}} error",
+    "checkRerun": "Ejecutar de nuevo",
+    "checkRecheckFailed": "Reintentar fallidos",
+    "checkInitial": "Preparando verificación de accesibilidad…",
+    "checkComplete": "Completado",
+    "checkAllReachable": "Todos los hosts accesibles",
+    "checkNoneReachable": "Ningún host accesible"
   },
   "collectionCenter": {
     "title": "Centro de colecciones",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Introduzca la contraseña de cifrado",
     "exporting": "Exportando...",
     "exportButton": "Exportar Conexiones"
+  },
+  "common": {
+    "close": "Cerrar"
   }
 }

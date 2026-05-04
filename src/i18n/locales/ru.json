@@ -19,7 +19,17 @@
     "singleConnection": "Режим одного подключения",
     "warnOnClose": "Предупреждать при закрытии",
     "warnOnDetachClose": "Предупреждать перед закрытием отсоединённых окон",
-    "warnOnExit": "Предупреждать при выходе"
+    "warnOnExit": "Предупреждать при выходе",
+    "checkSummaryReachable": "доступно: {{count}}",
+    "checkSummaryRefused": "отклонено: {{count}}",
+    "checkSummaryTimeout": "тайм-аут: {{count}}",
+    "checkSummaryError": "ошибка: {{count}}",
+    "checkRerun": "Запустить ещё раз",
+    "checkRecheckFailed": "Перепроверить сбои",
+    "checkInitial": "Подготовка проверки доступности…",
+    "checkComplete": "Готово",
+    "checkAllReachable": "Все узлы доступны",
+    "checkNoneReachable": "Ни один узел не доступен"
   },
   "collectionCenter": {
     "title": "Центр коллекций",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Введите пароль шифрования",
     "exporting": "Экспортирование...",
     "exportButton": "Экспорт подключений"
+  },
+  "common": {
+    "close": "Закрыть"
   }
 }

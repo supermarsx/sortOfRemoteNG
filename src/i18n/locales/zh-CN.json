@@ -19,7 +19,17 @@
     "singleConnection": "单连接模式",
     "warnOnClose": "关闭时警告",
     "warnOnDetachClose": "关闭分离窗口前警告",
-    "warnOnExit": "退出时警告"
+    "warnOnExit": "退出时警告",
+    "checkSummaryReachable": "{{count}} 可达",
+    "checkSummaryRefused": "{{count}} 拒绝",
+    "checkSummaryTimeout": "{{count}} 超时",
+    "checkSummaryError": "{{count}} 错误",
+    "checkRerun": "重新运行",
+    "checkRecheckFailed": "重新检查失败项",
+    "checkInitial": "正在准备可达性检查…",
+    "checkComplete": "完成",
+    "checkAllReachable": "所有主机可达",
+    "checkNoneReachable": "没有主机可达"
   },
   "collectionCenter": {
     "title": "集合中心",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Enter加密密码",
     "exporting": "导出中...",
     "exportButton": "导出连接"
+  },
+  "common": {
+    "close": "关闭"
   }
 }

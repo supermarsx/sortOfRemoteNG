@@ -19,7 +19,17 @@
     "singleConnection": "단일 연결 모드",
     "warnOnClose": "닫을 때 경고",
     "warnOnDetachClose": "분리된 창을 닫기 전에 경고",
-    "warnOnExit": "종료 시 경고"
+    "warnOnExit": "종료 시 경고",
+    "checkSummaryReachable": "{{count}}개 도달 가능",
+    "checkSummaryRefused": "{{count}}개 거부됨",
+    "checkSummaryTimeout": "{{count}}개 시간 초과",
+    "checkSummaryError": "{{count}}개 오류",
+    "checkRerun": "다시 실행",
+    "checkRecheckFailed": "실패 다시 확인",
+    "checkInitial": "도달성 검사 준비 중…",
+    "checkComplete": "완료",
+    "checkAllReachable": "모든 호스트 도달 가능",
+    "checkNoneReachable": "도달 가능한 호스트 없음"
   },
   "collectionCenter": {
     "title": "컬렉션 센터",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Enter 암호화 비밀번호",
     "exporting": "내보내는 중...",
     "exportButton": "내보내기 연결"
+  },
+  "common": {
+    "close": "닫기"
   }
 }

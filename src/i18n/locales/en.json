@@ -39,7 +39,17 @@
       "refused": "Refused",
       "timeout": "Timeout",
       "error": "Error"
-    }
+    },
+    "checkSummaryReachable": "{{count}} reachable",
+    "checkSummaryRefused": "{{count}} refused",
+    "checkSummaryTimeout": "{{count}} timed out",
+    "checkSummaryError": "{{count}} error",
+    "checkRerun": "Run again",
+    "checkRecheckFailed": "Re-check failed",
+    "checkInitial": "Preparing reachability check…",
+    "checkComplete": "Complete",
+    "checkAllReachable": "All hosts reachable",
+    "checkNoneReachable": "No hosts reachable"
   },
   "collectionCenter": {
     "title": "Collection Center",
@@ -2574,5 +2584,8 @@
     "enterPassword": "Enter encryption password",
     "exporting": "Exporting...",
     "exportButton": "Export Connections"
+  },
+  "common": {
+    "close": "Close"
   }
 }

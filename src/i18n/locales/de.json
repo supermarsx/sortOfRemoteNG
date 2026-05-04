@@ -19,7 +19,17 @@
     "singleConnection": "Einzelverbindungsmodus",
     "warnOnClose": "Beim Schliessen warnen",
     "warnOnDetachClose": "Vor dem Schliessen getrennter Fenster warnen",
-    "warnOnExit": "Beim Beenden warnen"
+    "warnOnExit": "Beim Beenden warnen",
+    "checkSummaryReachable": "{{count}} erreichbar",
+    "checkSummaryRefused": "{{count}} abgewiesen",
+    "checkSummaryTimeout": "{{count}} Zeitüberschreitung",
+    "checkSummaryError": "{{count}} Fehler",
+    "checkRerun": "Erneut ausführen",
+    "checkRecheckFailed": "Fehlgeschlagene erneut prüfen",
+    "checkInitial": "Erreichbarkeitsprüfung wird vorbereitet…",
+    "checkComplete": "Abgeschlossen",
+    "checkAllReachable": "Alle Hosts erreichbar",
+    "checkNoneReachable": "Keine Hosts erreichbar"
   },
   "collectionCenter": {
     "title": "Sammlungszentrum",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Verschlüsselungskennwort eingeben",
     "exporting": "Wird exportiert...",
     "exportButton": "Exportieren Verbindungen"
+  },
+  "common": {
+    "close": "Schließen"
   }
 }

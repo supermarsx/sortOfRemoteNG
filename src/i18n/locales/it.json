@@ -19,7 +19,17 @@
     "singleConnection": "Modalità connessione singola",
     "warnOnClose": "Avvisa alla chiusura",
     "warnOnDetachClose": "Avvisa prima di chiudere finestre staccate",
-    "warnOnExit": "Avvisa all’uscita"
+    "warnOnExit": "Avvisa all’uscita",
+    "checkSummaryReachable": "{{count}} raggiungibili",
+    "checkSummaryRefused": "{{count}} rifiutati",
+    "checkSummaryTimeout": "{{count}} scaduti",
+    "checkSummaryError": "{{count}} errore",
+    "checkRerun": "Esegui di nuovo",
+    "checkRecheckFailed": "Riprova falliti",
+    "checkInitial": "Preparazione del controllo di raggiungibilità…",
+    "checkComplete": "Completato",
+    "checkAllReachable": "Tutti gli host raggiungibili",
+    "checkNoneReachable": "Nessun host raggiungibile"
   },
   "collectionCenter": {
     "title": "Centro raccolte",
@@ -2554,5 +2564,8 @@
     "enterPassword": "Inserisci password di cifratura",
     "exporting": "Esportazione in corso...",
     "exportButton": "Esporta connessioni"
+  },
+  "common": {
+    "close": "Chiudi"
   }
 }
