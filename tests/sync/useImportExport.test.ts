@@ -211,15 +211,16 @@ beforeEach(() => {
   globalThis.URL.createObjectURL = vi.fn(() => "blob:mock");
   globalThis.URL.revokeObjectURL = vi.fn();
   // Stub anchor element creation only — preserve real createElement for test containers
-  const origCreate = document.createElement.bind(document);
+  // Capture original before any mocking to avoid recursive call stack
+  const origCreate = Document.prototype.createElement;
   const mockLink = {
     href: "",
     download: "",
     click: vi.fn(),
   } as unknown as HTMLAnchorElement;
-  vi.spyOn(document, "createElement").mockImplementation((tag: string, options?: any) => {
+  vi.spyOn(document, "createElement").mockImplementation(function(this: Document, tag: string, options?: any) {
     if (tag === "a") return mockLink;
-    return origCreate(tag, options);
+    return origCreate.call(this, tag, options);
   });
   vi.spyOn(document.body, "appendChild").mockImplementation(
     (node) => node,

@@ -119,7 +119,7 @@ export type ImportFormat =
  */
 export const detectImportFormat = (content: string, filename?: string): ImportFormat => {
   // Strip BOM and whitespace.
-  const trimmed = content.replace(/^﻿/, '').trim();
+  const trimmed = content.replace(/^\uFEFF/, '').trim();
   let extIsXml = false;
 
   // Check filename extension first
