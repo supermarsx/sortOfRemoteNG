@@ -565,6 +565,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tagManager: 'tab' as const,
     tabGroupManager: 'tab' as const,
     connectionEditor: 'tab' as const,
+    bulkEditor: 'tab' as const,
     proxyProfileEditor: 'tab' as const,
     proxyChainEditor: 'tab' as const,
     sshTunnelEditor: 'tab' as const,
