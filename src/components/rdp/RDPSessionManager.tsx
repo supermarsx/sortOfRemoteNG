@@ -22,7 +22,7 @@ import {
   formatBytes,
   RDPSessionInfo,
   RDPStats,
-} from "../../hooks/rdp/useRdpSessionManager";
+} from "../../hooks/rdp/useRDPSessionManager";
 import { Checkbox } from '../ui/forms';
 
 type Mgr = ReturnType<typeof useRDPSessionManager>;

@@ -26,7 +26,7 @@ import {
   useRDPErrorScreen,
   RDP_ERROR_CATEGORY_LABELS,
   type RDPErrorCategory,
-} from '../../hooks/rdp/useRdpErrorScreen';
+} from '../../hooks/rdp/useRDPErrorScreen';
 
 type Mgr = ReturnType<typeof useRDPErrorScreen>;
 

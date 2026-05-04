@@ -25,7 +25,7 @@ import BackupSettings from "./sections/BackupSettings";
 import CloudSyncSettings from "./sections/CloudSyncSettings";
 import { TrustVerificationSettings } from "./sections/TrustVerificationSettings";
 import WebBrowserSettings from "./sections/WebBrowserSettings";
-import RDPDefaultSettings from "./sections/RdpDefaultSettings";
+import RDPDefaultSettings from "./sections/RDPDefaultSettings";
 import BackendSettings from "./sections/BackendSettings";
 import RecordingSettings from "./sections/RecordingSettings";
 import MacroSettings from "./sections/MacroSettings";

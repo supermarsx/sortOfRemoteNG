@@ -196,7 +196,7 @@ vi.mock("../../src/components/SettingsDialog/sections/WebBrowserSettings", () =>
   __esModule: true,
   default: () => <div data-testid="section-webbrowser" />,
 }));
-vi.mock("../../src/components/SettingsDialog/sections/RdpDefaultSettings", () => ({
+vi.mock("../../src/components/settingsDialog/sections/RDPDefaultSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-rdp" />,
 }));

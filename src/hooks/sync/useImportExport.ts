@@ -5,7 +5,7 @@ import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
 import { CollectionManager } from '../../utils/connection/collectionManager';
 import { SettingsManager } from '../../utils/settings/settingsManager';
-import { ImportResult, ImportVpnData } from '../../components/ImportExport/types';
+import { ImportResult, ImportVpnData } from '../../components/importExport/types';
 import {
   encryptWithPassword,
   decryptWithPassword,
@@ -19,7 +19,7 @@ import {
   decryptMRemoteNGXml,
   verifyMRemoteNGPassword,
   MREMOTENG_DEFAULT_MASTER_PASSWORD,
-} from '../../components/ImportExport/utils';
+} from '../../components/importExport/utils';
 import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
 
