@@ -84,7 +84,9 @@ async function ensureAppWindowSelected(): Promise<void> {
         if (snapshot.href && snapshot.href !== 'about:blank') {
           return;
         }
-      } catch {}
+      } catch {
+        // Ignore transient handles while the Tauri webview is switching documents.
+      }
     }
   }
 
@@ -144,11 +146,15 @@ export async function resetAppState(): Promise<void> {
 
     try {
       globalThis.localStorage?.clear();
-    } catch {}
+    } catch {
+      // Ignore storage access failures during test reset.
+    }
 
     try {
       globalThis.sessionStorage?.clear();
-    } catch {}
+    } catch {
+      // Ignore storage access failures during test reset.
+    }
 
     try {
       if (!indexedDB.databases) {
