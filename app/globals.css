@@ -1,3 +1,6 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
 @import '../src/styles/base.css';
 @import './styles/theme-variables.css';
 @import './styles/app-shell.css';
@@ -13,10 +16,6 @@
 @import '../src/styles/forms.css';
 @import '../src/styles/lists.css';
 @import '../src/styles/tables-tabs.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 /* Override Tailwind's default border color with theme variable */
 @layer base {

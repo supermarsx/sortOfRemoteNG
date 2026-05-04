@@ -4,9 +4,9 @@
 [build]
 # 200 GB RAM — no memory constraints, maximise parallelism.
 jobs = 28
-# Default Windows builds to the GNU target (uses MinGW GCC from C:\msys64\mingw64).
-# Switch to x86_64-pc-windows-msvc once VS C++ Build Tools are installed.
-target = "x86_64-pc-windows-gnu"
+# Default Windows builds to the MSVC target (matches rust-toolchain.toml host
+# requirement and avoids MinGW-only deps such as openssl-sys needing pkg-config).
+target = "x86_64-pc-windows-msvc"
 # `sccache` is installed on this machine, but wrapper-enabled builds were
 # failing nondeterministically in this workspace (`h2` / `tauri-utils`
 # exiting without a Rust diagnostic). Keep the default build path reliable.
@@ -18,6 +18,13 @@ c2 = "check -j 2"
 b2 = "build -j 2"
 t2 = "test -j 2"
 r2 = "run -j 2"
+
+# `openssl-src` (vendored OpenSSL) requires a full Perl distribution. Git Bash's
+# bundled Perl is stripped (missing Locale::Maketext::Simple). Point the build
+# at Strawberry Perl explicitly. `force = false` lets a CI runner or another
+# developer override via the same env var without editing this file.
+[env]
+OPENSSL_SRC_PERL = "C:/Strawberry/perl/bin/perl.exe"
 
 [net]
 # Retry failed downloads up to 3 times
