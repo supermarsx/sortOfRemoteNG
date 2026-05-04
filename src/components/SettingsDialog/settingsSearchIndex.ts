@@ -121,6 +121,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   // ─── Trust ──────────────────────────────────────────────────────
   { key: 'tlsTrustPolicy', label: 'TLS Trust Policy', description: 'TLS certificate trust policy', tags: ['tls', 'ssl', 'certificate', 'trust', 'https'], section: 'trust', sectionLabel: 'Trust & Verification' },
   { key: 'sshTrustPolicy', label: 'SSH Trust Policy', description: 'SSH host key trust policy', tags: ['ssh', 'host key', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust & Verification' },
+  { key: 'rdpTrustPolicy', label: 'RDP Trust Policy', description: 'RDP server certificate trust policy', tags: ['rdp', 'remote desktop', 'certificate', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust & Verification' },
   { key: 'showTrustIdentityInfo', label: 'Show Trust Info', description: 'Show trust identity information', tags: ['trust', 'identity', 'info'], section: 'trust', sectionLabel: 'Trust & Verification' },
   { key: 'certExpiryWarningDays', label: 'Certificate Expiry Warning', description: 'Days before certificate expiry to warn', tags: ['certificate', 'expiry', 'warning', 'ssl'], section: 'trust', sectionLabel: 'Trust & Verification' },
 

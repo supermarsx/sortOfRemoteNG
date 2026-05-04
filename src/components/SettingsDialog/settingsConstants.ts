@@ -209,6 +209,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   trust: [
     "tlsTrustPolicy",
     "sshTrustPolicy",
+    "rdpTrustPolicy",
     "showTrustIdentityInfo",
     "certExpiryWarningDays",
   ],

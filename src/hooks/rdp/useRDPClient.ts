@@ -1044,7 +1044,12 @@ export function useRDPClient(session: ConnectionSession) {
 
       const conn = connectionRef.current;
       const connId = conn?.id;
-      const policy = getEffectiveTrustPolicy(conn?.rdpTrustPolicy, settingsRef.current.tlsTrustPolicy);
+      // RDP falls back to the dedicated `rdpTrustPolicy` global, then to
+       // `tlsTrustPolicy` for older settings that predate the split.
+      const policy = getEffectiveTrustPolicy(
+        conn?.rdpTrustPolicy,
+        settingsRef.current.rdpTrustPolicy ?? settingsRef.current.tlsTrustPolicy,
+      );
       const result = verifyIdentity(fp.host, fp.port, 'tls', identity, connId);
 
       if (result.status === 'trusted') return;

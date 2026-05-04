@@ -416,6 +416,14 @@ export interface GlobalSettings {
   tlsTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
   /** Default SSH host key trust policy */
   sshTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
+  /**
+   * Default RDP server certificate trust policy.
+   * RDP servers are commonly self-signed (lab/intranet hosts), so this is
+   * separated from `tlsTrustPolicy` (which usually targets HTTPS servers
+   * with public CAs) to let users pick a more permissive default for RDP
+   * without weakening their browser-style TLS trust.
+   */
+  rdpTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
   /** Show certificate / host-key info in the URL bar / terminal toolbar */
   showTrustIdentityInfo: boolean;
   /** Warn on TLS certificate expiry within N days (0 = disabled) */

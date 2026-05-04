@@ -288,6 +288,7 @@ export const defaultSettings: GlobalSettings = {
   enableAutocomplete: false,
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'always-ask',
+  rdpTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
   // Windows Remote Management Tools

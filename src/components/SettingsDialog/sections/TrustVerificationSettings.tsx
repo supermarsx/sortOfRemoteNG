@@ -13,6 +13,7 @@ import {
   Globe,
   Link2,
   ChevronRight,
+  Monitor,
 } from "lucide-react";
 import {
   formatFingerprint,
@@ -66,7 +67,7 @@ const SectionHeader: React.FC = () => (
 );
 
 const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
     <div className="sor-settings-card">
       <div className="flex items-center gap-2 mb-3">
         <Lock size={16} className="text-success" />
@@ -102,6 +103,29 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           POLICY_OPTIONS.find((o) => o.value === mgr.settings.sshTrustPolicy)
             ?.description
         }
+      </p>
+    </div>
+
+    <div className="sor-settings-card">
+      <div className="flex items-center gap-2 mb-3">
+        <Monitor size={16} className="text-warning" />
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
+          RDP Certificate Policy
+        </h4>
+      </div>
+      <Select value={mgr.settings.rdpTrustPolicy ?? "tofu"} onChange={(v: string) =>
+          mgr.updateSettings({
+            rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
+          })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
+      <p className="text-xs text-[var(--color-textMuted)] mt-2">
+        {
+          POLICY_OPTIONS.find((o) => o.value === mgr.settings.rdpTrustPolicy)
+            ?.description
+        }
+      </p>
+      <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
+        Separate from TLS — RDP servers are typically self-signed, so most users
+        keep this at TOFU even when TLS is set to Strict.
       </p>
     </div>
   </div>

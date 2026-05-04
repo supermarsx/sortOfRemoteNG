@@ -367,6 +367,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   enableAutocomplete: false,
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'always-ask',
+  rdpTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
 
