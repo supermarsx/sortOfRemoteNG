@@ -21,8 +21,8 @@ const ProtocolDeepDiagSection = ({
     return null;
 
   return (
-    <div className="bg-[var(--color-surfaceHover)]/50 border border-accent/30 rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 bg-purple-950/20 border-b border-accent/20">
+    <div className="bg-[var(--color-surfaceHover)]/50 border border-[var(--color-primary)]/40 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 bg-[var(--color-primary)]/10 border-b border-[var(--color-primary)]/30">
         <Microscope size={14} className="text-primary" />
         <h3 className="text-xs font-semibold uppercase tracking-wide text-primary">
           {connection.protocol.toUpperCase()} Deep Diagnostics
@@ -132,12 +132,12 @@ const ProtocolDeepDiagSection = ({
               {protocolReport.summary}
             </p>
             {protocolReport.rootCauseHint && (
-              <div className="rounded-lg border border-warning/30 bg-yellow-950/20 p-3">
+              <div className="rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3">
                 <h4 className="text-[10px] font-semibold text-warning uppercase tracking-wider mb-1 flex items-center gap-1.5">
                   <AlertCircle size={10} />
                   Root Cause Analysis
                 </h4>
-                <pre className="text-[10px] text-warning/80 whitespace-pre-wrap leading-relaxed">
+                <pre className="text-[10px] text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">
                   {protocolReport.rootCauseHint}
                 </pre>
               </div>
