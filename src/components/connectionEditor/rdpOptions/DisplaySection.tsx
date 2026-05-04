@@ -143,6 +143,30 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => {
         <Select value={rdp.display?.lossyCompression === undefined ? "" : rdp.display.lossyCompression ? "true" : "false"} onChange={(v: string) => updateRdp("display", { lossyCompression: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
       </div>
 
+      <div>
+        <label className="block text-xs text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+          Auto-rotate on connect
+          <Info size={12} className="text-[var(--color-textMuted)] cursor-help" data-tooltip="Automatically rotate the RDP display when the session connects. Useful for vertically-mounted monitors. The rotate button in the toolbar lets you change rotation at any time." />
+        </label>
+        <Select
+          value={rdp.display?.autoRotate?.toString() ?? "0"}
+          onChange={(v: string) => {
+            const deg = parseInt(v, 10);
+            const valid = (deg === 0 || deg === 90 || deg === 180 || deg === 270)
+              ? (deg as 0 | 90 | 180 | 270)
+              : 0;
+            updateRdp("display", { autoRotate: valid });
+          }}
+          options={[
+            { value: "0", label: "No rotation (default)" },
+            { value: "90", label: "90° clockwise (portrait — Y-axis vertical)" },
+            { value: "180", label: "180° (upside down)" },
+            { value: "270", label: "270° clockwise (portrait — X-axis vertical)" },
+          ]}
+          className={CSS.select}
+        />
+      </div>
+
     </Section>
   );
 };

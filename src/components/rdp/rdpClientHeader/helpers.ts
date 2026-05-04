@@ -51,6 +51,18 @@ export interface RDPClientHeaderProps {
   totpDefaultDigits?: number;
   totpDefaultPeriod?: number;
   totpDefaultAlgorithm?: string;
+  /** Current display rotation (0/90/180/270 degrees). */
+  rotation: 0 | 90 | 180 | 270;
+  setRotation: (deg: 0 | 90 | 180 | 270) => void;
+}
+
+/** Quarter-turn rotations cycled by the toolbar button. */
+export const ROTATION_CYCLE: ReadonlyArray<0 | 90 | 180 | 270> = [0, 90, 180, 270];
+
+/** Next rotation in the cycle. */
+export function nextRotation(current: 0 | 90 | 180 | 270): 0 | 90 | 180 | 270 {
+  const idx = ROTATION_CYCLE.indexOf(current);
+  return ROTATION_CYCLE[(idx + 1) % ROTATION_CYCLE.length];
 }
 
 export function formatDuration(sec: number): string {

@@ -287,6 +287,14 @@ export interface RdpDisplaySettings {
   magnifierZoom?: number;
   /** Smart sizing: scale the remote desktop to fit the client window */
   smartSizing?: boolean;
+  /**
+   * Auto-rotate the RDP display when the session connects.
+   * `0` (the default) shows the desktop in its native orientation.
+   * `90`/`180`/`270` apply a CSS rotation to the canvas at connect time.
+   * The user can still override interactively via the toolbar's rotate
+   * button; this setting only seeds the initial value.
+   */
+  autoRotate?: 0 | 90 | 180 | 270;
 }
 
 export type RdpAudioPlaybackMode = 'local' | 'remote' | 'disabled';

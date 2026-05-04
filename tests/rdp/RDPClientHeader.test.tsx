@@ -49,6 +49,8 @@ const buildProps = () => {
       totpConfigs: [],
       onUpdateTotpConfigs: vi.fn(),
       onUpdateServerCertValidation: vi.fn(),
+      rotation: 0 as const,
+      setRotation: vi.fn(),
     },
     handleSendKeys,
   };

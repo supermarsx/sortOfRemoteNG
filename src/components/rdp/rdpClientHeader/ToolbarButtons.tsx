@@ -1,6 +1,6 @@
 import React from "react";
-import { RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
-import { Activity, Camera, ClipboardCopy, Maximize2, Minimize2, Search, Settings, X } from "lucide-react";
+import { RDPClientHeaderProps, btnActive, btnDefault, nextRotation } from "./helpers";
+import { Activity, Camera, ClipboardCopy, Maximize2, Minimize2, RotateCw, Search, Settings, X } from "lucide-react";
 
 const ToolbarButtons: React.FC<{ p: RDPClientHeaderProps }> = ({ p }) => (
   <>
@@ -57,6 +57,21 @@ const ToolbarButtons: React.FC<{ p: RDPClientHeaderProps }> = ({ p }) => (
       data-tooltip="Copy screenshot to clipboard"
     >
       <ClipboardCopy size={14} />
+    </button>
+    <button
+      onClick={() => p.setRotation(nextRotation(p.rotation))}
+      className={p.rotation !== 0 ? btnActive : btnDefault}
+      data-tooltip={
+        p.rotation === 0
+          ? "Rotate display 90° (cycles: 0 → 90 → 180 → 270)"
+          : `Rotated ${p.rotation}° — click to cycle (back to 0 after 270)`
+      }
+      aria-label={`Rotate display, currently ${p.rotation} degrees`}
+    >
+      <RotateCw
+        size={14}
+        style={{ transform: `rotate(${p.rotation}deg)`, transition: "transform 200ms" }}
+      />
     </button>
   </>
 );

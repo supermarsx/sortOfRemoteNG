@@ -117,7 +117,7 @@ const DisconnectedOverlay: React.FC = () => (
   </div>
 );
 
-const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = ({ mgr, session }) => {
+const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession; rotation: 0 | 90 | 180 | 270 }> = ({ mgr, session, rotation }) => {
   // Smart sizing: scale the canvas to fit via CSS objectFit.
   // Resize to window: canvas buffer matches container — no CSS scaling needed.
   // Neither: fixed size, may overflow (scrollbars handled by container).
@@ -427,6 +427,21 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
           width: '100%',
           height: '100%',
         } : {}),
+        // Display rotation. Pure CSS transform — the underlying canvas pixel
+        // buffer is unaffected, only the visual presentation rotates around
+        // the canvas center. NOTE: pointer/keyboard input still operates in
+        // the unrotated coordinate space, so rotation is most useful as a
+        // view-only mode (e.g. side-mounted monitors). For 90/270 the visible
+        // bounding box swaps width/height; the surrounding container
+        // (`flex-1` of the parent) provides the necessary slack.
+        ...(rotation !== 0 ? {
+          transform: `rotate(${rotation}deg)`,
+          transformOrigin: 'center center',
+          transition: 'transform 250ms ease',
+        } : {
+          transform: 'none',
+          transition: 'transform 250ms ease',
+        }),
         display: mgr.connectionStatus !== 'disconnected' ? 'block' : 'none',
       }}
       onMouseMove={mgr.handleMouseMove}
@@ -462,6 +477,20 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
 
 const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => {
   const mgr = useRDPClient(session);
+
+  // Display rotation state. Seeded from `rdpSettings.display.autoRotate` once
+  // the connection finishes loading. The toolbar's rotate button cycles
+  // through 0 → 90 → 180 → 270 — purely a visual transform on the canvas.
+  const [rotation, setRotation] = React.useState<0 | 90 | 180 | 270>(0);
+  const seededAutoRotateRef = React.useRef(false);
+  React.useEffect(() => {
+    if (seededAutoRotateRef.current) return;
+    const auto = mgr.connection?.rdpSettings?.display?.autoRotate;
+    if (auto == null) return;
+    seededAutoRotateRef.current = true;
+    if (auto === 0) return;
+    setRotation(auto);
+  }, [mgr.connection?.rdpSettings?.display?.autoRotate]);
 
   return (
     <div className={`flex flex-col bg-[var(--color-background)] ${mgr.isFullscreen ? 'fixed inset-0 z-50' : 'h-full overflow-hidden'}`}>
@@ -514,6 +543,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
         totpDefaultDigits={mgr.settings.totpDigits}
         totpDefaultPeriod={mgr.settings.totpPeriod}
         totpDefaultAlgorithm={mgr.settings.totpAlgorithm}
+        rotation={rotation}
+        setRotation={setRotation}
       />
 
       {mgr.showSettings && (
@@ -549,7 +580,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
         />
       )}
 
-      <CanvasArea mgr={mgr} session={session} />
+      <CanvasArea mgr={mgr} session={session} rotation={rotation} />
 
       <RDPStatusBar
         rdpSessionId={mgr.rdpSessionId}
