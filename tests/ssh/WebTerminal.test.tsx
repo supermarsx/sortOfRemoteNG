@@ -63,17 +63,21 @@ const mockTerminal = {
 };
 
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn().mockImplementation(() => mockTerminal),
+  Terminal: vi.fn(function() { return mockTerminal; }),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn().mockImplementation(() => ({
-    fit: vi.fn(),
-  })),
+  FitAddon: vi.fn(function() {
+    return {
+      fit: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock("@xterm/addon-web-links", () => ({
-  WebLinksAddon: vi.fn(),
+  WebLinksAddon: vi.fn(function() {
+    return {};
+  }),
 }));
 
 vi.mock("react-i18next", () => ({

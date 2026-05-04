@@ -806,27 +806,30 @@ describe("ScriptManager", () => {
       fireEvent.click(newButton);
 
       // Find the Agnostic button - it should be selected (have primary styling)
-      const agnosticButton = screen.getByRole("button", {
-        name: /🌐 Agnostic/i,
-      });
-      expect(agnosticButton.className).toMatch(/bg-primary/);
+      const agnosticButton = screen.getAllByRole("button").find((btn) => btn.textContent?.includes("Agnostic"));
+      expect(agnosticButton?.className).toMatch(/bg-primary/);
     });
 
-    it("should toggle OS tags when clicked in editor", () => {
+    it("should toggle OS tags when clicked in editor", async () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
 
-      // Find and click the Linux button
-      const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-      expect(linuxButton.className).not.toMatch(/bg-primary/);
+      // Wait for editor to open
+      await screen.findByPlaceholderText(/Enter script name/i);
 
-      fireEvent.click(linuxButton);
-      expect(linuxButton.className).toMatch(/bg-primary/);
+      // Find and click the Linux button by finding button containing "Linux" text
+      const allButtons = screen.getAllByRole("button");
+      const linuxButton = allButtons.find((btn) => btn.textContent?.includes("Linux"));
+      expect(linuxButton).toBeDefined();
+      expect(linuxButton!.className).not.toMatch(/bg-primary/);
+
+      fireEvent.click(linuxButton!);
+      expect(linuxButton!.className).toMatch(/bg-primary/);
 
       // Click again to deselect
-      fireEvent.click(linuxButton);
-      expect(linuxButton.className).not.toMatch(/bg-primary/);
+      fireEvent.click(linuxButton!);
+      expect(linuxButton!.className).not.toMatch(/bg-primary/);
     });
 
     it("should save OS tags with custom script", async () => {
@@ -846,12 +849,12 @@ describe("ScriptManager", () => {
       fireEvent.change(scriptTextarea, { target: { value: 'echo "hello"' } });
 
       // Select Linux tag
-      const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-      fireEvent.click(linuxButton);
+      const linuxButton = screen.getAllByRole("button").find((btn) => btn.textContent?.includes("Linux"));
+      fireEvent.click(linuxButton!);
 
       // Select Windows tag
-      const windowsButton = screen.getByRole("button", { name: /🪟 Windows/i });
-      fireEvent.click(windowsButton);
+      const windowsButton = screen.getAllByRole("button").find((btn) => btn.textContent?.includes("Windows"));
+      fireEvent.click(windowsButton!);
 
       // Save
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
@@ -879,8 +882,8 @@ describe("ScriptManager", () => {
 
       // Editor should open with Linux tag already selected
       await waitFor(() => {
-        const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-        expect(linuxButton.className).toMatch(/bg-primary/);
+        const linuxButton = screen.getAllByRole("button").find((btn) => btn.textContent?.includes("Linux"));
+        expect(linuxButton?.className).toMatch(/bg-primary/);
       });
     });
 
@@ -894,8 +897,8 @@ describe("ScriptManager", () => {
 
       // Linux tag should be selected
       await waitFor(() => {
-        const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-        expect(linuxButton.className).toMatch(/bg-primary/);
+        const linuxButton = screen.getAllByRole("button").find((btn) => btn.textContent?.includes("Linux"));
+        expect(linuxButton?.className).toMatch(/bg-primary/);
       });
     });
 

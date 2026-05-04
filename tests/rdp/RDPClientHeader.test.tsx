@@ -73,10 +73,17 @@ describe("RDPClientHeader", () => {
 
   it("opens host-info popover and closes on outside click", () => {
     const { props } = buildProps();
-    render(<RDPClientHeader {...props} />);
+    const { container } = render(<RDPClientHeader {...props} />);
 
-    const hostInfoBtn = document.querySelector('[data-tooltip="Host info & certificate"]') as HTMLElement;
-    fireEvent.click(hostInfoBtn);
+    // Find the host info button - it contains an Info icon and opens the host-info-popover
+    const allButtons = screen.getAllByRole("button");
+    const hostInfoBtn = allButtons.find((btn) => {
+      // The button is adjacent to the popover with data-testid="rdp-host-info-popover"
+      // For simplicity, find button with tooltip text about "Host info"
+      return btn.getAttribute("data-tooltip")?.includes("Host info");
+    });
+    expect(hostInfoBtn).toBeDefined();
+    fireEvent.click(hostInfoBtn!);
     expect(screen.getByTestId("rdp-host-info-popover")).toBeInTheDocument();
     expect(screen.getByText("Friendly Name")).toBeInTheDocument();
 

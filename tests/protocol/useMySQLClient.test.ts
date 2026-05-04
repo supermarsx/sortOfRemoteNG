@@ -7,12 +7,14 @@ const mockGetTables = vi.fn();
 const mockExecuteQuery = vi.fn();
 
 vi.mock('../../src/utils/services/mysqlService', () => ({
-  MySQLService: vi.fn().mockImplementation(() => ({
-    getDatabases: mockGetDatabases,
-    getTables: mockGetTables,
-    executeQuery: mockExecuteQuery,
-    connect: vi.fn(),
-  })),
+  MySQLService: vi.fn(function() {
+    return {
+      getDatabases: mockGetDatabases,
+      getTables: mockGetTables,
+      executeQuery: mockExecuteQuery,
+      connect: vi.fn(),
+    };
+  }),
 }));
 
 import { useMySQLClient } from '../../src/hooks/protocol/useMySQLClient';

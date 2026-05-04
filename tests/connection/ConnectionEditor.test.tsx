@@ -113,7 +113,7 @@ describe("ConnectionEditor", () => {
       // RDP should be selected by default (has active styling)
       expect(nameInput).toHaveValue('');
       // RDP should be displayed as the selected protocol in the dropdown toggle
-      expect(screen.getByRole('button', { name: /RDP Remote Desktop/i })).toBeInTheDocument();
+      expect(screen.getByTestId('editor-protocol')).toHaveTextContent(/RDP/);
     });
 
     it("should update form data when inputs change", () => {
@@ -129,12 +129,12 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       // Open protocol dropdown and click SSH
-      const protocolToggle = screen.getByRole('button', { name: /RDP Remote Desktop/i });
+      const protocolToggle = screen.getByTestId('editor-protocol');
       fireEvent.click(protocolToggle);
-      fireEvent.click(screen.getByRole('button', { name: /SSH Secure Shell/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^SSH/i }));
 
       // Dropdown toggle should now show SSH
-      expect(screen.getByRole('button', { name: /SSH Secure Shell/i })).toBeInTheDocument();
+      expect(screen.getByTestId('editor-protocol')).toHaveTextContent(/SSH/);
     });
   });
 
@@ -170,8 +170,8 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       // Open protocol dropdown and click SSH
-      fireEvent.click(screen.getByRole('button', { name: /RDP Remote Desktop/i }));
-      fireEvent.click(screen.getByRole('button', { name: /SSH Secure Shell/i }));
+      fireEvent.click(screen.getByTestId('editor-protocol'));
+      fireEvent.click(screen.getByRole('button', { name: /^SSH/i }));
 
       expect(screen.getByTestId('ssh-options')).toBeInTheDocument();
     });
@@ -179,9 +179,11 @@ describe("ConnectionEditor", () => {
     it("should show HTTP options for HTTP protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      // Open protocol dropdown and click HTTP
-      fireEvent.click(screen.getByRole('button', { name: /RDP Remote Desktop/i }));
-      fireEvent.click(screen.getByRole('button', { name: /HTTP Web Service/i }));
+      // Open protocol dropdown and click HTTP (accessible name is "HTTPWeb Service" without space)
+      fireEvent.click(screen.getByTestId('editor-protocol'));
+      const allButtons = screen.getAllByRole('button');
+      const httpButton = allButtons.find((btn) => btn.textContent?.includes('HTTPWeb Service') || btn.textContent?.match(/HTTP\s*Web Service/));
+      fireEvent.click(httpButton!);
 
       expect(screen.getByTestId('http-options')).toBeInTheDocument();
     });

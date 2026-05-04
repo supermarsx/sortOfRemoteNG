@@ -169,9 +169,16 @@ describe("BulkSSHCommander", () => {
   describe("Session Selection", () => {
     it("should select all sessions by default", () => {
       renderComponent();
-      // All SSH sessions should be selected by default
-      const checkboxIcons = document.querySelectorAll(".lucide-check-square");
-      expect(checkboxIcons.length).toBeGreaterThanOrEqual(2);
+      // All SSH sessions should be selected by default - check semantically
+      const sessionButtons = screen
+        .getAllByRole("button")
+        .filter((btn) => btn.textContent?.includes("SSH Server"));
+      // All sessions should be rendered and selected (we have 2 SSH sessions)
+      expect(sessionButtons.length).toBe(2);
+      // Verify they have selected state styling
+      sessionButtons.forEach((btn) => {
+        expect(btn.className).toMatch(/border-accent|border-primary/);
+      });
     });
 
     it("should toggle session selection when clicked", () => {
