@@ -205,7 +205,7 @@ mod tests {
                 host: "proxy.example.com".to_string(),
                 port: 1080,
                 username: Some("user".to_string()),
-                password: Some("pass".to_string()),
+                password: Some("pass".to_string().into()),
             }],
             mode: ProxyChainMode::Strict,
             hop_timeout_ms: 10000,
