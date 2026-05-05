@@ -1,7 +1,9 @@
-pub mod clipboard;
+pub mod audin;
 pub mod cert_trust;
+pub mod clipboard;
+pub mod commands;
+pub mod diagnostics;
 pub mod errors;
-pub mod rdpdr;
 pub mod frame_channel;
 mod frame_delivery;
 pub mod frame_store;
@@ -9,14 +11,13 @@ pub mod input;
 #[cfg(feature = "rdp-multimon")]
 pub mod multimon;
 mod network;
+pub mod rdpdr;
 pub mod session_poller;
 pub mod session_runner;
+pub mod session_state;
 pub mod settings;
 pub mod stats;
 pub mod types;
-pub mod audin;
-pub mod commands;
-pub mod diagnostics;
 pub mod wake_channel;
 
 use std::sync::Arc;
