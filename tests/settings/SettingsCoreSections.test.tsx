@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import GeneralSettings from "../../src/components/SettingsDialog/sections/GeneralSettings";
 import BackendSettings from "../../src/components/SettingsDialog/sections/BackendSettings";
-import RDPDefaultSettings from "../../src/components/settingsDialog/sections/RDPDefaultSettings";
+import RDPDefaultSettings from "../../src/components/SettingsDialog/sections/RdpDefaultSettings";
 
 const baseSettings = {
   language: "en",

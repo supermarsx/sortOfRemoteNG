@@ -85,7 +85,7 @@ const ConnectionDiagnostics = dynamic(
   { ssr: false },
 );
 const SettingsTabContent = dynamic(
-  () => import("../settingsDialog/index").then((m) => m.SettingsTabContent),
+  () => import("../SettingsDialog/index").then((m) => m.SettingsTabContent),
   { ssr: false },
 );
 const RDPSessionPanelTab = dynamic(

@@ -1,4 +1,4 @@
-import { ImportExport } from "../../importExport";
+import { ImportExport } from "../../ImportExport";
 import { useTranslation } from "react-i18next";
 
 function ConnectionsTab() {
