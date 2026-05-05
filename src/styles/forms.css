@@ -162,6 +162,10 @@
   padding: 0.25rem 0.5rem;
 }
 
+.sor-form-input-xs.sor-form-input-xs-icon-left {
+  padding-left: 2rem;
+}
+
 .sor-form-input-sm::placeholder,
 .sor-form-textarea-sm::placeholder,
 .sor-form-input-xs::placeholder,

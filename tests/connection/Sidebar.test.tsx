@@ -103,6 +103,12 @@ describe("Sidebar", () => {
       expect(searchInput).toHaveAttribute('aria-label', 'connections.search');
     });
 
+    it("search input reserves space for its leading icon", () => {
+      renderWithProviders();
+
+      expect(screen.getByTestId("sidebar-search")).toHaveClass("sor-form-input-xs-icon-left");
+    });
+
     it("should clear search when clear button is clicked", () => {
       renderWithProviders();
 
