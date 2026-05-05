@@ -26,13 +26,13 @@ const HostInfoPopover: React.FC<{
 
   // Look up existing nickname from trust store
   const existingRecord = getAllTrustRecords(p.connectionId).find(
-    (r) => r.host === trustKey && r.type === "tls"
+    (r) => r.host === trustKey && r.type === "rdp"
   );
   const [certNickname, setCertNickname] = useState(existingRecord?.nickname ?? "");
   const [nickDraft, setNickDraft] = useState(certNickname);
 
   const saveNickname = useCallback(() => {
-    updateTrustRecordNickname(host, port, "tls", nickDraft, p.connectionId);
+    updateTrustRecordNickname(host, port, "rdp", nickDraft, p.connectionId);
     setCertNickname(nickDraft);
     setEditingNick(false);
   }, [host, port, nickDraft, p.connectionId]);

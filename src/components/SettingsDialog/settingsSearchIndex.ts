@@ -119,11 +119,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'totpAlgorithm', label: 'TOTP Algorithm', description: 'TOTP hash algorithm', tags: ['2fa', 'totp', 'algorithm', 'sha', 'hash'], section: 'security', sectionLabel: 'Security' },
 
   // ─── Trust ──────────────────────────────────────────────────────
-  { key: 'tlsTrustPolicy', label: 'TLS Trust Policy', description: 'TLS certificate trust policy', tags: ['tls', 'ssl', 'certificate', 'trust', 'https'], section: 'trust', sectionLabel: 'Trust & Verification' },
-  { key: 'sshTrustPolicy', label: 'SSH Trust Policy', description: 'SSH host key trust policy', tags: ['ssh', 'host key', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust & Verification' },
-  { key: 'rdpTrustPolicy', label: 'RDP Trust Policy', description: 'RDP server certificate trust policy', tags: ['rdp', 'remote desktop', 'certificate', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust & Verification' },
-  { key: 'showTrustIdentityInfo', label: 'Show Trust Info', description: 'Show trust identity information', tags: ['trust', 'identity', 'info'], section: 'trust', sectionLabel: 'Trust & Verification' },
-  { key: 'certExpiryWarningDays', label: 'Certificate Expiry Warning', description: 'Days before certificate expiry to warn', tags: ['certificate', 'expiry', 'warning', 'ssl'], section: 'trust', sectionLabel: 'Trust & Verification' },
+  { key: 'httpsTrustPolicy', label: 'HTTPS Certificate Policy', description: 'HTTPS certificate trust policy', tags: ['https', 'tls', 'ssl', 'certificate', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'sshTrustPolicy', label: 'SSH Host Key Policy', description: 'SSH host key trust policy', tags: ['ssh', 'host key', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'rdpTrustPolicy', label: 'RDP Certificate Policy', description: 'RDP server certificate trust policy', tags: ['rdp', 'remote desktop', 'certificate', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'tlsTrustPolicy', label: 'Legacy TLS Trust Policy', description: 'Deprecated fallback for legacy unclassified TLS certificate trust settings', tags: ['legacy tls', 'tls', 'ssl', 'certificate', 'trust', 'deprecated'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'showTrustIdentityInfo', label: 'Show Trust Info', description: 'Show trust identity information', tags: ['trust', 'identity', 'info'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'certExpiryWarningDays', label: 'Certificate Expiry Warning', description: 'Days before certificate expiry to warn', tags: ['certificate', 'expiry', 'warning', 'ssl'], section: 'trust', sectionLabel: 'Trust Center' },
 
   // ─── Performance ────────────────────────────────────────────────
   { key: 'maxConcurrentConnections', label: 'Max Concurrent Connections', description: 'Maximum simultaneous connections', tags: ['limit', 'concurrent', 'connections', 'parallel'], section: 'performance', sectionLabel: 'Performance' },

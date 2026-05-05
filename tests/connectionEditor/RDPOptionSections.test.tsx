@@ -24,7 +24,7 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
 const createRdp = (): RDPConnectionSettings =>
   JSON.parse(JSON.stringify(DEFAULT_RDP_SETTINGS)) as RDPConnectionSettings;
 
-const createMgr = (): RDPOptionsMgr =>
+const createMgr = (overrides: Partial<RDPOptionsMgr> = {}): RDPOptionsMgr =>
   ({
     hostRecords: [],
     editingNickname: null,
@@ -35,6 +35,7 @@ const createMgr = (): RDPOptionsMgr =>
     handleClearAllRdpTrust: vi.fn(),
     handleSaveNickname: vi.fn(),
     formatFingerprint: (fingerprint: string) => fingerprint,
+    ...overrides,
   }) as unknown as RDPOptionsMgr;
 
 describe("RDP connection editor sections", () => {
@@ -68,6 +69,43 @@ describe("RDP connection editor sections", () => {
 
     fireEvent.click(checkbox);
     expect(updateRdp).toHaveBeenCalledWith("security", { useCredSsp: false });
+  });
+
+  it("renders and removes explicit RDP certificate trust records", () => {
+    const rdpRecord = {
+      host: "rdp-host:3389",
+      type: "rdp" as const,
+      userApproved: true,
+      identity: {
+        fingerprint: "SHA256:rdp-cert",
+        firstSeen: "2026-01-01T00:00:00.000Z",
+        lastSeen: "2026-01-01T00:00:00.000Z",
+      },
+    };
+    const handleRemoveTrust = vi.fn();
+    const rdp = createRdp();
+    const formData: Partial<Connection> = {
+      protocol: "rdp",
+      hostname: "rdp-host",
+      port: 3389,
+    };
+
+    render(
+      <SecuritySection
+        rdp={rdp}
+        updateRdp={vi.fn()}
+        formData={formData}
+        setFormData={vi.fn()}
+        mgr={createMgr({ hostRecords: [rdpRecord], handleRemoveTrust })}
+      />,
+    );
+
+    expect(screen.getByText("Trusted RDP Certificates (1)")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Remove trust"));
+
+    expect(handleRemoveTrust).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "rdp" }),
+    );
   });
 
   it("renders Gateway controls with centralized form classes and separate credential fields", () => {

@@ -155,7 +155,7 @@ export function useRDPOptions(
       const connRecords = formData.id ? getAllTrustRecords(formData.id) : [];
       const globalRecords = getAllTrustRecords();
       const all = [...connRecords, ...globalRecords].filter(
-        (r) => r.type === "tls",
+        (r) => r.type === "rdp",
       );
       const seen = new Set<string>();
       const deduped = all.filter((r) => {
@@ -204,8 +204,8 @@ export function useRDPOptions(
       try {
         const [host, portStr] = record.host.split(":");
         const port = parseInt(portStr, 10) || 3389;
-        removeIdentity(host, port, "tls", formData.id);
-        removeIdentity(host, port, "tls");
+        removeIdentity(host, port, "rdp", formData.id);
+        removeIdentity(host, port, "rdp");
         setRdpTrustRecords((prev) =>
           prev.filter(
             (r) => r.identity.fingerprint !== record.identity.fingerprint,
@@ -235,7 +235,7 @@ export function useRDPOptions(
         updateTrustRecordNickname(
           host,
           port,
-          "tls",
+          "rdp",
           nicknameInput,
           formData.id,
         );

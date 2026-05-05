@@ -10,6 +10,24 @@ import {
 } from "../../utils/auth/trustStore";
 import { useConnections } from "../../contexts/useConnections";
 
+export interface ClassifiedTrustRecords {
+  httpsRecords: TrustRecord[];
+  rdpRecords: TrustRecord[];
+  sshRecords: TrustRecord[];
+  legacyTlsRecords: TrustRecord[];
+}
+
+export function classifyTrustRecords(
+  records: TrustRecord[],
+): ClassifiedTrustRecords {
+  return {
+    httpsRecords: records.filter((record) => record.type === "https"),
+    rdpRecords: records.filter((record) => record.type === "rdp"),
+    sshRecords: records.filter((record) => record.type === "ssh"),
+    legacyTlsRecords: records.filter((record) => record.type === "tls"),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
@@ -47,12 +65,8 @@ export function useTrustVerificationSettings(
     [connectionState.connections],
   );
 
-  const tlsRecords = useMemo(
-    () => trustRecords.filter((r) => r.type === "tls"),
-    [trustRecords],
-  );
-  const sshRecords = useMemo(
-    () => trustRecords.filter((r) => r.type === "ssh"),
+  const classifiedTrustRecords = useMemo(
+    () => classifyTrustRecords(trustRecords),
     [trustRecords],
   );
 
@@ -87,8 +101,7 @@ export function useTrustVerificationSettings(
     setShowConfirmClear,
     refreshRecords,
     connectionName,
-    tlsRecords,
-    sshRecords,
+    ...classifiedTrustRecords,
     handleRemoveRecord,
     handleClearAll,
     totalCount,

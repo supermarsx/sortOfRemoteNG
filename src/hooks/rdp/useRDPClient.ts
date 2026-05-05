@@ -733,7 +733,7 @@ export function useRDPClient(session: ConnectionSession) {
     const sess = sessionRef.current;
     if (certIdentity && conn) {
       const port = conn.port || 3389;
-      trustIdentity(sess.hostname, port, 'tls', certIdentity, true, conn.id);
+      trustIdentity(sess.hostname, port, 'rdp', certIdentity, true, conn.id);
     }
     setTrustPrompt(null);
   }, [certIdentity]);
@@ -1045,22 +1045,22 @@ export function useRDPClient(session: ConnectionSession) {
       const conn = connectionRef.current;
       const connId = conn?.id;
       // RDP falls back to the dedicated `rdpTrustPolicy` global, then to
-       // `tlsTrustPolicy` for older settings that predate the split.
+      // `tlsTrustPolicy` for older settings that predate the split.
       const policy = getEffectiveTrustPolicy(
         conn?.rdpTrustPolicy,
         settingsRef.current.rdpTrustPolicy ?? settingsRef.current.tlsTrustPolicy,
       );
-      const result = verifyIdentity(fp.host, fp.port, 'tls', identity, connId);
+      const result = verifyIdentity(fp.host, fp.port, 'rdp', identity, connId);
 
       if (result.status === 'trusted') return;
 
       if (result.status === 'first-use' && policy === 'tofu') {
-        trustIdentity(fp.host, fp.port, 'tls', identity, false, connId);
+        trustIdentity(fp.host, fp.port, 'rdp', identity, false, connId);
         return;
       }
 
       if (result.status === 'first-use' && policy === 'always-trust') {
-        trustIdentity(fp.host, fp.port, 'tls', identity, false, connId);
+        trustIdentity(fp.host, fp.port, 'rdp', identity, false, connId);
         return;
       }
 

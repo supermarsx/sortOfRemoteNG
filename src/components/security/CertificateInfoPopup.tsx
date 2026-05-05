@@ -21,6 +21,7 @@ import type {
   CertChainEntry,
   SshHostKeyIdentity,
   TrustRecord,
+  TrustRecordType,
 } from "../../utils/auth/trustStore";
 import {
   formatFingerprint,
@@ -31,7 +32,7 @@ import { useCertificateInfoPopup } from "../../hooks/security/useCertificateInfo
 const TRUST_ICONS = { ShieldAlert, ShieldCheck, Shield } as const;
 
 interface CertificateInfoPopupProps {
-  type: "tls" | "ssh";
+  type: TrustRecordType;
   host: string;
   port: number;
   currentIdentity?: CertIdentity | SshHostKeyIdentity;
@@ -78,7 +79,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
           <div className="flex items-center gap-2">
             <TrustIcon size={16} className={trustStatus.color} />
             <span className="text-sm font-medium text-[var(--color-text)]">
-              {mgr.isTls ? "Certificate Information" : "Host Key Information"}
+              {mgr.typeLabels.informationTitle}
             </span>
           </div>
           <button
@@ -160,7 +161,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
 
           {!mgr.identity ? (
             <p className="text-sm text-[var(--color-textMuted)] italic">
-              No {mgr.isTls ? "certificate" : "host key"} information available yet.
+              No {mgr.typeLabels.identityLower} information available yet.
               Connect to the server to retrieve it.
             </p>
           ) : (
@@ -176,13 +177,13 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                 </p>
               </div>
 
-              {/* TLS-specific cert details */}
-              {mgr.isCertIdentity(mgr.identity) && (
-                <TlsCertDetails identity={mgr.identity} isExpired={mgr.isExpired} isExpiringSoon={mgr.isExpiringSoon} />
+              {/* Certificate-specific details */}
+              {mgr.isCertificateType && (
+                <TlsCertDetails identity={mgr.identity as CertIdentity} isExpired={mgr.isExpired} isExpiringSoon={mgr.isExpiringSoon} />
               )}
 
               {/* SSH-specific host key details */}
-              {!mgr.isCertIdentity(mgr.identity) && (
+              {!mgr.isCertificateType && (
                 <SshKeyDetails identity={mgr.identity as SshHostKeyIdentity} />
               )}
 

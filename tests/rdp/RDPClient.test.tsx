@@ -4,6 +4,7 @@ import RDPClient from "../../src/components/rdp/RDPClient";
 import { ConnectionSession } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
+import { getStoredIdentity } from "../../src/utils/auth/trustStore";
 
 // Mock Tauri invoke + Channel
 vi.mock("@tauri-apps/api/core", () => ({
@@ -187,6 +188,7 @@ describe("RDPClient", () => {
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
+    localStorage.clear();
     // Default mock: list_rdp_sessions returns empty array (no existing session),
     // then connect_rdp returns a session ID.
     mockInvoke.mockImplementation(async (cmd: string) => {
@@ -493,6 +495,44 @@ describe("RDPClient", () => {
         expect(screen.getByText("25.0")).toBeInTheDocument();
         expect(screen.getByText("300")).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("Certificate Trust", () => {
+    it("stores first-use RDP certificate fingerprints as rdp records", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      await waitFor(() => {
+        expect(mockListeners["rdp://cert-fingerprint"]).toBeDefined();
+      });
+
+      await act(async () => {
+        mockListeners["rdp://cert-fingerprint"]({
+          payload: {
+            session_id: "rdp-session-123",
+            fingerprint: "SHA256:rdp-first-use",
+            host: "192.168.1.100",
+            port: 3389,
+            subject: "CN=192.168.1.100",
+            issuer: "CN=Lab CA",
+          },
+        });
+      });
+
+      await waitFor(() => {
+        expect(
+          getStoredIdentity("192.168.1.100", 3389, "rdp", "test-connection")?.identity.fingerprint,
+        ).toBe("SHA256:rdp-first-use");
+      });
+      expect(
+        getStoredIdentity("192.168.1.100", 3389, "tls", "test-connection"),
+      ).toBeUndefined();
     });
   });
 

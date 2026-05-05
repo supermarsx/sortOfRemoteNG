@@ -78,6 +78,34 @@ describe('SettingsManager loadSettings', () => {
     const reloaded = await SettingsManager.getInstance().loadSettings();
     expect(reloaded.sshTrustPolicy).toBe('strict');
   });
+
+  it('defaults HTTPS trust policy to tofu', async () => {
+    const manager = SettingsManager.getInstance();
+    const settings = await manager.loadSettings();
+
+    expect(settings.httpsTrustPolicy).toBe('tofu');
+    expect(settings.tlsTrustPolicy).toBe('tofu');
+  });
+
+  it('backfills HTTPS trust policy from legacy TLS only when HTTPS is absent', async () => {
+    await IndexedDbService.setItem('mremote-settings', {
+      tlsTrustPolicy: 'strict',
+    } as any);
+
+    const legacyOnly = await SettingsManager.getInstance().loadSettings();
+    expect(legacyOnly.httpsTrustPolicy).toBe('strict');
+    expect(legacyOnly.tlsTrustPolicy).toBe('strict');
+
+    SettingsManager.resetInstance();
+    await IndexedDbService.setItem('mremote-settings', {
+      httpsTrustPolicy: 'always-trust',
+      tlsTrustPolicy: 'strict',
+    } as any);
+
+    const explicitHttps = await SettingsManager.getInstance().loadSettings();
+    expect(explicitHttps.httpsTrustPolicy).toBe('always-trust');
+    expect(explicitHttps.tlsTrustPolicy).toBe('strict');
+  });
 });
 
 describe('SettingsManager.benchmarkKeyDerivation', () => {

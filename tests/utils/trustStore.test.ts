@@ -69,7 +69,7 @@ describe("trustStore", () => {
     });
 
     it("moves previous identity to history on update", () => {
-      const first = makeSshIdentity("SHA256:first");
+      const first = makeTlsIdentity("SHA256:first");
       trustIdentity("host", 443, "tls", first);
 
       const second = makeTlsIdentity("SHA256:second");
@@ -79,6 +79,34 @@ describe("trustStore", () => {
       expect(record!.identity.fingerprint).toBe("SHA256:second");
       expect(record!.history).toHaveLength(1);
       expect(record!.history![0].fingerprint).toBe("SHA256:first");
+    });
+
+    it("stores HTTPS, RDP, SSH, and legacy TLS records separately", () => {
+      trustIdentity("host", 443, "https", makeTlsIdentity("SHA256:https"));
+      trustIdentity("host", 443, "rdp", makeTlsIdentity("SHA256:rdp"));
+      trustIdentity("host", 443, "ssh", makeSshIdentity("SHA256:ssh"));
+      trustIdentity("host", 443, "tls", makeTlsIdentity("SHA256:legacy-tls"));
+
+      expect(getStoredIdentity("host", 443, "https")!.identity.fingerprint).toBe("SHA256:https");
+      expect(getStoredIdentity("host", 443, "rdp")!.identity.fingerprint).toBe("SHA256:rdp");
+      expect(getStoredIdentity("host", 443, "ssh")!.identity.fingerprint).toBe("SHA256:ssh");
+      expect(getStoredIdentity("host", 443, "tls")!.identity.fingerprint).toBe("SHA256:legacy-tls");
+      expect(getAllTrustRecords().map((record) => record.type).sort()).toEqual([
+        "https",
+        "rdp",
+        "ssh",
+        "tls",
+      ]);
+    });
+
+    it("does not use legacy TLS records as HTTPS or RDP fallback", () => {
+      const identity = makeTlsIdentity("SHA256:legacy-only");
+      trustIdentity("legacy.example", 443, "tls", identity);
+
+      expect(getStoredIdentity("legacy.example", 443, "https")).toBeUndefined();
+      expect(getStoredIdentity("legacy.example", 443, "rdp")).toBeUndefined();
+      expect(verifyIdentity("legacy.example", 443, "https", identity).status).toBe("first-use");
+      expect(verifyIdentity("legacy.example", 443, "rdp", identity).status).toBe("first-use");
     });
   });
 
@@ -100,6 +128,14 @@ describe("trustStore", () => {
 
       const records = getAllTrustRecords();
       expect(records).toHaveLength(2);
+    });
+
+    it("keeps legacy TLS records typed as tls", () => {
+      trustIdentity("legacy.example", 443, "tls", makeTlsIdentity("SHA256:legacy"));
+
+      const [record] = getAllTrustRecords();
+      expect(record.type).toBe("tls");
+      expect(record.identity.fingerprint).toBe("SHA256:legacy");
     });
 
     it("returns empty array when store is clean", () => {

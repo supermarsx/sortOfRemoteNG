@@ -19,6 +19,42 @@ vi.mock("../../src/contexts/useConnections", () => ({
 vi.mock("../../src/utils/auth/trustStore", () => ({
   getAllTrustRecords: vi.fn(() => [
     {
+      host: "web.example.local:443",
+      type: "https",
+      nickname: "Primary HTTPS",
+      userApproved: true,
+      history: [],
+      identity: {
+        fingerprint: "https:aa:bb:cc",
+        firstSeen: new Date("2024-01-01").toISOString(),
+        lastSeen: new Date("2024-01-02").toISOString(),
+      },
+    },
+    {
+      host: "rdp.example.local:3389",
+      type: "rdp",
+      nickname: "Primary RDP",
+      userApproved: true,
+      history: [],
+      identity: {
+        fingerprint: "rdp:aa:bb:cc",
+        firstSeen: new Date("2024-01-01").toISOString(),
+        lastSeen: new Date("2024-01-02").toISOString(),
+      },
+    },
+    {
+      host: "ssh.example.local:22",
+      type: "ssh",
+      nickname: "Primary SSH",
+      userApproved: true,
+      history: [],
+      identity: {
+        fingerprint: "ssh:aa:bb:cc",
+        firstSeen: new Date("2024-01-01").toISOString(),
+        lastSeen: new Date("2024-01-02").toISOString(),
+      },
+    },
+    {
       host: "example.local:443",
       type: "tls",
       nickname: "Primary TLS",
@@ -142,8 +178,10 @@ const securitySettings = {
 } as unknown as GlobalSettings;
 
 const trustSettings = {
+  httpsTrustPolicy: "tofu",
   tlsTrustPolicy: "tofu",
   sshTrustPolicy: "strict",
+  rdpTrustPolicy: "tofu",
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
 } as unknown as GlobalSettings;
@@ -282,6 +320,20 @@ describe("Extended settings section centralization", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ certExpiryWarningDays: 7 }),
     );
+  });
+
+  it("groups Trust Center identities by explicit record type", async () => {
+    render(
+      <TrustVerificationSettings
+        settings={trustSettings}
+        updateSettings={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(/HTTPS Certificates \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/RDP Certificates \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/SSH Host Keys \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Legacy TLS \(1\)/i)).toBeInTheDocument();
   });
 
   it("uses centralized card shells in RecoverySettings", () => {

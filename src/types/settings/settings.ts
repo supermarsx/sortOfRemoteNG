@@ -12,6 +12,7 @@ import type { LoadingElementSettings } from '../../components/ui/display/loading
 import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings';
 import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
 import type { ClipboardDirection, RdpPrinterOutputMode } from '../connection/connection';
+import type { TrustPolicy } from '../../utils/auth/trustStore';
 
 export const Themes = [
   "dark",
@@ -412,18 +413,20 @@ export interface GlobalSettings {
   cloudSync: CloudSyncConfig;
 
   // Trust & Verification
-  /** Default TLS certificate trust policy */
-  tlsTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
+  /** Default HTTPS certificate trust policy */
+  httpsTrustPolicy: TrustPolicy;
+  /** @deprecated Use `httpsTrustPolicy` for HTTPS certificates; retained for persisted compatibility. */
+  tlsTrustPolicy: TrustPolicy;
   /** Default SSH host key trust policy */
-  sshTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
+  sshTrustPolicy: TrustPolicy;
   /**
    * Default RDP server certificate trust policy.
    * RDP servers are commonly self-signed (lab/intranet hosts), so this is
-   * separated from `tlsTrustPolicy` (which usually targets HTTPS servers
+   * separated from `httpsTrustPolicy` (which targets HTTPS servers
    * with public CAs) to let users pick a more permissive default for RDP
    * without weakening their browser-style TLS trust.
    */
-  rdpTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
+  rdpTrustPolicy: TrustPolicy;
   /** Show certificate / host-key info in the URL bar / terminal toolbar */
   showTrustIdentityInfo: boolean;
   /** Warn on TLS certificate expiry within N days (0 = disabled) */

@@ -20,7 +20,10 @@ import {
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../../utils/auth/trustStore";
-import { useTrustVerificationSettings } from "../../../hooks/settings/useTrustVerificationSettings";
+import {
+  classifyTrustRecords,
+  useTrustVerificationSettings,
+} from "../../../hooks/settings/useTrustVerificationSettings";
 import { Checkbox, NumberInput, Select } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 
@@ -62,9 +65,13 @@ const POLICY_OPTIONS: { value: string; label: string; description: string }[] =
 
 const SectionHeader: React.FC = () => (
   <div>
-    <SectionHeading icon={<Fingerprint className="w-5 h-5" />} title="Trust Center" description="Control how TLS certificates and SSH host keys are verified and memorized. These settings apply globally but can be overridden per connection." />
+    <SectionHeading icon={<Fingerprint className="w-5 h-5" />} title="Trust Center" description="Control how HTTPS certificates, RDP certificates, SSH host keys, and legacy TLS identities are verified and memorized. These settings apply globally but can be overridden per connection." />
   </div>
 );
+
+function policyDescription(value: string | undefined): string | undefined {
+  return POLICY_OPTIONS.find((option) => option.value === value)?.description;
+}
 
 const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -72,18 +79,15 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <div className="flex items-center gap-2 mb-3">
         <Lock size={16} className="text-success" />
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
-          TLS Certificate Policy
+          HTTPS Certificate Policy
         </h4>
       </div>
-      <Select value={mgr.settings.tlsTrustPolicy ?? "tofu"} onChange={(v: string) =>
+      <Select value={mgr.settings.httpsTrustPolicy ?? mgr.settings.tlsTrustPolicy ?? "tofu"} onChange={(v: string) =>
           mgr.updateSettings({
-            tlsTrustPolicy: v as GlobalSettings["tlsTrustPolicy"],
+            httpsTrustPolicy: v as GlobalSettings["httpsTrustPolicy"],
           })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
       <p className="text-xs text-[var(--color-textMuted)] mt-2">
-        {
-          POLICY_OPTIONS.find((o) => o.value === mgr.settings.tlsTrustPolicy)
-            ?.description
-        }
+        {policyDescription(mgr.settings.httpsTrustPolicy ?? mgr.settings.tlsTrustPolicy ?? "tofu")}
       </p>
     </div>
 
@@ -99,10 +103,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
           })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
       <p className="text-xs text-[var(--color-textMuted)] mt-2">
-        {
-          POLICY_OPTIONS.find((o) => o.value === mgr.settings.sshTrustPolicy)
-            ?.description
-        }
+        {policyDescription(mgr.settings.sshTrustPolicy ?? "always-ask")}
       </p>
     </div>
 
@@ -118,14 +119,12 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
           })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
       <p className="text-xs text-[var(--color-textMuted)] mt-2">
-        {
-          POLICY_OPTIONS.find((o) => o.value === mgr.settings.rdpTrustPolicy)
-            ?.description
-        }
+        {policyDescription(mgr.settings.rdpTrustPolicy ?? "tofu")}
       </p>
       <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
-        Separate from TLS — RDP servers are typically self-signed, so most users
-        keep this at TOFU even when TLS is set to Strict.
+        Separate from HTTPS certificates and legacy TLS identities. RDP servers
+        are typically self-signed, so most users keep this at TOFU even when
+        HTTPS is set to Strict.
       </p>
     </div>
   </div>
@@ -211,7 +210,7 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <div className="flex items-center gap-2">
         <Clock size={14} className="text-[var(--color-textSecondary)]" />
         <label className="text-sm text-[var(--color-textSecondary)]">
-          Warn when TLS certificate expires within
+          Warn when certificates expire within
         </label>
       </div>
       <NumberInput value={mgr.settings.certExpiryWarningDays ?? 5} onChange={(v: number) => mgr.updateSettings({
@@ -258,6 +257,93 @@ const ClearAllButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 };
 
+interface TrustRecordGroupSectionProps {
+  title: string;
+  records: TrustRecord[];
+  icon: React.ReactNode;
+  recordKeyPrefix: string;
+  connectionId?: string;
+  mgr: Mgr;
+}
+
+const TrustRecordGroupSection: React.FC<TrustRecordGroupSectionProps> = ({
+  title,
+  records,
+  icon,
+  recordKeyPrefix,
+  connectionId,
+  mgr,
+}) => {
+  if (records.length === 0) return null;
+
+  return (
+    <div>
+      <h5 className="sor-sub-heading">
+        {icon} {title} ({records.length})
+      </h5>
+      <div className="space-y-2">
+        {records.map((record, index) => (
+          <TrustRecordRow
+            key={`${recordKeyPrefix}-${record.host}-${index}`}
+            record={record}
+            connectionId={connectionId}
+            onRemove={(selectedRecord) =>
+              mgr.handleRemoveRecord(selectedRecord, connectionId)
+            }
+            onUpdated={mgr.refreshRecords}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+function renderTrustRecordGroups(
+  records: TrustRecord[],
+  mgr: Mgr,
+  recordKeyPrefix: string,
+  connectionId?: string,
+): React.ReactNode {
+  const classifiedRecords = classifyTrustRecords(records);
+
+  return (
+    <>
+      <TrustRecordGroupSection
+        title="HTTPS Certificates"
+        records={classifiedRecords.httpsRecords}
+        icon={<Lock size={12} />}
+        recordKeyPrefix={`${recordKeyPrefix}-https`}
+        connectionId={connectionId}
+        mgr={mgr}
+      />
+      <TrustRecordGroupSection
+        title="RDP Certificates"
+        records={classifiedRecords.rdpRecords}
+        icon={<Monitor size={12} />}
+        recordKeyPrefix={`${recordKeyPrefix}-rdp`}
+        connectionId={connectionId}
+        mgr={mgr}
+      />
+      <TrustRecordGroupSection
+        title="SSH Host Keys"
+        records={classifiedRecords.sshRecords}
+        icon={<Fingerprint size={12} />}
+        recordKeyPrefix={`${recordKeyPrefix}-ssh`}
+        connectionId={connectionId}
+        mgr={mgr}
+      />
+      <TrustRecordGroupSection
+        title="Legacy TLS"
+        records={classifiedRecords.legacyTlsRecords}
+        icon={<AlertTriangle size={12} />}
+        recordKeyPrefix={`${recordKeyPrefix}-legacy-tls`}
+        connectionId={connectionId}
+        mgr={mgr}
+      />
+    </>
+  );
+}
+
 const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div>
     <div className="flex items-center justify-between mb-3">
@@ -290,107 +376,32 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               Global Identities ({mgr.trustRecords.length})
             </summary>
             <div className="space-y-3 ml-4">
-              {mgr.tlsRecords.length > 0 && (
-                <div>
-                  <h5 className="sor-sub-heading">
-                    <Lock size={12} /> TLS Certificates ({mgr.tlsRecords.length}
-                    )
-                  </h5>
-                  <div className="space-y-2">
-                    {mgr.tlsRecords.map((record, i) => (
-                      <TrustRecordRow
-                        key={`tls-${i}`}
-                        record={record}
-                        onRemove={(r) => mgr.handleRemoveRecord(r)}
-                        onUpdated={mgr.refreshRecords}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {mgr.sshRecords.length > 0 && (
-                <div>
-                  <h5 className="sor-sub-heading">
-                    <Fingerprint size={12} /> SSH Host Keys (
-                    {mgr.sshRecords.length})
-                  </h5>
-                  <div className="space-y-2">
-                    {mgr.sshRecords.map((record, i) => (
-                      <TrustRecordRow
-                        key={`ssh-${i}`}
-                        record={record}
-                        onRemove={(r) => mgr.handleRemoveRecord(r)}
-                        onUpdated={mgr.refreshRecords}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
+              {renderTrustRecordGroups(mgr.trustRecords, mgr, "global")}
             </div>
           </details>
         )}
 
         {/* Per-Connection Stores */}
-        {mgr.connectionGroups.map((group) => {
-          const connTls = group.records.filter((r) => r.type === "tls");
-          const connSsh = group.records.filter((r) => r.type === "ssh");
-          return (
-            <details key={group.connectionId} className="group">
-              <summary className="cursor-pointer select-none sor-sub-heading">
-                <ChevronRight
-                  size={12}
-                  className="transition-transform group-open:rotate-90"
-                />
-                <Link2 size={12} />
-                {mgr.connectionName(group.connectionId)} (
-                {group.records.length})
-              </summary>
-              <div className="space-y-3 ml-4">
-                {connTls.length > 0 && (
-                  <div>
-                    <h5 className="sor-sub-heading">
-                      <Lock size={12} /> TLS Certificates ({connTls.length})
-                    </h5>
-                    <div className="space-y-2">
-                      {connTls.map((record, i) => (
-                        <TrustRecordRow
-                          key={`${group.connectionId}-tls-${i}`}
-                          record={record}
-                          connectionId={group.connectionId}
-                          onRemove={(r) =>
-                            mgr.handleRemoveRecord(r, group.connectionId)
-                          }
-                          onUpdated={mgr.refreshRecords}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {connSsh.length > 0 && (
-                  <div>
-                    <h5 className="sor-sub-heading">
-                      <Fingerprint size={12} /> SSH Host Keys ({connSsh.length})
-                    </h5>
-                    <div className="space-y-2">
-                      {connSsh.map((record, i) => (
-                        <TrustRecordRow
-                          key={`${group.connectionId}-ssh-${i}`}
-                          record={record}
-                          connectionId={group.connectionId}
-                          onRemove={(r) =>
-                            mgr.handleRemoveRecord(r, group.connectionId)
-                          }
-                          onUpdated={mgr.refreshRecords}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </details>
-          );
-        })}
+        {mgr.connectionGroups.map((group) => (
+          <details key={group.connectionId} className="group">
+            <summary className="cursor-pointer select-none sor-sub-heading">
+              <ChevronRight
+                size={12}
+                className="transition-transform group-open:rotate-90"
+              />
+              <Link2 size={12} />
+              {mgr.connectionName(group.connectionId)} ({group.records.length})
+            </summary>
+            <div className="space-y-3 ml-4">
+              {renderTrustRecordGroups(
+                group.records,
+                mgr,
+                group.connectionId,
+                group.connectionId,
+              )}
+            </div>
+          </details>
+        ))}
       </div>
     )}
   </div>

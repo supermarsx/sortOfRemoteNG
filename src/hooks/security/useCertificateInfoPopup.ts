@@ -1,9 +1,19 @@
 import { useState, useCallback } from 'react';
-import type { CertIdentity, SshHostKeyIdentity, TrustRecord } from '../../utils/auth/trustStore';
-import { updateTrustRecordNickname } from '../../utils/auth/trustStore';
+import type { CertIdentity, SshHostKeyIdentity, TrustRecord, TrustRecordType } from '../../utils/auth/trustStore';
+import { isCertificateTrustRecordType, updateTrustRecordNickname } from '../../utils/auth/trustStore';
+
+const TRUST_TYPE_LABELS: Record<
+  TrustRecordType,
+  { informationTitle: string; identityLower: string }
+> = {
+  https: { informationTitle: 'HTTPS Certificate Information', identityLower: 'HTTPS certificate' },
+  rdp: { informationTitle: 'RDP Certificate Information', identityLower: 'RDP certificate' },
+  ssh: { informationTitle: 'Host Key Information', identityLower: 'host key' },
+  tls: { informationTitle: 'Legacy TLS Certificate Information', identityLower: 'legacy TLS certificate' },
+};
 
 export function useCertificateInfoPopup(
-  type: 'tls' | 'ssh',
+  type: TrustRecordType,
   host: string,
   port: number,
   currentIdentity: CertIdentity | SshHostKeyIdentity | undefined,
@@ -14,7 +24,8 @@ export function useCertificateInfoPopup(
   const [nickDraft, setNickDraft] = useState(trustRecord?.nickname ?? '');
   const [savedNick, setSavedNick] = useState(trustRecord?.nickname ?? '');
 
-  const isTls = type === 'tls';
+  const isCertificateType = isCertificateTrustRecordType(type);
+  const typeLabels = TRUST_TYPE_LABELS[type];
   const identity = currentIdentity ?? trustRecord?.identity;
 
   const isCertIdentity = useCallback(
@@ -69,7 +80,8 @@ export function useCertificateInfoPopup(
     nickDraft,
     setNickDraft,
     savedNick,
-    isTls,
+    isCertificateType,
+    typeLabels,
     identity,
     isCertIdentity,
     isExpiringSoon,

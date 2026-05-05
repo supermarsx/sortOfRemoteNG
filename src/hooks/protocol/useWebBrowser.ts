@@ -166,13 +166,13 @@ export function useWebBrowser(session: ConnectionSession) {
     });
   }, []);
 
-  // ── TLS cert trust ─────────────────────────────────────────
+  // ── HTTPS cert trust ───────────────────────────────────────
   const fetchAndVerifyCert = useCallback(async (): Promise<boolean> => {
     if (session.protocol !== "https") return true;
     const port = connection?.port || 443;
     const policy = getEffectiveTrustPolicy(
-      connection?.tlsTrustPolicy,
-      settings.tlsTrustPolicy,
+      connection?.httpsTrustPolicy ?? connection?.tlsTrustPolicy,
+      settings.httpsTrustPolicy ?? settings.tlsTrustPolicy,
     );
     if (policy === "always-trust") return true;
 
@@ -255,10 +255,10 @@ export function useWebBrowser(session: ConnectionSession) {
       };
       setCertIdentity(identity);
       const connId = connection?.id;
-      const result = verifyIdentity(session.hostname, port, "tls", identity, connId);
+      const result = verifyIdentity(session.hostname, port, "https", identity, connId);
       if (result.status === "trusted") return true;
       if (result.status === "first-use" && policy === "tofu") {
-        trustIdentity(session.hostname, port, "tls", identity, false, connId);
+        trustIdentity(session.hostname, port, "https", identity, false, connId);
         return true;
       }
       if (
@@ -280,15 +280,15 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       return true;
     } catch (err) {
-      debugLog("WebBrowser", "Failed to fetch TLS cert info", { err });
+      debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
       return true;
     }
-  }, [session.protocol, session.hostname, connection, settings.tlsTrustPolicy]);
+  }, [session.protocol, session.hostname, connection, settings.httpsTrustPolicy, settings.tlsTrustPolicy]);
 
   const handleTrustAccept = useCallback(() => {
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
-      trustIdentity(session.hostname, port, "tls", certIdentity, true, connection?.id);
+      trustIdentity(session.hostname, port, "https", certIdentity, true, connection?.id);
     }
     setTrustPrompt(null);
     trustResolveRef.current?.(true);

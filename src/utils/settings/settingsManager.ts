@@ -365,6 +365,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Trust & Verification
   enableAutocomplete: false,
+  httpsTrustPolicy: 'tofu',
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'always-ask',
   rdpTrustPolicy: 'tofu',
@@ -637,33 +638,36 @@ export class SettingsManager {
    */
   async loadSettings(): Promise<GlobalSettings> {
     try {
-      const stored = await IndexedDbService.getItem<GlobalSettings>('mremote-settings');
+      const stored = await IndexedDbService.getItem<Partial<GlobalSettings>>('mremote-settings');
       if (stored) {
+        const storedSettings = stored;
         // Validate colorScheme - migrate invalid values like "other" or "custom" to "blue"
         const validColorSchemes = [
           "red", "rose", "pink", "orange", "amber", "yellow", "lime",
           "green", "emerald", "teal", "cyan", "sky", "blue", "indigo",
           "violet", "purple", "fuchsia", "slate", "grey"
         ];
-        if (stored.colorScheme && !validColorSchemes.includes(stored.colorScheme)) {
-          console.warn(`Invalid colorScheme "${stored.colorScheme}" found in settings, resetting to "blue"`);
-          stored.colorScheme = "blue";
+        if (storedSettings.colorScheme && !validColorSchemes.includes(storedSettings.colorScheme)) {
+          console.warn(`Invalid colorScheme "${storedSettings.colorScheme}" found in settings, resetting to "blue"`);
+          storedSettings.colorScheme = "blue";
         }
 
         this.settings = {
           ...DEFAULT_SETTINGS,
-          ...stored,
+          ...storedSettings,
+          httpsTrustPolicy:
+            storedSettings.httpsTrustPolicy ?? storedSettings.tlsTrustPolicy ?? DEFAULT_SETTINGS.httpsTrustPolicy,
           networkDiscovery: {
             ...DEFAULT_SETTINGS.networkDiscovery,
-            ...(stored.networkDiscovery ?? {}),
+            ...(storedSettings.networkDiscovery ?? {}),
           },
           toolDisplayModes: {
             ...DEFAULT_SETTINGS.toolDisplayModes,
-            ...(stored.toolDisplayModes ?? {}),
+            ...(storedSettings.toolDisplayModes ?? {}),
           },
           rdpDefaults: {
             ...DEFAULT_SETTINGS.rdpDefaults,
-            ...(stored.rdpDefaults ?? {}),
+            ...(storedSettings.rdpDefaults ?? {}),
           },
         };
       }

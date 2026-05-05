@@ -286,6 +286,7 @@ export const defaultSettings: GlobalSettings = {
   autoRepatriateWindow: true,
   // Trust & Verification
   enableAutocomplete: false,
+  httpsTrustPolicy: 'tofu',
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'always-ask',
   rdpTrustPolicy: 'tofu',

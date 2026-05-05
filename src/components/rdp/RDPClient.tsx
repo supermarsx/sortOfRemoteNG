@@ -602,7 +602,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
 
       {mgr.trustPrompt && mgr.certIdentity && (
         <TrustWarningDialog
-          type="tls"
+          type="rdp"
           host={session.hostname}
           port={mgr.connection?.port || 3389}
           reason={mgr.trustPrompt.status === 'mismatch' ? 'mismatch' : 'first-use'}

@@ -189,7 +189,9 @@ export interface Connection {
   sshConnectionConfigOverride?: Partial<SSHConnectionConfig>;
 
   // Trust & Verification (per-connection override — falls back to global)
-  /** TLS certificate trust policy override */
+  /** HTTPS certificate trust policy override */
+  httpsTrustPolicy?: TrustPolicy;
+  /** @deprecated Use `httpsTrustPolicy` for HTTPS certificates; retained for persisted compatibility. */
   tlsTrustPolicy?: TrustPolicy;
   /** SSH host key trust policy override */
   sshTrustPolicy?: TrustPolicy;

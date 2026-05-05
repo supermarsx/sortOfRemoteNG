@@ -207,9 +207,10 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "totpAlgorithm",
   ],
   trust: [
-    "tlsTrustPolicy",
+    "httpsTrustPolicy",
     "sshTrustPolicy",
     "rdpTrustPolicy",
+    "tlsTrustPolicy",
     "showTrustIdentityInfo",
     "certExpiryWarningDays",
   ],

@@ -100,8 +100,8 @@ export const RDPCertTrustPrompt: React.FC = () => {
   );
   const headerColor = isChanged ? "bg-error/20" : "bg-warning/20";
   const title = isChanged
-    ? "Server certificate has changed"
-    : "Untrusted server certificate";
+    ? "RDP server certificate has changed"
+    : "Untrusted RDP server certificate";
 
   return (
     <Modal
@@ -123,14 +123,14 @@ export const RDPCertTrustPrompt: React.FC = () => {
             <p className="text-sm text-[var(--color-textSecondary)] mb-4">
               {isChanged ? (
                 <>
-                  The certificate for <strong>{prompt.host}:{prompt.port}</strong>{" "}
+                  The RDP certificate for <strong>{prompt.host}:{prompt.port}</strong>{" "}
                   doesn&apos;t match the one previously trusted. This can be a
                   legitimate cert rotation — or an active man-in-the-middle. Verify
                   the new fingerprint with the server admin before approving.
                 </>
               ) : (
                 <>
-                  The certificate presented by <strong>{prompt.host}:{prompt.port}</strong>{" "}
+                  The RDP certificate presented by <strong>{prompt.host}:{prompt.port}</strong>{" "}
                   isn&apos;t trusted by your system. This is normal for self-signed
                   or internal-CA hosts. Verify the fingerprint with the server admin
                   before approving.
@@ -201,7 +201,7 @@ export const RDPCertTrustPrompt: React.FC = () => {
                 onChange={(e) => setRemember(e.target.checked)}
                 className="rounded"
               />
-              Remember this certificate for {prompt.host}:{prompt.port}
+              Remember this RDP certificate for {prompt.host}:{prompt.port}
             </label>
 
             <div className="flex items-center justify-between gap-3">

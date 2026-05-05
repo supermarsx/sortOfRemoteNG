@@ -1,6 +1,6 @@
 /**
- * Trust Store — TOFU (Trust On First Use) management for TLS certificates
- * and SSH host key fingerprints.
+ * Trust Store — TOFU (Trust On First Use) management for HTTPS/RDP/legacy TLS
+ * certificates and SSH host key fingerprints.
  *
  * On first connection the identity (cert fingerprint / host key) is stored.
  * On subsequent connections the stored identity is compared with the one
@@ -19,6 +19,9 @@ export type TrustPolicy =
   | 'always-ask'      // Always ask the user before trusting
   | 'always-trust'    // Accept anything without checking
   | 'strict';         // Reject if not pre-approved (manual pinning)
+
+export type TrustRecordType = 'https' | 'rdp' | 'ssh' | 'tls';
+export type CertificateTrustRecordType = Exclude<TrustRecordType, 'ssh'>;
 
 export interface CertChainEntry {
   subject: string;
@@ -104,25 +107,30 @@ export interface SshHostKeyIdentity {
   publicKey?: string;
 }
 
+export type TrustIdentity = CertIdentity | SshHostKeyIdentity;
+export type TrustIdentityFor<T extends TrustRecordType> = T extends 'ssh'
+  ? SshHostKeyIdentity
+  : CertIdentity;
+
 export interface TrustRecord {
   /** Target host identifier: "hostname:port" */
   host: string;
   /** Protocol family */
-  type: 'tls' | 'ssh';
+  type: TrustRecordType;
   /** The memorized identity */
-  identity: CertIdentity | SshHostKeyIdentity;
+  identity: TrustIdentity;
   /** User explicitly approved this identity */
   userApproved: boolean;
   /** Optional user-assigned nickname / label */
   nickname?: string;
   /** Previous identities (when user chose to update) */
-  history?: Array<CertIdentity | SshHostKeyIdentity>;
+  history?: TrustIdentity[];
 }
 
 export type TrustVerifyResult =
   | { status: 'trusted' }
-  | { status: 'first-use'; identity: CertIdentity | SshHostKeyIdentity }
-  | { status: 'mismatch'; stored: CertIdentity | SshHostKeyIdentity; received: CertIdentity | SshHostKeyIdentity }
+  | { status: 'first-use'; identity: TrustIdentity }
+  | { status: 'mismatch'; stored: TrustIdentity; received: TrustIdentity }
   | { status: 'expired'; identity: CertIdentity };
 
 // ---------------------------------------------------------------------------
@@ -133,8 +141,12 @@ const TRUST_STORE_KEY = 'trustStore';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function hostKey(host: string, port: number, type: 'tls' | 'ssh'): string {
+function hostKey(host: string, port: number, type: TrustRecordType): string {
   return `${type}:${host}:${port}`;
+}
+
+export function isCertificateTrustRecordType(type: TrustRecordType): type is CertificateTrustRecordType {
+  return type === 'https' || type === 'rdp' || type === 'tls';
 }
 
 function connectionStoreKey(connectionId: string): string {
@@ -176,11 +188,11 @@ function notifyTrustStoreChanged(): void {
  * @returns A `TrustVerifyResult` indicating whether the identity is trusted,
  *          seen for the first time, or differs from what was stored.
  */
-export function verifyIdentity(
+export function verifyIdentity<T extends TrustRecordType>(
   host: string,
   port: number,
-  type: 'tls' | 'ssh',
-  received: CertIdentity | SshHostKeyIdentity,
+  type: T,
+  received: TrustIdentityFor<T>,
   connectionId?: string,
 ): TrustVerifyResult {
   const store = loadStore(connectionId);
@@ -222,11 +234,11 @@ export function verifyIdentity(
  * @param connectionId  When provided the identity is stored in the
  *                      per-connection store instead of the global one.
  */
-export function trustIdentity(
+export function trustIdentity<T extends TrustRecordType>(
   host: string,
   port: number,
-  type: 'tls' | 'ssh',
-  identity: CertIdentity | SshHostKeyIdentity,
+  type: T,
+  identity: TrustIdentityFor<T>,
   userApproved = true,
   connectionId?: string,
 ): void {
@@ -238,7 +250,7 @@ export function trustIdentity(
   identity.lastSeen = now;
   if (!identity.firstSeen) identity.firstSeen = now;
 
-  const history: Array<CertIdentity | SshHostKeyIdentity> = existing?.history ? [...existing.history] : [];
+  const history: TrustIdentity[] = existing?.history ? [...existing.history] : [];
   if (existing && existing.identity.fingerprint !== identity.fingerprint) {
     history.push(existing.identity);
   }
@@ -257,7 +269,7 @@ export function trustIdentity(
 /**
  * Remove a stored trust record.
  */
-export function removeIdentity(host: string, port: number, type: 'tls' | 'ssh', connectionId?: string): void {
+export function removeIdentity(host: string, port: number, type: TrustRecordType, connectionId?: string): void {
   const store = loadStore(connectionId);
   const key = hostKey(host, port, type);
   delete store[key];
@@ -271,7 +283,7 @@ export function removeIdentity(host: string, port: number, type: 'tls' | 'ssh', 
 export function getStoredIdentity(
   host: string,
   port: number,
-  type: 'tls' | 'ssh',
+  type: TrustRecordType,
   connectionId?: string,
 ): TrustRecord | undefined {
   const store = loadStore(connectionId);
@@ -339,7 +351,7 @@ export function clearAllTrustRecords(connectionId?: string): void {
 export function updateTrustRecordNickname(
   host: string,
   port: number,
-  type: 'tls' | 'ssh',
+  type: TrustRecordType,
   nickname: string,
   connectionId?: string,
 ): void {

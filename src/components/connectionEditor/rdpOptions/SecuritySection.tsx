@@ -243,7 +243,7 @@ const SecuritySection: React.FC<
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
             <Fingerprint size={12} />
-            Trusted Certificates ({mgr.hostRecords.length})
+            Trusted RDP Certificates ({mgr.hostRecords.length})
           </span>
           <button
             type="button"

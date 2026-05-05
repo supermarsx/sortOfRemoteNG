@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HTTPOptions } from "../../src/components/connectionEditor/HTTPOptions";
 import type { Connection } from "../../src/types/connection/connection";
@@ -21,7 +21,21 @@ const Wrapper = () => {
   return <HTTPOptions formData={formData} setFormData={setFormData} />;
 };
 
+const RecordingWrapper = ({ initial }: { initial: Partial<Connection> }) => {
+  const [formData, setFormData] = React.useState<Partial<Connection>>(initial);
+  return (
+    <>
+      <HTTPOptions formData={formData} setFormData={setFormData} />
+      <output data-testid="form-data">{JSON.stringify(formData)}</output>
+    </>
+  );
+};
+
 describe("HTTPOptions", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it("adds a custom header via modal", async () => {
     const { container } = render(<Wrapper />);
 
@@ -78,5 +92,73 @@ describe("HTTPOptions", () => {
     await waitFor(() => {
       expect(screen.queryByText("Add Bookmark")).not.toBeInTheDocument();
     });
+  });
+
+  it("writes HTTPS certificate policy to httpsTrustPolicy with legacy TLS display fallback", async () => {
+    render(
+      <RecordingWrapper
+        initial={{
+          ...makeFormData(),
+          protocol: "https",
+          port: 443,
+          tlsTrustPolicy: "strict",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("HTTPS Certificate Trust Policy")).toBeInTheDocument();
+    const legacyFallback = screen.getByText("Strict (reject unless pre-approved)");
+    expect(legacyFallback).toBeInTheDocument();
+
+    fireEvent.click(legacyFallback.closest("button")!);
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "Always Ask" }));
+
+    await waitFor(() => {
+      const formData = JSON.parse(screen.getByTestId("form-data").textContent ?? "{}");
+      expect(formData.httpsTrustPolicy).toBe("always-ask");
+      expect(formData.tlsTrustPolicy).toBe("strict");
+    });
+  });
+
+  it("shows only explicit HTTPS trust records in the HTTPS editor", () => {
+    localStorage.setItem(
+      "trustStore:http-1",
+      JSON.stringify({
+        "https:example.com:443": {
+          host: "example.com:443",
+          type: "https",
+          identity: {
+            fingerprint: "SHA256:https-cert",
+            firstSeen: "2026-01-01T00:00:00.000Z",
+            lastSeen: "2026-01-01T00:00:00.000Z",
+          },
+          userApproved: true,
+        },
+        "tls:legacy.example.com:443": {
+          host: "legacy.example.com:443",
+          type: "tls",
+          identity: {
+            fingerprint: "SHA256:legacy-cert",
+            firstSeen: "2026-01-01T00:00:00.000Z",
+            lastSeen: "2026-01-01T00:00:00.000Z",
+          },
+          userApproved: true,
+        },
+      }),
+    );
+
+    render(
+      <RecordingWrapper
+        initial={{
+          ...makeFormData(),
+          protocol: "https",
+          port: 443,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Stored HTTPS Certificates (1)")).toBeInTheDocument();
+    expect(screen.getByText("example.com:443")).toBeInTheDocument();
+    expect(screen.queryByText("legacy.example.com:443")).not.toBeInTheDocument();
   });
 });

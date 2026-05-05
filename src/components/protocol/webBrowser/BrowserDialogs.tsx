@@ -8,7 +8,7 @@ const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>
     {mgr.trustPrompt && mgr.certIdentity && (
       <TrustWarningDialog
-        type="tls"
+        type="https"
         host={mgr.session.hostname}
         port={mgr.connection?.port || 443}
         reason={

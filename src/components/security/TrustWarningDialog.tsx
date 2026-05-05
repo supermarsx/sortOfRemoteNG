@@ -12,12 +12,22 @@ import {
   Key,
   Shield,
 } from "lucide-react";
-import type { CertIdentity, SshHostKeyIdentity } from "../../utils/auth/trustStore";
-import { formatFingerprint } from "../../utils/auth/trustStore";
+import type { CertIdentity, SshHostKeyIdentity, TrustRecordType } from "../../utils/auth/trustStore";
+import { formatFingerprint, isCertificateTrustRecordType } from "../../utils/auth/trustStore";
 import { Modal } from "../ui/overlays/Modal";
 
+const TRUST_TYPE_LABELS: Record<
+  TrustRecordType,
+  { display: string; sentence: string }
+> = {
+  https: { display: "HTTPS Certificate", sentence: "HTTPS certificate" },
+  rdp: { display: "RDP Certificate", sentence: "RDP certificate" },
+  ssh: { display: "Host Key", sentence: "host key" },
+  tls: { display: "Legacy TLS Certificate", sentence: "legacy TLS certificate" },
+};
+
 interface TrustWarningDialogProps {
-  type: "tls" | "ssh";
+  type: TrustRecordType;
   host: string;
   port: number;
   /**
@@ -51,8 +61,8 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
   onReject,
 }) => {
   const isMismatch = reason === "mismatch";
-  const isTls = type === "tls";
-  const identityLabel = isTls ? "certificate" : "host key";
+  const isCertificateType = isCertificateTrustRecordType(type);
+  const typeLabels = TRUST_TYPE_LABELS[type];
   const [rememberDecision, setRememberDecision] = useState(false);
 
   return (
@@ -83,8 +93,8 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
               className={`text-lg font-semibold ${isMismatch ? "text-error" : "text-warning"}`}
             >
               {isMismatch
-                ? `${isTls ? "Certificate" : "Host Key"} Has Changed!`
-                : `Unknown ${isTls ? "Certificate" : "Host Key"}`}
+                ? `${typeLabels.display} Has Changed!`
+                : `Unknown ${typeLabels.display}`}
             </h2>
             <p className="text-sm text-[var(--color-textSecondary)]">
               {host}:{port}
@@ -103,12 +113,12 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 />
                 <div className="text-sm text-error">
                   <p className="font-medium">
-                    The {identityLabel} presented by this server has changed
+                    The {typeLabels.sentence} presented by this server has changed
                     since the last connection.
                   </p>
                   <p className="mt-1 text-error/80">
                     This could indicate a man-in-the-middle attack, or the
-                    server&apos;s {identityLabel} was legitimately rotated.
+                    server&apos;s {typeLabels.sentence} was legitimately rotated.
                     Proceed only if you trust this change.
                   </p>
                 </div>
@@ -121,7 +131,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                   <p className="text-xs text-[var(--color-textMuted)] font-medium mb-2">
                     Previously Stored
                   </p>
-                  <IdentitySummary identity={storedIdentity} isTls={isTls} />
+                  <IdentitySummary identity={storedIdentity} isCertificateType={isCertificateType} />
                 </div>
 
                 {/* Received now */}
@@ -129,7 +139,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                   <p className="text-xs text-error font-medium mb-2">
                     Received Now
                   </p>
-                  <IdentitySummary identity={receivedIdentity} isTls={isTls} accentClass="text-error" />
+                  <IdentitySummary identity={receivedIdentity} isCertificateType={isCertificateType} accentClass="text-error" />
                 </div>
               </div>
             </>
@@ -140,14 +150,14 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 <span className="text-warning font-medium">
                   {host}:{port}
                 </span>{" "}
-                presented a {identityLabel} that has not been seen before.
+                presented a {typeLabels.sentence} that has not been seen before.
               </p>
               <div className="bg-[var(--color-background)] rounded-lg p-3">
-                <IdentitySummary identity={receivedIdentity} isTls={isTls} />
+                <IdentitySummary identity={receivedIdentity} isCertificateType={isCertificateType} />
               </div>
               <p className="text-xs text-[var(--color-textSecondary)]">
-                If you trust this server, accept the {identityLabel} to remember
-                it for future connections. Any change to this {identityLabel}{" "}
+                If you trust this server, accept the {typeLabels.sentence} to remember
+                it for future connections. Any change to this {typeLabels.sentence}{" "}
                 will trigger a warning.
               </p>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -185,7 +195,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
               <>
                 <AlertTriangle size={14} />
                 <span>
-                  Trust New {isTls ? "Certificate" : "Key"} &amp; Continue
+                  Trust New {typeLabels.display} &amp; Continue
                 </span>
               </>
             ) : (
@@ -214,11 +224,11 @@ function isCertIdentity(
 /** A compact, read-only summary of a TLS cert or SSH host key identity. */
 function IdentitySummary({
   identity,
-  isTls,
+  isCertificateType,
   accentClass,
 }: {
   identity?: CertIdentity | SshHostKeyIdentity;
-  isTls: boolean;
+  isCertificateType: boolean;
   accentClass?: string;
 }) {
   if (!identity) {
@@ -242,8 +252,8 @@ function IdentitySummary({
         </p>
       </div>
 
-      {/* TLS-specific fields */}
-      {isTls && isCertIdentity(identity) && (
+      {/* Certificate-specific fields */}
+      {isCertificateType && isCertIdentity(identity) && (
         <>
           {identity.subject && (
             <SummaryRow icon={<Server size={10} />} label="Subject" value={identity.subject} />
@@ -288,7 +298,7 @@ function IdentitySummary({
       )}
 
       {/* SSH-specific fields */}
-      {!isTls && !isCertIdentity(identity) && (
+      {!isCertificateType && !isCertIdentity(identity) && (
         <>
           {(identity as SshHostKeyIdentity).keyType && (
             <SummaryRow icon={<Key size={10} />} label="Key Type" value={(identity as SshHostKeyIdentity).keyType!} />

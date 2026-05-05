@@ -52,14 +52,14 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
             <SecurityIcon mgr={mgr} />
             {mgr.showCertPopup && mgr.isSecure && (
               <CertificateInfoPopup
-                type="tls"
+                type="https"
                 host={mgr.session.hostname}
                 port={mgr.connection?.port || 443}
                 currentIdentity={mgr.certIdentity ?? undefined}
                 trustRecord={getStoredIdentity(
                   mgr.session.hostname,
                   mgr.connection?.port || 443,
-                  "tls",
+                  "https",
                   mgr.connection?.id,
                 )}
                 connectionId={mgr.connection?.id}

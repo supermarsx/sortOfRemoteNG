@@ -11,7 +11,7 @@ describe("TrustWarningDialog", () => {
 
     render(
       <TrustWarningDialog
-        type="tls"
+        type="https"
         host="example.com"
         port={443}
         reason="first-use"
@@ -25,7 +25,7 @@ describe("TrustWarningDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Unknown Certificate")).toBeInTheDocument();
+    expect(screen.getByText("Unknown HTTPS Certificate")).toBeInTheDocument();
     expect(screen.getAllByText(/example.com:443/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Accept & Continue" }));
@@ -61,8 +61,31 @@ describe("TrustWarningDialog", () => {
     expect(screen.getByText("Previously Stored")).toBeInTheDocument();
     expect(screen.getByText("Received Now")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Trust New Key & Continue/i }),
+      screen.getByRole("button", { name: /Trust New Host Key & Continue/i }),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["rdp", "Unknown RDP Certificate"],
+    ["tls", "Unknown Legacy TLS Certificate"],
+  ] as const)("renders explicit %s certificate labels", (type, title) => {
+    render(
+      <TrustWarningDialog
+        type={type}
+        host="example.com"
+        port={443}
+        reason="first-use"
+        receivedIdentity={{
+          fingerprint: "AA:BB:CC",
+          firstSeen: now,
+          lastSeen: now,
+        }}
+        onAccept={() => {}}
+        onReject={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(title)).toBeInTheDocument();
   });
 
   it("does not close on backdrop click", () => {

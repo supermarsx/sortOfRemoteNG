@@ -4,35 +4,30 @@ import React from "react";
 import { Lock, Trash2 } from "lucide-react";
 import { Select } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
-import { getAllTrustRecords, clearAllTrustRecords, formatFingerprint, removeIdentity } from "../../../utils/auth/trustStore";
+import { getAllTrustRecords, formatFingerprint, removeIdentity } from "../../../utils/auth/trustStore";
+import type { TrustPolicy } from "../../../utils/auth/trustStore";
 
 const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.isHttps) return null;
   return (
     <div className="md:col-span-2">
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        Certificate Trust Policy <InfoTooltip text="Controls how TLS certificate fingerprints are remembered and verified across connections to this host." />
+        HTTPS Certificate Trust Policy <InfoTooltip text="Controls how HTTPS certificate fingerprints are remembered and verified across connections to this host." />
       </label>
-      <Select value={mgr.formData.tlsTrustPolicy ?? ""} onChange={(v: string) => mgr.setFormData({
-            ...mgr.formData,
-            tlsTrustPolicy:
-              v === ""
-                ? undefined
-                : (v as
-                    | "tofu"
-                    | "always-ask"
-                    | "always-trust"
-                    | "strict"),
+      <Select value={mgr.formData.httpsTrustPolicy ?? mgr.formData.tlsTrustPolicy ?? ""} onChange={(v: string) => mgr.setFormData({
+        ...mgr.formData,
+        httpsTrustPolicy: v === "" ? undefined : (v as TrustPolicy),
+        ...(v === "" ? { tlsTrustPolicy: undefined } : {}),
           })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} variant="form" />
       <p className="text-xs text-[var(--color-textMuted)] mt-1">
         Controls whether certificate fingerprints are memorized and verified
         across connections.
       </p>
-      {/* Per-connection stored TLS certificates */}
+      {/* Per-connection stored HTTPS certificates */}
       {mgr.formData.id &&
         (() => {
           const records = getAllTrustRecords(mgr.formData.id).filter(
-            (r) => r.type === "tls",
+            (record) => record.type === "https",
           );
           if (records.length === 0) return null;
           return (
@@ -40,12 +35,20 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <div className="flex items-center justify-between mb-2">
                 <label className="sor-form-label-icon">
                   <Lock size={14} className="text-success" />
-                  Stored Certificates ({records.length})
+                  Stored HTTPS Certificates ({records.length})
                 </label>
                 <button
                   type="button"
                   onClick={() => {
-                    clearAllTrustRecords(mgr.formData.id);
+                    records.forEach((record) => {
+                      const [host, portStr] = record.host.split(":");
+                      removeIdentity(
+                        host,
+                        parseInt(portStr, 10),
+                        record.type,
+                        mgr.formData.id,
+                      );
+                    });
                     mgr.setFormData({ ...mgr.formData }); // force re-render
                   }}
                   className="text-xs text-[var(--color-textMuted)] hover:text-error transition-colors"
