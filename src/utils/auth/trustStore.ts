@@ -1,6 +1,6 @@
 /**
- * Trust Store — TOFU (Trust On First Use) management for HTTPS/RDP/legacy TLS
- * certificates and SSH host key fingerprints.
+ * Trust Store — TOFU (Trust On First Use) management for HTTPS/RDP/general/
+ * legacy TLS certificates and SSH host key fingerprints.
  *
  * On first connection the identity (cert fingerprint / host key) is stored.
  * On subsequent connections the stored identity is compared with the one
@@ -20,7 +20,9 @@ export type TrustPolicy =
   | 'always-trust'    // Accept anything without checking
   | 'strict';         // Reject if not pre-approved (manual pinning)
 
-export type TrustRecordType = 'https' | 'rdp' | 'ssh' | 'tls';
+export type InheritableTrustPolicy = TrustPolicy | 'inherit';
+
+export type TrustRecordType = 'https' | 'certificate' | 'rdp' | 'ssh' | 'tls';
 export type CertificateTrustRecordType = Exclude<TrustRecordType, 'ssh'>;
 
 export interface CertChainEntry {
@@ -146,7 +148,7 @@ function hostKey(host: string, port: number, type: TrustRecordType): string {
 }
 
 export function isCertificateTrustRecordType(type: TrustRecordType): type is CertificateTrustRecordType {
-  return type === 'https' || type === 'rdp' || type === 'tls';
+  return type === 'certificate' || type === 'https' || type === 'rdp' || type === 'tls';
 }
 
 function connectionStoreKey(connectionId: string): string {
@@ -374,12 +376,33 @@ export function formatFingerprint(fp: string): string {
   return fp.match(/.{1,2}/g)?.join(':') ?? fp;
 }
 
+function isConcreteTrustPolicy(policy: InheritableTrustPolicy | undefined): policy is TrustPolicy {
+  return policy !== undefined && policy !== 'inherit';
+}
+
+/**
+ * Resolve a concrete trust policy from connection, category, then root policy.
+ * Missing values and explicit inheritance both defer to the next level.
+ */
+export function resolveEffectiveTrustPolicy(
+  connectionPolicy: InheritableTrustPolicy | undefined,
+  categoryPolicy: InheritableTrustPolicy | undefined,
+  rootPolicy: InheritableTrustPolicy | undefined,
+  fallbackPolicy: TrustPolicy = 'always-ask',
+): TrustPolicy {
+  if (isConcreteTrustPolicy(connectionPolicy)) return connectionPolicy;
+  if (isConcreteTrustPolicy(categoryPolicy)) return categoryPolicy;
+  if (isConcreteTrustPolicy(rootPolicy)) return rootPolicy;
+  return fallbackPolicy;
+}
+
 /**
  * Determine effective trust policy for a connection, falling back to global.
+ * Compatibility wrapper for the pre-inheritance two-level call sites.
  */
 export function getEffectiveTrustPolicy(
-  connectionPolicy: TrustPolicy | undefined,
-  globalPolicy: TrustPolicy | undefined,
+  connectionPolicy: InheritableTrustPolicy | undefined,
+  globalPolicy: InheritableTrustPolicy | undefined,
 ): TrustPolicy {
-  return connectionPolicy ?? globalPolicy ?? 'always-ask';
+  return resolveEffectiveTrustPolicy(connectionPolicy, globalPolicy, undefined);
 }

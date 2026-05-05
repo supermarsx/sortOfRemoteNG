@@ -14,7 +14,7 @@ import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
   trustIdentity,
-  getEffectiveTrustPolicy,
+  resolveEffectiveTrustPolicy,
   type CertIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
@@ -170,9 +170,11 @@ export function useWebBrowser(session: ConnectionSession) {
   const fetchAndVerifyCert = useCallback(async (): Promise<boolean> => {
     if (session.protocol !== "https") return true;
     const port = connection?.port || 443;
-    const policy = getEffectiveTrustPolicy(
-      connection?.httpsTrustPolicy ?? connection?.tlsTrustPolicy,
-      settings.httpsTrustPolicy ?? settings.tlsTrustPolicy,
+    const policy = resolveEffectiveTrustPolicy(
+      connection?.httpsTrustPolicy,
+      settings.httpsTrustPolicy,
+      settings.trustPolicy,
+      connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
     );
     if (policy === "always-trust") return true;
 
@@ -283,7 +285,7 @@ export function useWebBrowser(session: ConnectionSession) {
       debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
       return true;
     }
-  }, [session.protocol, session.hostname, connection, settings.httpsTrustPolicy, settings.tlsTrustPolicy]);
+  }, [session.protocol, session.hostname, connection, settings.httpsTrustPolicy, settings.trustPolicy, settings.tlsTrustPolicy]);
 
   const handleTrustAccept = useCallback(() => {
     if (trustPrompt && certIdentity) {

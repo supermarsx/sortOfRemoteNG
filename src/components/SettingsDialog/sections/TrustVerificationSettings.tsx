@@ -17,15 +17,18 @@ import {
 } from "lucide-react";
 import {
   formatFingerprint,
+  resolveEffectiveTrustPolicy,
   updateTrustRecordNickname,
+  type InheritableTrustPolicy,
+  type TrustPolicy,
   type TrustRecord,
 } from "../../../utils/auth/trustStore";
 import {
   classifyTrustRecords,
   useTrustVerificationSettings,
 } from "../../../hooks/settings/useTrustVerificationSettings";
-import { Checkbox, NumberInput, Select } from '../../ui/forms';
-import SectionHeading from '../../ui/SectionHeading';
+import { Checkbox, NumberInput, Select } from "../../ui/forms";
+import SectionHeading from "../../ui/SectionHeading";
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -34,8 +37,11 @@ interface TrustVerificationSettingsProps {
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
 
-const POLICY_OPTIONS: { value: string; label: string; description: string }[] =
-  [
+const POLICY_OPTIONS: {
+  value: TrustPolicy;
+  label: string;
+  description: string;
+}[] = [
     {
       value: "tofu",
       label: "Trust On First Use (TOFU)",
@@ -59,76 +65,190 @@ const POLICY_OPTIONS: { value: string; label: string; description: string }[] =
     },
   ];
 
+const CONCRETE_POLICY_OPTIONS = POLICY_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}));
+
+const INHERITABLE_POLICY_OPTIONS = [
+  { value: "inherit", label: "Inherit Default Policy" },
+  ...CONCRETE_POLICY_OPTIONS,
+];
+
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
 
 const SectionHeader: React.FC = () => (
   <div>
-    <SectionHeading icon={<Fingerprint className="w-5 h-5" />} title="Trust Center" description="Control how HTTPS certificates, RDP certificates, SSH host keys, and legacy TLS identities are verified and memorized. These settings apply globally but can be overridden per connection." />
+    <SectionHeading
+      icon={<Fingerprint className="w-5 h-5" />}
+      title="Trust Center"
+      description="Control how HTTPS certificates, general certificates, RDP certificates, SSH host keys, and legacy TLS identities are verified and memorized. These settings apply globally but can be overridden per connection."
+    />
   </div>
 );
 
-function policyDescription(value: string | undefined): string | undefined {
+function policyLabel(value: TrustPolicy): string {
+  return POLICY_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function policyDescription(value: TrustPolicy | undefined): string | undefined {
   return POLICY_OPTIONS.find((option) => option.value === value)?.description;
 }
 
-const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <div className="sor-settings-card">
-      <div className="flex items-center gap-2 mb-3">
-        <Lock size={16} className="text-success" />
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
-          HTTPS Certificate Policy
-        </h4>
-      </div>
-      <Select value={mgr.settings.httpsTrustPolicy ?? mgr.settings.tlsTrustPolicy ?? "tofu"} onChange={(v: string) =>
-          mgr.updateSettings({
-            httpsTrustPolicy: v as GlobalSettings["httpsTrustPolicy"],
-          })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
-      <p className="text-xs text-[var(--color-textMuted)] mt-2">
-        {policyDescription(mgr.settings.httpsTrustPolicy ?? mgr.settings.tlsTrustPolicy ?? "tofu")}
-      </p>
-    </div>
+function effectivePolicyDescription(value: TrustPolicy): string {
+  const description = policyDescription(value);
+  return description
+    ? `Effective: ${policyLabel(value)}. ${description}`
+    : `Effective: ${policyLabel(value)}.`;
+}
 
-    <div className="sor-settings-card">
-      <div className="flex items-center gap-2 mb-3">
-        <Fingerprint size={16} className="text-primary" />
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
-          SSH Host Key Policy
-        </h4>
-      </div>
-      <Select value={mgr.settings.sshTrustPolicy ?? "always-ask"} onChange={(v: string) =>
-          mgr.updateSettings({
-            sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
-          })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
-      <p className="text-xs text-[var(--color-textMuted)] mt-2">
-        {policyDescription(mgr.settings.sshTrustPolicy ?? "always-ask")}
-      </p>
-    </div>
+interface PolicyCardProps {
+  title: string;
+  icon: React.ReactNode;
+  iconClassName: string;
+  value: TrustPolicy | InheritableTrustPolicy;
+  options: { value: string; label: string }[];
+  effectivePolicy: TrustPolicy;
+  onChange: (value: string) => void;
+  children?: React.ReactNode;
+}
 
-    <div className="sor-settings-card">
-      <div className="flex items-center gap-2 mb-3">
-        <Monitor size={16} className="text-warning" />
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
-          RDP Certificate Policy
-        </h4>
-      </div>
-      <Select value={mgr.settings.rdpTrustPolicy ?? "tofu"} onChange={(v: string) =>
-          mgr.updateSettings({
-            rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
-          })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
-      <p className="text-xs text-[var(--color-textMuted)] mt-2">
-        {policyDescription(mgr.settings.rdpTrustPolicy ?? "tofu")}
-      </p>
-      <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
-        Separate from HTTPS certificates and legacy TLS identities. RDP servers
-        are typically self-signed, so most users keep this at TOFU even when
-        HTTPS is set to Strict.
-      </p>
+const PolicyCard: React.FC<PolicyCardProps> = ({
+  title,
+  icon,
+  iconClassName,
+  value,
+  options,
+  effectivePolicy,
+  onChange,
+  children,
+}) => (
+  <div className="sor-settings-card">
+    <div className="flex items-center gap-2 mb-3">
+      <span className={iconClassName}>{icon}</span>
+      <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
+        {title}
+      </h4>
     </div>
+    <Select
+      value={value}
+      onChange={onChange}
+      options={options}
+      className="sor-settings-select w-full text-sm"
+    />
+    <p className="text-xs text-[var(--color-textMuted)] mt-2">
+      {effectivePolicyDescription(effectivePolicy)}
+    </p>
+    {children}
   </div>
 );
+
+const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const rootPolicy = mgr.settings.trustPolicy ?? "tofu";
+  const httpsPolicy = mgr.settings.httpsTrustPolicy ?? "inherit";
+  const certificatePolicy = mgr.settings.certificateTrustPolicy ?? "inherit";
+  const sshPolicy = mgr.settings.sshTrustPolicy ?? "always-ask";
+  const rdpPolicy = mgr.settings.rdpTrustPolicy ?? "inherit";
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <PolicyCard
+        title="Default Trust Policy"
+        icon={<ShieldCheck size={16} />}
+        iconClassName="text-success"
+        value={rootPolicy}
+        options={CONCRETE_POLICY_OPTIONS}
+        effectivePolicy={rootPolicy}
+        onChange={(v: string) =>
+          mgr.updateSettings({
+            trustPolicy: v as GlobalSettings["trustPolicy"],
+          })
+        }
+      />
+
+      <PolicyCard
+        title="General Certificate Policy"
+        icon={<ShieldAlert size={16} />}
+        iconClassName="text-primary"
+        value={certificatePolicy}
+        options={INHERITABLE_POLICY_OPTIONS}
+        effectivePolicy={resolveEffectiveTrustPolicy(
+          undefined,
+          certificatePolicy,
+          rootPolicy,
+        )}
+        onChange={(v: string) =>
+          mgr.updateSettings({
+            certificateTrustPolicy:
+              v as GlobalSettings["certificateTrustPolicy"],
+          })
+        }
+      />
+
+      <PolicyCard
+        title="HTTPS Certificate Policy"
+        icon={<Lock size={16} />}
+        iconClassName="text-success"
+        value={httpsPolicy}
+        options={INHERITABLE_POLICY_OPTIONS}
+        effectivePolicy={resolveEffectiveTrustPolicy(
+          undefined,
+          httpsPolicy,
+          rootPolicy,
+        )}
+        onChange={(v: string) =>
+          mgr.updateSettings({
+            httpsTrustPolicy: v as GlobalSettings["httpsTrustPolicy"],
+          })
+        }
+      />
+
+      <PolicyCard
+        title="SSH Host Key Policy"
+        icon={<Fingerprint size={16} />}
+        iconClassName="text-primary"
+        value={sshPolicy}
+        options={INHERITABLE_POLICY_OPTIONS}
+        effectivePolicy={resolveEffectiveTrustPolicy(
+          undefined,
+          sshPolicy,
+          rootPolicy,
+        )}
+        onChange={(v: string) =>
+          mgr.updateSettings({
+            sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
+          })
+        }
+      />
+
+      <PolicyCard
+        title="RDP Certificate Policy"
+        icon={<Monitor size={16} />}
+        iconClassName="text-warning"
+        value={rdpPolicy}
+        options={INHERITABLE_POLICY_OPTIONS}
+        effectivePolicy={resolveEffectiveTrustPolicy(
+          undefined,
+          rdpPolicy,
+          rootPolicy,
+        )}
+        onChange={(v: string) =>
+          mgr.updateSettings({
+            rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
+          })
+        }
+      >
+        <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
+          Separate from HTTPS certificates and legacy TLS identities. RDP servers
+          are typically self-signed, so most users keep this at TOFU even when
+          HTTPS is set to Strict.
+        </p>
+      </PolicyCard>
+    </div>
+  );
+};
 
 const PolicyExplanations: React.FC = () => (
   <details className="group [&>summary]:list-none bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg">
@@ -313,6 +433,14 @@ function renderTrustRecordGroups(
         records={classifiedRecords.httpsRecords}
         icon={<Lock size={12} />}
         recordKeyPrefix={`${recordKeyPrefix}-https`}
+        connectionId={connectionId}
+        mgr={mgr}
+      />
+      <TrustRecordGroupSection
+        title="General Certificates"
+        records={classifiedRecords.certificateRecords}
+        icon={<ShieldAlert size={12} />}
+        recordKeyPrefix={`${recordKeyPrefix}-certificate`}
         connectionId={connectionId}
         mgr={mgr}
       />

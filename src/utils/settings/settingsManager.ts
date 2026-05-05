@@ -365,10 +365,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Trust & Verification
   enableAutocomplete: false,
-  httpsTrustPolicy: 'tofu',
+  trustPolicy: 'tofu',
+  httpsTrustPolicy: 'inherit',
+  certificateTrustPolicy: 'inherit',
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'always-ask',
-  rdpTrustPolicy: 'tofu',
+  rdpTrustPolicy: 'inherit',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
 
@@ -657,6 +659,8 @@ export class SettingsManager {
           ...storedSettings,
           httpsTrustPolicy:
             storedSettings.httpsTrustPolicy ?? storedSettings.tlsTrustPolicy ?? DEFAULT_SETTINGS.httpsTrustPolicy,
+          certificateTrustPolicy:
+            storedSettings.certificateTrustPolicy ?? DEFAULT_SETTINGS.certificateTrustPolicy,
           networkDiscovery: {
             ...DEFAULT_SETTINGS.networkDiscovery,
             ...(storedSettings.networkDiscovery ?? {}),

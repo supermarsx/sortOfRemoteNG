@@ -5,6 +5,8 @@ import {
   removeIdentity,
   getStoredIdentity,
   getAllTrustRecords,
+  isCertificateTrustRecordType,
+  resolveEffectiveTrustPolicy,
   getEffectiveTrustPolicy,
 } from "../../src/utils/auth/trustStore";
 import type { SshHostKeyIdentity, CertIdentity } from "../../src/utils/auth/trustStore";
@@ -81,17 +83,20 @@ describe("trustStore", () => {
       expect(record!.history![0].fingerprint).toBe("SHA256:first");
     });
 
-    it("stores HTTPS, RDP, SSH, and legacy TLS records separately", () => {
+    it("stores certificate, HTTPS, RDP, SSH, and legacy TLS records separately", () => {
+      trustIdentity("host", 443, "certificate", makeTlsIdentity("SHA256:certificate"));
       trustIdentity("host", 443, "https", makeTlsIdentity("SHA256:https"));
       trustIdentity("host", 443, "rdp", makeTlsIdentity("SHA256:rdp"));
       trustIdentity("host", 443, "ssh", makeSshIdentity("SHA256:ssh"));
       trustIdentity("host", 443, "tls", makeTlsIdentity("SHA256:legacy-tls"));
 
+      expect(getStoredIdentity("host", 443, "certificate")!.identity.fingerprint).toBe("SHA256:certificate");
       expect(getStoredIdentity("host", 443, "https")!.identity.fingerprint).toBe("SHA256:https");
       expect(getStoredIdentity("host", 443, "rdp")!.identity.fingerprint).toBe("SHA256:rdp");
       expect(getStoredIdentity("host", 443, "ssh")!.identity.fingerprint).toBe("SHA256:ssh");
       expect(getStoredIdentity("host", 443, "tls")!.identity.fingerprint).toBe("SHA256:legacy-tls");
       expect(getAllTrustRecords().map((record) => record.type).sort()).toEqual([
+        "certificate",
         "https",
         "rdp",
         "ssh",
@@ -99,12 +104,22 @@ describe("trustStore", () => {
       ]);
     });
 
-    it("does not use legacy TLS records as HTTPS or RDP fallback", () => {
+    it("uses certificate-prefixed storage keys for general certificates", () => {
+      trustIdentity("cert.example", 8443, "certificate", makeTlsIdentity("SHA256:certificate"));
+
+      const rawStore = localStorage.getItem("trustStore");
+      expect(rawStore).toBeTruthy();
+      expect(Object.keys(JSON.parse(rawStore!))).toContain("certificate:cert.example:8443");
+    });
+
+    it("does not use legacy TLS records as certificate, HTTPS, or RDP fallback", () => {
       const identity = makeTlsIdentity("SHA256:legacy-only");
       trustIdentity("legacy.example", 443, "tls", identity);
 
+      expect(getStoredIdentity("legacy.example", 443, "certificate")).toBeUndefined();
       expect(getStoredIdentity("legacy.example", 443, "https")).toBeUndefined();
       expect(getStoredIdentity("legacy.example", 443, "rdp")).toBeUndefined();
+      expect(verifyIdentity("legacy.example", 443, "certificate", identity).status).toBe("first-use");
       expect(verifyIdentity("legacy.example", 443, "https", identity).status).toBe("first-use");
       expect(verifyIdentity("legacy.example", 443, "rdp", identity).status).toBe("first-use");
     });
@@ -153,9 +168,44 @@ describe("trustStore", () => {
     });
   });
 
+  describe("certificate record type helpers", () => {
+    it("classifies general certificates, HTTPS, RDP, and legacy TLS as certificate records", () => {
+      expect(isCertificateTrustRecordType("certificate")).toBe(true);
+      expect(isCertificateTrustRecordType("https")).toBe(true);
+      expect(isCertificateTrustRecordType("rdp")).toBe(true);
+      expect(isCertificateTrustRecordType("tls")).toBe(true);
+      expect(isCertificateTrustRecordType("ssh")).toBe(false);
+    });
+  });
+
+  describe("resolveEffectiveTrustPolicy", () => {
+    it("prefers concrete connection policy over category and root policies", () => {
+      expect(resolveEffectiveTrustPolicy("strict", "tofu", "always-trust")).toBe("strict");
+    });
+
+    it("inherits from category policy when connection policy is missing or inherit", () => {
+      expect(resolveEffectiveTrustPolicy(undefined, "tofu", "always-trust")).toBe("tofu");
+      expect(resolveEffectiveTrustPolicy("inherit", "tofu", "always-trust")).toBe("tofu");
+    });
+
+    it("inherits from root policy when category policy is missing or inherit", () => {
+      expect(resolveEffectiveTrustPolicy(undefined, undefined, "always-trust")).toBe("always-trust");
+      expect(resolveEffectiveTrustPolicy("inherit", "inherit", "strict")).toBe("strict");
+    });
+
+    it("falls back to always-ask when no concrete policy is available", () => {
+      expect(resolveEffectiveTrustPolicy(undefined, "inherit", undefined)).toBe("always-ask");
+    });
+  });
+
   describe("getEffectiveTrustPolicy", () => {
     it("falls back to always-ask when no connection or global policy is set", () => {
       expect(getEffectiveTrustPolicy(undefined, undefined)).toBe("always-ask");
+    });
+
+    it("treats inherit as a compatibility fallback value", () => {
+      expect(getEffectiveTrustPolicy("inherit", "tofu")).toBe("tofu");
+      expect(getEffectiveTrustPolicy("inherit", "inherit")).toBe("always-ask");
     });
 
     it("prefers connection policy over global policy", () => {

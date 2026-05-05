@@ -14,7 +14,7 @@ import { useToastContext } from '../../contexts/ToastContext';
 import {
   verifyIdentity,
   trustIdentity,
-  getEffectiveTrustPolicy,
+  resolveEffectiveTrustPolicy,
   type CertIdentity,
   type TrustVerifyResult,
 } from '../../utils/auth/trustStore';
@@ -1044,11 +1044,14 @@ export function useRDPClient(session: ConnectionSession) {
 
       const conn = connectionRef.current;
       const connId = conn?.id;
-      // RDP falls back to the dedicated `rdpTrustPolicy` global, then to
-      // `tlsTrustPolicy` for older settings that predate the split.
-      const policy = getEffectiveTrustPolicy(
+      const currentSettings = settingsRef.current;
+      // Legacy TLS is a last-resort compatibility fallback for older settings
+      // shapes that do not yet have inherited RDP/root policies.
+      const policy = resolveEffectiveTrustPolicy(
         conn?.rdpTrustPolicy,
-        settingsRef.current.rdpTrustPolicy ?? settingsRef.current.tlsTrustPolicy,
+        currentSettings.rdpTrustPolicy,
+        currentSettings.trustPolicy,
+        currentSettings.tlsTrustPolicy ?? 'always-ask',
       );
       const result = verifyIdentity(fp.host, fp.port, 'rdp', identity, connId);
 

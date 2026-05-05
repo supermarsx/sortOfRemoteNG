@@ -24,7 +24,7 @@ import { ManagedScript, getDefaultScripts, OSTag } from "../../components/record
 import {
   verifyIdentity,
   trustIdentity,
-  getEffectiveTrustPolicy,
+  resolveEffectiveTrustPolicy,
   type SshHostKeyIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
@@ -135,10 +135,12 @@ export function useWebTerminal(
   /* ── Stable refs for callbacks ── */
   const sessionRef = useRef(session);
   const connectionRef = useRef(connection);
+  const settingsRef = useRef(settings);
   const isSsh = session.protocol === "ssh";
 
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { connectionRef.current = connection; }, [connection]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   /* ──────────────────────────────────────────────────────────────
    * Script loading
@@ -477,7 +479,12 @@ export function useWebTerminal(
     if (force) sshSessionId.current = null;
 
     const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? false;
-    const sshTrustPolicy = getEffectiveTrustPolicy(currentConnection.sshTrustPolicy, settings.sshTrustPolicy);
+    const currentSettings = settingsRef.current;
+    const sshTrustPolicy = resolveEffectiveTrustPolicy(
+      currentConnection.sshTrustPolicy,
+      currentSettings.sshTrustPolicy,
+      currentSettings.trustPolicy,
+    );
     const strictHostKeyChecking = !ignoreHostKey && sshTrustPolicy !== "always-trust";
     isConnecting.current = true;
     setStatusState("connecting");

@@ -12,6 +12,7 @@ import { useConnections } from "../../contexts/useConnections";
 
 export interface ClassifiedTrustRecords {
   httpsRecords: TrustRecord[];
+  certificateRecords: TrustRecord[];
   rdpRecords: TrustRecord[];
   sshRecords: TrustRecord[];
   legacyTlsRecords: TrustRecord[];
@@ -22,6 +23,9 @@ export function classifyTrustRecords(
 ): ClassifiedTrustRecords {
   return {
     httpsRecords: records.filter((record) => record.type === "https"),
+    certificateRecords: records.filter(
+      (record) => record.type === "certificate",
+    ),
     rdpRecords: records.filter((record) => record.type === "rdp"),
     sshRecords: records.filter((record) => record.type === "ssh"),
     legacyTlsRecords: records.filter((record) => record.type === "tls"),

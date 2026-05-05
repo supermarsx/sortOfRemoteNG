@@ -12,7 +12,7 @@ import type { LoadingElementSettings } from '../../components/ui/display/loading
 import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings';
 import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
 import type { ClipboardDirection, RdpPrinterOutputMode } from '../connection/connection';
-import type { TrustPolicy } from '../../utils/auth/trustStore';
+import type { InheritableTrustPolicy, TrustPolicy } from '../../utils/auth/trustStore';
 
 export const Themes = [
   "dark",
@@ -413,20 +413,25 @@ export interface GlobalSettings {
   cloudSync: CloudSyncConfig;
 
   // Trust & Verification
-  /** Default HTTPS certificate trust policy */
-  httpsTrustPolicy: TrustPolicy;
+  /** Root trust policy inherited by category policies when they are set to `inherit`. */
+  trustPolicy: TrustPolicy;
+  /** Default HTTPS certificate trust policy; `inherit` defers to `trustPolicy`. */
+  httpsTrustPolicy: InheritableTrustPolicy;
+  /** Default non-HTTPS/RDP certificate trust policy; `inherit` defers to `trustPolicy`. */
+  certificateTrustPolicy: InheritableTrustPolicy;
   /** @deprecated Use `httpsTrustPolicy` for HTTPS certificates; retained for persisted compatibility. */
   tlsTrustPolicy: TrustPolicy;
-  /** Default SSH host key trust policy */
-  sshTrustPolicy: TrustPolicy;
+  /** Default SSH host key trust policy; `inherit` defers to `trustPolicy`. */
+  sshTrustPolicy: InheritableTrustPolicy;
   /**
    * Default RDP server certificate trust policy.
    * RDP servers are commonly self-signed (lab/intranet hosts), so this is
    * separated from `httpsTrustPolicy` (which targets HTTPS servers
    * with public CAs) to let users pick a more permissive default for RDP
    * without weakening their browser-style TLS trust.
+    * `inherit` defers to `trustPolicy`.
    */
-  rdpTrustPolicy: TrustPolicy;
+  rdpTrustPolicy: InheritableTrustPolicy;
   /** Show certificate / host-key info in the URL bar / terminal toolbar */
   showTrustIdentityInfo: boolean;
   /** Warn on TLS certificate expiry within N days (0 = disabled) */

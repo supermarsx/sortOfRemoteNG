@@ -79,11 +79,15 @@ describe('SettingsManager loadSettings', () => {
     expect(reloaded.sshTrustPolicy).toBe('strict');
   });
 
-  it('defaults HTTPS trust policy to tofu', async () => {
+  it('defaults trust policies to root tofu with inherited certificate categories', async () => {
     const manager = SettingsManager.getInstance();
     const settings = await manager.loadSettings();
 
-    expect(settings.httpsTrustPolicy).toBe('tofu');
+    expect(settings.trustPolicy).toBe('tofu');
+    expect(settings.httpsTrustPolicy).toBe('inherit');
+    expect(settings.certificateTrustPolicy).toBe('inherit');
+    expect(settings.rdpTrustPolicy).toBe('inherit');
+    expect(settings.sshTrustPolicy).toBe('always-ask');
     expect(settings.tlsTrustPolicy).toBe('tofu');
   });
 
@@ -94,6 +98,7 @@ describe('SettingsManager loadSettings', () => {
 
     const legacyOnly = await SettingsManager.getInstance().loadSettings();
     expect(legacyOnly.httpsTrustPolicy).toBe('strict');
+    expect(legacyOnly.certificateTrustPolicy).toBe('inherit');
     expect(legacyOnly.tlsTrustPolicy).toBe('strict');
 
     SettingsManager.resetInstance();
@@ -104,6 +109,7 @@ describe('SettingsManager loadSettings', () => {
 
     const explicitHttps = await SettingsManager.getInstance().loadSettings();
     expect(explicitHttps.httpsTrustPolicy).toBe('always-trust');
+    expect(explicitHttps.certificateTrustPolicy).toBe('inherit');
     expect(explicitHttps.tlsTrustPolicy).toBe('strict');
   });
 });

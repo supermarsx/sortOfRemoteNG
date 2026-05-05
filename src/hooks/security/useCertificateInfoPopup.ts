@@ -7,6 +7,7 @@ const TRUST_TYPE_LABELS: Record<
   { informationTitle: string; identityLower: string }
 > = {
   https: { informationTitle: 'HTTPS Certificate Information', identityLower: 'HTTPS certificate' },
+  certificate: { informationTitle: 'General Certificate Information', identityLower: 'general certificate' },
   rdp: { informationTitle: 'RDP Certificate Information', identityLower: 'RDP certificate' },
   ssh: { informationTitle: 'Host Key Information', identityLower: 'host key' },
   tls: { informationTitle: 'Legacy TLS Certificate Information', identityLower: 'legacy TLS certificate' },

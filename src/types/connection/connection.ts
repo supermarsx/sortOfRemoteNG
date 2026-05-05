@@ -1,5 +1,5 @@
 import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig, TOTPConfig } from "../settings/settings";
-import type { TrustPolicy } from "../../utils/auth/trustStore";
+import type { InheritableTrustPolicy, TrustPolicy } from "../../utils/auth/trustStore";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -189,14 +189,16 @@ export interface Connection {
   sshConnectionConfigOverride?: Partial<SSHConnectionConfig>;
 
   // Trust & Verification (per-connection override — falls back to global)
-  /** HTTPS certificate trust policy override */
-  httpsTrustPolicy?: TrustPolicy;
+  /** HTTPS certificate trust policy override; missing or `inherit` defers to global settings. */
+  httpsTrustPolicy?: InheritableTrustPolicy;
+  /** General certificate trust policy override; missing or `inherit` defers to global settings. */
+  certificateTrustPolicy?: InheritableTrustPolicy;
   /** @deprecated Use `httpsTrustPolicy` for HTTPS certificates; retained for persisted compatibility. */
   tlsTrustPolicy?: TrustPolicy;
-  /** SSH host key trust policy override */
-  sshTrustPolicy?: TrustPolicy;
-  /** RDP server certificate trust policy override */
-  rdpTrustPolicy?: TrustPolicy;
+  /** SSH host key trust policy override; missing or `inherit` defers to global settings. */
+  sshTrustPolicy?: InheritableTrustPolicy;
+  /** RDP server certificate trust policy override; missing or `inherit` defers to global settings. */
+  rdpTrustPolicy?: InheritableTrustPolicy;
 
   // RDP Connection Settings
   rdpSettings?: RDPConnectionSettings;

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import AdvancedSettings from "../../src/components/SettingsDialog/sections/AdvancedSettings";
@@ -26,6 +26,18 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
       history: [],
       identity: {
         fingerprint: "https:aa:bb:cc",
+        firstSeen: new Date("2024-01-01").toISOString(),
+        lastSeen: new Date("2024-01-02").toISOString(),
+      },
+    },
+    {
+      host: "cert.example.local:443",
+      type: "certificate",
+      nickname: "Primary General Cert",
+      userApproved: true,
+      history: [],
+      identity: {
+        fingerprint: "cert:aa:bb:cc",
         firstSeen: new Date("2024-01-01").toISOString(),
         lastSeen: new Date("2024-01-02").toISOString(),
       },
@@ -70,6 +82,17 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
   getAllPerConnectionTrustRecords: vi.fn(() => []),
   removeIdentity: vi.fn(),
   clearAllTrustRecords: vi.fn(),
+  resolveEffectiveTrustPolicy: vi.fn(
+    (
+      connectionPolicy: string | undefined,
+      categoryPolicy: string | undefined,
+      rootPolicy: string | undefined,
+      fallbackPolicy = "always-ask",
+    ) =>
+      [connectionPolicy, categoryPolicy, rootPolicy].find(
+        (policy) => policy && policy !== "inherit",
+      ) ?? fallbackPolicy,
+  ),
   formatFingerprint: vi.fn((fingerprint: string) => fingerprint),
   updateTrustRecordNickname: vi.fn(),
 }));
@@ -178,6 +201,8 @@ const securitySettings = {
 } as unknown as GlobalSettings;
 
 const trustSettings = {
+  trustPolicy: "tofu",
+  certificateTrustPolicy: "inherit",
   httpsTrustPolicy: "tofu",
   tlsTrustPolicy: "tofu",
   sshTrustPolicy: "strict",
@@ -302,6 +327,9 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
+    expect(screen.getByText("Default Trust Policy")).toBeInTheDocument();
+    expect(screen.getByText("General Certificate Policy")).toBeInTheDocument();
+
     const tlsPolicySelect = screen.getAllByText(
       "Trust On First Use (TOFU)",
     )[0].closest('[role="combobox"]') as HTMLElement;
@@ -322,6 +350,41 @@ describe("Extended settings section centralization", () => {
     );
   });
 
+  it("renders inherited Trust Center policy controls", async () => {
+    const updateSettings = vi.fn();
+    render(
+      <TrustVerificationSettings
+        settings={{
+          ...trustSettings,
+          trustPolicy: "strict",
+          certificateTrustPolicy: "inherit",
+          httpsTrustPolicy: "tofu",
+        }}
+        updateSettings={updateSettings}
+      />,
+    );
+
+    const certificateCard = screen
+      .getByText("General Certificate Policy")
+      .closest(".sor-settings-card") as HTMLElement;
+    expect(within(certificateCard).getByRole("combobox")).toHaveTextContent(
+      "Inherit Default Policy",
+    );
+    expect(certificateCard).toHaveTextContent("Effective: Strict");
+
+    const httpsCard = screen
+      .getByText("HTTPS Certificate Policy")
+      .closest(".sor-settings-card") as HTMLElement;
+    fireEvent.click(within(httpsCard).getByRole("combobox"));
+    fireEvent.mouseDown(
+      await screen.findByRole("option", { name: "Inherit Default Policy" }),
+    );
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      httpsTrustPolicy: "inherit",
+    });
+  });
+
   it("groups Trust Center identities by explicit record type", async () => {
     render(
       <TrustVerificationSettings
@@ -330,7 +393,10 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    expect(await screen.findByText(/HTTPS Certificates \(1\)/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/HTTPS Certificates \(1\)/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/General Certificates \(1\)/i)).toBeInTheDocument();
     expect(screen.getByText(/RDP Certificates \(1\)/i)).toBeInTheDocument();
     expect(screen.getByText(/SSH Host Keys \(1\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Legacy TLS \(1\)/i)).toBeInTheDocument();

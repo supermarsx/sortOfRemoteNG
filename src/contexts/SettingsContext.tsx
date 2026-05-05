@@ -286,10 +286,12 @@ export const defaultSettings: GlobalSettings = {
   autoRepatriateWindow: true,
   // Trust & Verification
   enableAutocomplete: false,
-  httpsTrustPolicy: 'tofu',
+  trustPolicy: 'tofu',
+  httpsTrustPolicy: 'inherit',
+  certificateTrustPolicy: 'inherit',
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'always-ask',
-  rdpTrustPolicy: 'tofu',
+  rdpTrustPolicy: 'inherit',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
   // Windows Remote Management Tools

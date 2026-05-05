@@ -21,6 +21,7 @@ const TRUST_TYPE_LABELS: Record<
   { display: string; sentence: string }
 > = {
   https: { display: "HTTPS Certificate", sentence: "HTTPS certificate" },
+  certificate: { display: "General Certificate", sentence: "general certificate" },
   rdp: { display: "RDP Certificate", sentence: "RDP certificate" },
   ssh: { display: "Host Key", sentence: "host key" },
   tls: { display: "Legacy TLS Certificate", sentence: "legacy TLS certificate" },

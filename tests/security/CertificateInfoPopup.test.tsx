@@ -74,6 +74,7 @@ describe("CertificateInfoPopup", () => {
   });
 
   it.each([
+    ["certificate", "General Certificate Information", 443],
     ["https", "HTTPS Certificate Information", 443],
     ["rdp", "RDP Certificate Information", 3389],
     ["tls", "Legacy TLS Certificate Information", 443],
@@ -83,10 +84,10 @@ describe("CertificateInfoPopup", () => {
     expect(screen.getByText(title)).toBeInTheDocument();
   });
 
-  it("updates nicknames using the expanded trust record type", () => {
+  it("updates nicknames using the general certificate trust record type", () => {
     const trustRecord: TrustRecord = {
-      host: "rdp.internal:3389",
-      type: "rdp",
+      host: "cert.internal:443",
+      type: "certificate",
       identity: certIdentity,
       userApproved: true,
     };
@@ -94,8 +95,8 @@ describe("CertificateInfoPopup", () => {
     localStorage.setItem(
       "trustStore",
       JSON.stringify({
-        "rdp:rdp.internal:3389": trustRecord,
-        "tls:rdp.internal:3389": {
+        "certificate:cert.internal:443": trustRecord,
+        "tls:cert.internal:443": {
           ...trustRecord,
           type: "tls",
           identity: { ...certIdentity, fingerprint: "SHA256:legacy" },
@@ -104,22 +105,22 @@ describe("CertificateInfoPopup", () => {
     );
 
     renderPopup({
-      type: "rdp",
-      host: "rdp.internal",
-      port: 3389,
+      type: "certificate",
+      host: "cert.internal",
+      port: 443,
       currentIdentity: certIdentity,
       trustRecord,
     });
 
     fireEvent.click(screen.getByTitle("Edit nickname"));
     fireEvent.change(screen.getByPlaceholderText("Add a nickname…"), {
-      target: { value: "Prod RDP" },
+      target: { value: "Prod Certificate" },
     });
     fireEvent.click(screen.getByTitle("Save"));
 
     const store = JSON.parse(localStorage.getItem("trustStore") ?? "{}");
-    expect(store["rdp:rdp.internal:3389"].nickname).toBe("Prod RDP");
-    expect(store["tls:rdp.internal:3389"].nickname).toBeUndefined();
+    expect(store["certificate:cert.internal:443"].nickname).toBe("Prod Certificate");
+    expect(store["tls:cert.internal:443"].nickname).toBeUndefined();
   });
 
   it("closes on outside click and ignores trigger clicks", () => {

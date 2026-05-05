@@ -66,6 +66,7 @@ describe("TrustWarningDialog", () => {
   });
 
   it.each([
+    ["certificate", "Unknown General Certificate"],
     ["rdp", "Unknown RDP Certificate"],
     ["tls", "Unknown Legacy TLS Certificate"],
   ] as const)("renders explicit %s certificate labels", (type, title) => {

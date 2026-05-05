@@ -119,7 +119,9 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'totpAlgorithm', label: 'TOTP Algorithm', description: 'TOTP hash algorithm', tags: ['2fa', 'totp', 'algorithm', 'sha', 'hash'], section: 'security', sectionLabel: 'Security' },
 
   // ─── Trust ──────────────────────────────────────────────────────
-  { key: 'httpsTrustPolicy', label: 'HTTPS Certificate Policy', description: 'HTTPS certificate trust policy', tags: ['https', 'tls', 'ssl', 'certificate', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'trustPolicy', label: 'Default Trust Policy', description: 'Default trust policy inherited by protocol and certificate policies', tags: ['default', 'global', 'inherit', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'httpsTrustPolicy', label: 'HTTPS Certificate Policy', description: 'HTTPS certificate trust policy', tags: ['https', 'tls', 'ssl', 'certificate', 'trust', 'inherit', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
+  { key: 'certificateTrustPolicy', label: 'General Certificate Policy', description: 'General non-HTTPS/RDP certificate trust policy', tags: ['general certificate', 'certificate', 'tls', 'ssl', 'trust', 'inherit', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
   { key: 'sshTrustPolicy', label: 'SSH Host Key Policy', description: 'SSH host key trust policy', tags: ['ssh', 'host key', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
   { key: 'rdpTrustPolicy', label: 'RDP Certificate Policy', description: 'RDP server certificate trust policy', tags: ['rdp', 'remote desktop', 'certificate', 'trust', 'tofu', 'fingerprint'], section: 'trust', sectionLabel: 'Trust Center' },
   { key: 'tlsTrustPolicy', label: 'Legacy TLS Trust Policy', description: 'Deprecated fallback for legacy unclassified TLS certificate trust settings', tags: ['legacy tls', 'tls', 'ssl', 'certificate', 'trust', 'deprecated'], section: 'trust', sectionLabel: 'Trust Center' },
