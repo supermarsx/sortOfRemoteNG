@@ -12,7 +12,6 @@ use super::RdpTlsConfig;
 
 use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
-
 // Re-export shared types so the frontend API stays unchanged.
 pub use sorng_core::diagnostics::{DiagnosticReport as DiagReport, DiagnosticStep as DiagStep};
 
@@ -150,62 +149,58 @@ pub fn run_diagnostics(
                     // it as `warn` with a detail line so the user can see the
                     // partial-compliance state at a glance.
                     let outcome = cert_trust::take_last_verify_outcome();
-                    let (status, message, mut detail_lines) =
-                        match outcome.as_ref() {
-                            Some(cert_trust::VerifyOutcome::TrustStorePinned { chain_error }) => (
-                                "warn",
-                                format!(
-                                    "TLS handshake completed via local trust store \
+                    let (status, message, mut detail_lines) = match outcome.as_ref() {
+                        Some(cert_trust::VerifyOutcome::TrustStorePinned { chain_error }) => (
+                            "warn",
+                            format!(
+                                "TLS handshake completed via local trust store \
                                      (server pubkey: {} bytes)",
-                                    server_public_key.len()
-                                ),
-                                vec![
-                                    "Pinned in trust store: passing this step although \
+                                server_public_key.len()
+                            ),
+                            vec![
+                                "Pinned in trust store: passing this step although \
                                      chain validation against system roots failed."
-                                        .to_string(),
-                                    format!("Chain error: {chain_error}"),
-                                ],
-                            ),
-                            Some(cert_trust::VerifyOutcome::ValidationIgnored) => (
-                                "warn",
-                                format!(
-                                    "TLS handshake completed (validation disabled, \
+                                    .to_string(),
+                                format!("Chain error: {chain_error}"),
+                            ],
+                        ),
+                        Some(cert_trust::VerifyOutcome::ValidationIgnored) => (
+                            "warn",
+                            format!(
+                                "TLS handshake completed (validation disabled, \
                                      server pubkey: {} bytes)",
-                                    server_public_key.len()
-                                ),
-                                vec![
-                                    "Validation mode is set to 'Ignore' for this connection \
+                                server_public_key.len()
+                            ),
+                            vec!["Validation mode is set to 'Ignore' for this connection \
                                      — the certificate chain was not checked."
-                                        .to_string(),
-                                ],
-                            ),
-                            Some(cert_trust::VerifyOutcome::UserApproved { remembered }) => (
-                                "pass",
-                                format!(
-                                    "TLS handshake completed (user approved, \
+                                .to_string()],
+                        ),
+                        Some(cert_trust::VerifyOutcome::UserApproved { remembered }) => (
+                            "pass",
+                            format!(
+                                "TLS handshake completed (user approved, \
                                      server pubkey: {} bytes)",
-                                    server_public_key.len()
-                                ),
-                                vec![if *remembered {
-                                    "Cert approved by the user and pinned to the local \
+                                server_public_key.len()
+                            ),
+                            vec![if *remembered {
+                                "Cert approved by the user and pinned to the local \
                                      trust store for future connections."
-                                        .to_string()
-                                } else {
-                                    "Cert approved by the user for this session only."
-                                        .to_string()
-                                }],
+                                    .to_string()
+                            } else {
+                                "Cert approved by the user for this session only.".to_string()
+                            }],
+                        ),
+                        // `ChainValid` and the unknown/unset case both treat
+                        // a clean handshake as a full pass.
+                        _ => (
+                            "pass",
+                            format!(
+                                "TLS handshake completed (server pubkey: {} bytes)",
+                                server_public_key.len()
                             ),
-                            // `ChainValid` and the unknown/unset case both treat
-                            // a clean handshake as a full pass.
-                            _ => (
-                                "pass",
-                                format!(
-                                    "TLS handshake completed (server pubkey: {} bytes)",
-                                    server_public_key.len()
-                                ),
-                                vec![],
-                            ),
-                        };
+                            vec![],
+                        ),
+                    };
                     detail_lines.push(cert_detail);
                     steps.push(DiagnosticStep {
                         name: "TLS Upgrade".into(),
@@ -248,16 +243,13 @@ pub fn run_diagnostics(
                             });
 
                             // -- Step 6: Server Capabilities --
-                            steps.push(build_server_capabilities_step(
-                                settings,
-                                &connection_result,
-                            ));
+                            steps
+                                .push(build_server_capabilities_step(settings, &connection_result));
 
                             // -- Step 7: Configuration Audit --
-                            if let Some(audit_step) = build_configuration_audit_step(
-                                settings,
-                                &connection_result,
-                            ) {
+                            if let Some(audit_step) =
+                                build_configuration_audit_step(settings, &connection_result)
+                            {
                                 steps.push(audit_step);
                             }
 
@@ -338,9 +330,7 @@ pub fn run_diagnostics(
                     let raw = e.to_string();
                     // Network::tls_upgrade already prefixes with "TLS handshake failed: ".
                     // Strip the duplicate so the UI doesn't render it twice.
-                    let inner = raw
-                        .strip_prefix("TLS handshake failed: ")
-                        .unwrap_or(&raw);
+                    let inner = raw.strip_prefix("TLS handshake failed: ").unwrap_or(&raw);
                     let detail = classify_tls_failure(inner);
                     steps.push(DiagnosticStep {
                         name: "TLS Upgrade".into(),
@@ -677,12 +667,15 @@ fn probe_alternative_protocols(
                         bitmap: Some(connector::BitmapConfig {
                             lossy_compression: false,
                             color_depth: 32,
-                            codecs: crate::ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+                            codecs: crate::ironrdp::pdu::rdp::capability_sets::BitmapCodecs(
+                                Vec::new(),
+                            ),
                         }),
                         client_build: settings.client_build,
                         client_name: settings.client_name.clone(),
                         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
-                        platform: crate::ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+                        platform:
+                            crate::ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
                         hardware_id: None,
                         request_data: None,
                         autologon: false,
@@ -758,7 +751,11 @@ fn build_server_capabilities_step(
 
     // Determine which security protocols were active based on settings that
     // led to the successful connection.
-    let tls_status = if settings.enable_tls { "supported" } else { "not requested" };
+    let tls_status = if settings.enable_tls {
+        "supported"
+    } else {
+        "not requested"
+    };
     let credssp_status = if settings.enable_credssp {
         if settings.enable_tls {
             "supported"
@@ -836,9 +833,7 @@ fn build_server_capabilities_step(
          \x20 Pointer Mode: {pointer_mode}"
     );
 
-    let summary = format!(
-        "{rdp_version}, {desktop_w}x{desktop_h}, {probe_depth}-bit color",
-    );
+    let summary = format!("{rdp_version}, {desktop_w}x{desktop_h}, {probe_depth}-bit color",);
 
     DiagnosticStep {
         name: "Server Capabilities".into(),
@@ -1042,8 +1037,10 @@ fn classify_finalize_error(err: &str) -> (&'static str, Option<String>) {
     // proceed with an anonymous identity, so the server rejects with
     // InvalidToken.
     if lower.contains("got empty identity") || lower.contains("empty identity") {
-        return ("fail", Some(
-            "CredSSP/NLA requires a username and password, but no identity was \
+        return (
+            "fail",
+            Some(
+                "CredSSP/NLA requires a username and password, but no identity was \
              supplied for this connection.\n\n\
              Fixes:\n\
              * Open the connection's editor and set Username + Password (or a \
@@ -1055,19 +1052,23 @@ fn classify_finalize_error(err: &str) -> (&'static str, Option<String>) {
                reasons; if the server enforces NLA you must provide credentials.\n\
              * For domain accounts use `DOMAIN\\\\user` or `user@domain` so the \
                domain reaches the server."
-                .into(),
-        ));
+                    .into(),
+            ),
+        );
     }
 
     if lower.contains("invalidtoken") {
-        return ("fail", Some(
-            "CredSSP rejected the authentication token. This usually means the \
+        return (
+            "fail",
+            Some(
+                "CredSSP rejected the authentication token. This usually means the \
              credentials are wrong, the account is locked, or the negotiated \
              security package (NTLM/Kerberos) couldn't complete. Verify the \
              username/password (and domain if applicable), and check that the \
              account isn't locked or expired on the server."
-                .into(),
-        ));
+                    .into(),
+            ),
+        );
     }
 
     ("fail", None)
@@ -1085,9 +1086,7 @@ fn classify_tls_failure(inner: &str) -> String {
     // got one. Today there's no frontend handler for the prompt event, so
     // every Warn-mode connection to an untrusted host hits this. Tell the
     // user to switch to Ignore (auto-accept) until the prompt UI ships.
-    if lower.contains("certificate trust prompt timed out")
-        || lower.contains("prompt timeout")
-    {
+    if lower.contains("certificate trust prompt timed out") || lower.contains("prompt timeout") {
         return "The server's certificate isn't trusted, and your connection's 'Server \
                 certificate validation' is set to 'Warn' (prompt-on-first-connect). \
                 The prompt UI didn't respond within the timeout, so the connection \
@@ -1096,7 +1095,8 @@ fn classify_tls_failure(inner: &str) -> String {
                 validation' to 'Ignore' if you want to auto-accept this server's cert, \
                 or to 'Validate' (strict) to fail fast without prompting. Verify the \
                 cert fingerprint against the value reported by the server admin before \
-                choosing 'Ignore' on a host you can't physically trust.".into();
+                choosing 'Ignore' on a host you can't physically trust."
+            .into();
     }
 
     // Untrusted issuer: typical for self-signed/internal CA. Common and
@@ -1113,7 +1113,8 @@ fn classify_tls_failure(inner: &str) -> String {
                 by the server admin before accepting.\n\n\
                 If you didn't expect this on a host you've connected to before, the \
                 connection may be intercepted -- do NOT relax validation until you've \
-                verified the fingerprint out-of-band.".into();
+                verified the fingerprint out-of-band."
+            .into();
     }
 
     // Hostname mismatch: cert is real but doesn't match what we connected to.
@@ -1129,7 +1130,8 @@ fn classify_tls_failure(inner: &str) -> String {
                 Options: connect using the hostname listed on the certificate, ask the \
                 server admin to reissue with the correct SAN, or set 'Server \
                 certificate validation' to 'Warn'/'Ignore' if you've verified the host \
-                identity by other means.".into();
+                identity by other means."
+            .into();
     }
 
     // Expired or not-yet-valid certificate.
@@ -1139,7 +1141,8 @@ fn classify_tls_failure(inner: &str) -> String {
                 the clock is correct, the server admin needs to renew the certificate. \
                 You can temporarily set 'Server certificate validation' to 'Warn' or \
                 'Ignore' to connect, but an expired cert means the server has likely \
-                been neglected; treat with caution.".into();
+                been neglected; treat with caution."
+            .into();
     }
 
     // Server actively rejected our TLS configuration (cipher mismatch, version
@@ -1149,7 +1152,8 @@ fn classify_tls_failure(inner: &str) -> String {
                 usually a protocol/cipher mismatch -- common with very old servers \
                 that only speak TLS 1.0/1.1. There is no client-side toggle that \
                 fixes this safely; the server needs to enable a modern TLS version, \
-                or you need to use a different transport (e.g. an RD Gateway).".into();
+                or you need to use a different transport (e.g. an RD Gateway)."
+            .into();
     }
 
     // Generic fallback: server probably isn't speaking TLS at all on this port.

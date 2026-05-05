@@ -3,7 +3,6 @@
 //! Reference: [MS-RDPEFS] Remote Desktop Protocol: File System Virtual Channel Extension
 //! https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpefs
 
-
 // ── RDPDR Header ─────────────────────────────────────────────────────
 
 /// Component field value for core RDPDR packets.
@@ -145,21 +144,29 @@ pub fn read_u32(data: &[u8], off: usize) -> u32 {
 /// Read a u64 LE from a byte slice at offset.
 pub fn read_u64(data: &[u8], off: usize) -> u64 {
     u64::from_le_bytes([
-        data[off], data[off+1], data[off+2], data[off+3],
-        data[off+4], data[off+5], data[off+6], data[off+7],
+        data[off],
+        data[off + 1],
+        data[off + 2],
+        data[off + 3],
+        data[off + 4],
+        data[off + 5],
+        data[off + 6],
+        data[off + 7],
     ])
 }
 
 /// Encode a null-terminated UTF-16LE string.
 pub fn encode_utf16le(s: &str) -> Vec<u8> {
     let mut out: Vec<u8> = s.encode_utf16().flat_map(|ch| ch.to_le_bytes()).collect();
-    out.push(0); out.push(0); // null terminator
+    out.push(0);
+    out.push(0); // null terminator
     out
 }
 
 /// Decode a null-terminated UTF-16LE string from a byte slice.
 pub fn decode_utf16le(data: &[u8]) -> String {
-    let u16s: Vec<u16> = data.chunks_exact(2)
+    let u16s: Vec<u16> = data
+        .chunks_exact(2)
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .take_while(|&ch| ch != 0)
         .collect();
@@ -175,7 +182,11 @@ pub fn write_header(buf: &mut Vec<u8>, component: u16, packet_id: u16) {
 }
 
 /// Build Client Announce Reply.
-pub fn build_client_announce_reply(version_major: u16, version_minor: u16, client_id: u32) -> Vec<u8> {
+pub fn build_client_announce_reply(
+    version_major: u16,
+    version_minor: u16,
+    client_id: u32,
+) -> Vec<u8> {
     let mut buf = Vec::with_capacity(12);
     write_header(&mut buf, RDPDR_CTYP_CORE, PAKID_CORE_CLIENTID_CONFIRM);
     buf.extend_from_slice(&version_major.to_le_bytes());
@@ -197,7 +208,12 @@ pub fn build_client_name(computer_name: &str) -> Vec<u8> {
 }
 
 /// Build Client Core Capability Response.
-pub fn build_client_capabilities(printers: bool, ports: bool, smart_cards: bool, has_drives: bool) -> Vec<u8> {
+pub fn build_client_capabilities(
+    printers: bool,
+    ports: bool,
+    smart_cards: bool,
+    has_drives: bool,
+) -> Vec<u8> {
     // (cap_type, version, body)
     let mut caps: Vec<(u16, u32, Vec<u8>)> = Vec::new();
 
@@ -210,7 +226,8 @@ pub fn build_client_capabilities(printers: bool, ports: bool, smart_cards: bool,
         body.extend_from_slice(&12u16.to_le_bytes()); // protocolMinorVersion (0x000C = support dir notify)
         body.extend_from_slice(&RDPDR_ALL_IRPS.to_le_bytes()); // ioCode1
         body.extend_from_slice(&0u32.to_le_bytes()); // ioCode2
-        let ext_pdu = RDPDR_DEVICE_REMOVE_PDUS | RDPDR_CLIENT_DISPLAY_NAME_PDU | RDPDR_USER_LOGGEDON_PDU;
+        let ext_pdu =
+            RDPDR_DEVICE_REMOVE_PDUS | RDPDR_CLIENT_DISPLAY_NAME_PDU | RDPDR_USER_LOGGEDON_PDU;
         body.extend_from_slice(&ext_pdu.to_le_bytes()); // extendedPDU
         body.extend_from_slice(&1u32.to_le_bytes()); // extraFlags1 (ENABLE_ASYNCIO)
         body.extend_from_slice(&0u32.to_le_bytes()); // extraFlags2
@@ -272,7 +289,12 @@ pub fn build_device_list_announce(devices: &[(u32, u32, &str, Vec<u8>)]) -> Vec<
 }
 
 /// Build Device I/O Completion (response to an IRP).
-pub fn build_io_completion(device_id: u32, completion_id: u32, io_status: u32, output: &[u8]) -> Vec<u8> {
+pub fn build_io_completion(
+    device_id: u32,
+    completion_id: u32,
+    io_status: u32,
+    output: &[u8],
+) -> Vec<u8> {
     let mut buf = Vec::with_capacity(16 + output.len());
     write_header(&mut buf, RDPDR_CTYP_CORE, PAKID_CORE_DEVICE_IOCOMPLETION);
     buf.extend_from_slice(&device_id.to_le_bytes());

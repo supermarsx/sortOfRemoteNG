@@ -111,7 +111,11 @@ fn presented_cert(host: &str, port: u16) -> PresentedCertificate {
     }
 }
 
-fn seed_frame(store: &Arc<sorng_rdp::rdp::frame_store::SharedFrameStore>, session_id: &str, fill: u8) {
+fn seed_frame(
+    store: &Arc<sorng_rdp::rdp::frame_store::SharedFrameStore>,
+    session_id: &str,
+    fill: u8,
+) {
     store.init(session_id, 4, 4);
     let slots = store.slots.read().expect("frame slots lock");
     let mut slot = slots
@@ -216,7 +220,10 @@ fn reconnect_loop_reuses_cached_secret_and_resumes_frames() {
         },
     );
 
-    assert!(result.is_ok(), "reconnect loop should finish cleanly: {result:?}");
+    assert!(
+        result.is_ok(),
+        "reconnect loop should finish cleanly: {result:?}"
+    );
     assert_eq!(establish_attempt, 4, "expected 4 total establish attempts");
     assert_eq!(active_attempt, 3, "expected 3 active-loop runs");
     assert_eq!(
@@ -249,13 +256,28 @@ fn reconnect_loop_reuses_cached_secret_and_resumes_frames() {
     );
 
     for (width, height, data) in &cleared_snapshots {
-        assert_eq!((*width, *height), (0, 0), "reconnect should clear the framebuffer shape before sleeping");
-        assert!(data.is_empty(), "reconnect should drop stale frame pixels before the next connect attempt");
+        assert_eq!(
+            (*width, *height),
+            (0, 0),
+            "reconnect should clear the framebuffer shape before sleeping"
+        );
+        assert!(
+            data.is_empty(),
+            "reconnect should drop stale frame pixels before the next connect attempt"
+        );
     }
 
     let (width, height, data) = snapshot_frame(&frame_store, session_id);
-    assert_eq!((width, height), (4, 4), "final reconnect should restore the framebuffer dimensions");
-    assert_eq!(data.len(), 4 * 4 * 4, "final frame should repopulate the framebuffer");
+    assert_eq!(
+        (width, height),
+        (4, 4),
+        "final reconnect should restore the framebuffer dimensions"
+    );
+    assert_eq!(
+        data.len(),
+        4 * 4 * 4,
+        "final frame should repopulate the framebuffer"
+    );
     assert!(
         data.iter().all(|byte| *byte == 0x33),
         "frame resumption should populate the post-reconnect framebuffer with the new frame"

@@ -156,13 +156,34 @@ mod tests {
 
     #[test]
     fn clipboard_direction_accepts_persisted_aliases() {
-        assert_eq!(parse_clipboard_direction("bidirectional"), ClipboardDirection::Bidirectional);
-        assert_eq!(parse_clipboard_direction("client-to-server"), ClipboardDirection::ClientToServer);
-        assert_eq!(parse_clipboard_direction("c2s"), ClipboardDirection::ClientToServer);
-        assert_eq!(parse_clipboard_direction("server-to-client"), ClipboardDirection::ServerToClient);
-        assert_eq!(parse_clipboard_direction("s2c"), ClipboardDirection::ServerToClient);
-        assert_eq!(parse_clipboard_direction("disabled"), ClipboardDirection::Disabled);
-        assert_eq!(parse_clipboard_direction("none"), ClipboardDirection::Disabled);
+        assert_eq!(
+            parse_clipboard_direction("bidirectional"),
+            ClipboardDirection::Bidirectional
+        );
+        assert_eq!(
+            parse_clipboard_direction("client-to-server"),
+            ClipboardDirection::ClientToServer
+        );
+        assert_eq!(
+            parse_clipboard_direction("c2s"),
+            ClipboardDirection::ClientToServer
+        );
+        assert_eq!(
+            parse_clipboard_direction("server-to-client"),
+            ClipboardDirection::ServerToClient
+        );
+        assert_eq!(
+            parse_clipboard_direction("s2c"),
+            ClipboardDirection::ServerToClient
+        );
+        assert_eq!(
+            parse_clipboard_direction("disabled"),
+            ClipboardDirection::Disabled
+        );
+        assert_eq!(
+            parse_clipboard_direction("none"),
+            ClipboardDirection::Disabled
+        );
     }
 
     #[test]
@@ -799,16 +820,20 @@ impl ResolvedSettings {
                 .as_ref()
                 .and_then(|d| d.drives.as_ref())
                 .map(|drives| {
-                    drives.iter()
+                    drives
+                        .iter()
                         .filter(|d| d.enabled.unwrap_or(true))
                         .map(|d| DriveRedirectionConfig {
                             name: d.name.clone(),
                             path: d.path.clone(),
                             read_only: d.read_only.unwrap_or(false),
-                            preferred_letter: d.preferred_letter.as_deref()
+                            preferred_letter: d
+                                .preferred_letter
+                                .as_deref()
                                 .and_then(|s| s.chars().next())
                                 .filter(|c| c.is_ascii_uppercase()),
-                        }).collect()
+                        })
+                        .collect()
                 })
                 .unwrap_or_default(),
         }

@@ -4,11 +4,11 @@ use std::sync::Arc;
 use sorng_core::events::{AppEventEmitter, DynEventEmitter};
 use sorng_rdp::rdp::rdpdr::pdu::{
     build_client_announce_reply, build_client_capabilities, build_client_name, build_io_completion,
-    decode_utf16le, read_u16, read_u32, PAKID_CORE_CLIENTID_CONFIRM, PAKID_CORE_CLIENT_CAPABILITY,
+    decode_utf16le, read_u16, read_u32, PAKID_CORE_CLIENTID_CONFIRM,
+    PAKID_CORE_CLIENTID_CONFIRM as PAKID_CORE_CLIENTID_CONFIRM_REQ, PAKID_CORE_CLIENT_CAPABILITY,
     PAKID_CORE_CLIENT_NAME, PAKID_CORE_DEVICELIST_ANNOUNCE, PAKID_CORE_DEVICE_IOCOMPLETION,
     PAKID_CORE_DEVICE_IOREQUEST, PAKID_CORE_SERVER_ANNOUNCE, PAKID_CORE_SERVER_CAPABILITY,
-    PAKID_CORE_CLIENTID_CONFIRM as PAKID_CORE_CLIENTID_CONFIRM_REQ, RDPDR_CTYP_CORE,
-    STATUS_NOT_SUPPORTED,
+    RDPDR_CTYP_CORE, STATUS_NOT_SUPPORTED,
 };
 use sorng_rdp::rdp::rdpdr::{DeviceFlags, RdpdrClient};
 use sorng_rdp::rdp::settings::{DriveRedirectionConfig, PrinterOutputMode};
@@ -38,10 +38,7 @@ impl Lcg {
 
     fn next_u32(&mut self) -> u32 {
         // Numerical Recipes LCG parameters for deterministic pseudo-random bytes.
-        self.state = self
-            .state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1);
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
         (self.state >> 16) as u32
     }
 
@@ -111,7 +108,11 @@ fn fixed_malformed_corpus() -> Vec<Vec<u8>> {
     ]
 }
 
-fn deterministic_payload_stream(seed: u64, iterations: usize, max_payload_size: usize) -> Vec<Vec<u8>> {
+fn deterministic_payload_stream(
+    seed: u64,
+    iterations: usize,
+    max_payload_size: usize,
+) -> Vec<Vec<u8>> {
     let mut rng = Lcg::new(seed);
     let mut out = Vec::with_capacity(iterations);
 
@@ -147,7 +148,11 @@ fn deterministic_payload_stream(seed: u64, iterations: usize, max_payload_size: 
 fn assert_core_header(packet: &[u8], expected_packet_id: u16) {
     assert!(packet.len() >= 4, "packet must contain RDPDR header");
     assert_eq!(read_u16(packet, 0), RDPDR_CTYP_CORE, "unexpected component");
-    assert_eq!(read_u16(packet, 2), expected_packet_id, "unexpected packet id");
+    assert_eq!(
+        read_u16(packet, 2),
+        expected_packet_id,
+        "unexpected packet id"
+    );
 }
 
 #[test]
@@ -160,14 +165,26 @@ fn rdpdr_parser_handles_bounded_malformed_corpus_without_panics() {
         MAX_PAYLOAD_SIZE,
     ));
 
-    assert_eq!(all_inputs.len(), fixed_malformed_corpus().len() + STREAM_ITERATIONS);
+    assert_eq!(
+        all_inputs.len(),
+        fixed_malformed_corpus().len() + STREAM_ITERATIONS
+    );
 
     for payload in &all_inputs {
         let responses = process_without_panic(&mut client, payload);
-        assert!(responses.len() <= 2, "unexpected response fanout for malformed input");
+        assert!(
+            responses.len() <= 2,
+            "unexpected response fanout for malformed input"
+        );
         for response in responses {
-            assert!(response.len() <= 16 * 1024, "response length should stay bounded");
-            assert!(response.len() >= 4, "all responses should include an RDPDR header");
+            assert!(
+                response.len() <= 16 * 1024,
+                "response length should stay bounded"
+            );
+            assert!(
+                response.len() >= 4,
+                "all responses should include an RDPDR header"
+            );
             assert_eq!(read_u16(&response, 0), RDPDR_CTYP_CORE);
         }
     }
@@ -177,13 +194,19 @@ fn rdpdr_parser_handles_bounded_malformed_corpus_without_panics() {
 fn deterministic_payload_generator_is_reproducible_and_bounded() {
     let a = deterministic_payload_stream(STREAM_SEED, STREAM_ITERATIONS, MAX_PAYLOAD_SIZE);
     let b = deterministic_payload_stream(STREAM_SEED, STREAM_ITERATIONS, MAX_PAYLOAD_SIZE);
-    let c = deterministic_payload_stream(STREAM_SEED.wrapping_add(1), STREAM_ITERATIONS, MAX_PAYLOAD_SIZE);
+    let c = deterministic_payload_stream(
+        STREAM_SEED.wrapping_add(1),
+        STREAM_ITERATIONS,
+        MAX_PAYLOAD_SIZE,
+    );
 
     assert_eq!(a, b, "fixed seed must produce the same stream");
     assert_ne!(a, c, "different seed should alter the stream");
     assert_eq!(a.len(), STREAM_ITERATIONS);
     assert!(a.iter().all(|payload| payload.len() <= MAX_PAYLOAD_SIZE));
-    assert!(a.iter().any(|payload| payload.len() >= 4 && read_u16(payload, 0) == RDPDR_CTYP_CORE));
+    assert!(a
+        .iter()
+        .any(|payload| payload.len() >= 4 && read_u16(payload, 0) == RDPDR_CTYP_CORE));
 }
 
 #[test]
@@ -224,7 +247,10 @@ fn pdu_builders_preserve_header_and_length_invariants() {
                 for has_drives in [false, true] {
                     let caps = build_client_capabilities(printers, ports, smart_cards, has_drives);
                     assert_core_header(&caps, PAKID_CORE_CLIENT_CAPABILITY);
-                    assert!(caps.len() >= 8, "capability response must include capability count");
+                    assert!(
+                        caps.len() >= 8,
+                        "capability response must include capability count"
+                    );
 
                     let expected = 1
                         + usize::from(printers)
@@ -254,7 +280,10 @@ fn rdpdr_state_machine_progress_and_unknown_device_irp_are_panic_free() {
     assert_eq!(responses.len(), 1);
     assert_core_header(&responses[0], PAKID_CORE_CLIENT_CAPABILITY);
 
-    let client_confirm = core_packet(PAKID_CORE_CLIENTID_CONFIRM_REQ, &[1, 0, 12, 0, 0x34, 0x12, 0, 0]);
+    let client_confirm = core_packet(
+        PAKID_CORE_CLIENTID_CONFIRM_REQ,
+        &[1, 0, 12, 0, 0x34, 0x12, 0, 0],
+    );
     let responses = process_without_panic(&mut client, &client_confirm);
     assert_eq!(responses.len(), 1);
     assert_core_header(&responses[0], PAKID_CORE_DEVICELIST_ANNOUNCE);

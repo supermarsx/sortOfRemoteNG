@@ -50,10 +50,7 @@ impl WakeSender {
     }
 
     /// Send a command and signal the session loop to wake up.
-    pub fn send(
-        &self,
-        cmd: RdpCommand,
-    ) -> Result<(), mpsc::error::SendError<RdpCommand>> {
+    pub fn send(&self, cmd: RdpCommand) -> Result<(), mpsc::error::SendError<RdpCommand>> {
         self.inner.send(cmd)?;
         // Coalesce: only write if not already signaled since last drain
         if !self.signaled.swap(true, Ordering::AcqRel) {

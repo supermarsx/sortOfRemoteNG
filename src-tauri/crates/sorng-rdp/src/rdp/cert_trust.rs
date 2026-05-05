@@ -218,7 +218,10 @@ impl CertTrustStore {
         previous: Option<&CertTrustEntry>,
     ) -> Result<CertTrustEntry, CertTrustError> {
         let mut document = self.load_document()?;
-        let entry = CertTrustEntry::from_presented(cert, previous.map(|existing| existing.first_seen.clone()));
+        let entry = CertTrustEntry::from_presented(
+            cert,
+            previous.map(|existing| existing.first_seen.clone()),
+        );
         document
             .entries
             .insert(store_key(&cert.host, cert.port), entry.clone());
@@ -232,40 +235,29 @@ impl CertTrustStore {
         }
 
         let raw = fs::read_to_string(&self.path).map_err(|error| {
-            CertTrustError::Store(format!(
-                "failed to read {}: {error}",
-                self.path.display()
-            ))
+            CertTrustError::Store(format!("failed to read {}: {error}", self.path.display()))
         })?;
         if raw.trim().is_empty() {
             return Ok(CertTrustDocument::default());
         }
 
         serde_json::from_str(&raw).map_err(|error| {
-            CertTrustError::Store(format!(
-                "failed to parse {}: {error}",
-                self.path.display()
-            ))
+            CertTrustError::Store(format!("failed to parse {}: {error}", self.path.display()))
         })
     }
 
     fn save_document(&self, document: &CertTrustDocument) -> Result<(), CertTrustError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(|error| {
-                CertTrustError::Store(format!(
-                    "failed to create {}: {error}",
-                    parent.display()
-                ))
+                CertTrustError::Store(format!("failed to create {}: {error}", parent.display()))
             })?;
         }
 
-        let raw = serde_json::to_string_pretty(document)
-            .map_err(|error| CertTrustError::Store(format!("failed to encode trust store: {error}")))?;
+        let raw = serde_json::to_string_pretty(document).map_err(|error| {
+            CertTrustError::Store(format!("failed to encode trust store: {error}"))
+        })?;
         fs::write(&self.path, raw).map_err(|error| {
-            CertTrustError::Store(format!(
-                "failed to write {}: {error}",
-                self.path.display()
-            ))
+            CertTrustError::Store(format!("failed to write {}: {error}", self.path.display()))
         })
     }
 }
@@ -522,7 +514,9 @@ pub fn evaluate_presented_certificate(
         .as_ref()
         .map(|context| context.prompt_timeout)
         .unwrap_or_else(default_prompt_timeout);
-    let session_id = session_context.as_ref().map(|context| context.session_id.as_str());
+    let session_id = session_context
+        .as_ref()
+        .map(|context| context.session_id.as_str());
     let store = current_store();
 
     evaluate_certificate_trust(
@@ -593,12 +587,14 @@ impl RuntimeTrustState {
             return Err(CertTrustError::Emit(error));
         }
 
-        let decision = receiver.recv_timeout(timeout).map_err(|error| match error {
-            mpsc::RecvTimeoutError::Timeout => CertTrustError::PromptTimeout,
-            mpsc::RecvTimeoutError::Disconnected => CertTrustError::PromptUnavailable(
-                "certificate trust prompt closed before a decision was received".to_string(),
-            ),
-        })?;
+        let decision = receiver
+            .recv_timeout(timeout)
+            .map_err(|error| match error {
+                mpsc::RecvTimeoutError::Timeout => CertTrustError::PromptTimeout,
+                mpsc::RecvTimeoutError::Disconnected => CertTrustError::PromptUnavailable(
+                    "certificate trust prompt closed before a decision was received".to_string(),
+                ),
+            })?;
 
         self.pending
             .lock()
@@ -635,7 +631,9 @@ impl RuntimeTrustState {
                 pending
                     .get(&key)
                     .map(|prompt| prompt.sender.clone())
-                    .ok_or_else(|| "No pending certificate trust prompt matched the response".to_string())?
+                    .ok_or_else(|| {
+                        "No pending certificate trust prompt matched the response".to_string()
+                    })?
             } else {
                 let mut matches = pending
                     .iter()

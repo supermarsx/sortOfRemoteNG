@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ironrdp_blocking::Framed;
-use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 
@@ -181,10 +181,13 @@ impl ServerCertVerifier for PromptingVerifier {
             pem: cert_details.pem.clone(),
         };
 
-        match self
-            .inner
-            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
-        {
+        match self.inner.verify_server_cert(
+            end_entity,
+            intermediates,
+            server_name,
+            ocsp_response,
+            now,
+        ) {
             Ok(_) => cert_trust::evaluate_presented_certificate(presented, ChainStatus::Valid)
                 .map(|_| ServerCertVerified::assertion())
                 .map_err(|error| rustls::Error::General(error.to_string())),
@@ -469,8 +472,15 @@ fn extract_san(tbs: &x509_cert::TbsCertificate) -> Vec<String> {
                             if raw.len() == 4 {
                                 Some(format!("IP:{}.{}.{}.{}", raw[0], raw[1], raw[2], raw[3]))
                             } else if raw.len() == 16 {
-                                let parts: Vec<String> = raw.chunks(2)
-                                    .map(|c| format!("{:02x}{:02x}", c[0], c.get(1).copied().unwrap_or(0)))
+                                let parts: Vec<String> = raw
+                                    .chunks(2)
+                                    .map(|c| {
+                                        format!(
+                                            "{:02x}{:02x}",
+                                            c[0],
+                                            c.get(1).copied().unwrap_or(0)
+                                        )
+                                    })
                                     .collect();
                                 Some(format!("IP:{}", parts.join(":")))
                             } else {

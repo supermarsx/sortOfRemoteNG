@@ -197,7 +197,9 @@ mod tests {
         512
     }
 
-    fn coalesce_inputs(actions: impl IntoIterator<Item = RdpInputAction>) -> (Vec<FastPathInputEvent>, u64) {
+    fn coalesce_inputs(
+        actions: impl IntoIterator<Item = RdpInputAction>,
+    ) -> (Vec<FastPathInputEvent>, u64) {
         let mut merged = Vec::new();
         let mut dropped = 0u64;
         let backlog_limit = input_backlog_limit();
@@ -300,13 +302,7 @@ mod tests {
         });
 
         assert_mouse_event(&vertical, PointerFlags::VERTICAL_WHEEL, 120, 100, 200);
-        assert_mouse_event(
-            &horizontal,
-            PointerFlags::HORIZONTAL_WHEEL,
-            -120,
-            101,
-            201,
-        );
+        assert_mouse_event(&horizontal, PointerFlags::HORIZONTAL_WHEEL, -120, 101, 201);
     }
 
     #[test]
@@ -357,7 +353,13 @@ mod tests {
 
         assert_eq!(merged.len(), backlog_limit as usize);
         assert_eq!(dropped, 1);
-        assert_mouse_event(merged.first().expect("first event"), PointerFlags::MOVE, 0, 0, 1000);
+        assert_mouse_event(
+            merged.first().expect("first event"),
+            PointerFlags::MOVE,
+            0,
+            0,
+            1000,
+        );
         assert_mouse_event(
             merged.last().expect("last retained event"),
             PointerFlags::MOVE,

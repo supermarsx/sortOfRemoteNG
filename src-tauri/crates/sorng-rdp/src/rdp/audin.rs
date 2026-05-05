@@ -6,8 +6,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use crate::ironrdp_core::impl_as_any;
 use crate::ironrdp::pdu::PduResult;
+use crate::ironrdp_core::impl_as_any;
 
 // AUDIN message types (MS-RDPEAI 2.2)
 const MSG_SNDIN_VERSION: u8 = 0x01;
@@ -74,7 +74,11 @@ impl AudinDvcProcessor {
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
-        log::info!("AUDIN session {}: audio input {}", self.session_id, if enabled { "enabled" } else { "disabled" });
+        log::info!(
+            "AUDIN session {}: audio input {}",
+            self.session_id,
+            if enabled { "enabled" } else { "disabled" }
+        );
         self.enabled = enabled;
         if !enabled {
             // Stop capture
@@ -94,7 +98,7 @@ impl AudinDvcProcessor {
         let mut buf = Vec::with_capacity(32);
         buf.push(MSG_SNDIN_FORMATS);
         buf.extend_from_slice(&(accepted.len() as u32).to_le_bytes()); // NumFormats
-        // cbSizeFormatsPacket — total size of format data
+                                                                       // cbSizeFormatsPacket — total size of format data
         let fmt_data_size: u32 = accepted.len() as u32 * 18; // WAVEFORMATEX without extra
         buf.extend_from_slice(&fmt_data_size.to_le_bytes());
 
@@ -118,21 +122,31 @@ impl AudinDvcProcessor {
 
     fn start_capture(&mut self) -> Vec<Vec<u8>> {
         if !self.enabled {
-            log::info!("AUDIN session {}: capture disabled, not starting", self.session_id);
+            log::info!(
+                "AUDIN session {}: capture disabled, not starting",
+                self.session_id
+            );
             return Vec::new();
         }
 
         let fmt = match self.active_format.and_then(|i| self.formats.get(i)) {
             Some(f) => f.clone(),
             None => {
-                log::warn!("AUDIN session {}: no active format, can't start capture", self.session_id);
+                log::warn!(
+                    "AUDIN session {}: no active format, can't start capture",
+                    self.session_id
+                );
                 return Vec::new();
             }
         };
 
         log::info!(
             "AUDIN session {}: starting capture {}Hz {}ch {}bit, {} frames/pkt",
-            self.session_id, fmt.samples_per_sec, fmt.channels, fmt.bits_per_sample, self.frames_per_packet
+            self.session_id,
+            fmt.samples_per_sec,
+            fmt.channels,
+            fmt.bits_per_sample,
+            self.frames_per_packet
         );
 
         let buffer = self.capture_buffer.clone();
@@ -143,7 +157,10 @@ impl AudinDvcProcessor {
         let device = match host.default_input_device() {
             Some(d) => d,
             None => {
-                log::warn!("AUDIN session {}: no input device available", self.session_id);
+                log::warn!(
+                    "AUDIN session {}: no input device available",
+                    self.session_id
+                );
                 return Vec::new();
             }
         };
@@ -159,9 +176,7 @@ impl AudinDvcProcessor {
             &config,
             move |data: &[i16], _: &cpal::InputCallbackInfo| {
                 // Convert i16 samples to little-endian bytes
-                let bytes: Vec<u8> = data.iter()
-                    .flat_map(|s| s.to_le_bytes())
-                    .collect();
+                let bytes: Vec<u8> = data.iter().flat_map(|s| s.to_le_bytes()).collect();
                 if let Ok(mut buf) = buffer.lock() {
                     buf.extend(bytes);
                 }
@@ -173,13 +188,21 @@ impl AudinDvcProcessor {
         ) {
             Ok(s) => s,
             Err(e) => {
-                log::error!("AUDIN session {}: failed to build input stream: {}", session_id, e);
+                log::error!(
+                    "AUDIN session {}: failed to build input stream: {}",
+                    session_id,
+                    e
+                );
                 return Vec::new();
             }
         };
 
         if let Err(e) = stream.play() {
-            log::error!("AUDIN session {}: failed to start capture: {}", self.session_id, e);
+            log::error!(
+                "AUDIN session {}: failed to start capture: {}",
+                self.session_id,
+                e
+            );
             return Vec::new();
         }
 
@@ -224,17 +247,26 @@ impl AudinDvcProcessor {
     }
 
     fn parse_server_formats(&mut self, body: &[u8]) {
-        if body.len() < 8 { return; }
+        if body.len() < 8 {
+            return;
+        }
         let num_formats = u32::from_le_bytes([body[0], body[1], body[2], body[3]]) as usize;
         // Skip cbSizeFormatsPacket (4 bytes)
         let mut offset = 8;
 
         self.formats.clear();
         for _ in 0..num_formats {
-            if offset + 18 > body.len() { break; }
+            if offset + 18 > body.len() {
+                break;
+            }
             let tag = u16::from_le_bytes([body[offset], body[offset + 1]]);
             let channels = u16::from_le_bytes([body[offset + 2], body[offset + 3]]);
-            let sample_rate = u32::from_le_bytes([body[offset + 4], body[offset + 5], body[offset + 6], body[offset + 7]]);
+            let sample_rate = u32::from_le_bytes([
+                body[offset + 4],
+                body[offset + 5],
+                body[offset + 6],
+                body[offset + 7],
+            ]);
             // skip nAvgBytesPerSec (4)
             let block_align = u16::from_le_bytes([body[offset + 12], body[offset + 13]]);
             let bits = u16::from_le_bytes([body[offset + 14], body[offset + 15]]);
@@ -261,8 +293,12 @@ impl AudinDvcProcessor {
             });
         }
 
-        log::info!("AUDIN session {}: parsed {} server formats, accepted {} PCM formats",
-            self.session_id, num_formats, self.formats.len());
+        log::info!(
+            "AUDIN session {}: parsed {} server formats, accepted {} PCM formats",
+            self.session_id,
+            num_formats,
+            self.formats.len()
+        );
     }
 }
 
@@ -270,13 +306,20 @@ impl AudinDvcProcessor {
 struct AudinDvcPdu(Vec<u8>);
 
 impl crate::ironrdp_core::Encode for AudinDvcPdu {
-    fn encode(&self, dst: &mut crate::ironrdp_core::WriteCursor<'_>) -> crate::ironrdp_core::EncodeResult<()> {
+    fn encode(
+        &self,
+        dst: &mut crate::ironrdp_core::WriteCursor<'_>,
+    ) -> crate::ironrdp_core::EncodeResult<()> {
         crate::ironrdp_core::ensure_size!(in: dst, size: self.0.len());
         dst.write_slice(&self.0);
         Ok(())
     }
-    fn name(&self) -> &'static str { "AudinDvcPdu" }
-    fn size(&self) -> usize { self.0.len() }
+    fn name(&self) -> &'static str {
+        "AudinDvcPdu"
+    }
+    fn size(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl crate::ironrdp_dvc::DvcEncode for AudinDvcPdu {}
@@ -288,13 +331,23 @@ impl crate::ironrdp_dvc::DvcProcessor for AudinDvcProcessor {
 
     fn start(&mut self, channel_id: u32) -> PduResult<Vec<crate::ironrdp_dvc::DvcMessage>> {
         self.channel_id = channel_id;
-        log::info!("AUDIN session {}: DVC channel opened (id={})", self.session_id, channel_id);
+        log::info!(
+            "AUDIN session {}: DVC channel opened (id={})",
+            self.session_id,
+            channel_id
+        );
         // Send client version
         let version_pdu = Self::build_version();
-        Ok(vec![Box::new(AudinDvcPdu(version_pdu)) as crate::ironrdp_dvc::DvcMessage])
+        Ok(vec![
+            Box::new(AudinDvcPdu(version_pdu)) as crate::ironrdp_dvc::DvcMessage
+        ])
     }
 
-    fn process(&mut self, _channel_id: u32, payload: &[u8]) -> PduResult<Vec<crate::ironrdp_dvc::DvcMessage>> {
+    fn process(
+        &mut self,
+        _channel_id: u32,
+        payload: &[u8],
+    ) -> PduResult<Vec<crate::ironrdp_dvc::DvcMessage>> {
         if payload.is_empty() {
             return Ok(Vec::new());
         }
@@ -306,7 +359,11 @@ impl crate::ironrdp_dvc::DvcProcessor for AudinDvcProcessor {
             MSG_SNDIN_VERSION => {
                 if body.len() >= 4 {
                     let server_version = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                    log::info!("AUDIN session {}: server version {}", self.session_id, server_version);
+                    log::info!(
+                        "AUDIN session {}: server version {}",
+                        self.session_id,
+                        server_version
+                    );
                 }
                 // We already sent our version in start()
                 Ok(Vec::new())
@@ -314,31 +371,61 @@ impl crate::ironrdp_dvc::DvcProcessor for AudinDvcProcessor {
             MSG_SNDIN_FORMATS => {
                 self.parse_server_formats(body);
                 let reply = Self::build_formats_reply(&self.formats);
-                log::info!("AUDIN session {}: sending {} accepted formats", self.session_id, self.formats.len());
-                Ok(vec![Box::new(AudinDvcPdu(reply)) as crate::ironrdp_dvc::DvcMessage])
+                log::info!(
+                    "AUDIN session {}: sending {} accepted formats",
+                    self.session_id,
+                    self.formats.len()
+                );
+                Ok(vec![
+                    Box::new(AudinDvcPdu(reply)) as crate::ironrdp_dvc::DvcMessage
+                ])
             }
             MSG_SNDIN_OPEN => {
                 if body.len() >= 8 {
-                    self.frames_per_packet = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                    let format_idx = u32::from_le_bytes([body[4], body[5], body[6], body[7]]) as usize;
-                    self.active_format = if format_idx < self.formats.len() { Some(format_idx) } else { Some(0) };
-                    log::info!("AUDIN session {}: Open - format={} frames/pkt={}", self.session_id, format_idx, self.frames_per_packet);
+                    self.frames_per_packet =
+                        u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
+                    let format_idx =
+                        u32::from_le_bytes([body[4], body[5], body[6], body[7]]) as usize;
+                    self.active_format = if format_idx < self.formats.len() {
+                        Some(format_idx)
+                    } else {
+                        Some(0)
+                    };
+                    log::info!(
+                        "AUDIN session {}: Open - format={} frames/pkt={}",
+                        self.session_id,
+                        format_idx,
+                        self.frames_per_packet
+                    );
                 }
                 // Start capture and send any initial data
                 let audio_pdus = self.start_capture();
-                let mut msgs: Vec<crate::ironrdp_dvc::DvcMessage> = audio_pdus.into_iter()
+                let mut msgs: Vec<crate::ironrdp_dvc::DvcMessage> = audio_pdus
+                    .into_iter()
                     .map(|d| Box::new(AudinDvcPdu(d)) as crate::ironrdp_dvc::DvcMessage)
                     .collect();
                 // Also drain any immediately available audio
                 let drain = self.drain_audio();
-                msgs.extend(drain.into_iter().map(|d| Box::new(AudinDvcPdu(d)) as crate::ironrdp_dvc::DvcMessage));
+                msgs.extend(
+                    drain
+                        .into_iter()
+                        .map(|d| Box::new(AudinDvcPdu(d)) as crate::ironrdp_dvc::DvcMessage),
+                );
                 Ok(msgs)
             }
             MSG_SNDIN_FORMATCHANGE => {
                 if body.len() >= 4 {
                     let new_idx = u32::from_le_bytes([body[0], body[1], body[2], body[3]]) as usize;
-                    log::info!("AUDIN session {}: format change to {}", self.session_id, new_idx);
-                    self.active_format = if new_idx < self.formats.len() { Some(new_idx) } else { self.active_format };
+                    log::info!(
+                        "AUDIN session {}: format change to {}",
+                        self.session_id,
+                        new_idx
+                    );
+                    self.active_format = if new_idx < self.formats.len() {
+                        Some(new_idx)
+                    } else {
+                        self.active_format
+                    };
                     // Restart capture with new format
                     self._capture_stream = None;
                     self.open = false;
@@ -347,10 +434,17 @@ impl crate::ironrdp_dvc::DvcProcessor for AudinDvcProcessor {
                 Ok(Vec::new())
             }
             _ => {
-                log::debug!("AUDIN session {}: unknown msg 0x{:02X}", self.session_id, msg_type);
+                log::debug!(
+                    "AUDIN session {}: unknown msg 0x{:02X}",
+                    self.session_id,
+                    msg_type
+                );
                 // Drain audio on any incoming message (server polls by sending data requests)
                 let drain = self.drain_audio();
-                Ok(drain.into_iter().map(|d| Box::new(AudinDvcPdu(d)) as crate::ironrdp_dvc::DvcMessage).collect())
+                Ok(drain
+                    .into_iter()
+                    .map(|d| Box::new(AudinDvcPdu(d)) as crate::ironrdp_dvc::DvcMessage)
+                    .collect())
             }
         }
     }

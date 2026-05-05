@@ -1,12 +1,19 @@
 use sorng_rdp::rdp::session_runner::{effective_drive_redirections, should_register_rdpdr};
-use sorng_rdp::rdp::settings::{ClipboardDirection, DriveRedirectionConfig, PrinterOutputMode, ResolvedSettings};
+use sorng_rdp::rdp::settings::{
+    ClipboardDirection, DriveRedirectionConfig, PrinterOutputMode, ResolvedSettings,
+};
 use sorng_rdp::rdp::RdpSettingsPayload;
 
 fn base_settings() -> ResolvedSettings {
     ResolvedSettings::from_payload(&RdpSettingsPayload::default(), 1280, 720)
 }
 
-fn drive(name: &str, path: &str, read_only: bool, preferred_letter: Option<char>) -> DriveRedirectionConfig {
+fn drive(
+    name: &str,
+    path: &str,
+    read_only: bool,
+    preferred_letter: Option<char>,
+) -> DriveRedirectionConfig {
     DriveRedirectionConfig {
         name: name.to_string(),
         path: path.to_string(),
@@ -26,7 +33,10 @@ fn disabled_drive_redirection_discards_configured_drives() {
 
     let drives = effective_drive_redirections(&settings);
 
-    assert!(drives.is_empty(), "disabled drive redirection should drop configured drives");
+    assert!(
+        drives.is_empty(),
+        "disabled drive redirection should drop configured drives"
+    );
     assert!(
         !should_register_rdpdr(&settings),
         "RDPDR should stay disabled when drives are configured but the drive flag is off"
@@ -87,7 +97,10 @@ fn neighboring_device_flags_still_register_rdpdr_without_drives() {
 
         let drives = effective_drive_redirections(&settings);
 
-        assert!(drives.is_empty(), "{label} should not preserve disabled drive mappings");
+        assert!(
+            drives.is_empty(),
+            "{label} should not preserve disabled drive mappings"
+        );
         assert!(
             should_register_rdpdr(&settings),
             "{label} should still cause RDPDR registration without enabled drives"
@@ -100,7 +113,10 @@ fn clipboard_direction_defaults_to_bidirectional() {
     let settings = base_settings();
 
     assert!(settings.clipboard_enabled);
-    assert_eq!(settings.clipboard_direction, ClipboardDirection::Bidirectional);
+    assert_eq!(
+        settings.clipboard_direction,
+        ClipboardDirection::Bidirectional
+    );
     assert!(settings.clipboard_direction.allows_client_to_server());
     assert!(settings.clipboard_direction.allows_server_to_client());
 }
@@ -134,7 +150,10 @@ fn one_way_clipboard_direction_preserves_channel_but_limits_flow() {
     let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
 
     assert!(settings.clipboard_enabled);
-    assert_eq!(settings.clipboard_direction, ClipboardDirection::ServerToClient);
+    assert_eq!(
+        settings.clipboard_direction,
+        ClipboardDirection::ServerToClient
+    );
     assert!(!settings.clipboard_direction.allows_client_to_server());
     assert!(settings.clipboard_direction.allows_server_to_client());
 }

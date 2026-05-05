@@ -48,10 +48,19 @@ impl FileSystemDevice {
 
     /// Dispatch an IRP to the appropriate handler.
     /// Returns None for IRPs that should be discarded (no response sent).
-    pub fn handle_irp(&mut self, major: u32, minor: u32, completion_id: u32, file_id: u32, data: &[u8]) -> Option<Vec<u8>> {
+    pub fn handle_irp(
+        &mut self,
+        major: u32,
+        minor: u32,
+        completion_id: u32,
+        file_id: u32,
+        data: &[u8],
+    ) -> Option<Vec<u8>> {
         // IRP_MN_NOTIFY_CHANGE_DIRECTORY: discard, don't respond (matches FreeRDP)
         if major == IRP_MJ_DIRECTORY_CONTROL && minor == IRP_MN_NOTIFY_CHANGE_DIRECTORY {
-            log::debug!("RDPDR: discarding IRP_MN_NOTIFY_CHANGE_DIRECTORY (no response, per FreeRDP)");
+            log::debug!(
+                "RDPDR: discarding IRP_MN_NOTIFY_CHANGE_DIRECTORY (no response, per FreeRDP)"
+            );
             return None;
         }
 
@@ -71,13 +80,20 @@ impl FileSystemDevice {
                 (STATUS_NOT_SUPPORTED, Vec::new())
             }
         };
-        Some(build_io_completion(self.device_id, completion_id, status, &output))
+        Some(build_io_completion(
+            self.device_id,
+            completion_id,
+            status,
+            &output,
+        ))
     }
 
     /// Resolve a remote path to a local path, preventing traversal.
     fn resolve_path(&self, remote_path: &str) -> Option<PathBuf> {
         // Remote paths use backslash, may start with backslash
-        let cleaned = remote_path.trim_start_matches('\\').replace('\\', std::path::MAIN_SEPARATOR_STR);
+        let cleaned = remote_path
+            .trim_start_matches('\\')
+            .replace('\\', std::path::MAIN_SEPARATOR_STR);
         if cleaned.is_empty() || cleaned == "." {
             return Some(self.root_path.clone());
         }
@@ -95,7 +111,11 @@ impl FileSystemDevice {
         let check_path = if candidate.exists() {
             candidate.clone()
         } else if let Some(parent) = candidate.parent() {
-            if parent.exists() { parent.to_path_buf() } else { return Some(candidate); }
+            if parent.exists() {
+                parent.to_path_buf()
+            } else {
+                return Some(candidate);
+            }
         } else {
             return Some(candidate);
         };
@@ -105,7 +125,11 @@ impl FileSystemDevice {
                 if canonical.starts_with(&root_canonical) {
                     Some(candidate) // Return the original joined path, not the \\?\ canonical
                 } else {
-                    log::warn!("RDPDR: path traversal blocked: {:?} -> {:?}", remote_path, canonical);
+                    log::warn!(
+                        "RDPDR: path traversal blocked: {:?} -> {:?}",
+                        remote_path,
+                        canonical
+                    );
                     None
                 }
             }
@@ -132,7 +156,11 @@ impl FileSystemDevice {
         let remote_path = decode_utf16le(path_bytes);
         log::info!(
             "RDPDR CREATE: path='{}' access=0x{:X} disposition={} options=0x{:X} path_len={}",
-            remote_path, desired_access, create_disposition, create_options, path_length
+            remote_path,
+            desired_access,
+            create_disposition,
+            create_options,
+            path_length
         );
 
         let local_path = match self.resolve_path(&remote_path) {
@@ -151,7 +179,11 @@ impl FileSystemDevice {
         // FILE_DIRECTORY_FILE for attribute queries. But respect FILE_NON_DIRECTORY_FILE.
         let target_is_dir = local_path.is_dir();
         let non_dir_requested = create_options & FILE_NON_DIRECTORY_FILE != 0;
-        let is_directory = if non_dir_requested { false } else { (create_options & FILE_DIRECTORY_FILE != 0) || target_is_dir };
+        let is_directory = if non_dir_requested {
+            false
+        } else {
+            (create_options & FILE_DIRECTORY_FILE != 0) || target_is_dir
+        };
         let delete_on_close = create_options & FILE_DELETE_ON_CLOSE != 0;
         let want_write = desired_access & 0x0002 != 0 // FILE_WRITE_DATA
             || desired_access & 0x0004 != 0 // FILE_APPEND_DATA
@@ -183,15 +215,18 @@ impl FileSystemDevice {
                     return (STATUS_UNSUCCESSFUL, create_response(0, 0));
                 }
             }
-            self.open_files.insert(file_id, OpenFile {
-                handle: None,
-                path: local_path,
-                is_directory: true,
-                delete_on_close,
-                dir_enum_done: false,
+            self.open_files.insert(
+                file_id,
+                OpenFile {
+                    handle: None,
+                    path: local_path,
+                    is_directory: true,
+                    delete_on_close,
+                    dir_enum_done: false,
                     dir_entries: Vec::new(),
                     dir_index: 0,
-            });
+                },
+            );
             (STATUS_SUCCESS, if exists { 1u32 } else { 2u32 }) // FILE_OPENED / FILE_CREATED
         } else {
             // Trying to open a directory as a file — return error
@@ -200,36 +235,65 @@ impl FileSystemDevice {
             }
             let file_result = match create_disposition {
                 FILE_OPEN => {
-                    if !exists { return (STATUS_NO_SUCH_FILE, create_response(0, 0)); }
-                    OpenOptions::new().read(true).write(!self.read_only).open(&local_path)
+                    if !exists {
+                        return (STATUS_NO_SUCH_FILE, create_response(0, 0));
+                    }
+                    OpenOptions::new()
+                        .read(true)
+                        .write(!self.read_only)
+                        .open(&local_path)
                 }
                 FILE_CREATE => {
-                    if exists { return (STATUS_OBJECT_NAME_COLLISION, create_response(0, 0)); }
-                    if self.read_only { return (STATUS_ACCESS_DENIED, create_response(0, 0)); }
-                    OpenOptions::new().read(true).write(true).create_new(true).open(&local_path)
+                    if exists {
+                        return (STATUS_OBJECT_NAME_COLLISION, create_response(0, 0));
+                    }
+                    if self.read_only {
+                        return (STATUS_ACCESS_DENIED, create_response(0, 0));
+                    }
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create_new(true)
+                        .open(&local_path)
                 }
                 FILE_OPEN_IF => {
-                    if self.read_only && !exists { return (STATUS_ACCESS_DENIED, create_response(0, 0)); }
-                    OpenOptions::new().read(true).write(!self.read_only).create(!self.read_only).open(&local_path)
+                    if self.read_only && !exists {
+                        return (STATUS_ACCESS_DENIED, create_response(0, 0));
+                    }
+                    OpenOptions::new()
+                        .read(true)
+                        .write(!self.read_only)
+                        .create(!self.read_only)
+                        .open(&local_path)
                 }
                 FILE_OVERWRITE | FILE_OVERWRITE_IF | FILE_SUPERSEDE => {
-                    if self.read_only { return (STATUS_ACCESS_DENIED, create_response(0, 0)); }
-                    OpenOptions::new().read(true).write(true).create(true).truncate(true).open(&local_path)
+                    if self.read_only {
+                        return (STATUS_ACCESS_DENIED, create_response(0, 0));
+                    }
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(&local_path)
                 }
                 _ => return (STATUS_NOT_SUPPORTED, create_response(0, 0)),
             };
 
             match file_result {
                 Ok(f) => {
-                    self.open_files.insert(file_id, OpenFile {
-                        handle: Some(f),
-                        path: local_path,
-                        is_directory: false,
-                        delete_on_close,
-                        dir_enum_done: false,
-                    dir_entries: Vec::new(),
-                    dir_index: 0,
-                    });
+                    self.open_files.insert(
+                        file_id,
+                        OpenFile {
+                            handle: Some(f),
+                            path: local_path,
+                            is_directory: false,
+                            delete_on_close,
+                            dir_enum_done: false,
+                            dir_entries: Vec::new(),
+                            dir_index: 0,
+                        },
+                    );
                     (STATUS_SUCCESS, if exists { 1u32 } else { 2u32 })
                 }
                 Err(e) => {
@@ -334,7 +398,11 @@ impl FileSystemDevice {
         if data.len() < 4 {
             return (STATUS_UNSUCCESSFUL, Vec::new());
         }
-        log::info!("RDPDR QUERY_INFO: file_id={} info_class={}", file_id, read_u32(data, 0));
+        log::info!(
+            "RDPDR QUERY_INFO: file_id={} info_class={}",
+            file_id,
+            read_u32(data, 0)
+        );
         let info_class = read_u32(data, 0);
 
         let entry = match self.open_files.get(&file_id) {
@@ -359,20 +427,20 @@ impl FileSystemDevice {
                 let ft_created = system_time_to_filetime(created);
                 let ft_accessed = system_time_to_filetime(accessed);
                 let ft_modified = system_time_to_filetime(modified);
-                out.extend_from_slice(&ft_created.to_le_bytes());  // CreationTime (8)
+                out.extend_from_slice(&ft_created.to_le_bytes()); // CreationTime (8)
                 out.extend_from_slice(&ft_accessed.to_le_bytes()); // LastAccessTime (8)
                 out.extend_from_slice(&ft_modified.to_le_bytes()); // LastWriteTime (8)
                 out.extend_from_slice(&ft_modified.to_le_bytes()); // ChangeTime (8)
-                out.extend_from_slice(&attrs.to_le_bytes());       // FileAttributes (4)
+                out.extend_from_slice(&attrs.to_le_bytes()); // FileAttributes (4)
                 (STATUS_SUCCESS, wrap_buffer(&out))
             }
             FILE_STANDARD_INFORMATION => {
                 let mut out = Vec::with_capacity(22);
-                out.extend_from_slice(&size.to_le_bytes());        // AllocationSize (8)
-                out.extend_from_slice(&size.to_le_bytes());        // EndOfFile (8)
-                out.extend_from_slice(&1u32.to_le_bytes());        // NumberOfLinks (4)
-                out.push(0);                                       // DeletePending (1)
-                out.push(if metadata.is_dir() { 1 } else { 0 });  // Directory (1)
+                out.extend_from_slice(&size.to_le_bytes()); // AllocationSize (8)
+                out.extend_from_slice(&size.to_le_bytes()); // EndOfFile (8)
+                out.extend_from_slice(&1u32.to_le_bytes()); // NumberOfLinks (4)
+                out.push(0); // DeletePending (1)
+                out.push(if metadata.is_dir() { 1 } else { 0 }); // Directory (1)
                 (STATUS_SUCCESS, wrap_buffer(&out))
             }
             FILE_ATTRIBUTE_TAG_INFORMATION => {
@@ -430,7 +498,9 @@ impl FileSystemDevice {
                             if let Some(entry) = self.open_files.get_mut(&file_id) {
                                 let old_path = entry.path.clone();
                                 match fs::rename(&old_path, &new_path) {
-                                    Ok(_) => { entry.path = new_path; }
+                                    Ok(_) => {
+                                        entry.path = new_path;
+                                    }
                                     Err(e) => {
                                         log::error!("RDPDR: rename error: {}", e);
                                         return (STATUS_UNSUCCESSFUL, Vec::new());
@@ -463,7 +533,7 @@ impl FileSystemDevice {
                 out.extend_from_slice(&0u32.to_le_bytes()); // VolumeSerialNumber (4)
                 out.extend_from_slice(&(label.len() as u32).to_le_bytes()); // VolumeLabelLength (4)
                 out.push(0); // SupportsObjects (1)
-                // No Reserved byte — packed wire format (17 bytes fixed, matching FreeRDP)
+                             // No Reserved byte — packed wire format (17 bytes fixed, matching FreeRDP)
                 out.extend_from_slice(&label);
                 (STATUS_SUCCESS, wrap_buffer(&out))
             }
@@ -471,16 +541,16 @@ impl FileSystemDevice {
                 // Report generous capacity
                 let mut out = Vec::with_capacity(24);
                 out.extend_from_slice(&(1024u64 * 1024 * 1024).to_le_bytes()); // TotalAllocationUnits
-                out.extend_from_slice(&(512u64 * 1024 * 1024).to_le_bytes());  // AvailableAllocationUnits
-                out.extend_from_slice(&8u32.to_le_bytes());                     // SectorsPerAllocationUnit
-                out.extend_from_slice(&512u32.to_le_bytes());                   // BytesPerSector
+                out.extend_from_slice(&(512u64 * 1024 * 1024).to_le_bytes()); // AvailableAllocationUnits
+                out.extend_from_slice(&8u32.to_le_bytes()); // SectorsPerAllocationUnit
+                out.extend_from_slice(&512u32.to_le_bytes()); // BytesPerSector
                 (STATUS_SUCCESS, wrap_buffer(&out))
             }
             FILE_FS_FULL_SIZE_INFORMATION => {
                 let mut out = Vec::with_capacity(32);
                 out.extend_from_slice(&(1024u64 * 1024 * 1024).to_le_bytes()); // TotalAllocationUnits
-                out.extend_from_slice(&(512u64 * 1024 * 1024).to_le_bytes());  // CallerAvailableAllocationUnits
-                out.extend_from_slice(&(512u64 * 1024 * 1024).to_le_bytes());  // ActualAvailableAllocationUnits
+                out.extend_from_slice(&(512u64 * 1024 * 1024).to_le_bytes()); // CallerAvailableAllocationUnits
+                out.extend_from_slice(&(512u64 * 1024 * 1024).to_le_bytes()); // ActualAvailableAllocationUnits
                 out.extend_from_slice(&8u32.to_le_bytes());
                 out.extend_from_slice(&512u32.to_le_bytes());
                 (STATUS_SUCCESS, wrap_buffer(&out))
@@ -489,7 +559,7 @@ impl FileSystemDevice {
                 let fs_name = encode_utf16le("FAT32"); // FreeRDP includes null terminator
                 let mut out = Vec::with_capacity(12 + fs_name.len());
                 out.extend_from_slice(&0x0000_001Fu32.to_le_bytes()); // FileSystemAttributes
-                out.extend_from_slice(&255u32.to_le_bytes());         // MaximumComponentNameLength
+                out.extend_from_slice(&255u32.to_le_bytes()); // MaximumComponentNameLength
                 out.extend_from_slice(&(fs_name.len() as u32).to_le_bytes()); // FileSystemNameLength (no null)
                 out.extend_from_slice(&fs_name);
                 (STATUS_SUCCESS, wrap_buffer(&out))
@@ -512,9 +582,22 @@ impl FileSystemDevice {
             return (STATUS_NOT_SUPPORTED, Vec::new());
         }
         let output_buffer_length = read_u32(data, 0);
-        let input_buffer_length = if data.len() >= 8 { read_u32(data, 4) } else { 0 };
-        let ioctl_code = if data.len() >= 12 { read_u32(data, 8) } else { 0 };
-        log::info!("RDPDR IOCTL: code=0x{:08X} in_len={} out_len={}", ioctl_code, input_buffer_length, output_buffer_length);
+        let input_buffer_length = if data.len() >= 8 {
+            read_u32(data, 4)
+        } else {
+            0
+        };
+        let ioctl_code = if data.len() >= 12 {
+            read_u32(data, 8)
+        } else {
+            0
+        };
+        log::info!(
+            "RDPDR IOCTL: code=0x{:08X} in_len={} out_len={}",
+            ioctl_code,
+            input_buffer_length,
+            output_buffer_length
+        );
 
         // Return empty success for common IOCTLs that check drive readiness
         let mut out = Vec::with_capacity(4);
@@ -522,7 +605,12 @@ impl FileSystemDevice {
         (STATUS_SUCCESS, out)
     }
 
-    fn handle_directory_control(&mut self, file_id: u32, minor: u32, data: &[u8]) -> (u32, Vec<u8>) {
+    fn handle_directory_control(
+        &mut self,
+        file_id: u32,
+        minor: u32,
+        data: &[u8],
+    ) -> (u32, Vec<u8>) {
         // IRP_MN_NOTIFY_CHANGE_DIRECTORY is handled (discarded) in handle_irp
         if minor != IRP_MN_QUERY_DIRECTORY || data.len() < 32 {
             return (STATUS_NOT_SUPPORTED, Vec::new());
@@ -539,7 +627,11 @@ impl FileSystemDevice {
         };
         log::info!(
             "RDPDR DIR_QUERY: file_id={} info_class={} initial={} pattern='{}' data_len={}",
-            file_id, info_class, initial_query, pattern, data.len()
+            file_id,
+            info_class,
+            initial_query,
+            pattern,
+            data.len()
         );
 
         let entry = match self.open_files.get_mut(&file_id) {
@@ -553,18 +645,30 @@ impl FileSystemDevice {
             entry.dir_entries = match fs::read_dir(&entry.path) {
                 Ok(rd) => {
                     let entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
-                    log::info!("RDPDR DIR_QUERY: found {} entries in {:?}", entries.len(), entry.path);
+                    log::info!(
+                        "RDPDR DIR_QUERY: found {} entries in {:?}",
+                        entries.len(),
+                        entry.path
+                    );
                     entries
                 }
                 Err(e) => {
-                    log::error!("RDPDR DIR_QUERY: read_dir FAILED for {:?}: {}", entry.path, e);
+                    log::error!(
+                        "RDPDR DIR_QUERY: read_dir FAILED for {:?}: {}",
+                        entry.path,
+                        e
+                    );
                     return (STATUS_UNSUCCESSFUL, vec![0u8; 5]);
                 }
             };
             entry.dir_index = 0;
             entry.dir_enum_done = false;
         } else {
-            log::info!("RDPDR DIR_QUERY: continuation query, index={} of {} entries", entry.dir_index, entry.dir_entries.len());
+            log::info!(
+                "RDPDR DIR_QUERY: continuation query, index={} of {} entries",
+                entry.dir_index,
+                entry.dir_entries.len()
+            );
         }
 
         if entry.dir_enum_done {
@@ -607,7 +711,9 @@ impl FileSystemDevice {
             let mut result_buf = Vec::new();
 
             match info_class {
-                FILE_BOTH_DIR_INFORMATION | FILE_FULL_DIR_INFORMATION | FILE_DIRECTORY_INFORMATION => {
+                FILE_BOTH_DIR_INFORMATION
+                | FILE_FULL_DIR_INFORMATION
+                | FILE_DIRECTORY_INFORMATION => {
                     result_buf.extend_from_slice(&0u32.to_le_bytes()); // NextEntryOffset = 0 (single entry)
                     result_buf.extend_from_slice(&0u32.to_le_bytes()); // FileIndex
                     result_buf.extend_from_slice(&system_time_to_filetime(created).to_le_bytes());
@@ -618,13 +724,15 @@ impl FileSystemDevice {
                     result_buf.extend_from_slice(&size.to_le_bytes()); // AllocationSize
                     result_buf.extend_from_slice(&attrs.to_le_bytes()); // FileAttributes
                     result_buf.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes()); // FileNameLength
-                    if info_class == FILE_BOTH_DIR_INFORMATION || info_class == FILE_FULL_DIR_INFORMATION {
+                    if info_class == FILE_BOTH_DIR_INFORMATION
+                        || info_class == FILE_FULL_DIR_INFORMATION
+                    {
                         result_buf.extend_from_slice(&0u32.to_le_bytes()); // EaSize
                     }
                     if info_class == FILE_BOTH_DIR_INFORMATION {
                         result_buf.push(0); // ShortNameLength (1)
-                        // Note: RDPDR uses packed layout (93 bytes fixed), NOT the
-                        // native Windows aligned struct (94 bytes). No Reserved1 byte.
+                                            // Note: RDPDR uses packed layout (93 bytes fixed), NOT the
+                                            // native Windows aligned struct (94 bytes). No Reserved1 byte.
                         result_buf.extend_from_slice(&[0u8; 24]); // ShortName[12] (24)
                     }
                     result_buf.extend_from_slice(&name_bytes); // FileName (no null terminator)

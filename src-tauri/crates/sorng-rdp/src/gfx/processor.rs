@@ -75,7 +75,9 @@ impl GfxProcessor {
         nal_passthrough: bool,
     ) -> Self {
         if nal_passthrough {
-            log::info!("GFX: NAL passthrough enabled — H.264 will be decoded on frontend via WebCodecs");
+            log::info!(
+                "GFX: NAL passthrough enabled — H.264 will be decoded on frontend via WebCodecs"
+            );
         }
         Self {
             surfaces: SurfaceManager::new(),

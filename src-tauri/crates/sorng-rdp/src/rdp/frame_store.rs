@@ -144,7 +144,12 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 4, 4);
         let slots = store.slots.read().expect("lock poisoned");
-        let slot = slots.get("s1").unwrap().inner.read().expect("lock poisoned");
+        let slot = slots
+            .get("s1")
+            .unwrap()
+            .inner
+            .read()
+            .expect("lock poisoned");
         assert!(slot.data.iter().all(|&b| b == 0));
     }
 
@@ -153,7 +158,12 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 0, 0);
         let slots = store.slots.read().expect("lock poisoned");
-        let slot = slots.get("s1").unwrap().inner.read().expect("lock poisoned");
+        let slot = slots
+            .get("s1")
+            .unwrap()
+            .inner
+            .read()
+            .expect("lock poisoned");
         assert!(slot.data.is_empty());
     }
 
@@ -164,7 +174,12 @@ mod tests {
         // Fill the framebuffer with a pattern
         {
             let slots = store.slots.read().expect("lock poisoned");
-            let mut slot = slots.get("s1").unwrap().inner.write().expect("lock poisoned");
+            let mut slot = slots
+                .get("s1")
+                .unwrap()
+                .inner
+                .write()
+                .expect("lock poisoned");
             for (i, byte) in slot.data.iter_mut().enumerate() {
                 *byte = (i % 256) as u8;
             }
@@ -183,7 +198,12 @@ mod tests {
         store.init("s1", 8, 8);
         {
             let slots = store.slots.read().expect("lock poisoned");
-            let mut slot = slots.get("s1").unwrap().inner.write().expect("lock poisoned");
+            let mut slot = slots
+                .get("s1")
+                .unwrap()
+                .inner
+                .write()
+                .expect("lock poisoned");
             // Fill with 0xFF
             for byte in slot.data.iter_mut() {
                 *byte = 0xFF;
@@ -207,13 +227,23 @@ mod tests {
         store.init("s1", 4, 4);
         {
             let slots = store.slots.read().expect("lock poisoned");
-            let mut slot = slots.get("s1").unwrap().inner.write().expect("lock poisoned");
+            let mut slot = slots
+                .get("s1")
+                .unwrap()
+                .inner
+                .write()
+                .expect("lock poisoned");
             slot.data[0] = 0xAA;
         }
         // Reinit with different dimensions
         store.reinit("s1", 8, 8);
         let slots = store.slots.read().expect("lock poisoned");
-        let slot = slots.get("s1").unwrap().inner.read().expect("lock poisoned");
+        let slot = slots
+            .get("s1")
+            .unwrap()
+            .inner
+            .read()
+            .expect("lock poisoned");
         assert_eq!(slot.width, 8);
         assert_eq!(slot.height, 8);
         assert_eq!(slot.data.len(), 8 * 8 * 4);
@@ -243,13 +273,36 @@ mod tests {
         store.init("s2", 8, 8);
         {
             let slots = store.slots.read().expect("lock poisoned");
-            let mut slot = slots.get("s1").unwrap().inner.write().expect("lock poisoned");
+            let mut slot = slots
+                .get("s1")
+                .unwrap()
+                .inner
+                .write()
+                .expect("lock poisoned");
             slot.data[0] = 0xBB;
         }
         // s2 should be untouched
         let slots = store.slots.read().expect("lock poisoned");
-        assert_eq!(slots.get("s2").unwrap().inner.read().expect("lock poisoned").data[0], 0);
-        assert_eq!(slots.get("s1").unwrap().inner.read().expect("lock poisoned").data[0], 0xBB);
+        assert_eq!(
+            slots
+                .get("s2")
+                .unwrap()
+                .inner
+                .read()
+                .expect("lock poisoned")
+                .data[0],
+            0
+        );
+        assert_eq!(
+            slots
+                .get("s1")
+                .unwrap()
+                .inner
+                .read()
+                .expect("lock poisoned")
+                .data[0],
+            0xBB
+        );
     }
 
     #[test]
@@ -266,7 +319,12 @@ mod tests {
         store.init("s1", 4, 4);
         store.init("s1", 2, 2);
         let slots = store.slots.read().expect("lock poisoned");
-        let slot = slots.get("s1").unwrap().inner.read().expect("lock poisoned");
+        let slot = slots
+            .get("s1")
+            .unwrap()
+            .inner
+            .read()
+            .expect("lock poisoned");
         assert_eq!(slot.width, 2);
         assert_eq!(slot.data.len(), 2 * 2 * 4);
     }

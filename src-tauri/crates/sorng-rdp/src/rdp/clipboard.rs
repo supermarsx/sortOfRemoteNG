@@ -10,9 +10,9 @@ use std::sync::{Arc, Mutex};
 use super::settings::ClipboardDirection;
 use crate::ironrdp_cliprdr::backend::CliprdrBackend;
 use crate::ironrdp_cliprdr::pdu::{
-    ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FileContentsRequest,
-    FileContentsResponse, FormatDataRequest, FormatDataResponse, LockDataId,
-    PackedFileList, FileDescriptor, ClipboardFileAttributes, OwnedFormatDataResponse,
+    ClipboardFileAttributes, ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags,
+    FileContentsRequest, FileContentsResponse, FileDescriptor, FormatDataRequest,
+    FormatDataResponse, LockDataId, OwnedFormatDataResponse, PackedFileList,
 };
 use crate::ironrdp_core::impl_as_any;
 use sorng_core::events::DynEventEmitter;
@@ -189,7 +189,10 @@ impl CliprdrBackend for AppCliprdrBackend {
     }
 
     fn on_ready(&mut self) {
-        log::info!("CLIPRDR session {}: clipboard channel ready", self.session_id);
+        log::info!(
+            "CLIPRDR session {}: clipboard channel ready",
+            self.session_id
+        );
         if let Ok(mut state) = self.state.lock() {
             state.ready = true;
         }
@@ -199,7 +202,10 @@ impl CliprdrBackend for AppCliprdrBackend {
         );
     }
 
-    fn on_process_negotiated_capabilities(&mut self, capabilities: ClipboardGeneralCapabilityFlags) {
+    fn on_process_negotiated_capabilities(
+        &mut self,
+        capabilities: ClipboardGeneralCapabilityFlags,
+    ) {
         log::debug!(
             "CLIPRDR session {}: negotiated capabilities: {:?}",
             self.session_id,
@@ -335,7 +341,11 @@ impl CliprdrBackend for AppCliprdrBackend {
     fn on_file_contents_request(&mut self, request: FileContentsRequest) {
         log::info!(
             "CLIPRDR session {}: file contents request idx={} flags={:?} pos={} size={}",
-            self.session_id, request.index, request.flags, request.position, request.requested_size
+            self.session_id,
+            request.index,
+            request.flags,
+            request.position,
+            request.requested_size
         );
         if let Ok(mut state) = self.state.lock() {
             let allowed = state.queue_file_contents_request(request);
@@ -382,16 +392,19 @@ pub fn encode_utf16le(text: &str) -> Vec<u8> {
 
 /// Build a PackedFileList from staged files.
 pub fn build_file_list(files: &[StagedFile]) -> PackedFileList {
-    let descriptors: Vec<FileDescriptor> = files.iter().map(|f| FileDescriptor {
-        attributes: Some(if f.is_directory {
-            ClipboardFileAttributes::DIRECTORY
-        } else {
-            ClipboardFileAttributes::ARCHIVE
-        }),
-        last_write_time: None,
-        file_size: Some(f.size),
-        name: f.name.clone(),
-    }).collect();
+    let descriptors: Vec<FileDescriptor> = files
+        .iter()
+        .map(|f| FileDescriptor {
+            attributes: Some(if f.is_directory {
+                ClipboardFileAttributes::DIRECTORY
+            } else {
+                ClipboardFileAttributes::ARCHIVE
+            }),
+            last_write_time: None,
+            file_size: Some(f.size),
+            name: f.name.clone(),
+        })
+        .collect();
     PackedFileList { files: descriptors }
 }
 

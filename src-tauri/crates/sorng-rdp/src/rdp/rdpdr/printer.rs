@@ -62,7 +62,8 @@ impl PrinterDevice {
         let driver_name = encode_utf16le("Microsoft Print to PDF");
         let printer_name = encode_utf16le(&self.printer_name);
 
-        let mut data = Vec::with_capacity(24 + pnp_name.len() + driver_name.len() + printer_name.len());
+        let mut data =
+            Vec::with_capacity(24 + pnp_name.len() + driver_name.len() + printer_name.len());
         // Flags: RDPDR_PRINTER_ANNOUNCE_FLAG_DEFAULTPRINTER = 0x01 (optional)
         data.extend_from_slice(&0u32.to_le_bytes()); // Flags
         data.extend_from_slice(&0u32.to_le_bytes()); // CodePage
@@ -78,7 +79,14 @@ impl PrinterDevice {
 
     /// Handle an IRP for this printer device.
     /// Returns Some(response) or None to discard.
-    pub fn handle_irp(&mut self, major: u32, _minor: u32, completion_id: u32, file_id: u32, data: &[u8]) -> Option<Vec<u8>> {
+    pub fn handle_irp(
+        &mut self,
+        major: u32,
+        _minor: u32,
+        completion_id: u32,
+        file_id: u32,
+        data: &[u8],
+    ) -> Option<Vec<u8>> {
         let (status, output) = match major {
             IRP_MJ_CREATE => self.handle_create(data),
             IRP_MJ_WRITE => self.handle_write(file_id, data),
@@ -88,7 +96,12 @@ impl PrinterDevice {
                 (STATUS_NOT_SUPPORTED, Vec::new())
             }
         };
-        Some(build_io_completion(self.device_id, completion_id, status, &output))
+        Some(build_io_completion(
+            self.device_id,
+            completion_id,
+            status,
+            &output,
+        ))
     }
 
     fn handle_create(&mut self, _data: &[u8]) -> (u32, Vec<u8>) {
@@ -104,12 +117,27 @@ impl PrinterDevice {
 
         match File::create(&path) {
             Ok(f) => {
-                log::info!("RDPDR printer {}: new print job -> {:?}", self.session_id, path);
-                self.open_jobs.insert(file_id, PrintJob { file: f, path, bytes_written: 0 });
+                log::info!(
+                    "RDPDR printer {}: new print job -> {:?}",
+                    self.session_id,
+                    path
+                );
+                self.open_jobs.insert(
+                    file_id,
+                    PrintJob {
+                        file: f,
+                        path,
+                        bytes_written: 0,
+                    },
+                );
                 (STATUS_SUCCESS, create_response(file_id, 2)) // FILE_CREATED
             }
             Err(e) => {
-                log::error!("RDPDR printer {}: failed to create file: {}", self.session_id, e);
+                log::error!(
+                    "RDPDR printer {}: failed to create file: {}",
+                    self.session_id,
+                    e
+                );
                 (STATUS_UNSUCCESSFUL, create_response(0, 0))
             }
         }
@@ -153,7 +181,9 @@ impl PrinterDevice {
             } else {
                 None
             };
-            let delivered_mode = if native_print_error.is_none() && self.output_mode == PrinterOutputMode::NativePrint {
+            let delivered_mode = if native_print_error.is_none()
+                && self.output_mode == PrinterOutputMode::NativePrint
+            {
                 "native-print"
             } else {
                 "spool-file"
@@ -161,7 +191,9 @@ impl PrinterDevice {
 
             log::info!(
                 "RDPDR printer {}: print job complete -> {:?} ({} bytes)",
-                self.session_id, job.path, job.bytes_written
+                self.session_id,
+                job.path,
+                job.bytes_written
             );
             // Notify frontend
             let _ = self.emitter.emit_event("rdp://print-job-complete", serde_json::json!({

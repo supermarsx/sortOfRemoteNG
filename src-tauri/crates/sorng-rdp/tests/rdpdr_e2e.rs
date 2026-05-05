@@ -133,7 +133,8 @@ impl SessionHarness {
         let session_id = format!("rdpdr-e2e-{}", Uuid::new_v4());
         let emitter = RecordingEmitter::default();
         let dyn_emitter: DynEventEmitter = Arc::new(emitter.clone());
-        let (cmd_tx, cmd_rx) = create_wake_channel().map_err(|error| format!("wake channel: {error}"))?;
+        let (cmd_tx, cmd_rx) =
+            create_wake_channel().map_err(|error| format!("wake channel: {error}"))?;
         let stats = Arc::new(RdpSessionStats::new());
         let frame_store = SharedFrameStore::new();
         let frame_channel: DynFrameChannel = Arc::new(NoopFrameChannel);
@@ -238,7 +239,9 @@ impl SessionHarness {
     }
 
     async fn shutdown(self) -> Result<(), String> {
-        let _ = self.cmd_tx.send(sorng_rdp::rdp::types::RdpCommand::Shutdown);
+        let _ = self
+            .cmd_tx
+            .send(sorng_rdp::rdp::types::RdpCommand::Shutdown);
 
         tokio::time::timeout(Duration::from_secs(20), self.handle)
             .await
@@ -277,7 +280,12 @@ fn base_settings() -> ResolvedSettings {
     settings
 }
 
-fn drive(name: &str, path: &Path, read_only: bool, preferred_letter: char) -> DriveRedirectionConfig {
+fn drive(
+    name: &str,
+    path: &Path,
+    read_only: bool,
+    preferred_letter: char,
+) -> DriveRedirectionConfig {
     DriveRedirectionConfig {
         name: name.to_string(),
         path: path.to_string_lossy().into_owned(),
@@ -396,7 +404,12 @@ async fn wait_for_remote_display(container_id: &str, timeout: Duration) -> Resul
     Err("timed out waiting for the remote X display".to_string())
 }
 
-fn build_create_request(remote_path: &str, desired_access: u32, disposition: u32, options: u32) -> Vec<u8> {
+fn build_create_request(
+    remote_path: &str,
+    desired_access: u32,
+    disposition: u32,
+    options: u32,
+) -> Vec<u8> {
     let path = encode_rdp_utf16le(remote_path);
     let mut request = Vec::with_capacity(32 + path.len());
     request.extend_from_slice(&desired_access.to_le_bytes());
@@ -469,7 +482,12 @@ fn filesystem_device_rejects_traversal_and_read_only_writes() {
             0,
             1,
             0,
-            &build_create_request("..\\..\\outside.txt", 0, FILE_OPEN_IF, FILE_NON_DIRECTORY_FILE),
+            &build_create_request(
+                "..\\..\\outside.txt",
+                0,
+                FILE_OPEN_IF,
+                FILE_NON_DIRECTORY_FILE,
+            ),
         )
         .expect("traversal response");
     assert_eq!(
@@ -495,7 +513,13 @@ fn filesystem_device_rejects_traversal_and_read_only_writes() {
 
     let file_id = io_output_u32(&open_existing, 0);
     let write = device
-        .handle_irp(IRP_MJ_WRITE, 0, 3, file_id, &build_write_request(b"blocked", 0))
+        .handle_irp(
+            IRP_MJ_WRITE,
+            0,
+            3,
+            file_id,
+            &build_write_request(b"blocked", 0),
+        )
         .expect("write response");
     assert_eq!(
         io_status(&write),
@@ -565,8 +589,9 @@ fn clipboard_file_round_trip_encodes_file_list_and_streams_bytes() {
         "bidirectional clipboard should allow local file advertisement"
     );
 
-    let file_list_response = FormatDataResponse::new_file_list(&build_file_list(&state.staged_files))
-        .expect("encode file list");
+    let file_list_response =
+        FormatDataResponse::new_file_list(&build_file_list(&state.staged_files))
+            .expect("encode file list");
     let decoded_file_list = file_list_response.to_file_list().expect("decode file list");
     assert_eq!(decoded_file_list.files.len(), 1);
     assert_eq!(decoded_file_list.files[0].name, staged.name);
@@ -598,8 +623,7 @@ fn clipboard_file_round_trip_encodes_file_list_and_streams_bytes() {
     let data_response = serve_staged_file_contents(&mut state, &data_request);
     assert_eq!(data_response.data(), &contents[4..9]);
     assert_eq!(
-        state.file_bytes_transferred,
-        5,
+        state.file_bytes_transferred, 5,
         "streaming file-clipboard bytes should advance transfer progress"
     );
 }
@@ -631,17 +655,21 @@ fn clipboard_text_round_trip_and_direction_policies_are_enforced() {
     client_to_server.local_text = Some(text.to_string());
     assert!(!client_to_server.store_remote_formats(std::slice::from_ref(&remote_format)));
     assert!(client_to_server.remote_formats.is_empty());
-    assert!(client_to_server.queue_format_data_request(FormatDataRequest {
-        format: ClipboardFormatId::new(CF_UNICODETEXT),
-    }));
+    assert!(
+        client_to_server.queue_format_data_request(FormatDataRequest {
+            format: ClipboardFormatId::new(CF_UNICODETEXT),
+        })
+    );
     assert_eq!(client_to_server.local_text.as_deref(), Some(text));
 
     let mut server_to_client = ClipboardState::new(ClipboardDirection::ServerToClient);
     server_to_client.local_text = Some(text.to_string());
     assert!(server_to_client.store_remote_formats(std::slice::from_ref(&remote_format)));
-    assert!(!server_to_client.queue_format_data_request(FormatDataRequest {
-        format: ClipboardFormatId::new(CF_UNICODETEXT),
-    }));
+    assert!(
+        !server_to_client.queue_format_data_request(FormatDataRequest {
+            format: ClipboardFormatId::new(CF_UNICODETEXT),
+        })
+    );
     assert!(server_to_client.local_text.is_none());
     assert_eq!(server_to_client.remote_formats.len(), 1);
 }
@@ -665,7 +693,10 @@ async fn live_rdpdr_docker_harness() {
     let smoke = SessionHarness::connect(smoke_settings)
         .await
         .expect("spawn live smoke session");
-    smoke.wait_connected().await.expect("connect live smoke session");
+    smoke
+        .wait_connected()
+        .await
+        .expect("connect live smoke session");
     let display = wait_for_remote_display(&container_id, Duration::from_secs(20))
         .await
         .expect("remote display for live smoke session");

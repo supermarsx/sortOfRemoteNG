@@ -71,7 +71,10 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
 
         let debug = format!("{:?}", connection.cached_password);
 
-        assert!(debug.contains("REDACTED"), "debug output should redact secrets");
+        assert!(
+            debug.contains("REDACTED"),
+            "debug output should redact secrets"
+        );
         assert!(
             !debug.contains("super-secret"),
             "debug output must not contain the cached password"
@@ -87,10 +90,16 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
 fn secret_backed_password_storage_zeroizes_on_drop() {
     let snapshot = Arc::new(Mutex::new(Vec::new()));
     let zeroized = Arc::new(AtomicBool::new(false));
-    let secret = Secret::new(ZeroizeSpy::new(Arc::clone(&snapshot), Arc::clone(&zeroized)));
+    let secret = Secret::new(ZeroizeSpy::new(
+        Arc::clone(&snapshot),
+        Arc::clone(&zeroized),
+    ));
 
     let debug = format!("{:?}", secret);
-    assert!(debug.contains("REDACTED"), "debug output should stay redacted");
+    assert!(
+        debug.contains("REDACTED"),
+        "debug output should stay redacted"
+    );
     assert!(
         !debug.contains("super-secret"),
         "debug output must not leak the stored secret"

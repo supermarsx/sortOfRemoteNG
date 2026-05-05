@@ -2,11 +2,11 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::frame_channel::DynFrameChannel;
+use super::wake_channel::WakeSender;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use super::frame_channel::DynFrameChannel;
-use super::wake_channel::WakeSender;
 
 use super::network::build_tls_config;
 use super::stats::RdpSessionStats;
@@ -151,9 +151,15 @@ pub enum RdpCommand {
     /// Stage local files for CLIPRDR file transfer and advertise FileGroupDescriptorW.
     ClipboardCopyFiles(Vec<ClipboardFileEntry>),
     /// Toggle a session feature on/off at runtime.
-    ToggleFeature { feature: String, enabled: bool },
+    ToggleFeature {
+        feature: String,
+        enabled: bool,
+    },
     /// Request a dynamic desktop resize via the Display Control DVC.
-    SetDesktopSize { width: u16, height: u16 },
+    SetDesktopSize {
+        width: u16,
+        height: u16,
+    },
 }
 
 /// File entry for clipboard file transfer.

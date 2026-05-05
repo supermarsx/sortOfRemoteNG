@@ -37,29 +37,55 @@ pub struct SmartCardDevice {
 
 impl SmartCardDevice {
     pub fn new(device_id: u32, session_id: String) -> Self {
-        Self { device_id, session_id }
+        Self {
+            device_id,
+            session_id,
+        }
     }
 
     /// Handle an IRP for the smart card device.
-    pub fn handle_irp(&mut self, major: u32, _minor: u32, completion_id: u32, _file_id: u32, data: &[u8]) -> Option<Vec<u8>> {
+    pub fn handle_irp(
+        &mut self,
+        major: u32,
+        _minor: u32,
+        completion_id: u32,
+        _file_id: u32,
+        data: &[u8],
+    ) -> Option<Vec<u8>> {
         match major {
             IRP_MJ_CREATE => {
                 // Open the smart card device
                 let mut out = Vec::with_capacity(5);
                 out.extend_from_slice(&0u32.to_le_bytes()); // FileId = 0
                 out.push(1); // FILE_OPENED
-                Some(build_io_completion(self.device_id, completion_id, STATUS_SUCCESS, &out))
+                Some(build_io_completion(
+                    self.device_id,
+                    completion_id,
+                    STATUS_SUCCESS,
+                    &out,
+                ))
             }
-            IRP_MJ_CLOSE => {
-                Some(build_io_completion(self.device_id, completion_id, STATUS_SUCCESS, &[0u8; 5]))
-            }
+            IRP_MJ_CLOSE => Some(build_io_completion(
+                self.device_id,
+                completion_id,
+                STATUS_SUCCESS,
+                &[0u8; 5],
+            )),
             IRP_MJ_DEVICE_CONTROL => {
                 let response = self.handle_ioctl(data);
-                Some(build_io_completion(self.device_id, completion_id, STATUS_SUCCESS, &response))
+                Some(build_io_completion(
+                    self.device_id,
+                    completion_id,
+                    STATUS_SUCCESS,
+                    &response,
+                ))
             }
-            _ => {
-                Some(build_io_completion(self.device_id, completion_id, STATUS_NOT_SUPPORTED, &[]))
-            }
+            _ => Some(build_io_completion(
+                self.device_id,
+                completion_id,
+                STATUS_NOT_SUPPORTED,
+                &[],
+            )),
         }
     }
 
@@ -72,7 +98,11 @@ impl SmartCardDevice {
         let _input_buffer_length = read_u32(data, 4);
         let ioctl_code = read_u32(data, 8);
 
-        log::info!("RDPDR smartcard {}: IOCTL 0x{:08X}", self.session_id, ioctl_code);
+        log::info!(
+            "RDPDR smartcard {}: IOCTL 0x{:08X}",
+            self.session_id,
+            ioctl_code
+        );
 
         // For now, delegate to the local PC/SC stack on Windows
         #[cfg(target_os = "windows")]
@@ -82,7 +112,10 @@ impl SmartCardDevice {
         #[cfg(not(target_os = "windows"))]
         {
             // Non-Windows: return "no service" for all IOCTLs
-            log::debug!("RDPDR smartcard {}: PC/SC not available on this platform", self.session_id);
+            log::debug!(
+                "RDPDR smartcard {}: PC/SC not available on this platform",
+                self.session_id
+            );
             self.ioctl_error_response(SCARD_E_NO_SERVICE)
         }
     }
@@ -131,9 +164,13 @@ impl SmartCardDevice {
                 out.extend_from_slice(&0x8010_000Au32.to_le_bytes()); // SCARD_E_TIMEOUT
                 self.ioctl_success_response(&out)
             }
-            SCARD_IOCTL_CONNECT_W | SCARD_IOCTL_DISCONNECT
-            | SCARD_IOCTL_BEGIN_TRANSACTION | SCARD_IOCTL_END_TRANSACTION
-            | SCARD_IOCTL_TRANSMIT | SCARD_IOCTL_STATUS_A | SCARD_IOCTL_STATUS_W
+            SCARD_IOCTL_CONNECT_W
+            | SCARD_IOCTL_DISCONNECT
+            | SCARD_IOCTL_BEGIN_TRANSACTION
+            | SCARD_IOCTL_END_TRANSACTION
+            | SCARD_IOCTL_TRANSMIT
+            | SCARD_IOCTL_STATUS_A
+            | SCARD_IOCTL_STATUS_W
             | SCARD_IOCTL_CANCEL => {
                 // Full SCARD proxy (connect, transmit, transaction) requires
                 // real PC/SC handle management. Return SCARD_E_NO_SERVICE to
@@ -147,7 +184,11 @@ impl SmartCardDevice {
                 self.ioctl_success_response(&out)
             }
             _ => {
-                log::debug!("RDPDR smartcard {}: unhandled IOCTL 0x{:08X}", self.session_id, ioctl_code);
+                log::debug!(
+                    "RDPDR smartcard {}: unhandled IOCTL 0x{:08X}",
+                    self.session_id,
+                    ioctl_code
+                );
                 self.ioctl_error_response(SCARD_E_NO_SERVICE)
             }
         }
@@ -186,7 +227,7 @@ mod tests {
     fn make_ioctl_data(ioctl_code: u32) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&256u32.to_le_bytes()); // output_buffer_length
-        data.extend_from_slice(&0u32.to_le_bytes());   // input_buffer_length
+        data.extend_from_slice(&0u32.to_le_bytes()); // input_buffer_length
         data.extend_from_slice(&ioctl_code.to_le_bytes());
         data
     }
@@ -218,9 +259,10 @@ mod tests {
         let mut d = dev();
         let _data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
         // The handle_ioctl is reached via IRP_MJ_DEVICE_CONTROL
-        let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 4, 0, &[0u8; 4]));
+        let (status, out) =
+            unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 4, 0, &[0u8; 4]));
         assert_eq!(status, STATUS_SUCCESS); // IRP status is always SUCCESS
-        // output should be the error response (0 length)
+                                            // output should be the error response (0 length)
         let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
         assert_eq!(buf_len, 0);
     }
@@ -233,7 +275,8 @@ mod tests {
         fn ioctl_access_started_event() {
             let mut d = dev();
             let data = make_ioctl_data(SCARD_IOCTL_ACCESS_STARTED_EVENT);
-            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
+            let (status, out) =
+                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
             // success response: OutputBufferLength(4) + empty data
             let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
@@ -244,7 +287,8 @@ mod tests {
         fn ioctl_establish_context_returns_handle() {
             let mut d = dev();
             let data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
-            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 11, 0, &data));
+            let (status, out) =
+                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 11, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
             let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
             assert!(buf_len >= 12); // SCARD_S_SUCCESS(4) + cbContext(4) + hContext(4)
@@ -256,7 +300,8 @@ mod tests {
         fn ioctl_list_readers_returns_empty() {
             let mut d = dev();
             let data = make_ioctl_data(SCARD_IOCTL_LIST_READERS_W);
-            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 12, 0, &data));
+            let (status, out) =
+                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 12, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
             let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
             assert!(buf_len >= 8); // SCARD_S_SUCCESS(4) + cReaders(4)
@@ -270,7 +315,8 @@ mod tests {
         fn ioctl_connect_returns_no_service() {
             let mut d = dev();
             let data = make_ioctl_data(SCARD_IOCTL_CONNECT_W);
-            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 13, 0, &data));
+            let (status, out) =
+                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 13, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
             let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
             assert!(buf_len >= 4);
@@ -282,7 +328,8 @@ mod tests {
         fn ioctl_transmit_returns_no_service() {
             let mut d = dev();
             let data = make_ioctl_data(SCARD_IOCTL_TRANSMIT);
-            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 14, 0, &data));
+            let (status, out) =
+                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 14, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
             let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
             assert_eq!(scard_status, SCARD_E_NO_SERVICE);
@@ -315,7 +362,8 @@ mod tests {
         fn ioctl_returns_no_service_on_non_windows() {
             let mut d = dev();
             let data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
-            let (status, out) = unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
+            let (status, out) =
+                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
             let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
             assert_eq!(buf_len, 0); // error response has 0 output

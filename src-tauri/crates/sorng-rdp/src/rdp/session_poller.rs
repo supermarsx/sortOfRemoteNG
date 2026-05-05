@@ -137,15 +137,11 @@ impl SessionPoller {
         #[cfg(windows)]
         {
             let _ = self.poller.modify(
-                unsafe {
-                    std::os::windows::io::BorrowedSocket::borrow_raw(self.tcp_sock)
-                },
+                unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.tcp_sock) },
                 Event::readable(KEY_TCP),
             );
             let _ = self.poller.modify(
-                unsafe {
-                    std::os::windows::io::BorrowedSocket::borrow_raw(self.wake_sock)
-                },
+                unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.wake_sock) },
                 Event::readable(KEY_WAKE),
             );
         }
@@ -157,25 +153,21 @@ impl Drop for SessionPoller {
         // Remove sources from the poller to avoid dangling registrations.
         #[cfg(unix)]
         {
-            let _ = self.poller.delete(
-                unsafe { std::os::unix::io::BorrowedFd::borrow_raw(self.tcp_fd) },
-            );
-            let _ = self.poller.delete(
-                unsafe { std::os::unix::io::BorrowedFd::borrow_raw(self.wake_fd) },
-            );
+            let _ = self
+                .poller
+                .delete(unsafe { std::os::unix::io::BorrowedFd::borrow_raw(self.tcp_fd) });
+            let _ = self
+                .poller
+                .delete(unsafe { std::os::unix::io::BorrowedFd::borrow_raw(self.wake_fd) });
         }
         #[cfg(windows)]
         {
-            let _ = self.poller.delete(
-                unsafe {
-                    std::os::windows::io::BorrowedSocket::borrow_raw(self.tcp_sock)
-                },
-            );
-            let _ = self.poller.delete(
-                unsafe {
-                    std::os::windows::io::BorrowedSocket::borrow_raw(self.wake_sock)
-                },
-            );
+            let _ = self
+                .poller
+                .delete(unsafe { std::os::windows::io::BorrowedSocket::borrow_raw(self.tcp_sock) });
+            let _ = self.poller.delete(unsafe {
+                std::os::windows::io::BorrowedSocket::borrow_raw(self.wake_sock)
+            });
         }
     }
 }

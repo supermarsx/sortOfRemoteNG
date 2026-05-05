@@ -4,6 +4,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use super::clipboard::{self, SharedClipboardState};
+use super::frame_channel::DynFrameChannel;
 use crate::ironrdp::connector::connection_activation::ConnectionActivationState;
 use crate::ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
 use crate::ironrdp::core::WriteBuf;
@@ -14,19 +16,19 @@ use crate::ironrdp::session::{ActiveStage, ActiveStageOutput};
 use crate::ironrdp_blocking::Framed;
 use secrecy::{ExposeSecret, SecretString};
 use sorng_core::events::DynEventEmitter;
-use super::clipboard::{self, SharedClipboardState};
-use super::frame_channel::DynFrameChannel;
 use tokio::sync::mpsc;
 
 use super::frame_delivery::*;
 use super::frame_store::SharedFrameStoreState;
-use super::network::{extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
+#[cfg(feature = "rdp-multimon")]
+use super::multimon::build_display_control_messages;
+use super::network::{
+    extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient,
+};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
 use super::{RdpTlsConfig, RdpTlsStream};
-#[cfg(feature = "rdp-multimon")]
-use super::multimon::build_display_control_messages;
 use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 
 // ---- Session log helper ----
@@ -36,7 +38,13 @@ use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 pub type LogSink = std::sync::mpsc::Sender<RdpLogEntry>;
 
 /// Emit a log entry to both the real-time event stream and the persistent log buffer.
-fn emit_log(emitter: &DynEventEmitter, log_sink: &LogSink, level: &str, message: String, session_id: &str) {
+fn emit_log(
+    emitter: &DynEventEmitter,
+    log_sink: &LogSink,
+    level: &str,
+    message: String,
+    session_id: &str,
+) {
     let entry = RdpLogEntry {
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -254,7 +262,8 @@ pub fn run_rdp_session(
                     message: "Session ended".to_string(),
                     desktop_width: None,
                     desktop_height: None,
-                }).unwrap_or_default(),
+                })
+                .unwrap_or_default(),
             );
         }
         Err(e) => {
@@ -274,7 +283,8 @@ pub fn run_rdp_session(
                         message: "Session cancelled".to_string(),
                         desktop_width: None,
                         desktop_height: None,
-                    }).unwrap_or_default(),
+                    })
+                    .unwrap_or_default(),
                 );
                 return;
             }
@@ -290,7 +300,8 @@ pub fn run_rdp_session(
                     message: err_msg,
                     desktop_width: None,
                     desktop_height: None,
-                }).unwrap_or_default(),
+                })
+                .unwrap_or_default(),
             );
         }
     }
@@ -331,7 +342,6 @@ pub fn build_negotiation_combos(
         ],
     }
 }
-
 
 #[doc(hidden)]
 pub fn effective_drive_redirections(settings: &ResolvedSettings) -> Vec<DriveRedirectionConfig> {
@@ -423,7 +433,8 @@ fn run_rdp_session_auto_detect(
                 ),
                 desktop_width: None,
                 desktop_height: None,
-            }).unwrap_or_default(),
+            })
+            .unwrap_or_default(),
         );
 
         let mut attempt_settings = ResolvedSettings {
@@ -483,7 +494,13 @@ fn run_rdp_session_auto_detect(
                     "RDP session {session_id}: auto-detect attempt {} failed: {e}",
                     i + 1
                 );
-                emit_log(event_emitter, log_sink, "warn", format!("Auto-detect attempt {} failed: {err_str}", i + 1), session_id);
+                emit_log(
+                    event_emitter,
+                    log_sink,
+                    "warn",
+                    format!("Auto-detect attempt {} failed: {err_str}", i + 1),
+                    session_id,
+                );
                 last_error = Some(e);
 
                 if i + 1 < max_attempts {
@@ -660,7 +677,8 @@ fn establish_rdp_connection(
             message: format!("Connecting to {addr}..."),
             desktop_width: None,
             desktop_height: None,
-        }).unwrap_or_default(),
+        })
+        .unwrap_or_default(),
     );
 
     // Resolve address -- supports both raw IPs and hostnames.
@@ -764,7 +782,9 @@ fn establish_rdp_connection(
                         lb.clone(),
                     ))
                 } else {
-                    Some(crate::ironrdp::pdu::nego::NegoRequestData::cookie(lb.clone()))
+                    Some(crate::ironrdp::pdu::nego::NegoRequestData::cookie(
+                        lb.clone(),
+                    ))
                 }
             } else if settings.use_vm_id && !settings.vm_id.is_empty() {
                 Some(crate::ironrdp::pdu::nego::NegoRequestData::cookie(format!(
@@ -821,7 +841,11 @@ fn establish_rdp_connection(
     let mut drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(
         crate::ironrdp_displaycontrol::client::DisplayControlClient::new(
             #[cfg(feature = "rdp-multimon")]
-            move |_| Ok(build_display_control_messages(explicit_monitor_layout.as_deref())),
+            move |_| {
+                Ok(build_display_control_messages(
+                    explicit_monitor_layout.as_deref(),
+                ))
+            },
             #[cfg(not(feature = "rdp-multimon"))]
             |_| Ok(Vec::new()),
         ),
@@ -993,7 +1017,8 @@ fn establish_rdp_connection(
                     "signature_algorithm": details.signature_algorithm,
                     "san": details.san,
                     "pem": details.pem,
-                })).unwrap_or_default(),
+                }))
+                .unwrap_or_default(),
             );
         } else if let Some(fp) = extract_cert_fingerprint(tls_stream) {
             // Fallback: emit fingerprint-only if full parsing failed
@@ -1004,7 +1029,8 @@ fn establish_rdp_connection(
                     "fingerprint": fp,
                     "host": host,
                     "port": port,
-                })).unwrap_or_default(),
+                }))
+                .unwrap_or_default(),
             );
         }
     }
@@ -1033,7 +1059,8 @@ fn establish_rdp_connection(
             message: "Authenticating...".to_string(),
             desktop_width: None,
             desktop_height: None,
-        }).unwrap_or_default(),
+        })
+        .unwrap_or_default(),
     );
 
     let t_auth = Instant::now();
@@ -1113,7 +1140,8 @@ fn establish_rdp_connection(
             "tls_ms": tls_ms,
             "auth_ms": auth_ms,
             "total_ms": total_ms,
-        })).unwrap_or_default(),
+        }))
+        .unwrap_or_default(),
     );
 
     // -- 6. Enter active session --
@@ -1132,7 +1160,8 @@ fn establish_rdp_connection(
             message: format!("Connected ({desktop_width}x{desktop_height})"),
             desktop_width: Some(desktop_width),
             desktop_height: Some(desktop_height),
-        }).unwrap_or_default(),
+        })
+        .unwrap_or_default(),
     );
 
     let image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
@@ -1149,10 +1178,13 @@ fn establish_rdp_connection(
         "RDP session {session_id}: {channel_count} static channels registered (io={cr_io_channel_id}, user={cr_user_channel_id})"
     );
     for (type_id, svc) in connection_result.static_channels.iter() {
-        let cid = connection_result.static_channels.get_channel_id_by_type_id(type_id);
+        let cid = connection_result
+            .static_channels
+            .get_channel_id_by_type_id(type_id);
         log::info!(
             "RDP session {session_id}: SVC '{:?}' channel_id={:?}",
-            svc.channel_name(), cid,
+            svc.channel_name(),
+            cid,
         );
     }
 
@@ -1215,7 +1247,8 @@ fn establish_rdp_connection(
         serde_json::to_value(serde_json::json!({
             "session_id": session_id,
             "backend": active_render_backend,
-        })).unwrap_or_default(),
+        }))
+        .unwrap_or_default(),
     );
 
     Ok(EstablishedSession {
@@ -1272,7 +1305,9 @@ fn run_active_session_loop(
             Some(p)
         }
         Err(e) => {
-            log::warn!("RDP session {session_id}: poller creation failed ({e}), using timeout fallback");
+            log::warn!(
+                "RDP session {session_id}: poller creation failed ({e}), using timeout fallback"
+            );
             set_nonblocking_on_framed(&est.tls_framed, false);
             set_read_timeout_on_framed(&est.tls_framed, Some(Duration::from_millis(2)));
             None
@@ -1388,7 +1423,9 @@ fn run_active_session_loop(
                     attached_channel = Some(new_channel);
                     viewer_detached = false;
                     // Force next frame delivery to do a full-frame sync
-                    stats.frame_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                    stats
+                        .frame_count
+                        .store(0, std::sync::atomic::Ordering::Relaxed);
 
                     // Emit "connected" status so the frontend knows the session is live
                     let _ = event_emitter.emit_event(
@@ -1402,7 +1439,8 @@ fn run_active_session_loop(
                             ),
                             desktop_width: Some(est.desktop_width),
                             desktop_height: Some(est.desktop_height),
-                        }).unwrap_or_default(),
+                        })
+                        .unwrap_or_default(),
                     );
                 }
                 Ok(RdpCommand::DetachViewer) => {
@@ -1487,17 +1525,23 @@ fn run_active_session_loop(
                             continue;
                         }
                         // Advertise CF_UNICODETEXT to the server
-                        if let Some(cliprdr) = est.active_stage
+                        if let Some(cliprdr) = est
+                            .active_stage
                             .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                         {
                             let format = crate::ironrdp_cliprdr::pdu::ClipboardFormat::new(
-                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT),
+                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
+                                    clipboard::CF_UNICODETEXT,
+                                ),
                             );
                             match cliprdr.initiate_copy(&[format]) {
                                 Ok(messages) => {
-                                    match est.active_stage.process_svc_processor_messages(messages) {
+                                    match est.active_stage.process_svc_processor_messages(messages)
+                                    {
                                         Ok(data) => {
-                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                            stats
+                                                .bytes_sent
+                                                .fetch_add(data.len() as u64, Ordering::Relaxed);
                                             let _ = est.tls_framed.write_all(&data);
                                         }
                                         Err(e) => log::warn!("CLIPRDR copy encode error: {e}"),
@@ -1512,7 +1556,12 @@ fn run_active_session_loop(
                     let allowed = est
                         .clipboard_state
                         .as_ref()
-                        .and_then(|clip_state| clip_state.lock().ok().map(|state| state.allows_server_to_client()))
+                        .and_then(|clip_state| {
+                            clip_state
+                                .lock()
+                                .ok()
+                                .map(|state| state.allows_server_to_client())
+                        })
                         .unwrap_or(false);
 
                     if !allowed {
@@ -1522,15 +1571,20 @@ fn run_active_session_loop(
                         continue;
                     }
 
-                    if let Some(cliprdr) = est.active_stage
+                    if let Some(cliprdr) = est
+                        .active_stage
                         .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                     {
-                        let format_id = crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT);
+                        let format_id = crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
+                            clipboard::CF_UNICODETEXT,
+                        );
                         match cliprdr.initiate_paste(format_id) {
                             Ok(messages) => {
                                 match est.active_stage.process_svc_processor_messages(messages) {
                                     Ok(data) => {
-                                        stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                        stats
+                                            .bytes_sent
+                                            .fetch_add(data.len() as u64, Ordering::Relaxed);
                                         let _ = est.tls_framed.write_all(&data);
                                     }
                                     Err(e) => log::warn!("CLIPRDR paste encode error: {e}"),
@@ -1546,12 +1600,15 @@ fn run_active_session_loop(
                         let allowed = if let Ok(mut state) = clip_state.lock() {
                             let allowed = state.allows_client_to_server();
                             state.staged_files = if allowed {
-                                entries.iter().map(|e| clipboard::StagedFile {
-                                    name: e.name.clone(),
-                                    size: e.size,
-                                    path: e.path.clone(),
-                                    is_directory: e.is_directory,
-                                }).collect()
+                                entries
+                                    .iter()
+                                    .map(|e| clipboard::StagedFile {
+                                        name: e.name.clone(),
+                                        size: e.size,
+                                        path: e.path.clone(),
+                                        is_directory: e.is_directory,
+                                    })
+                                    .collect()
                             } else {
                                 Vec::new()
                             };
@@ -1568,17 +1625,24 @@ fn run_active_session_loop(
                             continue;
                         }
                         // Advertise FileGroupDescriptorW format to server
-                        if let Some(cliprdr) = est.active_stage
+                        if let Some(cliprdr) = est
+                            .active_stage
                             .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                         {
                             let format = crate::ironrdp_cliprdr::pdu::ClipboardFormat::new(
-                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::FILEGROUPDESCRIPTORW_ID),
-                            ).with_name(crate::ironrdp_cliprdr::pdu::ClipboardFormatName::FILE_LIST);
+                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
+                                    clipboard::FILEGROUPDESCRIPTORW_ID,
+                                ),
+                            )
+                            .with_name(crate::ironrdp_cliprdr::pdu::ClipboardFormatName::FILE_LIST);
                             match cliprdr.initiate_copy(&[format]) {
                                 Ok(messages) => {
-                                    match est.active_stage.process_svc_processor_messages(messages) {
+                                    match est.active_stage.process_svc_processor_messages(messages)
+                                    {
                                         Ok(data) => {
-                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                            stats
+                                                .bytes_sent
+                                                .fetch_add(data.len() as u64, Ordering::Relaxed);
                                             let _ = est.tls_framed.write_all(&data);
                                         }
                                         Err(e) => log::warn!("CLIPRDR file copy encode error: {e}"),
@@ -1593,7 +1657,8 @@ fn run_active_session_loop(
                     log::info!("RDP session {session_id}: toggle '{feature}' = {enabled}");
                     match feature.as_str() {
                         "audio" => {
-                            if let Some(snd) = est.active_stage
+                            if let Some(snd) = est
+                                .active_stage
                                 .get_svc_processor_mut::<super::rdpdr::RdpsndClient>()
                             {
                                 snd.set_enabled(enabled);
@@ -1611,7 +1676,9 @@ fn run_active_session_loop(
                             // The setting controls registration at connect time.
                             log::info!("RDP session {session_id}: audioInput toggle requires reconnect to take effect");
                         }
-                        _ => log::warn!("RDP session {session_id}: unknown feature toggle '{feature}'"),
+                        _ => log::warn!(
+                            "RDP session {session_id}: unknown feature toggle '{feature}'"
+                        ),
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
@@ -1643,11 +1710,19 @@ fn run_active_session_loop(
                 None,
             ) {
                 Some(Ok(data)) => {
-                    stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                    stats
+                        .bytes_sent
+                        .fetch_add(data.len() as u64, Ordering::Relaxed);
                     stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
                     if let Err(e) = est.tls_framed.write_all(&data) {
                         let msg = format!("Write failed: {e}");
-                        emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {msg}"), session_id);
+                        emit_log(
+                            event_emitter,
+                            log_sink,
+                            "warn",
+                            format!("Network error (will reconnect): {msg}"),
+                            session_id,
+                        );
                         return SessionLoopExit::NetworkError(msg);
                     }
                 }
@@ -1690,10 +1765,22 @@ fn run_active_session_loop(
                         ) {
                             let err_str = format!("{e}");
                             if is_network_error_str(&err_str) {
-                                emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {err_str}"), session_id);
+                                emit_log(
+                                    event_emitter,
+                                    log_sink,
+                                    "warn",
+                                    format!("Network error (will reconnect): {err_str}"),
+                                    session_id,
+                                );
                                 return SessionLoopExit::NetworkError(err_str);
                             }
-                            emit_log(event_emitter, log_sink, "error", format!("Output processing error: {err_str}"), session_id);
+                            emit_log(
+                                event_emitter,
+                                log_sink,
+                                "error",
+                                format!("Output processing error: {err_str}"),
+                                session_id,
+                            );
                             return SessionLoopExit::ProtocolError(err_str);
                         }
                     } else {
@@ -1706,7 +1793,13 @@ fn run_active_session_loop(
                                 stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
                                 if let Err(e) = est.tls_framed.write_all(data) {
                                     let msg = format!("Write failed: {e}");
-                                    emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {msg}"), session_id);
+                                    emit_log(
+                                        event_emitter,
+                                        log_sink,
+                                        "warn",
+                                        format!("Network error (will reconnect): {msg}"),
+                                        session_id,
+                                    );
                                     return SessionLoopExit::NetworkError(msg);
                                 }
                             }
@@ -1715,14 +1808,23 @@ fn run_active_session_loop(
                 }
                 Err(e) => {
                     log::warn!("RDP {session_id}: input processing error: {e}");
-                    emit_log(event_emitter, log_sink, "warn", format!("Input processing error: {e}"), session_id);
+                    emit_log(
+                        event_emitter,
+                        log_sink,
+                        "warn",
+                        format!("Input processing error: {e}"),
+                        session_id,
+                    );
                 }
             }
         }
 
         // - Emit periodic stats -
         if last_stats_emit.elapsed() >= stats_interval {
-            let _ = event_emitter.emit_event("rdp://stats", serde_json::to_value(stats.to_event(session_id)).unwrap_or_default());
+            let _ = event_emitter.emit_event(
+                "rdp://stats",
+                serde_json::to_value(stats.to_event(session_id)).unwrap_or_default(),
+            );
             last_stats_emit = Instant::now();
 
             // -- RDP-level keepalive guard --
@@ -1940,10 +2042,15 @@ fn run_active_session_loop(
                                             serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "default",
-                                                x: None, y: None,
-                                                bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
-                                                hotspot_x: None, hotspot_y: None,
-                                            }).unwrap_or_default(),
+                                                x: None,
+                                                y: None,
+                                                bitmap_rgba: None,
+                                                bitmap_width: None,
+                                                bitmap_height: None,
+                                                hotspot_x: None,
+                                                hotspot_y: None,
+                                            })
+                                            .unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::PointerHidden => {
@@ -1952,10 +2059,15 @@ fn run_active_session_loop(
                                             serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "hidden",
-                                                x: None, y: None,
-                                                bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
-                                                hotspot_x: None, hotspot_y: None,
-                                            }).unwrap_or_default(),
+                                                x: None,
+                                                y: None,
+                                                bitmap_rgba: None,
+                                                bitmap_width: None,
+                                                bitmap_height: None,
+                                                hotspot_x: None,
+                                                hotspot_y: None,
+                                            })
+                                            .unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::PointerPosition { x, y } => {
@@ -1964,10 +2076,15 @@ fn run_active_session_loop(
                                             serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "position",
-                                                x: Some(x), y: Some(y),
-                                                bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
-                                                hotspot_x: None, hotspot_y: None,
-                                            }).unwrap_or_default(),
+                                                x: Some(x),
+                                                y: Some(y),
+                                                bitmap_rgba: None,
+                                                bitmap_width: None,
+                                                bitmap_height: None,
+                                                hotspot_x: None,
+                                                hotspot_y: None,
+                                            })
+                                            .unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::PointerBitmap(bitmap) => {
@@ -1989,7 +2106,8 @@ fn run_active_session_loop(
                                                 bitmap_height: Some(bitmap.height),
                                                 hotspot_x: Some(bitmap.hotspot_x),
                                                 hotspot_y: Some(bitmap.hotspot_y),
-                                            }).unwrap_or_default(),
+                                            })
+                                            .unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::Terminate(reason) => {
@@ -2006,7 +2124,13 @@ fn run_active_session_loop(
                         Err(e) => {
                             let err_str = format!("{e}");
                             log::warn!("RDP session {session_id}: PDU processing error (recovering): {err_str}");
-                            emit_log(event_emitter, log_sink, "warn", format!("PDU error (recovering): {err_str}"), session_id);
+                            emit_log(
+                                event_emitter,
+                                log_sink,
+                                "warn",
+                                format!("PDU error (recovering): {err_str}"),
+                                session_id,
+                            );
                             // Stats-based consecutive error tracking.
                             let count = stats.record_pdu_error();
                             stats.set_last_error(&err_str);
@@ -2046,10 +2170,22 @@ fn run_active_session_loop(
                     log::error!("RDP session {session_id}: read error: {err_str}");
                     // Classify: network errors are recoverable
                     if is_network_error(&e) || is_network_error_str(&err_str) {
-                        emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {err_str}"), session_id);
+                        emit_log(
+                            event_emitter,
+                            log_sink,
+                            "warn",
+                            format!("Network error (will reconnect): {err_str}"),
+                            session_id,
+                        );
                         return SessionLoopExit::NetworkError(err_str);
                     }
-                    emit_log(event_emitter, log_sink, "error", format!("Protocol error: {err_str}"), session_id);
+                    emit_log(
+                        event_emitter,
+                        log_sink,
+                        "error",
+                        format!("Protocol error: {err_str}"),
+                        session_id,
+                    );
                     return SessionLoopExit::ProtocolError(err_str);
                 }
             }
@@ -2065,7 +2201,10 @@ fn run_active_session_loop(
                 state.pending_data_request.take()
             };
             if let Some(request) = pending {
-                let is_file_list = request.format == crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::FILEGROUPDESCRIPTORW_ID);
+                let is_file_list = request.format
+                    == crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(
+                        clipboard::FILEGROUPDESCRIPTORW_ID,
+                    );
                 let (local_text, staged_files, allowed) = {
                     let state = clip_state.lock().expect("lock poisoned");
                     (
@@ -2075,7 +2214,8 @@ fn run_active_session_loop(
                     )
                 };
 
-                if let Some(cliprdr) = est.active_stage
+                if let Some(cliprdr) = est
+                    .active_stage
                     .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                 {
                     let response = if !allowed {
@@ -2093,10 +2233,14 @@ fn run_active_session_loop(
                         Ok(messages) => {
                             match est.active_stage.process_svc_processor_messages(messages) {
                                 Ok(data) => {
-                                    stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                    stats
+                                        .bytes_sent
+                                        .fetch_add(data.len() as u64, Ordering::Relaxed);
                                     let _ = est.tls_framed.write_all(&data);
                                 }
-                                Err(e) => log::warn!("CLIPRDR submit_format_data encode error: {e}"),
+                                Err(e) => {
+                                    log::warn!("CLIPRDR submit_format_data encode error: {e}")
+                                }
                             }
                         }
                         Err(e) => log::warn!("CLIPRDR submit_format_data error: {e}"),
@@ -2115,21 +2259,26 @@ fn run_active_session_loop(
                     (state.staged_files.clone(), state.allows_client_to_server())
                 };
                 if let Some(file) = staged_files.get(request.index as usize) {
-                    if let Some(cliprdr) = est.active_stage
+                    if let Some(cliprdr) = est
+                        .active_stage
                         .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                     {
                         use crate::ironrdp_cliprdr::pdu::FileContentsFlags;
 
                         let response = if !allowed {
-                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(request.stream_id)
+                            crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(
+                                request.stream_id,
+                            )
                         } else if request.flags.contains(FileContentsFlags::SIZE) {
                             crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_size_response(
-                                request.stream_id, file.size,
+                                request.stream_id,
+                                file.size,
                             )
                         } else if file.is_directory {
                             // Directory entries have no data
                             crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_data_response(
-                                request.stream_id, Vec::<u8>::new(),
+                                request.stream_id,
+                                Vec::<u8>::new(),
                             )
                         } else {
                             match std::fs::File::open(&file.path) {
@@ -2144,11 +2293,20 @@ fn run_active_session_loop(
                                     let (transferred, total_size, file_count, files_done) = {
                                         let mut state = clip_state.lock().expect("lock poisoned");
                                         state.file_bytes_transferred += n as u64;
-                                        let total: u64 = state.staged_files.iter().map(|f| f.size).sum();
-                                        let count = state.staged_files.iter().filter(|f| !f.is_directory).count();
+                                        let total: u64 =
+                                            state.staged_files.iter().map(|f| f.size).sum();
+                                        let count = state
+                                            .staged_files
+                                            .iter()
+                                            .filter(|f| !f.is_directory)
+                                            .count();
                                         // A file is "done" when we've read past its end
-                                        let done = state.staged_files.iter().take(request.index as usize)
-                                            .filter(|f| !f.is_directory).count();
+                                        let done = state
+                                            .staged_files
+                                            .iter()
+                                            .take(request.index as usize)
+                                            .filter(|f| !f.is_directory)
+                                            .count();
                                         (state.file_bytes_transferred, total, count, done)
                                     };
                                     let _ = event_emitter.emit_event(
@@ -2170,7 +2328,9 @@ fn run_active_session_loop(
                                 }
                                 Err(e) => {
                                     log::error!("CLIPRDR file read error for '{}': {e}", file.path);
-                                    crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(request.stream_id)
+                                    crate::ironrdp_cliprdr::pdu::FileContentsResponse::new_error(
+                                        request.stream_id,
+                                    )
                                 }
                             }
                         };
@@ -2178,17 +2338,24 @@ fn run_active_session_loop(
                             Ok(messages) => {
                                 match est.active_stage.process_svc_processor_messages(messages) {
                                     Ok(data) => {
-                                        stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                        stats
+                                            .bytes_sent
+                                            .fetch_add(data.len() as u64, Ordering::Relaxed);
                                         let _ = est.tls_framed.write_all(&data);
                                     }
-                                    Err(e) => log::warn!("CLIPRDR submit_file_contents encode error: {e}"),
+                                    Err(e) => {
+                                        log::warn!("CLIPRDR submit_file_contents encode error: {e}")
+                                    }
                                 }
                             }
                             Err(e) => log::warn!("CLIPRDR submit_file_contents error: {e}"),
                         }
                     }
                 } else {
-                    log::warn!("CLIPRDR file contents request for invalid index {}", request.index);
+                    log::warn!(
+                        "CLIPRDR file contents request for invalid index {}",
+                        request.index
+                    );
                 }
             }
         }
@@ -2245,7 +2412,8 @@ fn run_active_session_loop(
                     message: "Reactivating session...".to_string(),
                     desktop_width: None,
                     desktop_height: None,
-                }).unwrap_or_default(),
+                })
+                .unwrap_or_default(),
             );
 
             // Switch back to blocking mode for reactivation (it uses
@@ -2268,7 +2436,9 @@ fn run_active_session_loop(
                     );
                     est.active_stage = ActiveStage::new(new_result);
                     frame_store.reinit(session_id, est.desktop_width, est.desktop_height);
-                    stats.frame_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                    stats
+                        .frame_count
+                        .store(0, std::sync::atomic::Ordering::Relaxed);
                     stats.set_phase("active");
 
                     log::info!(
@@ -2288,7 +2458,8 @@ fn run_active_session_loop(
                             ),
                             desktop_width: Some(est.desktop_width),
                             desktop_height: Some(est.desktop_height),
-                        }).unwrap_or_default(),
+                        })
+                        .unwrap_or_default(),
                     );
 
                     // Back to non-blocking for the poller.
@@ -2322,10 +2493,7 @@ where
     Establish: FnMut(
         &mut crate::rdp::wake_channel::WakeReceiver,
     ) -> Result<Session, Box<dyn std::error::Error + Send + Sync>>,
-    RunActive: FnMut(
-        &mut Session,
-        &mut crate::rdp::wake_channel::WakeReceiver,
-    ) -> SessionLoopExit,
+    RunActive: FnMut(&mut Session, &mut crate::rdp::wake_channel::WakeReceiver) -> SessionLoopExit,
     Sleep: FnMut(
         &mut crate::rdp::wake_channel::WakeReceiver,
         Duration,
@@ -2447,7 +2615,9 @@ where
                     return Err(message.into());
                 }
                 reconnect_count += 1;
-                log::info!("RDP session {session_id}: will reconnect ({reconnect_count}): {message}");
+                log::info!(
+                    "RDP session {session_id}: will reconnect ({reconnect_count}): {message}"
+                );
                 emit_log(
                     event_emitter,
                     log_sink,
@@ -2516,10 +2686,7 @@ where
         &str,
         &mut crate::rdp::wake_channel::WakeReceiver,
     ) -> Result<Session, Box<dyn std::error::Error + Send + Sync>>,
-    RunActive: FnMut(
-        &mut Session,
-        &mut crate::rdp::wake_channel::WakeReceiver,
-    ) -> SessionLoopExit,
+    RunActive: FnMut(&mut Session, &mut crate::rdp::wake_channel::WakeReceiver) -> SessionLoopExit,
     Sleep: FnMut(
         &mut crate::rdp::wake_channel::WakeReceiver,
         Duration,

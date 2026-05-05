@@ -15,7 +15,8 @@ fn apply_optional_monitor_fields(
         }
     }
 
-    if let (Some(physical_width), Some(physical_height)) = (monitor.physical_width, monitor.physical_height)
+    if let (Some(physical_width), Some(physical_height)) =
+        (monitor.physical_width, monitor.physical_height)
     {
         if (10..=10_000).contains(&physical_width) && (10..=10_000).contains(&physical_height) {
             if let Ok(updated) = entry
@@ -54,7 +55,8 @@ pub fn normalize_monitor_layout(
 
     let mut normalized = Vec::with_capacity(monitors.len());
     for monitor in monitors {
-        let (width, height) = MonitorLayoutEntry::adjust_display_size(monitor.width, monitor.height);
+        let (width, height) =
+            MonitorLayoutEntry::adjust_display_size(monitor.width, monitor.height);
 
         let mut entry = if monitor.is_primary.unwrap_or(false) {
             MonitorLayoutEntry::new_primary(width, height)
@@ -90,7 +92,9 @@ pub fn build_display_control_messages(
         return Vec::new();
     };
 
-    let Ok(layout_pdu) = crate::ironrdp_displaycontrol::pdu::DisplayControlMonitorLayout::new(&monitors) else {
+    let Ok(layout_pdu) =
+        crate::ironrdp_displaycontrol::pdu::DisplayControlMonitorLayout::new(&monitors)
+    else {
         return Vec::new();
     };
 

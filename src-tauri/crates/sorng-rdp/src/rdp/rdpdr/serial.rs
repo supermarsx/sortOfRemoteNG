@@ -124,10 +124,7 @@ impl LineControl {
             _ => SERIAL_STOP_BIT_1,
         };
         self.parity = match self.parity {
-            SERIAL_PARITY_NONE
-            | SERIAL_PARITY_ODD
-            | SERIAL_PARITY_EVEN
-            | SERIAL_PARITY_MARK
+            SERIAL_PARITY_NONE | SERIAL_PARITY_ODD | SERIAL_PARITY_EVEN | SERIAL_PARITY_MARK
             | SERIAL_PARITY_SPACE => self.parity,
             _ => SERIAL_PARITY_NONE,
         };
@@ -321,7 +318,11 @@ trait SerialPortHandle: Send {
 
 #[cfg(feature = "rdp-serial")]
 trait SerialPortFactory: Send {
-    fn open(&self, port_name: &str, settings: &SerialSettings) -> io::Result<Box<dyn SerialPortHandle>>;
+    fn open(
+        &self,
+        port_name: &str,
+        settings: &SerialSettings,
+    ) -> io::Result<Box<dyn SerialPortHandle>>;
 }
 
 #[cfg(feature = "rdp-serial")]
@@ -403,7 +404,11 @@ impl SerialPortHandle for SystemSerialPort {
 
 #[cfg(feature = "rdp-serial")]
 impl SerialPortFactory for SystemSerialPortFactory {
-    fn open(&self, port_name: &str, settings: &SerialSettings) -> io::Result<Box<dyn SerialPortHandle>> {
+    fn open(
+        &self,
+        port_name: &str,
+        settings: &SerialSettings,
+    ) -> io::Result<Box<dyn SerialPortHandle>> {
         let timeout = settings.timeouts.effective_timeout();
         let mut port = serialport::new(port_name, settings.baud_rate)
             .data_bits(serial_data_bits(settings.line_control.word_length))
@@ -414,7 +419,8 @@ impl SerialPortFactory for SystemSerialPortFactory {
             .map_err(serialport_error)?;
 
         if settings.dtr_enabled {
-            port.write_data_terminal_ready(true).map_err(serialport_error)?;
+            port.write_data_terminal_ready(true)
+                .map_err(serialport_error)?;
         }
         if settings.rts_enabled {
             port.write_request_to_send(true).map_err(serialport_error)?;
@@ -481,7 +487,14 @@ impl SerialDevice {
     }
 
     /// Handle an IRP for this serial device.
-    pub fn handle_irp(&mut self, major: u32, _minor: u32, completion_id: u32, file_id: u32, data: &[u8]) -> Option<Vec<u8>> {
+    pub fn handle_irp(
+        &mut self,
+        major: u32,
+        _minor: u32,
+        completion_id: u32,
+        file_id: u32,
+        data: &[u8],
+    ) -> Option<Vec<u8>> {
         let (status, output) = match major {
             IRP_MJ_CREATE => self.handle_create(),
             IRP_MJ_CLOSE => self.handle_close(file_id),
@@ -489,11 +502,20 @@ impl SerialDevice {
             IRP_MJ_WRITE => self.handle_write(file_id, data),
             IRP_MJ_DEVICE_CONTROL => self.handle_ioctl(data),
             _ => {
-                log::debug!("RDPDR serial {}: unsupported IRP major=0x{:X}", self.session_id, major);
+                log::debug!(
+                    "RDPDR serial {}: unsupported IRP major=0x{:X}",
+                    self.session_id,
+                    major
+                );
                 (STATUS_NOT_SUPPORTED, Vec::new())
             }
         };
-        Some(build_io_completion(self.device_id, completion_id, status, &output))
+        Some(build_io_completion(
+            self.device_id,
+            completion_id,
+            status,
+            &output,
+        ))
     }
 
     fn handle_create(&mut self) -> (u32, Vec<u8>) {
@@ -681,7 +703,11 @@ impl SerialDevice {
         let ioctl_code = read_u32(data, 8);
         let input = device_control_input(data, input_buffer_length);
 
-        log::debug!("RDPDR serial {}: IOCTL 0x{:08X}", self.session_id, ioctl_code);
+        log::debug!(
+            "RDPDR serial {}: IOCTL 0x{:08X}",
+            self.session_id,
+            ioctl_code
+        );
 
         match ioctl_code {
             IOCTL_SERIAL_GET_BAUD_RATE => {
@@ -820,9 +846,10 @@ impl SerialDevice {
                 self.handflow = handflow;
                 (STATUS_SUCCESS, device_control_ack())
             }
-            IOCTL_SERIAL_GET_PROPERTIES => {
-                (STATUS_SUCCESS, self.build_properties_output(output_buffer_length))
-            }
+            IOCTL_SERIAL_GET_PROPERTIES => (
+                STATUS_SUCCESS,
+                self.build_properties_output(output_buffer_length),
+            ),
             IOCTL_SERIAL_GET_CHARS => {
                 let mut out = Vec::with_capacity(10);
                 out.extend_from_slice(&6u32.to_le_bytes());
@@ -837,7 +864,11 @@ impl SerialDevice {
                 (STATUS_SUCCESS, device_control_ack())
             }
             _ => {
-                log::debug!("RDPDR serial {}: unhandled IOCTL 0x{:08X}", self.session_id, ioctl_code);
+                log::debug!(
+                    "RDPDR serial {}: unhandled IOCTL 0x{:08X}",
+                    self.session_id,
+                    ioctl_code
+                );
                 (STATUS_SUCCESS, device_control_ack())
             }
         }
@@ -912,7 +943,12 @@ impl SerialDevice {
         }
     }
 
-    fn set_control_line(&mut self, dtr_enabled: bool, rts_enabled: bool, update_dtr: bool) -> (u32, Vec<u8>) {
+    fn set_control_line(
+        &mut self,
+        dtr_enabled: bool,
+        rts_enabled: bool,
+        update_dtr: bool,
+    ) -> (u32, Vec<u8>) {
         let previous_dtr = self.dtr_enabled;
         let previous_rts = self.rts_enabled;
         self.dtr_enabled = dtr_enabled;
@@ -998,16 +1034,14 @@ impl SerialDevice {
         payload[20..24].copy_from_slice(&self.baud_rate.max(115_200).to_le_bytes());
         payload[24..28].copy_from_slice(&SERIAL_SP_RS232.to_le_bytes());
         payload[28..32].copy_from_slice(
-            &(
-                SERIAL_PCF_DTRDSR
-                    | SERIAL_PCF_RTSCTS
-                    | SERIAL_PCF_PARITY_CHECK
-                    | SERIAL_PCF_XONXOFF
-                    | SERIAL_PCF_TOTALTIMEOUTS
-                    | SERIAL_PCF_INTTIMEOUTS
-                    | SERIAL_PCF_SPECIALCHARS
-            )
-            .to_le_bytes(),
+            &(SERIAL_PCF_DTRDSR
+                | SERIAL_PCF_RTSCTS
+                | SERIAL_PCF_PARITY_CHECK
+                | SERIAL_PCF_XONXOFF
+                | SERIAL_PCF_TOTALTIMEOUTS
+                | SERIAL_PCF_INTTIMEOUTS
+                | SERIAL_PCF_SPECIALCHARS)
+                .to_le_bytes(),
         );
         payload[32..36].copy_from_slice(
             &(SERIAL_SP_PARITY
@@ -1215,7 +1249,11 @@ mod tests {
 
     #[cfg(feature = "rdp-serial")]
     impl SerialPortFactory for MockPortFactory {
-        fn open(&self, port_name: &str, settings: &SerialSettings) -> io::Result<Box<dyn SerialPortHandle>> {
+        fn open(
+            &self,
+            port_name: &str,
+            settings: &SerialSettings,
+        ) -> io::Result<Box<dyn SerialPortHandle>> {
             let mut state = self.state.lock().unwrap();
             state.open_calls += 1;
             state.last_port_name = Some(port_name.to_string());
@@ -1262,7 +1300,9 @@ mod tests {
                     buf[..count].copy_from_slice(&data[..count]);
                     Ok(count)
                 }
-                MockReadAction::TimedOut => Err(io::Error::new(io::ErrorKind::TimedOut, "mock timeout")),
+                MockReadAction::TimedOut => {
+                    Err(io::Error::new(io::ErrorKind::TimedOut, "mock timeout"))
+                }
                 MockReadAction::Error(kind) => Err(io::Error::new(kind, "mock read error")),
             }
         }
@@ -1370,9 +1410,13 @@ mod tests {
         let file_id = read_u32(&out, 0);
         let payload = b"hello serial";
 
-        let (status, out) = unwrap_completion(
-            device.handle_irp(IRP_MJ_WRITE, 0, 4, file_id, &build_write_irp(payload)),
-        );
+        let (status, out) = unwrap_completion(device.handle_irp(
+            IRP_MJ_WRITE,
+            0,
+            4,
+            file_id,
+            &build_write_irp(payload),
+        ));
         assert_eq!(status, STATUS_SUCCESS);
         assert_eq!(read_u32(&out, 0), payload.len() as u32);
         assert_eq!(state.lock().unwrap().written, payload);
@@ -1387,12 +1431,13 @@ mod tests {
 
         {
             let mut state = state.lock().unwrap();
-            state.read_actions.push_back(MockReadAction::Data(vec![1, 2, 3, 4]));
+            state
+                .read_actions
+                .push_back(MockReadAction::Data(vec![1, 2, 3, 4]));
         }
 
-        let (status, out) = unwrap_completion(
-            device.handle_irp(IRP_MJ_READ, 0, 6, file_id, &build_read_irp(16)),
-        );
+        let (status, out) =
+            unwrap_completion(device.handle_irp(IRP_MJ_READ, 0, 6, file_id, &build_read_irp(16)));
         assert_eq!(status, STATUS_SUCCESS);
         assert_eq!(read_u32(&out, 0), 4);
         assert_eq!(&out[4..8], &[1, 2, 3, 4]);
@@ -1411,9 +1456,8 @@ mod tests {
             .read_actions
             .push_back(MockReadAction::TimedOut);
 
-        let (status, out) = unwrap_completion(
-            device.handle_irp(IRP_MJ_READ, 0, 8, file_id, &build_read_irp(32)),
-        );
+        let (status, out) =
+            unwrap_completion(device.handle_irp(IRP_MJ_READ, 0, 8, file_id, &build_read_irp(32)));
         assert_eq!(status, STATUS_SUCCESS);
         assert_eq!(read_u32(&out, 0), 0);
     }
@@ -1431,9 +1475,8 @@ mod tests {
             .read_actions
             .push_back(MockReadAction::Error(io::ErrorKind::BrokenPipe));
 
-        let (status, out) = unwrap_completion(
-            device.handle_irp(IRP_MJ_READ, 0, 32, file_id, &build_read_irp(8)),
-        );
+        let (status, out) =
+            unwrap_completion(device.handle_irp(IRP_MJ_READ, 0, 32, file_id, &build_read_irp(8)));
         assert_eq!(status, STATUS_UNSUCCESSFUL);
         assert!(out.is_empty());
     }
@@ -1458,7 +1501,11 @@ mod tests {
             0,
             11,
             0,
-            &build_device_control(IOCTL_SERIAL_SET_LINE_CONTROL, 0, &[SERIAL_STOP_BITS_2, SERIAL_PARITY_EVEN, 7]),
+            &build_device_control(
+                IOCTL_SERIAL_SET_LINE_CONTROL,
+                0,
+                &[SERIAL_STOP_BITS_2, SERIAL_PARITY_EVEN, 7],
+            ),
         ));
         assert_eq!(status, STATUS_SUCCESS);
 
@@ -1484,11 +1531,14 @@ mod tests {
 
         let state = state.lock().unwrap();
         assert_eq!(state.baud_rate, 115_200);
-        assert_eq!(state.line_control, LineControl {
-            stop_bits: SERIAL_STOP_BITS_2,
-            parity: SERIAL_PARITY_EVEN,
-            word_length: 7,
-        });
+        assert_eq!(
+            state.line_control,
+            LineControl {
+                stop_bits: SERIAL_STOP_BITS_2,
+                parity: SERIAL_PARITY_EVEN,
+                word_length: 7,
+            }
+        );
     }
 
     #[cfg(feature = "rdp-serial")]
@@ -1626,7 +1676,11 @@ mod tests {
             0,
             26,
             0,
-            &build_device_control(IOCTL_SERIAL_PURGE, 0, &(SERIAL_PURGE_RXCLEAR | SERIAL_PURGE_TXCLEAR).to_le_bytes()),
+            &build_device_control(
+                IOCTL_SERIAL_PURGE,
+                0,
+                &(SERIAL_PURGE_RXCLEAR | SERIAL_PURGE_TXCLEAR).to_le_bytes(),
+            ),
         ));
         assert_eq!(status, STATUS_SUCCESS);
 
@@ -1644,16 +1698,19 @@ mod tests {
         assert_eq!(status, STATUS_SUCCESS);
         let file_id = read_u32(&out, 0);
 
-        let (status, out) = unwrap_completion(
-            device.handle_irp(IRP_MJ_READ, 0, 28, file_id, &build_read_irp(32)),
-        );
+        let (status, out) =
+            unwrap_completion(device.handle_irp(IRP_MJ_READ, 0, 28, file_id, &build_read_irp(32)));
         assert_eq!(status, STATUS_SUCCESS);
         assert_eq!(read_u32(&out, 0), 0);
 
         let payload = b"discarded";
-        let (status, out) = unwrap_completion(
-            device.handle_irp(IRP_MJ_WRITE, 0, 29, file_id, &build_write_irp(payload)),
-        );
+        let (status, out) = unwrap_completion(device.handle_irp(
+            IRP_MJ_WRITE,
+            0,
+            29,
+            file_id,
+            &build_write_irp(payload),
+        ));
         assert_eq!(status, STATUS_SUCCESS);
         assert_eq!(read_u32(&out, 0), payload.len() as u32);
     }
@@ -1665,7 +1722,8 @@ mod tests {
         #[cfg(not(feature = "rdp-serial"))]
         let mut device = dev();
 
-        let (status, _) = unwrap_completion(device.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 30, 0, &[0u8; 4]));
+        let (status, _) =
+            unwrap_completion(device.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 30, 0, &[0u8; 4]));
         assert_eq!(status, STATUS_NOT_SUPPORTED);
     }
 }

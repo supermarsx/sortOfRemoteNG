@@ -270,11 +270,7 @@ impl RdpSessionStats {
     /// received PDUs or sent input events), and only fires after
     /// `idle_threshold` of silence.  Additionally, keepalives are
     /// rate-limited to `min_interval`.
-    pub fn should_send_keepalive(
-        &self,
-        idle_threshold: Duration,
-        min_interval: Duration,
-    ) -> bool {
+    pub fn should_send_keepalive(&self, idle_threshold: Duration, min_interval: Duration) -> bool {
         let now = Instant::now();
 
         // Suppress if we received data recently.

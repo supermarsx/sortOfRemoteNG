@@ -64,13 +64,7 @@ fn rdp_connect_list_disconnect_golden_path() {
     // negotiation, collects per-step DiagnosticStep entries, then drops
     // the stream when it returns (the implicit "disconnect").
     let report = run_diagnostics(
-        &host,
-        port,
-        &username,
-        &password,
-        None,
-        &settings,
-        None, // cached_tls_connector
+        &host, port, &username, &password, None, &settings, None, // cached_tls_connector
         None, // cached_http_client
     );
 
