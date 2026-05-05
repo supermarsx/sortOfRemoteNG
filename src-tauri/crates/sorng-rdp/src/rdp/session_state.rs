@@ -173,6 +173,21 @@ impl SessionState {
         }
     }
 
+    pub fn reconnect_attempt(&self) -> Option<u32> {
+        match self {
+            Self::Reconnecting(context) => Some(context.attempt),
+            _ => None,
+        }
+    }
+
+    pub fn failure_class(&self) -> Option<&FailureClass> {
+        match self {
+            Self::Draining(DrainReason::Failure(class))
+            | Self::Terminated(TerminationReason::Failed(class)) => Some(class),
+            _ => None,
+        }
+    }
+
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Terminated(_))
     }
@@ -418,10 +433,14 @@ impl LifecycleStateMachine {
                 .map(|substate| substate.as_str().to_string()),
             phase_started_at_ms: self.phase_started_at_ms,
             transition_count: self.transition_count,
-            reconnect_attempt: self.reconnect_attempt,
+            reconnect_attempt: self
+                .state
+                .reconnect_attempt()
+                .unwrap_or(self.reconnect_attempt),
             last_failure_class: self
                 .last_failure_class
                 .as_ref()
+                .or_else(|| self.state.failure_class())
                 .map(|class| class.as_str().to_string()),
             channel_summary: self.channel_summary.clone(),
             frame_flow_summary: self.frame_flow_summary.clone(),
@@ -447,8 +466,14 @@ impl LifecycleStateMachine {
             self.last_failure_class = Some(class);
         }
 
-        if let SessionState::Reconnecting(context) = &next {
-            self.reconnect_attempt = context.attempt;
+        match &next {
+            SessionState::Reconnecting(context) => {
+                self.reconnect_attempt = context.attempt;
+            }
+            SessionState::Active(_) => {
+                self.reconnect_attempt = 0;
+            }
+            _ => {}
         }
 
         self.state = next.clone();
@@ -914,5 +939,63 @@ mod tests {
             recovered.next,
             SessionState::Active(ActiveSubstate::Running)
         );
+    }
+
+    #[test]
+    fn snapshot_derives_attempt_and_failure_from_projected_state() {
+        let reconnecting = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Reconnecting(ReconnectContext::network_lost(3, 10)),
+            10,
+        );
+        assert_eq!(reconnecting.snapshot().reconnect_attempt, 3);
+
+        let failed = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Terminated(TerminationReason::Failed(FailureClass::AuthRejected)),
+            10,
+        );
+        assert_eq!(
+            failed.snapshot().last_failure_class.as_deref(),
+            Some("auth_rejected")
+        );
+    }
+
+    #[test]
+    fn reconnect_attempt_resets_after_successful_reactivation_path() {
+        let mut machine = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Active(ActiveSubstate::Running),
+            0,
+        );
+
+        assert_eq!(
+            machine
+                .transition(SessionEvent::NetworkLost, 10)
+                .unwrap()
+                .emitted_snapshot
+                .reconnect_attempt,
+            1
+        );
+        assert_eq!(
+            machine
+                .transition(SessionEvent::ReconnectTimerElapsed, 20)
+                .unwrap()
+                .emitted_snapshot
+                .reconnect_attempt,
+            2
+        );
+        machine.transition(SessionEvent::TcpConnected, 30).unwrap();
+        machine.transition(SessionEvent::TlsReady, 40).unwrap();
+        machine
+            .transition(SessionEvent::AuthenticationComplete, 50)
+            .unwrap();
+
+        let active = machine
+            .transition(SessionEvent::ActivationComplete, 60)
+            .unwrap();
+
+        assert_eq!(active.next, SessionState::Active(ActiveSubstate::Running));
+        assert_eq!(active.emitted_snapshot.reconnect_attempt, 0);
     }
 }

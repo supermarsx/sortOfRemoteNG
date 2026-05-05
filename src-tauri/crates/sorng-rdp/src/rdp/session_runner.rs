@@ -1296,23 +1296,21 @@ fn run_active_session_loop(
     set_nonblocking_on_framed(&est.tls_framed, true);
 
     let tcp_ref = tcp_stream_ref(&est.tls_framed);
-    let mut poller = match crate::rdp::session_poller::SessionPoller::new(
-        tcp_ref,
-        &cmd_rx.wake_reader,
-    ) {
-        Ok(p) => {
-            log::info!("RDP session {session_id}: event-driven poller active");
-            Some(p)
-        }
-        Err(e) => {
-            log::warn!(
+    let mut poller =
+        match crate::rdp::session_poller::SessionPoller::new(tcp_ref, &cmd_rx.wake_reader) {
+            Ok(p) => {
+                log::info!("RDP session {session_id}: event-driven poller active");
+                Some(p)
+            }
+            Err(e) => {
+                log::warn!(
                 "RDP session {session_id}: poller creation failed ({e}), using timeout fallback"
             );
-            set_nonblocking_on_framed(&est.tls_framed, false);
-            set_read_timeout_on_framed(&est.tls_framed, Some(Duration::from_millis(2)));
-            None
-        }
-    };
+                set_nonblocking_on_framed(&est.tls_framed, false);
+                set_read_timeout_on_framed(&est.tls_framed, Some(Duration::from_millis(2)));
+                None
+            }
+        };
 
     let mut last_stats_emit = Instant::now();
     let stats_interval = settings.stats_interval;
