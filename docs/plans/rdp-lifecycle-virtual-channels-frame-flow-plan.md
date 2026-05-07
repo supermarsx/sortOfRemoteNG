@@ -17,6 +17,7 @@
 13. [Success Metrics](#13-success-metrics)
 14. [Risks and Mitigations](#14-risks-and-mitigations)
 15. [Open Decisions](#15-open-decisions)
+16. [Completion Execution Tracker](#16-completion-execution-tracker)
 
 ---
 
@@ -1058,6 +1059,104 @@ Exit criteria:
 6. How much legacy server compatibility should be tested beyond xrdp and modern Windows Server?
 7. Should certificate trust prompts block the lifecycle state machine in `Authenticating`, or be modeled as a nested `AwaitingTrustDecision` state?
 8. Should RDPDR bulk file operations have independent pause/resume controls in the diagnostics UI?
+
+---
+
+## 16. Completion Execution Tracker
+
+This section is the implementation board for finishing the RDP review work. It turns the broad workstreams above into concrete mergeable slices. Each slice should be kept small enough to validate with focused tests before moving to the next one.
+
+### 16.1 Current completion state
+
+| Area | Status | Evidence | Remaining work |
+| --- | --- | --- | --- |
+| Review and architecture plan | Done | This plan exists and records lifecycle/channel/frame-flow goals. | Keep this tracker updated as slices land. |
+| Pure lifecycle model | Done | `src-tauri/crates/sorng-rdp/src/rdp/session_state.rs` has typed states, events, actions, snapshots, and unit tests. | Continue expanding event coverage only when new runner cases are wired. |
+| Runtime lifecycle observability | In progress | `RdpStatsEvent` carries lifecycle snapshots and the runner emits `rdp://lifecycle` beside stats. | Move from phase-derived snapshots to event-driven transitions at high-value runner points. |
+| Frontend lifecycle consumption | In progress | `useRDPClient` listens for `rdp://lifecycle`; internals panel can show lifecycle state and transition count. | Add richer diagnostics rows after channel/frame summaries exist. |
+| Drive redirection gate | Partially done | `effective_drive_redirections()` and `should_register_rdpdr()` exist in `session_runner.rs`. | Confirm with focused tests that disabled drive redirection registers no drives across SVC and DVC paths. |
+| Credential lifetime | Partially done | `RdpActiveConnection.cached_password` uses `SecretString`. | Audit connection/startup paths for temporary plaintext clones and snapshot/diagnostic leaks. |
+| Worker/WebCodecs fast path | Unknown | Prior review flagged `toDataView()` worker-scope bug. | Re-run renderer worker tests and fix any remaining worker-scope helper gaps. |
+| Certificate trust lifecycle | In progress elsewhere | Trust settings work exists in frontend and cert trust backend. | Map trust accept/reject/mismatch to lifecycle failure classes and tests. |
+| Virtual channel manager | Not started | Existing channels remain per-module. | Add registry/diagnostics skeleton, then adapt RDPDR, CLIPRDR, AUDIN, and optional GFX bridge. |
+| Backpressure frame controller | Not started | Frontend queue exists; backend is not credit-aware. | Add backend frame budgets, frontend telemetry, high/low watermarks, coalescing counters. |
+| Diagnostics UI | Partial | RDP internals panel exists and now receives lifecycle information. | Add channel rows, frame-flow counters, last failure class, and queue state. |
+
+### 16.2 Finish order
+
+#### 16.2.1 Lifecycle observability gate
+
+- Keep `RdpStatsEvent.lifecycle` optional for backward compatibility.
+- Emit `rdp://lifecycle` at stats cadence first.
+- Then wire event-driven transitions for attach, detach, reactivation, reconnect, shutdown, server close, and protocol errors.
+- Validation: `cargo test -p sorng-rdp session_state`, `cargo test -p sorng-rdp stats`, `npx tsc --noEmit`, focused RDP client/internals tests.
+
+#### 16.2.2 RDP review bug closure gate
+
+- Reconfirm worker/WebCodecs tests and fix worker helper scope if still present.
+- Reconfirm drive-redirection enable/disable coverage for SVC and DVC registration.
+- Reconfirm RDP certificate trust prompt behavior and typed reject/mismatch handling.
+- Reconfirm no secret-bearing lifecycle/stat/diagnostic snapshot serializes password-like fields.
+- Validation: focused Vitest renderer/security tests, `cargo test -p sorng-rdp redirection_flags credential_hygiene cert_trust`.
+
+#### 16.2.3 Virtual channel registry skeleton
+
+- Add `rdp/virtual_channels/` with channel name, kind, priority, state, summary, and diagnostics types.
+- Start as an observability/gating layer, not a protocol rewrite.
+- Feed `ChannelSummary` in lifecycle snapshots from the registry.
+- Validation: pure unit tests for registration, duplicate rejection, disabled channels, and summary counts.
+
+#### 16.2.4 Virtual channel adapters
+
+- Adapt RDPDR first because it has the largest device-gating risk.
+- Adapt CLIPRDR next because it is user-visible and can fail independently.
+- Adapt AUDIN/RDPSND after audio behavior is confirmed.
+- Add optional RDPGFX bridge if IronRDP dynamic-channel boundaries allow it without protocol churn.
+- Validation: existing RDPDR tests, clipboard tests, fuzzish parser tests, and multi-channel failure-isolation unit tests.
+
+#### 16.2.5 Frame-flow controller skeleton
+
+- Add backend `frame_flow_control.rs` with budgets, counters, and dispositions.
+- Start with accounting-only mode so behavior is observable before drops/coalescing are enabled.
+- Separate live frame budget from frame-store snapshot budget.
+- Validation: pure unit tests for budget accounting and no behavior change under no pressure.
+
+#### 16.2.6 Adaptive backpressure
+
+- Add frontend render telemetry at capped cadence.
+- Add backend high/low watermark state and `Active(FrontendBackpressured)` transitions.
+- Enable safe coalescing/drop only for superseded graphics, never lifecycle/input/resize/pointer-critical events.
+- Validation: synthetic slow-render tests, detach/reattach snapshot tests, input responsiveness tests.
+
+#### 16.2.7 Diagnostics finish
+
+- Extend RDP internals with lifecycle, channel, frame-flow, and last failure sections.
+- Keep diagnostics compact and numeric by default.
+- Avoid raw PDUs, credentials, certificate PEM, or token material.
+- Validation: component tests for display and redaction.
+
+#### 16.2.8 Final beta gate
+
+- Run focused frontend RDP suites.
+- Run focused Rust `sorng-rdp` tests.
+- Run `npx tsc --noEmit`.
+- Run live Docker/xrdp smoke when the host environment is available.
+- Update this tracker with pass/fail evidence and any deferred decisions.
+
+### 16.3 Definition of done
+
+The RDP review work is fully done only when all of these are true:
+
+- Lifecycle snapshots are emitted and consumed by frontend diagnostics.
+- Session runner uses event-driven lifecycle transitions for all major exits and recoveries.
+- Virtual channels have a central registry, state summary, and failure-isolation tests.
+- Drive redirection gates are tested for disabled, empty, mixed-device, and enabled cases.
+- Frame flow has bounded backend budgets and frontend render telemetry.
+- Slow-render tests prove memory stays bounded while input/disconnect remain responsive.
+- Certificate trust outcomes map to typed lifecycle classes.
+- Secret-bearing fields are excluded from lifecycle, stats, diagnostics, and logs.
+- Focused Rust and TypeScript validation gates are green.
+- Any live-environment gaps are documented as lab-only, not silently ignored.
 
 ---
 

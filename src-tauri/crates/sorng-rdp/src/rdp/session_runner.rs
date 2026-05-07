@@ -1819,9 +1819,16 @@ fn run_active_session_loop(
 
         // - Emit periodic stats -
         if last_stats_emit.elapsed() >= stats_interval {
+            let stats_event = stats.to_event(session_id);
+            if let Some(lifecycle) = stats_event.lifecycle.clone() {
+                let _ = event_emitter.emit_event(
+                    "rdp://lifecycle",
+                    serde_json::to_value(lifecycle).unwrap_or_default(),
+                );
+            }
             let _ = event_emitter.emit_event(
                 "rdp://stats",
-                serde_json::to_value(stats.to_event(session_id)).unwrap_or_default(),
+                serde_json::to_value(stats_event).unwrap_or_default(),
             );
             last_stats_emit = Instant::now();
 

@@ -1,6 +1,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use super::session_state::{
+    FrameFlowSummary, LifecycleStateMachine, SessionState, SessionStateSnapshot,
+};
 use super::types::RdpStatsEvent;
 
 // ---- Connection phase state machine ----
@@ -92,6 +95,7 @@ pub struct RdpSessionStats {
     pub reactivations: AtomicU64,
     /// Typed connection phase — replaces the old `Mutex<String>`.
     phase: std::sync::Mutex<ConnectionPhase>,
+    lifecycle: std::sync::Mutex<LifecycleStateMachine>,
     pub last_error: std::sync::Mutex<Option<String>>,
     /// Lock-free FPS tracking: frame count snapshot and timestamp for
     /// computing frames-per-second without any Mutex on the hot path.
@@ -143,6 +147,7 @@ impl RdpSessionStats {
             errors_recovered: AtomicU64::new(0),
             reactivations: AtomicU64::new(0),
             phase: std::sync::Mutex::new(ConnectionPhase::Initializing),
+            lifecycle: std::sync::Mutex::new(LifecycleStateMachine::new_at("", 0)),
             last_error: std::sync::Mutex::new(None),
             fps_snapshot_count: AtomicU64::new(0),
             fps_snapshot_time: std::sync::Mutex::new(now),
@@ -159,16 +164,16 @@ impl RdpSessionStats {
 
     /// Transition to a new connection phase using the typed enum.
     pub fn set_phase(&self, phase: &str) {
-        if let Ok(mut p) = self.phase.lock() {
-            *p = ConnectionPhase::from_str_lossy(phase);
-        }
+        self.set_phase_typed(ConnectionPhase::from_str_lossy(phase));
     }
 
     /// Set the phase directly from a typed `ConnectionPhase`.
-    #[allow(dead_code)]
     pub fn set_phase_typed(&self, phase: ConnectionPhase) {
         if let Ok(mut p) = self.phase.lock() {
             *p = phase;
+        }
+        if let Ok(mut lifecycle) = self.lifecycle.lock() {
+            lifecycle.force_state(SessionState::from(phase), self.elapsed_ms(Instant::now()));
         }
     }
 
@@ -346,7 +351,34 @@ impl RdpSessionStats {
             reactivations: self.reactivations.load(Ordering::Relaxed),
             phase: self.get_phase(),
             last_error: self.last_error.lock().ok().and_then(|e| e.clone()),
+            lifecycle: Some(self.lifecycle_snapshot(session_id)),
         }
+    }
+
+    pub fn lifecycle_snapshot(&self, session_id: &str) -> SessionStateSnapshot {
+        self.lifecycle
+            .lock()
+            .map(|mut lifecycle| {
+                lifecycle.set_frame_flow_summary(FrameFlowSummary {
+                    queued_frames: 0,
+                    delivered_frames: self.frame_count.load(Ordering::Relaxed),
+                    dropped_frames: 0,
+                });
+                lifecycle.snapshot_for_session(session_id)
+            })
+            .unwrap_or_else(|_| {
+                let mut lifecycle = LifecycleStateMachine::with_state(
+                    session_id,
+                    SessionState::from(self.get_phase_typed()),
+                    self.elapsed_ms(Instant::now()),
+                );
+                lifecycle.set_frame_flow_summary(FrameFlowSummary {
+                    queued_frames: 0,
+                    delivered_frames: self.frame_count.load(Ordering::Relaxed),
+                    dropped_frames: 0,
+                });
+                lifecycle.snapshot()
+            })
     }
 }
 
@@ -400,6 +432,25 @@ mod tests {
         stats.set_phase("negotiating");
         stats.set_phase("active");
         assert_eq!(stats.get_phase(), "active");
+    }
+
+    #[test]
+    fn lifecycle_snapshot_tracks_phase_changes() {
+        let stats = RdpSessionStats::new();
+
+        stats.set_phase("connecting");
+        let connecting = stats.lifecycle_snapshot("session-1");
+        assert_eq!(connecting.session_id, "session-1");
+        assert_eq!(connecting.state, "connecting");
+        assert_eq!(connecting.transition_count, 1);
+
+        stats.set_phase("active");
+        stats.record_frame();
+        let active = stats.lifecycle_snapshot("session-1");
+        assert_eq!(active.state, "active");
+        assert_eq!(active.active_substate.as_deref(), Some("running"));
+        assert_eq!(active.transition_count, 2);
+        assert_eq!(active.frame_flow_summary.delivered_frames, 1);
     }
 
     #[test]

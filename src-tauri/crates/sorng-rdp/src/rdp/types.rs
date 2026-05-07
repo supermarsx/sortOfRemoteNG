@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::frame_channel::DynFrameChannel;
+use super::session_state::SessionStateSnapshot;
 use super::wake_channel::WakeSender;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use secrecy::SecretString;
@@ -66,6 +67,8 @@ pub struct RdpStatsEvent {
     pub reactivations: u64,
     pub phase: String,
     pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lifecycle: Option<SessionStateSnapshot>,
 }
 
 // ---- Input events from the frontend ----

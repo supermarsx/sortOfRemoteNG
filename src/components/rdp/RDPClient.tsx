@@ -561,6 +561,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
       {mgr.showInternals && (
         <RDPInternalsPanel
           stats={mgr.stats}
+          lifecycle={mgr.lifecycle}
           connectTiming={mgr.connectTiming}
           rdpSettings={mgr.rdpSettings}
           activeRenderBackend={mgr.activeRenderBackend}

@@ -496,6 +496,69 @@ describe("RDPClient", () => {
         expect(screen.getByText("300")).toBeInTheDocument();
       });
     });
+
+    it("should display lifecycle snapshots from rdp://lifecycle", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+
+      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      internalsButton.click();
+
+      await act(async () => {
+        mockListeners["rdp://stats"]?.({
+          payload: {
+            session_id: "rdp-session-123",
+            uptime_secs: 42,
+            bytes_received: 1048576,
+            bytes_sent: 65536,
+            pdus_received: 500,
+            pdus_sent: 100,
+            frame_count: 300,
+            fps: 25.0,
+            input_events: 150,
+            errors_recovered: 2,
+            reactivations: 1,
+            phase: "active",
+            last_error: null,
+          },
+        });
+        mockListeners["rdp://lifecycle"]?.({
+          payload: {
+            sessionId: "rdp-session-123",
+            state: "active",
+            activeSubstate: "running",
+            phaseStartedAtMs: 10,
+            transitionCount: 7,
+            reconnectAttempt: 0,
+            channelSummary: {
+              enabledCount: 2,
+              readyCount: 2,
+              failedCount: 0,
+            },
+            frameFlowSummary: {
+              queuedFrames: 0,
+              deliveredFrames: 300,
+              droppedFrames: 0,
+            },
+          },
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Lifecycle")).toBeInTheDocument();
+        expect(screen.getByText("running")).toBeInTheDocument();
+        expect(screen.getByText("Transitions")).toBeInTheDocument();
+        expect(screen.getByText("7")).toBeInTheDocument();
+      });
+    });
   });
 
   describe("Certificate Trust", () => {

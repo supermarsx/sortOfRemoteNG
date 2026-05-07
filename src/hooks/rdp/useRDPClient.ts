@@ -21,7 +21,7 @@ import {
 import type { FrontendRendererType } from '../../components/rdp/rdpRenderers';
 import { RdpFramePipeline, type FrameSchedulingMode } from '../../components/rdp/rdpFramePipeline';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
-import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
+import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent, RDPLifecycleEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
 
 const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
@@ -83,6 +83,7 @@ export function useRDPClient(session: ConnectionSession) {
   const [pointerStyle, setPointerStyle] = useState<string>('default');
   const [showInternals, setShowInternals] = useState(false);
   const [stats, setStats] = useState<RDPStatsEvent | null>(null);
+  const [lifecycle, setLifecycle] = useState<RDPLifecycleEvent | null>(null);
   const [magnifierActive, setMagnifierActive] = useState(false);
   // Sync magnifier state into the pipeline (outside React render cycle).
   pipelineRef.current?.setMagnifierActive(magnifierActive);
@@ -1019,6 +1020,13 @@ export function useRDPClient(session: ConnectionSession) {
       const s = event.payload;
       if (s.session_id !== sessionIdRef.current) return;
       setStats(s);
+      if (s.lifecycle) setLifecycle(s.lifecycle);
+    }));
+
+    track(listen<RDPLifecycleEvent>('rdp://lifecycle', (event) => {
+      const snapshot = event.payload;
+      if (snapshot.sessionId !== sessionIdRef.current) return;
+      setLifecycle(snapshot);
     }));
 
     track(listen<RdpCertFingerprintEvent>('rdp://cert-fingerprint', (event) => {
@@ -1689,6 +1697,7 @@ export function useRDPClient(session: ConnectionSession) {
     showInternals,
     setShowInternals,
     stats,
+    lifecycle,
     magnifierActive,
     setMagnifierActive,
     magnifierPos,

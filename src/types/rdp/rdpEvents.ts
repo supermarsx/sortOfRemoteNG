@@ -33,6 +33,31 @@ export interface RDPStatsEvent {
   reactivations: number;
   phase: string;
   last_error: string | null;
+  lifecycle?: RDPLifecycleEvent;
+}
+
+export interface RDPChannelSummary {
+  enabledCount: number;
+  readyCount: number;
+  failedCount: number;
+}
+
+export interface RDPFrameFlowSummary {
+  queuedFrames: number;
+  deliveredFrames: number;
+  droppedFrames: number;
+}
+
+export interface RDPLifecycleEvent {
+  sessionId: string;
+  state: string;
+  activeSubstate?: string;
+  phaseStartedAtMs: number;
+  transitionCount: number;
+  reconnectAttempt: number;
+  lastFailureClass?: string;
+  channelSummary: RDPChannelSummary;
+  frameFlowSummary: RDPFrameFlowSummary;
 }
 
 export interface RdpCertFingerprintEvent {

@@ -2,11 +2,12 @@ import React from 'react';
 import { Activity, X } from 'lucide-react';
 import { formatUptime } from '../../utils/rdp/rdpFormatters';
 import { formatBytes } from '../../utils/core/formatters';
-import type { RDPStatsEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
+import type { RDPLifecycleEvent, RDPStatsEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
 import type { RDPConnectionSettings } from '../../types/connection/connection';
 
 interface RDPInternalsPanelProps {
   stats: RDPStatsEvent | null;
+  lifecycle: RDPLifecycleEvent | null;
   connectTiming: RDPTimingEvent | null;
   rdpSettings: RDPConnectionSettings;
   activeRenderBackend: string;
@@ -15,9 +16,10 @@ interface RDPInternalsPanelProps {
 }
 
 export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
-  stats, connectTiming, rdpSettings, activeRenderBackend, activeFrontendRenderer, onClose,
+  stats, lifecycle, connectTiming, rdpSettings, activeRenderBackend, activeFrontendRenderer, onClose,
 }) => {
   const isWebCodecsFrontend = activeFrontendRenderer.toLowerCase().includes('webcodecs');
+  const lifecycleSnapshot = lifecycle ?? stats?.lifecycle ?? null;
   return (
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between mb-3">
@@ -35,6 +37,20 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
           <div className="text-[var(--color-textMuted)] mb-1">Phase</div>
           <div className="text-[var(--color-text)] font-mono capitalize">{stats.phase}</div>
         </div>
+        {lifecycleSnapshot && (
+          <>
+            <div className="bg-[var(--color-background)] rounded p-2">
+              <div className="text-[var(--color-textMuted)] mb-1">Lifecycle</div>
+              <div className="text-[var(--color-text)] font-mono">
+                {lifecycleSnapshot.activeSubstate ?? lifecycleSnapshot.state}
+              </div>
+            </div>
+            <div className="bg-[var(--color-background)] rounded p-2">
+              <div className="text-[var(--color-textMuted)] mb-1">Transitions</div>
+              <div className="text-[var(--color-text)] font-mono">{lifecycleSnapshot.transitionCount}</div>
+            </div>
+          </>
+        )}
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Uptime</div>
           <div className="text-[var(--color-text)] font-mono">{formatUptime(stats.uptime_secs)}</div>

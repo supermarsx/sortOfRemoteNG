@@ -564,6 +564,38 @@ impl LifecycleStateMachine {
         }
     }
 
+    pub fn snapshot_for_session(&self, session_id: impl Into<String>) -> SessionStateSnapshot {
+        SessionStateSnapshot {
+            session_id: session_id.into(),
+            ..self.snapshot()
+        }
+    }
+
+    pub fn force_state(&mut self, state: SessionState, now_ms: u64) -> SessionStateSnapshot {
+        let state_changed = self.state != state;
+        if state_changed {
+            self.phase_started_at_ms = now_ms;
+            self.transition_count += 1;
+        }
+
+        if let Some(class) = state.failure_class() {
+            self.last_failure_class = Some(class.clone());
+        }
+
+        match &state {
+            SessionState::Reconnecting(context) => {
+                self.reconnect_attempt = context.attempt;
+            }
+            SessionState::Active(_) => {
+                self.reconnect_attempt = 0;
+            }
+            _ => {}
+        }
+
+        self.state = state;
+        self.snapshot()
+    }
+
     pub fn transition(
         &mut self,
         event: SessionEvent,
@@ -1117,15 +1149,41 @@ mod tests {
     }
 
     #[test]
+    fn force_state_mirrors_observed_phase_changes() {
+        let mut machine = LifecycleStateMachine::new("session-1");
+
+        let connecting = machine.force_state(SessionState::Connecting, 10);
+        assert_eq!(connecting.state, "connecting");
+        assert_eq!(connecting.transition_count, 1);
+
+        let repeated = machine.force_state(SessionState::Connecting, 20);
+        assert_eq!(repeated.transition_count, 1);
+        assert_eq!(repeated.phase_started_at_ms, 10);
+
+        let active = machine.force_state(SessionState::Active(ActiveSubstate::Running), 30);
+        assert_eq!(active.state, "active");
+        assert_eq!(active.active_substate.as_deref(), Some("running"));
+        assert_eq!(active.transition_count, 2);
+    }
+
+    #[test]
     fn lifecycle_event_names_and_categories_are_stable() {
         let cases = [
-            (SessionEvent::UserConnect, "user_connect", SessionEventCategory::User),
+            (
+                SessionEvent::UserConnect,
+                "user_connect",
+                SessionEventCategory::User,
+            ),
             (
                 SessionEvent::FrontendDetached,
                 "frontend_detached",
                 SessionEventCategory::Frontend,
             ),
-            (SessionEvent::NetworkLost, "network_lost", SessionEventCategory::Network),
+            (
+                SessionEvent::NetworkLost,
+                "network_lost",
+                SessionEventCategory::Network,
+            ),
             (
                 SessionEvent::ChannelFault {
                     channel: "rdpdr".to_string(),
@@ -1191,11 +1249,7 @@ mod tests {
 
         let event = SessionEvent::NetworkLost;
         let outcome = machine.transition(event.clone(), 10).unwrap();
-        let action_names: Vec<&str> = outcome
-            .actions
-            .iter()
-            .map(SessionAction::as_str)
-            .collect();
+        let action_names: Vec<&str> = outcome.actions.iter().map(SessionAction::as_str).collect();
 
         assert_eq!(event.as_str(), "network_lost");
         assert_eq!(event.category(), SessionEventCategory::Network);
