@@ -1,5 +1,9 @@
-import React, { CSSProperties, useEffect, useRef } from "react";
+import React, { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
+
+const VIEWPORT_PADDING = 4;
+const SUBMENU_FLYOUT_WIDTH = 224;
 
 const MENU_SELECTOR = '[role="menu"]';
 const MENU_ITEM_SELECTOR = [
@@ -117,21 +121,42 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const [resolvedPosition, setResolvedPosition] = useState<MenuSurfacePosition | null>(null);
+  const positionX = position?.x;
+  const positionY = position?.y;
 
-  // Clamp menu position to viewport after it renders
-  useEffect(() => {
-    if (!isOpen || !menuRef.current || !position) return;
+  useLayoutEffect(() => {
+    if (!isOpen || !menuRef.current || positionX == null || positionY == null) {
+      setResolvedPosition(null);
+      return;
+    }
+
     const el = menuRef.current;
     const rect = el.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let x = position.x;
-    let y = position.y;
-    if (x + rect.width > vw - 4) x = Math.max(4, vw - rect.width - 4);
-    if (y + rect.height > vh - 4) y = Math.max(4, vh - rect.height - 4);
-    if (x !== position.x) el.style.left = `${x}px`;
-    if (y !== position.y) el.style.top = `${y}px`;
-  });
+    let x = positionX;
+    let y = positionY;
+    if (x + rect.width > vw - VIEWPORT_PADDING) {
+      x = Math.max(VIEWPORT_PADDING, vw - rect.width - VIEWPORT_PADDING);
+    }
+    if (y + rect.height > vh - VIEWPORT_PADDING) {
+      y = Math.max(VIEWPORT_PADDING, vh - rect.height - VIEWPORT_PADDING);
+    }
+
+    const openSubmenusLeft =
+      x + rect.width + SUBMENU_FLYOUT_WIDTH > vw - VIEWPORT_PADDING &&
+      x - SUBMENU_FLYOUT_WIDTH >= VIEWPORT_PADDING;
+
+    el.querySelectorAll<HTMLElement>(".sor-menu-submenu").forEach((submenu) => {
+      submenu.dataset.submenuSide = openSubmenusLeft ? "left" : "right";
+    });
+
+    setResolvedPosition((current) => {
+      if (current?.x === x && current?.y === y) return current;
+      return { x, y };
+    });
+  }, [children, isOpen, positionX, positionY]);
 
   useEffect(() => {
     if (!isOpen || !onClose || !closeOnOutside) return;
@@ -181,6 +206,8 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
   }, [isOpen]);
 
   if (!isOpen || !position) return null;
+
+  const currentPosition = resolvedPosition ?? position;
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const rootMenu = menuRef.current;
@@ -241,11 +268,11 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
     }
   };
 
-  return (
+  const surface = (
     <div
       ref={menuRef}
       className={cx("sor-menu-surface fixed z-[9999]", className)}
-      style={{ left: position.x, top: position.y, ...style }}
+      style={{ left: currentPosition.x, top: currentPosition.y, ...style }}
       data-testid={dataTestId}
       tabIndex={-1}
       role="menu"
@@ -257,6 +284,9 @@ export const MenuSurface: React.FC<MenuSurfaceProps> = ({
       {children}
     </div>
   );
+
+  if (typeof document === "undefined") return surface;
+  return createPortal(surface, document.body);
 };
 
 export default MenuSurface;

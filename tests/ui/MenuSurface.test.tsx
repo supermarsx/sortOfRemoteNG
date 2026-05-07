@@ -1,7 +1,24 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MenuSurface } from "../../src/components/ui/overlays/MenuSurface";
+
+const rect = (x: number, y: number, width: number, height: number): DOMRect => ({
+  x,
+  y,
+  width,
+  height,
+  top: y,
+  left: x,
+  right: x + width,
+  bottom: y + height,
+  toJSON: () => ({}),
+} as DOMRect);
+
+const setViewport = (width: number, height: number) => {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+};
 
 const renderMenu = (useIgnoreRef = false) => {
   const TestHarness: React.FC = () => {
@@ -30,6 +47,10 @@ const renderMenu = (useIgnoreRef = false) => {
 };
 
 describe("MenuSurface", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders with menu semantics and focuses the first item", async () => {
     render(
       <MenuSurface
@@ -139,6 +160,44 @@ describe("MenuSurface", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(submenuWrapper).toHaveAttribute("data-submenu-open", "false");
     expect(trigger).toHaveFocus();
+  });
+
+  it("clamps to the viewport and opens flyouts inward near the right edge", async () => {
+    setViewport(700, 400);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect() {
+      const x = Number.parseFloat(this.style.left || "0") || 0;
+      const y = Number.parseFloat(this.style.top || "0") || 0;
+      if (this.getAttribute("data-testid") === "menu-surface") {
+        return rect(x, y, 160, 80);
+      }
+      return rect(x, y, 0, 0);
+    });
+
+    render(
+      <MenuSurface
+        isOpen
+        onClose={() => {}}
+        position={{ x: 650, y: 350 }}
+        dataTestId="menu-surface"
+      >
+        <button>Top Item</button>
+        <div className="sor-menu-submenu" data-testid="submenu-wrapper" data-submenu-open="false">
+          <button role="menuitem" aria-haspopup="menu">More Actions</button>
+          <div className="sor-menu-submenu-panel" role="menu">
+            <button role="menuitem">Sub Item</button>
+          </div>
+        </div>
+      </MenuSurface>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("menu-surface")).toHaveStyle({
+        left: "536px",
+        top: "316px",
+      });
+    });
+
+    expect(screen.getByTestId("submenu-wrapper")).toHaveAttribute("data-submenu-side", "left");
   });
 
   it("closes when clicking outside", () => {

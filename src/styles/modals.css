@@ -86,27 +86,40 @@
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.5rem;
+  box-sizing: border-box;
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.35),
     0 2px 6px rgba(0, 0, 0, 0.2);
   min-width: 10rem;
+  max-width: calc(100vw - 0.5rem);
   padding-block: 0.25rem;
   /* NOTE: no overflow:hidden — submenus position absolutely outside this box */
 }
 
 .sor-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
   width: 100%;
+  min-height: 1.75rem;
   display: flex;
   align-items: center;
   gap: 0.375rem;
   padding: 0.3rem 0.625rem;
   text-align: left;
+  font: inherit;
   font-size: 0.8125rem;
   line-height: 1.25;
+  white-space: nowrap;
   color: var(--color-textSecondary);
   transition:
     background-color 120ms ease,
     color 120ms ease;
+}
+
+.sor-menu-item > svg {
+  flex: 0 0 auto;
+  margin-right: 0;
 }
 
 .sor-menu-item:hover {
@@ -179,6 +192,11 @@
     0 2px 6px rgba(0, 0, 0, 0.2);
   padding-block: 0.25rem;
   z-index: 1;
+}
+
+.sor-menu-submenu[data-submenu-side="left"] > .sor-menu-submenu-panel {
+  left: auto;
+  right: 100%;
 }
 
 .sor-menu-submenu[data-submenu-open="true"] > .sor-menu-submenu-panel {
