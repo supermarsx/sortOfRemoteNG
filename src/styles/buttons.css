@@ -1,5 +1,43 @@
 /* ── Centralized button primitives ─────────────────────────────── */
 
+button:not(:disabled):not([aria-disabled="true"]),
+input[type="button"]:not(:disabled):not([aria-disabled="true"]),
+input[type="submit"]:not(:disabled):not([aria-disabled="true"]),
+input[type="reset"]:not(:disabled):not([aria-disabled="true"]),
+input[type="checkbox"]:not(:disabled):not([aria-disabled="true"]),
+input[type="radio"]:not(:disabled):not([aria-disabled="true"]),
+input[type="range"]:not(:disabled):not([aria-disabled="true"]),
+select:not(:disabled):not([aria-disabled="true"]),
+[role="button"]:not([disabled]):not([aria-disabled="true"]),
+[role="menuitem"]:not([disabled]):not([aria-disabled="true"]),
+summary:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+button[aria-disabled="true"],
+input[type="button"]:disabled,
+input[type="button"][aria-disabled="true"],
+input[type="submit"]:disabled,
+input[type="submit"][aria-disabled="true"],
+input[type="reset"]:disabled,
+input[type="reset"][aria-disabled="true"],
+input[type="checkbox"]:disabled,
+input[type="checkbox"][aria-disabled="true"],
+input[type="radio"]:disabled,
+input[type="radio"][aria-disabled="true"],
+input[type="range"]:disabled,
+input[type="range"][aria-disabled="true"],
+select:disabled,
+select[aria-disabled="true"],
+[role="button"][disabled],
+[role="button"][aria-disabled="true"],
+[role="menuitem"][disabled],
+[role="menuitem"][aria-disabled="true"],
+summary[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 /* Base class — use with a variant: sor-btn sor-btn-primary, etc. */
 .sor-btn {
   display: inline-flex;
