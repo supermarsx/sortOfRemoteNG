@@ -276,6 +276,85 @@ pub enum SessionEvent {
     FatalError { class: FailureClass },
 }
 
+impl SessionEvent {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::UserConnect => "user_connect",
+            Self::HostResolved => "host_resolved",
+            Self::TcpConnected => "tcp_connected",
+            Self::TlsReady => "tls_ready",
+            Self::CredSspReady => "credssp_ready",
+            Self::AuthenticationComplete => "authentication_complete",
+            Self::ActivationStarted => "activation_started",
+            Self::ActivationComplete => "activation_complete",
+            Self::DeactivateAllReceived => "deactivate_all_received",
+            Self::ReactivationComplete => "reactivation_complete",
+            Self::FrontendDetached => "frontend_detached",
+            Self::FrontendAttached => "frontend_attached",
+            Self::BackpressureRaised => "backpressure_raised",
+            Self::BackpressureCleared => "backpressure_cleared",
+            Self::ChannelFault { .. } => "channel_fault",
+            Self::ChannelRecovered { .. } => "channel_recovered",
+            Self::NetworkLost => "network_lost",
+            Self::ReconnectTimerElapsed => "reconnect_timer_elapsed",
+            Self::UserDisconnect => "user_disconnect",
+            Self::CloseComplete => "close_complete",
+            Self::ServerClosed => "server_closed",
+            Self::FatalError { .. } => "fatal_error",
+        }
+    }
+
+    pub fn category(&self) -> SessionEventCategory {
+        match self {
+            Self::UserConnect | Self::UserDisconnect => SessionEventCategory::User,
+            Self::FrontendDetached
+            | Self::FrontendAttached
+            | Self::BackpressureRaised
+            | Self::BackpressureCleared => SessionEventCategory::Frontend,
+            Self::ChannelFault { .. } | Self::ChannelRecovered { .. } => {
+                SessionEventCategory::Channel
+            }
+            Self::NetworkLost | Self::ReconnectTimerElapsed | Self::ServerClosed => {
+                SessionEventCategory::Network
+            }
+            Self::CloseComplete | Self::FatalError { .. } => SessionEventCategory::Terminal,
+            Self::HostResolved
+            | Self::TcpConnected
+            | Self::TlsReady
+            | Self::CredSspReady
+            | Self::AuthenticationComplete
+            | Self::ActivationStarted
+            | Self::ActivationComplete
+            | Self::DeactivateAllReceived
+            | Self::ReactivationComplete => SessionEventCategory::Lifecycle,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionEventCategory {
+    User,
+    Frontend,
+    Network,
+    Channel,
+    Lifecycle,
+    Terminal,
+}
+
+impl SessionEventCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Frontend => "frontend",
+            Self::Network => "network",
+            Self::Channel => "channel",
+            Self::Lifecycle => "lifecycle",
+            Self::Terminal => "terminal",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionAction {
     ResolveHost,
@@ -309,6 +388,44 @@ pub enum SessionAction {
     EmitStateSnapshot,
     MarkChannelFaulted(ChannelName),
     MarkChannelRecovered(ChannelName),
+}
+
+impl SessionAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ResolveHost => "resolve_host",
+            Self::OpenTcpTransport => "open_tcp_transport",
+            Self::StartSecurityNegotiation => "start_security_negotiation",
+            Self::StartAuthentication => "start_authentication",
+            Self::StartActivation => "start_activation",
+            Self::EnterActive => "enter_active",
+            Self::InitializeVirtualChannels => "initialize_virtual_channels",
+            Self::StartFrameFlow => "start_frame_flow",
+            Self::PauseFrameDelivery => "pause_frame_delivery",
+            Self::DeactivateChannels => "deactivate_channels",
+            Self::StartReactivation => "start_reactivation",
+            Self::ResumeChannels => "resume_channels",
+            Self::RefreshSurfaces => "refresh_surfaces",
+            Self::ResumeFrameDelivery => "resume_frame_delivery",
+            Self::StopLiveFramePushes => "stop_live_frame_pushes",
+            Self::KeepFrameStoreBudget => "keep_frame_store_budget",
+            Self::SendCurrentSnapshot => "send_current_snapshot",
+            Self::ResumeFramePushes => "resume_frame_pushes",
+            Self::EnterFrameBackpressure => "enter_frame_backpressure",
+            Self::ExitFrameBackpressure => "exit_frame_backpressure",
+            Self::FreezeFrameStore => "freeze_frame_store",
+            Self::MarkChannelsSuspended => "mark_channels_suspended",
+            Self::StartReconnectTimer => "start_reconnect_timer",
+            Self::DrainQueues => "drain_queues",
+            Self::CloseChannels => "close_channels",
+            Self::CloseTransport => "close_transport",
+            Self::ReleaseResources => "release_resources",
+            Self::EmitRecoveryEvent => "emit_recovery_event",
+            Self::EmitStateSnapshot => "emit_state_snapshot",
+            Self::MarkChannelFaulted(_) => "mark_channel_faulted",
+            Self::MarkChannelRecovered(_) => "mark_channel_recovered",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -997,5 +1114,96 @@ mod tests {
 
         assert_eq!(active.next, SessionState::Active(ActiveSubstate::Running));
         assert_eq!(active.emitted_snapshot.reconnect_attempt, 0);
+    }
+
+    #[test]
+    fn lifecycle_event_names_and_categories_are_stable() {
+        let cases = [
+            (SessionEvent::UserConnect, "user_connect", SessionEventCategory::User),
+            (
+                SessionEvent::FrontendDetached,
+                "frontend_detached",
+                SessionEventCategory::Frontend,
+            ),
+            (SessionEvent::NetworkLost, "network_lost", SessionEventCategory::Network),
+            (
+                SessionEvent::ChannelFault {
+                    channel: "rdpdr".to_string(),
+                },
+                "channel_fault",
+                SessionEventCategory::Channel,
+            ),
+            (
+                SessionEvent::ActivationComplete,
+                "activation_complete",
+                SessionEventCategory::Lifecycle,
+            ),
+            (
+                SessionEvent::FatalError {
+                    class: FailureClass::ProtocolViolation,
+                },
+                "fatal_error",
+                SessionEventCategory::Terminal,
+            ),
+        ];
+
+        for (event, name, category) in cases {
+            assert_eq!(event.as_str(), name);
+            assert_eq!(event.category(), category);
+            assert_eq!(event.category().as_str(), category.as_str());
+        }
+    }
+
+    #[test]
+    fn lifecycle_action_names_are_stable_for_diagnostics() {
+        let actions = [
+            (SessionAction::ResolveHost, "resolve_host"),
+            (
+                SessionAction::InitializeVirtualChannels,
+                "initialize_virtual_channels",
+            ),
+            (SessionAction::StartFrameFlow, "start_frame_flow"),
+            (SessionAction::FreezeFrameStore, "freeze_frame_store"),
+            (SessionAction::ReleaseResources, "release_resources"),
+            (SessionAction::EmitStateSnapshot, "emit_state_snapshot"),
+            (
+                SessionAction::MarkChannelFaulted("rdpdr".to_string()),
+                "mark_channel_faulted",
+            ),
+            (
+                SessionAction::MarkChannelRecovered("cliprdr".to_string()),
+                "mark_channel_recovered",
+            ),
+        ];
+
+        for (action, name) in actions {
+            assert_eq!(action.as_str(), name);
+        }
+    }
+
+    #[test]
+    fn transition_outcomes_can_be_projected_to_diagnostic_names() {
+        let mut machine = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Active(ActiveSubstate::Running),
+            0,
+        );
+
+        let event = SessionEvent::NetworkLost;
+        let outcome = machine.transition(event.clone(), 10).unwrap();
+        let action_names: Vec<&str> = outcome
+            .actions
+            .iter()
+            .map(SessionAction::as_str)
+            .collect();
+
+        assert_eq!(event.as_str(), "network_lost");
+        assert_eq!(event.category(), SessionEventCategory::Network);
+        assert_eq!(outcome.previous.name(), "active");
+        assert_eq!(outcome.next.name(), "reconnecting");
+        assert!(action_names.contains(&"freeze_frame_store"));
+        assert!(action_names.contains(&"mark_channels_suspended"));
+        assert!(action_names.contains(&"start_reconnect_timer"));
+        assert!(action_names.contains(&"emit_state_snapshot"));
     }
 }
