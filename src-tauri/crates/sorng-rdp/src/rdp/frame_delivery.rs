@@ -1,7 +1,7 @@
 use std::io;
 use std::time::Duration;
 
-use super::frame_channel::DynFrameChannel;
+use super::frame_channel::{send_accounted_frame, DynFrameChannel, FramePayloadKind};
 use super::types::RdpPointerEvent;
 use crate::ironrdp::session::image::DecodedImage;
 use crate::ironrdp::session::ActiveStageOutput;
@@ -267,7 +267,7 @@ pub fn push_multi_rect_via_channel(
         }
     }
 
-    let _ = frame_channel.send_raw(payload);
+    let _ = send_accounted_frame(frame_channel, FramePayloadKind::RgbaRects, payload);
 }
 
 /// Push a dirty region's pixel data directly through the frame channel.
@@ -281,6 +281,17 @@ pub fn push_frame_via_channel(
     fb_width: u16,
     region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
     frame_channel: &DynFrameChannel,
+) {
+    push_frame_payload_via_channel(image_data, fb_width, region, frame_channel, FramePayloadKind::RgbaRect);
+}
+
+#[inline]
+fn push_frame_payload_via_channel(
+    image_data: &[u8],
+    fb_width: u16,
+    region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
+    frame_channel: &DynFrameChannel,
+    payload_kind: FramePayloadKind,
 ) {
     let bpp = 4usize;
     let stride = fb_width as usize * bpp;
@@ -332,7 +343,7 @@ pub fn push_frame_via_channel(
         }
     }
 
-    let _ = frame_channel.send_raw(payload);
+    let _ = send_accounted_frame(frame_channel, payload_kind, payload);
 }
 
 /// Push a composed frame from the compositor through the Channel.
@@ -355,7 +366,7 @@ pub fn push_compositor_frame_via_channel(
     payload[4..6].copy_from_slice(&frame.width.to_le_bytes());
     payload[6..8].copy_from_slice(&frame.height.to_le_bytes());
 
-    let _ = frame_channel.send_raw(payload);
+    let _ = send_accounted_frame(frame_channel, FramePayloadKind::Compositor, payload);
 }
 
 /// NAL header magic prefix — `0x4E414C48` ("NALH" in ASCII).
@@ -390,7 +401,7 @@ pub fn push_nal_via_channel(
     payload.extend_from_slice(&0u16.to_le_bytes()); // [14..16] reserved
     payload.extend_from_slice(&nal.nal_data); // [16..]  NAL data
 
-    let _ = frame_channel.send_raw(payload);
+    let _ = send_accounted_frame(frame_channel, FramePayloadKind::Nal, payload);
 }
 
 /// Push the entire desktop as a single full-frame through the channel
@@ -412,7 +423,13 @@ pub fn send_full_frame_via_channel(
     // Update fallback store (periodic, not on hot path)
     frame_store.update_region(session_id, image.data(), width, &region);
     // Push full frame through channel
-    push_frame_via_channel(image.data(), width, &region, frame_channel);
+    push_frame_payload_via_channel(
+        image.data(),
+        width,
+        &region,
+        frame_channel,
+        FramePayloadKind::FullFrame,
+    );
 }
 
 /// Legacy: extract a rectangular region as a contiguous RGBA byte vec.

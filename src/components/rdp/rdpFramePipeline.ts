@@ -28,6 +28,7 @@ import {
   type FrontendRendererType,
   type RendererOptions,
 } from './rdpRenderers';
+import type { RdpFramePipelineMetrics } from '../../types/rdp/rdpEvents';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,16 @@ export class RdpFramePipeline {
   private diagFrameCount = 0;
   private diagRenderCount = 0;
   private diagDropCount = 0;
+  private receivedFrameCount = 0;
+  private presentedFrameCount = 0;
+  private coalescedFrameCount = 0;
+  private lastFrameRenderMs = 0;
+  private averageFrameRenderMs = 0;
+  private renderSampleCount = 0;
+  private renderSamplesMs: number[] = [];
+  private lastFrameReceivedAtMs: number | undefined;
+  private lastFramePresentedAtMs: number | undefined;
+  private static readonly MAX_RENDER_SAMPLES = 120;
 
   // ── Queue pressure management ─────────────────────────────────────
   // Prevent unbounded queue growth which adds latency (N frames × 16ms
@@ -117,6 +128,9 @@ export class RdpFramePipeline {
       return;
     }
     if (data.byteLength < 8) return;
+
+    this.receivedFrameCount++;
+    this.lastFrameReceivedAtMs = performance.now();
 
     // Queue pressure: drop oldest frames when the queue grows too deep.
     // Each queued frame adds one render-cycle of latency (~16ms at 60fps).
@@ -333,6 +347,32 @@ export class RdpFramePipeline {
     };
   }
 
+  /** Render and queue metrics for diagnostics / backpressure telemetry. */
+  getMetrics(): RdpFramePipelineMetrics {
+    const renderer = this.renderer;
+    return {
+      queuedFrames: this.queue.length,
+      queuedBytes: this.getQueuedBytes(),
+      preAttachFrames: this.preAttachBuffer.length,
+      preAttachBytes: this.preAttachBytes,
+      receivedFrames: this.receivedFrameCount,
+      presentedFrames: this.presentedFrameCount,
+      droppedFrames: this.queueDropCount,
+      droppedBytes: this.queueDropBytes,
+      coalescedFrames: this.coalescedFrameCount,
+      lastFrameRenderMs: this.lastFrameRenderMs,
+      averageRenderMs: this.averageFrameRenderMs,
+      p95RenderMs: this.getRenderPercentile(95),
+      activeScheduling: this.getActiveScheduling(),
+      renderer: renderer?.name ?? 'none',
+      rendererType: renderer?.type,
+      canvasAttached: !!this.canvas && !!this.fb && !!renderer,
+      destroyed: this.destroyed,
+      lastFrameReceivedAtMs: this.lastFrameReceivedAtMs,
+      lastFramePresentedAtMs: this.lastFramePresentedAtMs,
+    };
+  }
+
   /** Tear down everything. */
   destroy(): void {
     this.destroyed = true;
@@ -386,6 +426,9 @@ export class RdpFramePipeline {
     if (this.diagRenderCount++ < 5) {
       console.log(`[RDP pipeline] renderFrames #${this.diagRenderCount}: ${queue.length} buffers, renderer=${renderer.name}`);
     }
+
+    const frameBatchSize = queue.length;
+    const renderStartMs = performance.now();
 
     if (renderer) {
       // ── WebCodecs fast path: forward raw buffers directly to the worker ──
@@ -467,6 +510,11 @@ export class RdpFramePipeline {
       }
     }
 
+    const renderEndMs = performance.now();
+    this.recordRenderDuration(renderEndMs - renderStartMs);
+    this.presentedFrameCount += frameBatchSize;
+    this.lastFramePresentedAtMs = renderEndMs;
+
     queue.length = 0;
 
     // In low-latency mode, if new frames arrived while we were rendering,
@@ -475,5 +523,30 @@ export class RdpFramePipeline {
     if (this.queue.length > 0 && !this.pending) {
       this.scheduleRender();
     }
+  }
+
+  private getQueuedBytes(): number {
+    return this.queue.reduce((totalBytes, frame) => totalBytes + frame.byteLength, 0);
+  }
+
+  private recordRenderDuration(durationMs: number): void {
+    const safeDurationMs = Math.max(0, durationMs);
+    this.lastFrameRenderMs = safeDurationMs;
+    this.renderSampleCount++;
+    this.averageFrameRenderMs += (safeDurationMs - this.averageFrameRenderMs) / this.renderSampleCount;
+    this.renderSamplesMs.push(safeDurationMs);
+    if (this.renderSamplesMs.length > RdpFramePipeline.MAX_RENDER_SAMPLES) {
+      this.renderSamplesMs.shift();
+    }
+  }
+
+  private getRenderPercentile(percentile: number): number | undefined {
+    if (this.renderSamplesMs.length === 0) return undefined;
+    const sortedSamples = [...this.renderSamplesMs].sort((left, right) => left - right);
+    const percentileIndex = Math.min(
+      sortedSamples.length - 1,
+      Math.max(0, Math.ceil((percentile / 100) * sortedSamples.length) - 1),
+    );
+    return sortedSamples[percentileIndex];
   }
 }

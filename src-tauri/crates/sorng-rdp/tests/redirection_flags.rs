@@ -1,7 +1,9 @@
 use sorng_rdp::rdp::session_runner::{effective_drive_redirections, should_register_rdpdr};
+use sorng_rdp::rdp::session_state::ChannelSummary;
 use sorng_rdp::rdp::settings::{
     ClipboardDirection, DriveRedirectionConfig, PrinterOutputMode, ResolvedSettings,
 };
+use sorng_rdp::rdp::stats::RdpSessionStats;
 use sorng_rdp::rdp::RdpSettingsPayload;
 
 fn base_settings() -> ResolvedSettings {
@@ -214,4 +216,32 @@ fn disabled_audio_playback_mode_disables_local_output() {
     let settings = ResolvedSettings::from_payload(&payload, 1280, 720);
 
     assert!(!settings.enable_audio_playback);
+}
+
+#[test]
+fn lifecycle_channel_summary_does_not_expose_drive_paths() {
+    let mut settings = base_settings();
+    settings.drive_redirection_enabled = true;
+    settings.drive_redirections = vec![drive(
+        "Secrets",
+        "C:\\Users\\Alice\\secret.txt",
+        true,
+        Some('S'),
+    )];
+    assert_eq!(effective_drive_redirections(&settings).len(), 1);
+
+    let stats = RdpSessionStats::new();
+    stats.set_channel_summary(ChannelSummary {
+        enabled_count: 1,
+        ready_count: 0,
+        failed_count: 0,
+    });
+
+    let snapshot = stats.lifecycle_snapshot("session-1");
+    let encoded = serde_json::to_string(&snapshot).expect("lifecycle json");
+
+    assert!(encoded.contains("channelSummary"));
+    assert!(!encoded.contains("Secrets"));
+    assert!(!encoded.contains("C:\\\\Users\\\\Alice\\\\secret.txt"));
+    assert!(!encoded.contains("secret.txt"));
 }

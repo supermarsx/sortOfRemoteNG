@@ -48,6 +48,57 @@ export interface RDPFrameFlowSummary {
   droppedFrames: number;
 }
 
+export type RdpFramePressureState = 'healthy' | 'backpressured';
+
+export interface RdpFrameTelemetryEvent {
+  sessionId: string;
+  queuedFrames: number;
+  droppedFrames: number;
+  coalescedFrames: number;
+  averageRenderMs?: number;
+}
+
+export type RdpFrameTelemetryRequest = RdpFrameTelemetryEvent;
+
+export interface RdpFramePipelineMetrics {
+  queuedFrames: number;
+  queuedBytes: number;
+  preAttachFrames: number;
+  preAttachBytes: number;
+  receivedFrames: number;
+  presentedFrames: number;
+  droppedFrames: number;
+  droppedBytes: number;
+  coalescedFrames: number;
+  lastFrameRenderMs: number;
+  averageRenderMs: number;
+  p95RenderMs?: number;
+  activeScheduling: 'vsync' | 'low-latency';
+  renderer: string;
+  rendererType?: string;
+  canvasAttached: boolean;
+  destroyed: boolean;
+  lastFrameReceivedAtMs?: number;
+  lastFramePresentedAtMs?: number;
+}
+
+export interface RdpFrameBackpressureUpdate extends RdpFrameTelemetryEvent {
+  renderer: string;
+  queueDepth: number;
+  queuedBytes?: number;
+  lastFrameRenderMs: number;
+  p95RenderMs?: number;
+  presentedFrames: number;
+  isVisible: boolean;
+  isDetached: boolean;
+  pressureState: RdpFramePressureState;
+  timestampMs: number;
+}
+
+export type RdpFrameTelemetrySender = (
+  update: RdpFrameBackpressureUpdate,
+) => void | Promise<void>;
+
 export interface RDPLifecycleEvent {
   sessionId: string;
   state: string;

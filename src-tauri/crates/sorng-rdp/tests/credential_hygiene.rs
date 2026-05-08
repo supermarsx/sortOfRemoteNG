@@ -2,9 +2,31 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use secrecy::{CloneableSecret, DebugSecret, ExposeSecret, Secret, SecretString, Zeroize};
+use sorng_rdp::rdp::cert_trust::security_error_lifecycle_summary;
+use sorng_rdp::rdp::session_state::{ChannelSummary, FrameFlowSummary};
 use sorng_rdp::rdp::stats::RdpSessionStats;
-use sorng_rdp::rdp::types::{RdpActiveConnection, RdpSession};
+use sorng_rdp::rdp::types::{RdpActiveConnection, RdpSession, RdpStatsEvent};
 use sorng_rdp::rdp::wake_channel::create_wake_channel;
+
+const SENSITIVE_MARKERS: &[&str] = &[
+    "super-secret",
+    "LAB\\alice",
+    "alice@example.com",
+    "domain=LAB",
+    "token=abc123",
+    "-----BEGIN CERTIFICATE-----",
+    "C:\\Users\\Alice\\secret.txt",
+    "de ad be ef",
+];
+
+fn assert_no_sensitive_markers(encoded: &str) {
+    for marker in SENSITIVE_MARKERS {
+        assert!(
+            !encoded.contains(marker),
+            "sensitive marker {marker:?} leaked in {encoded}"
+        );
+    }
+}
 
 #[derive(Clone)]
 struct ZeroizeSpy {
@@ -116,4 +138,52 @@ fn secret_backed_password_storage_zeroizes_on_drop() {
         vec![0; "super-secret".len()],
         "zeroize should overwrite the secret bytes before drop completes"
     );
+}
+
+#[test]
+fn stats_and_lifecycle_snapshots_are_summary_only() {
+    let stats = RdpSessionStats::new();
+    stats.set_phase("active");
+    stats.record_frame();
+    stats.set_channel_summary(ChannelSummary {
+        enabled_count: 3,
+        ready_count: 2,
+        failed_count: 1,
+    });
+    stats.set_frame_flow_summary(FrameFlowSummary {
+        queued_frames: 4,
+        delivered_frames: 0,
+        dropped_frames: 1,
+    });
+    stats.set_last_error("auth_rejected");
+
+    let event: RdpStatsEvent = stats.to_event("session-1");
+    let event_json = serde_json::to_string(&event).expect("stats event json");
+    let lifecycle_json = serde_json::to_string(&event.lifecycle).expect("lifecycle json");
+
+    assert!(event_json.contains("auth_rejected"));
+    assert!(lifecycle_json.contains("channelSummary"));
+    assert!(lifecycle_json.contains("frameFlowSummary"));
+    assert_no_sensitive_markers(&event_json);
+    assert_no_sensitive_markers(&lifecycle_json);
+}
+
+#[test]
+fn diagnostic_security_summaries_do_not_echo_raw_credentials() {
+    let raw_error = "CredSSP InvalidToken for LAB\\alice password=super-secret \
+                     domain=LAB token=abc123 C:\\Users\\Alice\\secret.txt";
+    let summary = security_error_lifecycle_summary(raw_error);
+    let detail = serde_json::to_string(&summary).expect("summary json");
+    let step = sorng_rdp::rdp::DiagnosticStep {
+        name: "Security".to_string(),
+        status: "fail".to_string(),
+        message: summary.outcome.clone(),
+        duration_ms: 0,
+        detail: Some(detail),
+    };
+
+    let encoded = serde_json::to_string(&step).expect("diagnostic step json");
+
+    assert!(encoded.contains("auth_rejected"));
+    assert_no_sensitive_markers(&encoded);
 }

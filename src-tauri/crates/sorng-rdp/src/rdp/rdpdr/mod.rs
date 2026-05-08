@@ -17,6 +17,7 @@ use crate::ironrdp::pdu::gcc::ChannelName;
 use crate::ironrdp::pdu::PduResult;
 use crate::ironrdp_core::impl_as_any;
 use crate::ironrdp_svc::{SvcClientProcessor, SvcEncode, SvcMessage, SvcProcessor};
+use serde::{Deserialize, Serialize};
 use sorng_core::events::DynEventEmitter;
 
 use self::filesystem::FileSystemDevice;
@@ -24,7 +25,14 @@ use self::pdu::*;
 use self::printer::PrinterDevice;
 use self::serial::SerialDevice;
 use self::smartcard::SmartCardDevice;
+use super::session_state::ChannelSummary;
 use super::settings::{DriveRedirectionConfig, PrinterOutputMode};
+use super::virtual_channels::{
+    VirtualChannelDescriptor, VirtualChannelKind, VirtualChannelPriority, VirtualChannelState,
+};
+
+const RDPDR_CHANNEL_NAME: &str = "rdpdr";
+const RDPSND_CHANNEL_NAME: &str = "rdpsnd";
 
 /// Which non-filesystem device types to announce to the server.
 #[derive(Debug, Clone)]
@@ -34,12 +42,113 @@ pub struct DeviceFlags {
     pub smart_cards: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpdrChannelCounters {
+    pub payloads_received: u64,
+    pub responses_sent: u64,
+    pub malformed_payloads: u64,
+    pub ignored_packets: u64,
+    pub device_irps: u64,
+    pub rejected_devices: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpdrChannelDiagnostics {
+    pub descriptor: VirtualChannelDescriptor,
+    pub enabled: bool,
+    pub negotiating: bool,
+    pub ready: bool,
+    pub failed: bool,
+    pub muted: bool,
+    pub configured_drive_count: u16,
+    pub configured_printer_count: u16,
+    pub configured_serial_count: u16,
+    pub configured_smartcard_count: u16,
+    pub announced_drive_count: u16,
+    pub announced_printer_count: u16,
+    pub announced_serial_count: u16,
+    pub announced_smartcard_count: u16,
+    pub pending_response_count: u16,
+    pub counters: RdpdrChannelCounters,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpsndChannelCounters {
+    pub payloads_received: u64,
+    pub responses_sent: u64,
+    pub malformed_payloads: u64,
+    pub ignored_messages: u64,
+    pub server_format_messages: u64,
+    pub training_confirms: u64,
+    pub audio_blocks_received: u64,
+    pub audio_blocks_emitted: u64,
+    pub audio_blocks_muted: u64,
+    pub volume_events: u64,
+    pub close_events: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpsndChannelDiagnostics {
+    pub descriptor: VirtualChannelDescriptor,
+    pub enabled: bool,
+    pub negotiating: bool,
+    pub ready: bool,
+    pub failed: bool,
+    pub muted: bool,
+    pub playback_enabled: bool,
+    pub negotiated_format_count: u16,
+    pub pending_wave_count: u16,
+    pub counters: RdpsndChannelCounters,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RdpdrDiagnosticsState {
+    counters: RdpdrChannelCounters,
+    last_error_class: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RdpsndDiagnosticsState {
+    counters: RdpsndChannelCounters,
+    last_error_class: Option<&'static str>,
+}
+
+fn count_as_u16(count: usize) -> u16 {
+    count.min(u16::MAX as usize) as u16
+}
+
+fn bool_count(value: bool) -> u16 {
+    if value { 1 } else { 0 }
+}
+
+fn channel_summary(enabled: bool, ready: bool, failed: bool) -> ChannelSummary {
+    ChannelSummary {
+        enabled_count: bool_count(enabled),
+        ready_count: bool_count(ready && !failed),
+        failed_count: bool_count(failed),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum RdpdrState {
     WaitingServerAnnounce,
     WaitingCapabilities,
     WaitingClientIdConfirm,
     Ready,
+}
+
+impl RdpdrState {
+    fn is_negotiating(self) -> bool {
+        !matches!(self, Self::Ready)
+    }
+
+    fn is_ready(self) -> bool {
+        matches!(self, Self::Ready)
+    }
 }
 
 /// RDPDR static virtual channel processor.
@@ -60,6 +169,7 @@ pub struct RdpdrClient {
     smartcard_device: Option<(u32, SmartCardDevice)>,
     next_device_id: u32,
     pending_responses: Vec<Vec<u8>>,
+    diagnostics: RdpdrDiagnosticsState,
 }
 
 impl fmt::Debug for RdpdrClient {
@@ -99,6 +209,57 @@ impl RdpdrClient {
             smartcard_device: None,
             next_device_id: 1,
             pending_responses: Vec::new(),
+            diagnostics: RdpdrDiagnosticsState::default(),
+        }
+    }
+
+    pub fn channel_summary(&self) -> ChannelSummary {
+        let diagnostics = self.channel_diagnostics();
+        channel_summary(diagnostics.enabled, diagnostics.ready, diagnostics.failed)
+    }
+
+    pub fn channel_diagnostics(&self) -> RdpdrChannelDiagnostics {
+        self.channel_diagnostics_with_kind(VirtualChannelKind::Static)
+    }
+
+    fn channel_diagnostics_with_kind(&self, kind: VirtualChannelKind) -> RdpdrChannelDiagnostics {
+        let failed = self.diagnostics.last_error_class.is_some();
+        let ready = self.state.is_ready() && !failed;
+        let negotiating = self.state.is_negotiating() && !failed;
+        let mut descriptor = VirtualChannelDescriptor::new(
+            RDPDR_CHANNEL_NAME,
+            kind,
+            VirtualChannelPriority::High,
+            true,
+        );
+        descriptor.state = if failed {
+            VirtualChannelState::Faulted
+        } else if ready {
+            VirtualChannelState::Ready
+        } else {
+            VirtualChannelState::Negotiating
+        };
+        descriptor.messages_received = self.diagnostics.counters.payloads_received;
+        descriptor.messages_sent = self.diagnostics.counters.responses_sent;
+        descriptor.last_error_class = self.diagnostics.last_error_class.map(str::to_string);
+
+        RdpdrChannelDiagnostics {
+            descriptor,
+            enabled: true,
+            negotiating,
+            ready,
+            failed,
+            muted: false,
+            configured_drive_count: count_as_u16(self.drives.len()),
+            configured_printer_count: bool_count(self.device_flags.printers),
+            configured_serial_count: bool_count(self.device_flags.ports),
+            configured_smartcard_count: bool_count(self.device_flags.smart_cards),
+            announced_drive_count: count_as_u16(self.fs_devices.len()),
+            announced_printer_count: count_as_u16(self.printer_devices.len()),
+            announced_serial_count: count_as_u16(self.serial_devices.len()),
+            announced_smartcard_count: bool_count(self.smartcard_device.is_some()),
+            pending_response_count: count_as_u16(self.pending_responses.len()),
+            counters: self.diagnostics.counters,
         }
     }
 
@@ -134,7 +295,18 @@ impl RdpdrClient {
     /// Duplicates the dispatch logic from SvcProcessor::process() but collects
     /// raw bytes instead of SvcMessages (which have private internals).
     pub fn process_rdpdr_payload(&mut self, payload: &[u8]) -> Vec<Vec<u8>> {
+        self.diagnostics.counters.payloads_received = self
+            .diagnostics
+            .counters
+            .payloads_received
+            .saturating_add(1);
+
         if payload.len() < 4 {
+            self.diagnostics.counters.malformed_payloads = self
+                .diagnostics
+                .counters
+                .malformed_payloads
+                .saturating_add(1);
             log::warn!("RDPDR: payload too short ({} bytes)", payload.len());
             return Vec::new();
         }
@@ -153,6 +325,11 @@ impl RdpdrClient {
         );
 
         if component != RDPDR_CTYP_CORE {
+            self.diagnostics.counters.ignored_packets = self
+                .diagnostics
+                .counters
+                .ignored_packets
+                .saturating_add(1);
             return Vec::new();
         }
 
@@ -175,6 +352,12 @@ impl RdpdrClient {
                         self.client_id,
                         self.state
                     );
+                } else {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                 }
                 // Reset state — server can re-announce at any time (e.g., after reactivation)
                 self.fs_devices.clear();
@@ -200,6 +383,12 @@ impl RdpdrClient {
             PAKID_CORE_CLIENTID_CONFIRM => {
                 if body.len() >= 8 {
                     self.client_id = read_u32(body, 4);
+                } else {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                 }
                 log::info!("RDPDR session {}: Client ID confirmed", self.session_id);
                 self.state = RdpdrState::Ready;
@@ -354,6 +543,11 @@ impl RdpdrClient {
                             device_id
                         );
                     } else {
+                        self.diagnostics.counters.rejected_devices = self
+                            .diagnostics
+                            .counters
+                            .rejected_devices
+                            .saturating_add(1);
                         log::warn!(
                             "RDPDR session {}: device {} rejected (0x{:08X})",
                             self.session_id,
@@ -367,6 +561,11 @@ impl RdpdrClient {
             }
             PAKID_CORE_DEVICE_IOREQUEST => {
                 if body.len() >= 20 {
+                    self.diagnostics.counters.device_irps = self
+                        .diagnostics
+                        .counters
+                        .device_irps
+                        .saturating_add(1);
                     let device_id = read_u32(body, 0);
                     let file_id = read_u32(body, 4);
                     let completion_id = read_u32(body, 8);
@@ -451,6 +650,11 @@ impl RdpdrClient {
                         )]
                     }
                 } else {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                     Vec::new()
                 }
             }
@@ -458,8 +662,21 @@ impl RdpdrClient {
                 log::info!("RDPDR session {}: user logged on", self.session_id);
                 Vec::new()
             }
-            _ => Vec::new(),
+            _ => {
+                self.diagnostics.counters.ignored_packets = self
+                    .diagnostics
+                    .counters
+                    .ignored_packets
+                    .saturating_add(1);
+                Vec::new()
+            }
         };
+
+        self.diagnostics.counters.responses_sent = self
+            .diagnostics
+            .counters
+            .responses_sent
+            .saturating_add(result.len() as u64);
 
         result
     }
@@ -553,6 +770,7 @@ pub struct RdpsndClient {
     formats: Vec<AudioFormat>,
     // Legacy SNDC_WAVE state (two-PDU path)
     pending_wave: Option<PendingWave>,
+    diagnostics: RdpsndDiagnosticsState,
 }
 
 struct PendingWave {
@@ -583,6 +801,48 @@ impl RdpsndClient {
             negotiated: false,
             formats: Vec::new(),
             pending_wave: None,
+            diagnostics: RdpsndDiagnosticsState::default(),
+        }
+    }
+
+    pub fn channel_summary(&self) -> ChannelSummary {
+        let diagnostics = self.channel_diagnostics();
+        channel_summary(diagnostics.enabled, diagnostics.ready, diagnostics.failed)
+    }
+
+    pub fn channel_diagnostics(&self) -> RdpsndChannelDiagnostics {
+        let failed = self.diagnostics.last_error_class.is_some();
+        let ready = self.negotiated && !failed;
+        let negotiating = !self.negotiated && !failed;
+        let muted = !self.enabled;
+        let mut descriptor = VirtualChannelDescriptor::new(
+            RDPSND_CHANNEL_NAME,
+            VirtualChannelKind::Static,
+            VirtualChannelPriority::Optional,
+            true,
+        );
+        descriptor.state = if failed {
+            VirtualChannelState::Faulted
+        } else if ready {
+            VirtualChannelState::Ready
+        } else {
+            VirtualChannelState::Negotiating
+        };
+        descriptor.messages_received = self.diagnostics.counters.payloads_received;
+        descriptor.messages_sent = self.diagnostics.counters.responses_sent;
+        descriptor.last_error_class = self.diagnostics.last_error_class.map(str::to_string);
+
+        RdpsndChannelDiagnostics {
+            descriptor,
+            enabled: true,
+            negotiating,
+            ready,
+            failed,
+            muted,
+            playback_enabled: self.enabled,
+            negotiated_format_count: count_as_u16(self.formats.len()),
+            pending_wave_count: bool_count(self.pending_wave.is_some()),
+            counters: self.diagnostics.counters,
         }
     }
 
@@ -731,7 +991,18 @@ impl SvcProcessor for RdpsndClient {
     }
 
     fn process(&mut self, payload: &[u8]) -> PduResult<Vec<SvcMessage>> {
+        self.diagnostics.counters.payloads_received = self
+            .diagnostics
+            .counters
+            .payloads_received
+            .saturating_add(1);
+
         if payload.len() < 4 {
+            self.diagnostics.counters.malformed_payloads = self
+                .diagnostics
+                .counters
+                .malformed_payloads
+                .saturating_add(1);
             return Ok(Vec::new());
         }
 
@@ -750,17 +1021,44 @@ impl SvcProcessor for RdpsndClient {
                 pcm.extend_from_slice(&payload[skip..]);
             }
 
+            self.diagnostics.counters.audio_blocks_received = self
+                .diagnostics
+                .counters
+                .audio_blocks_received
+                .saturating_add(1);
+
             if self.enabled {
                 self.emit_audio(&pcm, pending.format_no);
+                self.diagnostics.counters.audio_blocks_emitted = self
+                    .diagnostics
+                    .counters
+                    .audio_blocks_emitted
+                    .saturating_add(1);
+            } else {
+                self.diagnostics.counters.audio_blocks_muted = self
+                    .diagnostics
+                    .counters
+                    .audio_blocks_muted
+                    .saturating_add(1);
             }
 
             let confirm = Self::build_wave_confirm(pending.timestamp, pending.block_no);
+            self.diagnostics.counters.responses_sent = self
+                .diagnostics
+                .counters
+                .responses_sent
+                .saturating_add(1);
             return Ok(vec![SvcMessage::from(RdpsndPdu(confirm))]);
         }
 
         match msg_type {
             SNDC_FORMATS => {
                 if body.len() < 20 {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                     return Ok(Vec::new());
                 }
                 let num_formats = u16::from_le_bytes([body[12], body[13]]);
@@ -775,6 +1073,16 @@ impl SvcProcessor for RdpsndClient {
                 self.parse_server_formats(body);
                 let reply = self.build_formats_reply(server_version);
                 self.negotiated = true;
+                self.diagnostics.counters.server_format_messages = self
+                    .diagnostics
+                    .counters
+                    .server_format_messages
+                    .saturating_add(1);
+                self.diagnostics.counters.responses_sent = self
+                    .diagnostics
+                    .counters
+                    .responses_sent
+                    .saturating_add(1);
                 Ok(vec![SvcMessage::from(RdpsndPdu(reply))])
             }
             SNDC_TRAINING => {
@@ -787,16 +1095,36 @@ impl SvcProcessor for RdpsndClient {
                         ts,
                         ps
                     );
+                    self.diagnostics.counters.training_confirms = self
+                        .diagnostics
+                        .counters
+                        .training_confirms
+                        .saturating_add(1);
+                    self.diagnostics.counters.responses_sent = self
+                        .diagnostics
+                        .counters
+                        .responses_sent
+                        .saturating_add(1);
                     Ok(vec![SvcMessage::from(RdpsndPdu(
                         Self::build_training_confirm(ts, ps),
                     ))])
                 } else {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                     Ok(Vec::new())
                 }
             }
             SNDC_WAVE2 => {
                 // Modern single-PDU audio: 12-byte sub-header + PCM data
                 if body.len() < 12 {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                     return Ok(Vec::new());
                 }
                 let timestamp = u16::from_le_bytes([body[0], body[1]]);
@@ -812,16 +1140,43 @@ impl SvcProcessor for RdpsndClient {
                     pcm_data.len()
                 );
 
+                self.diagnostics.counters.audio_blocks_received = self
+                    .diagnostics
+                    .counters
+                    .audio_blocks_received
+                    .saturating_add(1);
+
                 if self.enabled {
                     self.emit_audio(pcm_data, format_no);
+                    self.diagnostics.counters.audio_blocks_emitted = self
+                        .diagnostics
+                        .counters
+                        .audio_blocks_emitted
+                        .saturating_add(1);
+                } else {
+                    self.diagnostics.counters.audio_blocks_muted = self
+                        .diagnostics
+                        .counters
+                        .audio_blocks_muted
+                        .saturating_add(1);
                 }
 
                 let confirm = Self::build_wave_confirm(timestamp, block_no);
+                self.diagnostics.counters.responses_sent = self
+                    .diagnostics
+                    .counters
+                    .responses_sent
+                    .saturating_add(1);
                 Ok(vec![SvcMessage::from(RdpsndPdu(confirm))])
             }
             SNDC_WAVE => {
                 // Legacy two-PDU: WaveInfo (this PDU) + Wave (next PDU)
                 if body.len() < 12 {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                     return Ok(Vec::new());
                 }
                 let timestamp = u16::from_le_bytes([body[0], body[1]]);
@@ -867,12 +1222,28 @@ impl SvcProcessor for RdpsndClient {
                             "right": right,
                         }),
                     );
+                    self.diagnostics.counters.volume_events = self
+                        .diagnostics
+                        .counters
+                        .volume_events
+                        .saturating_add(1);
+                } else {
+                    self.diagnostics.counters.malformed_payloads = self
+                        .diagnostics
+                        .counters
+                        .malformed_payloads
+                        .saturating_add(1);
                 }
                 Ok(Vec::new())
             }
-            SNDC_QUALITYMODE => Ok(vec![SvcMessage::from(
-                RdpsndPdu(Self::build_quality_mode()),
-            )]),
+            SNDC_QUALITYMODE => {
+                self.diagnostics.counters.responses_sent = self
+                    .diagnostics
+                    .counters
+                    .responses_sent
+                    .saturating_add(1);
+                Ok(vec![SvcMessage::from(RdpsndPdu(Self::build_quality_mode()))])
+            }
             SNDC_CLOSE => {
                 log::info!("RDPSND session {}: Close", self.session_id);
                 let _ = self.emitter.emit_event(
@@ -881,9 +1252,19 @@ impl SvcProcessor for RdpsndClient {
                         "sessionId": self.session_id,
                     }),
                 );
+                self.diagnostics.counters.close_events = self
+                    .diagnostics
+                    .counters
+                    .close_events
+                    .saturating_add(1);
                 Ok(Vec::new())
             }
             _ => {
+                self.diagnostics.counters.ignored_messages = self
+                    .diagnostics
+                    .counters
+                    .ignored_messages
+                    .saturating_add(1);
                 log::debug!(
                     "RDPSND session {}: msgType=0x{:02X} ({}B), ignoring",
                     self.session_id,
@@ -1032,6 +1413,15 @@ impl RdpdrDvcProcessor {
             ),
         }
     }
+
+    pub fn channel_summary(&self) -> ChannelSummary {
+        self.inner.channel_summary()
+    }
+
+    pub fn channel_diagnostics(&self) -> RdpdrChannelDiagnostics {
+        self.inner
+            .channel_diagnostics_with_kind(VirtualChannelKind::Dynamic)
+    }
 }
 
 impl crate::ironrdp_dvc::DvcProcessor for RdpdrDvcProcessor {
@@ -1107,6 +1497,27 @@ mod tests {
         }
     }
 
+    fn rdpdr_core_packet(packet_id: u16, body: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(4 + body.len());
+        out.extend_from_slice(&RDPDR_CTYP_CORE.to_le_bytes());
+        out.extend_from_slice(&packet_id.to_le_bytes());
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn rdpsnd_formats_payload() -> Vec<u8> {
+        let body_size = 20u16;
+        let mut payload = Vec::with_capacity(4 + body_size as usize);
+        payload.push(SNDC_FORMATS);
+        payload.push(0);
+        payload.extend_from_slice(&body_size.to_le_bytes());
+        let mut body = vec![0u8; body_size as usize];
+        body[12..14].copy_from_slice(&1u16.to_le_bytes());
+        body[15..17].copy_from_slice(&6u16.to_le_bytes());
+        payload.extend_from_slice(&body);
+        payload
+    }
+
     fn rdpsnd_wave2_payload(pcm: &[u8]) -> Vec<u8> {
         let body_size = 12 + pcm.len() as u16;
         let mut payload = Vec::with_capacity(4 + body_size as usize);
@@ -1177,6 +1588,99 @@ mod tests {
     }
 
     #[test]
+    fn rdpdr_diagnostics_are_count_only_and_path_free() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let dyn_emitter: DynEventEmitter = emitter;
+        let drives = vec![DriveRedirectionConfig {
+            name: "Secrets".to_string(),
+            path: "C:\\Users\\Alice\\secret.txt".to_string(),
+            read_only: true,
+            preferred_letter: Some('S'),
+        }];
+        let flags = DeviceFlags {
+            printers: false,
+            ports: false,
+            smart_cards: false,
+        };
+        let mut client = RdpdrClient::new(
+            "session-rdpdr".to_string(),
+            dyn_emitter,
+            drives,
+            flags,
+            PrinterOutputMode::SpoolFile,
+        );
+
+        assert_eq!(
+            client
+                .process_rdpdr_payload(&rdpdr_core_packet(
+                    PAKID_CORE_SERVER_ANNOUNCE,
+                    &[1, 0, 12, 0, 0x34, 0x12, 0, 0],
+                ))
+                .len(),
+            2
+        );
+        assert_eq!(
+            client
+                .process_rdpdr_payload(&rdpdr_core_packet(PAKID_CORE_SERVER_CAPABILITY, &[0, 0]))
+                .len(),
+            1
+        );
+        assert_eq!(
+            client
+                .process_rdpdr_payload(&rdpdr_core_packet(
+                    PAKID_CORE_CLIENTID_CONFIRM,
+                    &[1, 0, 12, 0, 0x34, 0x12, 0, 0],
+                ))
+                .len(),
+            1
+        );
+
+        let diagnostics = client.channel_diagnostics();
+        assert!(diagnostics.enabled);
+        assert!(diagnostics.ready);
+        assert!(!diagnostics.negotiating);
+        assert!(!diagnostics.failed);
+        assert!(!diagnostics.muted);
+        assert_eq!(diagnostics.configured_drive_count, 1);
+        assert_eq!(diagnostics.announced_drive_count, 1);
+        assert_eq!(diagnostics.counters.payloads_received, 3);
+        assert_eq!(diagnostics.counters.responses_sent, 4);
+        assert_eq!(diagnostics.descriptor.state, VirtualChannelState::Ready);
+        assert_eq!(diagnostics.descriptor.messages_received, 3);
+        assert_eq!(client.channel_summary().ready_count, 1);
+
+        let encoded = serde_json::to_string(&diagnostics).expect("diagnostics json");
+        assert!(!encoded.contains("Secrets"));
+        assert!(!encoded.contains("Alice"));
+        assert!(!encoded.contains("secret.txt"));
+        assert!(!encoded.contains("C:\\\\Users\\\\Alice"));
+    }
+
+    #[test]
+    fn rdpdr_dvc_diagnostics_use_dynamic_channel_kind() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let dyn_emitter: DynEventEmitter = emitter;
+        let flags = DeviceFlags {
+            printers: false,
+            ports: false,
+            smart_cards: false,
+        };
+        let processor = RdpdrDvcProcessor::new(
+            "session-rdpdr".to_string(),
+            dyn_emitter,
+            Vec::new(),
+            flags,
+            PrinterOutputMode::SpoolFile,
+        );
+
+        let diagnostics = processor.channel_diagnostics();
+        assert_eq!(diagnostics.descriptor.kind, VirtualChannelKind::Dynamic);
+        assert!(diagnostics.enabled);
+        assert!(diagnostics.negotiating);
+        assert_eq!(processor.channel_summary().enabled_count, 1);
+    }
+
+    #[test]
     fn rdpsnd_emits_audio_events_when_local_playback_is_enabled() {
         let emitter = Arc::new(RecordingEmitter::default());
         let dyn_emitter: DynEventEmitter = emitter.clone();
@@ -1195,6 +1699,16 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].0, "rdp://audio-data");
         assert_eq!(events[0].1["sessionId"], "session-audio");
+
+        let diagnostics = client.channel_diagnostics();
+        assert!(diagnostics.enabled);
+        assert!(!diagnostics.muted);
+        assert!(diagnostics.playback_enabled);
+        assert_eq!(diagnostics.counters.payloads_received, 1);
+        assert_eq!(diagnostics.counters.responses_sent, 1);
+        assert_eq!(diagnostics.counters.audio_blocks_received, 1);
+        assert_eq!(diagnostics.counters.audio_blocks_emitted, 1);
+        assert_eq!(diagnostics.counters.audio_blocks_muted, 0);
     }
 
     #[test]
@@ -1220,5 +1734,43 @@ mod tests {
                 .is_empty(),
             "disabled playback must not emit frontend audio events"
         );
+
+        let diagnostics = client.channel_diagnostics();
+        assert!(diagnostics.enabled);
+        assert!(diagnostics.muted);
+        assert!(!diagnostics.playback_enabled);
+        assert_eq!(diagnostics.counters.payloads_received, 1);
+        assert_eq!(diagnostics.counters.responses_sent, 1);
+        assert_eq!(diagnostics.counters.audio_blocks_received, 1);
+        assert_eq!(diagnostics.counters.audio_blocks_emitted, 0);
+        assert_eq!(diagnostics.counters.audio_blocks_muted, 1);
+        assert_eq!(client.channel_summary().enabled_count, 1);
+    }
+
+    #[test]
+    fn rdpsnd_diagnostics_track_negotiation_state_and_counters() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let dyn_emitter: DynEventEmitter = emitter;
+        let mut client = RdpsndClient::new("session-audio".to_string(), dyn_emitter, true);
+
+        let before = client.channel_diagnostics();
+        assert!(before.negotiating);
+        assert!(!before.ready);
+
+        let messages = client
+            .process(&rdpsnd_formats_payload())
+            .expect("rdpsnd formats processing should succeed");
+
+        assert_eq!(messages.len(), 1);
+        let diagnostics = client.channel_diagnostics();
+        assert!(diagnostics.ready);
+        assert!(!diagnostics.negotiating);
+        assert!(!diagnostics.failed);
+        assert_eq!(diagnostics.negotiated_format_count, 1);
+        assert_eq!(diagnostics.counters.payloads_received, 1);
+        assert_eq!(diagnostics.counters.responses_sent, 1);
+        assert_eq!(diagnostics.counters.server_format_messages, 1);
+        assert_eq!(diagnostics.descriptor.state, VirtualChannelState::Ready);
+        assert_eq!(client.channel_summary().ready_count, 1);
     }
 }

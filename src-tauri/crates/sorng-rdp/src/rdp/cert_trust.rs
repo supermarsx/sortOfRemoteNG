@@ -10,6 +10,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sorng_core::events::DynEventEmitter;
 
+use super::session_state::FailureClass;
 use super::settings::RdpSettingsPayload;
 
 const DEFAULT_CERT_PROMPT_TIMEOUT_SECS: u64 = 60;
@@ -171,6 +172,26 @@ pub enum CertTrustError {
     PromptUnavailable(String),
     Store(String),
     Emit(String),
+}
+
+impl CertTrustError {
+    pub fn lifecycle_failure_class(&self) -> FailureClass {
+        FailureClass::TrustRejected
+    }
+
+    pub fn lifecycle_summary(&self) -> SecurityLifecycleSummary {
+        SecurityLifecycleSummary::failure(
+            match self {
+                Self::InvalidChain(_) => "invalid_chain",
+                Self::Rejected => "user_rejected",
+                Self::PromptTimeout => "prompt_timeout",
+                Self::PromptUnavailable(_) => "prompt_unavailable",
+                Self::Store(_) => "trust_store_error",
+                Self::Emit(_) => "prompt_emit_error",
+            },
+            self.lifecycle_failure_class(),
+        )
+    }
 }
 
 impl fmt::Display for CertTrustError {
@@ -399,6 +420,118 @@ pub enum VerifyOutcome {
     ValidationIgnored,
     /// The user approved a prompt. May or may not be remembered.
     UserApproved { remembered: bool },
+}
+
+impl VerifyOutcome {
+    pub fn lifecycle_summary(&self) -> SecurityLifecycleSummary {
+        match self {
+            Self::ChainValid => {
+                SecurityLifecycleSummary::trust_success("chain_valid", "system_roots", true, None)
+            }
+            Self::TrustStorePinned { .. } => SecurityLifecycleSummary::trust_success(
+                "trust_store_pinned",
+                "local_trust_store",
+                false,
+                None,
+            ),
+            Self::ValidationIgnored => SecurityLifecycleSummary::trust_success(
+                "validation_ignored",
+                "validation_disabled",
+                false,
+                None,
+            ),
+            Self::UserApproved { remembered } => SecurityLifecycleSummary::trust_success(
+                "user_approved",
+                "user_decision",
+                false,
+                Some(*remembered),
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityLifecycleSummary {
+    pub outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain_valid: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remembered: Option<bool>,
+}
+
+impl SecurityLifecycleSummary {
+    fn trust_success(
+        outcome: &str,
+        trust_source: &str,
+        chain_valid: bool,
+        remembered: Option<bool>,
+    ) -> Self {
+        Self {
+            outcome: outcome.to_string(),
+            failure_class: None,
+            trust_source: Some(trust_source.to_string()),
+            chain_valid: Some(chain_valid),
+            remembered,
+        }
+    }
+
+    fn failure(outcome: &str, failure_class: FailureClass) -> Self {
+        Self {
+            outcome: outcome.to_string(),
+            failure_class: Some(failure_class.as_str().to_string()),
+            trust_source: None,
+            chain_valid: None,
+            remembered: None,
+        }
+    }
+}
+
+pub fn classify_security_error_for_lifecycle(message: &str) -> FailureClass {
+    let lower = message.to_ascii_lowercase();
+
+    if lower.contains("certificate")
+        || lower.contains("cert trust")
+        || lower.contains("trust prompt")
+        || lower.contains("unknownissuer")
+        || lower.contains("unknown issuer")
+        || lower.contains("notvalidforname")
+        || lower.contains("not valid for name")
+    {
+        return FailureClass::TrustRejected;
+    }
+
+    if lower.contains("credssp")
+        || lower.contains("nla")
+        || lower.contains("invalidtoken")
+        || lower.contains("access denied")
+        || lower.contains("empty identity")
+        || lower.contains("credential")
+        || lower.contains("authentication")
+        || lower.contains("password")
+    {
+        return FailureClass::AuthRejected;
+    }
+
+    if lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("10054")
+        || lower.contains("forcibly closed")
+        || lower.contains("connection reset")
+    {
+        return FailureClass::NetworkTransient;
+    }
+
+    FailureClass::ProtocolViolation
+}
+
+pub fn security_error_lifecycle_summary(message: &str) -> SecurityLifecycleSummary {
+    let failure_class = classify_security_error_for_lifecycle(message);
+    SecurityLifecycleSummary::failure(failure_class.as_str(), failure_class)
 }
 
 fn set_last_verify_outcome(outcome: VerifyOutcome) {

@@ -798,6 +798,15 @@ function createPaintWorkerBlob(): Blob {
       return new DataView(data.buffer, data.byteOffset, data.byteLength);
     }
 
+    function toByteLength(data) {
+      return data.byteLength;
+    }
+
+    function toUint8ClampedArray(data, offset, length) {
+      const base = data instanceof ArrayBuffer ? 0 : data.byteOffset;
+      return new Uint8ClampedArray(data instanceof ArrayBuffer ? data : data.buffer, base + offset, length);
+    }
+
     self.onmessage = (e) => {
       const msg = e.data;
 
@@ -827,15 +836,17 @@ function createPaintWorkerBlob(): Blob {
         const buffers = msg.buffers;
         for (let i = 0; i < buffers.length; i++) {
           const data = buffers[i];
-          if (data.byteLength < 8) continue;
+          const dataLen = toByteLength(data);
+          if (dataLen < 8) continue;
           const view = toDataView(data);
           const x = view.getUint16(0, true);
           const y = view.getUint16(2, true);
           const rw = view.getUint16(4, true);
           const rh = view.getUint16(6, true);
           if (rw <= 0 || rh <= 0) continue;
-          const rgba = new Uint8ClampedArray(data, 8);
-          if (rgba.length < rw * rh * 4) continue;
+          const pixelBytes = rw * rh * 4;
+          if (dataLen < 8 + pixelBytes) continue;
+          const rgba = toUint8ClampedArray(data, 8, pixelBytes);
           const imgData = new ImageData(rgba, rw, rh);
           ctx.putImageData(imgData, x, y);
         }
@@ -979,6 +990,21 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
       return new DataView(data.buffer, data.byteOffset, data.byteLength);
     }
 
+    function toByteLength(data) {
+      return data.byteLength;
+    }
+
+    function toUint8Array(data, offset, length) {
+      const base = data instanceof ArrayBuffer ? 0 : data.byteOffset;
+      const dataLen = toByteLength(data);
+      return new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer, base + offset, length ?? dataLen - offset);
+    }
+
+    function toUint8ClampedArray(data, offset, length) {
+      const base = data instanceof ArrayBuffer ? 0 : data.byteOffset;
+      return new Uint8ClampedArray(data instanceof ArrayBuffer ? data : data.buffer, base + offset, length);
+    }
+
     // ── WebGL2 setup ───────────────────────────────────────────────────
     const VS = \`#version 300 es
       in vec2 a_pos;
@@ -1094,15 +1120,16 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
 
     function paintRgbaRect(data) {
       const view = toDataView(data);
+      const dataLen = toByteLength(data);
       let offset = 0;
-      while (offset + 8 <= data.byteLength) {
+      while (offset + 8 <= dataLen) {
         const x = view.getUint16(offset, true);
         const y = view.getUint16(offset + 2, true);
         const rw = view.getUint16(offset + 4, true);
         const rh = view.getUint16(offset + 6, true);
         const pixelBytes = rw * rh * 4;
-        if (offset + 8 + pixelBytes > data.byteLength) break;
-        const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+        if (offset + 8 + pixelBytes > dataLen) break;
+        const rgba = toUint8ClampedArray(data, offset + 8, pixelBytes);
 
         if (gl) {
           gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -1162,7 +1189,7 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
 
       if (msg.type === 'frame') {
         const data = msg.data; // ArrayBuffer
-        if (data.byteLength < 4) return;
+        if (toByteLength(data) < 4) return;
 
         const magic = toDataView(data).getUint32(0, true);
         if (magic === NAL_MAGIC && decoder) {
@@ -1170,7 +1197,7 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
           const view = toDataView(data);
           const destW = view.getUint16(10, true);
           const destH = view.getUint16(12, true);
-          const nalData = new Uint8Array(data, 16);
+          const nalData = toUint8Array(data, 16);
 
           if (!decoderConfigured && destW > 0 && destH > 0) {
             configureDecoder(destW, destH);
@@ -1194,13 +1221,13 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
         const buffers = msg.buffers;
         for (let i = 0; i < buffers.length; i++) {
           const data = buffers[i];
-          if (data.byteLength < 4) continue;
+          if (toByteLength(data) < 4) continue;
           const magic = toDataView(data).getUint32(0, true);
           if (magic === NAL_MAGIC && decoder) {
             const view = toDataView(data);
             const destW = view.getUint16(10, true);
             const destH = view.getUint16(12, true);
-            const nalData = new Uint8Array(data, 16);
+            const nalData = toUint8Array(data, 16);
             if (!decoderConfigured && destW > 0 && destH > 0) {
               configureDecoder(destW, destH);
             }

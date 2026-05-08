@@ -1,9 +1,31 @@
 use std::time::Duration;
 
 use sorng_rdp::rdp::cert_trust::{
-    evaluate_certificate_trust, CertTrustError, CertTrustStore, ChainStatus, PresentedCertificate,
-    PromptDecision, PromptKind, ServerCertValidationMode,
+    classify_security_error_for_lifecycle, evaluate_certificate_trust,
+    security_error_lifecycle_summary, CertTrustError, CertTrustStore, ChainStatus,
+    PresentedCertificate, PromptDecision, PromptKind, ServerCertValidationMode, VerifyOutcome,
 };
+use sorng_rdp::rdp::session_state::FailureClass;
+
+const SENSITIVE_MARKERS: &[&str] = &[
+    "-----BEGIN CERTIFICATE-----",
+    "super-secret",
+    "LAB\\alice",
+    "alice@example.com",
+    "domain=LAB",
+    "token=abc123",
+    "C:\\Users\\Alice\\secret.txt",
+    "de ad be ef",
+];
+
+fn assert_no_sensitive_markers(encoded: &str) {
+    for marker in SENSITIVE_MARKERS {
+        assert!(
+            !encoded.contains(marker),
+            "sensitive marker {marker:?} leaked in {encoded}"
+        );
+    }
+}
 
 fn cert(host: &str, port: u16, fingerprint: &str) -> PresentedCertificate {
     PresentedCertificate {
@@ -199,4 +221,53 @@ fn prompt_timeout_rejects_handshake() {
     .expect_err("timed-out prompts should fail the handshake");
 
     assert_eq!(error, CertTrustError::PromptTimeout);
+}
+
+#[test]
+fn trust_outcomes_project_lifecycle_safe_summaries() {
+    let outcome = VerifyOutcome::TrustStorePinned {
+        chain_error: "UnknownIssuer for CN=rdp.example.com token=abc123".to_string(),
+    };
+
+    let summary = outcome.lifecycle_summary();
+    let encoded = serde_json::to_string(&summary).expect("summary json");
+
+    assert_eq!(summary.outcome, "trust_store_pinned");
+    assert_eq!(summary.trust_source.as_deref(), Some("local_trust_store"));
+    assert_eq!(summary.chain_valid, Some(false));
+    assert_no_sensitive_markers(&encoded);
+    assert!(!encoded.contains("UnknownIssuer"));
+    assert!(!encoded.contains("rdp.example.com"));
+}
+
+#[test]
+fn trust_errors_map_to_safe_failure_class_without_raw_detail() {
+    let error = CertTrustError::InvalidChain(
+        "-----BEGIN CERTIFICATE----- super-secret token=abc123".to_string(),
+    );
+
+    let summary = error.lifecycle_summary();
+    let encoded = serde_json::to_string(&summary).expect("summary json");
+
+    assert_eq!(error.lifecycle_failure_class(), FailureClass::TrustRejected);
+    assert_eq!(summary.outcome, "invalid_chain");
+    assert_eq!(summary.failure_class.as_deref(), Some("trust_rejected"));
+    assert_no_sensitive_markers(&encoded);
+}
+
+#[test]
+fn auth_error_mapping_returns_class_only() {
+    let raw_error = "CredSSP InvalidToken for LAB\\alice password=super-secret \
+                     domain=LAB token=abc123 C:\\Users\\Alice\\secret.txt";
+
+    let summary = security_error_lifecycle_summary(raw_error);
+    let encoded = serde_json::to_string(&summary).expect("summary json");
+
+    assert_eq!(
+        classify_security_error_for_lifecycle(raw_error),
+        FailureClass::AuthRejected
+    );
+    assert_eq!(summary.outcome, "auth_rejected");
+    assert_eq!(summary.failure_class.as_deref(), Some("auth_rejected"));
+    assert_no_sensitive_markers(&encoded);
 }

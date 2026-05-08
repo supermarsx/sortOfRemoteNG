@@ -10,6 +10,7 @@ type RawBufferRenderer = FrameRenderer & {
 
 const workerBlobs = new Map<string, string>();
 const workers: MockWorker[] = [];
+const decodedChunks: MockEncodedVideoChunk[] = [];
 const NAL_MAGIC = 0x4E414C48;
 
 let originalCreateObjectURL: typeof URL.createObjectURL | undefined;
@@ -27,6 +28,9 @@ class MockImageData {
       this.data = dataOrWidth;
       this.width = widthOrHeight;
       this.height = height ?? dataOrWidth.length / (4 * widthOrHeight);
+      if (this.data.length !== this.width * this.height * 4) {
+        throw new Error(`Invalid ImageData payload length: ${this.data.length}`);
+      }
       return;
     }
 
@@ -66,7 +70,9 @@ class MockVideoDecoder {
 
   configure(_config: Record<string, unknown>): void {}
 
-  decode(_chunk: MockEncodedVideoChunk): void {}
+  decode(chunk: MockEncodedVideoChunk): void {
+    decodedChunks.push(chunk);
+  }
 
   close(): void {}
 }
@@ -191,6 +197,14 @@ function buildNalBuffer(destW = 2, destH = 2): ArrayBuffer {
   return buffer;
 }
 
+function asOffsetUint8View(buffer: ArrayBuffer): Uint8Array {
+  const source = new Uint8Array(buffer);
+  const outer = new Uint8Array(source.byteLength + 11);
+  outer.fill(0xee);
+  outer.set(source, 5);
+  return outer.subarray(5, 5 + source.byteLength);
+}
+
 function getWorker(renderer: unknown): MockWorker {
   const worker = (renderer as { worker?: MockWorker }).worker;
   if (!worker) {
@@ -210,6 +224,7 @@ describe('rdp worker blobs', () => {
   beforeEach(() => {
     workerBlobs.clear();
     workers.length = 0;
+    decodedChunks.length = 0;
 
     vi.stubGlobal('ImageData', MockImageData as typeof ImageData);
     vi.stubGlobal('Blob', MockBlob as unknown as typeof Blob);
@@ -263,6 +278,7 @@ describe('rdp worker blobs', () => {
     vi.unstubAllGlobals();
     workerBlobs.clear();
     workers.length = 0;
+    decodedChunks.length = 0;
 
     if (originalCreateObjectURL) {
       Object.defineProperty(URL, 'createObjectURL', {
@@ -310,6 +326,23 @@ describe('rdp worker blobs', () => {
     expect(getWorker(renderer).errors).toEqual([]);
   });
 
+  it('parses view-like RGBA batches inside the offscreen paint worker blob', async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+
+    const renderer = createFrameRenderer('offscreen-worker', canvas);
+    expect(renderer.type).toBe('offscreen-worker');
+
+    getWorker(renderer).postMessage({
+      type: 'frames',
+      buffers: [asOffsetUint8View(buildRgbaRectBuffer())],
+    });
+    await waitForWorkersToDrain();
+
+    expect(getWorker(renderer).errors).toEqual([]);
+  });
+
   it('parses RGBA and NAL buffers inside the WebCodecs worker blob without ReferenceError', async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 16;
@@ -330,5 +363,27 @@ describe('rdp worker blobs', () => {
     await waitForWorkersToDrain();
 
     expect(getWorker(renderer).errors).toEqual([]);
+  });
+
+  it('parses view-like RGBA and NAL buffers inside the WebCodecs worker blob', async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+
+    const renderer = createFrameRenderer(
+      'webcodecs-worker',
+      canvas,
+      { width: 16, height: 16 },
+    );
+    expect(renderer.type).toBe('webcodecs-worker');
+
+    const worker = getWorker(renderer);
+    worker.postMessage({ type: 'frame', data: asOffsetUint8View(buildRgbaRectBuffer()) });
+    worker.postMessage({ type: 'frame', data: asOffsetUint8View(buildNalBuffer()) });
+    await waitForWorkersToDrain();
+
+    expect(worker.errors).toEqual([]);
+    expect(decodedChunks).toHaveLength(1);
+    expect(Array.from(decodedChunks[0].data)).toEqual([0x65, 0x88, 0x84, 0x21]);
   });
 });

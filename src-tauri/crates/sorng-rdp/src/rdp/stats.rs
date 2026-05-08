@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use super::session_state::{
-    FrameFlowSummary, LifecycleStateMachine, SessionState, SessionStateSnapshot,
+    ChannelSummary, FrameFlowSummary, LifecycleStateMachine, SessionState, SessionStateSnapshot,
 };
 use super::types::RdpStatsEvent;
 
@@ -199,6 +199,18 @@ impl RdpSessionStats {
         }
     }
 
+    pub fn set_channel_summary(&self, summary: ChannelSummary) {
+        if let Ok(mut lifecycle) = self.lifecycle.lock() {
+            lifecycle.set_channel_summary(summary);
+        }
+    }
+
+    pub fn set_frame_flow_summary(&self, summary: FrameFlowSummary) {
+        if let Ok(mut lifecycle) = self.lifecycle.lock() {
+            lifecycle.set_frame_flow_summary(summary);
+        }
+    }
+
     /// Record a frame.  Lock-free: just an atomic increment.
     #[inline]
     pub fn record_frame(&self) {
@@ -359,11 +371,9 @@ impl RdpSessionStats {
         self.lifecycle
             .lock()
             .map(|mut lifecycle| {
-                lifecycle.set_frame_flow_summary(FrameFlowSummary {
-                    queued_frames: 0,
-                    delivered_frames: self.frame_count.load(Ordering::Relaxed),
-                    dropped_frames: 0,
-                });
+                let mut frame_flow_summary = lifecycle.frame_flow_summary();
+                frame_flow_summary.delivered_frames = self.frame_count.load(Ordering::Relaxed);
+                lifecycle.set_frame_flow_summary(frame_flow_summary);
                 lifecycle.snapshot_for_session(session_id)
             })
             .unwrap_or_else(|_| {
@@ -446,11 +456,26 @@ mod tests {
 
         stats.set_phase("active");
         stats.record_frame();
+        stats.set_frame_flow_summary(FrameFlowSummary {
+            queued_frames: 3,
+            delivered_frames: 0,
+            dropped_frames: 2,
+        });
+        stats.set_channel_summary(ChannelSummary {
+            enabled_count: 2,
+            ready_count: 1,
+            failed_count: 1,
+        });
         let active = stats.lifecycle_snapshot("session-1");
         assert_eq!(active.state, "active");
         assert_eq!(active.active_substate.as_deref(), Some("running"));
         assert_eq!(active.transition_count, 2);
+        assert_eq!(active.channel_summary.enabled_count, 2);
+        assert_eq!(active.channel_summary.ready_count, 1);
+        assert_eq!(active.channel_summary.failed_count, 1);
+        assert_eq!(active.frame_flow_summary.queued_frames, 3);
         assert_eq!(active.frame_flow_summary.delivered_frames, 1);
+        assert_eq!(active.frame_flow_summary.dropped_frames, 2);
     }
 
     #[test]

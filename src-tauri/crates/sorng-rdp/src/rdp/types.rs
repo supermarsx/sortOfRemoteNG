@@ -71,6 +71,17 @@ pub struct RdpStatsEvent {
     pub lifecycle: Option<SessionStateSnapshot>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpFrameTelemetryEvent {
+    pub session_id: String,
+    pub queued_frames: u16,
+    pub dropped_frames: u64,
+    pub coalesced_frames: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub average_render_ms: Option<f64>,
+}
+
 // ---- Input events from the frontend ----
 
 #[derive(Debug, Deserialize)]

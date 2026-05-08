@@ -19,6 +19,7 @@ disabled_commands!(
     get_rdp_session_info,
     list_rdp_sessions,
     get_rdp_stats,
+    rdp_report_frame_telemetry,
     detect_keyboard_layout,
     diagnose_rdp_connection,
     rdp_sign_out,

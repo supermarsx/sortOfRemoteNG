@@ -74,6 +74,7 @@ pub fn is_command(command: &str) -> bool {
             | "get_rdp_session_info"
             | "list_rdp_sessions"
             | "get_rdp_stats"
+            | "rdp_report_frame_telemetry"
             | "detect_keyboard_layout"
             | "diagnose_rdp_connection"
             | "rdp_sign_out"
@@ -1229,6 +1230,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         rdp_commands::get_rdp_session_info,
         rdp_commands::list_rdp_sessions,
         rdp_commands::get_rdp_stats,
+        rdp_commands::rdp_report_frame_telemetry,
         rdp_commands::detect_keyboard_layout,
         rdp_commands::diagnose_rdp_connection,
         rdp_commands::rdp_sign_out,

@@ -536,8 +536,16 @@ impl LifecycleStateMachine {
         self.channel_summary = summary;
     }
 
+    pub fn channel_summary(&self) -> ChannelSummary {
+        self.channel_summary.clone()
+    }
+
     pub fn set_frame_flow_summary(&mut self, summary: FrameFlowSummary) {
         self.frame_flow_summary = summary;
+    }
+
+    pub fn frame_flow_summary(&self) -> FrameFlowSummary {
+        self.frame_flow_summary.clone()
     }
 
     pub fn snapshot(&self) -> SessionStateSnapshot {

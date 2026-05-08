@@ -627,6 +627,37 @@ pub async fn get_rdp_stats(
     }
 }
 
+#[tauri::command]
+pub async fn rdp_report_frame_telemetry(
+    state: tauri::State<'_, RdpServiceState>,
+    payload: RdpFrameTelemetryEvent,
+) -> Result<(), String> {
+    if payload
+        .average_render_ms
+        .is_some_and(|average_render_ms| !average_render_ms.is_finite() || average_render_ms < 0.0)
+    {
+        return Err("averageRenderMs must be a finite non-negative number".to_string());
+    }
+
+    let stats = {
+        let service = state.lock().await;
+        service
+            .connections
+            .get(&payload.session_id)
+            .map(|conn| Arc::clone(&conn.stats))
+            .ok_or_else(|| format!("RDP session {} not found", payload.session_id))?
+    };
+
+    let mut frame_flow_summary = stats
+        .lifecycle_snapshot(&payload.session_id)
+        .frame_flow_summary;
+    frame_flow_summary.queued_frames = payload.queued_frames;
+    frame_flow_summary.dropped_frames = payload.dropped_frames;
+    stats.set_frame_flow_summary(frame_flow_summary);
+
+    Ok(())
+}
+
 /// Retrieve RDP log entries, optionally filtered by timestamp.
 #[tauri::command]
 pub async fn get_rdp_logs(
