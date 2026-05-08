@@ -11,6 +11,7 @@ import {
   defaultMemoryWatchdogSettings,
 } from '../../types/settings/settings';
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../../components/ui/display/loadingElement/defaults';
+import { DEFAULT_MCP_CONFIG } from '../../types/mcp/mcpServer';
 import { SecureStorage } from '../storage/storage';
 import { IndexedDbService } from '../storage/indexedDbService';
 import { generateId } from '../core/id';
@@ -208,6 +209,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     maxStoredRdpRecordings: 20,
     autoSaveToLibrary: false,
   },
+  mcpServer: DEFAULT_MCP_CONFIG,
   webRecording: {
     enabled: true,
     autoRecordWebSessions: false,
@@ -672,6 +674,10 @@ export class SettingsManager {
           rdpDefaults: {
             ...DEFAULT_SETTINGS.rdpDefaults,
             ...(storedSettings.rdpDefaults ?? {}),
+          },
+          mcpServer: {
+            ...DEFAULT_SETTINGS.mcpServer,
+            ...(storedSettings.mcpServer ?? {}),
           },
         };
       }

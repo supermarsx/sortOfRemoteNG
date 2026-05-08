@@ -13,6 +13,7 @@ import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings'
 import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
 import type { ClipboardDirection, RdpPrinterOutputMode } from '../connection/connection';
 import type { InheritableTrustPolicy, TrustPolicy } from '../../utils/auth/trustStore';
+import type { McpServerConfig } from '../mcp/mcpServer';
 
 export const Themes = [
   "dark",
@@ -385,6 +386,9 @@ export interface GlobalSettings {
     maxThreads: number;
     requestTimeout: number;
   };
+
+  // MCP Server / Model Context Protocol
+  mcpServer: McpServerConfig;
 
   // Wake on LAN
   wolEnabled: boolean;

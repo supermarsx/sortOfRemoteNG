@@ -173,6 +173,10 @@ vi.mock("../../src/components/SettingsDialog/sections/ApiSettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-api" />,
 }));
+vi.mock("../../src/components/SettingsDialog/sections/McpSettings", () => ({
+  __esModule: true,
+  default: () => <div data-testid="section-mcp" />,
+}));
 vi.mock("../../src/components/SettingsDialog/sections/RecoverySettings", () => ({
   __esModule: true,
   default: () => <div data-testid="section-recovery" />,
@@ -261,6 +265,7 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("Behavior")).toBeInTheDocument();
     expect(screen.getByText("settings.theme")).toBeInTheDocument();
     expect(screen.getByText("settings.security")).toBeInTheDocument();
+    expect(screen.getByText("mcpServer.title")).toBeInTheDocument();
     expect(screen.getByText("About")).toBeInTheDocument();
   });
 
@@ -306,6 +311,20 @@ describe("SettingsDialog", () => {
 
     expect(screen.queryByTestId("section-general")).not.toBeInTheDocument();
     expect(screen.getByTestId("section-about")).toBeInTheDocument();
+  });
+
+  it("switches to MCP Server tab when clicked", async () => {
+    render(
+      <ToastProvider>
+        <SettingsDialog isOpen onClose={() => {}} />
+      </ToastProvider>,
+    );
+    await screen.findByTestId("section-general");
+
+    fireEvent.click(screen.getByText("mcpServer.title"));
+
+    expect(screen.queryByTestId("section-general")).not.toBeInTheDocument();
+    expect(screen.getByTestId("section-mcp")).toBeInTheDocument();
   });
 
   it("calls onClose when close button is clicked", async () => {

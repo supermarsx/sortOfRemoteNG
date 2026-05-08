@@ -21,10 +21,12 @@ import {
   RotateCcw,
   Activity,
   Info,
+  Bot,
   LucideIcon,
 } from "lucide-react";
 import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig } from "../../types/settings/settings";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../ui/display/loadingElement/defaults";
+import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition
@@ -59,6 +61,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
   { id: "backend", labelKey: "Backend", icon: Cpu },
   { id: "api", labelKey: "API Server", icon: Server },
+  { id: "mcpServer", labelKey: "mcpServer.title", fallback: "MCP Server", icon: Bot },
   { id: "diagnostics", labelKey: "Diagnostics", icon: Activity },
   { id: "advanced", labelKey: "settings.advanced", icon: Code },
   { id: "recovery", labelKey: "Recovery", icon: RotateCcw },
@@ -258,6 +261,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "showRecordingManagerIcon",
   ],
   macros: ["macros"],
+  mcpServer: ["mcpServer"],
   diagnostics: ["diagnostics"],
   backend: ["backendConfig"],
   sshTerminal: ["sshTerminal"],
@@ -446,5 +450,6 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     reconnectMaxDelaySecs: 30,
     reconnectOnNetworkLoss: true,
   } as GlobalSettings['rdpDefaults'],
+  mcpServer: DEFAULT_MCP_CONFIG,
   diagnostics: defaultDiagnosticsConfig,
 };

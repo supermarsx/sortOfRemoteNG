@@ -18,6 +18,7 @@ import VpnSettings from "./sections/VpnSettings";
 import AdvancedSettings from "./sections/AdvancedSettings";
 import StartupSettings from "./sections/StartupSettings";
 import ApiSettings from "./sections/ApiSettings";
+import McpSettings from "./sections/McpSettings";
 import RecoverySettings from "./sections/RecoverySettings";
 import BehaviorSettings from "./sections/BehaviorSettings";
 import SSHTerminalSettings from "./sections/SSHTerminalSettings";
@@ -226,6 +227,9 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         )}
         {mgr.activeTab === "api" && (
           <ApiSettings settings={s} updateSettings={u} />
+        )}
+        {mgr.activeTab === "mcpServer" && (
+          <McpSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "diagnostics" && (
           <DiagnosticsSettings settings={s} updateSettings={u} />
