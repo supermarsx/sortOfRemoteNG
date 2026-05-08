@@ -88,6 +88,10 @@ const SettingsTabContent = dynamic(
   () => import("../SettingsDialog/index").then((m) => m.SettingsTabContent),
   { ssr: false },
 );
+const ImportExport = dynamic(
+  () => import("../ImportExport").then((m) => m.ImportExport),
+  { ssr: false },
+);
 const RDPSessionPanelTab = dynamic(
   () => import("../rdp/RDPSessionPanel").then((m) => m.RDPSessionPanel),
   { ssr: false },
@@ -186,6 +190,11 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, 
         return conn ? <ConnectionDiagnostics connection={conn} onClose={onClose} /> : null;
       })()}
       {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
+      {toolKey === 'importExport' && (
+        <div className="h-full overflow-y-auto bg-[var(--color-surface)] p-6">
+          <ImportExport isOpen embedded onClose={onClose} />
+        </div>
+      )}
       {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
       {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
       {toolKey === 'bulkEditor' && (

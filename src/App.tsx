@@ -65,9 +65,7 @@ const AppContent: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
-  const [showImportExport, setShowImportExport] = useState(false);
-  const [importExportInitialTab, setImportExportInitialTab] = useState<'export' | 'import'>('export');
-  const [collectionSelectorInitialTab, setCollectionSelectorInitialTab] = useState<'collections' | 'connections' | 'proxies' | undefined>(undefined);
+  const [collectionSelectorInitialTab, setCollectionSelectorInitialTab] = useState<'collections' | 'proxies' | undefined>(undefined);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
   // isRdpPanelResizing is in useResizeHandlers hook
   const [showErrorLog, setShowErrorLog] = useState(false);
@@ -229,6 +227,7 @@ const AppContent: React.FC = () => {
     const keys: ToolKey[] = [
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
       'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
+      'importExport',
       'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
       'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
       'connectionEditor', 'bulkEditor',
@@ -1133,10 +1132,7 @@ const AppContent: React.FC = () => {
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
           onOpenBulkEditor={() => toolShowSetters.current.bulkEditor(true)}
-          onOpenImport={() => {
-            setCollectionSelectorInitialTab('connections');
-            setShowCollectionSelector(true);
-          }}
+          onOpenImport={() => toolShowSetters.current.importExport(true)}
           noCollection={!collectionManager.getCurrentCollection()}
         />
         {!state.sidebarCollapsed && (
@@ -1196,8 +1192,7 @@ const AppContent: React.FC = () => {
           setShowCollectionSelector(v);
         }}
         openImportExport={() => {
-          setCollectionSelectorInitialTab('connections');
-          setShowCollectionSelector(true);
+          toolShowSetters.current.importExport(true);
         }}
         setShowSettings={handleOpenSettings}
         setRdpPanelOpen={toolShowSetters.current.rdpSessions}
@@ -1317,18 +1312,15 @@ const AppContent: React.FC = () => {
         showQuickConnect={showQuickConnect}
         showPasswordDialog={showPasswordDialog}
         showSettings={showSettings}
-        showImportExport={showImportExport}
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
         setShowCollectionSelector={setShowCollectionSelector}
         setShowQuickConnect={setShowQuickConnect}
         setShowSettings={handleOpenSettings}
-        setShowImportExport={setShowImportExport}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}
-        importExportInitialTab={importExportInitialTab}
         collectionSelectorInitialTab={collectionSelectorInitialTab}
         diagnosticsConnection={diagnosticsConnection}
         setDiagnosticsConnection={setDiagnosticsConnection}

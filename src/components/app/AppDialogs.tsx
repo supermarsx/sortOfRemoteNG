@@ -28,10 +28,6 @@ const SettingsDialog = dynamic(
   () => import("../SettingsDialog").then((module) => module.SettingsDialog),
   { ssr: false },
 );
-const ImportExport = dynamic(
-  () => import("../ImportExport").then((module) => module.ImportExport),
-  { ssr: false },
-);
 const ConnectionDiagnostics = dynamic(
   () => import("../connection/ConnectionDiagnostics").then((module) => module.ConnectionDiagnostics),
   { ssr: false },
@@ -47,19 +43,16 @@ interface AppDialogsProps {
   showQuickConnect: boolean;
   showPasswordDialog: boolean;
   showSettings: boolean;
-  showImportExport: boolean;
   showDiagnostics: boolean;
   showErrorLog: boolean;
   setShowCollectionSelector: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
   setShowSettings: (v: boolean) => void;
-  setShowImportExport: (v: boolean) => void;
   setShowDiagnostics: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   passwordDialogMode: "setup" | "unlock";
   passwordError: string;
-  importExportInitialTab: "import" | "export";
-  collectionSelectorInitialTab?: "collections" | "connections" | "proxies";
+  collectionSelectorInitialTab?: "collections" | "proxies";
   diagnosticsConnection: Connection | null;
   setDiagnosticsConnection: (c: Connection | null) => void;
   hasStoragePassword: boolean;
@@ -88,18 +81,15 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     showQuickConnect,
     showPasswordDialog,
     showSettings,
-    showImportExport,
     showDiagnostics,
     showErrorLog,
     setShowCollectionSelector,
     setShowQuickConnect,
     setShowSettings,
-    setShowImportExport,
     setShowDiagnostics,
     setShowErrorLog,
     passwordDialogMode,
     passwordError,
-    importExportInitialTab,
     collectionSelectorInitialTab,
     diagnosticsConnection,
     setDiagnosticsConnection,
@@ -192,12 +182,6 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
           onClose={() => setShowSettings(false)}
         />
       </FeatureErrorBoundary>
-
-      <ImportExport
-        isOpen={showImportExport}
-        onClose={() => setShowImportExport(false)}
-        initialTab={importExportInitialTab}
-      />
 
       {showDiagnostics && diagnosticsConnection && (
         <ConnectionDiagnostics

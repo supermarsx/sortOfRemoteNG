@@ -27,10 +27,6 @@ vi.mock("../../src/components/SettingsDialog", () => ({
   SettingsDialog: ({ isOpen, onClose }: any) =>
     isOpen ? <div data-testid="settings-dialog"><button onClick={onClose}>close-settings</button></div> : null,
 }));
-vi.mock("../../src/components/ImportExport", () => ({
-  ImportExport: ({ isOpen, onClose }: any) =>
-    isOpen ? <div data-testid="import-export"><button onClick={onClose}>close-ie</button></div> : null,
-}));
 vi.mock("../../src/components/connection/ConnectionDiagnostics", () => ({
   ConnectionDiagnostics: ({ onClose }: any) =>
     <div data-testid="connection-diagnostics"><button onClick={onClose}>close-diag</button></div>,
@@ -68,18 +64,15 @@ function makeProps(overrides: Record<string, any> = {}) {
     showQuickConnect: false,
     showPasswordDialog: false,
     showSettings: false,
-    showImportExport: false,
     showDiagnostics: false,
     showErrorLog: false,
     setShowCollectionSelector: vi.fn(),
     setShowQuickConnect: vi.fn(),
     setShowSettings: vi.fn(),
-    setShowImportExport: vi.fn(),
     setShowDiagnostics: vi.fn(),
     setShowErrorLog: vi.fn(),
     passwordDialogMode: "unlock" as const,
     passwordError: "",
-    importExportInitialTab: "import" as const,
     diagnosticsConnection: null,
     setDiagnosticsConnection: vi.fn(),
     hasStoragePassword: false,
@@ -121,18 +114,15 @@ describe("AppDialogs", () => {
         showQuickConnect={false}
         showPasswordDialog={false}
         showSettings={false}
-        showImportExport={false}
         showDiagnostics={false}
         showErrorLog={false}
         setShowCollectionSelector={() => {}}
         setShowQuickConnect={() => {}}
         setShowSettings={() => {}}
-        setShowImportExport={() => {}}
         setShowDiagnostics={() => {}}
         setShowErrorLog={() => {}}
         passwordDialogMode="unlock"
         passwordError=""
-        importExportInitialTab="import"
         diagnosticsConnection={null}
         setDiagnosticsConnection={() => {}}
         hasStoragePassword={true}
@@ -166,11 +156,6 @@ describe("AppDialogs", () => {
   it("shows SettingsDialog when showSettings is true", () => {
     render(<AppDialogs {...makeProps({ showSettings: true })} />);
     expect(screen.getByTestId("settings-dialog")).toBeInTheDocument();
-  });
-
-  it("shows ImportExport when showImportExport is true", () => {
-    render(<AppDialogs {...makeProps({ showImportExport: true })} />);
-    expect(screen.getByTestId("import-export")).toBeInTheDocument();
   });
 
   it("shows ConnectionDiagnostics when showDiagnostics and diagnosticsConnection exist", async () => {
@@ -210,12 +195,5 @@ describe("AppDialogs", () => {
     render(<AppDialogs {...makeProps({ showSettings: true, setShowSettings })} />);
     fireEvent.click(screen.getByText("close-settings"));
     expect(setShowSettings).toHaveBeenCalledWith(false);
-  });
-
-  it("calls setShowImportExport(false) when closing ImportExport", () => {
-    const setShowImportExport = vi.fn();
-    render(<AppDialogs {...makeProps({ showImportExport: true, setShowImportExport })} />);
-    fireEvent.click(screen.getByText("close-ie"));
-    expect(setShowImportExport).toHaveBeenCalledWith(false);
   });
 });

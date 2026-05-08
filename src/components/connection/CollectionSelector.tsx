@@ -11,13 +11,11 @@ import {
   Download,
   Upload,
   X,
-  Layers,
   Network,
   Link2,
   Copy,
   Search,
 } from "lucide-react";
-import { ImportExport } from "../ImportExport";
 import { ProxyProfileEditor } from "../network/ProxyProfileEditor";
 import { ProxyChainEditor } from "../network/ProxyChainEditor";
 import { Modal } from "../ui/overlays/Modal";
@@ -26,7 +24,6 @@ import { useCollectionSelector } from "../../hooks/connection/useCollectionSelec
 import { Checkbox } from '../ui/forms';
 import { useTranslation } from "react-i18next";
 import CollectionsTab from "./collectionSelector/CollectionsTab";
-import ConnectionsTab from "./collectionSelector/ConnectionsTab";
 import ProxiesTab from "./collectionSelector/ProxiesTab";
 
 interface CollectionSelectorProps {
@@ -36,7 +33,7 @@ interface CollectionSelectorProps {
     password?: string,
   ) => Promise<void> | void;
   onClose: () => void;
-  initialTab?: "collections" | "connections" | "proxies";
+  initialTab?: "collections" | "proxies";
 }
 
 export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
@@ -47,12 +44,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const mgr = useCollectionSelector(isOpen, onCollectionSelect);
+  const { setActiveTab } = mgr;
 
   React.useEffect(() => {
     if (isOpen && initialTab) {
-      mgr.setActiveTab(initialTab);
+      setActiveTab(initialTab);
     }
-  }, [isOpen, initialTab, mgr.setActiveTab]);
+  }, [isOpen, initialTab, setActiveTab]);
 
   if (!isOpen) return null;
 
@@ -133,17 +131,6 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               <span>{t("collectionCenter.tabs.collections")}</span>
             </button>
             <button
-              onClick={() => mgr.setActiveTab("connections")}
-              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
-                mgr.activeTab === "connections"
-                  ? "bg-primary text-[var(--color-text)]"
-                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
-              }`}
-            >
-              <Layers size={16} />
-              <span>{t("collectionCenter.tabs.connections")}</span>
-            </button>
-            <button
               onClick={() => mgr.setActiveTab("proxies")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "proxies"
@@ -162,7 +149,6 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               {mgr.activeTab === "collections" && (
                 <CollectionsTab mgr={mgr} />
               )}
-              {mgr.activeTab === "connections" && <ConnectionsTab />}
               {mgr.activeTab === "proxies" && <ProxiesTab mgr={mgr} />}
             </div>
           </div>

@@ -24,6 +24,7 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
     showTransparencyToggle: false,
     showQuickConnectIcon: true,
     showCollectionSwitcherIcon: true,
+    showImportExportIcon: true,
     showSettingsIcon: true,
     showRdpSessionsIcon: true,
     showInternalProxyIcon: false,
@@ -55,6 +56,7 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
   connections: [],
   setShowQuickConnect: vi.fn(),
   setShowCollectionSelector: vi.fn(),
+  openImportExport: vi.fn(),
   setShowSettings: vi.fn(),
   setRdpPanelOpen: vi.fn(),
   setShowInternalProxyManager: vi.fn(),
@@ -99,6 +101,17 @@ describe("AppToolbar", () => {
     expect(settingsBtn).toBeTruthy();
     fireEvent.click(settingsBtn);
     expect(props.setShowSettings).toHaveBeenCalledWith(true);
+  });
+
+  it("opens Import / Export through the toolbar action", () => {
+    const props = makeProps({
+      collectionManager: { getCurrentCollection: () => ({ id: "col-1", name: "Test" }) } as any,
+    });
+
+    render(<AppToolbar {...(props as any)} />);
+    fireEvent.click(screen.getByTestId("toolbar-import-export"));
+
+    expect(props.openImportExport).toHaveBeenCalledTimes(1);
   });
 
   it("calls handleMinimize when minimize button is clicked", () => {

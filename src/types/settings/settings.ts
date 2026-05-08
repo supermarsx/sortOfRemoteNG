@@ -1139,6 +1139,7 @@ export interface MacroConfig {
  *  opened as a session tab so that ToolKey can be derived from it. */
 export interface ToolDisplayModes {
   recordingManager: 'tab';
+  importExport: 'tab';
   macroManager: 'tab';
   scriptManager: 'tab';
   performanceMonitor: 'tab';

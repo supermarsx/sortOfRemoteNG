@@ -9,6 +9,7 @@ export const TOOL_PROTOCOL_PREFIX = "tool:";
 export const TOOL_LABELS: Record<ToolKey, string> = {
   performanceMonitor: "Performance Monitor",
   actionLog: "Action Log",
+  importExport: "Import / Export",
   shortcutManager: "Shortcuts",
   proxyChain: "Proxy & VPN",
   internalProxy: "Internal Proxy",

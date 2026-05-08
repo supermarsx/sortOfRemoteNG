@@ -462,6 +462,7 @@ export const defaultSettings: GlobalSettings = {
   rdpSessionHistoryMax: 1000,
   toolDisplayModes: {
     recordingManager: 'tab' as const,
+    importExport: 'tab' as const,
     macroManager: 'tab' as const,
     scriptManager: 'tab' as const,
     performanceMonitor: 'tab' as const,

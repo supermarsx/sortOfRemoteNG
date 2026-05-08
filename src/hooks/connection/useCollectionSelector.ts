@@ -116,7 +116,7 @@ export function useCollectionSelector(
   // Shared UI state
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<
-    "collections" | "connections" | "proxies"
+    "collections" | "proxies"
   >("collections");
 
   // Proxy/VPN profiles
