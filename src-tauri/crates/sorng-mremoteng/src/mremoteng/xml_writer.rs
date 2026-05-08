@@ -15,7 +15,11 @@ use super::error::{MremotengError, MremotengResult};
 use super::types::*;
 
 /// Serialize a connection file to XML string.
-pub fn write_xml(file: &MrngConnectionFile, master_password: &str) -> MremotengResult<String> {
+pub fn write_xml(
+    file: &MrngConnectionFile,
+    master_password: &str,
+    encrypt_passwords: bool,
+) -> MremotengResult<String> {
     let mut writer = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 4);
 
     // XML declaration
@@ -65,6 +69,7 @@ pub fn write_xml(file: &MrngConnectionFile, master_password: &str) -> MremotengR
             child,
             master_password,
             file.encryption.kdf_iterations,
+            encrypt_passwords,
         )?;
     }
 
@@ -83,6 +88,7 @@ fn write_node<W: std::io::Write>(
     node: &MrngConnectionInfo,
     master_password: &str,
     kdf_iterations: u32,
+    encrypt_passwords: bool,
 ) -> MremotengResult<()> {
     let mut elem = BytesStart::new("Node");
 
@@ -118,10 +124,16 @@ fn write_node<W: std::io::Write>(
 
     // ── Credentials ──────────────────────────────────────────────
     elem.push_attribute(("Username", node.username.as_str()));
-    let encrypted_pw =
-        encryption::encrypt_password(&node.password, master_password, kdf_iterations)
-            .unwrap_or_default();
-    elem.push_attribute(("Password", encrypted_pw.as_str()));
+    let encrypted_pw;
+    let password = if encrypt_passwords {
+        encrypted_pw =
+            encryption::encrypt_password(&node.password, master_password, kdf_iterations)
+                .unwrap_or_default();
+        encrypted_pw.as_str()
+    } else {
+        node.password.as_str()
+    };
+    elem.push_attribute(("Password", password));
     elem.push_attribute(("Domain", node.domain.as_str()));
     elem.push_attribute((
         "ExternalCredentialProvider",
@@ -172,10 +184,19 @@ fn write_node<W: std::io::Write>(
         &*u32_str(node.rd_gateway_use_connection_credentials as u32),
     ));
     elem.push_attribute(("RDGatewayUsername", node.rd_gateway_username.as_str()));
-    let encrypted_gw_pw =
-        encryption::encrypt_password(&node.rd_gateway_password, master_password, kdf_iterations)
-            .unwrap_or_default();
-    elem.push_attribute(("RDGatewayPassword", encrypted_gw_pw.as_str()));
+    let encrypted_gw_pw;
+    let rd_gateway_password = if encrypt_passwords {
+        encrypted_gw_pw = encryption::encrypt_password(
+            &node.rd_gateway_password,
+            master_password,
+            kdf_iterations,
+        )
+        .unwrap_or_default();
+        encrypted_gw_pw.as_str()
+    } else {
+        node.rd_gateway_password.as_str()
+    };
+    elem.push_attribute(("RDGatewayPassword", rd_gateway_password));
     elem.push_attribute(("RDGatewayDomain", node.rd_gateway_domain.as_str()));
     elem.push_attribute((
         "RDGatewayAccessToken",
@@ -249,10 +270,16 @@ fn write_node<W: std::io::Write>(
     elem.push_attribute(("VNCProxyIP", node.vnc_proxy_ip.as_str()));
     elem.push_attribute(("VNCProxyPort", &*node.vnc_proxy_port.to_string()));
     elem.push_attribute(("VNCProxyUsername", node.vnc_proxy_username.as_str()));
-    let encrypted_vnc_pw =
-        encryption::encrypt_password(&node.vnc_proxy_password, master_password, kdf_iterations)
-            .unwrap_or_default();
-    elem.push_attribute(("VNCProxyPassword", encrypted_vnc_pw.as_str()));
+    let encrypted_vnc_pw;
+    let vnc_proxy_password = if encrypt_passwords {
+        encrypted_vnc_pw =
+            encryption::encrypt_password(&node.vnc_proxy_password, master_password, kdf_iterations)
+                .unwrap_or_default();
+        encrypted_vnc_pw.as_str()
+    } else {
+        node.vnc_proxy_password.as_str()
+    };
+    elem.push_attribute(("VNCProxyPassword", vnc_proxy_password));
     elem.push_attribute(("VNCColors", &*u32_str(node.vnc_colors as u32)));
     elem.push_attribute((
         "VNCSmartSizeMode",
@@ -283,7 +310,13 @@ fn write_node<W: std::io::Write>(
             .map_err(|e| MremotengError::Serialization(e.to_string()))?;
 
         for child in &node.children {
-            write_node(writer, child, master_password, kdf_iterations)?;
+            write_node(
+                writer,
+                child,
+                master_password,
+                kdf_iterations,
+                encrypt_passwords,
+            )?;
         }
 
         writer

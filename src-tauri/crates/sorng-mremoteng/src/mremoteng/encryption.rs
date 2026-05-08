@@ -1,15 +1,17 @@
 //! AES-256-GCM encryption/decryption with PBKDF2 key derivation.
 //!
 //! Matches the wire format used by mRemoteNG's `AeadCryptographyProvider`:
-//! - 16-byte random salt → PBKDF2-HMAC-SHA1 → 32-byte key
+//! - 16-byte random salt -> PBKDF2-HMAC-SHA1 -> 32-byte key
 //! - 16-byte random nonce
 //! - AES-256-GCM ciphertext (includes 16-byte auth tag appended)
 //! - Binary layout: `[salt (16)] [nonce (16)] [ciphertext+tag]`
+//! - The salt is also used as AES-GCM additional authenticated data (AAD)
 //! - Final output: Base64-encoded
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
+    aead::{generic_array::typenum::U16, Aead, KeyInit, Payload},
+    aes::Aes256,
+    AesGcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use rand::Rng;
@@ -22,26 +24,45 @@ const SALT_SIZE: usize = 16;
 const NONCE_SIZE: usize = 16; // mRemoteNG uses 128-bit nonce (non-standard but matches their code)
 const KEY_SIZE: usize = 32; // 256-bit AES key
 const MIN_PASSWORD_LEN: usize = 1;
+const DEFAULT_MASTER_PASSWORD: &str = "mR3m";
+const PROTECTED_PLAINTEXT_NO_PASSWORD: &str = "ThisIsNotProtected";
+const PROTECTED_PLAINTEXT_PASSWORD: &str = "ThisIsProtected";
 
-// mRemoteNG uses 96-bit nonce for AES-GCM (the standard).
-// However, the BouncyCastle GCM implementation in mRemoteNG uses 128-bit nonce.
-// The `aes-gcm` crate only supports 96-bit nonces natively.
-// We'll use 96-bit nonces (first 12 bytes) which is compatible with the standard
-// AES-GCM spec. For reading mRemoteNG files that used 128-bit nonces,
-// we provide a fallback.
 const AES_GCM_NONCE_SIZE: usize = 12;
+type Aes256Gcm16 = AesGcm<Aes256, U16>;
+
+fn effective_password(password: &str) -> &str {
+    if password.is_empty() {
+        DEFAULT_MASTER_PASSWORD
+    } else {
+        password
+    }
+}
+
+fn pkcs5_password_to_bytes(password: &str) -> Vec<u8> {
+    password
+        .encode_utf16()
+        .map(|code_unit| (code_unit & 0xff) as u8)
+        .collect()
+}
 
 /// Derive a 256-bit key from a password and salt using PBKDF2-HMAC-SHA1.
 fn derive_key(password: &str, salt: &[u8], iterations: u32) -> [u8; KEY_SIZE] {
     let mut key = [0u8; KEY_SIZE];
-    pbkdf2::pbkdf2_hmac::<Sha1>(password.as_bytes(), salt, iterations, &mut key);
+    pbkdf2::pbkdf2_hmac::<Sha1>(
+        &pkcs5_password_to_bytes(password),
+        salt,
+        iterations,
+        &mut key,
+    );
     key
 }
 
 /// Encrypt a plaintext string using AES-256-GCM with PBKDF2 key derivation.
 ///
-/// Output: Base64-encoded `[salt (16)] [nonce (12)] [ciphertext+tag]`
+/// Output: Base64-encoded `[salt (16)] [nonce (16)] [ciphertext+tag]`
 pub fn encrypt(plaintext: &str, password: &str, iterations: u32) -> MremotengResult<String> {
+    let password = effective_password(password);
     if password.len() < MIN_PASSWORD_LEN {
         return Err(MremotengError::Encryption(format!(
             "Password must be at least {} character(s)",
@@ -62,20 +83,26 @@ pub fn encrypt(plaintext: &str, password: &str, iterations: u32) -> MremotengRes
     // Derive key
     let key = derive_key(password, &salt, iterations);
 
-    // Generate random nonce (96-bit for standard AES-GCM)
-    let mut nonce_bytes = [0u8; AES_GCM_NONCE_SIZE];
+    // Generate random nonce (128-bit, matching mRemoteNG/BouncyCastle)
+    let mut nonce_bytes = [0u8; NONCE_SIZE];
     rng.fill(&mut nonce_bytes);
 
     // Encrypt
     let cipher =
-        Aes256Gcm::new_from_slice(&key).map_err(|e| MremotengError::Encryption(e.to_string()))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
+        Aes256Gcm16::new_from_slice(&key).map_err(|e| MremotengError::Encryption(e.to_string()))?;
+    let nonce = Nonce::<U16>::from_slice(&nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad: &salt,
+            },
+        )
         .map_err(|e| MremotengError::Encryption(e.to_string()))?;
 
     // Assemble: [salt][nonce][ciphertext+tag]
-    let mut output = Vec::with_capacity(SALT_SIZE + AES_GCM_NONCE_SIZE + ciphertext.len());
+    let mut output = Vec::with_capacity(SALT_SIZE + NONCE_SIZE + ciphertext.len());
     output.extend_from_slice(&salt);
     output.extend_from_slice(&nonce_bytes);
     output.extend_from_slice(&ciphertext);
@@ -85,8 +112,10 @@ pub fn encrypt(plaintext: &str, password: &str, iterations: u32) -> MremotengRes
 
 /// Decrypt a Base64-encoded ciphertext string using AES-256-GCM with PBKDF2.
 ///
-/// Supports both 96-bit (standard) and 128-bit (mRemoteNG BouncyCastle) nonces.
+/// Supports real mRemoteNG 128-bit nonces and legacy sortOfRemoteNG 96-bit
+/// empty-AAD exports written before the compatibility fix.
 pub fn decrypt(ciphertext_b64: &str, password: &str, iterations: u32) -> MremotengResult<String> {
+    let password = effective_password(password);
     if password.len() < MIN_PASSWORD_LEN {
         return Err(MremotengError::Decryption(format!(
             "Password must be at least {} character(s)",
@@ -102,9 +131,11 @@ pub fn decrypt(ciphertext_b64: &str, password: &str, iterations: u32) -> Mremote
         .decode(ciphertext_b64)
         .map_err(|e| MremotengError::Decryption(format!("Invalid Base64: {}", e)))?;
 
-    // Try standard 96-bit nonce first, then mRemoteNG's 128-bit
-    decrypt_with_nonce_size(&data, password, iterations, AES_GCM_NONCE_SIZE)
-        .or_else(|_| decrypt_with_nonce_size(&data, password, iterations, NONCE_SIZE))
+    decrypt_with_nonce_size(&data, password, iterations, NONCE_SIZE, true)
+        .or_else(|_| decrypt_with_nonce_size(&data, password, iterations, NONCE_SIZE, false))
+        .or_else(|_| {
+            decrypt_with_nonce_size(&data, password, iterations, AES_GCM_NONCE_SIZE, false)
+        })
 }
 
 fn decrypt_with_nonce_size(
@@ -112,6 +143,7 @@ fn decrypt_with_nonce_size(
     password: &str,
     iterations: u32,
     nonce_size: usize,
+    salt_as_aad: bool,
 ) -> MremotengResult<String> {
     let min_len = SALT_SIZE + nonce_size + 16; // 16 = GCM tag
     if data.len() < min_len {
@@ -126,21 +158,25 @@ fn decrypt_with_nonce_size(
 
     let key = derive_key(password, salt, iterations);
 
-    // For 128-bit nonce: truncate to 96-bit since aes-gcm only supports 96-bit
-    // mRemoteNG's BouncyCastle handles arbitrary nonce sizes.
-    // For compatibility, we only use the first 12 bytes if nonce_size is 16.
-    let effective_nonce = if nonce_size > AES_GCM_NONCE_SIZE {
-        &nonce_bytes[..AES_GCM_NONCE_SIZE]
+    let plaintext_bytes = if nonce_size == NONCE_SIZE {
+        let cipher = Aes256Gcm16::new_from_slice(&key)
+            .map_err(|e| MremotengError::Decryption(e.to_string()))?;
+        let nonce = Nonce::<U16>::from_slice(nonce_bytes);
+        cipher.decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad: if salt_as_aad { salt } else { b"" },
+            },
+        )
     } else {
-        nonce_bytes
-    };
-
-    let cipher =
-        Aes256Gcm::new_from_slice(&key).map_err(|e| MremotengError::Decryption(e.to_string()))?;
-    let nonce = Nonce::from_slice(effective_nonce);
-
-    let plaintext_bytes = cipher.decrypt(nonce, ciphertext).map_err(|_| {
-        MremotengError::Decryption("Decryption failed — wrong password or corrupted data".into())
+        let cipher = aes_gcm::Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| MremotengError::Decryption(e.to_string()))?;
+        let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
+        cipher.decrypt(nonce, ciphertext)
+    }
+    .map_err(|_| {
+        MremotengError::Decryption("Decryption failed - wrong password or corrupted data".into())
     })?;
 
     String::from_utf8(plaintext_bytes)
@@ -156,15 +192,6 @@ pub fn decrypt_password(
 ) -> String {
     if encrypted_password.is_empty() {
         return String::new();
-    }
-
-    // If no master password, the file might be unencrypted
-    if master_password.is_empty() {
-        // Try with default empty password "mR3m"
-        match decrypt(encrypted_password, "mR3m", iterations) {
-            Ok(p) => return p,
-            Err(_) => return encrypted_password.to_string(),
-        }
     }
 
     match decrypt(encrypted_password, master_password, iterations) {
@@ -183,12 +210,34 @@ pub fn encrypt_password(
         return Ok(String::new());
     }
 
-    let pwd = if master_password.is_empty() {
-        "mR3m"
+    encrypt(plaintext_password, master_password, iterations)
+}
+
+pub fn encrypt_protected_sentinel(
+    master_password: &str,
+    iterations: u32,
+) -> MremotengResult<String> {
+    let plaintext = if effective_password(master_password) == DEFAULT_MASTER_PASSWORD {
+        PROTECTED_PLAINTEXT_NO_PASSWORD
     } else {
-        master_password
+        PROTECTED_PLAINTEXT_PASSWORD
     };
-    encrypt(plaintext_password, pwd, iterations)
+    encrypt(plaintext, master_password, iterations)
+}
+
+pub fn verify_protected_sentinel(
+    protected: &str,
+    master_password: &str,
+    iterations: u32,
+) -> MremotengResult<bool> {
+    if protected.is_empty() {
+        return Ok(true);
+    }
+    let plaintext = decrypt(protected, master_password, iterations)?;
+    Ok(matches!(
+        plaintext.as_str(),
+        PROTECTED_PLAINTEXT_NO_PASSWORD | PROTECTED_PLAINTEXT_PASSWORD
+    ))
 }
 
 /// Build encryption info from file metadata.
@@ -256,5 +305,42 @@ mod tests {
         let encrypted = encrypt_password("secret", "", 1000).unwrap();
         let decrypted = decrypt_password(&encrypted, "", 1000);
         assert_eq!(decrypted, "secret");
+    }
+
+    #[test]
+    fn decrypts_real_mremoteng_default_master_protected_sample() {
+        let protected = "0RlaSZ8kZayRzE3yO2agQWIXUV5EW3ZWDJ3Pm2SV4yKJaZyYWSxrFgjtbM8RcO1ebkkTuRerKXmfdUmM7oVFZ1M/";
+
+        let decrypted = decrypt(protected, "mR3m", 1000).unwrap();
+
+        assert_eq!(decrypted, PROTECTED_PLAINTEXT_NO_PASSWORD);
+    }
+
+    #[test]
+    fn decrypts_fixed_salt_aad_vector_with_16_byte_nonce() {
+        let protected = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+uz8d4sTNaXr0HOVjlPwIR242YEwJN5jdxDvqLIqzPGtjj";
+
+        let decrypted = decrypt(protected, "", 1000).unwrap();
+
+        assert_eq!(decrypted, PROTECTED_PLAINTEXT_NO_PASSWORD);
+    }
+
+    #[test]
+    fn decrypts_legacy_empty_aad_vector() {
+        let protected = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9gjEssCXScU591iI4+iNzk/8FY/ftUkt6DfQzNT9a56IWX";
+
+        let decrypted = decrypt(protected, "", 1000).unwrap();
+
+        assert_eq!(decrypted, PROTECTED_PLAINTEXT_NO_PASSWORD);
+    }
+
+    #[test]
+    fn uses_pkcs5_low_byte_password_conversion() {
+        let protected =
+            "oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr+ILHCWiT4evIaHlzgqtsozBl0fg48rsmYQL7oc";
+
+        let decrypted = decrypt(protected, "passwört", 1000).unwrap();
+
+        assert_eq!(decrypted, "latin-secret");
     }
 }

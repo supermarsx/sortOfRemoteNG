@@ -22,6 +22,8 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
 
     let mut file = MrngConnectionFile::default();
     let mut stack: Vec<MrngConnectionInfo> = Vec::new();
+    let mut inside_connections = false;
+    let mut encrypted_body = String::new();
 
     loop {
         match reader.read_event() {
@@ -33,6 +35,7 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
                 match tag_name {
                     "Connections" => {
                         parse_connections_element(e, &mut file)?;
+                        inside_connections = true;
                     }
                     "Node" => {
                         let node =
@@ -72,6 +75,16 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
                             file.root.children.push(node);
                         }
                     }
+                } else if tag_name == "Connections" {
+                    inside_connections = false;
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                if inside_connections && file.encryption.full_file_encryption {
+                    encrypted_body.push_str(
+                        &e.unescape()
+                            .map_err(|e| MremotengError::XmlParse(e.to_string()))?,
+                    );
                 }
             }
             Ok(Event::Eof) => break,
@@ -84,6 +97,35 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
             }
             _ => {}
         }
+    }
+
+    if !file.protected.is_empty() {
+        encryption::verify_protected_sentinel(
+            &file.protected,
+            master_password,
+            file.encryption.kdf_iterations,
+        )?;
+    }
+
+    if file.encryption.full_file_encryption {
+        let body = encrypted_body.trim();
+        if body.is_empty() {
+            return Err(MremotengError::Decryption(
+                "FullFileEncryption is on but body is empty".into(),
+            ));
+        }
+
+        let inner_xml = encryption::decrypt(body, master_password, file.encryption.kdf_iterations)?;
+        let wrapped = format!(
+            r#"<Connections KdfIterations="{}" FullFileEncryption="false">{}</Connections>"#,
+            file.encryption.kdf_iterations, inner_xml
+        );
+        let mut decrypted_file = parse_xml(&wrapped, master_password)?;
+        decrypted_file.name = file.name;
+        decrypted_file.conf_version = file.conf_version;
+        decrypted_file.encryption = file.encryption;
+        decrypted_file.protected = file.protected;
+        return Ok(decrypted_file);
     }
 
     Ok(file)
@@ -795,8 +837,6 @@ mod tests {
         assert!(!file.encryption.full_file_encryption);
     }
 
-    use super::*;
-
     #[test]
     fn test_parse_minimal_xml() {
         let xml = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -819,6 +859,25 @@ mod tests {
         assert_eq!(node.username, "admin");
         assert!(matches!(node.protocol, MrngProtocol::RDP));
         assert!(matches!(node.node_type, MrngNodeType::Connection));
+    }
+
+    #[test]
+    fn test_parse_full_file_encrypted_default_master_xml() {
+        let protected = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+uz8d4sTNaXr0HOVjlPwIR242YEwJN5jdxDvqLIqzPGtjj";
+        let body = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh/G6cFvnWBaUKQydhXZNRIRnMlcYXXf2KPjDn2D7hb8nISHM01SFbXMqiu1RE4fID6HXg==";
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="true" Protected="{}" ConfVersion="2.6">{}</Connections>"#,
+            protected, body
+        );
+
+        let file = parse_xml(&xml, "").unwrap();
+
+        assert_eq!(file.root.children.len(), 1);
+        assert_eq!(file.root.children[0].name, "Host");
+        assert_eq!(file.root.children[0].password, "pw");
+        assert!(file.encryption.full_file_encryption);
     }
 
     #[test]

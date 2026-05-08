@@ -152,7 +152,12 @@ impl MremotengService {
 
     /// Validate an mRemoteNG XML file and return detailed info including encryption status.
     pub fn validate_xml_detailed(&self, xml_content: &str) -> MremotengResult<Value> {
-        let file = xml_parser::parse_xml_metadata_only(xml_content)?;
+        let metadata = xml_parser::parse_xml_metadata_only(xml_content)?;
+        let file = if metadata.encryption.full_file_encryption {
+            metadata
+        } else {
+            xml_parser::parse_xml(xml_content, &self.default_password).unwrap_or(metadata)
+        };
         let total = count_connections(&file.root.children);
         let containers = count_containers(&file.root.children);
         let is_encrypted = !file.protected.is_empty();
@@ -180,16 +185,7 @@ impl MremotengService {
         xml_content: &str,
         config: &MrngImportConfig,
     ) -> MremotengResult<MrngImportResult> {
-        // Check if file is encrypted and requires password
         let encryption_info = Self::detect_encryption(xml_content)?;
-        if encryption_info.requires_password
-            && config.password.as_ref().map_or(true, |p| p.is_empty())
-        {
-            return Err(MremotengError::EncryptionRequired(
-                "This file is encrypted and requires a password to import".into(),
-            ));
-        }
-
         let password = config.password.as_deref().unwrap_or(&self.default_password);
         let file = xml_parser::parse_xml(xml_content, password).map_err(|e| {
             // Convert decryption errors to WrongPassword for better user feedback
@@ -426,6 +422,11 @@ impl MremotengService {
                 kdf_iterations: config.kdf_iterations,
                 ..Default::default()
             },
+            protected: if config.encrypt_passwords {
+                encryption::encrypt_protected_sentinel(password, config.kdf_iterations)?
+            } else {
+                String::new()
+            },
             root: MrngConnectionInfo {
                 name: "Connections".into(),
                 node_type: MrngNodeType::Root,
@@ -435,7 +436,7 @@ impl MremotengService {
             ..Default::default()
         };
 
-        let xml = xml_writer::write_xml(&file, password)?;
+        let xml = xml_writer::write_xml(&file, password, config.encrypt_passwords)?;
         let total = count_connections(connections);
 
         let result = MrngExportResult {
@@ -631,22 +632,92 @@ mod tests {
     }
 
     #[test]
-    fn test_import_xml_requires_password_for_full_encryption() {
-        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+    fn test_import_xml_default_master_full_encryption_without_prompt_password() {
+        let protected = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+uz8d4sTNaXr0HOVjlPwIR242YEwJN5jdxDvqLIqzPGtjj";
+        let body = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh/G6cFvnWBaUKQydhXZNRIRnMlcYXXf2KPjDn2D7hb8nISHM01SFbXMqiu1RE4fID6HXg==";
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>
 <Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
- KdfIterations="1000" FullFileEncryption="true" Protected="dGVzdA==" ConfVersion="2.6">
-    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
-</Connections>"#;
+ KdfIterations="1000" FullFileEncryption="true" Protected="{}" ConfVersion="2.6">{}</Connections>"#,
+            protected, body
+        );
 
         let mut service = test_service();
-        let config = MrngImportConfig::default(); // No password
+        let config = MrngImportConfig::default();
 
-        let result = service.import_xml(xml, &config);
+        let result = service.import_xml(&xml, &config).unwrap();
+
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.connections[0].name, "Host");
+        assert_eq!(result.connections[0].password, "pw");
+    }
+
+    #[test]
+    fn test_import_xml_rejects_wrong_custom_master() {
+        let protected = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+uz8d4sTNaXr0HOVjlPwIR242YEwJN5jdxDvqLIqzPGtjj";
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" EncryptionEngine="AES" BlockCipherMode="GCM"
+ KdfIterations="1000" FullFileEncryption="false" Protected="{}" ConfVersion="2.6">
+    <Node Name="Server" Type="Connection" Hostname="example.com" Protocol="SSH2" Port="22" />
+</Connections>"#,
+            protected
+        );
+
+        let mut service = test_service();
+        let config = MrngImportConfig {
+            password: Some("wrong".into()),
+            ..Default::default()
+        };
+
+        let result = service.import_xml(&xml, &config);
         assert!(result.is_err());
         match result.unwrap_err() {
-            MremotengError::EncryptionRequired(_) => {} // Expected
-            e => panic!("Expected EncryptionRequired error, got {:?}", e),
+            MremotengError::WrongPassword(_) => {}
+            e => panic!("Expected WrongPassword error, got {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_export_xml_writes_protected_sentinel_when_encrypting_passwords() {
+        let mut service = test_service();
+        let node = MrngConnectionInfo {
+            name: "Server".into(),
+            node_type: MrngNodeType::Connection,
+            password: "secret".into(),
+            ..Default::default()
+        };
+
+        let result = service
+            .export_xml(&[node], &MrngExportConfig::default())
+            .unwrap();
+        let xml = result.content.unwrap();
+
+        assert!(xml.contains("Protected=\""));
+        assert!(!xml.contains("Protected=\"\""));
+        assert!(!xml.contains("Password=\"secret\""));
+        assert!(xml_parser::parse_xml(&xml, "").is_ok());
+    }
+
+    #[test]
+    fn test_export_xml_can_write_plaintext_passwords_when_requested() {
+        let mut service = test_service();
+        let node = MrngConnectionInfo {
+            name: "Server".into(),
+            node_type: MrngNodeType::Connection,
+            password: "secret".into(),
+            ..Default::default()
+        };
+        let config = MrngExportConfig {
+            encrypt_passwords: false,
+            ..Default::default()
+        };
+
+        let result = service.export_xml(&[node], &config).unwrap();
+        let xml = result.content.unwrap();
+
+        assert!(xml.contains("Protected=\"\""));
+        assert!(xml.contains("Password=\"secret\""));
     }
 
     #[test]

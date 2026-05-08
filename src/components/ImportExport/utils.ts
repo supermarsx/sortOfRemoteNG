@@ -255,6 +255,7 @@ const PROTECTED_PLAINTEXT_PASSWORD = 'ThisIsProtected';
 // Wire format constants for AES-256-GCM (the only cipher implemented here).
 // Layout per upstream `AeadCryptographyProvider.cs`:
 //   [ salt (16) ] [ nonce (16) ] [ ciphertext ‖ tag (16) ]   then base64
+// The salt is also used as AES-GCM additional authenticated data.
 const MRNG_SALT_SIZE = 16;
 const MRNG_NONCE_SIZE = 16;
 const MRNG_TAG_SIZE = 16;
@@ -280,7 +281,7 @@ const encodeBase64 = (bytes: Uint8Array): string => {
  * Convert a password to bytes the way BouncyCastle's
  * `PbeParametersGenerator.Pkcs5PasswordToBytes` does: take the low byte of
  * each UTF-16 code unit. mRemoteNG's `Pkcs5S2KeyGenerator` calls this before
- * feeding the bytes to PBKDF2, so we MUST match it exactly — not UTF-8 — or
+ * feeding the bytes to PBKDF2, so we MUST match it exactly - not UTF-8 - or
  * non-ASCII passwords (e.g. "passwört") will derive a different key.
  *
  * For any pure-ASCII password this is identical to UTF-8; for Latin-1 the
@@ -320,7 +321,7 @@ async function deriveMRemoteNGKey(
 /**
  * Decrypt a single base64-encoded mRemoteNG ciphertext (Protected attribute,
  * per-field Password, or full-file body). The output is the raw plaintext
- * bytes — caller decides whether to UTF-8 decode.
+ * bytes - caller decides whether to UTF-8 decode.
  */
 async function decryptMRemoteNGBlob(
   payloadB64: string,
@@ -331,18 +332,36 @@ async function decryptMRemoteNGBlob(
   const minLen = MRNG_SALT_SIZE + MRNG_NONCE_SIZE + MRNG_TAG_SIZE;
   if (data.length < minLen) {
     throw new Error(
-      `mRemoteNG ciphertext is too short (${data.length} bytes; need ≥ ${minLen})`,
+      `mRemoteNG ciphertext is too short (${data.length} bytes; need >= ${minLen})`,
     );
   }
   const salt = data.slice(0, MRNG_SALT_SIZE);
   const nonce = data.slice(MRNG_SALT_SIZE, MRNG_SALT_SIZE + MRNG_NONCE_SIZE);
   const ciphertext = data.slice(MRNG_SALT_SIZE + MRNG_NONCE_SIZE);
   const key = await deriveMRemoteNGKey(password, salt, iterations);
-  const plain = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: asBufferSource(nonce), tagLength: MRNG_TAG_SIZE * 8 },
-    key,
-    asBufferSource(ciphertext),
-  );
+  const params: AesGcmParams = {
+    name: 'AES-GCM',
+    iv: asBufferSource(nonce),
+    additionalData: asBufferSource(salt),
+    tagLength: MRNG_TAG_SIZE * 8,
+  };
+  let plain: ArrayBuffer;
+  try {
+    plain = await crypto.subtle.decrypt(params, key, asBufferSource(ciphertext));
+  } catch (primaryError) {
+    // sortOfRemoteNG builds before this interop fix wrote AES-GCM blobs with
+    // empty AAD. Keep that recovery path so existing exports can still import,
+    // but prefer the upstream mRemoteNG salt-AAD format above.
+    try {
+      plain = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: asBufferSource(nonce), tagLength: MRNG_TAG_SIZE * 8 },
+        key,
+        asBufferSource(ciphertext),
+      );
+    } catch {
+      throw primaryError;
+    }
+  }
   return new Uint8Array(plain);
 }
 
@@ -364,7 +383,12 @@ export async function encryptMRemoteNGBlob(
   const key = await deriveMRemoteNGKey(password, salt, iterations, ['encrypt']);
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: asBufferSource(nonce), tagLength: MRNG_TAG_SIZE * 8 },
+      {
+        name: 'AES-GCM',
+        iv: asBufferSource(nonce),
+        additionalData: asBufferSource(salt),
+        tagLength: MRNG_TAG_SIZE * 8,
+      },
       key,
       asBufferSource(bytes),
     ),

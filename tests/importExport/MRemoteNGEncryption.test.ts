@@ -321,7 +321,13 @@ describe('upstream wire-format invariants', () => {
   //   SaltBitSize  = 128 → 16 bytes
   //   NonceBitSize = 128 → 16 bytes (GCM)
   //   MacBitSize   = 128 → 16-byte tag appended to ciphertext
-  //   Layout: [salt(16)] [nonce(16)] [ct ‖ tag(16)]   (when nonSecretPayload is empty)
+  //   Layout: [salt(16)] [nonce(16)] [ct ‖ tag(16)]
+  //   AAD: salt (SimpleEncryptWithPassword appends salt to nonSecretPayload)
+  const UPSTREAM_DEFAULT_SENTINEL =
+    'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh+uz8d4sTNaXr0HOVjlPwIR242YEwJN5jdxDvqLIqzPGtjj';
+  const LEGACY_EMPTY_AAD_DEFAULT_SENTINEL =
+    'ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9gjEssCXScU591iI4+iNzk/8FY/ftUkt6DfQzNT9a56IWX';
+
   it('encrypts with a 16-byte salt, 16-byte nonce, and 16-byte tag', async () => {
     const ct = await encryptMRemoteNGBlob('x', 'pw', 1000);
     const bytes = Uint8Array.from(atob(ct), (c) => c.charCodeAt(0));
@@ -342,6 +348,35 @@ describe('upstream wire-format invariants', () => {
     const check = await verifyMRemoteNGPassword(wrapped, 'pw');
     expect(check.valid).toBe(false);
     expect(check.hasProtected).toBe(true);
+  });
+
+  it('decrypts an upstream-compatible salt-AAD default-master Protected sentinel', async () => {
+    const xml =
+      `<?xml version="1.0"?><Connections EncryptionEngine="AES" ` +
+      `BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" ` +
+      `Protected="${UPSTREAM_DEFAULT_SENTINEL}" ConfVersion="2.6"></Connections>`;
+    const check = await verifyMRemoteNGPassword(
+      xml,
+      MREMOTENG_DEFAULT_MASTER_PASSWORD,
+    );
+    expect(check).toMatchObject({
+      valid: true,
+      isDefaultMaster: true,
+      hasProtected: true,
+    });
+  });
+
+  it('keeps reading legacy sortOfRemoteNG empty-AAD Protected sentinels', async () => {
+    const xml =
+      `<?xml version="1.0"?><Connections EncryptionEngine="AES" ` +
+      `BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="false" ` +
+      `Protected="${LEGACY_EMPTY_AAD_DEFAULT_SENTINEL}" ConfVersion="2.6"></Connections>`;
+    const check = await verifyMRemoteNGPassword(
+      xml,
+      MREMOTENG_DEFAULT_MASTER_PASSWORD,
+    );
+    expect(check.valid).toBe(true);
+    expect(check.isDefaultMaster).toBe(true);
   });
 });
 
@@ -374,11 +409,9 @@ describe('password-byte conversion (PKCS5 PasswordToBytes)', () => {
 });
 
 describe('real-world Protected sample (from user docs)', () => {
-  // Verbatim `Protected` value from the documented mRemoteNG sample. We don't
-  // know which password produced this exact ciphertext (the source docs don't
-  // say), so we can't assert what it decrypts to. We CAN assert that the wire
-  // format parses cleanly and that wrong passwords are rejected — both are
-  // important interop signals that survive even without the password.
+  // Verbatim `Protected` value from a real default-master mRemoteNG sample.
+  // It decrypts to `ThisIsNotProtected` only when AES-GCM authenticates with
+  // the 16-byte salt as AAD, matching upstream AeadCryptographyProvider.
   const REAL_PROTECTED =
     '0RlaSZ8kZayRzE3yO2agQWIXUV5EW3ZWDJ3Pm2SV4yKJaZyYWSxrFgjtbM8RcO1ebkkTuRerKXmfdUmM7oVFZ1M/';
   const SAMPLE_XML =
@@ -400,14 +433,16 @@ describe('real-world Protected sample (from user docs)', () => {
     expect(check.hasProtected).toBe(true);
   });
 
-  it('rejects the default master password (sample uses a custom master)', async () => {
-    // Empirically the GCM tag check fails for this ciphertext with mR3m, so
-    // the file that produced this sample had a custom master password set.
+  it('accepts the default master password', async () => {
     const check = await verifyMRemoteNGPassword(
       SAMPLE_XML,
       MREMOTENG_DEFAULT_MASTER_PASSWORD,
     );
-    expect(check.valid).toBe(false);
+    expect(check).toMatchObject({
+      valid: true,
+      isDefaultMaster: true,
+      hasProtected: true,
+    });
   });
 
   it('detection flags the sample as needing decryption', () => {
