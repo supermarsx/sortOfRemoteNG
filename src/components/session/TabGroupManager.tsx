@@ -16,6 +16,7 @@ import {
   ArrowDown,
   GripVertical,
   Copy,
+  Unlink,
 } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { EmptyState } from "../ui/display";
@@ -357,6 +358,25 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
       }
     },
     [tabGroups, dispatch]
+  );
+
+  const handleDetachSession = useCallback(
+    (sessionId: string) => {
+      const session = sessions.find((s) => s.id === sessionId);
+      if (!session) return;
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: { ...session, tabGroupId: undefined },
+      });
+    },
+    [sessions, dispatch],
+  );
+
+  const handleCloseSession = useCallback(
+    (sessionId: string) => {
+      dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+    },
+    [dispatch],
   );
 
   const handleUngroupAll = useCallback(
@@ -1029,7 +1049,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                               {groupSessions.map((session) => (
                                 <div
                                   key={session.id}
-                                  className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-[var(--color-border)]/50"
+                                  className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-[var(--color-border)]/50 group/tab"
                                 >
                                   <span
                                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -1052,6 +1072,24 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                                   >
                                     {session.status}
                                   </span>
+                                  <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/tab:opacity-100 focus-within:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => handleDetachSession(session.id)}
+                                      className="sor-icon-btn-sm"
+                                      title="Remove from group (keeps tab open)"
+                                      aria-label={`Detach ${session.name} from group`}
+                                    >
+                                      <Unlink size={12} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleCloseSession(session.id)}
+                                      className="sor-icon-btn-danger"
+                                      title="Close tab"
+                                      aria-label={`Close ${session.name}`}
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
