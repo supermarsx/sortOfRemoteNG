@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { LucideIcon } from 'lucide-react';
 import { ChevronDown, Check } from 'lucide-react';
 import { cx } from '../lib/cx';
 
@@ -18,6 +19,7 @@ export interface SelectOption {
   label: string;
   disabled?: boolean;
   title?: string;
+  icon?: LucideIcon;
 }
 
 export interface SelectProps {
@@ -228,7 +230,12 @@ export const Select: React.FC<SelectProps> = ({
           className,
         )}
       >
-        <span className="sor-select-trigger-label">{displayLabel}</span>
+        <span className="sor-select-trigger-label inline-flex items-center gap-2 min-w-0">
+          {selectedOption?.icon && (
+            <selectedOption.icon size={14} className="flex-shrink-0 text-[var(--color-textSecondary)]" />
+          )}
+          <span className="truncate">{displayLabel}</span>
+        </span>
         <ChevronDown
           size={14}
           className={cx(
@@ -276,7 +283,12 @@ export const Select: React.FC<SelectProps> = ({
                       selectOption(opt);
                     }}
                   >
-                    <span className="sor-select-option-label">{opt.label}</span>
+                    <span className="sor-select-option-label inline-flex items-center gap-2 min-w-0">
+                      {opt.icon && (
+                        <opt.icon size={14} className="flex-shrink-0 text-[var(--color-textSecondary)]" />
+                      )}
+                      <span className="truncate">{opt.label}</span>
+                    </span>
                     {isSelected && (
                       <Check size={14} className="sor-select-option-check" />
                     )}

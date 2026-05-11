@@ -6,6 +6,7 @@ import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { useQuickConnect } from "../../hooks/connection/useQuickConnect";
 import { Checkbox, Select } from '../ui/forms';
+import { getProtocolIcon } from "./connectionTree/helpers";
 
 type Mgr = ReturnType<typeof useQuickConnect>;
 
@@ -88,26 +89,32 @@ const HostnameField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     {mgr.showHistory && mgr.historyItems.length > 0 && (
       <div className="absolute z-20 mt-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg overflow-hidden">
         <div className="max-h-48 overflow-auto">
-          {mgr.historyItems.map((entry, index) => (
-            <button
-              key={`${entry.protocol}-${entry.hostname}-${index}`}
-              type="button"
-              onClick={() => mgr.handleHistorySelect(entry)}
-              className="w-full text-left px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <span className="truncate">{entry.hostname}</span>
-                <span className="ml-3 text-[10px] uppercase text-[var(--color-textSecondary)]">
-                  {entry.protocol}
-                </span>
-              </div>
-              {entry.username && (
-                <div className="text-[11px] text-[var(--color-textSecondary)] truncate">
-                  {entry.username}
+          {mgr.historyItems.map((entry, index) => {
+            const ProtoIcon = getProtocolIcon(entry.protocol);
+            return (
+              <button
+                key={`${entry.protocol}-${entry.hostname}-${index}`}
+                type="button"
+                onClick={() => mgr.handleHistorySelect(entry)}
+                className="w-full text-left px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <ProtoIcon size={14} className="flex-shrink-0 text-[var(--color-textSecondary)]" />
+                    <span className="truncate">{entry.hostname}</span>
+                  </span>
+                  <span className="ml-3 text-[10px] uppercase text-[var(--color-textSecondary)] flex-shrink-0">
+                    {entry.protocol}
+                  </span>
                 </div>
-              )}
-            </button>
-          ))}
+                {entry.username && (
+                  <div className="text-[11px] text-[var(--color-textSecondary)] truncate pl-6">
+                    {entry.username}
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
         <div className="border-t border-[var(--color-border)] px-3 py-2 flex items-center justify-between">
           <span className="text-[11px] text-[var(--color-textSecondary)]">
@@ -140,7 +147,20 @@ const ProtocolSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     >
       Protocol
     </label>
-    <Select id="protocol" value={mgr.protocol} onChange={(v: string) => mgr.setProtocol(v)} options={[{ value: "rdp", label: "RDP (Remote Desktop)" }, { value: "ssh", label: "SSH (Secure Shell)" }, { value: "vnc", label: "VNC (Virtual Network Computing)" }, { value: "http", label: "HTTP" }, { value: "https", label: "HTTPS" }, { value: "telnet", label: "Telnet" }]} variant="form" />
+    <Select
+      id="protocol"
+      value={mgr.protocol}
+      onChange={(v: string) => mgr.setProtocol(v)}
+      options={[
+        { value: "rdp", label: "RDP (Remote Desktop)", icon: getProtocolIcon("rdp") },
+        { value: "ssh", label: "SSH (Secure Shell)", icon: getProtocolIcon("ssh") },
+        { value: "vnc", label: "VNC (Virtual Network Computing)", icon: getProtocolIcon("vnc") },
+        { value: "http", label: "HTTP", icon: getProtocolIcon("http") },
+        { value: "https", label: "HTTPS", icon: getProtocolIcon("https") },
+        { value: "telnet", label: "Telnet", icon: getProtocolIcon("telnet") },
+      ]}
+      variant="form"
+    />
   </div>
 );
 
