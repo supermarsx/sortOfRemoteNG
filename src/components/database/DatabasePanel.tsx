@@ -1,8 +1,5 @@
 import React from "react";
-import { Database, Plus, Upload } from "lucide-react";
-import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { useDatabaseSelector } from "../../hooks/connection/useDatabaseSelector";
-import { useTranslation } from "react-i18next";
 import DatabaseList from "./list/DatabaseList";
 
 interface DatabasePanelProps {
@@ -20,17 +17,16 @@ interface DatabasePanelProps {
 }
 
 /**
- * Tab-format replacement for the old <CollectionSelector> modal.
+ * Tab-format Databases panel.
  *
- * Renders inside the ToolPanel like the Tag Manager and Tab Group Manager.
- * The list, create, import, unlock, and clone flows are reused verbatim
- * from DatabaseList — only the framing (modal → flush panel) changes.
+ * Lives inside ToolPanel like the Tag Manager / Tab Group Manager. The tab
+ * bar already provides the tab title, so the panel renders its own heading
+ * directly in the content — no DialogHeader, no modal chrome.
  */
 export const DatabasePanel: React.FC<DatabasePanelProps> = ({
   onClose,
   onDatabaseSelect,
 }) => {
-  const { t } = useTranslation();
   const mgr = useDatabaseSelector(
     true,
     onDatabaseSelect ?? (() => Promise.resolve()),
@@ -38,39 +34,8 @@ export const DatabasePanel: React.FC<DatabasePanelProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
-      <DialogHeader
-        icon={Database}
-        iconColor="text-primary"
-        iconBg="bg-primary/20"
-        title={t("databaseCenter.title")}
-        subtitle={t("databaseCenter.subtitle")}
-        onClose={onClose}
-        sticky
-        actions={
-          <>
-            <button
-              onClick={() => mgr.setShowImportForm(true)}
-              className="sor-btn-secondary-sm"
-            >
-              <Upload size={14} />
-              <span>{t("databaseCenter.actions.import")}</span>
-            </button>
-            <button
-              onClick={() => mgr.setShowCreateForm(true)}
-              className="sor-btn-primary-sm"
-              data-testid="database-create"
-            >
-              <Plus size={14} />
-              <span>{t("connections.new")}</span>
-            </button>
-          </>
-        }
-      />
-
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-5xl mx-auto p-6">
-          <DatabaseList mgr={mgr} />
-        </div>
+        <DatabaseList mgr={mgr} onClose={onClose} />
       </div>
     </div>
   );

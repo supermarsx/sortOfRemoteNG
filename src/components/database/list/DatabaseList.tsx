@@ -1,729 +1,972 @@
-import type { Mgr } from './types';
-import { PasswordInput, Textarea} from '../../ui/forms';
-import { Copy, Database, Download, Edit, Eye, EyeOff, FolderOpen, Lock, MoreHorizontal, Trash2, Upload } from "lucide-react";
-import { Checkbox } from "../../ui/forms";
+import React, { useMemo, useState } from "react";
+import {
+  Check,
+  Copy,
+  Database,
+  Download,
+  Edit,
+  Eye,
+  EyeOff,
+  FolderOpen,
+  Lock,
+  Plus,
+  Search,
+  Trash2,
+  Unlock,
+  Upload,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
-import MenuSurface from "../../ui/overlays/MenuSurface";
+import type { Mgr } from "./types";
+import type { ConnectionDatabase } from "../../../types/connection/connection";
+import { Checkbox, PasswordInput, Textarea } from "../../ui/forms";
+import { EmptyState } from "../../ui/display";
+import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 
-function DatabaseList({ mgr }: { mgr: Mgr }) {
+interface DatabaseListProps {
+  mgr: Mgr;
+  onClose: () => void;
+}
+
+/**
+ * Tab-format database list — mirrors the visual language of
+ * TabGroupManager / TagManagerDialog.
+ *
+ * Layout:
+ *  - Heading row with title and a primary "+ New Database" action.
+ *  - Two-paragraph description.
+ *  - Search filter input.
+ *  - Inline create / import / edit / export / unlock cards that slide in
+ *    just below the search row when the corresponding manager state is
+ *    active. No more modal-stacking.
+ *  - A list of database rows; each row shows the icon, encryption badge,
+ *    description and last-accessed date, plus an always-visible toolbar
+ *    of Open / Edit / Clone / Export / Delete buttons. Clicking a row
+ *    body (off the toolbar) opens the database.
+ *  - Footer line with stats.
+ */
+function DatabaseList({ mgr }: DatabaseListProps) {
   const { t } = useTranslation();
+  const [searchFilter, setSearchFilter] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<ConnectionDatabase | null>(
+    null,
+  );
+
+  const filteredCollections = useMemo(() => {
+    const q = searchFilter.trim().toLowerCase();
+    if (!q) return mgr.collections;
+    return mgr.collections.filter((c) => {
+      return (
+        c.name.toLowerCase().includes(q) ||
+        (c.description?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [mgr.collections, searchFilter]);
+
+  const stats = useMemo(() => {
+    const total = mgr.collections.length;
+    const encrypted = mgr.collections.filter((c) => c.isEncrypted).length;
+    return { total, encrypted };
+  }, [mgr.collections]);
+
+  const anyFormOpen =
+    mgr.showCreateForm ||
+    mgr.showImportForm ||
+    Boolean(mgr.editingCollection) ||
+    Boolean(mgr.exportingCollection) ||
+    mgr.showPasswordDialog;
 
   return (
-    <div className="space-y-6">
-      {/* Create Collection Form */}
-      {mgr.showCreateForm && (
-        <div className="sor-section-card p-6 mb-6">
-          <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("databaseCenter.collections.createTitle")}
+    <div className="max-w-3xl mx-auto p-4 space-y-4">
+      {/* Heading + primary action */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2 min-w-0">
+            <Database className="w-5 h-5 text-primary flex-shrink-0" />
+            <span className="truncate">{t("databaseCenter.title")}</span>
           </h3>
-          {mgr.error && (
-            <div className="sor-alert-error">
-              <p className="text-error text-sm">{mgr.error}</p>
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.nameLabel")}
-              </label>
-              <input
-                type="text"
-                value={mgr.newCollection.name}
-                onChange={(e) =>
-                  mgr.setNewCollection({
-                    ...mgr.newCollection,
-                    name: e.target.value,
-                  })
-                }
-                className="sor-form-input w-full"
-                placeholder={t("databaseCenter.collections.namePlaceholder")}
-                data-testid="collection-name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.descriptionLabel")}
-              </label>
-              <Textarea
-                value={mgr.newCollection.description}
-                onChange={(v) =>
-                  mgr.setNewCollection({
-                    ...mgr.newCollection,
-                    description: v,
-                  })
-                }
-                className="sor-form-input resize-none w-full"
-                rows={3}
-                placeholder={t("databaseCenter.collections.descriptionPlaceholder")}
-              />
-            </div>
-            <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.newCollection.isEncrypted} onChange={(v: boolean) => mgr.setNewCollection({
-                    ...mgr.newCollection,
-                    isEncrypted: v,
-                  })} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t("databaseCenter.collections.encryptToggle")}
-              </span>
-            </label>
-            {mgr.newCollection.isEncrypted && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.passwordLabel")}
-                  </label>
-                  <PasswordInput
-                    value={mgr.newCollection.password}
-                    onChange={(e) =>
-                      mgr.setNewCollection({
-                        ...mgr.newCollection,
-                        password: e.target.value,
-                      })
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.passwordPlaceholder")}
-                    data-testid="collection-password"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.confirmPasswordLabel")}
-                  </label>
-                  <PasswordInput
-                    value={mgr.newCollection.confirmPassword}
-                    onChange={(e) =>
-                      mgr.setNewCollection({
-                        ...mgr.newCollection,
-                        confirmPassword: e.target.value,
-                      })
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.confirmPasswordPlaceholder")}
-                    revealable={false}
-                  />
-                </div>
-              </>
-            )}
-            <div className="flex justify-end space-x-3">
+          {!anyFormOpen && (
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={() => {
-                  mgr.setShowCreateForm(false);
+                  mgr.setShowImportForm(true);
                   mgr.setError("");
                 }}
-                className="sor-btn sor-btn-secondary"
-              >
-                {t("settings.cancel")}
-              </button>
-              <button
-                onClick={mgr.handleCreateCollection}
-                className="sor-btn sor-btn-primary"
-                data-testid="collection-confirm"
-              >
-                {t("databaseCenter.collections.createAction")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Password Dialog */}
-      {mgr.showPasswordDialog && mgr.selectedCollection && (
-        <div className="sor-section-card p-6 mb-6">
-          <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {mgr.passwordDialogMode === "clone"
-              ? t("databaseCenter.collections.cloneTitle", {
-                  name: mgr.selectedCollection.name,
-                })
-              : t("databaseCenter.collections.unlockTitle", {
-                  name: mgr.selectedCollection.name,
-                })}
-          </h3>
-          {mgr.error && (
-            <div className="sor-alert-error">
-              <p className="text-error text-sm">{mgr.error}</p>
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {mgr.passwordDialogMode === "clone"
-                  ? t("databaseCenter.collections.sourcePasswordLabel")
-                  : t("databaseCenter.collections.passwordInputLabel")}
-              </label>
-              <div className="relative">
-                <input
-                  type={mgr.showPassword ? "text" : "password"}
-                  value={mgr.password}
-                  onChange={(e) => mgr.setPassword(e.target.value)}
-                  onKeyPress={(e) =>
-                    e.key === "Enter" && mgr.handlePasswordSubmit()
-                  }
-                  disabled={mgr.isWorking}
-                  className="sor-form-input w-full pr-10"
-                  placeholder={
-                    mgr.passwordDialogMode === "clone"
-                      ? t("databaseCenter.collections.sourcePasswordPlaceholder")
-                      : t("databaseCenter.collections.unlockPasswordPlaceholder")
-                  }
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => mgr.setShowPassword(!mgr.showPassword)}
-                  disabled={mgr.isWorking}
-                  className="sor-search-clear"
-                >
-                  {mgr.showPassword ? (
-                    <EyeOff size={16} />
-                  ) : (
-                    <Eye size={16} />
-                  )}
-                </button>
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  mgr.closePasswordDialog();
-                  mgr.setError("");
-                }}
-                disabled={mgr.isWorking}
-                className="sor-btn sor-btn-secondary"
-              >
-                {t("settings.cancel")}
-              </button>
-              <button
-                onClick={mgr.handlePasswordSubmit}
-                disabled={mgr.isWorking}
-                className="sor-btn sor-btn-primary"
-              >
-                {mgr.isWorking
-                  ? mgr.passwordDialogMode === "clone"
-                    ? t("databaseCenter.collections.cloning")
-                    : t("databaseCenter.collections.unlocking")
-                  : mgr.passwordDialogMode === "clone"
-                    ? t("databaseCenter.collections.cloneAction")
-                    : t("databaseCenter.collections.unlockAction")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Collection Form */}
-      {mgr.exportingCollection && (
-        <div className="sor-section-card p-6 mb-6">
-          <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("databaseCenter.collections.exportTitle", {
-              name: mgr.exportingCollection.name,
-            })}
-          </h3>
-          {mgr.error && (
-            <div className="sor-alert-error">
-              <p className="text-error text-sm">{mgr.error}</p>
-            </div>
-          )}
-          <div className="space-y-4">
-            {mgr.exportingCollection.isEncrypted && (
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  {t("databaseCenter.collections.collectionPasswordLabel")}
-                </label>
-                <input
-                  type={mgr.showPassword ? "text" : "password"}
-                  value={mgr.collectionPassword}
-                  onChange={(e) => mgr.setCollectionPassword(e.target.value)}
-                  className="sor-form-input w-full"
-                  placeholder={t("databaseCenter.collections.passwordPlaceholder")}
-                />
-              </div>
-            )}
-            <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.includePasswords} onChange={(v: boolean) => mgr.setIncludePasswords(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t("databaseCenter.collections.includePasswords")}
-              </span>
-            </label>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.exportPasswordLabel")}
-              </label>
-              <input
-                type={mgr.showPassword ? "text" : "password"}
-                value={mgr.exportPassword}
-                onChange={(e) => mgr.setExportPassword(e.target.value)}
-                className="sor-form-input w-full"
-                placeholder={t("databaseCenter.collections.exportPasswordPlaceholder")}
-              />
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  mgr.setExportingCollection(null);
-                  mgr.setError("");
-                }}
-                className="sor-btn sor-btn-secondary"
-              >
-                {t("settings.cancel")}
-              </button>
-              <button
-                onClick={mgr.handleExportDownload}
-                className="sor-btn sor-btn-primary"
-              >
-                <Download size={14} />
-                <span>{t("databaseCenter.actions.export")}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Import Collection Form */}
-      {mgr.showImportForm && (
-        <div className="sor-section-card p-6 mb-6">
-          <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("databaseCenter.collections.importTitle")}
-          </h3>
-          {mgr.error && (
-            <div className="sor-alert-error">
-              <p className="text-error text-sm">{mgr.error}</p>
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.fileLabel")}
-              </label>
-              <input
-                type="file"
-                accept=".json"
-                onChange={(e) =>
-                  mgr.setImportFile(e.target.files?.[0] ?? null)
-                }
-                className="sor-form-input w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.optionalNameLabel")}
-              </label>
-              <input
-                type="text"
-                value={mgr.importCollectionName}
-                onChange={(e) => mgr.setImportCollectionName(e.target.value)}
-                className="sor-form-input w-full"
-                placeholder={t("databaseCenter.collections.optionalNamePlaceholder")}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.importPasswordLabel")}
-              </label>
-              <input
-                type={mgr.showPassword ? "text" : "password"}
-                value={mgr.importPassword}
-                onChange={(e) => mgr.setImportPassword(e.target.value)}
-                className="sor-form-input w-full"
-                placeholder={t("databaseCenter.collections.passwordPlaceholder")}
-              />
-            </div>
-            <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.encryptImport} onChange={(v: boolean) => mgr.setEncryptImport(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t("databaseCenter.collections.encryptImportToggle")}
-              </span>
-            </label>
-            {mgr.encryptImport && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.newPasswordLabel")}
-                  </label>
-                  <input
-                    type={mgr.showPassword ? "text" : "password"}
-                    value={mgr.importEncryptPassword}
-                    onChange={(e) =>
-                      mgr.setImportEncryptPassword(e.target.value)
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.newPasswordPlaceholder")}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.confirmPasswordShortLabel")}
-                  </label>
-                  <input
-                    type={mgr.showPassword ? "text" : "password"}
-                    value={mgr.importEncryptConfirmPassword}
-                    onChange={(e) =>
-                      mgr.setImportEncryptConfirmPassword(e.target.value)
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.confirmPasswordPlaceholder")}
-                  />
-                </div>
-              </>
-            )}
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  mgr.setShowImportForm(false);
-                  mgr.setError("");
-                }}
-                className="sor-btn sor-btn-secondary"
-              >
-                {t("settings.cancel")}
-              </button>
-              <button
-                onClick={mgr.handleImportCollection}
-                className="sor-btn sor-btn-primary"
+                className="sor-btn-secondary-sm"
+                data-testid="database-import"
               >
                 <Upload size={14} />
                 <span>{t("databaseCenter.actions.import")}</span>
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Collection Form */}
-      {mgr.editingCollection && (
-        <div className="sor-section-card p-6 mb-6">
-          <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("databaseCenter.collections.editTitle")}
-          </h3>
-          {mgr.error && (
-            <div className="sor-alert-error">
-              <p className="text-error text-sm">{mgr.error}</p>
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.nameLabel")}
-              </label>
-              <input
-                type="text"
-                value={mgr.editingCollection.name}
-                onChange={(e) =>
-                  mgr.setEditingCollection({
-                    ...mgr.editingCollection!,
-                    name: e.target.value,
-                  })
-                }
-                className="sor-form-input w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("databaseCenter.collections.descriptionLabel")}
-              </label>
-              <Textarea
-                value={mgr.editingCollection.description || ""}
-                onChange={(v) =>
-                  mgr.setEditingCollection({
-                    ...mgr.editingCollection!,
-                    description: v,
-                  })
-                }
-                className="sor-form-input resize-none w-full"
-                rows={3}
-              />
-            </div>
-            <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.editPassword.enableEncryption} onChange={(v: boolean) => mgr.setEditPassword((prev) => ({
-                    ...prev,
-                    enableEncryption: v,
-                  }))} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t("databaseCenter.collections.encryptToggle")}
-              </span>
-            </label>
-            {(mgr.editingCollection.isEncrypted ||
-              mgr.editPassword.enableEncryption) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.currentPasswordLabel")}
-                  </label>
-                  <input
-                    type={mgr.showPassword ? "text" : "password"}
-                    value={mgr.editPassword.current}
-                    onChange={(e) =>
-                      mgr.setEditPassword((prev) => ({
-                        ...prev,
-                        current: e.target.value,
-                      }))
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.currentPasswordPlaceholder")}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.newPasswordLabel")}
-                  </label>
-                  <input
-                    type={mgr.showPassword ? "text" : "password"}
-                    value={mgr.editPassword.next}
-                    onChange={(e) =>
-                      mgr.setEditPassword((prev) => ({
-                        ...prev,
-                        next: e.target.value,
-                      }))
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.newPasswordPlaceholder")}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("databaseCenter.collections.confirmPasswordShortLabel")}
-                  </label>
-                  <input
-                    type={mgr.showPassword ? "text" : "password"}
-                    value={mgr.editPassword.confirm}
-                    onChange={(e) =>
-                      mgr.setEditPassword((prev) => ({
-                        ...prev,
-                        confirm: e.target.value,
-                      }))
-                    }
-                    className="sor-form-input w-full"
-                    placeholder={t("databaseCenter.collections.confirmPasswordPlaceholder")}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={() => mgr.setShowPassword(!mgr.showPassword)}
-                    className="sor-btn sor-btn-secondary w-full"
-                  >
-                    {mgr.showPassword ? (
-                      <EyeOff size={16} />
-                    ) : (
-                      <Eye size={16} />
-                    )}
-                    <span>
-                      {mgr.showPassword
-                        ? t("databaseCenter.collections.hidePassword")
-                        : t("databaseCenter.collections.showPassword")}
-                    </span>
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
-                  mgr.setEditingCollection(null);
+                  mgr.setShowCreateForm(true);
                   mgr.setError("");
                 }}
-                className="sor-btn sor-btn-secondary"
+                className="sor-btn-primary-sm"
+                data-testid="database-create"
               >
-                {t("settings.cancel")}
-              </button>
-              <button
-                onClick={mgr.handleUpdateCollection}
-                className="sor-btn sor-btn-primary"
-              >
-                {t("databaseCenter.collections.updateAction")}
+                <Plus size={14} />
+                <span>{t("connections.new", "New")}</span>
               </button>
             </div>
-          </div>
+          )}
+        </div>
+        <div className="text-xs text-[var(--color-textSecondary)] space-y-1">
+          <p>{t("databaseCenter.subtitle")}</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search
+          size={16}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]"
+        />
+        <input
+          type="text"
+          value={searchFilter}
+          onChange={(e) => setSearchFilter(e.target.value)}
+          className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
+          placeholder={t("connections.search", "Search…") as string}
+        />
+      </div>
+
+      {/* Inline forms */}
+      {mgr.showCreateForm && (
+        <CreateDatabaseCard
+          mgr={mgr}
+          onClose={() => {
+            mgr.setShowCreateForm(false);
+            mgr.setError("");
+          }}
+        />
+      )}
+      {mgr.showImportForm && (
+        <ImportDatabaseCard
+          mgr={mgr}
+          onClose={() => {
+            mgr.setShowImportForm(false);
+            mgr.setError("");
+          }}
+        />
+      )}
+      {mgr.editingCollection && (
+        <EditDatabaseCard
+          mgr={mgr}
+          onClose={() => {
+            mgr.setEditingCollection(null);
+            mgr.setError("");
+          }}
+        />
+      )}
+      {mgr.exportingCollection && (
+        <ExportDatabaseCard
+          mgr={mgr}
+          onClose={() => {
+            mgr.setExportingCollection(null);
+            mgr.setError("");
+          }}
+        />
+      )}
+      {mgr.showPasswordDialog && mgr.selectedCollection && (
+        <UnlockDatabaseCard mgr={mgr} />
+      )}
+
+      {/* Database list */}
+      {filteredCollections.length === 0 ? (
+        <EmptyState
+          icon={Database}
+          iconSize={48}
+          message={
+            mgr.collections.length === 0
+              ? t("databaseCenter.collections.emptyTitle")
+              : t("connections.noResults", "No databases match your search.") as string
+          }
+          hint={
+            mgr.collections.length === 0
+              ? t("databaseCenter.collections.emptyDescription")
+              : undefined
+          }
+          className="py-12"
+        />
+      ) : (
+        <div className="space-y-2">
+          {filteredCollections.map((collection) => (
+            <DatabaseRow
+              key={collection.id}
+              collection={collection}
+              mgr={mgr}
+              highlighted={mgr.highlightedCollectionId === collection.id}
+              onDelete={() => setDeleteConfirm(collection)}
+            />
+          ))}
         </div>
       )}
 
-      {/* Collections List */}
-      <div className="space-y-3">
-        {mgr.collections.length === 0 ? (
-          <div className="text-center py-12">
-            <Database size={48} className="mx-auto text-[var(--color-textMuted)] mb-4" />
-            <p className="text-[var(--color-textSecondary)] mb-2">
-              {t("databaseCenter.collections.emptyTitle")}
-            </p>
-            <p className="text-[var(--color-textMuted)] text-sm">
-              {t("databaseCenter.collections.emptyDescription")}
-            </p>
-          </div>
-        ) : (
-          mgr.collections.map((collection) => (
-            <div
-              key={collection.id}
-              className={`bg-[var(--color-border)]/60 rounded-lg p-4 hover:bg-[var(--color-border)]/80 hover:shadow-lg hover:shadow-primary/30 border border-transparent hover:border-[var(--color-border)] transition-all duration-200 cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                mgr.highlightedCollectionId === collection.id
-                  ? "sor-tree-item-blink border-primary/60"
-                  : ""
-              }`}
-              onClick={() => {
-                void mgr.handleSelectCollection(collection);
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                mgr.openCollectionMenu(collection, {
-                  x: event.clientX,
-                  y: event.clientY,
-                });
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  void mgr.handleSelectCollection(collection);
-                }
-
-                if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  event.preventDefault();
-                  mgr.openCollectionMenu(collection, {
-                    x: rect.right - 24,
-                    y: rect.top + 24,
-                  });
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              aria-label={t("databaseCenter.collections.openCollectionLabel", {
-                name: collection.name,
-              })}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-2">
-                    <Database
-                      size={20}
-                      className="text-primary group-hover:text-primary transition-colors"
-                    />
-                    {collection.isEncrypted && (
-                      <Lock size={16} className="text-warning" />
-                    )}
-                  </div>
-                  <div>
-                    <h4 className="text-[var(--color-text)] font-medium group-hover:text-primary transition-colors">
-                      {collection.name}
-                    </h4>
-                    {collection.description && (
-                      <p className="text-[var(--color-textSecondary)] text-sm">
-                        {collection.description}
-                      </p>
-                    )}
-                    <p className="text-[var(--color-textMuted)] text-xs">
-                      {t("databaseCenter.collections.lastAccessed")}: {" "}
-                      {new Date(collection.lastAccessed).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const isOpen = mgr.collectionMenu?.collection.id === collection.id;
-                      if (isOpen) {
-                        mgr.closeCollectionMenu();
-                        return;
-                      }
-
-                      mgr.openCollectionMenu(collection, {
-                        x: rect.left,
-                        y: rect.bottom + 4,
-                      });
-                    }}
-                    aria-label={`Actions for ${collection.name}`}
-                    aria-haspopup="menu"
-                    aria-expanded={mgr.collectionMenu?.collection.id === collection.id}
-                    className="sor-icon-btn-sm"
-                    title={t("databaseCenter.actions.moreActions")}
-                    data-testid="collection-actions-trigger"
-                  >
-                    <MoreHorizontal size={16} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
+      {/* Footer stats */}
+      <div className="pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-textMuted)] flex items-center gap-3">
+        <span>
+          {stats.total} {stats.total === 1 ? "database" : "databases"}
+        </span>
+        {stats.encrypted > 0 && (
+          <>
+            <span aria-hidden>•</span>
+            <span className="flex items-center gap-1">
+              <Lock size={11} /> {stats.encrypted} encrypted
+            </span>
+          </>
         )}
       </div>
 
-      <MenuSurface
-        isOpen={Boolean(mgr.collectionMenu)}
-        onClose={mgr.closeCollectionMenu}
-        position={mgr.collectionMenu?.position ?? null}
-        className="min-w-[180px]"
-        dataTestId="collection-action-menu"
-        ariaLabel={
-          mgr.collectionMenu
-            ? t("databaseCenter.collections.actionsLabel", {
-                name: mgr.collectionMenu.collection.name,
-              })
-            : t("databaseCenter.actions.moreActions")
+      <ConfirmDialog
+        isOpen={deleteConfirm !== null}
+        title={t("databaseCenter.actions.delete")}
+        variant="danger"
+        confirmText={t("databaseCenter.actions.delete")}
+        cancelText={t("settings.cancel", "Cancel") as string}
+        message={
+          deleteConfirm
+            ? (t("databaseCenter.collections.deleteConfirm", {
+                name: deleteConfirm.name,
+              }) as string)
+            : ""
         }
-      >
-        {mgr.collectionMenu && (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                void mgr.handleSelectCollection(mgr.collectionMenu!.collection);
-              }}
-              className="sor-menu-item"
-              disabled={mgr.isWorking}
-            >
-              <FolderOpen size={14} className="mr-2" />
-              {mgr.collectionMenu.collection.isEncrypted
-                ? t("databaseCenter.actions.unlock")
-                : t("databaseCenter.actions.open")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void mgr.handleCloneCollection(mgr.collectionMenu!.collection);
-              }}
-              className="sor-menu-item"
-              disabled={mgr.isWorking}
-            >
-              <Copy size={14} className="mr-2" />
-              {t("databaseCenter.actions.clone")}
-            </button>
-            <div className="sor-menu-divider" />
-            <button
-              type="button"
-              onClick={() => {
-                mgr.handleExportCollection(mgr.collectionMenu!.collection);
-                mgr.closeCollectionMenu();
-              }}
-              className="sor-menu-item"
-            >
-              <Download size={14} className="mr-2" />
-              {t("databaseCenter.actions.export")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                mgr.handleEditCollection(mgr.collectionMenu!.collection);
-              }}
-              className="sor-menu-item"
-            >
-              <Edit size={14} className="mr-2" />
-              {t("databaseCenter.actions.edit")}
-            </button>
-            <div className="sor-menu-divider" />
-            <button
-              type="button"
-              onClick={() => {
-                void mgr.handleDeleteCollection(mgr.collectionMenu!.collection);
-              }}
-              className="sor-menu-item sor-menu-item-danger"
-            >
-              <Trash2 size={14} className="mr-2" />
-              {t("databaseCenter.actions.delete")}
-            </button>
-          </>
-        )}
-      </MenuSurface>
+        onConfirm={() => {
+          if (deleteConfirm) {
+            void mgr.handleDeleteCollection(deleteConfirm);
+          }
+          setDeleteConfirm(null);
+        }}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }
+
+// ─── Row ──────────────────────────────────────────────────────────────
+
+interface DatabaseRowProps {
+  collection: ConnectionDatabase;
+  mgr: Mgr;
+  highlighted: boolean;
+  onDelete: () => void;
+}
+
+const DatabaseRow: React.FC<DatabaseRowProps> = ({
+  collection,
+  mgr,
+  highlighted,
+  onDelete,
+}) => {
+  const { t } = useTranslation();
+
+  const openLabel = collection.isEncrypted
+    ? t("databaseCenter.actions.unlock")
+    : t("databaseCenter.actions.open");
+
+  return (
+    <div
+      className={`rounded-lg border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary group ${
+        highlighted
+          ? "border-primary/60 bg-primary/5"
+          : "border-[var(--color-border)] bg-[var(--color-border)]/30 hover:bg-[var(--color-border)]/50"
+      }`}
+    >
+      <div className="flex items-center gap-3 p-3">
+        <button
+          type="button"
+          onClick={() => void mgr.handleSelectCollection(collection)}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left"
+          aria-label={t("databaseCenter.collections.openCollectionLabel", {
+            name: collection.name,
+          }) as string}
+        >
+          <div className="relative flex-shrink-0">
+            <Database size={20} className="text-primary" />
+            {collection.isEncrypted && (
+              <Lock
+                size={10}
+                className="absolute -bottom-0.5 -right-1 text-warning bg-[var(--color-surface)] rounded-full"
+              />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-medium text-[var(--color-text)] truncate group-hover:text-primary transition-colors">
+                {collection.name}
+              </span>
+              {collection.isEncrypted && (
+                <span className="text-[10px] uppercase tracking-wide text-warning bg-warning/10 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                  encrypted
+                </span>
+              )}
+            </div>
+            {collection.description && (
+              <p className="text-xs text-[var(--color-textSecondary)] truncate mt-0.5">
+                {collection.description}
+              </p>
+            )}
+            <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">
+              {t("databaseCenter.collections.lastAccessed")}:{" "}
+              {new Date(collection.lastAccessed).toLocaleDateString()}
+            </p>
+          </div>
+        </button>
+
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => void mgr.handleSelectCollection(collection)}
+            className="sor-icon-btn-sm"
+            title={openLabel}
+            aria-label={openLabel}
+          >
+            {collection.isEncrypted ? (
+              <Unlock size={13} />
+            ) : (
+              <FolderOpen size={13} />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => mgr.handleEditCollection(collection)}
+            className="sor-icon-btn-sm"
+            title={t("databaseCenter.actions.edit") as string}
+            aria-label={t("databaseCenter.actions.edit") as string}
+          >
+            <Edit size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void mgr.handleCloneCollection(collection)}
+            className="sor-icon-btn-sm"
+            title={t("databaseCenter.actions.clone") as string}
+            aria-label={t("databaseCenter.actions.clone") as string}
+          >
+            <Copy size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => mgr.handleExportCollection(collection)}
+            className="sor-icon-btn-sm"
+            title={t("databaseCenter.actions.export") as string}
+            aria-label={t("databaseCenter.actions.export") as string}
+          >
+            <Download size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="sor-icon-btn-danger"
+            title={t("databaseCenter.actions.delete") as string}
+            aria-label={t("databaseCenter.actions.delete") as string}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Inline cards ─────────────────────────────────────────────────────
+
+interface CardShellProps {
+  title: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  error?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  /**
+   * Footer area for action buttons. Rendered with right-aligned spacing
+   * by the shell, so callers just pass the buttons.
+   */
+  footer: React.ReactNode;
+}
+
+const CardShell: React.FC<CardShellProps> = ({
+  title,
+  icon: Icon,
+  error,
+  onClose,
+  children,
+  footer,
+}) => (
+  <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3 animate-fade-in-down">
+    <div className="flex items-center justify-between gap-3">
+      <h4 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2 min-w-0">
+        <Icon size={14} className="text-primary flex-shrink-0" />
+        <span className="truncate">{title}</span>
+      </h4>
+      <button
+        onClick={onClose}
+        className="sor-icon-btn-sm"
+        title="Cancel"
+        aria-label="Cancel"
+      >
+        <X size={14} />
+      </button>
+    </div>
+    {error && (
+      <div className="sor-alert-error">
+        <p className="text-error text-sm">{error}</p>
+      </div>
+    )}
+    <div className="space-y-3">{children}</div>
+    <div className="flex items-center justify-end gap-2 pt-1">{footer}</div>
+  </div>
+);
+
+// ── Create ───────────────────────────────────────────────────────────
+
+const CreateDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
+  mgr,
+  onClose,
+}) => {
+  const { t } = useTranslation();
+  return (
+    <CardShell
+      title={t("databaseCenter.collections.createTitle")}
+      icon={Plus}
+      error={mgr.error}
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose} className="sor-btn sor-btn-secondary">
+            {t("settings.cancel", "Cancel")}
+          </button>
+          <button
+            onClick={mgr.handleCreateCollection}
+            className="sor-btn-primary-sm"
+            data-testid="database-confirm"
+            disabled={!mgr.newCollection.name.trim()}
+          >
+            <Check size={14} />
+            <span>{t("databaseCenter.collections.createAction")}</span>
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.nameLabel")}
+        </label>
+        <input
+          type="text"
+          value={mgr.newCollection.name}
+          onChange={(e) =>
+            mgr.setNewCollection({ ...mgr.newCollection, name: e.target.value })
+          }
+          className="sor-form-input-xs w-full"
+          placeholder={t("databaseCenter.collections.namePlaceholder") as string}
+          data-testid="database-name"
+          autoFocus
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.descriptionLabel")}
+        </label>
+        <Textarea
+          value={mgr.newCollection.description}
+          onChange={(v) =>
+            mgr.setNewCollection({ ...mgr.newCollection, description: v })
+          }
+          className="sor-form-input resize-none w-full"
+          rows={2}
+          placeholder={
+            t("databaseCenter.collections.descriptionPlaceholder") as string
+          }
+        />
+      </div>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <Checkbox
+          checked={mgr.newCollection.isEncrypted}
+          onChange={(v: boolean) =>
+            mgr.setNewCollection({ ...mgr.newCollection, isEncrypted: v })
+          }
+        />
+        <span className="text-xs text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.encryptToggle")}
+        </span>
+      </label>
+      {mgr.newCollection.isEncrypted && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.passwordLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.newCollection.password}
+              onChange={(e) =>
+                mgr.setNewCollection({
+                  ...mgr.newCollection,
+                  password: e.target.value,
+                })
+              }
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t("databaseCenter.collections.passwordPlaceholder") as string
+              }
+              data-testid="database-password"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.confirmPasswordLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.newCollection.confirmPassword}
+              onChange={(e) =>
+                mgr.setNewCollection({
+                  ...mgr.newCollection,
+                  confirmPassword: e.target.value,
+                })
+              }
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t(
+                  "databaseCenter.collections.confirmPasswordPlaceholder",
+                ) as string
+              }
+              revealable={false}
+            />
+          </div>
+        </div>
+      )}
+    </CardShell>
+  );
+};
+
+// ── Edit ─────────────────────────────────────────────────────────────
+
+const EditDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
+  mgr,
+  onClose,
+}) => {
+  const { t } = useTranslation();
+  if (!mgr.editingCollection) return null;
+  const editing = mgr.editingCollection;
+  const showPasswordRow =
+    editing.isEncrypted || mgr.editPassword.enableEncryption;
+
+  return (
+    <CardShell
+      title={t("databaseCenter.collections.editTitle")}
+      icon={Edit}
+      error={mgr.error}
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose} className="sor-btn sor-btn-secondary">
+            {t("settings.cancel", "Cancel")}
+          </button>
+          <button
+            onClick={mgr.handleUpdateCollection}
+            className="sor-btn-primary-sm"
+          >
+            <Check size={14} />
+            <span>{t("databaseCenter.collections.updateAction")}</span>
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.nameLabel")}
+        </label>
+        <input
+          type="text"
+          value={editing.name}
+          onChange={(e) =>
+            mgr.setEditingCollection({ ...editing, name: e.target.value })
+          }
+          className="sor-form-input-xs w-full"
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.descriptionLabel")}
+        </label>
+        <Textarea
+          value={editing.description || ""}
+          onChange={(v) =>
+            mgr.setEditingCollection({ ...editing, description: v })
+          }
+          className="sor-form-input resize-none w-full"
+          rows={2}
+        />
+      </div>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <Checkbox
+          checked={mgr.editPassword.enableEncryption}
+          onChange={(v: boolean) =>
+            mgr.setEditPassword((prev) => ({ ...prev, enableEncryption: v }))
+          }
+        />
+        <span className="text-xs text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.encryptToggle")}
+        </span>
+      </label>
+      {showPasswordRow && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.currentPasswordLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.editPassword.current}
+              onChange={(e) =>
+                mgr.setEditPassword((prev) => ({
+                  ...prev,
+                  current: e.target.value,
+                }))
+              }
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t(
+                  "databaseCenter.collections.currentPasswordPlaceholder",
+                ) as string
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.newPasswordLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.editPassword.next}
+              onChange={(e) =>
+                mgr.setEditPassword((prev) => ({
+                  ...prev,
+                  next: e.target.value,
+                }))
+              }
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t("databaseCenter.collections.newPasswordPlaceholder") as string
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.confirmPasswordShortLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.editPassword.confirm}
+              onChange={(e) =>
+                mgr.setEditPassword((prev) => ({
+                  ...prev,
+                  confirm: e.target.value,
+                }))
+              }
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t(
+                  "databaseCenter.collections.confirmPasswordPlaceholder",
+                ) as string
+              }
+            />
+          </div>
+        </div>
+      )}
+    </CardShell>
+  );
+};
+
+// ── Import ───────────────────────────────────────────────────────────
+
+const ImportDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
+  mgr,
+  onClose,
+}) => {
+  const { t } = useTranslation();
+  return (
+    <CardShell
+      title={t("databaseCenter.collections.importTitle")}
+      icon={Upload}
+      error={mgr.error}
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose} className="sor-btn sor-btn-secondary">
+            {t("settings.cancel", "Cancel")}
+          </button>
+          <button
+            onClick={mgr.handleImportCollection}
+            className="sor-btn-primary-sm"
+            disabled={!mgr.importFile}
+          >
+            <Upload size={14} />
+            <span>{t("databaseCenter.actions.import")}</span>
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.fileLabel")}
+        </label>
+        <input
+          type="file"
+          accept=".json"
+          onChange={(e) => mgr.setImportFile(e.target.files?.[0] ?? null)}
+          className="sor-form-input-xs w-full"
+        />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+            {t("databaseCenter.collections.optionalNameLabel")}
+          </label>
+          <input
+            type="text"
+            value={mgr.importCollectionName}
+            onChange={(e) => mgr.setImportCollectionName(e.target.value)}
+            className="sor-form-input-xs w-full"
+            placeholder={
+              t("databaseCenter.collections.optionalNamePlaceholder") as string
+            }
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+            {t("databaseCenter.collections.importPasswordLabel")}
+          </label>
+          <PasswordInput
+            value={mgr.importPassword}
+            onChange={(e) => mgr.setImportPassword(e.target.value)}
+            className="sor-form-input-xs w-full"
+            placeholder={
+              t("databaseCenter.collections.passwordPlaceholder") as string
+            }
+          />
+        </div>
+      </div>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <Checkbox
+          checked={mgr.encryptImport}
+          onChange={(v: boolean) => mgr.setEncryptImport(v)}
+        />
+        <span className="text-xs text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.encryptImportToggle")}
+        </span>
+      </label>
+      {mgr.encryptImport && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.newPasswordLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.importEncryptPassword}
+              onChange={(e) => mgr.setImportEncryptPassword(e.target.value)}
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t("databaseCenter.collections.newPasswordPlaceholder") as string
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+              {t("databaseCenter.collections.confirmPasswordShortLabel")}
+            </label>
+            <PasswordInput
+              value={mgr.importEncryptConfirmPassword}
+              onChange={(e) =>
+                mgr.setImportEncryptConfirmPassword(e.target.value)
+              }
+              className="sor-form-input-xs w-full"
+              placeholder={
+                t(
+                  "databaseCenter.collections.confirmPasswordPlaceholder",
+                ) as string
+              }
+              revealable={false}
+            />
+          </div>
+        </div>
+      )}
+    </CardShell>
+  );
+};
+
+// ── Export ───────────────────────────────────────────────────────────
+
+const ExportDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
+  mgr,
+  onClose,
+}) => {
+  const { t } = useTranslation();
+  if (!mgr.exportingCollection) return null;
+  const target = mgr.exportingCollection;
+
+  return (
+    <CardShell
+      title={t("databaseCenter.collections.exportTitle", { name: target.name })}
+      icon={Download}
+      error={mgr.error}
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose} className="sor-btn sor-btn-secondary">
+            {t("settings.cancel", "Cancel")}
+          </button>
+          <button
+            onClick={mgr.handleExportDownload}
+            className="sor-btn-primary-sm"
+          >
+            <Download size={14} />
+            <span>{t("databaseCenter.actions.export")}</span>
+          </button>
+        </>
+      }
+    >
+      {target.isEncrypted && (
+        <div className="space-y-1">
+          <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+            {t("databaseCenter.collections.collectionPasswordLabel")}
+          </label>
+          <PasswordInput
+            value={mgr.collectionPassword}
+            onChange={(e) => mgr.setCollectionPassword(e.target.value)}
+            className="sor-form-input-xs w-full"
+            placeholder={
+              t("databaseCenter.collections.passwordPlaceholder") as string
+            }
+          />
+        </div>
+      )}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <Checkbox
+          checked={mgr.includePasswords}
+          onChange={(v: boolean) => mgr.setIncludePasswords(v)}
+        />
+        <span className="text-xs text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.includePasswords")}
+        </span>
+      </label>
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {t("databaseCenter.collections.exportPasswordLabel")}
+        </label>
+        <PasswordInput
+          value={mgr.exportPassword}
+          onChange={(e) => mgr.setExportPassword(e.target.value)}
+          className="sor-form-input-xs w-full"
+          placeholder={
+            t("databaseCenter.collections.exportPasswordPlaceholder") as string
+          }
+        />
+      </div>
+    </CardShell>
+  );
+};
+
+// ── Unlock / clone-source ────────────────────────────────────────────
+
+const UnlockDatabaseCard: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  if (!mgr.selectedCollection) return null;
+  const target = mgr.selectedCollection;
+  const isClone = mgr.passwordDialogMode === "clone";
+
+  return (
+    <CardShell
+      title={
+        isClone
+          ? (t("databaseCenter.collections.cloneTitle", {
+              name: target.name,
+            }) as string)
+          : (t("databaseCenter.collections.unlockTitle", {
+              name: target.name,
+            }) as string)
+      }
+      icon={isClone ? Copy : Unlock}
+      error={mgr.error}
+      onClose={() => {
+        mgr.closePasswordDialog();
+        mgr.setError("");
+      }}
+      footer={
+        <>
+          <button
+            onClick={() => {
+              mgr.closePasswordDialog();
+              mgr.setError("");
+            }}
+            disabled={mgr.isWorking}
+            className="sor-btn sor-btn-secondary"
+          >
+            {t("settings.cancel", "Cancel")}
+          </button>
+          <button
+            onClick={mgr.handlePasswordSubmit}
+            disabled={mgr.isWorking}
+            className="sor-btn-primary-sm"
+          >
+            {isClone ? <Copy size={14} /> : <Unlock size={14} />}
+            <span>
+              {mgr.isWorking
+                ? isClone
+                  ? t("databaseCenter.collections.cloning")
+                  : t("databaseCenter.collections.unlocking")
+                : isClone
+                  ? t("databaseCenter.collections.cloneAction")
+                  : t("databaseCenter.collections.unlockAction")}
+            </span>
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-1">
+        <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+          {isClone
+            ? t("databaseCenter.collections.sourcePasswordLabel")
+            : t("databaseCenter.collections.passwordInputLabel")}
+        </label>
+        <div className="relative">
+          <input
+            type={mgr.showPassword ? "text" : "password"}
+            value={mgr.password}
+            onChange={(e) => mgr.setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void mgr.handlePasswordSubmit();
+              }
+            }}
+            disabled={mgr.isWorking}
+            className="sor-form-input-xs w-full pr-9"
+            placeholder={
+              isClone
+                ? (t(
+                    "databaseCenter.collections.sourcePasswordPlaceholder",
+                  ) as string)
+                : (t(
+                    "databaseCenter.collections.unlockPasswordPlaceholder",
+                  ) as string)
+            }
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => mgr.setShowPassword(!mgr.showPassword)}
+            disabled={mgr.isWorking}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+            aria-label={
+              mgr.showPassword
+                ? (t("databaseCenter.collections.hidePassword") as string)
+                : (t("databaseCenter.collections.showPassword") as string)
+            }
+          >
+            {mgr.showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
+      </div>
+    </CardShell>
+  );
+};
 
 export default DatabaseList;

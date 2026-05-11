@@ -1,44 +1,20 @@
-//! # Pluggable Updater Endpoint (t3-e39)
+//! Compatibility helpers for the updater settings file.
 //!
-//! Resolves the optional **private** update feed URL that supplements the
-//! public GitHub Releases endpoint wired by t3-e21. Both endpoints share
-//! the single Ed25519 pubkey committed in `tauri.conf.json`
-//! (`plugins.updater.pubkey`) — signature-verification parity is therefore
-//! preserved regardless of which endpoint a given check hits.
-//!
-//! ## Two sources, in priority order
-//!
-//! 1. **Build-time env var** `UPDATER_PRIVATE_ENDPOINT_URL`:
-//!    baked into `tauri.conf.json`'s `plugins.updater.endpoints` by
-//!    `build.rs`. Enterprise admins who ship a rebranded internal build
-//!    set this before `tauri build`; no user action is needed.
-//! 2. **Runtime setting** `updater.private_endpoint`: persisted in
-//!    `<app_data_dir>/settings.json` (on Windows this resolves to
-//!    `%APPDATA%\com.sortofremote.ng\settings.json`). This is the path
-//!    an enterprise admin pushes via MDM / Group Policy, or a user sets
-//!    via the optional settings UI (see
-//!    `src/components/settings/UpdaterEndpointSetting.tsx`). When present,
-//!    it is combined with the endpoint list from `tauri.conf.json` at
-//!    runtime via `UpdaterExt::updater_builder().endpoints(..)`.
-//!
-//! Both paths **augment** — never replace — the public endpoint, unless
-//! the admin explicitly removes it from `tauri.conf.json` at build time.
-//!
-//! ## Failure mode
-//!
-//! This module is defensive: a missing / unreadable / malformed settings
-//! file returns `Ok(None)`. A URL that fails to parse as `http(s)://…`
-//! returns `Ok(None)` with a `tracing::warn!`. The updater plugin then
-//! falls back to the conf.json endpoints alone. We never panic the app
-//! init on a bad private-endpoint setting.
+//! The production updater path is `sorng-updater` plus
+//! `tauri-plugin-updater`. Private endpoints are backend-managed runtime
+//! settings and are never injected into committed `tauri.conf.json` at build
+//! time. These helpers remain for older callers and tests that read/write the
+//! app settings file directly.
 
 use std::path::{Path, PathBuf};
 
 /// Key under which the private endpoint URL is persisted in
 /// `settings.json`. Grouped under `"updater"` so future keys (channel,
-/// auto-check cadence, …) slot in without a schema churn.
+/// auto-check cadence, etc.) slot in without a schema churn.
 pub const SETTINGS_KEY_UPDATER: &str = "updater";
-pub const SETTINGS_KEY_PRIVATE_ENDPOINT: &str = "private_endpoint";
+pub const SETTINGS_KEY_PRIVATE_ENDPOINT: &str = "privateEndpointUrl";
+pub const SETTINGS_KEY_PRIVATE_ENDPOINT_ENABLED: &str = "privateEndpointEnabled";
+pub const SETTINGS_KEY_PRIVATE_ENDPOINT_LEGACY: &str = "private_endpoint";
 
 /// Filename of the runtime settings store read by this module.
 pub const SETTINGS_FILENAME: &str = "settings.json";
@@ -47,7 +23,7 @@ pub const SETTINGS_FILENAME: &str = "settings.json";
 /// inside the given app-data directory.
 ///
 /// Returns `Ok(None)` when the file is absent, the key is missing, or the
-/// value fails `http(s)://` validation. Returns `Err` only on unexpected
+/// value fails HTTPS/local-dev validation. Returns `Err` only on unexpected
 /// I/O errors the caller should surface.
 pub fn read_private_endpoint(app_data_dir: &Path) -> std::io::Result<Option<String>> {
     let path = app_data_dir.join(SETTINGS_FILENAME);
@@ -64,23 +40,24 @@ pub fn read_private_endpoint(app_data_dir: &Path) -> std::io::Result<Option<Stri
 /// without touching the filesystem.
 pub fn parse_private_endpoint(raw: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
-    let s = v
-        .get(SETTINGS_KEY_UPDATER)?
-        .get(SETTINGS_KEY_PRIVATE_ENDPOINT)?
+    let updater = v.get(SETTINGS_KEY_UPDATER)?;
+    let s = updater
+        .get(SETTINGS_KEY_PRIVATE_ENDPOINT)
+        .or_else(|| updater.get(SETTINGS_KEY_PRIVATE_ENDPOINT_LEGACY))?
         .as_str()?
         .trim()
         .to_string();
     if s.is_empty() {
         return None;
     }
-    if !(s.starts_with("https://") || s.starts_with("http://")) {
+    if !is_valid_private_endpoint(&s) {
         return None;
     }
     Some(s)
 }
 
 /// Persist the private endpoint URL to `settings.json` under
-/// `updater.private_endpoint`. Creates the file (and any missing
+/// `updater.privateEndpointUrl`. Creates the file (and any missing
 /// subkeys) if they do not yet exist; preserves any other top-level
 /// keys already written by other subsystems.
 ///
@@ -110,27 +87,55 @@ pub fn write_private_endpoint(app_data_dir: &Path, url: Option<&str>) -> std::io
     match url {
         Some(u) => {
             let trimmed = u.trim();
-            if trimmed.is_empty()
-                || !(trimmed.starts_with("https://") || trimmed.starts_with("http://"))
-            {
+            if trimmed.is_empty() || !is_valid_private_endpoint(trimmed) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "private updater endpoint must be a non-empty http(s) URL",
+                    "private updater endpoint must be HTTPS, except local development HTTP endpoints in debug builds",
                 ));
             }
             updater_obj.insert(
                 SETTINGS_KEY_PRIVATE_ENDPOINT.to_string(),
                 serde_json::Value::String(trimmed.to_string()),
             );
+            updater_obj.insert(
+                SETTINGS_KEY_PRIVATE_ENDPOINT_ENABLED.to_string(),
+                serde_json::Value::Bool(true),
+            );
+            updater_obj.remove(SETTINGS_KEY_PRIVATE_ENDPOINT_LEGACY);
         }
         None => {
             updater_obj.remove(SETTINGS_KEY_PRIVATE_ENDPOINT);
+            updater_obj.remove(SETTINGS_KEY_PRIVATE_ENDPOINT_LEGACY);
+            updater_obj.insert(
+                SETTINGS_KEY_PRIVATE_ENDPOINT_ENABLED.to_string(),
+                serde_json::Value::Bool(false),
+            );
         }
     }
 
     let body = serde_json::to_string_pretty(&root)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("serialize: {e}")))?;
     std::fs::write(&path, body)
+}
+
+fn is_valid_private_endpoint(input: &str) -> bool {
+    let Ok(url) = url::Url::parse(input.trim()) else {
+        return false;
+    };
+
+    match url.scheme() {
+        "https" => true,
+        "http" if cfg!(debug_assertions) => {
+            matches!(
+                url.host_str(),
+                Some("localhost") | Some("127.0.0.1") | Some("::1") | Some("0.0.0.0")
+            ) || url
+                .host_str()
+                .map(|host| host.ends_with(".localhost"))
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]

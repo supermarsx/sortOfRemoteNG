@@ -1,171 +1,117 @@
-//! Data types, enums, and configuration structs for the updater.
+//! Stable command contract for the backend-owned updater facade.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-// ─── UpdateChannel ──────────────────────────────────────────────────
+pub const PUBLIC_ENDPOINT_URL: &str =
+    "https://github.com/supermarsx/sortOfRemoteNG/releases/latest/download/latest.json";
 
-/// Supported update channels.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-#[derive(Default)]
-pub enum UpdateChannel {
-    #[default]
-    Stable,
-    Beta,
-    Nightly,
-    Custom {
-        name: String,
-    },
-}
-
-impl std::fmt::Display for UpdateChannel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stable => write!(f, "stable"),
-            Self::Beta => write!(f, "beta"),
-            Self::Nightly => write!(f, "nightly"),
-            Self::Custom { name } => write!(f, "custom:{name}"),
-        }
-    }
-}
-
-// ─── UpdateAsset ────────────────────────────────────────────────────
-
-/// A single downloadable asset attached to an update release.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateAsset {
-    pub name: String,
-    pub url: String,
-    pub size: u64,
-    pub content_type: String,
-    pub os: Option<String>,
-    pub arch: Option<String>,
-}
-
-// ─── UpdateInfo ─────────────────────────────────────────────────────
-
-/// Full description of an available update.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateInfo {
-    pub version: String,
-    pub channel: UpdateChannel,
-    pub release_date: DateTime<Utc>,
-    pub release_notes: String,
-    pub download_url: String,
-    pub download_size: u64,
-    pub checksum_sha256: String,
-    pub signature: Option<String>,
-    pub mandatory: bool,
-    pub min_version: Option<String>,
-    pub assets: Vec<UpdateAsset>,
-}
-
-// ─── UpdateStatus ───────────────────────────────────────────────────
-
-/// Current status of the updater state machine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum UpdateStatus {
-    UpToDate,
-    UpdateAvailable {
-        info: UpdateInfo,
-    },
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdaterStatusValue {
+    Idle,
     Checking,
-    Downloading {
-        progress_pct: f64,
-        bytes_downloaded: u64,
-        total_bytes: u64,
-    },
+    UpToDate,
+    Available,
+    Downloading,
     Installing,
-    Restarting,
-    Error {
-        message: String,
-    },
+    RestartRequired,
+    Error,
 }
 
-// ─── UpdateConfig ───────────────────────────────────────────────────
-
-/// Persistent configuration for the auto-updater.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateConfig {
-    pub enabled: bool,
-    pub check_interval_hours: u64,
-    pub channel: UpdateChannel,
-    pub auto_download: bool,
-    pub auto_install: bool,
-    pub install_on_exit: bool,
-    pub github_owner: String,
-    pub github_repo: String,
-    pub custom_update_url: Option<String>,
-    pub pre_release: bool,
-    pub show_release_notes: bool,
-}
-
-impl Default for UpdateConfig {
+impl Default for UpdaterStatusValue {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            check_interval_hours: 24,
-            channel: UpdateChannel::Stable,
-            auto_download: false,
-            auto_install: false,
-            install_on_exit: false,
-            github_owner: String::new(),
-            github_repo: String::new(),
-            custom_update_url: None,
-            pre_release: false,
-            show_release_notes: true,
-        }
+        Self::Idle
     }
 }
 
-// ─── UpdateHistory ──────────────────────────────────────────────────
-
-/// Record of a past update attempt.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateHistory {
-    pub id: String,
-    pub from_version: String,
-    pub to_version: String,
-    pub channel: UpdateChannel,
-    pub timestamp: DateTime<Utc>,
-    pub success: bool,
-    pub error: Option<String>,
-    pub rollback_available: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdaterEndpointMode {
+    PublicOnly,
+    PrivateThenPublic,
 }
 
-// ─── RollbackInfo ───────────────────────────────────────────────────
-
-/// Metadata for a rollback point.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RollbackInfo {
-    pub previous_version: String,
-    pub backup_path: String,
-    pub created_at: DateTime<Utc>,
-    pub size_bytes: u64,
+impl Default for UpdaterEndpointMode {
+    fn default() -> Self {
+        Self::PublicOnly
+    }
 }
 
-// ─── VersionInfo ────────────────────────────────────────────────────
-
-/// Summary of version information shown in the UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VersionInfo {
-    pub current_version: String,
-    pub latest_version: Option<String>,
-    pub channel: UpdateChannel,
-    pub last_check: Option<DateTime<Utc>>,
-    pub update_available: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdaterEndpointSource {
+    Public,
+    Private,
 }
 
-// ─── DownloadProgress ───────────────────────────────────────────────
-
-/// Real-time download progress report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloadProgress {
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedUpdaterEndpoint {
     pub url: String,
-    pub bytes_downloaded: u64,
-    pub total_bytes: u64,
-    pub speed_bps: u64,
-    pub eta_seconds: u64,
+    pub source: UpdaterEndpointSource,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterSettings {
+    pub auto_check_enabled: bool,
+    pub check_interval_hours: u64,
+    pub private_endpoint_enabled: bool,
+    pub private_endpoint_url: Option<String>,
+    pub public_endpoint_url: String,
+    pub endpoint_mode: UpdaterEndpointMode,
+    pub resolved_endpoints: Vec<ResolvedUpdaterEndpoint>,
+    pub dynamic_plugin_endpoints_supported: bool,
+    pub dynamic_plugin_endpoints_message: Option<String>,
+    pub private_endpoint_validation_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterSettingsPatch {
+    pub auto_check_enabled: Option<bool>,
+    pub check_interval_hours: Option<u64>,
+    pub private_endpoint_enabled: Option<bool>,
+    pub private_endpoint_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableUpdate {
+    pub current_version: String,
+    pub version: String,
+    pub date: Option<String>,
+    pub body: Option<String>,
+    pub target: String,
+    pub download_url: String,
+    pub signature_present: bool,
+    pub raw_json: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterStatusSnapshot {
+    pub status: UpdaterStatusValue,
+    pub current_version: String,
+    pub available_update: Option<AvailableUpdate>,
+    pub last_checked_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub endpoint_mode: UpdaterEndpointMode,
+    pub endpoint_source: String,
+    pub resolved_endpoints: Vec<ResolvedUpdaterEndpoint>,
+    pub dynamic_plugin_endpoints_supported: bool,
+    pub dynamic_plugin_endpoints_message: Option<String>,
+    pub private_endpoint_validation_error: Option<String>,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub progress_percent: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterCheckResult {
+    pub update_available: bool,
+    pub available_update: Option<AvailableUpdate>,
+    pub status: UpdaterStatusSnapshot,
 }

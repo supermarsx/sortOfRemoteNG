@@ -77,6 +77,7 @@ pub(crate) use telnet::TelnetService;
 pub(crate) use totp::service::{TotpService, TotpServiceState};
 pub(crate) use trust_store::TrustStoreService;
 pub(crate) use two_factor::TwoFactorService;
+pub(crate) use updater::service::UpdaterService;
 pub(crate) use vnc::VncService;
 pub(crate) use wireguard::WireGuardService;
 pub(crate) use wol::WolService;
@@ -308,6 +309,9 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     cpu_features::log_all_features();
 
     let app_dir = app.path().app_data_dir()?;
+
+    let updater_service = UpdaterService::new(env!("CARGO_PKG_VERSION"), &app_dir);
+    app.manage(updater_service);
 
     let user_store_path = app_dir.join("users.json");
     let auth_service = AuthService::new(user_store_path.to_string_lossy().to_string());

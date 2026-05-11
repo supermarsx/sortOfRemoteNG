@@ -11,7 +11,6 @@ pub use sorng_filters as filters;
 pub use sorng_credentials as credentials;
 pub use sorng_replay as replay;
 pub use sorng_rdpfile as rdpfile;
-pub use sorng_updater as updater;
 pub use sorng_marketplace as marketplace;
 pub use sorng_portable as portable;
 pub use sorng_scheduler as scheduler;
@@ -43,8 +42,6 @@ mod credentials_commands;
 mod replay_commands;
 #[path = "../../sorng-commands-ops/src/rdpfile_commands.rs"]
 mod rdpfile_commands;
-#[path = "../../sorng-commands-ops/src/updater_commands.rs"]
-mod updater_commands;
 #[path = "../../sorng-commands-ops/src/marketplace_commands.rs"]
 mod marketplace_commands;
 #[path = "../../sorng-commands-ops/src/portable_commands.rs"]

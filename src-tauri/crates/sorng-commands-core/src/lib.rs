@@ -116,6 +116,7 @@ mod telnet_commands;
 mod totp_commands;
 #[path = "../../../src/trust_store_commands.rs"]
 mod trust_store_commands;
+mod updater_commands;
 #[path = "../../../src/vault_commands.rs"]
 mod vault_commands;
 #[path = "../../../src/vercel_commands.rs"]

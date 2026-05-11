@@ -85,7 +85,6 @@ sorng-terraform = { path = "../sorng-terraform" }
 sorng-time-ntp = { path = "../sorng-time-ntp" }
 sorng-topology = { path = "../sorng-topology" }
 sorng-traefik = { path = "../sorng-traefik" }
-sorng-updater = { path = "../sorng-updater" }
 sorng-ups = { path = "../sorng-ups" }
 sorng-warpgate = { path = "../sorng-warpgate" }
 sorng-winmgmt = { path = "../sorng-winmgmt" }

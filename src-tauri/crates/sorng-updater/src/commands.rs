@@ -1,136 +1,63 @@
-// Tauri command handlers for the updater.
-//
-// Each command follows the `updater_*` naming convention and delegates
-// to `UpdaterService`.
+use tauri::{AppHandle, State};
 
-use tauri::State;
-
-use super::service::UpdaterServiceState;
-use super::types::*;
-
-/// Helper to map UpdateError → String for Tauri command results.
-fn err_str(e: super::error::UpdateError) -> String {
-    e.to_string()
-}
-
-// ─── Check ──────────────────────────────────────────────────────────
+use crate::{
+    service::UpdaterServiceState,
+    types::{UpdaterCheckResult, UpdaterSettings, UpdaterSettingsPatch, UpdaterStatusSnapshot},
+};
 
 #[tauri::command]
-pub async fn updater_check(state: State<'_, UpdaterServiceState>) -> Result<UpdateStatus, String> {
-    let mut svc = state.lock().await;
-    svc.check_for_updates().await.map_err(err_str)
-}
-
-// ─── Download ───────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn updater_download(state: State<'_, UpdaterServiceState>) -> Result<String, String> {
-    let mut svc = state.lock().await;
-    svc.download_update().await.map_err(err_str)
-}
-
-#[tauri::command]
-pub async fn updater_cancel_download(state: State<'_, UpdaterServiceState>) -> Result<(), String> {
-    let svc = state.lock().await;
-    svc.cancel_download();
-    Ok(())
-}
-
-// ─── Install ────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn updater_install(state: State<'_, UpdaterServiceState>) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.install_update().await.map_err(err_str)
-}
-
-#[tauri::command]
-pub async fn updater_schedule_install(state: State<'_, UpdaterServiceState>) -> Result<(), String> {
-    let svc = state.lock().await;
-    svc.schedule_install_on_restart().await.map_err(err_str)
-}
-
-// ─── Status / info ──────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn updater_get_status(
+pub fn updater_get_settings(
     state: State<'_, UpdaterServiceState>,
-) -> Result<UpdateStatus, String> {
-    let svc = state.lock().await;
-    Ok(svc.get_status())
+) -> Result<UpdaterSettings, String> {
+    state.get_settings().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub async fn updater_get_config(
+pub fn updater_save_settings(
     state: State<'_, UpdaterServiceState>,
-) -> Result<UpdateConfig, String> {
-    let svc = state.lock().await;
-    Ok(svc.get_config())
+    patch: UpdaterSettingsPatch,
+) -> Result<UpdaterSettings, String> {
+    state
+        .save_settings(patch)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub async fn updater_update_config(
+pub fn updater_get_status(
     state: State<'_, UpdaterServiceState>,
-    config: UpdateConfig,
+) -> Result<UpdaterStatusSnapshot, String> {
+    state.get_status().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn updater_check(
+    app: AppHandle,
+    state: State<'_, UpdaterServiceState>,
+    force: Option<bool>,
+) -> Result<UpdaterCheckResult, String> {
+    state
+        .check(&app, force.unwrap_or(false))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn updater_download_and_install(
+    app: AppHandle,
+    state: State<'_, UpdaterServiceState>,
+    version: Option<String>,
+) -> Result<UpdaterStatusSnapshot, String> {
+    state
+        .download_and_install(&app, version)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn updater_relaunch(
+    app: AppHandle,
+    state: State<'_, UpdaterServiceState>,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.update_config(config);
+    state.relaunch(&app);
     Ok(())
-}
-
-#[tauri::command]
-pub async fn updater_set_channel(
-    state: State<'_, UpdaterServiceState>,
-    channel: UpdateChannel,
-) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.set_channel(channel);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn updater_get_version_info(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<VersionInfo, String> {
-    let svc = state.lock().await;
-    Ok(svc.get_version_info())
-}
-
-// ─── History ────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn updater_get_history(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<Vec<UpdateHistory>, String> {
-    let svc = state.lock().await;
-    Ok(svc.get_history())
-}
-
-// ─── Rollback ───────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn updater_rollback(
-    state: State<'_, UpdaterServiceState>,
-    info: RollbackInfo,
-) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.rollback(&info).await.map_err(err_str)
-}
-
-#[tauri::command]
-pub async fn updater_get_rollbacks(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<Vec<RollbackInfo>, String> {
-    let svc = state.lock().await;
-    Ok(svc.get_rollbacks().await)
-}
-
-// ─── Release notes ──────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn updater_get_release_notes(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<Option<String>, String> {
-    let svc = state.lock().await;
-    Ok(svc.get_release_notes())
 }

@@ -248,6 +248,7 @@ dependencies = [
  "tokio-test",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "windows 0.62.2",
 ]
@@ -9061,6 +9062,7 @@ dependencies = [
  "sorng-storage",
  "sorng-telnet",
  "sorng-totp",
+ "sorng-updater",
  "sorng-vault",
  "sorng-vnc",
  "sorng-vpn",
@@ -9153,7 +9155,6 @@ dependencies = [
  "sorng-time-ntp",
  "sorng-topology",
  "sorng-traefik",
- "sorng-updater",
  "sorng-ups",
  "sorng-warpgate",
  "sorng-winmgmt",
@@ -9762,7 +9763,6 @@ dependencies = [
  "sorng-snmp",
  "sorng-ssh-scripts",
  "sorng-topology",
- "sorng-updater",
  "sorng-warpgate",
  "tauri",
  "uuid",
@@ -12077,12 +12077,11 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.10.9",
- "tokio 1.52.1",
- "uuid",
+ "tauri",
+ "tauri-plugin-updater",
+ "url",
 ]
 
 [[package]]

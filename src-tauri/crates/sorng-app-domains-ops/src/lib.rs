@@ -80,7 +80,6 @@ pub use sorng_terraform as terraform;
 pub use sorng_time_ntp as time_ntp;
 pub use sorng_topology as topology;
 pub use sorng_traefik as traefik;
-pub use sorng_updater as updater;
 pub use sorng_ups as ups_mgmt;
 pub use sorng_warpgate as warpgate;
 pub use sorng_winmgmt as winmgmt;

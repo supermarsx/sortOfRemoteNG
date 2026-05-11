@@ -47,9 +47,8 @@ pub(crate) mod event_bridge;
 mod invoke_handler;
 mod splash;
 mod state_registry;
-// Pluggable updater endpoint (t3-e39) — runtime-setting reader layered
-// on top of the build-time endpoint wired via `build.rs` +
-// `tauri.conf.json`. See `docs/release/private-updater-endpoint.md`.
+// Compatibility helpers for the updater settings file. The production
+// updater path is owned by `sorng-updater` and `tauri-plugin-updater`.
 pub mod updater_config;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -130,12 +129,9 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        // Tauri updater plugin (signed update feed, pubkey pinned in
-        // `tauri.conf.json` → `plugins.updater.pubkey`; endpoints point to
-        // the public GitHub Releases `latest.json` by default — see
-        // `docs/release/updater-setup.md`). This is the low-level signed
-        // artifact delivery plugin that lives alongside the higher-level
-        // in-app updater UI/panel (see `src/components/updater/`).
+        // Tauri updater plugin: the only production-authoritative signed
+        // check/download/install path. App-owned updater commands in
+        // sorng-updater supply settings, status, and private endpoint wiring.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             state_registry::register(app)?;

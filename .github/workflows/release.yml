@@ -9,14 +9,26 @@ on:
       tag:
         description: "Tag to release (e.g. v1.2.3)"
         required: true
+      release_tier:
+        description: "Release tier: production publishes latest.json; staging/dry-run never do."
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - production
+          - staging
+          - dry-run
 
 permissions:
   contents: write
 
+env:
+  RELEASE_TIER: ${{ github.event_name == 'push' && 'production' || github.event.inputs.release_tier || 'dry-run' }}
+
 jobs:
   # --------------------------------------------------------------------------
   # Build + (optionally) sign platform bundles in a matrix.
-  # Each target tolerates missing signing secrets and falls back to UNSIGNED.
+  # Production is strict; staging/dry-run may build unsigned bundles.
   # --------------------------------------------------------------------------
   build:
     strategy:
@@ -36,7 +48,7 @@ jobs:
     outputs:
       version: ${{ steps.resolve_version.outputs.version }}
     env:
-      # Tauri updater signing (graceful: absent => plain bundles, no .sig)
+      # Tauri updater signing (production requires this; non-production may omit it)
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
@@ -45,6 +57,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Validate release tier
+        shell: bash
+        run: |
+          case "$RELEASE_TIER" in
+            production|staging|dry-run) ;;
+            *)
+              echo "::error::Invalid release tier '$RELEASE_TIER'."
+              exit 1
+              ;;
+          esac
+          echo "Release tier: $RELEASE_TIER"
+
+      - name: Check updater signing key
+        shell: bash
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY//[[:space:]]/}" ]; then
+            if [ "$RELEASE_TIER" = "production" ]; then
+              echo "::error::TAURI_SIGNING_PRIVATE_KEY is required for production releases."
+              exit 1
+            fi
+            echo "::notice::TAURI_SIGNING_PRIVATE_KEY is not set; $RELEASE_TIER bundles may be unsigned and will not publish production latest.json."
+          fi
 
       - name: Resolve version from tag
         id: resolve_version
@@ -122,17 +157,32 @@ jobs:
         id: check_macos_signing
         if: matrix.target == 'macos'
         shell: bash
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "${{ secrets.APPLE_CERT_P12_BASE64 }}" ] \
-             && [ -n "${{ secrets.APPLE_CERT_PASSWORD }}" ] \
-             && [ -n "${{ secrets.APPLE_ID }}" ] \
-             && [ -n "${{ secrets.APPLE_PASSWORD }}" ] \
-             && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+          missing=()
+          for secret_name in APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            secret_value="${!secret_name:-}"
+            if [ -z "${secret_value//[[:space:]]/}" ]; then
+              missing+=("$secret_name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -eq 0 ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             echo "macOS signing: ENABLED"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::macOS signing secrets missing — producing UNSIGNED .dmg/.app (skipping codesign + notarytool)."
+            message="macOS signing/notarization secrets missing: ${missing[*]}"
+            if [ "$RELEASE_TIER" = "production" ]; then
+              echo "::error::$message"
+              exit 1
+            fi
+            echo "::warning::$message - producing unsigned macOS bundles for $RELEASE_TIER."
           fi
 
       - name: Import Apple Developer ID certificate
@@ -161,34 +211,35 @@ jobs:
         id: check_windows_signing
         if: matrix.target == 'windows'
         shell: bash
+        env:
+          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
         run: |
-          if [ -n "${{ secrets.WINDOWS_CERT_THUMBPRINT }}" ]; then
+          if [ -n "${WINDOWS_CERT_THUMBPRINT//[[:space:]]/}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             echo "Windows signing: ENABLED (thumbprint provided)"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::WINDOWS_CERT_THUMBPRINT missing — producing UNSIGNED .msi/.exe (skipping signtool)."
+            if [ "$RELEASE_TIER" = "production" ]; then
+              echo "::error::WINDOWS_CERT_THUMBPRINT is required for production Windows signing."
+              exit 1
+            fi
+            echo "::warning::WINDOWS_CERT_THUMBPRINT missing - producing unsigned Windows bundles for $RELEASE_TIER."
           fi
 
       # ----------------------------------------------------------------------
-      # Build bundles with tauri-action. For macOS, tauri-action itself
-      # invokes codesign + notarytool when APPLE_* env vars are set.
+      # Build bundles with tauri-action only. Release creation/upload is kept
+      # in the publish job after production feed/signature validation.
       # ----------------------------------------------------------------------
       - name: Build Tauri bundles
         id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS signing / notarization (only populated when enabled)
           APPLE_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
           APPLE_SIGNING_IDENTITY: "${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}"
         with:
-          tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: "sortOfRemoteNG ${{ steps.resolve_version.outputs.version }}"
-          releaseDraft: true
-          prerelease: false
           includeUpdaterJson: false
           args: --no-default-features --features full --bundles ${{ matrix.bundles }}
 
@@ -204,14 +255,38 @@ jobs:
           $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
           Write-Host "Using signtool: $signtool"
           $bundleDir = "src-tauri/target/release/bundle"
-          Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe | ForEach-Object {
-            Write-Host "Signing $($_.FullName)"
-            & $signtool sign /sha1 $env:WINDOWS_CERT_THUMBPRINT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($_.FullName)" }
+          $files = @(Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe)
+          if ($files.Count -eq 0) {
+            if ($env:RELEASE_TIER -eq "production") { throw "No Windows .msi/.exe artifacts found to sign." }
+            Write-Warning "No Windows .msi/.exe artifacts found to sign."
+            exit 0
+          }
+          foreach ($file in $files) {
+            Write-Host "Signing $($file.FullName)"
+            & $signtool sign /sha1 $env:WINDOWS_CERT_THUMBPRINT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($file.FullName)" }
+          }
+
+      - name: Verify Windows Authenticode signatures
+        if: matrix.target == 'windows' && steps.check_windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          $bundleDir = "src-tauri/target/release/bundle"
+          $files = @(Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe)
+          if ($files.Count -eq 0) {
+            if ($env:RELEASE_TIER -eq "production") { throw "No Windows .msi/.exe artifacts found to verify." }
+            Write-Warning "No Windows .msi/.exe artifacts found to verify."
+            exit 0
+          }
+          foreach ($file in $files) {
+            Write-Host "Verifying $($file.FullName)"
+            & $signtool verify /pa /tw $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool verify failed for $($file.FullName)" }
           }
 
       # ----------------------------------------------------------------------
-      # Collect artifacts for latest.json feed generation job.
+      # Collect artifacts for updater feed generation job.
       # ----------------------------------------------------------------------
       - name: Stage artifacts
         shell: bash
@@ -233,16 +308,64 @@ jobs:
           esac
           ls -la artifacts/ || true
 
+      - name: Validate production staged artifacts
+        if: env.RELEASE_TIER == 'production'
+        shell: bash
+        run: |
+          set -euo pipefail
+          require_one() {
+            local label="$1"
+            local pattern="$2"
+            local artifact
+            artifact=$(find artifacts -maxdepth 1 -type f -name "$pattern" | sort | head -n 1 || true)
+            if [ -z "$artifact" ]; then
+              echo "::error::Missing production $label artifact ($pattern)."
+              exit 1
+            fi
+            printf '%s' "$artifact"
+          }
+
+          require_non_empty_sig() {
+            local artifact="$1"
+            local signature_file="${artifact}.sig"
+            if [ ! -f "$signature_file" ]; then
+              echo "::error::Missing updater signature $signature_file."
+              exit 1
+            fi
+            if [ -z "$(tr -d '\r\n\t ' < "$signature_file")" ]; then
+              echo "::error::Updater signature $signature_file is empty."
+              exit 1
+            fi
+          }
+
+          case "${{ matrix.target }}" in
+            linux)
+              linux_appimage=$(require_one "Linux AppImage" "*.AppImage")
+              require_one "Linux deb" "*.deb" >/dev/null
+              require_non_empty_sig "$linux_appimage"
+              ;;
+            macos)
+              mac_app_tar=$(require_one "macOS updater archive" "*.app.tar.gz")
+              require_one "macOS dmg" "*.dmg" >/dev/null
+              require_non_empty_sig "$mac_app_tar"
+              ;;
+            windows)
+              windows_exe=$(require_one "Windows NSIS installer" "*.exe")
+              require_one "Windows MSI installer" "*.msi" >/dev/null
+              require_non_empty_sig "$windows_exe"
+              ;;
+          esac
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.target }}
           path: artifacts/
-          if-no-files-found: warn
+          if-no-files-found: ${{ env.RELEASE_TIER == 'production' && 'error' || 'warn' }}
           retention-days: 7
 
   # --------------------------------------------------------------------------
-  # Aggregate artifacts, build latest.json feed, attach to GitHub Release.
+  # Aggregate artifacts, build the tiered updater feed, attach to GitHub Release.
   # --------------------------------------------------------------------------
   publish:
     needs: build
@@ -251,39 +374,73 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Node toolchain
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Download all bundle artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: ${{ env.RELEASE_TIER != 'production' }}
         with:
           path: dist
           pattern: bundle-*
           merge-multiple: true
 
-      - name: Resolve version + release URL base
+      - name: Ensure dist directory exists
+        shell: bash
+        run: mkdir -p dist
+
+      - name: Resolve version, release tag, and feed file
         id: meta
         shell: bash
         run: |
+          set -euo pipefail
           RAW="${{ github.event.inputs.tag || github.ref_name }}"
           VERSION="${RAW#v}"
-          TAG="${RAW}"
+          case "$RELEASE_TIER" in
+            production)
+              RELEASE_TAG="${RAW}"
+              FEED_FILE="latest.json"
+              ;;
+            staging)
+              RELEASE_TAG="${RAW}-staging"
+              FEED_FILE="staging-latest.json"
+              ;;
+            dry-run)
+              RELEASE_TAG="${RAW}-dry-run"
+              FEED_FILE="dry-run-latest.json"
+              ;;
+            *)
+              echo "::error::Invalid release tier '$RELEASE_TIER'."
+              exit 1
+              ;;
+          esac
           REPO="${{ github.repository }}"
-          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+          BASE="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "feed_file=${FEED_FILE}" >> "$GITHUB_OUTPUT"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           echo "pub_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "Release tier: $RELEASE_TIER"
+          echo "Release tag: $RELEASE_TAG"
+          echo "Feed file: $FEED_FILE"
 
       # ----------------------------------------------------------------------
-      # Build latest.json in the Tauri updater shape:
+      # Build the updater feed in the Tauri updater shape:
       #   { version, pub_date, notes, platforms: { "<target>": { signature, url } } }
       # Signature is read from each bundle's companion .sig (if present).
-      # Missing .sig => empty string (updater will reject, but feed is valid).
+      # Production validation rejects missing signatures; non-production feeds are
+      # named staging-latest.json/dry-run-latest.json and may remain permissive.
       # ----------------------------------------------------------------------
-      - name: Generate latest.json
+      - name: Generate updater feed
         shell: bash
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           PUB_DATE: ${{ steps.meta.outputs.pub_date }}
           BASE: ${{ steps.meta.outputs.base }}
+          FEED_FILE: ${{ steps.meta.outputs.feed_file }}
         run: |
           set -euo pipefail
           sig_of() {
@@ -316,7 +473,7 @@ jobs:
                                 '. + {($k): {signature: $s, url: $u}}' \
                                 <<<"$jq_platforms")
               if [ -z "$sig" ]; then
-                echo "::warning::No .sig for $file — platform $key will have empty signature (UNSIGNED build)."
+                echo "::warning::No .sig for $file - platform $key will have empty signature (UNSIGNED build)."
               fi
             fi
           }
@@ -332,21 +489,67 @@ jobs:
             --arg notes "Release $VERSION" \
             --argjson platforms "$jq_platforms" \
             '{version: $version, pub_date: $pub_date, notes: $notes, platforms: $platforms}' \
-            > latest.json
+            > "$FEED_FILE"
 
-          echo "---- latest.json ----"
-          cat latest.json
+          echo "---- $FEED_FILE ----"
+          cat "$FEED_FILE"
 
-      - name: Upload release assets
+      - name: Validate production updater feed
+        if: env.RELEASE_TIER == 'production'
+        shell: bash
+        run: |
+          node scripts/ci/validate-updater-feed.mjs "${{ steps.meta.outputs.feed_file }}" \
+            --dist-dir dist \
+            --require-signature-files \
+            --require-platform linux-x86_64 \
+            --require-platform darwin-x86_64 \
+            --require-platform darwin-aarch64 \
+            --require-platform windows-x86_64
+
+      - name: Validate non-production updater feed
+        if: env.RELEASE_TIER != 'production'
+        shell: bash
+        run: |
+          node scripts/ci/validate-updater-feed.mjs "${{ steps.meta.outputs.feed_file }}" \
+            --dist-dir dist \
+            --allow-empty-platforms \
+            --allow-empty-signatures
+
+      - name: Upload production release assets
+        if: env.RELEASE_TIER == 'production'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ steps.meta.outputs.release_tag }}
           name: sortOfRemoteNG ${{ steps.meta.outputs.version }}
           draft: true
           prerelease: false
-          fail_on_unmatched_files: false
+          make_latest: true
+          fail_on_unmatched_files: true
           files: |
             dist/**/*
             latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload staging release assets
+        if: env.RELEASE_TIER == 'staging'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: sortOfRemoteNG ${{ steps.meta.outputs.version }} (staging)
+          draft: true
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: false
+          files: |
+            dist/**/*
+            staging-latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dry-run release summary
+        if: env.RELEASE_TIER == 'dry-run'
+        shell: bash
+        run: |
+          echo "Dry-run release completed. No GitHub Release assets were uploaded and no production latest.json was published."

@@ -18,7 +18,6 @@ sorng-filters = { path = "../sorng-filters" }
 sorng-credentials = { path = "../sorng-credentials" }
 sorng-replay = { path = "../sorng-replay" }
 sorng-rdpfile = { path = "../sorng-rdpfile" }
-sorng-updater = { path = "../sorng-updater" }
 sorng-marketplace = { path = "../sorng-marketplace" }
 sorng-portable = { path = "../sorng-portable" }
 sorng-scheduler = { path = "../sorng-scheduler" }

@@ -67,113 +67,18 @@ fn main() {
         println!("cargo:rustc-cfg=has_avx2_full");
     }
 
-    // ── Pluggable updater endpoint (t3-e39) ─────────────────────────────
-    //
-    // If the build environment defines `UPDATER_PRIVATE_ENDPOINT_URL`,
-    // append it to `plugins.updater.endpoints` in `tauri.conf.json` at
-    // build time. The public GitHub Releases endpoint (wired by t3-e21)
-    // is preserved as the first entry so signature verification parity
-    // is maintained (same embedded Ed25519 pubkey, two endpoints checked
-    // in order). If the env var is missing, the file is untouched.
-    //
-    // See `docs/release/private-updater-endpoint.md` for enterprise
-    // deployment flow + `latest.json` schema.
+    // Private updater endpoints are backend-managed runtime settings. The
+    // build must not mutate the committed Tauri config when this env var is
+    // present; keep the rerun marker only so CI logs make ignored usage clear.
     println!("cargo:rerun-if-env-changed=UPDATER_PRIVATE_ENDPOINT_URL");
-    if let Ok(private_endpoint) = std::env::var("UPDATER_PRIVATE_ENDPOINT_URL") {
-        let trimmed = private_endpoint.trim();
-        if !trimmed.is_empty() {
-            inject_private_endpoint(trimmed);
-        }
+    if std::env::var("UPDATER_PRIVATE_ENDPOINT_URL")
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        println!(
+            "cargo:warning=UPDATER_PRIVATE_ENDPOINT_URL is ignored; configure private updater endpoints through backend updater settings"
+        );
     }
 
     tauri_build::build()
-}
-
-/// Parse `tauri.conf.json`, append the given URL to
-/// `plugins.updater.endpoints` if not already present, and write it back.
-///
-/// This intentionally mutates the committed config on disk: enterprise
-/// builds are expected to run against fresh checkouts (CI container or
-/// throwaway workstation clone). Do NOT set the env var in a developer
-/// shell where you plan to commit from — the resulting diff should not
-/// be committed upstream.
-fn inject_private_endpoint(url: &str) {
-    let conf_path = std::path::Path::new("tauri.conf.json");
-    let raw = match std::fs::read_to_string(conf_path) {
-        Ok(s) => s,
-        Err(e) => {
-            println!(
-                "cargo:warning=t3-e39: cannot read tauri.conf.json ({e}); skipping private-endpoint injection"
-            );
-            return;
-        }
-    };
-
-    let mut root: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(e) => {
-            println!(
-                "cargo:warning=t3-e39: tauri.conf.json is not valid JSON ({e}); skipping private-endpoint injection"
-            );
-            return;
-        }
-    };
-
-    // Validate URL shape — fail closed if malformed.
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        println!(
-            "cargo:warning=t3-e39: UPDATER_PRIVATE_ENDPOINT_URL must be http(s) (got {url:?}); skipping"
-        );
-        return;
-    }
-
-    // Navigate / create plugins.updater.endpoints.
-    let plugins = root.as_object_mut().and_then(|o| {
-        o.entry("plugins")
-            .or_insert_with(|| serde_json::json!({}))
-            .as_object_mut()
-    });
-    let Some(plugins) = plugins else {
-        println!("cargo:warning=t3-e39: tauri.conf.json root is not an object; skipping");
-        return;
-    };
-    let updater = plugins
-        .entry("updater")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut();
-    let Some(updater) = updater else {
-        println!("cargo:warning=t3-e39: plugins.updater is not an object; skipping");
-        return;
-    };
-    let endpoints = updater
-        .entry("endpoints")
-        .or_insert_with(|| serde_json::json!([]));
-    if !endpoints.is_array() {
-        println!("cargo:warning=t3-e39: plugins.updater.endpoints is not an array; skipping");
-        return;
-    }
-    let arr = endpoints.as_array_mut().expect("checked above");
-
-    // Skip if already present (idempotent across incremental builds).
-    let already = arr
-        .iter()
-        .any(|v| v.as_str().map(|s| s == url).unwrap_or(false));
-    if already {
-        return;
-    }
-    arr.push(serde_json::Value::String(url.to_string()));
-
-    // Pretty-print to preserve diff readability.
-    let new_raw = match serde_json::to_string_pretty(&root) {
-        Ok(s) => s,
-        Err(e) => {
-            println!("cargo:warning=t3-e39: serialize tauri.conf.json failed ({e}); skipping");
-            return;
-        }
-    };
-    if let Err(e) = std::fs::write(conf_path, format!("{new_raw}\n")) {
-        println!("cargo:warning=t3-e39: write tauri.conf.json failed ({e}); skipping");
-        return;
-    }
-    println!("cargo:warning=t3-e39: injected private updater endpoint into tauri.conf.json: {url}");
 }

@@ -1,30 +1,11 @@
-//! # sorng-updater
+//! Backend-owned facade over `tauri-plugin-updater`.
 //!
-//! Application auto-updater engine for SortOfRemote NG.
-//!
-//! Provides GitHub releases integration, semantic version comparison,
-//! update channels (stable / beta / nightly), download with progress
-//! tracking, signature verification, rollback support, release notes
-//! display, and update scheduling.
-//!
-//! | Module       | Purpose                                           |
-//! |--------------|---------------------------------------------------|
-//! | `types`      | Data types, enums, and configuration structs       |
-//! | `error`      | Error types for the updater                        |
-//! | `version`    | Semantic version parsing, comparison, ordering     |
-//! | `channels`   | Channel management and GitHub release filtering    |
-//! | `checker`    | Update checking via the GitHub Releases API        |
-//! | `downloader` | Download management with progress & cancellation   |
-//! | `installer`  | Installation, backup creation, restart scheduling  |
-//! | `rollback`   | Rollback and backup lifecycle management           |
-//! | `service`    | Service façade (`UpdaterServiceState`)             |
+//! The Tauri updater plugin is the only production-authoritative path for
+//! checking, downloading, signature verification, and installation. This crate
+//! owns settings/status state and exposes app-specific commands so frontend code
+//! does not call the plugin directly.
 
-pub mod channels;
-pub mod checker;
-pub mod downloader;
+pub mod commands;
 pub mod error;
-pub mod installer;
-pub mod rollback;
 pub mod service;
 pub mod types;
-pub mod version;

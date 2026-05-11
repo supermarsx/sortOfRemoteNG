@@ -41,6 +41,12 @@ pub fn is_command(command: &str) -> bool {
             | "trust_get_identity_history"
             | "trust_get_verification_stats"
             | "trust_get_summary"
+            | "updater_get_settings"
+            | "updater_save_settings"
+            | "updater_get_status"
+            | "updater_check"
+            | "updater_download_and_install"
+            | "updater_relaunch"
             | "connect_ssh"
             | "ssh_respond_to_host_key_prompt"
             | "start_shell"
@@ -1147,6 +1153,12 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         trust_store_commands::trust_get_identity_history,
         trust_store_commands::trust_get_verification_stats,
         trust_store_commands::trust_get_summary,
+        updater_commands::updater_get_settings,
+        updater_commands::updater_save_settings,
+        updater_commands::updater_get_status,
+        updater_commands::updater_check,
+        updater_commands::updater_download_and_install,
+        updater_commands::updater_relaunch,
         #[cfg(feature = "opkssh")]
         opkssh_commands::inner::opkssh_check_binary,
         #[cfg(feature = "opkssh")]
