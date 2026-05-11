@@ -1317,9 +1317,3 @@ export interface ConnectionDatabase {
   lastAccessed: string;
 }
 
-/**
- * Backward-compat alias. Prefer {@link ConnectionDatabase} in new code.
- * Will be removed in a future cleanup pass after consumers migrate.
- */
-export type ConnectionCollection = ConnectionDatabase;
-

@@ -15,7 +15,7 @@ import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./typ
 import { SettingsManager } from "./utils/settings/settingsManager";
 import { StatusChecker } from "./utils/connection/statusChecker";
 import { DatabaseManager } from "./utils/connection/databaseManager";
-import { CollectionNotFoundError, InvalidPasswordError } from "./utils/core/errors";
+import { DatabaseNotFoundError, InvalidPasswordError } from "./utils/core/errors";
 import { SecureStorage } from "./utils/storage/storage";
 import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
@@ -543,7 +543,7 @@ const AppContent: React.FC = () => {
         }
       } catch (error) {
         console.error("Failed to select collection:", error);
-        if (error instanceof CollectionNotFoundError) {
+        if (error instanceof DatabaseNotFoundError) {
           showAlert("Collection not found");
         } else if (error instanceof InvalidPasswordError) {
           showAlert("Invalid or missing password");

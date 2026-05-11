@@ -3,7 +3,7 @@ import { DatabaseManager } from '../../src/utils/connection/databaseManager';
 import { IndexedDbService } from '../../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
 import { StorageData } from '../../src/utils/storage/storage';
-import { ConnectionCollection } from '../../src/types/connection/connection';
+import { ConnectionDatabase } from '../../src/types/connection/connection';
 
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
@@ -35,7 +35,7 @@ describe('DatabaseManager remove password', () => {
     );
     expect(storedAfter!.connections).toBeTruthy();
 
-    const meta = (await IndexedDbService.getItem<ConnectionCollection[]>(
+    const meta = (await IndexedDbService.getItem<ConnectionDatabase[]>(
       'mremote-collections'
     ))![0];
     expect(meta.isEncrypted).toBe(false);

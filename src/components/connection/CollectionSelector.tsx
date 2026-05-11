@@ -2,7 +2,7 @@ import React from "react";
 import { Database, Plus, Upload } from "lucide-react";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
-import { useCollectionSelector } from "../../hooks/connection/useDatabaseSelector";
+import { useDatabaseSelector } from "../../hooks/connection/useDatabaseSelector";
 import { useTranslation } from "react-i18next";
 import CollectionsTab from "./collectionSelector/CollectionsTab";
 
@@ -24,7 +24,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   initialTab,
 }) => {
   const { t } = useTranslation();
-  const mgr = useCollectionSelector(isOpen, onCollectionSelect);
+  const mgr = useDatabaseSelector(isOpen, onCollectionSelect);
   const { setActiveTab } = mgr;
 
   React.useEffect(() => {

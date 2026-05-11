@@ -1,9 +1,9 @@
-import { ConnectionCollection } from "../../types/connection/connection";
+import { ConnectionDatabase } from "../../types/connection/connection";
 import { StorageData } from "../storage/storage";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
 import {
-  CollectionNotFoundError,
+  DatabaseNotFoundError,
   CorruptedDataError,
   InvalidPasswordError,
 } from "../core/errors";
@@ -122,7 +122,7 @@ function cloneStorageData(data: StorageData): StorageData {
 
 function buildDuplicateCollectionName(
   sourceName: string,
-  collections: ConnectionCollection[],
+  collections: ConnectionDatabase[],
   preferredName?: string,
 ): string {
   const desiredName = (preferredName?.trim() || `${sourceName} (Copy)`).trim();
@@ -154,8 +154,9 @@ function buildDuplicateCollectionName(
  */
 export class DatabaseManager {
   private static instance: DatabaseManager;
-  private readonly collectionsKey = "mremote-collections";
-  private currentCollection: ConnectionCollection | null = null;
+  private readonly databasesKey = "mremote-databases";
+  private readonly legacyDatabasesKey = "mremote-collections";
+  private currentCollection: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
 
   static getInstance(): DatabaseManager {
@@ -182,8 +183,8 @@ export class DatabaseManager {
     description?: string,
     isEncrypted: boolean = false,
     password?: string,
-  ): Promise<ConnectionCollection> {
-    const collection: ConnectionCollection = {
+  ): Promise<ConnectionDatabase> {
+    const collection: ConnectionDatabase = {
       id: generateId(),
       name,
       description,
@@ -225,11 +226,26 @@ export class DatabaseManager {
     return collection;
   }
 
-  async getAllCollections(): Promise<ConnectionCollection[]> {
+  async getAllCollections(): Promise<ConnectionDatabase[]> {
     try {
-      const collections = await IndexedDbService.getItem<
-        ConnectionCollection[]
-      >(this.collectionsKey);
+      let collections = await IndexedDbService.getItem<ConnectionDatabase[]>(
+        this.databasesKey,
+      );
+      if (!collections) {
+        // One-shot migration from the legacy "mremote-collections" key.
+        const legacy = await IndexedDbService.getItem<ConnectionDatabase[]>(
+          this.legacyDatabasesKey,
+        );
+        if (legacy) {
+          await IndexedDbService.setItem(this.databasesKey, legacy);
+          try {
+            await IndexedDbService.removeItem(this.legacyDatabasesKey);
+          } catch {
+            // best-effort
+          }
+          collections = legacy;
+        }
+      }
       if (collections) {
         return collections.map((c: any) => ({
           ...c,
@@ -240,12 +256,12 @@ export class DatabaseManager {
       }
       return [];
     } catch (error) {
-      console.error("Failed to load collections:", error);
+      console.error("Failed to load databases:", error);
       return [];
     }
   }
 
-  async getCollection(id: string): Promise<ConnectionCollection | null> {
+  async getCollection(id: string): Promise<ConnectionDatabase | null> {
     const collections = await this.getAllCollections();
     return collections.find((c) => c.id === id) || null;
   }
@@ -253,7 +269,7 @@ export class DatabaseManager {
   async selectCollection(id: string, password?: string): Promise<void> {
     const collection = await this.getCollection(id);
     if (!collection) {
-      throw new CollectionNotFoundError();
+      throw new DatabaseNotFoundError();
     }
 
     if (collection.isEncrypted && !password) {
@@ -279,11 +295,11 @@ export class DatabaseManager {
     );
   }
 
-  getCurrentCollection(): ConnectionCollection | null {
+  getCurrentCollection(): ConnectionDatabase | null {
     return this.currentCollection;
   }
 
-  async updateCollection(collection: ConnectionCollection): Promise<void> {
+  async updateCollection(collection: ConnectionDatabase): Promise<void> {
     const collections = await this.getAllCollections();
     const index = collections.findIndex((c) => c.id === collection.id);
     if (index >= 0) {
@@ -324,10 +340,10 @@ export class DatabaseManager {
       password?: string;
       name?: string;
     },
-  ): Promise<ConnectionCollection> {
+  ): Promise<ConnectionDatabase> {
     const sourceCollection = await this.getCollection(collectionId);
     if (!sourceCollection) {
-      throw new CollectionNotFoundError();
+      throw new DatabaseNotFoundError();
     }
 
     const duplicatePassword = sourceCollection.isEncrypted
@@ -348,7 +364,7 @@ export class DatabaseManager {
       duplicatePassword,
     );
     if (!sourceData) {
-      throw new CollectionNotFoundError();
+      throw new DatabaseNotFoundError();
     }
 
     const collections = await this.getAllCollections();
@@ -356,11 +372,11 @@ export class DatabaseManager {
       (collection) => collection.id === collectionId,
     );
     if (sourceIndex < 0) {
-      throw new CollectionNotFoundError();
+      throw new DatabaseNotFoundError();
     }
 
     const now = new Date().toISOString();
-    const duplicatedCollection: ConnectionCollection = {
+    const duplicatedCollection: ConnectionDatabase = {
       id: generateId(),
       name: buildDuplicateCollectionName(
         sourceCollection.name,
@@ -394,9 +410,9 @@ export class DatabaseManager {
   }
 
   private async saveCollections(
-    collections: ConnectionCollection[],
+    collections: ConnectionDatabase[],
   ): Promise<void> {
-    await IndexedDbService.setItem(this.collectionsKey, collections);
+    await IndexedDbService.setItem(this.databasesKey, collections);
   }
 
   // Collection data management
@@ -405,14 +421,34 @@ export class DatabaseManager {
     data: StorageData,
     password?: string,
   ): Promise<void> {
-    const key = `mremote-collection-${collectionId}`;
+    const key = `mremote-database-${collectionId}`;
+    const legacyKey = `mremote-collection-${collectionId}`;
 
     if (invoke) {
       try {
-        await invoke("save_collection_data", { collectionId, data, password });
+        await invoke("save_database_data", {
+          databaseId: collectionId,
+          data,
+          password,
+        });
         return;
       } catch (error) {
-        console.error("Failed to save collection via IPC:", error);
+        // Fall back to the legacy command name if the new one isn't
+        // registered on the Rust side yet.
+        try {
+          await invoke("save_collection_data", {
+            collectionId,
+            data,
+            password,
+          });
+          return;
+        } catch (legacyError) {
+          console.error(
+            "Failed to save database via IPC:",
+            error,
+            legacyError,
+          );
+        }
       }
     }
 
@@ -422,20 +458,39 @@ export class DatabaseManager {
     } else {
       await IndexedDbService.setItem(key, data);
     }
+
+    // Drop the legacy IndexedDB row once the new one is written so a
+    // future read doesn't pick up stale data.
+    try {
+      await IndexedDbService.removeItem(legacyKey);
+    } catch {
+      // best-effort
+    }
   }
 
   async loadCollectionData(
     collectionId: string,
     password?: string,
   ): Promise<StorageData | null> {
-    const key = `mremote-collection-${collectionId}`;
+    const key = `mremote-database-${collectionId}`;
+    const legacyKey = `mremote-collection-${collectionId}`;
     let stored: any = null;
 
     if (invoke) {
       try {
-        stored = await invoke("load_collection_data", { collectionId });
+        stored = await invoke("load_database_data", {
+          databaseId: collectionId,
+        });
       } catch (error) {
-        console.error("Failed to load collection via IPC:", error);
+        try {
+          stored = await invoke("load_collection_data", { collectionId });
+        } catch (legacyError) {
+          console.error(
+            "Failed to load database via IPC:",
+            error,
+            legacyError,
+          );
+        }
       }
     }
 
@@ -444,7 +499,21 @@ export class DatabaseManager {
     }
 
     if (!stored) {
-      throw new CollectionNotFoundError();
+      // One-shot migration: read from the old key and rewrite to the new
+      // one so subsequent loads avoid the fallback path.
+      stored = await IndexedDbService.getItem<any>(legacyKey);
+      if (stored) {
+        try {
+          await IndexedDbService.setItem(key, stored);
+          await IndexedDbService.removeItem(legacyKey);
+        } catch {
+          // best-effort; falling through to use `stored` as-is
+        }
+      }
+    }
+
+    if (!stored) {
+      throw new DatabaseNotFoundError();
     }
 
     try {
@@ -621,7 +690,7 @@ export class DatabaseManager {
       collectionName?: string;
       encryptPassword?: string;
     },
-  ): Promise<ConnectionCollection> {
+  ): Promise<ConnectionDatabase> {
     let parsed: any;
     try {
       parsed = JSON.parse(content);
@@ -699,11 +768,4 @@ export class DatabaseManager {
     return `sortofremoteng-exports-${datetime}-${randomHex}.json`;
   }
 }
-
-
-// ─── Backward-compat alias ──────────────────────────────────────
-// Existing call sites still import { CollectionManager } from this module.
-// Keep the alias until those imports are migrated and the alias is removed
-// in a future cleanup pass.
-export { DatabaseManager as CollectionManager };
 

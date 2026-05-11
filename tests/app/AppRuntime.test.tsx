@@ -189,7 +189,7 @@ import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { PBKDF2_ITERATIONS, DEFAULT_PBKDF2_ITERATIONS } from "../../src/config";
 import {
-  CollectionNotFoundError,
+  DatabaseNotFoundError,
   InvalidPasswordError,
   CorruptedDataError,
 } from "../../src/utils/core/errors";
@@ -850,15 +850,15 @@ describe("Utility modules runtime", () => {
   });
 
   describe("Custom errors", () => {
-    it("CollectionNotFoundError has correct name and message", () => {
-      const err = new CollectionNotFoundError("missing");
+    it("DatabaseNotFoundError has correct name and message", () => {
+      const err = new DatabaseNotFoundError("missing");
       expect(err).toBeInstanceOf(Error);
-      expect(err.name).toBe("CollectionNotFoundError");
+      expect(err.name).toBe("DatabaseNotFoundError");
       expect(err.message).toBe("missing");
     });
 
-    it("CollectionNotFoundError uses default message", () => {
-      const err = new CollectionNotFoundError();
+    it("DatabaseNotFoundError uses default message", () => {
+      const err = new DatabaseNotFoundError();
       expect(err.message).toBe("Collection not found");
     });
 

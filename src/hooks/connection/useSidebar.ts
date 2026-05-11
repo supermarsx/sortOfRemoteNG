@@ -20,7 +20,7 @@ export function useSidebar() {
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
   const settingsContext = useContext(SettingsContext) as SettingsContextValue | undefined;
-  const colorTags = settingsContext?.settings.colorTags ?? {};
+  const colorTags = settingsContext?.settings.colorTags;
   const [showFilters, setShowFilters] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [isStorageEncrypted, setIsStorageEncrypted] = useState(false);
@@ -49,7 +49,7 @@ export function useSidebar() {
       }
     }
 
-    return Object.entries(colorTags)
+    return Object.entries(colorTags ?? {})
       .map(([id, tag]) => ({
         id,
         name: tag.name,

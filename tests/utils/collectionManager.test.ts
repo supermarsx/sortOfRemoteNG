@@ -3,7 +3,7 @@ import { encryptWithPassword } from "../../src/utils/crypto/webCryptoAes";
 import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import {
-  CollectionNotFoundError,
+  DatabaseNotFoundError,
   CorruptedDataError,
   InvalidPasswordError,
 } from "../../src/utils/core/errors";
@@ -143,9 +143,9 @@ describe("DatabaseManager", () => {
     );
   });
 
-  it("throws CollectionNotFoundError when selecting missing collection", async () => {
+  it("throws DatabaseNotFoundError when selecting missing collection", async () => {
     await expect(manager.selectCollection("missing")).rejects.toBeInstanceOf(
-      CollectionNotFoundError,
+      DatabaseNotFoundError,
     );
   });
 

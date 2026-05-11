@@ -5,7 +5,7 @@ import { CollectionSelector } from '../../src/components/connection/CollectionSe
 import { DatabaseManager } from '../../src/utils/connection/databaseManager';
 import { IndexedDbService } from '../../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
-import { ConnectionCollection } from '../../src/types/connection/connection';
+import { ConnectionDatabase } from '../../src/types/connection/connection';
 
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
@@ -97,7 +97,7 @@ describe('CollectionSelector editing', () => {
     fireEvent.click(screen.getByText('Update'));
 
     await waitFor(async () => {
-      const stored = await IndexedDbService.getItem<ConnectionCollection[]>('mremote-collections');
+      const stored = await IndexedDbService.getItem<ConnectionDatabase[]>('mremote-collections');
       expect(stored![0].name).toBe('Renamed');
       expect(stored![0].description).toBe('updated');
     });
@@ -114,7 +114,7 @@ describe('CollectionSelector editing', () => {
     fireEvent.click(await screen.findByText('Clone'));
 
     await waitFor(async () => {
-      const stored = await IndexedDbService.getItem<ConnectionCollection[]>('mremote-collections');
+      const stored = await IndexedDbService.getItem<ConnectionDatabase[]>('mremote-collections');
       expect(stored).toHaveLength(2);
       expect(stored?.[1].name).toBe('First (Copy)');
     });
@@ -153,7 +153,7 @@ describe('CollectionSelector editing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clone Collection' }));
 
     await waitFor(async () => {
-      const stored = await IndexedDbService.getItem<ConnectionCollection[]>('mremote-collections');
+      const stored = await IndexedDbService.getItem<ConnectionDatabase[]>('mremote-collections');
       expect(stored?.map((collection) => collection.name)).toEqual([
         'First',
         'Secure',

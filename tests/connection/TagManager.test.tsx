@@ -61,8 +61,64 @@ describe("TagManager", () => {
     expect(onChange).toHaveBeenCalledWith(["server", "dev"]);
   });
 
+  it("prevents duplicate tags case-insensitively", () => {
+    const onChange = vi.fn();
+    const onCreateTag = vi.fn();
+    render(
+      <TagManager
+        tags={["Server"]}
+        availableTags={["server", "Production"]}
+        onChange={onChange}
+        onCreateTag={onCreateTag}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Add tag server/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create tag" }));
+    fireEvent.change(screen.getByTestId("tag-input"), {
+      target: { value: " server " },
+    });
+    fireEvent.click(screen.getByTestId("tag-create"));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onCreateTag).not.toHaveBeenCalled();
+  });
+
+  it("creates a normalized tag with Enter", () => {
+    const onChange = vi.fn();
+    const onCreateTag = vi.fn();
+    render(
+      <TagManager
+        tags={[]}
+        availableTags={[]}
+        onChange={onChange}
+        onCreateTag={onCreateTag}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create tag" }));
+    const input = screen.getByTestId("tag-input");
+    fireEvent.change(input, { target: { value: "  staging   east  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onCreateTag).toHaveBeenCalledWith("staging east");
+    expect(onChange).toHaveBeenCalledWith(["staging east"]);
+  });
+
+  it("exposes accessible remove buttons for selected chips", () => {
+    render(<TagManager {...defaultProps} />);
+
+    expect(
+      screen.getByRole("button", { name: "Remove tag server" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove tag production" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders no available tags section when all are selected", () => {
-    const { container } = render(
+    render(
       <TagManager
         tags={["server", "dev"]}
         availableTags={["server", "dev"]}

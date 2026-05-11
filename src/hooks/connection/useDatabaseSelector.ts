@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { ConnectionCollection } from "../../types/connection/connection";
+import { ConnectionDatabase } from "../../types/connection/connection";
 import { SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
@@ -35,7 +35,7 @@ const EMPTY_NEW_COLLECTION: NewCollectionForm = {
 type PasswordDialogMode = "unlock" | "clone";
 
 interface CollectionActionMenuState {
-  collection: ConnectionCollection;
+  collection: ConnectionDatabase;
   position: {
     x: number;
     y: number;
@@ -68,18 +68,18 @@ export function useDatabaseSelector(
   const { t } = useTranslation();
 
   // Collections
-  const [collections, setCollections] = useState<ConnectionCollection[]>([]);
+  const [collections, setCollections] = useState<ConnectionDatabase[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showImportForm, setShowImportForm] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [selectedCollection, setSelectedCollection] =
-    useState<ConnectionCollection | null>(null);
+    useState<ConnectionDatabase | null>(null);
   const [passwordDialogMode, setPasswordDialogMode] =
     useState<PasswordDialogMode>("unlock");
   const [newCollection, setNewCollection] =
     useState<NewCollectionForm>(EMPTY_NEW_COLLECTION);
   const [editingCollection, setEditingCollection] =
-    useState<ConnectionCollection | null>(null);
+    useState<ConnectionDatabase | null>(null);
   const [editPassword, setEditPassword] = useState<EditPasswordForm>({
     current: "",
     next: "",
@@ -98,7 +98,7 @@ export function useDatabaseSelector(
 
   // Export state
   const [exportingCollection, setExportingCollection] =
-    useState<ConnectionCollection | null>(null);
+    useState<ConnectionDatabase | null>(null);
   const [includePasswords, setIncludePasswords] = useState(false);
   const [exportPassword, setExportPassword] = useState("");
   const [collectionPassword, setCollectionPassword] = useState("");
@@ -168,7 +168,7 @@ export function useDatabaseSelector(
 
   const openCollectionMenu = useCallback(
     (
-      collection: ConnectionCollection,
+      collection: ConnectionDatabase,
       position: CollectionActionMenuState["position"],
     ) => {
       setCollectionMenu({ collection, position });
@@ -228,7 +228,7 @@ export function useDatabaseSelector(
     }
   };
 
-  const handleDeleteCollection = async (collection: ConnectionCollection) => {
+  const handleDeleteCollection = async (collection: ConnectionDatabase) => {
     if (
       confirm(
         t("databaseCenter.collections.deleteConfirm", {
@@ -250,7 +250,7 @@ export function useDatabaseSelector(
     }
   };
 
-  const handleEditCollection = (collection: ConnectionCollection) => {
+  const handleEditCollection = (collection: ConnectionDatabase) => {
     closeCollectionMenu();
     setEditingCollection({ ...collection });
     setEditPassword({
@@ -348,9 +348,9 @@ export function useDatabaseSelector(
 
   const runCloneCollection = useCallback(
     async (
-      collection: ConnectionCollection,
+      collection: ConnectionDatabase,
       sourcePassword?: string,
-    ): Promise<ConnectionCollection> => {
+    ): Promise<ConnectionDatabase> => {
       setIsWorking(true);
       try {
         if (collectionManager.getCurrentCollection()?.id === collection.id) {
@@ -390,7 +390,7 @@ export function useDatabaseSelector(
   );
 
   const handleCloneCollection = useCallback(
-    async (collection: ConnectionCollection) => {
+    async (collection: ConnectionDatabase) => {
       const isCurrentEncryptedCollection =
         collection.isEncrypted &&
         collectionManager.getCurrentCollection()?.id === collection.id;
@@ -412,7 +412,7 @@ export function useDatabaseSelector(
 
   // ─── Collection Selection ──────────────────────────────────────
 
-  const handleSelectCollection = async (collection: ConnectionCollection) => {
+  const handleSelectCollection = async (collection: ConnectionDatabase) => {
     closeCollectionMenu();
     setError("");
 
@@ -502,7 +502,7 @@ export function useDatabaseSelector(
     }
   };
 
-  const handleExportCollection = (collection: ConnectionCollection) => {
+  const handleExportCollection = (collection: ConnectionDatabase) => {
     setExportingCollection(collection);
     setIncludePasswords(false);
     setExportPassword("");
@@ -826,7 +826,3 @@ export function useDatabaseSelector(
     closeChainEditor,
   };
 }
-
-
-// Backward-compat alias — see ./useCollectionSelector for the shim.
-export { useDatabaseSelector as useCollectionSelector };

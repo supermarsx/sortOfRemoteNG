@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  CollectionNotFoundError,
+  DatabaseNotFoundError,
   InvalidPasswordError,
   CorruptedDataError,
 } from "../../src/utils/core/errors";
 
 describe("Custom error classes", () => {
-  it("CollectionNotFoundError has correct name and message", () => {
-    const err = new CollectionNotFoundError("col-1");
+  it("DatabaseNotFoundError has correct name and message", () => {
+    const err = new DatabaseNotFoundError("col-1");
     expect(err).toBeInstanceOf(Error);
-    expect(err.name).toBe("CollectionNotFoundError");
+    expect(err.name).toBe("DatabaseNotFoundError");
     expect(err.message).toContain("col-1");
   });
 
