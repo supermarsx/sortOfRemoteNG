@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cx } from '../lib/cx';
 
@@ -119,6 +120,7 @@ export const Modal: React.FC<ModalProps> = ({
   }, [isOpen, onClose, closeOnEscape]);
 
   if (!isOpen) return null;
+  if (typeof document === 'undefined') return null;
 
   const hasMaxWidthClass = hasClassFragment(panelClassName, 'max-w-');
   const hasHorizontalMarginClass =
@@ -126,10 +128,10 @@ export const Modal: React.FC<ModalProps> = ({
     hasClassFragment(panelClassName, 'ml-') ||
     hasClassFragment(panelClassName, 'mr-');
 
-  return (
+  return createPortal(
     <div
       className={cx(
-        'sor-modal-backdrop fixed inset-0 flex items-center justify-center z-50',
+        'sor-modal-backdrop fixed inset-0 flex items-center justify-center',
         backdropClassName,
       )}
       data-testid={dataTestId}
@@ -152,7 +154,8 @@ export const Modal: React.FC<ModalProps> = ({
       >
         <div className={cx('sor-modal-content', contentClassName)}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

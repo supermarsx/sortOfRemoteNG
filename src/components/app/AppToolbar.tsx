@@ -121,10 +121,11 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
 
   return (
     <>
-      {/* Top bar */}
+      {/* Top bar — kept above the modal backdrop so the window handle never
+          fades while a dialog is open. */}
       <div
         data-testid="toolbar"
-        className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
+        className="h-12 app-bar border-b flex items-center justify-between px-4 select-none relative z-[1100]"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-3">

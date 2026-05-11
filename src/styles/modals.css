@@ -2,7 +2,9 @@
 .sor-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Sits above session tiles and floating panels but below the always-on
+     top toolbar, so the window-control row stays unfaded. */
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
