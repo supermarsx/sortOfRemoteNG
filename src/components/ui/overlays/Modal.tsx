@@ -131,7 +131,7 @@ export const Modal: React.FC<ModalProps> = ({
   return createPortal(
     <div
       className={cx(
-        'sor-modal-backdrop fixed inset-0 flex items-center justify-center',
+        'sor-modal-backdrop',
         backdropClassName,
       )}
       data-testid={dataTestId}

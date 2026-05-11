@@ -1,13 +1,14 @@
 /* Centralized modal/dialog primitives */
 .sor-modal-backdrop {
-  position: fixed;
+  position: fixed !important;
   /* Leave the top window-handle bar (Tauri drag region, h-12 = 3rem) out
      of the fade so the user can always see and use window controls
-     while a dialog is open. */
-  top: var(--app-titlebar-height, 3rem);
-  right: 0;
-  bottom: 0;
-  left: 0;
+     while a dialog is open. !important guards against callers that pass
+     a Tailwind inset-0 / top-0 through backdropClassName. */
+  top: var(--app-titlebar-height, 3rem) !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
   /* Sits above session tiles and floating panels. */
   z-index: 1000;
   display: flex;
