@@ -166,6 +166,22 @@
   padding-left: 2rem;
 }
 
+.sor-form-input.sor-form-input-icon-left {
+  padding-left: 2.25rem !important;
+}
+
+.sor-form-input.sor-form-input-icon-right {
+  padding-right: 2.25rem !important;
+}
+
+.sor-form-input-sm.sor-form-input-sm-icon-left {
+  padding-left: 2rem !important;
+}
+
+.sor-form-input-sm.sor-form-input-sm-icon-right {
+  padding-right: 2rem !important;
+}
+
 .sor-form-input-sm::placeholder,
 .sor-form-textarea-sm::placeholder,
 .sor-form-input-xs::placeholder,

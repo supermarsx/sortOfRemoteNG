@@ -357,7 +357,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
               type="text"
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="sor-form-input pl-9 text-sm w-full"
+              className="sor-form-input sor-form-input-icon-left text-sm w-full"
               placeholder="Search groups..."
             />
           </div>

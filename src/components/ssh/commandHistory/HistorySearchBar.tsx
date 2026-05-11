@@ -32,7 +32,7 @@ function HistorySearchBar({
               "sshHistory.searchPlaceholder",
               "Search commands, tags, notes...",
             )}
-            className="sor-form-input-sm w-full pl-8 pr-8 font-mono"
+            className="sor-form-input-sm sor-form-input-sm-icon-left sor-form-input-sm-icon-right w-full font-mono"
           />
           {mgr.filter.searchQuery && (
             <button
