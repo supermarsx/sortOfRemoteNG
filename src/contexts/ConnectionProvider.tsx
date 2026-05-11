@@ -128,9 +128,21 @@ const connectionReducer = (
     case "SET_FILTER":
       // Update connection list filters
       return { ...state, filter: { ...state.filter, ...action.payload } };
-    case "ADD_SESSION":
-      // Register a new connection session
-      return { ...state, sessions: [...state.sessions, action.payload] };
+    case "ADD_SESSION": {
+      // Register a new connection session. If the session has no explicit
+      // tabGroupId, fall back to the source connection's defaultTabGroupId
+      // (only when that group still exists) so users can auto-route
+      // sessions for a given host into a chosen tab group.
+      let session = action.payload;
+      if (!session.tabGroupId && session.connectionId) {
+        const conn = state.connections.find((c) => c.id === session.connectionId);
+        const defaultId = conn?.defaultTabGroupId;
+        if (defaultId && state.tabGroups.some((g) => g.id === defaultId)) {
+          session = { ...session, tabGroupId: defaultId };
+        }
+      }
+      return { ...state, sessions: [...state.sessions, session] };
+    }
     case "UPDATE_SESSION":
       // Modify an existing session
       return {

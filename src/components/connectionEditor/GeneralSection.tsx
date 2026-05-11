@@ -12,6 +12,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { Connection } from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import {
   getConnectionDepth,
@@ -118,6 +119,8 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   allConnections = [],
 }) => {
   const { t } = useTranslation();
+  const { state: connectionsState } = useConnections();
+  const tabGroups = connectionsState.tabGroups;
   const [nameError, setNameError] = useState<string | null>(null);
   const [portError, setPortError] = useState<string | null>(null);
 
@@ -236,6 +239,34 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
             allConnections={allConnections}
           />
         </div>
+
+        {!formData.isGroup && tabGroups.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              {t('connectionEditor.defaultTabGroup', 'Default Tab Group')}
+            </label>
+            <Select
+              value={formData.defaultTabGroupId ?? ""}
+              onChange={(v: string) =>
+                setFormData({
+                  ...formData,
+                  defaultTabGroupId: v || undefined,
+                })
+              }
+              options={[
+                { value: "", label: t('connectionEditor.defaultTabGroupNone', 'None — keep ungrouped') },
+                ...tabGroups.map((g) => ({ value: g.id, label: g.name })),
+              ]}
+              variant="form"
+            />
+            <p className="text-xs text-[var(--color-textMuted)] mt-1">
+              {t(
+                'connectionEditor.defaultTabGroupHint',
+                'New sessions for this connection will automatically join this group.',
+              )}
+            </p>
+          </div>
+        )}
 
         {!formData.isGroup && (
           <>

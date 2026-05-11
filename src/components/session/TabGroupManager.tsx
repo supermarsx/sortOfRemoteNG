@@ -15,6 +15,7 @@ import {
   ArrowUp,
   ArrowDown,
   GripVertical,
+  Copy,
 } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { EmptyState } from "../ui/display";
@@ -115,6 +116,8 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   const tabGroups = state.tabGroups;
 
   const [searchFilter, setSearchFilter] = useState("");
+  const [populationFilter, setPopulationFilter] = useState<"all" | "withTabs" | "empty">("all");
+  const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
 
   // Inline rename state
@@ -158,12 +161,24 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   }, [tabGroups, sessions]);
 
   const filteredGroups = useMemo(() => {
-    if (!searchFilter.trim()) return groupsWithSessions;
-    const q = searchFilter.toLowerCase();
-    return groupsWithSessions.filter((g) =>
-      g.group.name.toLowerCase().includes(q)
-    );
-  }, [groupsWithSessions, searchFilter]);
+    const q = searchFilter.trim().toLowerCase();
+    return groupsWithSessions.filter((g) => {
+      if (q && !g.group.name.toLowerCase().includes(q)) return false;
+      if (populationFilter === "withTabs" && g.sessions.length === 0) return false;
+      if (populationFilter === "empty" && g.sessions.length > 0) return false;
+      if (colorFilter && g.group.color.toLowerCase() !== colorFilter.toLowerCase()) return false;
+      return true;
+    });
+  }, [groupsWithSessions, searchFilter, populationFilter, colorFilter]);
+
+  const distinctColors = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const { group } of groupsWithSessions) {
+      const key = group.color.toLowerCase();
+      if (!seen.has(key)) seen.set(key, group.color);
+    }
+    return Array.from(seen.values());
+  }, [groupsWithSessions]);
 
   const stats = useMemo(() => {
     const groupCount = tabGroups.length;
@@ -303,6 +318,29 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
     [sessions, dispatch]
   );
 
+  const handleCloneGroup = useCallback(
+    (groupId: string) => {
+      const source = tabGroups.find((g) => g.id === groupId);
+      if (!source) return;
+      // Pick a unique name with "(copy)" / "(copy N)" suffix.
+      const existingNames = new Set(tabGroups.map((g) => g.name));
+      const base = source.name.replace(/\s*\(copy(?: \d+)?\)$/i, "");
+      let candidate = `${base} (copy)`;
+      let n = 2;
+      while (existingNames.has(candidate)) {
+        candidate = `${base} (copy ${n++})`;
+      }
+      const clone: TabGroup = {
+        id: crypto.randomUUID(),
+        name: candidate,
+        color: source.color,
+        collapsed: source.collapsed,
+      };
+      dispatch({ type: "ADD_TAB_GROUP", payload: clone });
+    },
+    [tabGroups, dispatch],
+  );
+
   const handleCreateGroup = useCallback(() => {
     const name = newGroupName.trim();
     if (!name) return;
@@ -430,16 +468,72 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
             )}
           </div>
 
-          {/* Search */}
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
-            <input
-              type="text"
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              placeholder="Search groups..."
-            />
+          {/* Search + filters */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
+                placeholder="Search groups..."
+              />
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+              {(
+                [
+                  { key: "all", label: `All (${tabGroups.length})` },
+                  { key: "withTabs", label: `With tabs (${groupsWithSessions.filter((g) => g.sessions.length > 0).length})` },
+                  { key: "empty", label: `Empty (${groupsWithSessions.filter((g) => g.sessions.length === 0).length})` },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setPopulationFilter(opt.key)}
+                  className={`px-2 py-0.5 rounded-full border transition-colors ${
+                    populationFilter === opt.key
+                      ? "bg-primary/20 border-primary/50 text-primary"
+                      : "bg-[var(--color-border)]/40 border-transparent text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {distinctColors.length > 1 && (
+                <span className="mx-1 h-3 w-px bg-[var(--color-border)]" />
+              )}
+              {distinctColors.length > 1 &&
+                distinctColors.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() =>
+                      setColorFilter((prev) =>
+                        prev?.toLowerCase() === c.toLowerCase() ? null : c,
+                      )
+                    }
+                    className={`w-4 h-4 rounded-full border-2 transition-transform hover:scale-110 ${
+                      colorFilter?.toLowerCase() === c.toLowerCase()
+                        ? "border-white scale-110"
+                        : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: c }}
+                    title={`Filter by ${c}`}
+                  />
+                ))}
+              {(searchFilter || populationFilter !== "all" || colorFilter) && (
+                <button
+                  onClick={() => {
+                    setSearchFilter("");
+                    setPopulationFilter("all");
+                    setColorFilter(null);
+                  }}
+                  className="ml-auto text-[var(--color-textMuted)] hover:text-[var(--color-text)] underline underline-offset-2"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Inline create form */}
@@ -712,6 +806,13 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                             title="Move group down"
                           >
                             <ArrowDown size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleCloneGroup(group.id)}
+                            className="sor-icon-btn-sm"
+                            title="Clone group (name + color, no tabs)"
+                          >
+                            <Copy size={13} />
                           </button>
                           <button
                             onClick={() => handleUngroupAll(group.id)}
