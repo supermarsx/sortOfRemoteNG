@@ -465,9 +465,20 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                 <Layers className="w-5 h-5 text-primary" />
                 Tab Group Manager
               </h3>
-              <p className="text-xs text-[var(--color-textSecondary)] mt-1">
-                Organize open session tabs into color-coded groups.
-              </p>
+              <div className="text-xs text-[var(--color-textSecondary)] mt-1 space-y-1">
+                <p>
+                  Bundle open session tabs into named, color-coded groups so
+                  you can see what belongs together at a glance and act on
+                  them as a unit.
+                </p>
+                <p className="text-[var(--color-textMuted)]">
+                  Drag groups to reorder them, collapse a group to hide its
+                  tabs in the tab bar, ungroup to detach the tabs without
+                  closing them, or delete a group to close every tab inside.
+                  Set a default tab group on a connection (in its editor) to
+                  auto-route new sessions for that host into the right group.
+                </p>
+              </div>
             </div>
             {!showCreateForm && (
               <button
