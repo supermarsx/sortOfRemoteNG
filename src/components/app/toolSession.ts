@@ -36,6 +36,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   tunnelChainEditor: "Tunnel Chain Editor",
   tunnelProfileEditor: "Tunnel Profile",
   bulkEditor: "Bulk Editor",
+  database: "Databases",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>

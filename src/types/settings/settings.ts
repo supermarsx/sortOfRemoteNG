@@ -1171,6 +1171,7 @@ export interface ToolDisplayModes {
   tunnelChainEditor: 'tab';
   tunnelProfileEditor: 'tab';
   bulkEditor: 'tab';
+  database: 'tab';
 }
 
 export interface SettingsDialogConfig {

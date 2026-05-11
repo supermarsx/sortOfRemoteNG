@@ -136,6 +136,10 @@ const BulkConnectionEditor = dynamic(
   () => import("../connection/BulkConnectionEditor").then((m) => m.BulkConnectionEditor),
   { ssr: false },
 );
+const DatabasePanel = dynamic(
+  () => import("../database/DatabasePanel").then((m) => m.DatabasePanel),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -145,13 +149,18 @@ interface ToolTabViewerProps {
   onDetachToWindow?: (sessionId: string) => void;
   onReconnect?: (connection: import("../../types/connection/connection").Connection) => void;
   onEditConnection?: (connection: import("../../types/connection/connection").Connection) => void;
+  /** Open the requested database (id, optional password). */
+  onDatabaseSelect?: (
+    databaseId: string,
+    password?: string,
+  ) => Promise<void> | void;
 }
 
 /**
  * Renders the appropriate tool component inside a session tab.
  * Used by SessionViewer when the session protocol starts with "tool:".
  */
-export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect, onEditConnection }) => {
+export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect, onEditConnection, onDatabaseSelect }) => {
   const { state } = useConnections();
   const { settings } = useSettings();
   const toolKey = getToolKeyFromProtocol(session.protocol);
@@ -197,6 +206,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, 
       )}
       {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
       {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
+      {toolKey === 'database' && (
+        <DatabasePanel onClose={onClose} onDatabaseSelect={onDatabaseSelect} />
+      )}
       {toolKey === 'bulkEditor' && (
         <BulkConnectionEditor isOpen onClose={onClose} onEditConnection={onEditConnection} />
       )}

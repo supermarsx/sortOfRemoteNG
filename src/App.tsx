@@ -230,7 +230,7 @@ const AppContent: React.FC = () => {
       'importExport',
       'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
       'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
-      'connectionEditor', 'bulkEditor',
+      'connectionEditor', 'bulkEditor', 'database',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
@@ -525,6 +525,7 @@ const AppContent: React.FC = () => {
         await collectionManager.selectCollection(collectionId, password);
         await loadData();
         setShowCollectionSelector(false);
+        toolShowSetters.current.database(false);
         settingsManager.logAction(
           "info",
           "Collection selected",
@@ -1188,7 +1189,14 @@ const AppContent: React.FC = () => {
         connections={state.connections}
         setShowQuickConnect={setShowQuickConnect}
         setShowCollectionSelector={(v) => {
-          if (v) setCollectionSelectorInitialTab('collections');
+          if (v) {
+            setCollectionSelectorInitialTab('collections');
+            toolShowSetters.current.database(true);
+          } else {
+            toolShowSetters.current.database(false);
+          }
+          // Legacy modal flag — keep in sync for any other consumers
+          // that still read it until they're migrated off.
           setShowCollectionSelector(v);
         }}
         openImportExport={() => {
@@ -1253,7 +1261,7 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} />}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleCollectionSelect} />}
                 showTabBar={false}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />

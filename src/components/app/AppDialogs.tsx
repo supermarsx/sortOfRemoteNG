@@ -12,10 +12,6 @@ const AutoLockManager = dynamic(
   () => import("../security/AutoLockManager").then((module) => module.AutoLockManager),
   { ssr: false },
 );
-const CollectionSelector = dynamic(
-  () => import("../connection/CollectionSelector").then((module) => module.CollectionSelector),
-  { ssr: false },
-);
 const QuickConnect = dynamic(
   () => import("../connection/QuickConnect").then((module) => module.QuickConnect),
   { ssr: false },
@@ -128,12 +124,9 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         />
       )}
 
-      <CollectionSelector
-        isOpen={showCollectionSelector}
-        onCollectionSelect={handleCollectionSelect}
-        onClose={() => setShowCollectionSelector(false)}
-        initialTab={collectionSelectorInitialTab}
-      />
+      {/* The legacy modal Collection Selector has been replaced by the
+          tool-tab DatabasePanel; it now mounts inside the ToolPanel via
+          the 'database' tool key. */}
 
       <QuickConnect
         isOpen={showQuickConnect}

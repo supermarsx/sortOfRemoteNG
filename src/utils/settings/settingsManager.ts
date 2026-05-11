@@ -582,6 +582,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     shortcutCreator: 'tab' as const,
     tunnelChainEditor: 'tab' as const,
     tunnelProfileEditor: 'tab' as const,
+    database: 'tab' as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,

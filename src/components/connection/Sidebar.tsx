@@ -38,47 +38,80 @@ const SidebarHeader: React.FC<{ mgr: Mgr; sidebarPosition: 'left' | 'right'; onT
   </div>
 );
 
-const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="p-3 border-b border-[var(--color-border)]">
-    <div className="relative">
-      <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
-      <input type="text" placeholder={mgr.t('connections.search')} value={mgr.state.filter.searchTerm} onChange={(e) => mgr.handleSearch(e.target.value)} aria-label={mgr.t('connections.search')} data-testid="sidebar-search" className="sor-form-input-xs sor-form-input-xs-icon-left w-full" />
-    </div>
-    <div className="flex items-center justify-between mt-2">
-      <button onClick={() => mgr.setShowFilters(!mgr.showFilters)} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors">
-        <Filter size={12} />
-        <span>{mgr.t('connections.filters')}</span>
-        {(mgr.state.filter.tags.length > 0 || mgr.state.filter.protocols.length > 0) && (
-          <span className="bg-primary text-[var(--color-text)] text-xs rounded-full px-1">{mgr.state.filter.tags.length + mgr.state.filter.protocols.length}</span>
-        )}
-      </button>
-      <div className="flex items-center space-x-1">
-        <button onClick={() => mgr.dispatch({ type: 'SET_FILTER', payload: { showFavorites: !mgr.state.filter.showFavorites } })} className={`p-1 text-xs rounded transition-colors ${mgr.isFavoritesActive ? 'text-warning bg-warning/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} aria-label={mgr.isFavoritesActive ? "Showing favorites" : "Toggle favorites"} aria-pressed={mgr.isFavoritesActive}>
-          <Star size={12} />
-        </button>
-        <button onClick={mgr.expandAllFolders} className="p-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors" aria-label={mgr.t('connections.expandAll')}>
-          <ExpandAll size={12} />
-        </button>
-        <button onClick={mgr.collapseAllFolders} className="p-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors" aria-label={mgr.t('connections.collapseAll')}>
-          <CollapseAll size={12} />
-        </button>
-      </div>
-      {(mgr.state.filter.searchTerm || mgr.state.filter.tags.length > 0 || mgr.state.filter.protocols.length > 0) && (
-        <button onClick={mgr.clearFilters} className="text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">{mgr.t('connections.clear')}</button>
-      )}
-    </div>
+const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const hasClearableFilters = Boolean(
+    mgr.state.filter.searchTerm ||
+    mgr.state.filter.tags.length > 0 ||
+    mgr.state.filter.colorTags.length > 0 ||
+    mgr.state.filter.protocols.length > 0,
+  );
 
-    {mgr.showFilters && (
-      <div className="mt-3 p-3 bg-[var(--color-border)] rounded-md space-y-3">
+  return (
+    <div className="p-3 border-b border-[var(--color-border)]">
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
+        <input type="text" placeholder={mgr.t('connections.search')} value={mgr.state.filter.searchTerm} onChange={(e) => mgr.handleSearch(e.target.value)} aria-label={mgr.t('connections.search')} data-testid="sidebar-search" className="sor-form-input-xs sor-form-input-xs-icon-left w-full" />
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <button onClick={() => mgr.setShowFilters(!mgr.showFilters)} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors">
+          <Filter size={12} />
+          <span>{mgr.t('connections.filters')}</span>
+          {mgr.activeFilterCount > 0 && (
+            <span className="bg-primary text-[var(--color-text)] text-xs rounded-full px-1">{mgr.activeFilterCount}</span>
+          )}
+        </button>
+        <div className="flex items-center space-x-1">
+          <button onClick={() => mgr.dispatch({ type: 'SET_FILTER', payload: { showFavorites: !mgr.state.filter.showFavorites } })} className={`p-1 text-xs rounded transition-colors ${mgr.isFavoritesActive ? 'text-warning bg-warning/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} aria-label={mgr.isFavoritesActive ? "Showing favorites" : "Toggle favorites"} aria-pressed={mgr.isFavoritesActive}>
+            <Star size={12} />
+          </button>
+          <button onClick={mgr.expandAllFolders} className="p-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors" aria-label={mgr.t('connections.expandAll')}>
+            <ExpandAll size={12} />
+          </button>
+          <button onClick={mgr.collapseAllFolders} className="p-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors" aria-label={mgr.t('connections.collapseAll')}>
+            <CollapseAll size={12} />
+          </button>
+        </div>
+        {hasClearableFilters && (
+          <button onClick={mgr.clearFilters} className="text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">{mgr.t('connections.clear')}</button>
+        )}
+      </div>
+
+      {mgr.showFilters && (
+        <div className="mt-3 p-3 bg-[var(--color-border)] rounded-md space-y-3">
         {mgr.allTags.length > 0 && (
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-2">Filter by Tags</label>
             <div className="flex flex-wrap gap-1">
               {mgr.allTags.map(tag => (
-                <button key={tag} onClick={() => mgr.handleTagFilter(tag)} className={`inline-flex items-center px-2 py-1 text-xs rounded-full transition-colors ${mgr.state.filter.tags.includes(tag) ? 'bg-primary text-[var(--color-text)]' : 'bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-secondary)]'}`}>
+                <button key={tag} onClick={() => mgr.handleTagFilter(tag)} aria-pressed={mgr.state.filter.tags.includes(tag)} className={`inline-flex items-center px-2 py-1 text-xs rounded-full transition-colors ${mgr.state.filter.tags.includes(tag) ? 'bg-primary text-[var(--color-text)]' : 'bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-secondary)]'}`}>
                   <Tag size={8} className="mr-1" />{tag}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+        {mgr.allColorTags.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-2">Filter by Color Tags</label>
+            <div className="space-y-1">
+              {mgr.allColorTags.map((tag) => {
+                const selected = mgr.state.filter.colorTags.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => mgr.handleColorTagFilter(tag.id)}
+                    aria-pressed={selected}
+                    className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-xs transition-colors ${selected ? 'bg-primary text-[var(--color-text)]' : 'bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-secondary)]'}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-3 w-3 shrink-0 rounded-full border border-white/20" style={{ backgroundColor: tag.color }} />
+                      <span className="truncate">{tag.name}</span>
+                    </span>
+                    <span className="shrink-0 text-[10px] opacity-80">{tag.count}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -101,10 +134,11 @@ const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             </button>
           </div>
         </div>
-      </div>
-    )}
-  </div>
-);
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SidebarToolbar: React.FC<{ mgr: Mgr; onNewConnection: () => void; noCollection: boolean; onOpenBulkEditor?: () => void }> = ({ mgr, onNewConnection, noCollection, onOpenBulkEditor }) => (
   <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center space-x-1">

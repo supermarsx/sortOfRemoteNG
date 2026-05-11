@@ -252,20 +252,80 @@ export function useConnectionTree(
       });
   }, [enableReorder, state.filter.sortBy, state.filter.sortDirection]);
 
+  const hasActiveConnectionFilter = useMemo(() => {
+    const filter = state.filter;
+    return Boolean(
+      filter.showFavorites ||
+      filter.showRecent ||
+      filter.searchTerm.trim() ||
+      filter.tags.some((tag) => tag.trim() !== "") ||
+      filter.colorTags.length > 0 ||
+      filter.protocols.length > 0,
+    );
+  }, [state.filter]);
+
   const filteredConnections = useMemo(() => {
-    return state.connections.filter((conn) => {
+    if (!hasActiveConnectionFilter) return state.connections;
+
+    const searchLower = state.filter.searchTerm.trim().toLowerCase();
+    const textTagFilters = state.filter.tags
+      .map((tag) => tag.trim().toLowerCase())
+      .filter((tag) => tag !== "");
+    const colorTagFilters = new Set(state.filter.colorTags.filter((tagId) => tagId.trim() !== ""));
+    const protocolFilters = new Set(state.filter.protocols.filter((protocol) => protocol.trim() !== ""));
+    const connectionsById = new Map(state.connections.map((conn) => [conn.id, conn]));
+
+    const matchesConnection = (conn: Connection): boolean => {
       if (state.filter.showFavorites && !conn.favorite) return false;
-      if (state.filter.searchTerm) {
-        const searchLower = state.filter.searchTerm.toLowerCase();
-        return (
+      if (state.filter.showRecent && !conn.lastConnected) return false;
+
+      if (searchLower) {
+        const matchesSearch =
           conn.name.toLowerCase().includes(searchLower) ||
-          conn.hostname?.toLowerCase().includes(searchLower) ||
-          conn.description?.toLowerCase().includes(searchLower)
-        );
+          (conn.hostname?.toLowerCase().includes(searchLower) ?? false) ||
+          (conn.description?.toLowerCase().includes(searchLower) ?? false);
+        if (!matchesSearch) return false;
       }
+
+      if (protocolFilters.size > 0 && !protocolFilters.has(conn.protocol)) return false;
+
+      if (textTagFilters.length > 0) {
+        const connectionTags = new Set(
+          (conn.tags || [])
+            .map((tag) => tag.trim().toLowerCase())
+            .filter((tag) => tag !== ""),
+        );
+        if (!textTagFilters.every((tag) => connectionTags.has(tag))) return false;
+      }
+
+      if (colorTagFilters.size > 0 && (!conn.colorTag || !colorTagFilters.has(conn.colorTag))) return false;
+
       return true;
-    });
-  }, [state.connections, state.filter]);
+    };
+
+    const includedIds = new Set<string>();
+    const includeWithAncestors = (conn: Connection) => {
+      includedIds.add(conn.id);
+      let parentId = conn.parentId;
+      const visitedIds = new Set<string>();
+
+      while (parentId && !visitedIds.has(parentId)) {
+        visitedIds.add(parentId);
+        const parent = connectionsById.get(parentId);
+        if (!parent) break;
+        includedIds.add(parent.id);
+        parentId = parent.parentId;
+      }
+    };
+
+    for (const conn of state.connections) {
+      if (matchesConnection(conn)) {
+        includeWithAncestors(conn);
+      }
+    }
+
+    return state.connections.filter((conn) => includedIds.has(conn.id));
+  }, [hasActiveConnectionFilter, state.connections, state.filter]);
 
   /* ── Panel-level handlers ── */
 
@@ -444,6 +504,7 @@ export function useConnectionTree(
     handleCheckConnections,
     buildTree,
     filteredConnections,
+    hasActiveConnectionFilter,
   };
 }
 

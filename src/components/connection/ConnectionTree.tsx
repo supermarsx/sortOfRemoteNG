@@ -90,46 +90,51 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   }, [mgr, onActivateSession]);
 
   const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
-    return connections.map((connection) => (
-      <div key={connection.id}>
-        <ConnectionTreeItem
-          connection={connection}
-          level={level}
-          onConnect={onConnect}
-          onDisconnect={onDisconnect}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          onCopyHostname={mgr.handleCopyHostname}
-          onRename={mgr.handleRename}
-          onExport={mgr.handleExportConnection}
-          onConnectWithOptions={mgr.handleConnectWithOptions}
-          onConnectWithoutCredentials={mgr.handleConnectWithoutCredentials}
-          onExecuteScripts={mgr.handleExecuteScripts}
-          onDiagnostics={onDiagnostics}
-          onDetachSession={onSessionDetach}
-          onDuplicate={mgr.handleDuplicate}
-          onCheckConnection={mgr.handleCheckConnection}
-          onWindowsTool={handleWindowsTool}
-          onConnectAll={handleConnectAll}
-          onConnectAllRecursive={handleConnectAllRecursive}
-          enableReorder={enableReorder}
-          isDragging={mgr.draggedId === connection.id}
-          isDragOver={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id}
-          dropPosition={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id ? mgr.dropPosition : null}
-          singleClickConnect={mgr.settings.singleClickConnect}
-          singleClickDisconnect={mgr.settings.singleClickDisconnect}
-          doubleClickRename={mgr.settings.doubleClickRename}
-          onDragStart={mgr.handleItemDragStart}
-          onDragOver={mgr.handleItemDragOver}
-          onDragLeave={() => { /* let next dragOver set the new target */ }}
-          onDragEnd={mgr.handleItemDragEnd}
-          onDrop={mgr.handleItemDrop}
-        />
-        {connection.isGroup && connection.expanded && (
-          <div role="group">{renderTree(mgr.buildTree(mgr.state.connections, connection.id), level + 1)}</div>
-        )}
-      </div>
-    ));
+    return connections.map((connection) => {
+      const childConnections = connection.isGroup ? mgr.buildTree(mgr.filteredConnections, connection.id) : [];
+      const shouldRenderChildren = connection.isGroup && childConnections.length > 0 && (connection.expanded || mgr.hasActiveConnectionFilter);
+
+      return (
+        <div key={connection.id}>
+          <ConnectionTreeItem
+            connection={connection}
+            level={level}
+            onConnect={onConnect}
+            onDisconnect={onDisconnect}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onCopyHostname={mgr.handleCopyHostname}
+            onRename={mgr.handleRename}
+            onExport={mgr.handleExportConnection}
+            onConnectWithOptions={mgr.handleConnectWithOptions}
+            onConnectWithoutCredentials={mgr.handleConnectWithoutCredentials}
+            onExecuteScripts={mgr.handleExecuteScripts}
+            onDiagnostics={onDiagnostics}
+            onDetachSession={onSessionDetach}
+            onDuplicate={mgr.handleDuplicate}
+            onCheckConnection={mgr.handleCheckConnection}
+            onWindowsTool={handleWindowsTool}
+            onConnectAll={handleConnectAll}
+            onConnectAllRecursive={handleConnectAllRecursive}
+            enableReorder={enableReorder}
+            isDragging={mgr.draggedId === connection.id}
+            isDragOver={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id}
+            dropPosition={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id ? mgr.dropPosition : null}
+            singleClickConnect={mgr.settings.singleClickConnect}
+            singleClickDisconnect={mgr.settings.singleClickDisconnect}
+            doubleClickRename={mgr.settings.doubleClickRename}
+            onDragStart={mgr.handleItemDragStart}
+            onDragOver={mgr.handleItemDragOver}
+            onDragLeave={() => { /* let next dragOver set the new target */ }}
+            onDragEnd={mgr.handleItemDragEnd}
+            onDrop={mgr.handleItemDrop}
+          />
+          {shouldRenderChildren && (
+            <div role="group">{renderTree(childConnections, level + 1)}</div>
+          )}
+        </div>
+      );
+    });
   };
 
   return (
