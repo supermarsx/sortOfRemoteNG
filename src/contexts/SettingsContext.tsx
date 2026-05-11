@@ -91,6 +91,7 @@ export const defaultSettings: GlobalSettings = {
   confirmDisconnect: false,
   confirmDeleteConnection: true,
   confirmDeleteTabGroup: true,
+  enableTabGroupAnimations: true,
   confirmBulkOperations: true,
   confirmImport: true,
 

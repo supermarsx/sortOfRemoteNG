@@ -195,6 +195,8 @@ export interface GlobalSettings {
   confirmDeleteConnection: boolean;
   /** Ask before deleting a tab group (which also closes its tabs) */
   confirmDeleteTabGroup: boolean;
+  /** Animate add/remove/filter transitions in the Tab Group Manager */
+  enableTabGroupAnimations: boolean;
   /** Confirm before bulk operations (multi-select actions) */
   confirmBulkOperations: boolean;
   /** Confirm before importing connections */

@@ -155,6 +155,10 @@ const AnimationsSection: React.FC<{
         <Checkbox checked={settings.reduceMotion} onChange={(v: boolean) => updateSettings({ reduceMotion: v })} disabled={!settings.animationsEnabled} />
         <span className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? "opacity-50" : ""}`}>{mgr.t("settings.theme.reduceMotion", "Reduce motion (minimal animations)")} <InfoTooltip text="Use minimal, subtle animations instead of full motion effects for accessibility" /></span>
       </label>
+      <label className="flex items-center space-x-3 cursor-pointer">
+        <Checkbox checked={settings.enableTabGroupAnimations} onChange={(v: boolean) => updateSettings({ enableTabGroupAnimations: v })} disabled={!settings.animationsEnabled} />
+        <span className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? "opacity-50" : ""}`}>{mgr.t("settings.theme.tabGroupAnimations", "Animate the Tab Group Manager")} <InfoTooltip text="Add fade and slide animations when groups are added, removed, searched, or filtered in the Tab Group Manager. Falls back to instant updates when off." /></span>
+      </label>
       <div className={`space-y-2 ${!settings.animationsEnabled ? "opacity-50 pointer-events-none" : ""}`}>
         <label className="text-xs text-[var(--color-textSecondary)]">{mgr.t("settings.theme.animationDuration", "Animation duration")} <InfoTooltip text="Base duration for animations in milliseconds; lower values feel snappier" /></label>
         <div className="flex items-center space-x-4">

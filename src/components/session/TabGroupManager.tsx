@@ -140,6 +140,13 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
 
+  // Animation state — IDs currently fading out before the real dispatch fires.
+  const [leavingGroupIds, setLeavingGroupIds] = useState<Set<string>>(new Set());
+
+  const animEnabled =
+    settings.animationsEnabled && settings.enableTabGroupAnimations;
+  const animDurationMs = settings.animationDuration || 200;
+
   useEffect(() => {
     if (renamingGroupId && renameInputRef.current) {
       renameInputRef.current.focus();
@@ -322,12 +329,33 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
               }`;
         if (!confirm(`Delete ${tabPart}? This cannot be undone.`)) return;
       }
-      for (const session of groupSessions) {
-        dispatch({ type: "REMOVE_SESSION", payload: session.id });
+      const finalize = () => {
+        for (const session of groupSessions) {
+          dispatch({ type: "REMOVE_SESSION", payload: session.id });
+        }
+        dispatch({ type: "REMOVE_TAB_GROUP", payload: groupId });
+        setLeavingGroupIds((prev) => {
+          if (!prev.has(groupId)) return prev;
+          const next = new Set(prev);
+          next.delete(groupId);
+          return next;
+        });
+      };
+      if (!animEnabled) {
+        finalize();
+        return;
       }
-      dispatch({ type: "REMOVE_TAB_GROUP", payload: groupId });
+      setLeavingGroupIds((prev) => new Set(prev).add(groupId));
+      window.setTimeout(finalize, animDurationMs);
     },
-    [sessions, tabGroups, dispatch, settings.confirmDeleteTabGroup],
+    [
+      sessions,
+      tabGroups,
+      dispatch,
+      settings.confirmDeleteTabGroup,
+      animEnabled,
+      animDurationMs,
+    ],
   );
 
   const handleCloneGroup = useCallback(
@@ -565,7 +593,11 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
           {/* Inline create form */}
           {showCreateForm && (
-            <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
+            <div
+              className={`rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3 ${
+                animEnabled ? "animate-fade-in-down" : ""
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
                   <Plus size={14} className="text-primary" />
@@ -677,13 +709,15 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                 className="py-12"
               />
             ) : filteredGroups.length === 0 ? (
-              <EmptyState
-                icon={Search}
-                iconSize={40}
-                message="No groups match your search"
-                hint="Try a different search term"
-                className="py-8"
-              />
+              <div className={animEnabled ? "animate-fade-in" : ""}>
+                <EmptyState
+                  icon={Search}
+                  iconSize={40}
+                  message="No groups match your search"
+                  hint="Try a different search term"
+                  className="py-8"
+                />
+              </div>
             ) : (
               <div className="space-y-2">
                 {filteredGroups.map(({ group, sessions: groupSessions }, index) => {
@@ -692,6 +726,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                   const isLast = index === filteredGroups.length - 1;
                   const isDragOver = dragOverGroupId === group.id;
                   const isDragging = draggedGroupId === group.id;
+                  const isLeaving = leavingGroupIds.has(group.id);
 
                   return (
                     <div
@@ -704,11 +739,18 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                       onDrop={(e) => handleGroupDrop(e, group.id)}
                       onDragEnd={handleGroupDragEnd}
                       onKeyDown={(e) => handleKeyDown(e, group.id, index)}
-                      className={`rounded-lg border transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      className={`rounded-lg border outline-none focus-visible:ring-2 focus-visible:ring-primary transition-smooth ${
                         isDragOver
                           ? "border-primary bg-primary/5"
                           : "border-[var(--color-border)] bg-[var(--color-border)]/30"
-                      } ${isDragging ? "opacity-50" : ""}`}
+                      } ${isDragging ? "opacity-50" : ""} ${
+                        animEnabled && isLeaving ? "animate-fade-out" : ""
+                      } ${animEnabled && !isLeaving ? "animate-fade-in-down" : ""}`}
+                      style={
+                        animEnabled && isLeaving
+                          ? { pointerEvents: "none" }
+                          : undefined
+                      }
                     >
                       {/* Group header row */}
                       <div className="flex items-center gap-2 p-3">
@@ -881,7 +923,11 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
                       {/* Inline color picker */}
                       {colorPickerGroupId === group.id && (
-                        <div className="px-3 pb-2 flex items-center gap-3 flex-wrap">
+                        <div
+                          className={`px-3 pb-2 flex items-center gap-3 flex-wrap ${
+                            animEnabled ? "animate-fade-in" : ""
+                          }`}
+                        >
                           <span className="text-[10px] text-[var(--color-textMuted)]">
                             Color:
                           </span>
@@ -911,7 +957,11 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
                       {/* Expanded member list */}
                       {isExpanded && (
-                        <div className="border-t border-[var(--color-border)] px-3 py-2">
+                        <div
+                          className={`border-t border-[var(--color-border)] px-3 py-2 ${
+                            animEnabled ? "animate-fade-in" : ""
+                          }`}
+                        >
                           {groupSessions.length === 0 ? (
                             <div className="text-xs text-[var(--color-textMuted)] py-1 text-center">
                               No tabs in this group

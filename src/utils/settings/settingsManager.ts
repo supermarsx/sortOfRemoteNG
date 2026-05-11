@@ -133,6 +133,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   confirmDisconnect: false,
   confirmDeleteConnection: true,
   confirmDeleteTabGroup: true,
+  enableTabGroupAnimations: true,
   confirmBulkOperations: true,
   confirmImport: true,
 
