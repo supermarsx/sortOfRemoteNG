@@ -31,19 +31,16 @@
     "checkAllReachable": "Tous les hôtes accessibles",
     "checkNoneReachable": "Aucun hôte accessible"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "Centre des collections",
     "subtitle": "Gérez vos collections de connexions",
     "tabs": {
       "collections": "Collections",
-      "connections": "Connexions",
-      "proxies": "Profils proxy/VPN"
+      "connections": "Connexions"
     },
     "actions": {
       "import": "Importer",
       "export": "Exporter",
-      "newProfile": "Nouveau profil",
-      "newChain": "Nouvelle chaîne",
       "duplicate": "Dupliquer",
       "edit": "Modifier",
       "delete": "Supprimer",
@@ -125,27 +122,6 @@
         "importFailed": "Échec de l'import de la collection",
         "exportFailed": "Échec de l'export de la collection"
       }
-    },
-    "proxies": {
-      "profilesTitle": "Profils proxy",
-      "profilesDescription": "Créez et gérez des configurations proxy réutilisables pouvant être utilisées entre les connexions et les chaînes.",
-      "profileSearchPlaceholder": "Rechercher des profils...",
-      "profilesEmptySearch": "Aucun profil ne correspond à votre recherche.",
-      "profilesEmpty": "Aucun profil proxy enregistré. Cliquez sur \"Nouveau profil\" pour en créer un.",
-      "defaultBadge": "Par défaut",
-      "chainsTitle": "Chaînes proxy",
-      "chainsDescription": "Créez des chaînes proxy réutilisables qui acheminent le trafic à travers plusieurs couches.",
-      "chainSearchPlaceholder": "Rechercher des chaînes...",
-      "chainsEmptySearch": "Aucune chaîne ne correspond à votre recherche.",
-      "chainsEmpty": "Aucune chaîne proxy enregistrée. Cliquez sur \"Nouvelle chaîne\" pour en créer une.",
-      "layerSingular": "couche",
-      "layerPlural": "couches",
-      "deleteProfileConfirm": "Voulez-vous vraiment supprimer ce profil proxy ?",
-      "deleteProfileFailed": "Échec de la suppression du profil",
-      "deleteChainConfirm": "Voulez-vous vraiment supprimer cette chaîne proxy ?",
-      "deleteChainFailed": "Échec de la suppression de la chaîne",
-      "importFailed": "Échec de l'import des profils : {{message}}",
-      "unknownError": "Erreur inconnue"
     }
   },
   "connection": {

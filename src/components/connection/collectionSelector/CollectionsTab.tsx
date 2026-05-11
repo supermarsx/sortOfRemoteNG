@@ -14,7 +14,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
       {mgr.showCreateForm && (
         <div className="sor-section-card p-6 mb-6">
           <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("collectionCenter.collections.createTitle")}
+            {t("databaseCenter.collections.createTitle")}
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
@@ -24,7 +24,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.nameLabel")}
+                {t("databaseCenter.collections.nameLabel")}
               </label>
               <input
                 type="text"
@@ -36,13 +36,13 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                   })
                 }
                 className="sor-form-input w-full"
-                placeholder={t("collectionCenter.collections.namePlaceholder")}
+                placeholder={t("databaseCenter.collections.namePlaceholder")}
                 data-testid="collection-name"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.descriptionLabel")}
+                {t("databaseCenter.collections.descriptionLabel")}
               </label>
               <Textarea
                 value={mgr.newCollection.description}
@@ -54,7 +54,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                 }
                 className="sor-form-input resize-none w-full"
                 rows={3}
-                placeholder={t("collectionCenter.collections.descriptionPlaceholder")}
+                placeholder={t("databaseCenter.collections.descriptionPlaceholder")}
               />
             </div>
             <label className="flex items-center space-x-2">
@@ -63,14 +63,14 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                     isEncrypted: v,
                   })} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
-                {t("collectionCenter.collections.encryptToggle")}
+                {t("databaseCenter.collections.encryptToggle")}
               </span>
             </label>
             {mgr.newCollection.isEncrypted && (
               <>
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.passwordLabel")}
+                    {t("databaseCenter.collections.passwordLabel")}
                   </label>
                   <PasswordInput
                     value={mgr.newCollection.password}
@@ -81,13 +81,13 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       })
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.passwordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.passwordPlaceholder")}
                     data-testid="collection-password"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.confirmPasswordLabel")}
+                    {t("databaseCenter.collections.confirmPasswordLabel")}
                   </label>
                   <PasswordInput
                     value={mgr.newCollection.confirmPassword}
@@ -98,7 +98,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       })
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.confirmPasswordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.confirmPasswordPlaceholder")}
                     revealable={false}
                   />
                 </div>
@@ -119,7 +119,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                 className="sor-btn sor-btn-primary"
                 data-testid="collection-confirm"
               >
-                {t("collectionCenter.collections.createAction")}
+                {t("databaseCenter.collections.createAction")}
               </button>
             </div>
           </div>
@@ -131,10 +131,10 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
         <div className="sor-section-card p-6 mb-6">
           <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
             {mgr.passwordDialogMode === "clone"
-              ? t("collectionCenter.collections.cloneTitle", {
+              ? t("databaseCenter.collections.cloneTitle", {
                   name: mgr.selectedCollection.name,
                 })
-              : t("collectionCenter.collections.unlockTitle", {
+              : t("databaseCenter.collections.unlockTitle", {
                   name: mgr.selectedCollection.name,
                 })}
           </h3>
@@ -147,8 +147,8 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 {mgr.passwordDialogMode === "clone"
-                  ? t("collectionCenter.collections.sourcePasswordLabel")
-                  : t("collectionCenter.collections.passwordInputLabel")}
+                  ? t("databaseCenter.collections.sourcePasswordLabel")
+                  : t("databaseCenter.collections.passwordInputLabel")}
               </label>
               <div className="relative">
                 <input
@@ -162,8 +162,8 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                   className="sor-form-input w-full pr-10"
                   placeholder={
                     mgr.passwordDialogMode === "clone"
-                      ? t("collectionCenter.collections.sourcePasswordPlaceholder")
-                      : t("collectionCenter.collections.unlockPasswordPlaceholder")
+                      ? t("databaseCenter.collections.sourcePasswordPlaceholder")
+                      : t("databaseCenter.collections.unlockPasswordPlaceholder")
                   }
                   autoFocus
                 />
@@ -199,11 +199,11 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               >
                 {mgr.isWorking
                   ? mgr.passwordDialogMode === "clone"
-                    ? t("collectionCenter.collections.cloning")
-                    : t("collectionCenter.collections.unlocking")
+                    ? t("databaseCenter.collections.cloning")
+                    : t("databaseCenter.collections.unlocking")
                   : mgr.passwordDialogMode === "clone"
-                    ? t("collectionCenter.collections.cloneAction")
-                    : t("collectionCenter.collections.unlockAction")}
+                    ? t("databaseCenter.collections.cloneAction")
+                    : t("databaseCenter.collections.unlockAction")}
               </button>
             </div>
           </div>
@@ -214,7 +214,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
       {mgr.exportingCollection && (
         <div className="sor-section-card p-6 mb-6">
           <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("collectionCenter.collections.exportTitle", {
+            {t("databaseCenter.collections.exportTitle", {
               name: mgr.exportingCollection.name,
             })}
           </h3>
@@ -227,33 +227,33 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
             {mgr.exportingCollection.isEncrypted && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  {t("collectionCenter.collections.collectionPasswordLabel")}
+                  {t("databaseCenter.collections.collectionPasswordLabel")}
                 </label>
                 <input
                   type={mgr.showPassword ? "text" : "password"}
                   value={mgr.collectionPassword}
                   onChange={(e) => mgr.setCollectionPassword(e.target.value)}
                   className="sor-form-input w-full"
-                  placeholder={t("collectionCenter.collections.passwordPlaceholder")}
+                  placeholder={t("databaseCenter.collections.passwordPlaceholder")}
                 />
               </div>
             )}
             <label className="flex items-center space-x-2">
               <Checkbox checked={mgr.includePasswords} onChange={(v: boolean) => mgr.setIncludePasswords(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
-                {t("collectionCenter.collections.includePasswords")}
+                {t("databaseCenter.collections.includePasswords")}
               </span>
             </label>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.exportPasswordLabel")}
+                {t("databaseCenter.collections.exportPasswordLabel")}
               </label>
               <input
                 type={mgr.showPassword ? "text" : "password"}
                 value={mgr.exportPassword}
                 onChange={(e) => mgr.setExportPassword(e.target.value)}
                 className="sor-form-input w-full"
-                placeholder={t("collectionCenter.collections.exportPasswordPlaceholder")}
+                placeholder={t("databaseCenter.collections.exportPasswordPlaceholder")}
               />
             </div>
             <div className="flex justify-end space-x-3">
@@ -271,7 +271,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                 className="sor-btn sor-btn-primary"
               >
                 <Download size={14} />
-                <span>{t("collectionCenter.actions.export")}</span>
+                <span>{t("databaseCenter.actions.export")}</span>
               </button>
             </div>
           </div>
@@ -282,7 +282,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
       {mgr.showImportForm && (
         <div className="sor-section-card p-6 mb-6">
           <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("collectionCenter.collections.importTitle")}
+            {t("databaseCenter.collections.importTitle")}
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
@@ -292,7 +292,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.fileLabel")}
+                {t("databaseCenter.collections.fileLabel")}
               </label>
               <input
                 type="file"
@@ -305,39 +305,39 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.optionalNameLabel")}
+                {t("databaseCenter.collections.optionalNameLabel")}
               </label>
               <input
                 type="text"
                 value={mgr.importCollectionName}
                 onChange={(e) => mgr.setImportCollectionName(e.target.value)}
                 className="sor-form-input w-full"
-                placeholder={t("collectionCenter.collections.optionalNamePlaceholder")}
+                placeholder={t("databaseCenter.collections.optionalNamePlaceholder")}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.importPasswordLabel")}
+                {t("databaseCenter.collections.importPasswordLabel")}
               </label>
               <input
                 type={mgr.showPassword ? "text" : "password"}
                 value={mgr.importPassword}
                 onChange={(e) => mgr.setImportPassword(e.target.value)}
                 className="sor-form-input w-full"
-                placeholder={t("collectionCenter.collections.passwordPlaceholder")}
+                placeholder={t("databaseCenter.collections.passwordPlaceholder")}
               />
             </div>
             <label className="flex items-center space-x-2">
               <Checkbox checked={mgr.encryptImport} onChange={(v: boolean) => mgr.setEncryptImport(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
-                {t("collectionCenter.collections.encryptImportToggle")}
+                {t("databaseCenter.collections.encryptImportToggle")}
               </span>
             </label>
             {mgr.encryptImport && (
               <>
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.newPasswordLabel")}
+                    {t("databaseCenter.collections.newPasswordLabel")}
                   </label>
                   <input
                     type={mgr.showPassword ? "text" : "password"}
@@ -346,12 +346,12 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       mgr.setImportEncryptPassword(e.target.value)
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.newPasswordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.newPasswordPlaceholder")}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.confirmPasswordShortLabel")}
+                    {t("databaseCenter.collections.confirmPasswordShortLabel")}
                   </label>
                   <input
                     type={mgr.showPassword ? "text" : "password"}
@@ -360,7 +360,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       mgr.setImportEncryptConfirmPassword(e.target.value)
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.confirmPasswordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.confirmPasswordPlaceholder")}
                   />
                 </div>
               </>
@@ -380,7 +380,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                 className="sor-btn sor-btn-primary"
               >
                 <Upload size={14} />
-                <span>{t("collectionCenter.actions.import")}</span>
+                <span>{t("databaseCenter.actions.import")}</span>
               </button>
             </div>
           </div>
@@ -391,7 +391,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
       {mgr.editingCollection && (
         <div className="sor-section-card p-6 mb-6">
           <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-            {t("collectionCenter.collections.editTitle")}
+            {t("databaseCenter.collections.editTitle")}
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
@@ -401,7 +401,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.nameLabel")}
+                {t("databaseCenter.collections.nameLabel")}
               </label>
               <input
                 type="text"
@@ -417,7 +417,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t("collectionCenter.collections.descriptionLabel")}
+                {t("databaseCenter.collections.descriptionLabel")}
               </label>
               <Textarea
                 value={mgr.editingCollection.description || ""}
@@ -437,7 +437,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                     enableEncryption: v,
                   }))} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
-                {t("collectionCenter.collections.encryptToggle")}
+                {t("databaseCenter.collections.encryptToggle")}
               </span>
             </label>
             {(mgr.editingCollection.isEncrypted ||
@@ -445,7 +445,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.currentPasswordLabel")}
+                    {t("databaseCenter.collections.currentPasswordLabel")}
                   </label>
                   <input
                     type={mgr.showPassword ? "text" : "password"}
@@ -457,12 +457,12 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       }))
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.currentPasswordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.currentPasswordPlaceholder")}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.newPasswordLabel")}
+                    {t("databaseCenter.collections.newPasswordLabel")}
                   </label>
                   <input
                     type={mgr.showPassword ? "text" : "password"}
@@ -474,12 +474,12 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       }))
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.newPasswordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.newPasswordPlaceholder")}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    {t("collectionCenter.collections.confirmPasswordShortLabel")}
+                    {t("databaseCenter.collections.confirmPasswordShortLabel")}
                   </label>
                   <input
                     type={mgr.showPassword ? "text" : "password"}
@@ -491,7 +491,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       }))
                     }
                     className="sor-form-input w-full"
-                    placeholder={t("collectionCenter.collections.confirmPasswordPlaceholder")}
+                    placeholder={t("databaseCenter.collections.confirmPasswordPlaceholder")}
                   />
                 </div>
                 <div className="flex items-end">
@@ -507,8 +507,8 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                     )}
                     <span>
                       {mgr.showPassword
-                        ? t("collectionCenter.collections.hidePassword")
-                        : t("collectionCenter.collections.showPassword")}
+                        ? t("databaseCenter.collections.hidePassword")
+                        : t("databaseCenter.collections.showPassword")}
                     </span>
                   </button>
                 </div>
@@ -528,7 +528,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                 onClick={mgr.handleUpdateCollection}
                 className="sor-btn sor-btn-primary"
               >
-                {t("collectionCenter.collections.updateAction")}
+                {t("databaseCenter.collections.updateAction")}
               </button>
             </div>
           </div>
@@ -541,10 +541,10 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           <div className="text-center py-12">
             <Database size={48} className="mx-auto text-[var(--color-textMuted)] mb-4" />
             <p className="text-[var(--color-textSecondary)] mb-2">
-              {t("collectionCenter.collections.emptyTitle")}
+              {t("databaseCenter.collections.emptyTitle")}
             </p>
             <p className="text-[var(--color-textMuted)] text-sm">
-              {t("collectionCenter.collections.emptyDescription")}
+              {t("databaseCenter.collections.emptyDescription")}
             </p>
           </div>
         ) : (
@@ -583,7 +583,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               }}
               role="button"
               tabIndex={0}
-              aria-label={t("collectionCenter.collections.openCollectionLabel", {
+              aria-label={t("databaseCenter.collections.openCollectionLabel", {
                 name: collection.name,
               })}
             >
@@ -608,7 +608,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                       </p>
                     )}
                     <p className="text-[var(--color-textMuted)] text-xs">
-                      {t("collectionCenter.collections.lastAccessed")}: {" "}
+                      {t("databaseCenter.collections.lastAccessed")}: {" "}
                       {new Date(collection.lastAccessed).toLocaleDateString()}
                     </p>
                   </div>
@@ -634,7 +634,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                     aria-haspopup="menu"
                     aria-expanded={mgr.collectionMenu?.collection.id === collection.id}
                     className="sor-icon-btn-sm"
-                    title={t("collectionCenter.actions.moreActions")}
+                    title={t("databaseCenter.actions.moreActions")}
                     data-testid="collection-actions-trigger"
                   >
                     <MoreHorizontal size={16} />
@@ -654,10 +654,10 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
         dataTestId="collection-action-menu"
         ariaLabel={
           mgr.collectionMenu
-            ? t("collectionCenter.collections.actionsLabel", {
+            ? t("databaseCenter.collections.actionsLabel", {
                 name: mgr.collectionMenu.collection.name,
               })
-            : t("collectionCenter.actions.moreActions")
+            : t("databaseCenter.actions.moreActions")
         }
       >
         {mgr.collectionMenu && (
@@ -672,8 +672,8 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
             >
               <FolderOpen size={14} className="mr-2" />
               {mgr.collectionMenu.collection.isEncrypted
-                ? t("collectionCenter.actions.unlock")
-                : t("collectionCenter.actions.open")}
+                ? t("databaseCenter.actions.unlock")
+                : t("databaseCenter.actions.open")}
             </button>
             <button
               type="button"
@@ -684,7 +684,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               disabled={mgr.isWorking}
             >
               <Copy size={14} className="mr-2" />
-              {t("collectionCenter.actions.clone")}
+              {t("databaseCenter.actions.clone")}
             </button>
             <div className="sor-menu-divider" />
             <button
@@ -696,7 +696,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               className="sor-menu-item"
             >
               <Download size={14} className="mr-2" />
-              {t("collectionCenter.actions.export")}
+              {t("databaseCenter.actions.export")}
             </button>
             <button
               type="button"
@@ -706,7 +706,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               className="sor-menu-item"
             >
               <Edit size={14} className="mr-2" />
-              {t("collectionCenter.actions.edit")}
+              {t("databaseCenter.actions.edit")}
             </button>
             <div className="sor-menu-divider" />
             <button
@@ -717,7 +717,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               className="sor-menu-item sor-menu-item-danger"
             >
               <Trash2 size={14} className="mr-2" />
-              {t("collectionCenter.actions.delete")}
+              {t("databaseCenter.actions.delete")}
             </button>
           </>
         )}

@@ -185,22 +185,22 @@ export function useCollectionSelector(
 
   const handleCreateCollection = async () => {
     if (!newCollection.name.trim()) {
-      setError(t("collectionCenter.collections.errors.nameRequired"));
+      setError(t("databaseCenter.collections.errors.nameRequired"));
       return;
     }
     if (newCollection.isEncrypted) {
       if (!newCollection.password) {
         setError(
-          t("collectionCenter.collections.errors.passwordRequiredForEncrypted"),
+          t("databaseCenter.collections.errors.passwordRequiredForEncrypted"),
         );
         return;
       }
       if (newCollection.password !== newCollection.confirmPassword) {
-        setError(t("collectionCenter.collections.errors.passwordsDoNotMatch"));
+        setError(t("databaseCenter.collections.errors.passwordsDoNotMatch"));
         return;
       }
       if (newCollection.password.length < 4) {
-        setError(t("collectionCenter.collections.errors.passwordTooShort"));
+        setError(t("databaseCenter.collections.errors.passwordTooShort"));
         return;
       }
     }
@@ -223,7 +223,7 @@ export function useCollectionSelector(
       setError(
         error instanceof Error
           ? error.message
-          : t("collectionCenter.collections.errors.createFailed"),
+          : t("databaseCenter.collections.errors.createFailed"),
       );
     }
   };
@@ -231,7 +231,7 @@ export function useCollectionSelector(
   const handleDeleteCollection = async (collection: ConnectionCollection) => {
     if (
       confirm(
-        t("collectionCenter.collections.deleteConfirm", {
+        t("databaseCenter.collections.deleteConfirm", {
           name: collection.name,
         }),
       )
@@ -244,7 +244,7 @@ export function useCollectionSelector(
         setError(
           error instanceof Error
             ? error.message
-            : t("collectionCenter.collections.errors.deleteFailed"),
+            : t("databaseCenter.collections.errors.deleteFailed"),
         );
       }
     }
@@ -265,7 +265,7 @@ export function useCollectionSelector(
   const handleUpdateCollection = async () => {
     if (!editingCollection) return;
     if (!editingCollection.name.trim()) {
-      setError(t("collectionCenter.collections.errors.nameRequired"));
+      setError(t("databaseCenter.collections.errors.nameRequired"));
       return;
     }
 
@@ -275,24 +275,24 @@ export function useCollectionSelector(
     if (wantsEncryption) {
       if (!editingCollection.isEncrypted && !wantsPasswordChange) {
         setError(
-          t("collectionCenter.collections.errors.passwordRequiredToEncrypt"),
+          t("databaseCenter.collections.errors.passwordRequiredToEncrypt"),
         );
         return;
       }
       if (wantsPasswordChange) {
         if (editPassword.next !== editPassword.confirm) {
           setError(
-            t("collectionCenter.collections.errors.newPasswordsDoNotMatch"),
+            t("databaseCenter.collections.errors.newPasswordsDoNotMatch"),
           );
           return;
         }
         if (editPassword.next.length < 4) {
-          setError(t("collectionCenter.collections.errors.passwordTooShort"));
+          setError(t("databaseCenter.collections.errors.passwordTooShort"));
           return;
         }
         if (editingCollection.isEncrypted && !editPassword.current) {
           setError(
-            t("collectionCenter.collections.errors.currentPasswordRequired"),
+            t("databaseCenter.collections.errors.currentPasswordRequired"),
           );
           return;
         }
@@ -300,7 +300,7 @@ export function useCollectionSelector(
     } else if (editingCollection.isEncrypted && !editPassword.current) {
       setError(
         t(
-          "collectionCenter.collections.errors.currentPasswordRequiredToRemoveEncryption",
+          "databaseCenter.collections.errors.currentPasswordRequiredToRemoveEncryption",
         ),
       );
       return;
@@ -341,7 +341,7 @@ export function useCollectionSelector(
       setError(
         error instanceof Error
           ? error.message
-          : t("collectionCenter.collections.errors.updateFailed"),
+          : t("databaseCenter.collections.errors.updateFailed"),
       );
     }
   };
@@ -370,8 +370,8 @@ export function useCollectionSelector(
         setError(
           getCollectionActionError(
             error,
-            t("collectionCenter.collections.errors.cloneFailed"),
-            t("collectionCenter.collections.errors.invalidPassword"),
+            t("databaseCenter.collections.errors.cloneFailed"),
+            t("databaseCenter.collections.errors.invalidPassword"),
           ),
         );
         throw error;
@@ -444,8 +444,8 @@ export function useCollectionSelector(
       setError(
         getCollectionActionError(
           error,
-          t("collectionCenter.collections.errors.accessFailed"),
-          t("collectionCenter.collections.errors.invalidPassword"),
+          t("databaseCenter.collections.errors.accessFailed"),
+          t("databaseCenter.collections.errors.invalidPassword"),
         ),
       );
     } finally {
@@ -457,20 +457,20 @@ export function useCollectionSelector(
 
   const handleImportCollection = async () => {
     if (!importFile) {
-      setError(t("collectionCenter.collections.errors.fileRequired"));
+      setError(t("databaseCenter.collections.errors.fileRequired"));
       return;
     }
     if (encryptImport) {
       if (!importEncryptPassword) {
         setError(
-          t("collectionCenter.collections.errors.passwordRequiredToEncryptImport"),
+          t("databaseCenter.collections.errors.passwordRequiredToEncryptImport"),
         );
         return;
       }
       if (importEncryptPassword !== importEncryptConfirmPassword) {
         setError(
           t(
-            "collectionCenter.collections.errors.encryptionPasswordsDoNotMatch",
+            "databaseCenter.collections.errors.encryptionPasswordsDoNotMatch",
           ),
         );
         return;
@@ -497,7 +497,7 @@ export function useCollectionSelector(
       setError(
         error instanceof Error
           ? error.message
-          : t("collectionCenter.collections.errors.importFailed"),
+          : t("databaseCenter.collections.errors.importFailed"),
       );
     }
   };
@@ -535,7 +535,7 @@ export function useCollectionSelector(
       setError(
         error instanceof Error
           ? error.message
-          : t("collectionCenter.collections.errors.exportFailed"),
+          : t("databaseCenter.collections.errors.exportFailed"),
       );
     }
   };
@@ -581,7 +581,7 @@ export function useCollectionSelector(
   };
 
   const handleDeleteProfile = async (profileId: string) => {
-    if (confirm(t("collectionCenter.proxies.deleteProfileConfirm"))) {
+    if (confirm(t("databaseCenter.proxies.deleteProfileConfirm"))) {
       try {
         await proxyCollectionManager.deleteProfile(profileId);
         setSavedProfiles(proxyCollectionManager.getProfiles());
@@ -589,7 +589,7 @@ export function useCollectionSelector(
         alert(
           error instanceof Error
             ? error.message
-            : t("collectionCenter.proxies.deleteProfileFailed"),
+            : t("databaseCenter.proxies.deleteProfileFailed"),
         );
       }
     }
@@ -641,7 +641,7 @@ export function useCollectionSelector(
   };
 
   const handleDeleteChain = async (chainId: string) => {
-    if (confirm(t("collectionCenter.proxies.deleteChainConfirm"))) {
+    if (confirm(t("databaseCenter.proxies.deleteChainConfirm"))) {
       try {
         await proxyCollectionManager.deleteChain(chainId);
         setSavedChains(proxyCollectionManager.getChains());
@@ -649,7 +649,7 @@ export function useCollectionSelector(
         alert(
           error instanceof Error
             ? error.message
-            : t("collectionCenter.proxies.deleteChainFailed"),
+            : t("databaseCenter.proxies.deleteChainFailed"),
         );
       }
     }
@@ -693,10 +693,10 @@ export function useCollectionSelector(
           setSavedChains(proxyCollectionManager.getChains());
         } catch (error) {
           alert(
-            t("collectionCenter.proxies.importFailed", {
+            t("databaseCenter.proxies.importFailed", {
               message: error instanceof Error
                 ? error.message
-                : t("collectionCenter.proxies.unknownError"),
+                : t("databaseCenter.proxies.unknownError"),
             }),
           );
         }

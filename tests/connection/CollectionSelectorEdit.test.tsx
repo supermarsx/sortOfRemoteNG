@@ -11,13 +11,13 @@ const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
 
 const translations: Record<string, string> = {
-  'collectionCenter.actions.clone': 'Clone',
-  'collectionCenter.actions.edit': 'Edit',
-  'collectionCenter.collections.actionsLabel': 'Actions for {{name}}',
-  'collectionCenter.collections.updateAction': 'Update',
-  'collectionCenter.collections.cloneAction': 'Clone Collection',
-  'collectionCenter.collections.cloneTitle': 'Clone Collection: {{name}}',
-  'collectionCenter.collections.sourcePasswordPlaceholder': 'Enter source collection password',
+  'databaseCenter.actions.clone': 'Clone',
+  'databaseCenter.actions.edit': 'Edit',
+  'databaseCenter.collections.actionsLabel': 'Actions for {{name}}',
+  'databaseCenter.collections.updateAction': 'Update',
+  'databaseCenter.collections.cloneAction': 'Clone Collection',
+  'databaseCenter.collections.cloneTitle': 'Clone Collection: {{name}}',
+  'databaseCenter.collections.sourcePasswordPlaceholder': 'Enter source collection password',
 };
 
 const interpolate = (template: string, options?: Record<string, unknown>) =>

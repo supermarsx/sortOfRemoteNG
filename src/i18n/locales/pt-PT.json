@@ -31,19 +31,16 @@
     "checkAllReachable": "Todos os anfitriões acessíveis",
     "checkNoneReachable": "Nenhum anfitrião acessível"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "Centro de coleções",
     "subtitle": "Gere as suas coleções de ligações",
     "tabs": {
       "collections": "Coleções",
-      "connections": "Ligações",
-      "proxies": "Perfis de Proxy/VPN"
+      "connections": "Ligações"
     },
     "actions": {
       "import": "Importar",
       "export": "Exportar",
-      "newProfile": "Novo perfil",
-      "newChain": "Nova cadeia",
       "duplicate": "Duplicar",
       "edit": "Editar",
       "delete": "Eliminar",
@@ -125,27 +122,6 @@
         "importFailed": "Não foi possível importar a coleção",
         "exportFailed": "Não foi possível exportar a coleção"
       }
-    },
-    "proxies": {
-      "profilesTitle": "Perfis proxy",
-      "profilesDescription": "Crie e gira configurações proxy reutilizáveis que podem ser usadas entre ligações e cadeias.",
-      "profileSearchPlaceholder": "Pesquisar perfis...",
-      "profilesEmptySearch": "Nenhum perfil corresponde à sua pesquisa.",
-      "profilesEmpty": "Não existem perfis proxy guardados. Clique em \"Novo perfil\" para criar um.",
-      "defaultBadge": "Predefinição",
-      "chainsTitle": "Cadeias proxy",
-      "chainsDescription": "Crie cadeias proxy reutilizáveis que encaminham o tráfego através de várias camadas.",
-      "chainSearchPlaceholder": "Pesquisar cadeias...",
-      "chainsEmptySearch": "Nenhuma cadeia corresponde à sua pesquisa.",
-      "chainsEmpty": "Não existem cadeias proxy guardadas. Clique em \"Nova cadeia\" para criar uma.",
-      "layerSingular": "camada",
-      "layerPlural": "camadas",
-      "deleteProfileConfirm": "Tem a certeza de que pretende eliminar este perfil proxy?",
-      "deleteProfileFailed": "Não foi possível eliminar o perfil",
-      "deleteChainConfirm": "Tem a certeza de que pretende eliminar esta cadeia proxy?",
-      "deleteChainFailed": "Não foi possível eliminar a cadeia",
-      "importFailed": "Não foi possível importar os perfis: {{message}}",
-      "unknownError": "Erro desconhecido"
     }
   },
   "connection": {

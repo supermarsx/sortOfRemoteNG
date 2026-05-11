@@ -31,19 +31,16 @@
     "checkAllReachable": "Все узлы доступны",
     "checkNoneReachable": "Ни один узел не доступен"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "Центр коллекций",
     "subtitle": "Управляйте своими коллекциями подключений",
     "tabs": {
       "collections": "Коллекции",
-      "connections": "Подключения",
-      "proxies": "Профили прокси/VPN"
+      "connections": "Подключения"
     },
     "actions": {
       "import": "Импорт",
       "export": "Экспорт",
-      "newProfile": "Новый профиль",
-      "newChain": "Новая цепочка",
       "duplicate": "Дублировать",
       "edit": "Изменить",
       "delete": "Удалить",
@@ -125,27 +122,6 @@
         "importFailed": "Не удалось импортировать коллекцию",
         "exportFailed": "Не удалось экспортировать коллекцию"
       }
-    },
-    "proxies": {
-      "profilesTitle": "Профили прокси",
-      "profilesDescription": "Создавайте и управляйте повторно используемыми настройками прокси, которые можно применять в подключениях и цепочках.",
-      "profileSearchPlaceholder": "Поиск профилей...",
-      "profilesEmptySearch": "Нет профилей, соответствующих поиску.",
-      "profilesEmpty": "Сохранённых профилей прокси нет. Нажмите \"Новый профиль\", чтобы создать его.",
-      "defaultBadge": "По умолчанию",
-      "chainsTitle": "Цепочки прокси",
-      "chainsDescription": "Создавайте повторно используемые цепочки прокси, которые направляют трафик через несколько уровней.",
-      "chainSearchPlaceholder": "Поиск цепочек...",
-      "chainsEmptySearch": "Нет цепочек, соответствующих поиску.",
-      "chainsEmpty": "Сохранённых цепочек прокси нет. Нажмите \"Новая цепочка\", чтобы создать её.",
-      "layerSingular": "уровень",
-      "layerPlural": "уровня",
-      "deleteProfileConfirm": "Вы действительно хотите удалить этот профиль прокси?",
-      "deleteProfileFailed": "Не удалось удалить профиль",
-      "deleteChainConfirm": "Вы действительно хотите удалить эту цепочку прокси?",
-      "deleteChainFailed": "Не удалось удалить цепочку",
-      "importFailed": "Не удалось импортировать профили: {{message}}",
-      "unknownError": "Неизвестная ошибка"
     }
   },
   "connection": {

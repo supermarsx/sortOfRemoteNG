@@ -50,8 +50,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           icon={Database}
           iconColor="text-primary"
           iconBg="bg-primary/20"
-          title={t("collectionCenter.title")}
-          subtitle={t("collectionCenter.subtitle")}
+          title={t("databaseCenter.title")}
+          subtitle={t("databaseCenter.subtitle")}
           onClose={onClose}
           sticky
           actions={
@@ -61,7 +61,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                 className="sor-btn-secondary-sm"
               >
                 <Upload size={14} />
-                <span>{t("collectionCenter.actions.import")}</span>
+                <span>{t("databaseCenter.actions.import")}</span>
               </button>
               <button
                 onClick={() => mgr.setShowCreateForm(true)}

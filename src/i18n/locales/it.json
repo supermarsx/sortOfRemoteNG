@@ -31,19 +31,16 @@
     "checkAllReachable": "Tutti gli host raggiungibili",
     "checkNoneReachable": "Nessun host raggiungibile"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "Centro raccolte",
     "subtitle": "Gestisci le tue raccolte di connessioni",
     "tabs": {
       "collections": "Raccolte",
-      "connections": "Connessioni",
-      "proxies": "Profili proxy/VPN"
+      "connections": "Connessioni"
     },
     "actions": {
       "import": "Importa",
       "export": "Esporta",
-      "newProfile": "Nuovo profilo",
-      "newChain": "Nuova catena",
       "duplicate": "Duplica",
       "edit": "Modifica",
       "delete": "Elimina",
@@ -125,27 +122,6 @@
         "importFailed": "Impossibile importare la raccolta",
         "exportFailed": "Impossibile esportare la raccolta"
       }
-    },
-    "proxies": {
-      "profilesTitle": "Profili proxy",
-      "profilesDescription": "Crea e gestisci configurazioni proxy riutilizzabili che possono essere usate tra connessioni e catene.",
-      "profileSearchPlaceholder": "Cerca profili...",
-      "profilesEmptySearch": "Nessun profilo corrisponde alla ricerca.",
-      "profilesEmpty": "Nessun profilo proxy salvato. Fai clic su \"Nuovo profilo\" per crearne uno.",
-      "defaultBadge": "Predefinito",
-      "chainsTitle": "Catene proxy",
-      "chainsDescription": "Crea catene proxy riutilizzabili che instradano il traffico attraverso più livelli.",
-      "chainSearchPlaceholder": "Cerca catene...",
-      "chainsEmptySearch": "Nessuna catena corrisponde alla ricerca.",
-      "chainsEmpty": "Nessuna catena proxy salvata. Fai clic su \"Nuova catena\" per crearne una.",
-      "layerSingular": "livello",
-      "layerPlural": "livelli",
-      "deleteProfileConfirm": "Sei sicuro di voler eliminare questo profilo proxy?",
-      "deleteProfileFailed": "Impossibile eliminare il profilo",
-      "deleteChainConfirm": "Sei sicuro di voler eliminare questa catena proxy?",
-      "deleteChainFailed": "Impossibile eliminare la catena",
-      "importFailed": "Impossibile importare i profili: {{message}}",
-      "unknownError": "Errore sconosciuto"
     }
   },
   "connection": {

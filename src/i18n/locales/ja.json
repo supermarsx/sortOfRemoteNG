@@ -31,19 +31,16 @@
     "checkAllReachable": "すべてのホストに到達可能",
     "checkNoneReachable": "到達可能なホストなし"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "コレクションセンター",
     "subtitle": "接続コレクションを管理します",
     "tabs": {
       "collections": "コレクション",
-      "connections": "接続",
-      "proxies": "プロキシ/VPN プロファイル"
+      "connections": "接続"
     },
     "actions": {
       "import": "インポート",
       "export": "エクスポート",
-      "newProfile": "新しいプロファイル",
-      "newChain": "新しいチェーン",
       "duplicate": "複製",
       "edit": "編集",
       "delete": "削除",
@@ -125,27 +122,6 @@
         "importFailed": "コレクションのインポートに失敗しました",
         "exportFailed": "コレクションのエクスポートに失敗しました"
       }
-    },
-    "proxies": {
-      "profilesTitle": "プロキシプロファイル",
-      "profilesDescription": "接続やチェーン間で再利用できるプロキシ設定を作成・管理します。",
-      "profileSearchPlaceholder": "プロファイルを検索...",
-      "profilesEmptySearch": "検索に一致するプロファイルがありません。",
-      "profilesEmpty": "保存されたプロキシプロファイルはありません。\"新しいプロファイル\"をクリックして作成してください。",
-      "defaultBadge": "既定",
-      "chainsTitle": "プロキシチェーン",
-      "chainsDescription": "トラフィックを複数の層にルーティングする再利用可能なプロキシチェーンを作成します。",
-      "chainSearchPlaceholder": "チェーンを検索...",
-      "chainsEmptySearch": "検索に一致するチェーンがありません。",
-      "chainsEmpty": "保存されたプロキシチェーンはありません。\"新しいチェーン\"をクリックして作成してください。",
-      "layerSingular": "層",
-      "layerPlural": "層",
-      "deleteProfileConfirm": "このプロキシプロファイルを削除してもよろしいですか？",
-      "deleteProfileFailed": "プロファイルの削除に失敗しました",
-      "deleteChainConfirm": "このプロキシチェーンを削除してもよろしいですか？",
-      "deleteChainFailed": "チェーンの削除に失敗しました",
-      "importFailed": "プロファイルのインポートに失敗しました: {{message}}",
-      "unknownError": "不明なエラー"
     }
   },
   "connection": {

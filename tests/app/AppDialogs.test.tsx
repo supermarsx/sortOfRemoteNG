@@ -143,13 +143,11 @@ describe("AppDialogs", () => {
     expect(screen.getByTestId("error-log")).toBeInTheDocument();
   });
 
-  it("shows CollectionSelector when showCollectionSelector is true", () => {
+  // CollectionSelector was migrated to a tool-panel tab (DatabasePanel)
+  // and is no longer mounted from AppDialogs. The legacy flag has no
+  // visual effect here anymore — AppDialogs should render nothing for it.
+  it("does not mount the legacy CollectionSelector modal", () => {
     render(<AppDialogs {...makeProps({ showCollectionSelector: true })} />);
-    expect(screen.getByTestId("collection-selector")).toBeInTheDocument();
-  });
-
-  it("does not show CollectionSelector when showCollectionSelector is false", () => {
-    render(<AppDialogs {...makeProps()} />);
     expect(screen.queryByTestId("collection-selector")).not.toBeInTheDocument();
   });
 

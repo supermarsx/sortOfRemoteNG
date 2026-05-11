@@ -31,19 +31,16 @@
     "checkAllReachable": "Alle Hosts erreichbar",
     "checkNoneReachable": "Keine Hosts erreichbar"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "Sammlungszentrum",
     "subtitle": "Verwalten Sie Ihre Verbindungssammlungen",
     "tabs": {
       "collections": "Sammlungen",
-      "connections": "Verbindungen",
-      "proxies": "Proxy/VPN-Profile"
+      "connections": "Verbindungen"
     },
     "actions": {
       "import": "Importieren",
       "export": "Exportieren",
-      "newProfile": "Neues Profil",
-      "newChain": "Neue Kette",
       "duplicate": "Duplizieren",
       "edit": "Bearbeiten",
       "delete": "Loeschen",
@@ -125,27 +122,6 @@
         "importFailed": "Sammlung konnte nicht importiert werden",
         "exportFailed": "Sammlung konnte nicht exportiert werden"
       }
-    },
-    "proxies": {
-      "profilesTitle": "Proxy-Profile",
-      "profilesDescription": "Erstellen und verwalten Sie wiederverwendbare Proxy-Konfigurationen, die ueber Verbindungen und Ketten hinweg genutzt werden koennen.",
-      "profileSearchPlaceholder": "Profile suchen...",
-      "profilesEmptySearch": "Keine Profile entsprechen Ihrer Suche.",
-      "profilesEmpty": "Keine Proxy-Profile gespeichert. Klicken Sie auf \"Neues Profil\", um eines zu erstellen.",
-      "defaultBadge": "Standard",
-      "chainsTitle": "Proxy-Ketten",
-      "chainsDescription": "Erstellen Sie wiederverwendbare Proxy-Ketten, die Datenverkehr durch mehrere Ebenen leiten.",
-      "chainSearchPlaceholder": "Ketten suchen...",
-      "chainsEmptySearch": "Keine Ketten entsprechen Ihrer Suche.",
-      "chainsEmpty": "Keine Proxy-Ketten gespeichert. Klicken Sie auf \"Neue Kette\", um eine zu erstellen.",
-      "layerSingular": "Ebene",
-      "layerPlural": "Ebenen",
-      "deleteProfileConfirm": "Moechten Sie dieses Proxy-Profil wirklich loeschen?",
-      "deleteProfileFailed": "Profil konnte nicht geloescht werden",
-      "deleteChainConfirm": "Moechten Sie diese Proxy-Kette wirklich loeschen?",
-      "deleteChainFailed": "Kette konnte nicht geloescht werden",
-      "importFailed": "Profile konnten nicht importiert werden: {{message}}",
-      "unknownError": "Unbekannter Fehler"
     }
   },
   "connection": {

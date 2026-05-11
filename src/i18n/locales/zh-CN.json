@@ -31,19 +31,16 @@
     "checkAllReachable": "所有主机可达",
     "checkNoneReachable": "没有主机可达"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "集合中心",
     "subtitle": "管理你的连接集合",
     "tabs": {
       "collections": "集合",
-      "connections": "连接",
-      "proxies": "代理/VPN 配置"
+      "connections": "连接"
     },
     "actions": {
       "import": "导入",
       "export": "导出",
-      "newProfile": "新建配置",
-      "newChain": "新建链",
       "duplicate": "复制",
       "edit": "编辑",
       "delete": "删除",
@@ -125,27 +122,6 @@
         "importFailed": "导入集合失败",
         "exportFailed": "导出集合失败"
       }
-    },
-    "proxies": {
-      "profilesTitle": "代理配置",
-      "profilesDescription": "创建并管理可在连接和链路之间复用的代理配置。",
-      "profileSearchPlaceholder": "搜索配置...",
-      "profilesEmptySearch": "没有匹配搜索的配置。",
-      "profilesEmpty": "尚未保存代理配置。点击\"新建配置\"即可创建。",
-      "defaultBadge": "默认",
-      "chainsTitle": "代理链",
-      "chainsDescription": "创建可重复使用的代理链，使流量经过多层路由。",
-      "chainSearchPlaceholder": "搜索链...",
-      "chainsEmptySearch": "没有匹配搜索的链。",
-      "chainsEmpty": "尚未保存代理链。点击\"新建链\"即可创建。",
-      "layerSingular": "层",
-      "layerPlural": "层",
-      "deleteProfileConfirm": "确定要删除此代理配置吗？",
-      "deleteProfileFailed": "删除配置失败",
-      "deleteChainConfirm": "确定要删除此代理链吗？",
-      "deleteChainFailed": "删除链失败",
-      "importFailed": "导入配置失败：{{message}}",
-      "unknownError": "未知错误"
     }
   },
   "connection": {

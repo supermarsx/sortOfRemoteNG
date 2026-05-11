@@ -22,7 +22,7 @@ function collectLeafPaths(value: unknown, prefix = ""): string[] {
     .sort();
 }
 
-describe("collectionCenter locale parity", () => {
+describe("databaseCenter locale parity", () => {
   const locales = {
     de,
     es,
@@ -35,11 +35,11 @@ describe("collectionCenter locale parity", () => {
     "zh-CN": zhCN,
   } as const;
 
-  const expectedLeafPaths = collectLeafPaths((en as any).collectionCenter);
+  const expectedLeafPaths = collectLeafPaths((en as any).databaseCenter);
 
-  it("ships the collectionCenter namespace in every supported locale", () => {
+  it("ships the databaseCenter namespace in every supported locale", () => {
     for (const [localeName, locale] of Object.entries(locales)) {
-      expect(collectLeafPaths((locale as any).collectionCenter), localeName).toEqual(
+      expect(collectLeafPaths((locale as any).databaseCenter), localeName).toEqual(
         expectedLeafPaths,
       );
     }

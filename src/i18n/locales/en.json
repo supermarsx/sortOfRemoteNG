@@ -51,7 +51,7 @@
     "checkAllReachable": "All hosts reachable",
     "checkNoneReachable": "No hosts reachable"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "Databases",
     "subtitle": "Manage your connection databases — each holds connections, tab groups, tags and other workspace data",
     "tabs": {

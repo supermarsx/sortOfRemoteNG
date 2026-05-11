@@ -31,19 +31,16 @@
     "checkAllReachable": "모든 호스트 도달 가능",
     "checkNoneReachable": "도달 가능한 호스트 없음"
   },
-  "collectionCenter": {
+  "databaseCenter": {
     "title": "컬렉션 센터",
     "subtitle": "연결 컬렉션을 관리합니다",
     "tabs": {
       "collections": "컬렉션",
-      "connections": "연결",
-      "proxies": "프록시/VPN 프로필"
+      "connections": "연결"
     },
     "actions": {
       "import": "가져오기",
       "export": "내보내기",
-      "newProfile": "새 프로필",
-      "newChain": "새 체인",
       "duplicate": "복제",
       "edit": "편집",
       "delete": "삭제",
@@ -125,27 +122,6 @@
         "importFailed": "컬렉션을 가져오지 못했습니다",
         "exportFailed": "컬렉션을 내보내지 못했습니다"
       }
-    },
-    "proxies": {
-      "profilesTitle": "프록시 프로필",
-      "profilesDescription": "연결과 체인 전반에서 재사용할 수 있는 프록시 구성을 만들고 관리합니다.",
-      "profileSearchPlaceholder": "프로필 검색...",
-      "profilesEmptySearch": "검색과 일치하는 프로필이 없습니다.",
-      "profilesEmpty": "저장된 프록시 프로필이 없습니다. \"새 프로필\"을 클릭해 만드세요.",
-      "defaultBadge": "기본값",
-      "chainsTitle": "프록시 체인",
-      "chainsDescription": "트래픽을 여러 계층으로 라우팅하는 재사용 가능한 프록시 체인을 만듭니다.",
-      "chainSearchPlaceholder": "체인 검색...",
-      "chainsEmptySearch": "검색과 일치하는 체인이 없습니다.",
-      "chainsEmpty": "저장된 프록시 체인이 없습니다. \"새 체인\"을 클릭해 만드세요.",
-      "layerSingular": "계층",
-      "layerPlural": "계층",
-      "deleteProfileConfirm": "이 프록시 프로필을 삭제하시겠습니까?",
-      "deleteProfileFailed": "프로필을 삭제하지 못했습니다",
-      "deleteChainConfirm": "이 프록시 체인을 삭제하시겠습니까?",
-      "deleteChainFailed": "체인을 삭제하지 못했습니다",
-      "importFailed": "프로필을 가져오지 못했습니다: {{message}}",
-      "unknownError": "알 수 없는 오류"
     }
   },
   "connection": {
