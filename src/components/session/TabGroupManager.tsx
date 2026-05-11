@@ -407,16 +407,27 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-3xl mx-auto p-4 space-y-6">
-          {/* Heading */}
-          <div>
-            <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-              <Layers className="w-5 h-5 text-primary" />
-              Tab Group Manager
-            </h3>
-            <p className="text-xs text-[var(--color-textSecondary)] mt-1">
-              Organize open session tabs into color-coded groups.
-            </p>
+        <div className="max-w-3xl mx-auto p-4 space-y-4">
+          {/* Heading + primary action */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+                <Layers className="w-5 h-5 text-primary" />
+                Tab Group Manager
+              </h3>
+              <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+                Organize open session tabs into color-coded groups.
+              </p>
+            </div>
+            {!showCreateForm && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="sor-btn-primary-sm flex-shrink-0"
+              >
+                <Plus size={14} />
+                <span>New Group</span>
+              </button>
+            )}
           </div>
 
           {/* Search */}
@@ -430,6 +441,109 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
               placeholder="Search groups..."
             />
           </div>
+
+          {/* Inline create form */}
+          {showCreateForm && (
+            <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
+                  <Plus size={14} className="text-primary" />
+                  New Tab Group
+                </h4>
+                <button
+                  onClick={() => {
+                    setShowCreateForm(false);
+                    setNewGroupName("");
+                  }}
+                  className="sor-icon-btn-sm"
+                  title="Cancel"
+                  aria-label="Cancel new group"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="new-group-name"
+                  className="block text-[11px] font-medium text-[var(--color-textSecondary)]"
+                >
+                  Name
+                </label>
+                <input
+                  ref={newGroupInputRef}
+                  id="new-group-name"
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleCreateGroup();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setShowCreateForm(false);
+                      setNewGroupName("");
+                    }
+                  }}
+                  placeholder="e.g. Production servers"
+                  className="sor-form-input-xs w-full"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-[var(--color-textSecondary)]">
+                  Color
+                </label>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex gap-1.5">
+                    {GROUP_COLORS.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => setNewGroupColor(c.value)}
+                        className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                          newGroupColor === c.value
+                            ? "border-white scale-110 shadow"
+                            : "border-transparent"
+                        }`}
+                        style={{ backgroundColor: c.value }}
+                        title={c.name}
+                        aria-label={`Use ${c.name}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[var(--color-textMuted)] text-[11px]">
+                    or
+                  </span>
+                  <CustomColorPicker
+                    value={newGroupColor}
+                    onChange={setNewGroupColor}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setShowCreateForm(false);
+                    setNewGroupName("");
+                  }}
+                  className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateGroup}
+                  disabled={!newGroupName.trim()}
+                  className="sor-btn-primary-sm"
+                >
+                  <Check size={14} />
+                  <span>Create Group</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Content */}
           <div>
@@ -720,91 +834,13 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
             )}
           </div>
 
-          {/* Footer */}
-        <div className="pt-4 border-t border-[var(--color-border)]">
-          <div className="flex items-center justify-between w-full">
-            {/* Stats */}
-            <div className="text-xs text-[var(--color-textMuted)]">
-              {stats.groupCount} {stats.groupCount === 1 ? "group" : "groups"},{" "}
-              {stats.groupedTabCount} grouped{" "}
-              {stats.groupedTabCount === 1 ? "tab" : "tabs"},{" "}
-              {stats.ungroupedTabCount} ungrouped
-            </div>
-
-            {/* Create new group */}
-            {showCreateForm ? (
-              <div className="flex items-center gap-2">
-                <input
-                  ref={newGroupInputRef}
-                  type="text"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleCreateGroup();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      setShowCreateForm(false);
-                      setNewGroupName("");
-                    }
-                  }}
-                  placeholder="Group name"
-                  className="text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 outline-none focus:border-[var(--color-borderActive)] text-[var(--color-text)] w-32"
-                />
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex gap-1">
-                    {GROUP_COLORS.map((c) => (
-                      <button
-                        key={c.value}
-                        onClick={() => setNewGroupColor(c.value)}
-                        className={`w-4 h-4 rounded-full border-2 transition-transform hover:scale-110 ${
-                          newGroupColor === c.value
-                            ? "border-white scale-110"
-                            : "border-transparent"
-                        }`}
-                        style={{ backgroundColor: c.value }}
-                        title={c.name}
-                      />
-                    ))}
-                  </div>
-                  <CustomColorPicker
-                    value={newGroupColor}
-                    onChange={setNewGroupColor}
-                    size="sm"
-                  />
-                </div>
-                <button
-                  onClick={handleCreateGroup}
-                  disabled={!newGroupName.trim()}
-                  className="sor-btn-primary-sm"
-                  title="Create group"
-                >
-                  <Check size={14} />
-                  <span>Create</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setNewGroupName("");
-                  }}
-                  className="sor-icon-btn-sm"
-                  title="Cancel"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowCreateForm(true)}
-                className="sor-btn-primary-sm"
-              >
-                <Plus size={14} />
-                <span>Create New Group</span>
-              </button>
-            )}
+          {/* Footer (stats only) */}
+          <div className="pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-textMuted)]">
+            {stats.groupCount} {stats.groupCount === 1 ? "group" : "groups"},{" "}
+            {stats.groupedTabCount} grouped{" "}
+            {stats.groupedTabCount === 1 ? "tab" : "tabs"},{" "}
+            {stats.ungroupedTabCount} ungrouped
           </div>
-        </div>
         </div>
       </div>
     </div>
