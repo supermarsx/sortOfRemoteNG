@@ -96,6 +96,32 @@
   }
 }
 
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes cardHide {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+    filter: blur(2px);
+  }
+}
+
 /* Animation utility classes */
 .animate-fade-in {
   animation: fadeIn var(--animation-duration, 200ms) ease-out forwards;
@@ -123,6 +149,21 @@
 
 .animate-slide-in-left {
   animation: slideInLeft var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-card-reveal {
+  animation: cardReveal calc(var(--animation-duration, 200ms) * 1.4)
+    cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top center;
+  will-change: transform, opacity, filter;
+}
+
+.animate-card-hide {
+  animation: cardHide calc(var(--animation-duration, 200ms) * 1.0)
+    cubic-bezier(0.4, 0, 1, 1) forwards;
+  transform-origin: top center;
+  will-change: transform, opacity, filter;
+  pointer-events: none;
 }
 
 /* Modal/Dialog backdrop animation */
@@ -230,6 +271,8 @@
   .animate-fade-in-scale,
   .animate-slide-in-right,
   .animate-slide-in-left,
+  .animate-card-reveal,
+  .animate-card-hide,
   .backdrop-animate,
   .modal-content-animate,
   .popup-animate,

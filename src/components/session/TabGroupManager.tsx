@@ -132,9 +132,11 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
   // New group creation
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createFormClosing, setCreateFormClosing] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[5].value);
   const newGroupInputRef = useRef<HTMLInputElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
 
   // Drag reorder state
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
@@ -146,6 +148,41 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   const animEnabled =
     settings.animationsEnabled && settings.enableTabGroupAnimations;
   const animDurationMs = settings.animationDuration || 200;
+  // Card-reveal/hide use slightly longer total cycle than the global var
+  // (matches the 1.4× / 1.0× multipliers in animations.css).
+  const cardOutDurationMs = animDurationMs;
+
+  const openCreateForm = useCallback(() => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setCreateFormClosing(false);
+    setShowCreateForm(true);
+  }, []);
+
+  const closeCreateForm = useCallback(() => {
+    if (!animEnabled) {
+      setShowCreateForm(false);
+      setCreateFormClosing(false);
+      setNewGroupName("");
+      return;
+    }
+    setCreateFormClosing(true);
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      setShowCreateForm(false);
+      setCreateFormClosing(false);
+      setNewGroupName("");
+      closeTimerRef.current = null;
+    }, cardOutDurationMs);
+  }, [animEnabled, cardOutDurationMs]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (renamingGroupId && renameInputRef.current) {
@@ -391,10 +428,9 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
       collapsed: false,
     };
     dispatch({ type: "ADD_TAB_GROUP", payload: newGroup });
-    setNewGroupName("");
     setNewGroupColor(GROUP_COLORS[5].value);
-    setShowCreateForm(false);
-  }, [newGroupName, newGroupColor, dispatch]);
+    closeCreateForm();
+  }, [newGroupName, newGroupColor, dispatch, closeCreateForm]);
 
   // ── Drag and drop for group reorder ───────────────────────────
 
@@ -508,10 +544,12 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                 </p>
               </div>
             </div>
-            {!showCreateForm && (
+            {(!showCreateForm || createFormClosing) && (
               <button
-                onClick={() => setShowCreateForm(true)}
-                className="sor-btn-primary-sm flex-shrink-0"
+                onClick={openCreateForm}
+                className={`sor-btn-primary-sm flex-shrink-0 ${
+                  animEnabled ? "animate-fade-in" : ""
+                }`}
               >
                 <Plus size={14} />
                 <span>New Group</span>
@@ -595,8 +633,13 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
           {showCreateForm && (
             <div
               className={`rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3 ${
-                animEnabled ? "animate-fade-in-down" : ""
+                animEnabled
+                  ? createFormClosing
+                    ? "animate-card-hide"
+                    : "animate-card-reveal"
+                  : ""
               }`}
+              aria-hidden={createFormClosing}
             >
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
@@ -604,10 +647,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                   New Tab Group
                 </h4>
                 <button
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setNewGroupName("");
-                  }}
+                  onClick={closeCreateForm}
                   className="sor-icon-btn-sm"
                   title="Cancel"
                   aria-label="Cancel new group"
@@ -635,8 +675,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                       handleCreateGroup();
                     } else if (e.key === "Escape") {
                       e.preventDefault();
-                      setShowCreateForm(false);
-                      setNewGroupName("");
+                      closeCreateForm();
                     }
                   }}
                   placeholder="e.g. Production servers"
@@ -678,10 +717,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setNewGroupName("");
-                  }}
+                  onClick={closeCreateForm}
                   className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                 >
                   Cancel
