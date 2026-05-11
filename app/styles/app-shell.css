@@ -1,6 +1,9 @@
 .app-shell {
   position: relative;
-  isolation: isolate;
+  /* No isolation: isolate here — that would lock children into a private
+     stacking context and prevent the toolbar (z-index 1100) from layering
+     above the portaled modal backdrop (z-index 1000). The glow ::before
+     pseudo is given a negative z-index instead to keep it behind content. */
 }
 
 .app-shell.app-transparent {
@@ -68,12 +71,14 @@
   opacity: var(--app-glow-opacity);
   filter: blur(var(--app-glow-blur));
   pointer-events: none;
-  z-index: 0;
+  /* Negative so the glow stays behind ordinary content without requiring
+     isolation on .app-shell. */
+  z-index: -1;
 }
 
-.app-shell > * {
-  z-index: 1;
-}
+/* Default app-shell children sit at z:auto so their own z-index utilities
+   take effect — previously every child was clamped to z:1 which silently
+   beat Tailwind z-[…] utilities at equal specificity. */
 
 .app-shell > :not(.fixed):not(.absolute):not(.sticky) {
   position: relative;
@@ -85,6 +90,18 @@
   color: var(--color-text);
   position: relative;
   overflow: hidden;
+  /* The app-bar must always sit above any modal backdrop. .app-shell > *
+     forces z-index:1 on every direct child, so a Tailwind z-[1100]
+     utility was being silently overridden — pin the layer here with the
+     same specificity as the offending rule. */
+  z-index: 1100;
+}
+
+/* Re-assert the toolbar layer in case it isn't a direct child of
+   .app-shell in some surface (e.g. detached windows). */
+.app-shell > .app-bar,
+.app-shell > .app-bar-secondary {
+  z-index: 1100;
 }
 
 /* Top bar glow effect */
