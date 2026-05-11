@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::clipboard::{self, SharedClipboardState};
-use super::frame_channel::DynFrameChannel;
+use super::frame_channel::{frame_delivery_snapshot, DynFrameChannel};
 use crate::ironrdp::connector::connection_activation::ConnectionActivationState;
 use crate::ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
 use crate::ironrdp::core::WriteBuf;
@@ -25,6 +25,7 @@ use super::multimon::build_display_control_messages;
 use super::network::{
     extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient,
 };
+use super::session_state::{ChannelSummary, FrameFlowSummary};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
@@ -59,6 +60,34 @@ fn emit_log(
         serde_json::to_value(&entry).unwrap_or_default(),
     );
     let _ = log_sink.send(entry);
+}
+
+fn emit_lifecycle_snapshot(
+    event_emitter: &DynEventEmitter,
+    stats: &RdpSessionStats,
+    session_id: &str,
+) {
+    let lifecycle = stats.lifecycle_snapshot(session_id);
+    let _ = event_emitter.emit_event(
+        "rdp://lifecycle",
+        serde_json::to_value(lifecycle).unwrap_or_default(),
+    );
+}
+
+fn set_phase_and_emit_lifecycle(
+    stats: &RdpSessionStats,
+    event_emitter: &DynEventEmitter,
+    session_id: &str,
+    phase: &str,
+) {
+    stats.set_phase(phase);
+    emit_lifecycle_snapshot(event_emitter, stats, session_id);
+}
+
+fn merge_channel_summary(into: &mut ChannelSummary, add: ChannelSummary) {
+    into.enabled_count = into.enabled_count.saturating_add(add.enabled_count);
+    into.ready_count = into.ready_count.saturating_add(add.ready_count);
+    into.failed_count = into.failed_count.saturating_add(add.failed_count);
 }
 
 // ---- Deactivation-Reactivation Sequence handler ----
@@ -252,7 +281,7 @@ pub fn run_rdp_session(
     match result {
         Ok(()) => {
             log::info!("RDP session {session_id} ended normally");
-            stats.set_phase("disconnected");
+            set_phase_and_emit_lifecycle(&stats, &event_emitter, &session_id, "disconnected");
             // Only emit disconnected for clean exits -- errors already emitted their own status.
             let _ = event_emitter.emit_event(
                 "rdp://status",
@@ -274,7 +303,7 @@ pub fn run_rdp_session(
             // disconnect rather than an error visible to the user.
             if err_msg.contains("session_shutdown") {
                 log::info!("RDP session {session_id} was shut down before connecting");
-                stats.set_phase("disconnected");
+                set_phase_and_emit_lifecycle(&stats, &event_emitter, &session_id, "disconnected");
                 let _ = event_emitter.emit_event(
                     "rdp://status",
                     serde_json::to_value(&RdpStatusEvent {
@@ -290,7 +319,7 @@ pub fn run_rdp_session(
             }
 
             log::error!("RDP session {session_id} error: {err_msg}");
-            stats.set_phase("error");
+            set_phase_and_emit_lifecycle(&stats, &event_emitter, &session_id, "error");
             stats.set_last_error(&err_msg);
             let _ = event_emitter.emit_event(
                 "rdp://status",
@@ -667,7 +696,7 @@ fn establish_rdp_connection(
 
     let addr = format!("{host}:{port}");
     log::info!("RDP session {session_id}: connecting to {addr}");
-    stats.set_phase("tcp_connect");
+    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "tcp_connect");
 
     let _ = event_emitter.emit_event(
         "rdp://status",
@@ -728,7 +757,7 @@ fn establish_rdp_connection(
 
     // -- 2. Build IronRDP connector config --
 
-    stats.set_phase("configuring");
+    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "initializing");
 
     let (actual_user, actual_domain): (String, Option<String>) = if domain.is_some() {
         (username.to_string(), domain.map(String::from))
@@ -973,7 +1002,7 @@ fn establish_rdp_connection(
 
     // -- 3. Connection begin (pre-TLS phase) --
 
-    stats.set_phase("negotiating");
+    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "negotiating");
     log::info!("RDP session {session_id}: starting connection sequence");
     let t_negotiate = Instant::now();
     let should_upgrade = crate::ironrdp_blocking::connect_begin(&mut framed, &mut connector)
@@ -983,7 +1012,7 @@ fn establish_rdp_connection(
 
     // -- 4. TLS upgrade --
 
-    stats.set_phase("tls_upgrade");
+    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "tls_handshake");
     log::info!("RDP session {session_id}: upgrading to TLS");
     let t_tls = Instant::now();
 
@@ -1048,7 +1077,7 @@ fn establish_rdp_connection(
 
     // -- 5. Finalize connection (CredSSP / NLA + remaining handshake) --
 
-    stats.set_phase("authenticating");
+    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "credssp");
     log::info!("RDP session {session_id}: finalizing connection (CredSSP/NLA)");
 
     let _ = event_emitter.emit_event(
@@ -1149,7 +1178,7 @@ fn establish_rdp_connection(
     let desktop_width = connection_result.desktop_size.width;
     let desktop_height = connection_result.desktop_size.height;
 
-    stats.set_phase("active");
+    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "active");
     log::info!("RDP session {session_id}: connected! Desktop: {desktop_width}x{desktop_height}");
 
     let _ = event_emitter.emit_event(
@@ -1819,6 +1848,38 @@ fn run_active_session_loop(
 
         // - Emit periodic stats -
         if last_stats_emit.elapsed() >= stats_interval {
+            let active_ch = if !viewer_detached {
+                attached_channel.as_ref().unwrap_or(frame_channel)
+            } else {
+                frame_channel
+            };
+
+            let delivery_snapshot = frame_delivery_snapshot(active_ch);
+            stats.set_frame_flow_summary(FrameFlowSummary {
+                queued_frames: dirty_regions.len().min(u16::MAX as usize) as u16,
+                delivered_frames: stats.frame_count.load(Ordering::Relaxed),
+                dropped_frames: delivery_snapshot.failed_frames,
+            });
+
+            let mut channel_summary = ChannelSummary::default();
+            if settings.clipboard_enabled {
+                channel_summary.enabled_count = channel_summary.enabled_count.saturating_add(1);
+                channel_summary.ready_count = channel_summary.ready_count.saturating_add(1);
+            }
+            if let Some(rdpdr) = est
+                .active_stage
+                .get_svc_processor_mut::<super::rdpdr::RdpdrClient>()
+            {
+                merge_channel_summary(&mut channel_summary, rdpdr.channel_summary());
+            }
+            if let Some(rdpsnd) = est
+                .active_stage
+                .get_svc_processor_mut::<super::rdpdr::RdpsndClient>()
+            {
+                merge_channel_summary(&mut channel_summary, rdpsnd.channel_summary());
+            }
+            stats.set_channel_summary(channel_summary);
+
             let stats_event = stats.to_event(session_id);
             if let Some(lifecycle) = stats_event.lifecycle.clone() {
                 let _ = event_emitter.emit_event(
@@ -2117,7 +2178,12 @@ fn run_active_session_loop(
                                     }
                                     ActiveStageOutput::Terminate(reason) => {
                                         log::info!("RDP session {session_id}: server terminated: {reason:?}");
-                                        stats.set_phase("terminated");
+                                        set_phase_and_emit_lifecycle(
+                                            stats,
+                                            event_emitter,
+                                            session_id,
+                                            "terminated",
+                                        );
                                         batch_should_terminate = true;
                                     }
                                     ActiveStageOutput::DeactivateAll(cas) => {
@@ -2444,7 +2510,7 @@ fn run_active_session_loop(
                     stats
                         .frame_count
                         .store(0, std::sync::atomic::Ordering::Relaxed);
-                    stats.set_phase("active");
+                    set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "active");
 
                     log::info!(
                         "RDP session {session_id}: reactivated at {}x{}",
@@ -2545,7 +2611,7 @@ where
                     "RDP session {session_id}: reconnect attempt {reconnect_count} failed: {message}"
                 );
 
-                stats.set_phase("reconnecting");
+                set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "reconnecting");
                 let _ = event_emitter.emit_event(
                     "rdp://status",
                     serde_json::to_value(&RdpStatusEvent {
@@ -2646,7 +2712,7 @@ where
             }
         }
 
-        stats.set_phase("reconnecting");
+        set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "reconnecting");
         let _ = event_emitter.emit_event(
             "rdp://status",
             serde_json::to_value(&RdpStatusEvent {

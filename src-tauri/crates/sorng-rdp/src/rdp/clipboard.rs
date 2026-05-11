@@ -303,10 +303,12 @@ impl ClipboardState {
     }
 
     pub fn queue_file_contents_request(&mut self, request: FileContentsRequest) -> bool {
-        self.file_contents_requests_received = self.file_contents_requests_received.saturating_add(1);
+        self.file_contents_requests_received =
+            self.file_contents_requests_received.saturating_add(1);
         let allowed = self.apply_local_advertisement_policy();
         if !allowed {
-            self.file_contents_requests_blocked = self.file_contents_requests_blocked.saturating_add(1);
+            self.file_contents_requests_blocked =
+                self.file_contents_requests_blocked.saturating_add(1);
         }
         self.pending_file_contents_request = Some(request);
         allowed

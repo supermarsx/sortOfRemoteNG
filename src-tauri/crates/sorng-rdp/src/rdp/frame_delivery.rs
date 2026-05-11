@@ -282,7 +282,13 @@ pub fn push_frame_via_channel(
     region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
     frame_channel: &DynFrameChannel,
 ) {
-    push_frame_payload_via_channel(image_data, fb_width, region, frame_channel, FramePayloadKind::RgbaRect);
+    push_frame_payload_via_channel(
+        image_data,
+        fb_width,
+        region,
+        frame_channel,
+        FramePayloadKind::RgbaRect,
+    );
 }
 
 #[inline]

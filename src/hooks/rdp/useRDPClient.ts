@@ -20,6 +20,7 @@ import {
 } from '../../utils/auth/trustStore';
 import type { FrontendRendererType } from '../../components/rdp/rdpRenderers';
 import { RdpFramePipeline, type FrameSchedulingMode } from '../../components/rdp/rdpFramePipeline';
+import { useRdpFrameBackpressure } from './useRdpFrameBackpressure';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
 import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent, RDPLifecycleEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
@@ -96,6 +97,29 @@ export function useRDPClient(session: ConnectionSession) {
   const [activeRenderBackend, setActiveRenderBackend] = useState<string>('webview');
   /** Which frontend renderer is actually active (may differ from config if fallback). */
   const [activeFrontendRenderer, setActiveFrontendRenderer] = useState<string>('canvas2d');
+
+  const {
+    pressureState: framePressureState,
+    lastUpdate: frameBackpressureTelemetry,
+    reset: resetFrameBackpressure,
+  } = useRdpFrameBackpressure({
+    sessionId: rdpSessionId,
+    enabled: isConnected && !!rdpSessionId,
+    getMetrics: () => pipelineRef.current?.getMetrics() ?? null,
+    renderer: activeFrontendRenderer,
+    isDetached: !isConnected,
+    sender: async (update) => {
+      await invoke('rdp_report_frame_telemetry', {
+        payload: {
+          sessionId: update.sessionId,
+          queuedFrames: update.queuedFrames,
+          droppedFrames: update.droppedFrames,
+          coalescedFrames: update.coalescedFrames,
+          averageRenderMs: update.averageRenderMs,
+        },
+      });
+    },
+  });
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
@@ -1196,9 +1220,16 @@ export function useRDPClient(session: ConnectionSession) {
     initializeRDPConnection();
     return () => {
       cleanup();
+      resetFrameBackpressure();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- session.id is the only meaningful trigger
-  }, [session.id]);
+  }, [session.id, resetFrameBackpressure]);
+
+  useEffect(() => {
+    if (!rdpSessionId || !isConnected) {
+      resetFrameBackpressure();
+    }
+  }, [rdpSessionId, isConnected, resetFrameBackpressure]);
 
   // Pipeline cleanup is handled by the cleanup() call in the
   // connect-on-mount effect above — no separate unmount effect needed.
@@ -1711,6 +1742,8 @@ export function useRDPClient(session: ConnectionSession) {
     connectTiming,
     activeRenderBackend,
     activeFrontendRenderer,
+    framePressureState,
+    frameBackpressureTelemetry,
     activeScheduling: pipelineRef.current?.getActiveScheduling() ?? 'vsync',
     tripleBuffered: pipelineRef.current?.getRenderer()?.tripleBuffered ?? false,
     // Derived

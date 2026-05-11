@@ -56,7 +56,11 @@ fn accounting_key(frame_channel: &DynFrameChannel) -> usize {
     Arc::as_ptr(frame_channel) as *const () as usize
 }
 
-fn record_delivery_attempt(snapshot: &mut FrameDeliverySnapshot, kind: FramePayloadKind, bytes: u64) {
+fn record_delivery_attempt(
+    snapshot: &mut FrameDeliverySnapshot,
+    kind: FramePayloadKind,
+    bytes: u64,
+) {
     snapshot.attempted_frames = snapshot.attempted_frames.saturating_add(1);
     snapshot.attempted_bytes = snapshot.attempted_bytes.saturating_add(bytes);
     match kind {
@@ -160,8 +164,12 @@ mod tests {
         let frame_channel: DynFrameChannel = Arc::new(NoopFrameChannel);
         reset_frame_delivery_accounting(&frame_channel);
 
-        send_accounted_frame(&frame_channel, FramePayloadKind::FullFrame, vec![1, 2, 3, 4])
-            .expect("noop channel should accept payloads");
+        send_accounted_frame(
+            &frame_channel,
+            FramePayloadKind::FullFrame,
+            vec![1, 2, 3, 4],
+        )
+        .expect("noop channel should accept payloads");
 
         let snapshot = frame_delivery_snapshot(&frame_channel);
         assert_eq!(snapshot.attempted_frames, 1);

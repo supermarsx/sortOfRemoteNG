@@ -122,7 +122,11 @@ fn count_as_u16(count: usize) -> u16 {
 }
 
 fn bool_count(value: bool) -> u16 {
-    if value { 1 } else { 0 }
+    if value {
+        1
+    } else {
+        0
+    }
 }
 
 fn channel_summary(enabled: bool, ready: bool, failed: bool) -> ChannelSummary {
@@ -325,11 +329,8 @@ impl RdpdrClient {
         );
 
         if component != RDPDR_CTYP_CORE {
-            self.diagnostics.counters.ignored_packets = self
-                .diagnostics
-                .counters
-                .ignored_packets
-                .saturating_add(1);
+            self.diagnostics.counters.ignored_packets =
+                self.diagnostics.counters.ignored_packets.saturating_add(1);
             return Vec::new();
         }
 
@@ -543,11 +544,8 @@ impl RdpdrClient {
                             device_id
                         );
                     } else {
-                        self.diagnostics.counters.rejected_devices = self
-                            .diagnostics
-                            .counters
-                            .rejected_devices
-                            .saturating_add(1);
+                        self.diagnostics.counters.rejected_devices =
+                            self.diagnostics.counters.rejected_devices.saturating_add(1);
                         log::warn!(
                             "RDPDR session {}: device {} rejected (0x{:08X})",
                             self.session_id,
@@ -561,11 +559,8 @@ impl RdpdrClient {
             }
             PAKID_CORE_DEVICE_IOREQUEST => {
                 if body.len() >= 20 {
-                    self.diagnostics.counters.device_irps = self
-                        .diagnostics
-                        .counters
-                        .device_irps
-                        .saturating_add(1);
+                    self.diagnostics.counters.device_irps =
+                        self.diagnostics.counters.device_irps.saturating_add(1);
                     let device_id = read_u32(body, 0);
                     let file_id = read_u32(body, 4);
                     let completion_id = read_u32(body, 8);
@@ -663,11 +658,8 @@ impl RdpdrClient {
                 Vec::new()
             }
             _ => {
-                self.diagnostics.counters.ignored_packets = self
-                    .diagnostics
-                    .counters
-                    .ignored_packets
-                    .saturating_add(1);
+                self.diagnostics.counters.ignored_packets =
+                    self.diagnostics.counters.ignored_packets.saturating_add(1);
                 Vec::new()
             }
         };
@@ -1043,11 +1035,8 @@ impl SvcProcessor for RdpsndClient {
             }
 
             let confirm = Self::build_wave_confirm(pending.timestamp, pending.block_no);
-            self.diagnostics.counters.responses_sent = self
-                .diagnostics
-                .counters
-                .responses_sent
-                .saturating_add(1);
+            self.diagnostics.counters.responses_sent =
+                self.diagnostics.counters.responses_sent.saturating_add(1);
             return Ok(vec![SvcMessage::from(RdpsndPdu(confirm))]);
         }
 
@@ -1078,11 +1067,8 @@ impl SvcProcessor for RdpsndClient {
                     .counters
                     .server_format_messages
                     .saturating_add(1);
-                self.diagnostics.counters.responses_sent = self
-                    .diagnostics
-                    .counters
-                    .responses_sent
-                    .saturating_add(1);
+                self.diagnostics.counters.responses_sent =
+                    self.diagnostics.counters.responses_sent.saturating_add(1);
                 Ok(vec![SvcMessage::from(RdpsndPdu(reply))])
             }
             SNDC_TRAINING => {
@@ -1100,11 +1086,8 @@ impl SvcProcessor for RdpsndClient {
                         .counters
                         .training_confirms
                         .saturating_add(1);
-                    self.diagnostics.counters.responses_sent = self
-                        .diagnostics
-                        .counters
-                        .responses_sent
-                        .saturating_add(1);
+                    self.diagnostics.counters.responses_sent =
+                        self.diagnostics.counters.responses_sent.saturating_add(1);
                     Ok(vec![SvcMessage::from(RdpsndPdu(
                         Self::build_training_confirm(ts, ps),
                     ))])
@@ -1162,11 +1145,8 @@ impl SvcProcessor for RdpsndClient {
                 }
 
                 let confirm = Self::build_wave_confirm(timestamp, block_no);
-                self.diagnostics.counters.responses_sent = self
-                    .diagnostics
-                    .counters
-                    .responses_sent
-                    .saturating_add(1);
+                self.diagnostics.counters.responses_sent =
+                    self.diagnostics.counters.responses_sent.saturating_add(1);
                 Ok(vec![SvcMessage::from(RdpsndPdu(confirm))])
             }
             SNDC_WAVE => {
@@ -1222,11 +1202,8 @@ impl SvcProcessor for RdpsndClient {
                             "right": right,
                         }),
                     );
-                    self.diagnostics.counters.volume_events = self
-                        .diagnostics
-                        .counters
-                        .volume_events
-                        .saturating_add(1);
+                    self.diagnostics.counters.volume_events =
+                        self.diagnostics.counters.volume_events.saturating_add(1);
                 } else {
                     self.diagnostics.counters.malformed_payloads = self
                         .diagnostics
@@ -1237,12 +1214,11 @@ impl SvcProcessor for RdpsndClient {
                 Ok(Vec::new())
             }
             SNDC_QUALITYMODE => {
-                self.diagnostics.counters.responses_sent = self
-                    .diagnostics
-                    .counters
-                    .responses_sent
-                    .saturating_add(1);
-                Ok(vec![SvcMessage::from(RdpsndPdu(Self::build_quality_mode()))])
+                self.diagnostics.counters.responses_sent =
+                    self.diagnostics.counters.responses_sent.saturating_add(1);
+                Ok(vec![SvcMessage::from(
+                    RdpsndPdu(Self::build_quality_mode()),
+                )])
             }
             SNDC_CLOSE => {
                 log::info!("RDPSND session {}: Close", self.session_id);
@@ -1252,19 +1228,13 @@ impl SvcProcessor for RdpsndClient {
                         "sessionId": self.session_id,
                     }),
                 );
-                self.diagnostics.counters.close_events = self
-                    .diagnostics
-                    .counters
-                    .close_events
-                    .saturating_add(1);
+                self.diagnostics.counters.close_events =
+                    self.diagnostics.counters.close_events.saturating_add(1);
                 Ok(Vec::new())
             }
             _ => {
-                self.diagnostics.counters.ignored_messages = self
-                    .diagnostics
-                    .counters
-                    .ignored_messages
-                    .saturating_add(1);
+                self.diagnostics.counters.ignored_messages =
+                    self.diagnostics.counters.ignored_messages.saturating_add(1);
                 log::debug!(
                     "RDPSND session {}: msgType=0x{:02X} ({}B), ignoring",
                     self.session_id,

@@ -211,15 +211,8 @@ impl SharedFrameStore {
         let slots = self.slots.read().expect("lock poisoned");
         let slot_arc = slots.get(session_id)?;
         let slot = slot_arc.inner.read().expect("lock poisoned");
-        let (bounded_x, bounded_y, bounded_width, bounded_height) = bounded_region(
-            slot.width,
-            slot.height,
-            x,
-            y,
-            w,
-            h,
-            max_bytes,
-        );
+        let (bounded_x, bounded_y, bounded_width, bounded_height) =
+            bounded_region(slot.width, slot.height, x, y, w, h, max_bytes);
         let rgba = extract_bounded_region_rgba(
             &slot.data,
             slot.width,
@@ -248,15 +241,8 @@ impl SharedFrameStore {
         w: u16,
         h: u16,
     ) -> Option<Vec<u8>> {
-        self.extract_region_bounded(
-            session_id,
-            x,
-            y,
-            w,
-            h,
-            DEFAULT_MAX_REGION_SNAPSHOT_BYTES,
-        )
-        .map(|snapshot| snapshot.rgba)
+        self.extract_region_bounded(session_id, x, y, w, h, DEFAULT_MAX_REGION_SNAPSHOT_BYTES)
+            .map(|snapshot| snapshot.rgba)
     }
 
     /// Reset slot dimensions (e.g. after reactivation at a new desktop size).
