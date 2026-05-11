@@ -54,11 +54,11 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
   },
 }));
 
-vi.mock("../../src/utils/connection/collectionManager", () => ({
+vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
-      getAllCollections: vi.fn().mockResolvedValue([]),
-      getCurrentCollection: vi.fn().mockReturnValue(null),
+      getAllDatabases: vi.fn().mockResolvedValue([]),
+      getCurrentDatabase: vi.fn().mockReturnValue(null),
     }),
     resetInstance: vi.fn(),
   },

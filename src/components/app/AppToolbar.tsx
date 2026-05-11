@@ -42,10 +42,10 @@ interface AppToolbarProps {
   isAlwaysOnTop: boolean;
   rdpPanelOpen: boolean;
   showErrorLog: boolean;
-  collectionManager: DatabaseManager;
+  databaseManager: DatabaseManager;
   connections: Connection[];
   setShowQuickConnect: (v: boolean) => void;
-  setShowCollectionSelector: (v: boolean) => void;
+  setShowDatabasePanel: (v: boolean) => void;
   openImportExport: () => void;
   setShowSettings: (v: boolean) => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -82,10 +82,10 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   isAlwaysOnTop,
   rdpPanelOpen,
   showErrorLog,
-  collectionManager,
+  databaseManager,
   connections,
   setShowQuickConnect,
-  setShowCollectionSelector,
+  setShowDatabasePanel,
   openImportExport,
   setShowSettings,
   setRdpPanelOpen,
@@ -117,7 +117,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowTabGroupManager,
 }) => {
   const { t } = useTranslation();
-  const noCollection = !collectionManager.getCurrentCollection();
+  const noCollection = !databaseManager.getCurrentDatabase();
 
   return (
     <>
@@ -219,7 +219,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           )}
           {appSettings.showCollectionSwitcherIcon && (
             <button
-              onClick={() => setShowCollectionSelector(true)}
+              onClick={() => setShowDatabasePanel(true)}
               className="app-bar-button p-2"
               title={t("toolbar.switchCollection", "Collections")}
               data-testid="toolbar-collection"

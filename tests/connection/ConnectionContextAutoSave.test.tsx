@@ -39,8 +39,8 @@ describe('ConnectionProvider auto-save', () => {
     await db.clear(STORE_NAME);
     DatabaseManager.resetInstance();
     manager = DatabaseManager.getInstance();
-    const col = await manager.createCollection('Test');
-    await manager.selectCollection(col.id);
+    const col = await manager.createDatabase('Test');
+    await manager.selectDatabase(col.id);
     collectionId = col.id;
   });
 
@@ -208,7 +208,7 @@ describe('ConnectionProvider auto-save', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const saveSpy = vi.spyOn(
       DatabaseManager.getInstance(),
-      'saveCurrentCollectionData' as any,
+      'saveCurrentDatabaseData' as any,
     ).mockRejectedValueOnce(new Error('DB write failed'));
 
     const conn: Connection = {

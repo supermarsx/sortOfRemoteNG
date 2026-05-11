@@ -67,13 +67,13 @@ const mockGetCurrentCollection = vi
 const mockGetAllConnections = vi.fn().mockResolvedValue([]);
 const mockAddConnection = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("../../src/utils/connection/collectionManager", () => ({
+vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
       getAllConnections: mockGetAllConnections,
       addConnection: mockAddConnection,
-      getCurrentCollection: mockGetCurrentCollection,
-      exportCollection: mockExportCollection,
+      getCurrentDatabase: mockGetCurrentCollection,
+      exportDatabase: mockExportCollection,
     }),
     resetInstance: vi.fn(),
   },
@@ -328,7 +328,7 @@ describe("useImportExport", () => {
 
   // ── Export ──────────────────────────────────────────────────
 
-  it("handleExport JSON — calls collectionManager and downloads", async () => {
+  it("handleExport JSON — calls databaseManager and downloads", async () => {
     mockExportCollection.mockResolvedValueOnce('{"data":"ok"}');
     const { result } = renderImportExport();
 

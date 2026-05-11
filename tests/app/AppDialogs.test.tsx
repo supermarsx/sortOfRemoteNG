@@ -3,10 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AppDialogs } from "../../src/components/app/AppDialogs";
 
-vi.mock("../../src/components/connection/CollectionSelector", () => ({
-  CollectionSelector: ({ isOpen, onClose }: any) =>
-    isOpen ? <div data-testid="collection-selector"><button onClick={onClose}>close-cs</button></div> : null,
-}));
+// CollectionSelector was migrated to a tool-panel tab (DatabasePanel)
+// and is no longer imported here, so it doesn't need a mock.
 vi.mock("../../src/components/connection/ConnectionEditor", () => ({
   ConnectionEditor: () => <div data-testid="connection-editor" />,
 }));
@@ -60,13 +58,13 @@ const defaultAppSettings = {
 function makeProps(overrides: Record<string, any> = {}) {
   return {
     appSettings: defaultAppSettings as any,
-    showCollectionSelector: false,
+    showDatabasePanel: false,
     showQuickConnect: false,
     showPasswordDialog: false,
     showSettings: false,
     showDiagnostics: false,
     showErrorLog: false,
-    setShowCollectionSelector: vi.fn(),
+    setShowDatabasePanel: vi.fn(),
     setShowQuickConnect: vi.fn(),
     setShowSettings: vi.fn(),
     setShowDiagnostics: vi.fn(),
@@ -83,17 +81,17 @@ function makeProps(overrides: Record<string, any> = {}) {
     handlePasswordCancel: vi.fn(),
     handleQuickConnectWithHistory: vi.fn(),
     clearQuickConnectHistory: vi.fn(),
-    handleCollectionSelect: vi.fn(),
+    handleDatabaseSelect: vi.fn(),
     settingsManager: { saveSettings: vi.fn(), logAction: vi.fn() } as any,
-    collectionManager: { getCurrentCollection: vi.fn().mockReturnValue(null) } as any,
+    databaseManager: { getCurrentDatabase: vi.fn().mockReturnValue(null) } as any,
     ...overrides,
   };
 }
 
 describe("AppDialogs", () => {
   it("renders core dialogs without tool popups", () => {
-    const collectionManager = {
-      getCurrentCollection: vi.fn().mockReturnValue(null),
+    const databaseManager = {
+      getCurrentDatabase: vi.fn().mockReturnValue(null),
     };
 
     render(
@@ -110,13 +108,13 @@ describe("AppDialogs", () => {
             },
           } as any
         }
-        showCollectionSelector={false}
+        showDatabasePanel={false}
         showQuickConnect={false}
         showPasswordDialog={false}
         showSettings={false}
         showDiagnostics={false}
         showErrorLog={false}
-        setShowCollectionSelector={() => {}}
+        setShowDatabasePanel={() => {}}
         setShowQuickConnect={() => {}}
         setShowSettings={() => {}}
         setShowDiagnostics={() => {}}
@@ -133,9 +131,9 @@ describe("AppDialogs", () => {
         handlePasswordCancel={() => {}}
         handleQuickConnectWithHistory={() => {}}
         clearQuickConnectHistory={() => {}}
-        handleCollectionSelect={async () => {}}
+        handleDatabaseSelect={async () => {}}
         settingsManager={{} as any}
-        collectionManager={collectionManager as any}
+        databaseManager={databaseManager as any}
       />,
     );
 
@@ -147,7 +145,7 @@ describe("AppDialogs", () => {
   // and is no longer mounted from AppDialogs. The legacy flag has no
   // visual effect here anymore — AppDialogs should render nothing for it.
   it("does not mount the legacy CollectionSelector modal", () => {
-    render(<AppDialogs {...makeProps({ showCollectionSelector: true })} />);
+    render(<AppDialogs {...makeProps({ showDatabasePanel: true })} />);
     expect(screen.queryByTestId("collection-selector")).not.toBeInTheDocument();
   });
 
@@ -179,13 +177,6 @@ describe("AppDialogs", () => {
   it("does not show AutoLockManager when autoLock is disabled", () => {
     render(<AppDialogs {...makeProps()} />);
     expect(screen.queryByTestId("auto-lock")).not.toBeInTheDocument();
-  });
-
-  it("calls setShowCollectionSelector(false) when closing CollectionSelector", () => {
-    const setShowCollectionSelector = vi.fn();
-    render(<AppDialogs {...makeProps({ showCollectionSelector: true, setShowCollectionSelector })} />);
-    fireEvent.click(screen.getByText("close-cs"));
-    expect(setShowCollectionSelector).toHaveBeenCalledWith(false);
   });
 
   it("calls setShowSettings(false) when closing SettingsDialog", () => {

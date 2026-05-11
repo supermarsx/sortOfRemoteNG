@@ -18,18 +18,18 @@ describe('DatabaseManager remove password', () => {
     await db.clear(STORE_NAME);
     DatabaseManager.resetInstance();
     manager = DatabaseManager.getInstance();
-    const col = await manager.createCollection('Secure', 'desc', true, 'secret');
+    const col = await manager.createDatabase('Secure', 'desc', true, 'secret');
     collectionId = col.id;
   });
 
   it('removes encryption with correct password', async () => {
-    await manager.selectCollection(collectionId, 'secret');
+    await manager.selectDatabase(collectionId, 'secret');
     const storedBefore = await IndexedDbService.getItem<string>(
       `mremote-collection-${collectionId}`
     );
     expect(typeof storedBefore).toBe('string');
 
-    await manager.removePasswordFromCollection(collectionId, 'secret');
+    await manager.removePasswordFromDatabase(collectionId, 'secret');
     const storedAfter = await IndexedDbService.getItem<StorageData>(
       `mremote-collection-${collectionId}`
     );
@@ -42,6 +42,6 @@ describe('DatabaseManager remove password', () => {
   });
 
   it('throws on wrong password', async () => {
-    await expect(manager.removePasswordFromCollection(collectionId, 'bad')).rejects.toThrow();
+    await expect(manager.removePasswordFromDatabase(collectionId, 'bad')).rejects.toThrow();
   });
 });

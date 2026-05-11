@@ -25,7 +25,7 @@ describe("DatabaseManager", () => {
   });
 
   it("creates and persists a collection", async () => {
-    const col = await manager.createCollection("Test");
+    const col = await manager.createDatabase("Test");
     const stored = await IndexedDbService.getItem<any[]>("mremote-collections");
     expect(stored).toHaveLength(1);
     expect(stored![0].id).toBe(col.id);
@@ -34,7 +34,7 @@ describe("DatabaseManager", () => {
 
   it("loads collection data", async () => {
     await IndexedDbService.setItem("mremote-collection-abc", sampleData);
-    const loaded = await manager.loadCollectionData("abc");
+    const loaded = await manager.loadDatabaseData("abc");
     expect(loaded).toEqual(sampleData);
   });
 
@@ -47,36 +47,36 @@ describe("DatabaseManager", () => {
   });
 
   it("updates and persists changes to a collection", async () => {
-    const col = await manager.createCollection("Initial", "desc");
+    const col = await manager.createDatabase("Initial", "desc");
     const updated = { ...col, name: "Updated", description: "changed" };
-    await manager.updateCollection(updated);
+    await manager.updateDatabase(updated);
 
     const stored = await IndexedDbService.getItem<any[]>("mremote-collections");
     expect(stored![0].name).toBe("Updated");
     expect(stored![0].description).toBe("changed");
   });
 
-  it("updates currentCollection when editing selected collection", async () => {
-    const col = await manager.createCollection("A");
-    await manager.selectCollection(col.id);
+  it("updates currentDatabase when editing selected collection", async () => {
+    const col = await manager.createDatabase("A");
+    await manager.selectDatabase(col.id);
     const updated = { ...col, name: "B" };
-    await manager.updateCollection(updated);
-    expect(manager.getCurrentCollection()?.name).toBe("B");
+    await manager.updateDatabase(updated);
+    expect(manager.getCurrentDatabase()?.name).toBe("B");
   });
 
   it("duplicates an unencrypted collection after its source", async () => {
-    const source = await manager.createCollection("Source");
-    await manager.createCollection("Sibling");
+    const source = await manager.createDatabase("Source");
+    await manager.createDatabase("Sibling");
 
     const sourceData = {
       connections: [{ id: "conn-1", name: "Alpha" } as any],
       settings: { sidebarCollapsed: true },
       timestamp: 42,
     };
-    await manager.saveCollectionData(source.id, sourceData as any);
+    await manager.saveDatabaseData(source.id, sourceData as any);
 
-    const duplicate = await manager.duplicateCollection(source.id);
-    const storedCollections = await manager.getAllCollections();
+    const duplicate = await manager.duplicateDatabase(source.id);
+    const storedCollections = await manager.getAllDatabases();
 
     expect(duplicate.name).toBe("Source (Copy)");
     expect(storedCollections.map((collection) => collection.name)).toEqual([
@@ -84,11 +84,11 @@ describe("DatabaseManager", () => {
       "Source (Copy)",
       "Sibling",
     ]);
-    expect(await manager.loadCollectionData(duplicate.id)).toEqual(sourceData);
+    expect(await manager.loadDatabaseData(duplicate.id)).toEqual(sourceData);
   });
 
   it("duplicates the active encrypted collection using the cached password", async () => {
-    const source = await manager.createCollection(
+    const source = await manager.createDatabase(
       "Secure",
       "desc",
       true,
@@ -100,26 +100,26 @@ describe("DatabaseManager", () => {
       timestamp: 84,
     };
 
-    await manager.saveCollectionData(source.id, sourceData as any, "secret");
-    await manager.selectCollection(source.id, "secret");
+    await manager.saveDatabaseData(source.id, sourceData as any, "secret");
+    await manager.selectDatabase(source.id, "secret");
 
-    const duplicate = await manager.duplicateCollection(source.id);
+    const duplicate = await manager.duplicateDatabase(source.id);
 
     expect(duplicate.name).toBe("Secure (Copy)");
     expect(duplicate.isEncrypted).toBe(true);
-    expect(await manager.loadCollectionData(duplicate.id, "secret")).toEqual(
+    expect(await manager.loadDatabaseData(duplicate.id, "secret")).toEqual(
       sourceData,
     );
   });
 
   it("duplicates another encrypted collection when the source password is provided", async () => {
-    const source = await manager.createCollection(
+    const source = await manager.createDatabase(
       "Vault",
       "desc",
       true,
       "secret",
     );
-    await manager.createCollection("Sibling");
+    await manager.createDatabase("Sibling");
 
     const sourceData = {
       connections: [{ id: "conn-3", name: "Charlie" } as any],
@@ -127,37 +127,37 @@ describe("DatabaseManager", () => {
       timestamp: 128,
     };
 
-    await manager.saveCollectionData(source.id, sourceData as any, "secret");
+    await manager.saveDatabaseData(source.id, sourceData as any, "secret");
 
-    const duplicate = await manager.duplicateCollection(source.id, {
+    const duplicate = await manager.duplicateDatabase(source.id, {
       password: "secret",
     });
 
-    expect((await manager.getAllCollections()).map((collection) => collection.name)).toEqual([
+    expect((await manager.getAllDatabases()).map((collection) => collection.name)).toEqual([
       "Vault",
       "Vault (Copy)",
       "Sibling",
     ]);
-    expect(await manager.loadCollectionData(duplicate.id, "secret")).toEqual(
+    expect(await manager.loadDatabaseData(duplicate.id, "secret")).toEqual(
       sourceData,
     );
   });
 
   it("throws DatabaseNotFoundError when selecting missing collection", async () => {
-    await expect(manager.selectCollection("missing")).rejects.toBeInstanceOf(
+    await expect(manager.selectDatabase("missing")).rejects.toBeInstanceOf(
       DatabaseNotFoundError,
     );
   });
 
   it("throws InvalidPasswordError when password is incorrect", async () => {
-    const col = await manager.createCollection(
+    const col = await manager.createDatabase(
       "Secure",
       "desc",
       true,
       "secret",
     );
     await expect(
-      manager.loadCollectionData(col.id, "wrong"),
+      manager.loadDatabaseData(col.id, "wrong"),
     ).rejects.toBeInstanceOf(InvalidPasswordError);
   });
 
@@ -167,7 +167,7 @@ describe("DatabaseManager", () => {
     const encrypted = await encryptWithPassword("{bad-json", password);
     await IndexedDbService.setItem("mremote-collection-corrupt", encrypted);
     await expect(
-      manager.loadCollectionData("corrupt", password),
+      manager.loadDatabaseData("corrupt", password),
     ).rejects.toBeInstanceOf(CorruptedDataError);
   });
 });

@@ -3,7 +3,7 @@ import { Database, Plus, Upload } from "lucide-react";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { useDatabaseSelector } from "../../hooks/connection/useDatabaseSelector";
 import { useTranslation } from "react-i18next";
-import CollectionsTab from "../connection/collectionSelector/CollectionsTab";
+import DatabaseList from "./list/DatabaseList";
 
 interface DatabasePanelProps {
   /** Tool-panel close handler (closes the tab). */
@@ -24,7 +24,7 @@ interface DatabasePanelProps {
  *
  * Renders inside the ToolPanel like the Tag Manager and Tab Group Manager.
  * The list, create, import, unlock, and clone flows are reused verbatim
- * from CollectionsTab — only the framing (modal → flush panel) changes.
+ * from DatabaseList — only the framing (modal → flush panel) changes.
  */
 export const DatabasePanel: React.FC<DatabasePanelProps> = ({
   onClose,
@@ -69,7 +69,7 @@ export const DatabasePanel: React.FC<DatabasePanelProps> = ({
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-5xl mx-auto p-6">
-          <CollectionsTab mgr={mgr} />
+          <DatabaseList mgr={mgr} />
         </div>
       </div>
     </div>

@@ -266,7 +266,7 @@ export const ShortcutCreator: React.FC<{ isOpen: boolean; onClose: () => void }>
           )}
           <div>
             <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.collection", "Collection")} ({t("common.optional", "Optional")})</label>
-            <Select value={mgr.selectedCollectionId} onChange={(v: string) => mgr.setSelectedCollectionId(v)} variant="form" options={[{ value: '', label: t("shortcuts.selectCollection", "Select a collection...") }, ...mgr.collections.map((c) => ({ value: c.id, label: c.name }))]} />
+            <Select value={mgr.selectedCollectionId} onChange={(v: string) => mgr.setSelectedCollectionId(v)} variant="form" options={[{ value: '', label: t("shortcuts.selectDatabase", "Select a collection...") }, ...mgr.collections.map((c) => ({ value: c.id, label: c.name }))]} />
           </div>
           <div>
             <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{t("shortcuts.connection", "Connection")} ({t("common.optional", "Optional")})</label>

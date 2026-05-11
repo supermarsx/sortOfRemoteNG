@@ -58,12 +58,12 @@ function getCollectionActionError(
 
 export function useDatabaseSelector(
   isOpen: boolean,
-  onCollectionSelect: (
+  onDatabaseSelect: (
     collectionId: string,
     password?: string,
   ) => Promise<void> | void,
 ) {
-  const collectionManager = DatabaseManager.getInstance();
+  const databaseManager = DatabaseManager.getInstance();
   const { saveData } = useConnections();
   const { t } = useTranslation();
 
@@ -134,18 +134,18 @@ export function useDatabaseSelector(
 
   // ─── Data loading ───────────────────────────────────────────────
 
-  const loadCollections = useCallback(async () => {
-    const allCollections = await collectionManager.getAllCollections();
+  const loadDatabases = useCallback(async () => {
+    const allCollections = await databaseManager.getAllDatabases();
     setCollections(allCollections);
-  }, [collectionManager]);
+  }, [databaseManager]);
 
   useEffect(() => {
     if (isOpen) {
-      loadCollections();
+      loadDatabases();
       setSavedProfiles(proxyCollectionManager.getProfiles());
       setSavedChains(proxyCollectionManager.getChains());
     }
-  }, [isOpen, loadCollections]);
+  }, [isOpen, loadDatabases]);
 
   useEffect(() => {
     if (!highlightedCollectionId) {
@@ -206,7 +206,7 @@ export function useDatabaseSelector(
     }
 
     try {
-      const collection = await collectionManager.createCollection(
+      const collection = await databaseManager.createDatabase(
         newCollection.name,
         newCollection.description,
         newCollection.isEncrypted,
@@ -217,7 +217,7 @@ export function useDatabaseSelector(
       setNewCollection(EMPTY_NEW_COLLECTION);
       setError("");
       await Promise.resolve(
-        onCollectionSelect(collection.id, newCollection.password || undefined),
+        onDatabaseSelect(collection.id, newCollection.password || undefined),
       );
     } catch (error) {
       setError(
@@ -238,7 +238,7 @@ export function useDatabaseSelector(
     ) {
       try {
         closeCollectionMenu();
-        await collectionManager.deleteCollection(collection.id);
+        await databaseManager.deleteDatabase(collection.id);
         setCollections(collections.filter((c) => c.id !== collection.id));
       } catch (error) {
         setError(
@@ -313,7 +313,7 @@ export function useDatabaseSelector(
       };
 
       if (editingCollection.isEncrypted && !wantsEncryption) {
-        await collectionManager.removePasswordFromCollection(
+        await databaseManager.removePasswordFromDatabase(
           editingCollection.id,
           editPassword.current,
         );
@@ -321,7 +321,7 @@ export function useDatabaseSelector(
       }
 
       if (wantsEncryption && wantsPasswordChange) {
-        await collectionManager.changeCollectionPassword(
+        await databaseManager.changeDatabasePassword(
           editingCollection.id,
           editingCollection.isEncrypted ? editPassword.current : undefined,
           editPassword.next,
@@ -329,7 +329,7 @@ export function useDatabaseSelector(
         updatedCollection = { ...updatedCollection, isEncrypted: true };
       }
 
-      await collectionManager.updateCollection(updatedCollection);
+      await databaseManager.updateDatabase(updatedCollection);
       setCollections(
         collections.map((c) =>
           c.id === editingCollection.id ? updatedCollection : c,
@@ -353,14 +353,14 @@ export function useDatabaseSelector(
     ): Promise<ConnectionDatabase> => {
       setIsWorking(true);
       try {
-        if (collectionManager.getCurrentCollection()?.id === collection.id) {
+        if (databaseManager.getCurrentDatabase()?.id === collection.id) {
           await saveData();
         }
 
-        const duplicate = await collectionManager.duplicateCollection(collection.id, {
+        const duplicate = await databaseManager.duplicateDatabase(collection.id, {
           password: sourcePassword,
         });
-        await loadCollections();
+        await loadDatabases();
         setHighlightedCollectionId(duplicate.id);
         setError("");
         closePasswordDialog();
@@ -382,8 +382,8 @@ export function useDatabaseSelector(
     [
       closeCollectionMenu,
       closePasswordDialog,
-      collectionManager,
-      loadCollections,
+      databaseManager,
+      loadDatabases,
       saveData,
       t,
     ],
@@ -393,7 +393,7 @@ export function useDatabaseSelector(
     async (collection: ConnectionDatabase) => {
       const isCurrentEncryptedCollection =
         collection.isEncrypted &&
-        collectionManager.getCurrentCollection()?.id === collection.id;
+        databaseManager.getCurrentDatabase()?.id === collection.id;
 
       if (collection.isEncrypted && !isCurrentEncryptedCollection) {
         closeCollectionMenu();
@@ -407,7 +407,7 @@ export function useDatabaseSelector(
 
       await runCloneCollection(collection);
     },
-    [closeCollectionMenu, collectionManager, runCloneCollection],
+    [closeCollectionMenu, databaseManager, runCloneCollection],
   );
 
   // ─── Collection Selection ──────────────────────────────────────
@@ -422,7 +422,7 @@ export function useDatabaseSelector(
       setShowPasswordDialog(true);
       setPassword("");
     } else {
-      await Promise.resolve(onCollectionSelect(collection.id));
+      await Promise.resolve(onDatabaseSelect(collection.id));
     }
   };
 
@@ -436,8 +436,8 @@ export function useDatabaseSelector(
         return;
       }
 
-      await collectionManager.loadCollectionData(selectedCollection.id, password);
-      await Promise.resolve(onCollectionSelect(selectedCollection.id, password));
+      await databaseManager.loadDatabaseData(selectedCollection.id, password);
+      await Promise.resolve(onDatabaseSelect(selectedCollection.id, password));
       closePasswordDialog();
       setError("");
     } catch (error) {
@@ -479,7 +479,7 @@ export function useDatabaseSelector(
 
     try {
       const content = await importFile.text();
-      const collection = await collectionManager.importCollection(content, {
+      const collection = await databaseManager.importDatabase(content, {
         importPassword: importPassword || undefined,
         collectionName: importCollectionName.trim() || undefined,
         encryptPassword: encryptImport ? importEncryptPassword : undefined,
@@ -513,13 +513,13 @@ export function useDatabaseSelector(
   const handleExportDownload = async () => {
     if (!exportingCollection) return;
     try {
-      const content = await collectionManager.exportCollection(
+      const content = await databaseManager.exportDatabase(
         exportingCollection.id,
         includePasswords,
         exportPassword || undefined,
         collectionPassword || undefined,
       );
-      const filename = collectionManager.generateExportFilename();
+      const filename = databaseManager.generateExportFilename();
       const blob = new Blob([content], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -744,7 +744,7 @@ export function useDatabaseSelector(
     setEditingCollection,
     editPassword,
     setEditPassword,
-    loadCollections,
+    loadDatabases,
     handleCreateCollection,
     handleDeleteCollection,
     handleEditCollection,

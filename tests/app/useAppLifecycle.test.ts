@@ -96,7 +96,7 @@ describe("useAppLifecycle", () => {
     const { result } = renderHook(() =>
       useAppLifecycle({
         handleConnect: vi.fn(),
-        setShowCollectionSelector: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
         setShowPasswordDialog: vi.fn(),
         setPasswordDialogMode: vi.fn(),
       }),
@@ -125,7 +125,7 @@ describe("useAppLifecycle", () => {
     const { result } = renderHook(() =>
       useAppLifecycle({
         handleConnect: vi.fn(),
-        setShowCollectionSelector: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
         setShowPasswordDialog: vi.fn(),
         setPasswordDialogMode: vi.fn(),
       }),
@@ -151,7 +151,7 @@ describe("useAppLifecycle", () => {
     renderHook(() =>
       useAppLifecycle({
         handleConnect: vi.fn(),
-        setShowCollectionSelector: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
         setShowPasswordDialog: vi.fn(),
         setPasswordDialogMode: vi.fn(),
       }),
@@ -182,7 +182,7 @@ describe("useAppLifecycle", () => {
     renderHook(() =>
       useAppLifecycle({
         handleConnect: vi.fn(),
-        setShowCollectionSelector: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
         setShowPasswordDialog: vi.fn(),
         setPasswordDialogMode: vi.fn(),
       }),
@@ -205,7 +205,7 @@ describe("useAppLifecycle", () => {
     renderHook(() =>
       useAppLifecycle({
         handleConnect: vi.fn(),
-        setShowCollectionSelector: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
         setShowPasswordDialog: vi.fn(),
         setPasswordDialogMode: vi.fn(),
       }),
@@ -228,7 +228,7 @@ describe("useAppLifecycle", () => {
     renderHook(() =>
       useAppLifecycle({
         handleConnect: vi.fn(),
-        setShowCollectionSelector: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
         setShowPasswordDialog: vi.fn(),
         setPasswordDialogMode: vi.fn(),
       }),

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
-  exportCollection: vi.fn(),
+  exportDatabase: vi.fn(),
   logAction: vi.fn(),
 }));
 
@@ -39,11 +39,11 @@ vi.mock("../../src/contexts/ToastContext", () => ({
   }),
 }));
 
-vi.mock("../../src/utils/connection/collectionManager", () => ({
+vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
-      getCurrentCollection: () => ({ id: "collection-1" }),
-      exportCollection: mocks.exportCollection.mockResolvedValue("[]"),
+      getCurrentDatabase: () => ({ id: "collection-1" }),
+      exportDatabase: mocks.exportDatabase.mockResolvedValue("[]"),
     }),
   },
 }));

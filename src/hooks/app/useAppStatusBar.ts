@@ -6,19 +6,19 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 interface AppStatusBarInput {
   connections: Connection[];
   sessions: ConnectionSession[];
-  collectionManager: DatabaseManager;
+  databaseManager: DatabaseManager;
   isInitialized: boolean;
 }
 
 export function useAppStatusBar({
   connections,
   sessions,
-  collectionManager,
+  databaseManager,
   isInitialized,
 }: AppStatusBarInput) {
   const { t } = useTranslation();
 
-  const collection = collectionManager.getCurrentCollection();
+  const collection = databaseManager.getCurrentDatabase();
 
   // Only count real remote connections — exclude tools, settings, diagnostics, etc.
   const realSessions = useMemo(

@@ -13,7 +13,7 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 interface AppStatusBarProps {
   connections: Connection[];
   sessions: ConnectionSession[];
-  collectionManager: DatabaseManager;
+  databaseManager: DatabaseManager;
   isInitialized: boolean;
 }
 

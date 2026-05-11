@@ -43,7 +43,7 @@ function isTauri(): boolean {
 export function useShortcutManager(isOpen: boolean) {
   const { t } = useTranslation();
   const { state } = useConnections();
-  const collectionManager = DatabaseManager.getInstance();
+  const databaseManager = DatabaseManager.getInstance();
 
   const [collections, setCollections] = useState<
     Array<{ id: string; name: string }>
@@ -504,13 +504,13 @@ export function useShortcutManager(isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    collectionManager
-      .getAllCollections()
+    databaseManager
+      .getAllDatabases()
       .then((c) => { if (!cancelled) setCollections(c); })
       .catch(() => { if (!cancelled) setCollections([]); });
     loadShortcuts();
     return () => { cancelled = true; };
-  }, [collectionManager, isOpen, loadShortcuts]);
+  }, [databaseManager, isOpen, loadShortcuts]);
 
   // ─── Return ─────────────────────────────────────────────────────
 

@@ -52,10 +52,10 @@ const makeProps = (overrides: Record<string, unknown> = {}) => ({
   isAlwaysOnTop: false,
   rdpPanelOpen: false,
   showErrorLog: false,
-  collectionManager: { getCurrentCollection: () => null } as any,
+  databaseManager: { getCurrentDatabase: () => null } as any,
   connections: [],
   setShowQuickConnect: vi.fn(),
-  setShowCollectionSelector: vi.fn(),
+  setShowDatabasePanel: vi.fn(),
   openImportExport: vi.fn(),
   setShowSettings: vi.fn(),
   setRdpPanelOpen: vi.fn(),
@@ -105,7 +105,7 @@ describe("AppToolbar", () => {
 
   it("opens Import / Export through the toolbar action", () => {
     const props = makeProps({
-      collectionManager: { getCurrentCollection: () => ({ id: "col-1", name: "Test" }) } as any,
+      databaseManager: { getCurrentDatabase: () => ({ id: "col-1", name: "Test" }) } as any,
     });
 
     render(<AppToolbar {...(props as any)} />);
@@ -159,7 +159,7 @@ describe("AppToolbar", () => {
 
   it("shows RDP sessions button when showRdpSessionsIcon is enabled", () => {
     const props = makeProps({
-      collectionManager: { getCurrentCollection: () => ({ id: "col-1", name: "Test" }) } as any,
+      databaseManager: { getCurrentDatabase: () => ({ id: "col-1", name: "Test" }) } as any,
     });
     render(<AppToolbar {...(props as any)} />);
     const btn = screen.getByTitle("RDP Sessions");

@@ -478,7 +478,7 @@ export function useImportExport({
     resolve?.(null);
   };
 
-  const collectionManager = DatabaseManager.getInstance();
+  const databaseManager = DatabaseManager.getInstance();
   const settingsManager = SettingsManager.getInstance();
 
   useEffect(() => {
@@ -714,13 +714,13 @@ export function useImportExport({
       let mimeType: string;
       const shouldUsePasswordEncryption = exportEncrypted && Boolean(exportPassword);
 
-      const currentCollection = collectionManager.getCurrentCollection();
-      if (!currentCollection) throw new Error('No collection selected');
+      const currentDatabase = databaseManager.getCurrentDatabase();
+      if (!currentDatabase) throw new Error('No collection selected');
 
       switch (exportFormat) {
         case 'json': {
-          content = await collectionManager.exportCollection(
-            currentCollection.id,
+          content = await databaseManager.exportDatabase(
+            currentDatabase.id,
             includePasswords,
             shouldUsePasswordEncryption ? exportPassword : undefined,
           );

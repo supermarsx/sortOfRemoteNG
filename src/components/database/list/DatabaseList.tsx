@@ -5,7 +5,7 @@ import { Checkbox } from "../../ui/forms";
 import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 
-function CollectionsTab({ mgr }: { mgr: Mgr }) {
+function DatabaseList({ mgr }: { mgr: Mgr }) {
   const { t } = useTranslation();
 
   return (
@@ -726,4 +726,4 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
   );
 }
 
-export default CollectionsTab;
+export default DatabaseList;

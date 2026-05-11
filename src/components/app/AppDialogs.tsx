@@ -35,20 +35,20 @@ const RDPCertTrustPrompt = dynamic(
 
 interface AppDialogsProps {
   appSettings: GlobalSettings;
-  showCollectionSelector: boolean;
+  showDatabasePanel: boolean;
   showQuickConnect: boolean;
   showPasswordDialog: boolean;
   showSettings: boolean;
   showDiagnostics: boolean;
   showErrorLog: boolean;
-  setShowCollectionSelector: (v: boolean) => void;
+  setShowDatabasePanel: (v: boolean) => void;
   setShowQuickConnect: (v: boolean) => void;
   setShowSettings: (v: boolean) => void;
   setShowDiagnostics: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   passwordDialogMode: "setup" | "unlock";
   passwordError: string;
-  collectionSelectorInitialTab?: "collections";
+  databasePanelInitialTab?: "collections";
   diagnosticsConnection: Connection | null;
   setDiagnosticsConnection: (c: Connection | null) => void;
   hasStoragePassword: boolean;
@@ -64,29 +64,29 @@ interface AppDialogsProps {
   handlePasswordCancel: () => void;
   handleQuickConnectWithHistory: (...args: any[]) => void;
   clearQuickConnectHistory: () => void;
-  handleCollectionSelect: (id: string) => Promise<void>;
+  handleDatabaseSelect: (id: string) => Promise<void>;
   handleConnect?: (connection: Connection) => void;
   settingsManager: SettingsManager;
-  collectionManager: DatabaseManager;
+  databaseManager: DatabaseManager;
 }
 
 export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
   const {
     appSettings,
-    showCollectionSelector,
+    showDatabasePanel,
     showQuickConnect,
     showPasswordDialog,
     showSettings,
     showDiagnostics,
     showErrorLog,
-    setShowCollectionSelector,
+    setShowDatabasePanel,
     setShowQuickConnect,
     setShowSettings,
     setShowDiagnostics,
     setShowErrorLog,
     passwordDialogMode,
     passwordError,
-    collectionSelectorInitialTab,
+    databasePanelInitialTab,
     diagnosticsConnection,
     setDiagnosticsConnection,
     hasStoragePassword,
@@ -97,10 +97,10 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     handlePasswordCancel,
     handleQuickConnectWithHistory,
     clearQuickConnectHistory,
-    handleCollectionSelect,
+    handleDatabaseSelect,
     handleConnect,
     settingsManager,
-    collectionManager,
+    databaseManager,
   } = props;
 
   return (
@@ -143,7 +143,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         onSubmit={handlePasswordSubmit}
         onCancel={handlePasswordCancel}
         error={passwordError}
-        noCollectionSelected={!collectionManager.getCurrentCollection()}
+        noCollectionSelected={!databaseManager.getCurrentDatabase()}
       />
 
       <ConfirmDialog

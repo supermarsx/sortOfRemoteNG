@@ -120,7 +120,7 @@ function cloneStorageData(data: StorageData): StorageData {
   return JSON.parse(JSON.stringify(data)) as StorageData;
 }
 
-function buildDuplicateCollectionName(
+function buildDuplicateDatabaseName(
   sourceName: string,
   collections: ConnectionDatabase[],
   preferredName?: string,
@@ -156,7 +156,7 @@ export class DatabaseManager {
   private static instance: DatabaseManager;
   private readonly databasesKey = "mremote-databases";
   private readonly legacyDatabasesKey = "mremote-collections";
-  private currentCollection: ConnectionDatabase | null = null;
+  private currentDatabase: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
 
   static getInstance(): DatabaseManager {
@@ -178,7 +178,7 @@ export class DatabaseManager {
    * using AES with the provided password. The method returns the created
    * collection descriptor.
    */
-  async createCollection(
+  async createDatabase(
     name: string,
     description?: string,
     isEncrypted: boolean = false,
@@ -194,21 +194,21 @@ export class DatabaseManager {
       lastAccessed: new Date().toISOString(),
     };
 
-    const collections = await this.getAllCollections();
+    const collections = await this.getAllDatabases();
     collections.push(collection);
-    await this.saveCollections(collections);
+    await this.saveDatabases(collections);
 
     // Assumes collection count is modest; appending and rewriting the entire
     // array could be expensive if thousands of collections were stored.
     // Initialize empty data for the collection
     if (isEncrypted && password) {
-      await this.saveCollectionData(
+      await this.saveDatabaseData(
         collection.id,
         { connections: [], settings: {}, timestamp: Date.now() },
         password,
       );
     } else {
-      await this.saveCollectionData(collection.id, {
+      await this.saveDatabaseData(collection.id, {
         connections: [],
         settings: {},
         timestamp: Date.now(),
@@ -226,7 +226,7 @@ export class DatabaseManager {
     return collection;
   }
 
-  async getAllCollections(): Promise<ConnectionDatabase[]> {
+  async getAllDatabases(): Promise<ConnectionDatabase[]> {
     try {
       let collections = await IndexedDbService.getItem<ConnectionDatabase[]>(
         this.databasesKey,
@@ -261,13 +261,13 @@ export class DatabaseManager {
     }
   }
 
-  async getCollection(id: string): Promise<ConnectionDatabase | null> {
-    const collections = await this.getAllCollections();
+  async getDatabase(id: string): Promise<ConnectionDatabase | null> {
+    const collections = await this.getAllDatabases();
     return collections.find((c) => c.id === id) || null;
   }
 
-  async selectCollection(id: string, password?: string): Promise<void> {
-    const collection = await this.getCollection(id);
+  async selectDatabase(id: string, password?: string): Promise<void> {
+    const collection = await this.getDatabase(id);
     if (!collection) {
       throw new DatabaseNotFoundError();
     }
@@ -278,13 +278,13 @@ export class DatabaseManager {
       );
     }
 
-    await this.loadCollectionData(id, password);
-    this.currentCollection = collection;
+    await this.loadDatabaseData(id, password);
+    this.currentDatabase = collection;
     this.currentPassword = password || null;
 
     // Update last accessed time
     collection.lastAccessed = new Date().toISOString();
-    await this.updateCollection(collection);
+    await this.updateDatabase(collection);
     
     // Log collection selection/opening
     SettingsManager.getInstance().logAction(
@@ -295,27 +295,27 @@ export class DatabaseManager {
     );
   }
 
-  getCurrentCollection(): ConnectionDatabase | null {
-    return this.currentCollection;
+  getCurrentDatabase(): ConnectionDatabase | null {
+    return this.currentDatabase;
   }
 
-  async updateCollection(collection: ConnectionDatabase): Promise<void> {
-    const collections = await this.getAllCollections();
+  async updateDatabase(collection: ConnectionDatabase): Promise<void> {
+    const collections = await this.getAllDatabases();
     const index = collections.findIndex((c) => c.id === collection.id);
     if (index >= 0) {
       collections[index] = { ...collection, updatedAt: new Date().toISOString() };
-      await this.saveCollections(collections);
-      if (this.currentCollection?.id === collection.id) {
-        this.currentCollection = { ...collections[index] };
+      await this.saveDatabases(collections);
+      if (this.currentDatabase?.id === collection.id) {
+        this.currentDatabase = { ...collections[index] };
       }
     }
   }
 
-  async deleteCollection(id: string): Promise<void> {
-    const collection = await this.getCollection(id);
-    const collections = await this.getAllCollections();
+  async deleteDatabase(id: string): Promise<void> {
+    const collection = await this.getDatabase(id);
+    const collections = await this.getAllDatabases();
     const filteredCollections = collections.filter((c) => c.id !== id);
-    await this.saveCollections(filteredCollections);
+    await this.saveDatabases(filteredCollections);
 
     // Remove collection data
     await IndexedDbService.removeItem(`mremote-collection-${id}`);
@@ -328,27 +328,27 @@ export class DatabaseManager {
       `Database "${collection?.name || id}" deleted`
     );
 
-    if (this.currentCollection?.id === id) {
-      this.currentCollection = null;
+    if (this.currentDatabase?.id === id) {
+      this.currentDatabase = null;
       this.currentPassword = null;
     }
   }
 
-  async duplicateCollection(
+  async duplicateDatabase(
     collectionId: string,
     options?: {
       password?: string;
       name?: string;
     },
   ): Promise<ConnectionDatabase> {
-    const sourceCollection = await this.getCollection(collectionId);
+    const sourceCollection = await this.getDatabase(collectionId);
     if (!sourceCollection) {
       throw new DatabaseNotFoundError();
     }
 
     const duplicatePassword = sourceCollection.isEncrypted
       ? options?.password ??
-        (this.currentCollection?.id === collectionId
+        (this.currentDatabase?.id === collectionId
           ? this.currentPassword || undefined
           : undefined)
       : undefined;
@@ -359,7 +359,7 @@ export class DatabaseManager {
       );
     }
 
-    const sourceData = await this.loadCollectionData(
+    const sourceData = await this.loadDatabaseData(
       collectionId,
       duplicatePassword,
     );
@@ -367,7 +367,7 @@ export class DatabaseManager {
       throw new DatabaseNotFoundError();
     }
 
-    const collections = await this.getAllCollections();
+    const collections = await this.getAllDatabases();
     const sourceIndex = collections.findIndex(
       (collection) => collection.id === collectionId,
     );
@@ -378,7 +378,7 @@ export class DatabaseManager {
     const now = new Date().toISOString();
     const duplicatedCollection: ConnectionDatabase = {
       id: generateId(),
-      name: buildDuplicateCollectionName(
+      name: buildDuplicateDatabaseName(
         sourceCollection.name,
         collections,
         options?.name,
@@ -392,8 +392,8 @@ export class DatabaseManager {
 
     const nextCollections = [...collections];
     nextCollections.splice(sourceIndex + 1, 0, duplicatedCollection);
-    await this.saveCollections(nextCollections);
-    await this.saveCollectionData(
+    await this.saveDatabases(nextCollections);
+    await this.saveDatabaseData(
       duplicatedCollection.id,
       cloneStorageData(sourceData),
       sourceCollection.isEncrypted ? duplicatePassword : undefined,
@@ -409,14 +409,14 @@ export class DatabaseManager {
     return duplicatedCollection;
   }
 
-  private async saveCollections(
+  private async saveDatabases(
     collections: ConnectionDatabase[],
   ): Promise<void> {
     await IndexedDbService.setItem(this.databasesKey, collections);
   }
 
   // Collection data management
-  async saveCollectionData(
+  async saveDatabaseData(
     collectionId: string,
     data: StorageData,
     password?: string,
@@ -468,7 +468,7 @@ export class DatabaseManager {
     }
   }
 
-  async loadCollectionData(
+  async loadDatabaseData(
     collectionId: string,
     password?: string,
   ): Promise<StorageData | null> {
@@ -567,40 +567,40 @@ export class DatabaseManager {
   }
 
   // Current collection data access
-  async saveCurrentCollectionData(data: StorageData): Promise<void> {
-    if (!this.currentCollection) {
+  async saveCurrentDatabaseData(data: StorageData): Promise<void> {
+    if (!this.currentDatabase) {
       throw new Error("No collection selected");
     }
-    await this.saveCollectionData(
-      this.currentCollection.id,
+    await this.saveDatabaseData(
+      this.currentDatabase.id,
       data,
       this.currentPassword || undefined,
     );
   }
 
-  async loadCurrentCollectionData(): Promise<StorageData | null> {
-    if (!this.currentCollection) {
+  async loadCurrentDatabaseData(): Promise<StorageData | null> {
+    if (!this.currentDatabase) {
       throw new Error("No collection selected");
     }
-    return this.loadCollectionData(
-      this.currentCollection.id,
+    return this.loadDatabaseData(
+      this.currentDatabase.id,
       this.currentPassword || undefined,
     );
   }
 
   // Export collection with encryption
-  async exportCollection(
+  async exportDatabase(
     collectionId: string,
     includePasswords: boolean = false,
     exportPassword?: string,
     collectionPassword?: string,
   ): Promise<string> {
-    const collection = await this.getCollection(collectionId);
+    const collection = await this.getDatabase(collectionId);
     if (!collection) {
       throw new Error("Collection not found");
     }
 
-    const data = await this.loadCollectionData(
+    const data = await this.loadDatabaseData(
       collectionId,
       collectionPassword || this.currentPassword || undefined,
     );
@@ -637,53 +637,53 @@ export class DatabaseManager {
     return jsonData;
   }
 
-  async removePasswordFromCollection(
+  async removePasswordFromDatabase(
     collectionId: string,
     password: string,
   ): Promise<void> {
-    const collection = await this.getCollection(collectionId);
+    const collection = await this.getDatabase(collectionId);
     if (!collection) throw new Error("Collection not found");
 
-    const data = await this.loadCollectionData(collectionId, password);
+    const data = await this.loadDatabaseData(collectionId, password);
     if (data === null) throw new Error("Invalid password");
 
-    await this.saveCollectionData(collectionId, data);
+    await this.saveDatabaseData(collectionId, data);
     collection.isEncrypted = false;
-    await this.updateCollection(collection);
+    await this.updateDatabase(collection);
 
-    if (this.currentCollection?.id === collectionId) {
+    if (this.currentDatabase?.id === collectionId) {
       this.currentPassword = null;
-      this.currentCollection = { ...collection };
+      this.currentDatabase = { ...collection };
     }
   }
 
-  async changeCollectionPassword(
+  async changeDatabasePassword(
     collectionId: string,
     currentPassword: string | undefined,
     newPassword: string,
   ): Promise<void> {
-    const collection = await this.getCollection(collectionId);
+    const collection = await this.getDatabase(collectionId);
     if (!collection) throw new Error("Collection not found");
 
     const data = collection.isEncrypted
-      ? await this.loadCollectionData(collectionId, currentPassword)
-      : await this.loadCollectionData(collectionId);
+      ? await this.loadDatabaseData(collectionId, currentPassword)
+      : await this.loadDatabaseData(collectionId);
 
     if (data === null) {
       throw new Error("Invalid password");
     }
 
-    await this.saveCollectionData(collectionId, data, newPassword);
+    await this.saveDatabaseData(collectionId, data, newPassword);
     collection.isEncrypted = true;
-    await this.updateCollection(collection);
+    await this.updateDatabase(collection);
 
-    if (this.currentCollection?.id === collectionId) {
+    if (this.currentDatabase?.id === collectionId) {
       this.currentPassword = newPassword;
-      this.currentCollection = { ...collection };
+      this.currentDatabase = { ...collection };
     }
   }
 
-  async importCollection(
+  async importDatabase(
     content: string,
     options?: {
       importPassword?: string;
@@ -735,14 +735,14 @@ export class DatabaseManager {
           : conn.basicAuthPassword,
     }));
 
-    const collection = await this.createCollection(
+    const collection = await this.createDatabase(
       collectionName,
       parsed?.collection?.description,
       Boolean(options?.encryptPassword),
       options?.encryptPassword,
     );
 
-    await this.saveCollectionData(
+    await this.saveDatabaseData(
       collection.id,
       {
         connections,

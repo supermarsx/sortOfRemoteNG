@@ -20,13 +20,13 @@ vi.mock('../../src/contexts/useConnections', () => ({
 }));
 
 const mockCollectionManager = {
-  getAllCollections: vi.fn().mockResolvedValue([
+  getAllDatabases: vi.fn().mockResolvedValue([
     { id: 'col1', name: 'Collection A' },
     { id: 'col2', name: 'Collection B' },
   ]),
 };
 
-vi.mock('../../src/utils/connection/collectionManager', () => ({
+vi.mock('../../src/utils/connection/databaseManager', () => ({
   DatabaseManager: {
     getInstance: () => mockCollectionManager,
   },
@@ -104,7 +104,7 @@ describe('useShortcutManager', () => {
 
   it('does not load data when isOpen is false', async () => {
     const useShortcutManager = await getHook();
-    const spy = mockCollectionManager.getAllCollections;
+    const spy = mockCollectionManager.getAllDatabases;
     spy.mockClear();
     renderHook(() => useShortcutManager(false));
     await new Promise((r) => setTimeout(r, 50));

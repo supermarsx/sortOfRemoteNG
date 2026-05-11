@@ -208,7 +208,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [state, baseDispatch] = useReducer(connectionReducer, initialState);
-  const collectionManager = useMemo(() => DatabaseManager.getInstance(), []);
+  const databaseManager = useMemo(() => DatabaseManager.getInstance(), []);
   const settingsManager = useMemo(() => SettingsManager.getInstance(), []);
   // Track whether data has been loaded to prevent overwriting on initial mount
   const hasLoadedRef = useRef(false);
@@ -315,16 +315,16 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         tabGroups: tabGroupsRef.current,
       };
 
-      await collectionManager.saveCurrentCollectionData(data);
+      await databaseManager.saveCurrentDatabaseData(data);
     } catch (error) {
       console.error("Failed to save data:", error);
       throw error;
     }
-  }, [collectionManager]);
+  }, [databaseManager]);
 
   const loadData = useCallback(async () => {
     try {
-      const data = await collectionManager.loadCurrentCollectionData();
+      const data = await databaseManager.loadCurrentDatabaseData();
       if (data && data.connections) {
         // Convert date strings back to Date objects (with validation)
         const toValidDate = (value: unknown, field: string, connId?: string): Date => {
@@ -354,7 +354,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error("Failed to load data:", error);
       throw error;
     }
-  }, [collectionManager]);
+  }, [databaseManager]);
 
   // Debounced auto-save: coalesces rapid connection changes into a single write
   // to prevent race conditions from concurrent saveData() calls causing data loss.
@@ -402,7 +402,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    if (!hasLoadedRef.current || !collectionManager.getCurrentCollection()) {
+    if (!hasLoadedRef.current || !databaseManager.getCurrentDatabase()) {
       // Drop the pending marker so it doesn't accidentally fire later
       // when a database isn't open.
       tabGroupSavePendingRef.current = false;
@@ -411,9 +411,9 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
     debouncedSave();
     tabGroupSavePendingRef.current = false;
-  // saveData/debouncedSave are stable (depend only on collectionManager) — safe to omit from lint
+  // saveData/debouncedSave are stable (depend only on databaseManager) — safe to omit from lint
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.connections, state.tabGroups, collectionManager]);
+  }, [state.connections, state.tabGroups, databaseManager]);
 
   const contextValue = useMemo(
     () => ({ state, dispatch, saveData, loadData }),

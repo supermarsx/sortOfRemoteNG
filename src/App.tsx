@@ -63,9 +63,9 @@ const AppContent: React.FC = () => {
   const settingsManager = SettingsManager.getInstance();
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
-  const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
+  const [showDatabasePanel, setShowDatabasePanel] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
-  const [collectionSelectorInitialTab, setCollectionSelectorInitialTab] = useState<'collections' | undefined>(undefined);
+  const [databasePanelInitialTab, setDatabasePanelInitialTab] = useState<'collections' | undefined>(undefined);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
   // isRdpPanelResizing is in useResizeHandlers hook
   const [showErrorLog, setShowErrorLog] = useState(false);
@@ -113,7 +113,7 @@ const AppContent: React.FC = () => {
   const awaitingCloseConfirmRef = useRef(false);
 
   const statusChecker = StatusChecker.getInstance();
-  const collectionManager = DatabaseManager.getInstance();
+  const databaseManager = DatabaseManager.getInstance();
 
   const {
     activeSessionId,
@@ -128,7 +128,7 @@ const AppContent: React.FC = () => {
   const { isInitialized, initProgress, initStatus, criticalError } = useAppLifecycle({
     handleConnect,
     restoreSession,
-    setShowCollectionSelector,
+    setShowDatabasePanel,
     setShowPasswordDialog,
     setPasswordDialogMode,
   });
@@ -519,18 +519,18 @@ const AppContent: React.FC = () => {
    * @param collectionId - ID of the collection to select.
    * @param password - Optional password for encrypted collections.
    */
-  const handleCollectionSelect = useCallback(
+  const handleDatabaseSelect = useCallback(
     async (collectionId: string, password?: string): Promise<void> => {
       try {
-        await collectionManager.selectCollection(collectionId, password);
+        await databaseManager.selectDatabase(collectionId, password);
         await loadData();
-        setShowCollectionSelector(false);
+        setShowDatabasePanel(false);
         toolShowSetters.current.database(false);
         settingsManager.logAction(
           "info",
           "Collection selected",
           undefined,
-          `Collection: ${collectionManager.getCurrentCollection()?.name}`,
+          `Collection: ${databaseManager.getCurrentDatabase()?.name}`,
         );
         
         // Save the last opened collection ID for auto-open feature
@@ -553,9 +553,9 @@ const AppContent: React.FC = () => {
       }
     },
     [
-      collectionManager,
+      databaseManager,
       loadData,
-      setShowCollectionSelector,
+      setShowDatabasePanel,
       settingsManager,
       showAlert,
     ],
@@ -716,7 +716,7 @@ const AppContent: React.FC = () => {
 
   const handlePasswordCancel = () => {
     if (passwordDialogMode === "setup") {
-      if (!collectionManager.getCurrentCollection()) {
+      if (!databaseManager.getCurrentDatabase()) {
         showAlert("No collection selected.");
         setShowPasswordDialog(false);
         setPasswordError("");
@@ -870,7 +870,7 @@ const AppContent: React.FC = () => {
       if (!hasUnsavedWorkRef.current) return;
       const elapsed = Date.now() - lastWorkAtRef.current;
       if (elapsed < intervalMs) return;
-      if (!collectionManager.getCurrentCollection()) return;
+      if (!databaseManager.getCurrentDatabase()) return;
 
       saveData()
         .then(() => {
@@ -883,7 +883,7 @@ const AppContent: React.FC = () => {
   }, [
     appSettings.autoSaveEnabled,
     appSettings.autoSaveIntervalMinutes,
-    collectionManager,
+    databaseManager,
     saveData,
   ]);
 
@@ -946,7 +946,7 @@ const AppContent: React.FC = () => {
         }>("get_launch_args");
 
         if (args.collection_id) {
-          await handleCollectionSelect(args.collection_id);
+          await handleDatabaseSelect(args.collection_id);
         }
 
         if (args.connection_id) {
@@ -956,7 +956,7 @@ const AppContent: React.FC = () => {
         console.error("Failed to read launch args:", error);
       }
     })();
-  }, [handleCollectionSelect, isInitialized]);
+  }, [handleDatabaseSelect, isInitialized]);
 
   useEffect(() => {
     if (!pendingLaunchConnectionId) return;
@@ -1134,7 +1134,7 @@ const AppContent: React.FC = () => {
           enableConnectionReorder={appSettings.enableConnectionReorder}
           onOpenBulkEditor={() => toolShowSetters.current.bulkEditor(true)}
           onOpenImport={() => toolShowSetters.current.importExport(true)}
-          noCollection={!collectionManager.getCurrentCollection()}
+          noCollection={!databaseManager.getCurrentDatabase()}
         />
         {!state.sidebarCollapsed && (
           <div
@@ -1185,19 +1185,19 @@ const AppContent: React.FC = () => {
         isAlwaysOnTop={isAlwaysOnTop}
         rdpPanelOpen={false}
         showErrorLog={showErrorLog}
-        collectionManager={collectionManager}
+        databaseManager={databaseManager}
         connections={state.connections}
         setShowQuickConnect={setShowQuickConnect}
-        setShowCollectionSelector={(v) => {
+        setShowDatabasePanel={(v) => {
           if (v) {
-            setCollectionSelectorInitialTab('collections');
+            setDatabasePanelInitialTab('collections');
             toolShowSetters.current.database(true);
           } else {
             toolShowSetters.current.database(false);
           }
           // Legacy modal flag — keep in sync for any other consumers
           // that still read it until they're migrated off.
-          setShowCollectionSelector(v);
+          setShowDatabasePanel(v);
         }}
         openImportExport={() => {
           toolShowSetters.current.importExport(true);
@@ -1261,7 +1261,7 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleCollectionSelect} />}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleDatabaseSelect} />}
                 showTabBar={false}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
@@ -1310,26 +1310,26 @@ const AppContent: React.FC = () => {
       <AppStatusBar
         connections={state.connections}
         sessions={state.sessions}
-        collectionManager={collectionManager}
+        databaseManager={databaseManager}
         isInitialized={isInitialized}
       />
 
       <AppDialogs
         appSettings={appSettings}
-        showCollectionSelector={showCollectionSelector}
+        showDatabasePanel={showDatabasePanel}
         showQuickConnect={showQuickConnect}
         showPasswordDialog={showPasswordDialog}
         showSettings={showSettings}
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
-        setShowCollectionSelector={setShowCollectionSelector}
+        setShowDatabasePanel={setShowDatabasePanel}
         setShowQuickConnect={setShowQuickConnect}
         setShowSettings={handleOpenSettings}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
         passwordDialogMode={passwordDialogMode}
         passwordError={passwordError}
-        collectionSelectorInitialTab={collectionSelectorInitialTab}
+        databasePanelInitialTab={databasePanelInitialTab}
         diagnosticsConnection={diagnosticsConnection}
         setDiagnosticsConnection={setDiagnosticsConnection}
         hasStoragePassword={hasStoragePassword}
@@ -1340,10 +1340,10 @@ const AppContent: React.FC = () => {
         handlePasswordCancel={handlePasswordCancel}
         handleQuickConnectWithHistory={handleQuickConnectWithHistory}
         clearQuickConnectHistory={clearQuickConnectHistory}
-        handleCollectionSelect={handleCollectionSelect}
+        handleDatabaseSelect={handleDatabaseSelect}
         handleConnect={handleConnect}
         settingsManager={settingsManager}
-        collectionManager={collectionManager}
+        databaseManager={databaseManager}
       />
 
       <DebugPanel

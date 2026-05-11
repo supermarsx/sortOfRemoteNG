@@ -32,7 +32,7 @@ function consumeSafeMode(): "once" | "permanent" | null {
  * Options for {@link useAppLifecycle}.
  * @property handleConnect - Invoked to initiate a connection.
  * @property restoreSession - Invoked to restore a saved session.
- * @property setShowCollectionSelector - Toggles the collection selector dialog.
+ * @property setShowDatabasePanel - Toggles the collection selector dialog.
  * @property setShowPasswordDialog - Toggles the password dialog visibility.
  * @property setPasswordDialogMode - Sets the password dialog mode.
  */
@@ -56,7 +56,7 @@ interface Options {
     },
     connection: Connection,
   ) => Promise<void>;
-  setShowCollectionSelector: (value: boolean) => void;
+  setShowDatabasePanel: (value: boolean) => void;
   setShowPasswordDialog: (value: boolean) => void;
   setPasswordDialogMode: (mode: "setup" | "unlock") => void;
 }
@@ -75,7 +75,7 @@ interface Options {
 export const useAppLifecycle = ({
   handleConnect,
   restoreSession,
-  setShowCollectionSelector,
+  setShowDatabasePanel,
   setShowPasswordDialog,
   setPasswordDialogMode,
 }: Options) => {
@@ -84,7 +84,7 @@ export const useAppLifecycle = ({
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
-  const collectionManager = DatabaseManager.getInstance();
+  const databaseManager = DatabaseManager.getInstance();
   const themeManager = ThemeManager.getInstance();
 
   const [isInitialized, setIsInitialized] = useState(false);
@@ -198,18 +198,18 @@ export const useAppLifecycle = ({
       setInitStatus("Loading connections...");
       if (safeMode) {
         console.log("Safe mode: skipping auto-open collection");
-        setShowCollectionSelector(true);
+        setShowDatabasePanel(true);
       } else if (settings.autoOpenLastCollection && settings.lastOpenedCollectionId) {
         try {
-          const collections = await collectionManager.getAllCollections();
+          const collections = await databaseManager.getAllDatabases();
           const lastCollection = collections.find(c => c.id === settings.lastOpenedCollectionId);
 
           if (lastCollection) {
             if (lastCollection.isEncrypted) {
               console.log(`Last collection "${lastCollection.name}" requires password, showing selector`);
-              setShowCollectionSelector(true);
+              setShowDatabasePanel(true);
             } else {
-              await collectionManager.selectCollection(lastCollection.id);
+              await databaseManager.selectDatabase(lastCollection.id);
               await loadData();
               console.log(`Auto-opened last collection: ${lastCollection.name}`);
               settingsManager.logAction(
@@ -221,11 +221,11 @@ export const useAppLifecycle = ({
             }
           } else {
             console.log("Last opened collection no longer exists, showing selector");
-            setShowCollectionSelector(true);
+            setShowDatabasePanel(true);
           }
         } catch (error) {
           console.warn("Failed to auto-open last collection:", error);
-          setShowCollectionSelector(true);
+          setShowDatabasePanel(true);
         }
       }
       if (!mountedRef.current) return;
@@ -256,7 +256,7 @@ export const useAppLifecycle = ({
         msg,
       );
     }
-  }, [settingsManager, themeManager, i18n, loadData, setShowCollectionSelector, collectionManager]);
+  }, [settingsManager, themeManager, i18n, loadData, setShowDatabasePanel, databaseManager]);
 
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
@@ -338,11 +338,11 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     if (isInitialized) {
-      const currentCollection = collectionManager.getCurrentCollection();
-      if (!currentCollection) {
-        setShowCollectionSelector(true);
+      const currentDatabase = databaseManager.getCurrentDatabase();
+      if (!currentDatabase) {
+        setShowDatabasePanel(true);
       } else if (
-        currentCollection.isEncrypted &&
+        currentDatabase.isEncrypted &&
         !SecureStorage.isStorageUnlocked()
       ) {
         setPasswordDialogMode("unlock");
@@ -351,8 +351,8 @@ export const useAppLifecycle = ({
     }
   }, [
     isInitialized,
-    collectionManager,
-    setShowCollectionSelector,
+    databaseManager,
+    setShowDatabasePanel,
     setShowPasswordDialog,
     setPasswordDialogMode,
   ]);
