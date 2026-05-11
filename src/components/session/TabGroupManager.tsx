@@ -35,6 +35,16 @@ const GROUP_COLORS = [
   { name: "Pink", value: "#ec4899" },
 ];
 
+const pickRandomGroupColor = (avoid?: string): string => {
+  // Try to avoid repeating the same color twice in a row so consecutive
+  // "New Group" clicks visibly cycle.
+  const pool =
+    avoid && GROUP_COLORS.length > 1
+      ? GROUP_COLORS.filter((c) => c.value !== avoid)
+      : GROUP_COLORS;
+  return pool[Math.floor(Math.random() * pool.length)].value;
+};
+
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 const normalizeHex = (raw: string): string | null => {
@@ -135,7 +145,9 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createFormClosing, setCreateFormClosing] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
-  const [newGroupColor, setNewGroupColor] = useState(GROUP_COLORS[5].value);
+  const [newGroupColor, setNewGroupColor] = useState(() =>
+    pickRandomGroupColor(),
+  );
   const newGroupInputRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<number | null>(null);
 
@@ -166,6 +178,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
       closeTimerRef.current = null;
     }
     setCreateFormClosing(false);
+    setNewGroupColor((prev) => pickRandomGroupColor(prev));
     setShowCreateForm(true);
   }, []);
 
@@ -437,7 +450,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
       collapsed: false,
     };
     dispatch({ type: "ADD_TAB_GROUP", payload: newGroup });
-    setNewGroupColor(GROUP_COLORS[5].value);
+    setNewGroupColor(pickRandomGroupColor(newGroupColor));
     closeCreateForm();
   }, [newGroupName, newGroupColor, dispatch, closeCreateForm]);
 
