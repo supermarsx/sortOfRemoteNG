@@ -1049,7 +1049,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                               {groupSessions.map((session) => (
                                 <div
                                   key={session.id}
-                                  className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-[var(--color-border)]/50 group/tab"
+                                  className="flex items-center gap-2 text-xs py-1 px-2 rounded hover:bg-[var(--color-border)]/50"
                                 >
                                   <span
                                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -1072,7 +1072,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                                   >
                                     {session.status}
                                   </span>
-                                  <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/tab:opacity-100 focus-within:opacity-100 transition-opacity">
+                                  <div className="flex items-center gap-0.5 flex-shrink-0">
                                     <button
                                       onClick={() => handleDetachSession(session.id)}
                                       className="sor-icon-btn-sm"
