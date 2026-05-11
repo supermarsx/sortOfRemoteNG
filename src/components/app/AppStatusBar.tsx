@@ -8,12 +8,12 @@ import {
 } from "lucide-react";
 import { useAppStatusBar } from "../../hooks/app/useAppStatusBar";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
-import { CollectionManager } from "../../utils/connection/collectionManager";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 
 interface AppStatusBarProps {
   connections: Connection[];
   sessions: ConnectionSession[];
-  collectionManager: CollectionManager;
+  collectionManager: DatabaseManager;
   isInitialized: boolean;
 }
 

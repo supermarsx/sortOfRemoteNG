@@ -14,7 +14,7 @@ import { Connection, ConnectionSession, TabLayout } from "./types/connection/con
 import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings/settings";
 import { SettingsManager } from "./utils/settings/settingsManager";
 import { StatusChecker } from "./utils/connection/statusChecker";
-import { CollectionManager } from "./utils/connection/collectionManager";
+import { DatabaseManager } from "./utils/connection/databaseManager";
 import { CollectionNotFoundError, InvalidPasswordError } from "./utils/core/errors";
 import { SecureStorage } from "./utils/storage/storage";
 import { useSessionManager } from "./hooks/session/useSessionManager";
@@ -113,7 +113,7 @@ const AppContent: React.FC = () => {
   const awaitingCloseConfirmRef = useRef(false);
 
   const statusChecker = StatusChecker.getInstance();
-  const collectionManager = CollectionManager.getInstance();
+  const collectionManager = DatabaseManager.getInstance();
 
   const {
     activeSessionId,

@@ -1,7 +1,7 @@
 export * from "./useBulkConnectionEditor";
 export { useBulkConnectionCheck } from "./useBulkConnectionCheck";
 export type { UseBulkConnectionCheck } from "./useBulkConnectionCheck";
-export * from "./useCollectionSelector";
+export * from "./useDatabaseSelector";
 export * from "./useColorTagManager";
 export * from "./useConnectionDiagnostics";
 export * from "./useConnectionEditor";

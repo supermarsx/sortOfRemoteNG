@@ -68,7 +68,7 @@ const mockGetAllConnections = vi.fn().mockResolvedValue([]);
 const mockAddConnection = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../src/utils/connection/collectionManager", () => ({
-  CollectionManager: {
+  DatabaseManager: {
     getInstance: () => ({
       getAllConnections: mockGetAllConnections,
       addConnection: mockAddConnection,

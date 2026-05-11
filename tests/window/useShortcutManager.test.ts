@@ -27,7 +27,7 @@ const mockCollectionManager = {
 };
 
 vi.mock('../../src/utils/connection/collectionManager', () => ({
-  CollectionManager: {
+  DatabaseManager: {
     getInstance: () => mockCollectionManager,
   },
 }));

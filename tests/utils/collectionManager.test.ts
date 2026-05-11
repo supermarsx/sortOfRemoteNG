@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { encryptWithPassword } from "../../src/utils/crypto/webCryptoAes";
-import { CollectionManager } from "../../src/utils/connection/collectionManager";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import {
   CollectionNotFoundError,
@@ -14,14 +14,14 @@ const STORE_NAME = "keyval";
 
 const sampleData = { connections: [], settings: {}, timestamp: 1 };
 
-describe("CollectionManager", () => {
-  let manager: CollectionManager;
+describe("DatabaseManager", () => {
+  let manager: DatabaseManager;
 
   beforeEach(async () => {
     await IndexedDbService.init();
     const db = await openDB(DB_NAME, 1);
     await db.clear(STORE_NAME);
-    manager = new CollectionManager();
+    manager = new DatabaseManager();
   });
 
   it("creates and persists a collection", async () => {

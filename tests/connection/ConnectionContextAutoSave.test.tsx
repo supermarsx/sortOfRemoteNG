@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider } from '../../src/contexts/ConnectionContext';
 import { useConnections } from '../../src/contexts/useConnections';
-import { CollectionManager } from '../../src/utils/connection/collectionManager';
+import { DatabaseManager } from '../../src/utils/connection/databaseManager';
 import { IndexedDbService } from '../../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
 import { Connection } from '../../src/types/connection/connection';
@@ -29,7 +29,7 @@ async function flushSave() {
 }
 
 describe('ConnectionProvider auto-save', () => {
-  let manager: CollectionManager;
+  let manager: DatabaseManager;
   let collectionId: string;
 
   beforeEach(async () => {
@@ -37,8 +37,8 @@ describe('ConnectionProvider auto-save', () => {
     await IndexedDbService.init();
     const db = await openDB(DB_NAME, 1);
     await db.clear(STORE_NAME);
-    CollectionManager.resetInstance();
-    manager = CollectionManager.getInstance();
+    DatabaseManager.resetInstance();
+    manager = DatabaseManager.getInstance();
     const col = await manager.createCollection('Test');
     await manager.selectCollection(col.id);
     collectionId = col.id;
@@ -207,7 +207,7 @@ describe('ConnectionProvider auto-save', () => {
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const saveSpy = vi.spyOn(
-      CollectionManager.getInstance(),
+      DatabaseManager.getInstance(),
       'saveCurrentCollectionData' as any,
     ).mockRejectedValueOnce(new Error('DB write failed'));
 

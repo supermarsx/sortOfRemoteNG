@@ -1,5 +1,5 @@
 import React, { useReducer, useEffect, useCallback, useMemo, useRef, useState } from "react";
-import { CollectionManager } from "../utils/connection/collectionManager";
+import { DatabaseManager } from "../utils/connection/databaseManager";
 import { StorageData } from "../utils/storage/storage";
 import { SettingsManager } from "../utils/settings/settingsManager";
 import {
@@ -208,7 +208,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [state, baseDispatch] = useReducer(connectionReducer, initialState);
-  const collectionManager = useMemo(() => CollectionManager.getInstance(), []);
+  const collectionManager = useMemo(() => DatabaseManager.getInstance(), []);
   const settingsManager = useMemo(() => SettingsManager.getInstance(), []);
   // Track whether data has been loaded to prevent overwriting on initial mount
   const hasLoadedRef = useRef(false);

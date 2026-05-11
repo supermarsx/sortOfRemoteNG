@@ -40,7 +40,7 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 }));
 
 vi.mock("../../src/utils/connection/collectionManager", () => ({
-  CollectionManager: {
+  DatabaseManager: {
     getInstance: () => ({
       getCurrentCollection: () => ({ id: "collection-1" }),
       exportCollection: mocks.exportCollection.mockResolvedValue("[]"),

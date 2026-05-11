@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 import { Connection } from "../../types/connection/connection";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
-import { CollectionManager } from "../../utils/connection/collectionManager";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { ErrorLogBar } from "./ErrorLogBar";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
@@ -67,7 +67,7 @@ interface AppDialogsProps {
   handleCollectionSelect: (id: string) => Promise<void>;
   handleConnect?: (connection: Connection) => void;
   settingsManager: SettingsManager;
-  collectionManager: CollectionManager;
+  collectionManager: DatabaseManager;
 }
 
 export const AppDialogs: React.FC<AppDialogsProps> = (props) => {

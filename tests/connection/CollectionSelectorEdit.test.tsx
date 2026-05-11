@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { CollectionSelector } from '../../src/components/connection/CollectionSelector';
-import { CollectionManager } from '../../src/utils/connection/collectionManager';
+import { DatabaseManager } from '../../src/utils/connection/databaseManager';
 import { IndexedDbService } from '../../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
 import { ConnectionCollection } from '../../src/types/connection/connection';
@@ -69,14 +69,14 @@ vi.mock('../../src/utils/settings/themeManager', () => ({
 }));
 
 describe('CollectionSelector editing', () => {
-  let manager: CollectionManager;
+  let manager: DatabaseManager;
 
   beforeEach(async () => {
     await IndexedDbService.init();
     const db = await openDB(DB_NAME, 1);
     await db.clear(STORE_NAME);
-    CollectionManager.resetInstance();
-    manager = CollectionManager.getInstance();
+    DatabaseManager.resetInstance();
+    manager = DatabaseManager.getInstance();
     await manager.createCollection('First', 'desc');
   });
 

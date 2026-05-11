@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
-import { CollectionManager } from "../../utils/connection/collectionManager";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 
 interface AppStatusBarInput {
   connections: Connection[];
   sessions: ConnectionSession[];
-  collectionManager: CollectionManager;
+  collectionManager: DatabaseManager;
   isInitialized: boolean;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CollectionManager } from '../../src/utils/connection/collectionManager';
+import { DatabaseManager } from '../../src/utils/connection/databaseManager';
 import { IndexedDbService } from '../../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
 import { StorageData } from '../../src/utils/storage/storage';
@@ -8,16 +8,16 @@ import { ConnectionCollection } from '../../src/types/connection/connection';
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
 
-describe('CollectionManager remove password', () => {
-  let manager: CollectionManager;
+describe('DatabaseManager remove password', () => {
+  let manager: DatabaseManager;
   let collectionId: string;
 
   beforeEach(async () => {
     await IndexedDbService.init();
     const db = await openDB(DB_NAME, 1);
     await db.clear(STORE_NAME);
-    CollectionManager.resetInstance();
-    manager = CollectionManager.getInstance();
+    DatabaseManager.resetInstance();
+    manager = DatabaseManager.getInstance();
     const col = await manager.createCollection('Secure', 'desc', true, 'secret');
     collectionId = col.id;
   });

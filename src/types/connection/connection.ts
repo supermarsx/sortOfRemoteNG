@@ -1307,7 +1307,7 @@ export interface RecoveryInfo {
   seedPhrase?: string;
 }
 
-export interface ConnectionCollection {
+export interface ConnectionDatabase {
   id: string;
   name: string;
   description?: string;
@@ -1316,4 +1316,10 @@ export interface ConnectionCollection {
   updatedAt: string;
   lastAccessed: string;
 }
+
+/**
+ * Backward-compat alias. Prefer {@link ConnectionDatabase} in new code.
+ * Will be removed in a future cleanup pass after consumers migrate.
+ */
+export type ConnectionCollection = ConnectionDatabase;
 

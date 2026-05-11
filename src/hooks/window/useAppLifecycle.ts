@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useConnections } from "../../contexts/useConnections";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
-import { CollectionManager } from "../../utils/connection/collectionManager";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ThemeManager } from "../../utils/settings/themeManager";
 import { SecureStorage } from "../../utils/storage/storage";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
@@ -84,7 +84,7 @@ export const useAppLifecycle = ({
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
-  const collectionManager = CollectionManager.getInstance();
+  const collectionManager = DatabaseManager.getInstance();
   const themeManager = ThemeManager.getInstance();
 
   const [isInitialized, setIsInitialized] = useState(false);

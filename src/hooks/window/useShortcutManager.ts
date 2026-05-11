@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useConnections } from "../../contexts/useConnections";
-import { CollectionManager } from "../../utils/connection/collectionManager";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { useTranslation } from "react-i18next";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ function isTauri(): boolean {
 export function useShortcutManager(isOpen: boolean) {
   const { t } = useTranslation();
   const { state } = useConnections();
-  const collectionManager = CollectionManager.getInstance();
+  const collectionManager = DatabaseManager.getInstance();
 
   const [collections, setCollections] = useState<
     Array<{ id: string; name: string }>

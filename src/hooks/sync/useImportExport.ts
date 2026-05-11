@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Connection } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
-import { CollectionManager } from '../../utils/connection/collectionManager';
+import { DatabaseManager } from '../../utils/connection/databaseManager';
 import { SettingsManager } from '../../utils/settings/settingsManager';
 import {
   ImportFilterState,
@@ -478,7 +478,7 @@ export function useImportExport({
     resolve?.(null);
   };
 
-  const collectionManager = CollectionManager.getInstance();
+  const collectionManager = DatabaseManager.getInstance();
   const settingsManager = SettingsManager.getInstance();
 
   useEffect(() => {

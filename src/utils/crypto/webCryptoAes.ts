@@ -3,7 +3,7 @@
 // via `invoke(...)`; this module covers the browser-side path only.
 //
 // Output format: `${base64(salt)}.${base64(iv)}.${base64(ciphertext)}`
-// (same shape produced by CollectionManager so that encrypted JSON
+// (same shape produced by DatabaseManager so that encrypted JSON
 // exports round-trip across both code paths.)
 
 import { PBKDF2_ITERATIONS } from '../../config';

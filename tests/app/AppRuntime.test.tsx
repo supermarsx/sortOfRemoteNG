@@ -184,7 +184,7 @@ import {
 } from "../../src/components/app/ToolPanel";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { StatusChecker } from "../../src/utils/connection/statusChecker";
-import { CollectionManager } from "../../src/utils/connection/collectionManager";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
 import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
 import { PBKDF2_ITERATIONS, DEFAULT_PBKDF2_ITERATIONS } from "../../src/config";
@@ -271,7 +271,7 @@ function ConnectionStateView() {
 function resetSingletons() {
   SettingsManager.resetInstance?.();
   StatusChecker.resetInstance?.();
-  CollectionManager.resetInstance?.();
+  DatabaseManager.resetInstance?.();
   ThemeManager.resetInstance?.();
 }
 
@@ -928,12 +928,12 @@ describe("Utility modules runtime", () => {
     });
   });
 
-  describe("CollectionManager singleton", () => {
-    beforeEach(() => CollectionManager.resetInstance?.());
+  describe("DatabaseManager singleton", () => {
+    beforeEach(() => DatabaseManager.resetInstance?.());
 
     it("getInstance returns the same reference", () => {
-      const a = CollectionManager.getInstance();
-      const b = CollectionManager.getInstance();
+      const a = DatabaseManager.getInstance();
+      const b = DatabaseManager.getInstance();
       expect(a).toBe(b);
     });
   });

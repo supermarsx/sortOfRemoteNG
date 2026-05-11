@@ -35,14 +35,14 @@ import { Connection } from "../../types/connection/connection";
 import { BackupStatusPopup } from "../sync/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "../sync/CloudSyncStatusPopup";
 import { SyncBackupStatusBar } from "../sync/SyncBackupStatusBar";
-import { CollectionManager } from "../../utils/connection/collectionManager";
+import { DatabaseManager } from "../../utils/connection/databaseManager";
 
 interface AppToolbarProps {
   appSettings: GlobalSettings;
   isAlwaysOnTop: boolean;
   rdpPanelOpen: boolean;
   showErrorLog: boolean;
-  collectionManager: CollectionManager;
+  collectionManager: DatabaseManager;
   connections: Connection[];
   setShowQuickConnect: (v: boolean) => void;
   setShowCollectionSelector: (v: boolean) => void;
