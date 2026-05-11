@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { EmptyState } from "../ui/display";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import type { ConnectionSession, TabGroup } from "../../types/connection/connection";
@@ -144,6 +145,13 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
   // Animation state — IDs currently fading out before the real dispatch fires.
   const [leavingGroupIds, setLeavingGroupIds] = useState<Set<string>>(new Set());
+
+  // Pending delete confirmation
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    groupId: string;
+    groupName: string;
+    sessionCount: number;
+  } | null>(null);
 
   const animEnabled =
     settings.animationsEnabled && settings.enableTabGroupAnimations;
@@ -353,19 +361,9 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
     [sessions, dispatch]
   );
 
-  const handleDeleteGroup = useCallback(
+  const performDeleteGroup = useCallback(
     (groupId: string) => {
-      const group = tabGroups.find((g) => g.id === groupId);
       const groupSessions = sessions.filter((s) => s.tabGroupId === groupId);
-      if (settings.confirmDeleteTabGroup && group) {
-        const tabPart =
-          groupSessions.length === 0
-            ? "this empty group"
-            : `"${group.name}" and close ${groupSessions.length} ${
-                groupSessions.length === 1 ? "tab" : "tabs"
-              }`;
-        if (!confirm(`Delete ${tabPart}? This cannot be undone.`)) return;
-      }
       const finalize = () => {
         for (const session of groupSessions) {
           dispatch({ type: "REMOVE_SESSION", payload: session.id });
@@ -385,14 +383,25 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
       setLeavingGroupIds((prev) => new Set(prev).add(groupId));
       window.setTimeout(finalize, animDurationMs);
     },
-    [
-      sessions,
-      tabGroups,
-      dispatch,
-      settings.confirmDeleteTabGroup,
-      animEnabled,
-      animDurationMs,
-    ],
+    [sessions, dispatch, animEnabled, animDurationMs],
+  );
+
+  const handleDeleteGroup = useCallback(
+    (groupId: string) => {
+      const group = tabGroups.find((g) => g.id === groupId);
+      if (!group) return;
+      const groupSessions = sessions.filter((s) => s.tabGroupId === groupId);
+      if (!settings.confirmDeleteTabGroup) {
+        performDeleteGroup(groupId);
+        return;
+      }
+      setDeleteConfirm({
+        groupId,
+        groupName: group.name,
+        sessionCount: groupSessions.length,
+      });
+    },
+    [sessions, tabGroups, settings.confirmDeleteTabGroup, performDeleteGroup],
   );
 
   const handleCloneGroup = useCallback(
@@ -523,38 +532,38 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-3xl mx-auto p-4 space-y-4">
           {/* Heading + primary action */}
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-                <Layers className="w-5 h-5 text-primary" />
-                Tab Group Manager
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2 min-w-0">
+                <Layers className="w-5 h-5 text-primary flex-shrink-0" />
+                <span className="truncate">Tab Group Manager</span>
               </h3>
-              <div className="text-xs text-[var(--color-textSecondary)] mt-1 space-y-1">
-                <p>
-                  Bundle open session tabs into named, color-coded groups so
-                  you can see what belongs together at a glance and act on
-                  them as a unit.
-                </p>
-                <p className="text-[var(--color-textMuted)]">
-                  Drag groups to reorder them, collapse a group to hide its
-                  tabs in the tab bar, ungroup to detach the tabs without
-                  closing them, or delete a group to close every tab inside.
-                  Set a default tab group on a connection (in its editor) to
-                  auto-route new sessions for that host into the right group.
-                </p>
-              </div>
+              {(!showCreateForm || createFormClosing) && (
+                <button
+                  onClick={openCreateForm}
+                  className={`sor-btn-primary-sm flex-shrink-0 ${
+                    animEnabled ? "animate-fade-in" : ""
+                  }`}
+                >
+                  <Plus size={14} />
+                  <span>New Group</span>
+                </button>
+              )}
             </div>
-            {(!showCreateForm || createFormClosing) && (
-              <button
-                onClick={openCreateForm}
-                className={`sor-btn-primary-sm flex-shrink-0 ${
-                  animEnabled ? "animate-fade-in" : ""
-                }`}
-              >
-                <Plus size={14} />
-                <span>New Group</span>
-              </button>
-            )}
+            <div className="text-xs text-[var(--color-textSecondary)] space-y-1">
+              <p>
+                Bundle open session tabs into named, color-coded groups so you
+                can see what belongs together at a glance and act on them as a
+                unit.
+              </p>
+              <p className="text-[var(--color-textMuted)]">
+                Drag groups to reorder them, collapse a group to hide its tabs
+                in the tab bar, ungroup to detach the tabs without closing
+                them, or delete a group to close every tab inside. Set a
+                default tab group on a connection (in its editor) to auto-route
+                new sessions for that host into the right group.
+              </p>
+            </div>
           </div>
 
           {/* Search + filters */}
@@ -1063,6 +1072,28 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={deleteConfirm !== null}
+        title="Delete tab group?"
+        variant="danger"
+        confirmText="Delete"
+        cancelText="Keep"
+        message={
+          deleteConfirm
+            ? deleteConfirm.sessionCount === 0
+              ? `Delete the empty group "${deleteConfirm.groupName}"? This cannot be undone.`
+              : `Delete "${deleteConfirm.groupName}" and close ${deleteConfirm.sessionCount} ${
+                  deleteConfirm.sessionCount === 1 ? "tab" : "tabs"
+                }? This cannot be undone.`
+            : ""
+        }
+        onConfirm={() => {
+          if (deleteConfirm) performDeleteGroup(deleteConfirm.groupId);
+          setDeleteConfirm(null);
+        }}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 };
