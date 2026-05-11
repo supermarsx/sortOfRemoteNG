@@ -285,9 +285,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     baseDispatch(action);
   }, [settingsManager]);
 
-  // Use a ref so saveData has a stable identity and doesn't cause effect re-runs
+  // Use refs so saveData has a stable identity and doesn't cause effect re-runs
   const connectionsRef = useRef(state.connections);
   connectionsRef.current = state.connections;
+  const tabGroupsRef = useRef(state.tabGroups);
+  tabGroupsRef.current = state.tabGroups;
 
   const saveData = useCallback(async () => {
     try {
@@ -295,6 +297,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         connections: connectionsRef.current,
         settings: {},
         timestamp: Date.now(),
+        tabGroups: tabGroupsRef.current,
       };
 
       await collectionManager.saveCurrentCollectionData(data);
@@ -324,6 +327,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           updatedAt: toValidDate(conn.updatedAt, 'updatedAt', conn.id),
         }));
         baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
+        if (Array.isArray(data.tabGroups)) {
+          baseDispatch({ type: "SET_TAB_GROUPS", payload: data.tabGroups });
+        } else {
+          baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
+        }
       }
       // Mark as loaded after successfully loading data
       hasLoadedRef.current = true;
@@ -384,7 +392,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   // saveData/debouncedSave are stable (depend only on collectionManager) — safe to omit from lint
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.connections, collectionManager]);
+  }, [state.connections, state.tabGroups, collectionManager]);
 
   const contextValue = useMemo(
     () => ({ state, dispatch, saveData, loadData }),

@@ -555,6 +555,8 @@ export class CollectionManager {
               : undefined,
           })),
       settings: data.settings,
+      tabGroups: data.tabGroups ?? [],
+      colorTags: data.colorTags ?? {},
     };
 
     const jsonData = JSON.stringify(exportData, null, 2);
@@ -677,6 +679,11 @@ export class CollectionManager {
         connections,
         settings: parsed?.settings ?? {},
         timestamp: Date.now(),
+        tabGroups: Array.isArray(parsed?.tabGroups) ? parsed.tabGroups : [],
+        colorTags:
+          parsed?.colorTags && typeof parsed.colorTags === "object"
+            ? parsed.colorTags
+            : {},
       },
       options?.encryptPassword,
     );

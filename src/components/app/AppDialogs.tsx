@@ -52,7 +52,7 @@ interface AppDialogsProps {
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   passwordDialogMode: "setup" | "unlock";
   passwordError: string;
-  collectionSelectorInitialTab?: "collections" | "proxies";
+  collectionSelectorInitialTab?: "collections";
   diagnosticsConnection: Connection | null;
   setDiagnosticsConnection: (c: Connection | null) => void;
   hasStoragePassword: boolean;

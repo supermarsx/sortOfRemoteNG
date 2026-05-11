@@ -65,7 +65,7 @@ const AppContent: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
-  const [collectionSelectorInitialTab, setCollectionSelectorInitialTab] = useState<'collections' | 'proxies' | undefined>(undefined);
+  const [collectionSelectorInitialTab, setCollectionSelectorInitialTab] = useState<'collections' | undefined>(undefined);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
   // isRdpPanelResizing is in useResizeHandlers hook
   const [showErrorLog, setShowErrorLog] = useState(false);

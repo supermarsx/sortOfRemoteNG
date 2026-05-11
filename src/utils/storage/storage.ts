@@ -37,6 +37,10 @@ export interface StorageData {
   connections: Connection[];
   settings: Record<string, unknown>;
   timestamp: number;
+  /** Tab group definitions persisted alongside the collection's connections. */
+  tabGroups?: import("../../types/connection/connection").TabGroup[];
+  /** Color tag palette definitions, keyed by id. */
+  colorTags?: Record<string, { name: string; color: string; global?: boolean }>;
 }
 
 /**

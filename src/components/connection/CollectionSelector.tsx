@@ -1,30 +1,10 @@
 import React from "react";
-import { PasswordInput } from '../ui/forms';
-import {
-  Database,
-  Plus,
-  Lock,
-  Trash2,
-  Edit,
-  Eye,
-  EyeOff,
-  Download,
-  Upload,
-  X,
-  Network,
-  Link2,
-  Copy,
-  Search,
-} from "lucide-react";
-import { ProxyProfileEditor } from "../network/ProxyProfileEditor";
-import { ProxyChainEditor } from "../network/ProxyChainEditor";
+import { Database, Plus, Upload } from "lucide-react";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { useCollectionSelector } from "../../hooks/connection/useCollectionSelector";
-import { Checkbox } from '../ui/forms';
 import { useTranslation } from "react-i18next";
 import CollectionsTab from "./collectionSelector/CollectionsTab";
-import ProxiesTab from "./collectionSelector/ProxiesTab";
 
 interface CollectionSelectorProps {
   isOpen: boolean;
@@ -33,7 +13,8 @@ interface CollectionSelectorProps {
     password?: string,
   ) => Promise<void> | void;
   onClose: () => void;
-  initialTab?: "collections" | "proxies";
+  /** Reserved for future tabs; currently unused. */
+  initialTab?: "collections";
 }
 
 export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
@@ -75,103 +56,33 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           sticky
           actions={
             <>
-              {mgr.activeTab === "collections" && (
-                <>
-                  <button
-                    onClick={() => mgr.setShowImportForm(true)}
-                    className="sor-btn-secondary-sm"
-                  >
-                    <Upload size={14} />
-                    <span>{t("collectionCenter.actions.import")}</span>
-                  </button>
-                  <button
-                    onClick={() => mgr.setShowCreateForm(true)}
-                    className="sor-btn-primary-sm"
-                    data-testid="collection-create"
-                  >
-                    <Plus size={14} />
-                    <span>{t("connections.new")}</span>
-                  </button>
-                </>
-              )}
-              {mgr.activeTab === "proxies" && (
-                <>
-                  <button
-                    onClick={mgr.handleImportProxies}
-                    className="sor-btn-secondary-sm"
-                  >
-                    <Upload size={14} />
-                    <span>{t("collectionCenter.actions.import")}</span>
-                  </button>
-                  <button
-                    onClick={mgr.handleExportProxies}
-                    className="sor-btn-secondary-sm"
-                  >
-                    <Download size={14} />
-                    <span>{t("collectionCenter.actions.export")}</span>
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => mgr.setShowImportForm(true)}
+                className="sor-btn-secondary-sm"
+              >
+                <Upload size={14} />
+                <span>{t("collectionCenter.actions.import")}</span>
+              </button>
+              <button
+                onClick={() => mgr.setShowCreateForm(true)}
+                className="sor-btn-primary-sm"
+                data-testid="collection-create"
+              >
+                <Plus size={14} />
+                <span>{t("connections.new")}</span>
+              </button>
             </>
           }
         />
 
-        <div className="flex flex-1 min-h-0">
-          {/* Sidebar */}
-          <div className="w-60 bg-[var(--color-background)] border-r border-[var(--color-border)] p-4 space-y-2">
-            <button
-              onClick={() => mgr.setActiveTab("collections")}
-              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
-                mgr.activeTab === "collections"
-                  ? "bg-primary text-[var(--color-text)]"
-                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
-              }`}
-            >
-              <Database size={16} />
-              <span>{t("collectionCenter.tabs.collections")}</span>
-            </button>
-            <button
-              onClick={() => mgr.setActiveTab("proxies")}
-              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
-                mgr.activeTab === "proxies"
-                  ? "bg-primary text-[var(--color-text)]"
-                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
-              }`}
-            >
-              <Network size={16} />
-              <span>{t("collectionCenter.tabs.proxies")}</span>
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            <div className="p-6">
-              {mgr.activeTab === "collections" && (
-                <CollectionsTab mgr={mgr} />
-              )}
-              {mgr.activeTab === "proxies" && <ProxiesTab mgr={mgr} />}
-            </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="p-6">
+            <CollectionsTab mgr={mgr} />
           </div>
         </div>
       </div>
-
-      {/* Sub-dialogs */}
-      <ProxyProfileEditor
-        isOpen={mgr.showProfileEditor}
-        onClose={mgr.closeProfileEditor}
-        onSave={mgr.handleSaveProfile}
-        editingProfile={mgr.editingProfile}
-      />
-      <ProxyChainEditor
-        isOpen={mgr.showChainEditor}
-        onClose={mgr.closeChainEditor}
-        onSave={mgr.handleSaveChain}
-        editingChain={mgr.editingChain}
-      />
     </Modal>
   );
 };
 
-// ─── Tab sub-components ──────────────────────────────────────────
-
-type Mgr = ReturnType<typeof useCollectionSelector>;
