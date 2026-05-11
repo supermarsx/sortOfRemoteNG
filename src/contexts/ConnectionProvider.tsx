@@ -220,6 +220,16 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const dispatch = useCallback((action: ConnectionAction) => {
     try {
       switch (action.type) {
+        case "ADD_TAB_GROUP":
+        case "UPDATE_TAB_GROUP":
+        case "REMOVE_TAB_GROUP": {
+          // Force a save right after a tab group mutation — belt and
+          // suspenders so persistence does not rely on the state-deps
+          // useEffect alone (which can be subtly bypassed by HMR or
+          // double-dispatch quirks).
+          tabGroupSavePendingRef.current = true;
+          break;
+        }
         case "ADD_CONNECTION": {
           const conn = action.payload;
           settingsManager.logAction(
@@ -290,6 +300,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   connectionsRef.current = state.connections;
   const tabGroupsRef = useRef(state.tabGroups);
   tabGroupsRef.current = state.tabGroups;
+  // Marker set by the dispatch wrapper whenever a tab-group action runs.
+  // The auto-save effect below treats it as a forced trigger so changes
+  // to state.tabGroups always reach disk even if the dependency-array
+  // path is bypassed.
+  const tabGroupSavePendingRef = useRef(false);
 
   const saveData = useCallback(async () => {
     try {
@@ -377,19 +392,25 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // Auto-save whenever the list of connections is modified
-  // BUT only after data has been loaded to prevent overwriting on mount/HMR
+  // Auto-save whenever connections or tab groups change.
+  // BUT only after data has been loaded to prevent overwriting on mount/HMR.
   useEffect(() => {
     // Skip auto-save on initial mount
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
+      tabGroupSavePendingRef.current = false;
       return;
     }
 
-    // Only save if we've loaded data first and have a collection selected
-    if (hasLoadedRef.current && collectionManager.getCurrentCollection()) {
-      debouncedSave();
+    if (!hasLoadedRef.current || !collectionManager.getCurrentCollection()) {
+      // Drop the pending marker so it doesn't accidentally fire later
+      // when a database isn't open.
+      tabGroupSavePendingRef.current = false;
+      return;
     }
+
+    debouncedSave();
+    tabGroupSavePendingRef.current = false;
   // saveData/debouncedSave are stable (depend only on collectionManager) — safe to omit from lint
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.connections, state.tabGroups, collectionManager]);
