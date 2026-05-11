@@ -231,16 +231,16 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
           </div>
 
           {/* Search */}
-          <label className="flex min-h-9 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-input)] px-3 text-sm focus-within:border-primary">
-            <Search size={14} className="shrink-0 text-[var(--color-textSecondary)]" />
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
             <input
               type="text"
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[var(--color-text)] outline-none placeholder:text-[var(--color-textMuted)]"
+              className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               placeholder={`Search ${activeTab === "text" ? "text" : "color"} tags...`}
             />
-          </label>
+          </div>
 
           {/* Content */}
           {activeTab === "text" ? (
