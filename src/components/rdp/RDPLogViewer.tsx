@@ -62,7 +62,7 @@ export const RDPLogViewer: React.FC<RDPLogViewerProps> = ({
             value={mgr.filter}
             onChange={(e) => mgr.setFilter(e.target.value)}
             placeholder="Filter logs..."
-            className="sor-settings-input sor-settings-input-compact sor-settings-input-sm w-full pl-7 pr-2 placeholder-[var(--color-textMuted)]"
+            className="sor-settings-input sor-settings-input-compact sor-settings-input-sm sor-settings-input-icon-left w-full pr-2 placeholder-[var(--color-textMuted)]"
           />
         </div>
         <Select value={mgr.levelFilter} onChange={(v: string) => mgr.setLevelFilter(v)} options={[{ value: "all", label: "All" }, { value: "info", label: "Info" }, { value: "warn", label: "Warn" }, { value: "error", label: "Error" }]} className="sor-settings-input-sm" />

@@ -125,6 +125,14 @@
   padding: 0.25rem 0.5rem;
 }
 
+.sor-settings-input-icon-left {
+  padding-left: 2rem !important;
+}
+
+.sor-settings-input-icon-right {
+  padding-right: 2rem !important;
+}
+
 .sor-settings-input-sm {
   font-size: 0.75rem;
 }

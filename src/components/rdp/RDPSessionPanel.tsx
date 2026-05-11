@@ -220,7 +220,7 @@ const HistoryTab: React.FC<{
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter by name, host, user..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs sor-form-input transition-colors"
+            className="w-full pr-3 py-1.5 text-xs sor-form-input sor-form-input-icon-left transition-colors"
           />
         </div>
         <span className="text-[11px] text-[var(--color-textMuted)] flex-shrink-0">{filteredHistory.length} entries</span>
