@@ -193,6 +193,8 @@ export interface GlobalSettings {
   confirmDisconnect: boolean;
   /** Confirm before deleting a connection */
   confirmDeleteConnection: boolean;
+  /** Ask before deleting a tab group (which also closes its tabs) */
+  confirmDeleteTabGroup: boolean;
   /** Confirm before bulk operations (multi-select actions) */
   confirmBulkOperations: boolean;
   /** Confirm before importing connections */

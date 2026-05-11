@@ -20,6 +20,7 @@ import {
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "../ui/overlays/Modal";
 import { EmptyState } from "../ui/display";
 import { useConnections } from "../../contexts/useConnections";
+import { useSettings } from "../../contexts/SettingsContext";
 import type { ConnectionSession, TabGroup } from "../../types/connection/connection";
 
 const GROUP_COLORS = [
@@ -112,6 +113,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
   onClose,
 }) => {
   const { state, dispatch } = useConnections();
+  const { settings } = useSettings();
   const sessions = state.sessions.filter((s) => !s.layout?.isDetached);
   const tabGroups = state.tabGroups;
 
@@ -307,15 +309,25 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
     [sessions, dispatch]
   );
 
-  const handleCloseAllInGroup = useCallback(
+  const handleDeleteGroup = useCallback(
     (groupId: string) => {
+      const group = tabGroups.find((g) => g.id === groupId);
       const groupSessions = sessions.filter((s) => s.tabGroupId === groupId);
+      if (settings.confirmDeleteTabGroup && group) {
+        const tabPart =
+          groupSessions.length === 0
+            ? "this empty group"
+            : `"${group.name}" and close ${groupSessions.length} ${
+                groupSessions.length === 1 ? "tab" : "tabs"
+              }`;
+        if (!confirm(`Delete ${tabPart}? This cannot be undone.`)) return;
+      }
       for (const session of groupSessions) {
         dispatch({ type: "REMOVE_SESSION", payload: session.id });
       }
       dispatch({ type: "REMOVE_TAB_GROUP", payload: groupId });
     },
-    [sessions, dispatch]
+    [sessions, tabGroups, dispatch, settings.confirmDeleteTabGroup],
   );
 
   const handleCloneGroup = useCallback(
@@ -500,27 +512,31 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                   {opt.label}
                 </button>
               ))}
-              {distinctColors.length > 1 && (
-                <span className="mx-1 h-3 w-px bg-[var(--color-border)]" />
+              {distinctColors.length > 0 && (
+                <>
+                  <span className="mx-1 h-3 w-px bg-[var(--color-border)]" />
+                  <span className="text-[var(--color-textMuted)]">Color:</span>
+                  {distinctColors.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() =>
+                        setColorFilter((prev) =>
+                          prev?.toLowerCase() === c.toLowerCase() ? null : c,
+                        )
+                      }
+                      className={`w-4 h-4 rounded-full border-2 transition-transform hover:scale-110 ${
+                        colorFilter?.toLowerCase() === c.toLowerCase()
+                          ? "border-white scale-110"
+                          : "border-transparent"
+                      }`}
+                      style={{ backgroundColor: c }}
+                      title={`Filter by ${c}`}
+                      aria-label={`Filter by color ${c}`}
+                      aria-pressed={colorFilter?.toLowerCase() === c.toLowerCase()}
+                    />
+                  ))}
+                </>
               )}
-              {distinctColors.length > 1 &&
-                distinctColors.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() =>
-                      setColorFilter((prev) =>
-                        prev?.toLowerCase() === c.toLowerCase() ? null : c,
-                      )
-                    }
-                    className={`w-4 h-4 rounded-full border-2 transition-transform hover:scale-110 ${
-                      colorFilter?.toLowerCase() === c.toLowerCase()
-                        ? "border-white scale-110"
-                        : "border-transparent"
-                    }`}
-                    style={{ backgroundColor: c }}
-                    title={`Filter by ${c}`}
-                  />
-                ))}
               {(searchFilter || populationFilter !== "all" || colorFilter) && (
                 <button
                   onClick={() => {
@@ -822,9 +838,15 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                             <FolderMinus size={13} />
                           </button>
                           <button
-                            onClick={() => handleCloseAllInGroup(group.id)}
+                            onClick={() => handleDeleteGroup(group.id)}
                             className="sor-icon-btn-danger"
-                            title="Close all tabs in group"
+                            title={
+                              groupSessions.length === 0
+                                ? "Delete group"
+                                : `Delete group (closes ${groupSessions.length} ${
+                                    groupSessions.length === 1 ? "tab" : "tabs"
+                                  })`
+                            }
                           >
                             <Trash2 size={13} />
                           </button>

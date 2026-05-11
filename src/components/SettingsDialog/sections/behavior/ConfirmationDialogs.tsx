@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { ShieldAlert, Trash2, FileDown } from "lucide-react";
+import { ShieldAlert, Trash2, FileDown, Layers } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -29,6 +29,15 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         description="Prompt before permanently removing a saved connection"
         settingKey="confirmDeleteConnection"
         infoTooltip="Require confirmation before permanently deleting a saved connection entry from the connection tree. Helps prevent accidental data loss."
+      />
+      <Toggle
+        checked={s.confirmDeleteTabGroup}
+        onChange={(v) => u({ confirmDeleteTabGroup: v })}
+        icon={<Layers size={16} />}
+        label="Confirm before deleting a tab group"
+        description="Ask before removing a tab group (closes all of its tabs)"
+        settingKey="confirmDeleteTabGroup"
+        infoTooltip="Require confirmation before deleting a tab group. Deleting a group also closes every session tab it contains, so this guard prevents accidentally killing a batch of open tabs."
       />
       <Toggle
         checked={s.confirmBulkOperations}
