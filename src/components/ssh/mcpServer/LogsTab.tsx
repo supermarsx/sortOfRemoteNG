@@ -82,6 +82,7 @@ export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
           />
         </div>
         <button
+          type="button"
           onClick={mgr.refreshLogs}
           className="p-1.5 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
           title={t("mcpServer.logs.refresh", "Refresh")}
@@ -89,6 +90,7 @@ export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
           <RefreshCw size={12} />
         </button>
         <button
+          type="button"
           onClick={mgr.clearLogs}
           className="p-1.5 rounded hover:bg-error/10 text-error"
           title={t("mcpServer.logs.clear", "Clear")}
@@ -118,7 +120,7 @@ export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
               <span className="text-[var(--color-textSecondary)] flex-shrink-0 w-20 font-mono truncate">
                 {log.logger}
               </span>
-              <span className="text-[var(--color-text-primary)] flex-1 break-all">
+              <span className="text-[var(--color-text)] flex-1 break-all">
                 {log.message}
               </span>
             </div>

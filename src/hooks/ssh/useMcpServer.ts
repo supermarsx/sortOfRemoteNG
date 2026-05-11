@@ -26,6 +26,115 @@ function isTauri(): boolean {
   );
 }
 
+type TauriMcpServerConfig = {
+  enabled: boolean;
+  port: number;
+  host: string;
+  requireAuth: boolean;
+  apiKey: string;
+  allowRemote: boolean;
+  maxSessions: number;
+  sessionTimeoutSecs: number;
+  corsEnabled: boolean;
+  corsOrigins: string[];
+  rateLimitPerMinute: number;
+  loggingEnabled: boolean;
+  logLevel: McpServerConfig["log_level"];
+  enabledTools: string[];
+  enabledResources: string[];
+  enabledPrompts: string[];
+  exposeSensitiveData: boolean;
+  serverInstructions: string;
+  sseEnabled: boolean;
+  autoStart: boolean;
+};
+
+type WireMcpServerConfig = Partial<McpServerConfig> &
+  Partial<TauriMcpServerConfig>;
+
+function normalizeMcpConfig(config: unknown): McpServerConfig {
+  const value = (
+    typeof config === "object" && config !== null ? config : {}
+  ) as WireMcpServerConfig;
+
+  return {
+    enabled: value.enabled ?? DEFAULT_MCP_CONFIG.enabled,
+    port: value.port ?? DEFAULT_MCP_CONFIG.port,
+    host: value.host ?? DEFAULT_MCP_CONFIG.host,
+    require_auth:
+      value.require_auth ?? value.requireAuth ?? DEFAULT_MCP_CONFIG.require_auth,
+    api_key: value.api_key ?? value.apiKey ?? DEFAULT_MCP_CONFIG.api_key,
+    allow_remote:
+      value.allow_remote ?? value.allowRemote ?? DEFAULT_MCP_CONFIG.allow_remote,
+    max_sessions:
+      value.max_sessions ?? value.maxSessions ?? DEFAULT_MCP_CONFIG.max_sessions,
+    session_timeout_secs:
+      value.session_timeout_secs ??
+      value.sessionTimeoutSecs ??
+      DEFAULT_MCP_CONFIG.session_timeout_secs,
+    cors_enabled:
+      value.cors_enabled ?? value.corsEnabled ?? DEFAULT_MCP_CONFIG.cors_enabled,
+    cors_origins:
+      value.cors_origins ?? value.corsOrigins ?? DEFAULT_MCP_CONFIG.cors_origins,
+    rate_limit_per_minute:
+      value.rate_limit_per_minute ??
+      value.rateLimitPerMinute ??
+      DEFAULT_MCP_CONFIG.rate_limit_per_minute,
+    logging_enabled:
+      value.logging_enabled ??
+      value.loggingEnabled ??
+      DEFAULT_MCP_CONFIG.logging_enabled,
+    log_level: value.log_level ?? value.logLevel ?? DEFAULT_MCP_CONFIG.log_level,
+    enabled_tools:
+      value.enabled_tools ?? value.enabledTools ?? DEFAULT_MCP_CONFIG.enabled_tools,
+    enabled_resources:
+      value.enabled_resources ??
+      value.enabledResources ??
+      DEFAULT_MCP_CONFIG.enabled_resources,
+    enabled_prompts:
+      value.enabled_prompts ??
+      value.enabledPrompts ??
+      DEFAULT_MCP_CONFIG.enabled_prompts,
+    expose_sensitive_data:
+      value.expose_sensitive_data ??
+      value.exposeSensitiveData ??
+      DEFAULT_MCP_CONFIG.expose_sensitive_data,
+    server_instructions:
+      value.server_instructions ??
+      value.serverInstructions ??
+      DEFAULT_MCP_CONFIG.server_instructions,
+    sse_enabled:
+      value.sse_enabled ?? value.sseEnabled ?? DEFAULT_MCP_CONFIG.sse_enabled,
+    auto_start:
+      value.auto_start ?? value.autoStart ?? DEFAULT_MCP_CONFIG.auto_start,
+  };
+}
+
+function toTauriMcpConfig(config: McpServerConfig): TauriMcpServerConfig {
+  return {
+    enabled: config.enabled,
+    port: config.port,
+    host: config.host,
+    requireAuth: config.require_auth,
+    apiKey: config.api_key,
+    allowRemote: config.allow_remote,
+    maxSessions: config.max_sessions,
+    sessionTimeoutSecs: config.session_timeout_secs,
+    corsEnabled: config.cors_enabled,
+    corsOrigins: config.cors_origins,
+    rateLimitPerMinute: config.rate_limit_per_minute,
+    loggingEnabled: config.logging_enabled,
+    logLevel: config.log_level,
+    enabledTools: config.enabled_tools,
+    enabledResources: config.enabled_resources,
+    enabledPrompts: config.enabled_prompts,
+    exposeSensitiveData: config.expose_sensitive_data,
+    serverInstructions: config.server_instructions,
+    sseEnabled: config.sse_enabled,
+    autoStart: config.auto_start,
+  };
+}
+
 // ─── Types ─────────────────────────────────────────────────────────
 
 export interface UseMcpServerResult {
@@ -133,8 +242,8 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
   const refreshConfig = useCallback(async () => {
     if (!isTauri()) return;
     try {
-      const c = await invoke<McpServerConfig>("mcp_get_config");
-      setConfig(c);
+      const c = await invoke<unknown>("mcp_get_config");
+      setConfig(normalizeMcpConfig(c));
     } catch (e: any) {
       console.warn("Failed to get MCP config:", e);
     }
@@ -244,8 +353,11 @@ export function useMcpServer(isOpen: boolean): UseMcpServerResult {
     setError(null);
     setIsSavingConfig(true);
     try {
-      await invoke("mcp_update_config", { config: newConfig });
-      setConfig(newConfig);
+      const normalizedConfig = normalizeMcpConfig(newConfig);
+      await invoke("mcp_update_config", {
+        config: toTauriMcpConfig(normalizedConfig),
+      });
+      setConfig(normalizedConfig);
       await refreshStatus();
     } catch (e: any) {
       setError(typeof e === "string" ? e : e.message || "Failed to update MCP config");

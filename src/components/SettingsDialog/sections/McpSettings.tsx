@@ -3,7 +3,6 @@ import { AlertCircle, Bot } from "lucide-react";
 import SectionHeading from "../../ui/SectionHeading";
 import { useMcpSettings } from "../../../hooks/settings/useMcpSettings";
 import type { GlobalSettings } from "../../../types/settings/settings";
-import { OverviewTab } from "../../ssh/mcpServer/OverviewTab";
 import { ConfigTab } from "../../ssh/mcpServer/ConfigTab";
 
 interface McpSettingsProps {
@@ -43,7 +42,6 @@ export const McpSettings: React.FC<McpSettingsProps> = ({
         </div>
       )}
 
-      <OverviewTab mgr={mgr} />
       <ConfigTab mgr={mgr} />
     </div>
   );

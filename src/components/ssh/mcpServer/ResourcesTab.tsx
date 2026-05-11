@@ -16,12 +16,12 @@ export const ResourcesTab: React.FC<McpTabProps> = ({ mgr }) => {
         {mgr.resources.map((r) => (
           <div
             key={r.uri}
-            className="p-3 rounded-lg bg-[var(--color-surface-secondary)] border border-[var(--color-border)]"
+            className="p-3 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)]"
             data-testid={`mcp-resource-${r.name}`}
           >
             <div className="flex items-center gap-2 mb-1">
               <Database size={12} className="text-teal-400" />
-              <span className="text-xs font-medium text-[var(--color-text-primary)]">{r.name}</span>
+              <span className="text-xs font-medium text-[var(--color-text)]">{r.name}</span>
               {r.mimeType && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]">
                   {r.mimeType}

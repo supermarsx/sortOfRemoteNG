@@ -23,7 +23,18 @@ import { DEFAULT_MCP_CONFIG } from "../../src/types/mcp/mcpServer";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback || key,
+    t: (key: string, fallback?: string) => {
+      if (
+        [
+          "mcpServer.tools",
+          "mcpServer.resources",
+          "mcpServer.prompts",
+        ].includes(key)
+      ) {
+        throw new Error(`${key} is a translation object, not a string`);
+      }
+      return fallback || key;
+    },
   }),
 }));
 
@@ -338,6 +349,7 @@ describe("McpServerPanel", () => {
     });
 
     it("should switch to config tab", async () => {
+      setupMockInvoke({ mcp_get_config: { ...defaultConfig, enabled: true } });
       renderPanel();
       await waitFor(() => {
         expect(screen.getByText("MCP Server")).toBeInTheDocument();
@@ -487,6 +499,22 @@ describe("McpServerPanel", () => {
       });
     });
 
+    it("should tolerate partial metrics payloads", async () => {
+      setupMockInvoke({
+        mcp_get_status: runningStatus,
+        mcp_get_metrics: {
+          avg_response_ms: 12.25,
+        },
+      });
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Resource Reads")).toBeInTheDocument();
+        expect(screen.getByText("Avg Response")).toBeInTheDocument();
+        expect(screen.getByText("12.3ms")).toBeInTheDocument();
+      });
+    });
+
     it("should display error banner when last_error is set", async () => {
       setupMockInvoke({
         mcp_get_status: {
@@ -505,6 +533,7 @@ describe("McpServerPanel", () => {
 
   describe("Config Tab", () => {
     it("should display configuration fields", async () => {
+      setupMockInvoke({ mcp_get_config: { ...defaultConfig, enabled: true } });
       renderPanel();
       await waitFor(() => {
         expect(screen.getByText("MCP Server")).toBeInTheDocument();
@@ -527,7 +556,46 @@ describe("McpServerPanel", () => {
       });
     });
 
-    it("should call update config when save is clicked", async () => {
+    it("should normalize camelCase config returned by the backend", async () => {
+      setupMockInvoke({
+        mcp_get_config: {
+          enabled: true,
+          port: 3456,
+          host: "0.0.0.0",
+          requireAuth: true,
+          apiKey: "mcp-secret",
+          allowRemote: true,
+          maxSessions: 25,
+          sessionTimeoutSecs: 7200,
+          corsEnabled: false,
+          corsOrigins: ["http://localhost:3000"],
+          rateLimitPerMinute: 240,
+          loggingEnabled: false,
+          logLevel: "debug",
+          enabledTools: ["list_connections"],
+          enabledResources: ["connections"],
+          enabledPrompts: ["connect-to-server"],
+          exposeSensitiveData: true,
+          serverInstructions: "Use carefully",
+          sseEnabled: false,
+          autoStart: true,
+        },
+      });
+
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("MCP Server")).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByTestId("mcp-tab-config"));
+      await waitFor(() => {
+        expect(screen.getByDisplayValue("0.0.0.0")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("3456")).toBeInTheDocument();
+        expect(screen.getByDisplayValue("mcp-secret")).toBeInTheDocument();
+      });
+    });
+
+    it("should send camelCase config live when a field changes", async () => {
+      setupMockInvoke({ mcp_get_config: { ...defaultConfig, enabled: true } });
       renderPanel();
       await waitFor(() => {
         expect(screen.getByText("MCP Server")).toBeInTheDocument();
@@ -536,20 +604,45 @@ describe("McpServerPanel", () => {
       await waitFor(() => {
         expect(screen.getByText("General")).toBeInTheDocument();
       });
-      // Modify a field to enable save button
-      const portInputs = screen.getAllByDisplayValue("3100");
-      if (portInputs.length > 0) {
-        fireEvent.change(portInputs[0], { target: { value: "3200" } });
-        await waitFor(() => {
-          const saveBtn = screen.queryByText("Save Changes");
-          if (saveBtn) {
-            fireEvent.click(saveBtn);
-          }
-        });
-      }
+
+      const [portInput] = screen.getAllByDisplayValue("3100");
+      fireEvent.change(portInput, { target: { value: "3200" } });
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "mcp_update_config",
+          expect.objectContaining({
+            config: expect.objectContaining({
+              port: 3200,
+              requireAuth: true,
+              apiKey: "",
+              allowRemote: false,
+              maxSessions: 10,
+              sessionTimeoutSecs: 3600,
+              corsEnabled: true,
+              rateLimitPerMinute: 120,
+              loggingEnabled: true,
+              logLevel: "info",
+              exposeSensitiveData: false,
+              serverInstructions: DEFAULT_MCP_CONFIG.server_instructions,
+              sseEnabled: true,
+              autoStart: false,
+            }),
+          }),
+        );
+      });
+
+      const updateCall = mockInvoke.mock.calls.find(
+        ([cmd]) => cmd === "mcp_update_config",
+      );
+      const payload = updateCall?.[1] as { config: Record<string, unknown> };
+      expect(payload.config).not.toHaveProperty("require_auth");
+      expect(payload.config).not.toHaveProperty("api_key");
+      expect(payload.config).not.toHaveProperty("allow_remote");
     });
 
     it("should generate API key when clicked", async () => {
+      setupMockInvoke({ mcp_get_config: { ...defaultConfig, enabled: true } });
       renderPanel();
       await waitFor(() => {
         expect(screen.getByText("MCP Server")).toBeInTheDocument();

@@ -30,8 +30,9 @@ export const SessionsTab: React.FC<McpTabProps> = ({ mgr }) => {
           {mgr.sessions.length} {t("mcpServer.sessions.active", "active sessions")}
         </div>
         <button
+          type="button"
           onClick={mgr.refreshSessions}
-          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surfaceHover)]"
+          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
         >
           <RefreshCw size={10} />
           {t("mcpServer.sessions.refresh", "Refresh")}
@@ -42,13 +43,13 @@ export const SessionsTab: React.FC<McpTabProps> = ({ mgr }) => {
       {mgr.sessions.map((session) => (
         <div
           key={session.id}
-          className="p-3 rounded-lg bg-[var(--color-surface-secondary)] border border-[var(--color-border)]"
+          className="p-3 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)]"
           data-testid={`mcp-session-${session.id}`}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Users size={12} className="text-primary" />
-              <span className="text-xs font-mono text-[var(--color-text-primary)]">
+              <span className="text-xs font-mono text-[var(--color-text)]">
                 {session.id.slice(0, 12)}…
               </span>
               {session.initialized ? (
@@ -62,6 +63,7 @@ export const SessionsTab: React.FC<McpTabProps> = ({ mgr }) => {
               )}
             </div>
             <button
+              type="button"
               onClick={() => mgr.disconnectSession(session.id)}
               className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-error hover:bg-error/10"
               title={t("mcpServer.sessions.disconnect", "Disconnect")}

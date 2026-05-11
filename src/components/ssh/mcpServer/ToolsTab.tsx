@@ -37,7 +37,7 @@ export const ToolsTab: React.FC<McpTabProps> = ({ mgr }) => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t("mcpServer.tools.search", "Search tools...")}
-          className="w-full pl-8 pr-3 py-2 bg-[var(--color-surface-secondary)] border border-[var(--color-border)] rounded-md text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+          className="w-full pl-8 pr-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
           data-testid="mcp-tools-search"
         />
       </div>
@@ -84,7 +84,7 @@ const ToolCard: React.FC<{
 
   return (
     <div
-      className="rounded-lg bg-[var(--color-surface-secondary)] border border-[var(--color-border)] overflow-hidden"
+      className="rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)] overflow-hidden"
       data-testid={`mcp-tool-${tool.name}`}
     >
       <button
@@ -93,7 +93,7 @@ const ToolCard: React.FC<{
       >
         {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Wrench size={12} className="text-[var(--color-accent)] flex-shrink-0" />
-        <span className="text-xs font-mono font-medium text-[var(--color-text-primary)] flex-1">
+        <span className="text-xs font-mono font-medium text-[var(--color-text)] flex-1">
           {tool.name}
         </span>
         {/* Annotation badges */}
@@ -131,7 +131,7 @@ const ToolCard: React.FC<{
               <div className="text-[10px] font-semibold text-[var(--color-textSecondary)] mb-1 uppercase">
                 {t("mcpServer.tools.inputSchema", "Input Schema")}
               </div>
-              <pre className="text-[10px] text-[var(--color-text-primary)] bg-[var(--color-surface)] rounded p-2 overflow-x-auto max-h-48 scrollbar-thin">
+              <pre className="text-[10px] text-[var(--color-text)] bg-[var(--color-surface)] rounded p-2 overflow-x-auto max-h-48 scrollbar-thin">
                 {JSON.stringify(tool.inputSchema, null, 2)}
               </pre>
             </div>

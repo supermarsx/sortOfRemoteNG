@@ -15,12 +15,12 @@ export const PromptsTab: React.FC<McpTabProps> = ({ mgr }) => {
       {mgr.prompts.map((prompt) => (
         <div
           key={prompt.name}
-          className="p-3 rounded-lg bg-[var(--color-surface-secondary)] border border-[var(--color-border)]"
+          className="p-3 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)]"
           data-testid={`mcp-prompt-${prompt.name}`}
         >
           <div className="flex items-center gap-2 mb-1">
             <MessageSquare size={12} className="text-primary" />
-            <span className="text-xs font-mono font-medium text-[var(--color-text-primary)]">
+            <span className="text-xs font-mono font-medium text-[var(--color-text)]">
               {prompt.name}
             </span>
           </div>
@@ -40,7 +40,7 @@ export const PromptsTab: React.FC<McpTabProps> = ({ mgr }) => {
                   ) : (
                     <Circle size={9} className="text-[var(--color-textSecondary)]" />
                   )}
-                  <span className="font-mono text-[var(--color-text-primary)]">{arg.name}</span>
+                  <span className="font-mono text-[var(--color-text)]">{arg.name}</span>
                   {arg.required && (
                     <span className="text-[8px] px-1 py-0.5 rounded bg-success/20 text-success">
                       {t("mcpServer.prompts.required", "required")}

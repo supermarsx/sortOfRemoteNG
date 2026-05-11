@@ -80,6 +80,7 @@ export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
         />
         <div className="flex-1" />
         <button
+          type="button"
           onClick={mgr.refreshEvents}
           className="p-1.5 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
           title={t("mcpServer.events.refresh", "Refresh")}
@@ -90,7 +91,7 @@ export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
 
       {/* Tool call log section */}
       {mgr.toolCallLogs.length > 0 && !filterType && (
-        <div className="p-3 rounded-lg bg-[var(--color-surface-secondary)] border border-[var(--color-border)]">
+        <div className="p-3 rounded-lg bg-[var(--color-surfaceHover)] border border-[var(--color-border)]">
           <h3 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase text-[var(--color-textSecondary)] mb-2">
             <Wrench size={10} />
             {t("mcpServer.events.recentToolCalls", "Recent Tool Calls")}
@@ -101,7 +102,7 @@ export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
                 <span className={log.success ? "text-success" : "text-error"}>
                   {log.success ? "✓" : "✗"}
                 </span>
-                <span className="font-mono text-[var(--color-text-primary)]">{log.tool_name}</span>
+                <span className="font-mono text-[var(--color-text)]">{log.tool_name}</span>
                 <span className="text-[var(--color-textSecondary)]">{log.duration_ms}ms</span>
                 <span className="text-[var(--color-textSecondary)] flex-shrink-0">
                   <Clock size={8} className="inline mr-0.5" />

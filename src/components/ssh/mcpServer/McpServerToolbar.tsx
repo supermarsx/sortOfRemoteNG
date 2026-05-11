@@ -43,15 +43,15 @@ export const McpServerToolbar: React.FC<McpTabProps> = ({ mgr }) => {
             onClick={() => mgr.setActiveTab(key)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
               isActive
-                ? "bg-[var(--color-accent)]/20 text-[var(--color-accent)] shadow-sm"
-                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surfaceHover)]"
+                ? "bg-accent/20 text-accent shadow-sm"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
             }`}
             data-testid={`mcp-tab-${key}`}
           >
             <Icon size={14} />
             <span>{t(labelKey, fallback)}</span>
             {key === "sessions" && mgr.sessions.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[var(--color-accent)]/20 text-[10px]">
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-accent/20 text-[10px]">
                 {mgr.sessions.length}
               </span>
             )}
