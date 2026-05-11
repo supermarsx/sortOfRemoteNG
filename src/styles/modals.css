@@ -1,9 +1,14 @@
 /* Centralized modal/dialog primitives */
 .sor-modal-backdrop {
   position: fixed;
-  inset: 0;
-  /* Sits above session tiles and floating panels but below the always-on
-     top toolbar, so the window-control row stays unfaded. */
+  /* Leave the top window-handle bar (Tauri drag region, h-12 = 3rem) out
+     of the fade so the user can always see and use window controls
+     while a dialog is open. */
+  top: var(--app-titlebar-height, 3rem);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  /* Sits above session tiles and floating panels. */
   z-index: 1000;
   display: flex;
   align-items: center;
