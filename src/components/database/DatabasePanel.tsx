@@ -1,7 +1,7 @@
 import React from "react";
 import { Database, Plus, Upload } from "lucide-react";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
-import { useCollectionSelector } from "../../hooks/connection/useCollectionSelector";
+import { useDatabaseSelector } from "../../hooks/connection/useDatabaseSelector";
 import { useTranslation } from "react-i18next";
 import CollectionsTab from "../connection/collectionSelector/CollectionsTab";
 
@@ -31,7 +31,7 @@ export const DatabasePanel: React.FC<DatabasePanelProps> = ({
   onDatabaseSelect,
 }) => {
   const { t } = useTranslation();
-  const mgr = useCollectionSelector(
+  const mgr = useDatabaseSelector(
     true,
     onDatabaseSelect ?? (() => Promise.resolve()),
   );
