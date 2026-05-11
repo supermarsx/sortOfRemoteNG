@@ -32,6 +32,75 @@ const GROUP_COLORS = [
   { name: "Pink", value: "#ec4899" },
 ];
 
+const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+const normalizeHex = (raw: string): string | null => {
+  const trimmed = raw.trim();
+  const withHash = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  if (HEX_PATTERN.test(withHash)) return withHash.toLowerCase();
+  // accept short form #abc
+  if (/^#[0-9a-fA-F]{3}$/.test(withHash)) {
+    const [, r, g, b] = withHash;
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return null;
+};
+
+const CustomColorPicker: React.FC<{
+  value: string;
+  onChange: (color: string) => void;
+  size?: "sm" | "md";
+}> = ({ value, onChange, size = "md" }) => {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const commit = useCallback(
+    (raw: string) => {
+      const next = normalizeHex(raw);
+      if (next) onChange(next);
+    },
+    [onChange],
+  );
+  const swatchSize = size === "sm" ? "w-4 h-4" : "w-5 h-5";
+  return (
+    <label
+      className="flex items-center gap-1.5 text-[10px] text-[var(--color-textMuted)] cursor-pointer"
+      title="Custom color"
+    >
+      <span>Custom:</span>
+      <span
+        className={`relative inline-block ${swatchSize} rounded-full border-2 border-white/20 overflow-hidden`}
+        style={{ backgroundColor: value }}
+      >
+        <input
+          type="color"
+          value={HEX_PATTERN.test(value) ? value : "#888888"}
+          onChange={(e) => onChange(e.target.value)}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          aria-label="Pick custom color"
+        />
+      </span>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit(draft);
+          }
+        }}
+        spellCheck={false}
+        className="w-20 bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-borderActive)]"
+        placeholder="#3b82f6"
+        aria-label="Custom hex color"
+      />
+    </label>
+  );
+};
+
 interface TabGroupManagerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -351,16 +420,16 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
           </div>
 
           {/* Search */}
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
+          <label className="flex min-h-9 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-input)] px-3 text-sm focus-within:border-primary">
+            <Search size={14} className="shrink-0 text-[var(--color-textSecondary)]" />
             <input
               type="text"
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="sor-form-input sor-form-input-icon-left text-sm w-full"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[var(--color-text)] outline-none placeholder:text-[var(--color-textMuted)]"
               placeholder="Search groups..."
             />
-          </div>
+          </label>
 
           {/* Content */}
           <div>
@@ -564,7 +633,7 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
 
                       {/* Inline color picker */}
                       {colorPickerGroupId === group.id && (
-                        <div className="px-3 pb-2 flex items-center gap-2">
+                        <div className="px-3 pb-2 flex items-center gap-3 flex-wrap">
                           <span className="text-[10px] text-[var(--color-textMuted)]">
                             Color:
                           </span>
@@ -574,7 +643,6 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                                 key={c.value}
                                 onClick={() => {
                                   handleChangeColor(group.id, c.value);
-                                  setColorPickerGroupId(null);
                                 }}
                                 className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${
                                   group.color === c.value
@@ -586,6 +654,10 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                               />
                             ))}
                           </div>
+                          <CustomColorPicker
+                            value={group.color}
+                            onChange={(v) => handleChangeColor(group.id, v)}
+                          />
                         </div>
                       )}
 
@@ -680,20 +752,27 @@ export const TabGroupManager: React.FC<TabGroupManagerProps> = ({
                   placeholder="Group name"
                   className="text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-2 py-1 outline-none focus:border-[var(--color-borderActive)] text-[var(--color-text)] w-32"
                 />
-                <div className="flex gap-1">
-                  {GROUP_COLORS.map((c) => (
-                    <button
-                      key={c.value}
-                      onClick={() => setNewGroupColor(c.value)}
-                      className={`w-4 h-4 rounded-full border-2 transition-transform hover:scale-110 ${
-                        newGroupColor === c.value
-                          ? "border-white scale-110"
-                          : "border-transparent"
-                      }`}
-                      style={{ backgroundColor: c.value }}
-                      title={c.name}
-                    />
-                  ))}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex gap-1">
+                    {GROUP_COLORS.map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => setNewGroupColor(c.value)}
+                        className={`w-4 h-4 rounded-full border-2 transition-transform hover:scale-110 ${
+                          newGroupColor === c.value
+                            ? "border-white scale-110"
+                            : "border-transparent"
+                        }`}
+                        style={{ backgroundColor: c.value }}
+                        title={c.name}
+                      />
+                    ))}
+                  </div>
+                  <CustomColorPicker
+                    value={newGroupColor}
+                    onChange={setNewGroupColor}
+                    size="sm"
+                  />
                 </div>
                 <button
                   onClick={handleCreateGroup}
