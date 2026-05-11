@@ -127,7 +127,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
         />
       )}
 
-      <div className={embedded ? "p-0" : "p-6 overflow-y-auto"}>
+      <div className={embedded ? "mx-auto w-full max-w-4xl" : "p-6 overflow-y-auto"}>
         <TabBar mgr={mgr} />
 
         {mgr.activeTab === "export" && (
@@ -159,9 +159,25 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               handleImport={mgr.handleImport}
               fileInputRef={mgr.fileInputRef}
               importResult={mgr.importResult}
+              importAnalysis={mgr.importAnalysis}
+              importFilters={mgr.importFilters}
+              updateImportFilters={mgr.updateImportFilters}
+              resetImportFilters={mgr.resetImportFilters}
+              importOptions={mgr.importOptions}
+              updateImportOptions={mgr.updateImportOptions}
+              previewItems={mgr.importPreviewItems}
+              visiblePreviewItems={mgr.visiblePreviewItems}
+              availableProtocols={mgr.availableImportProtocols}
+              selectedPreviewIds={mgr.selectedPreviewIds}
+              selectedCount={mgr.selectedImportCount}
               handleFileSelect={mgr.handleFileSelect}
               confirmImport={() => mgr.confirmImport(mgr.importFilename)}
               cancelImport={mgr.cancelImport}
+              togglePreviewSelection={mgr.togglePreviewSelection}
+              selectAllVisiblePreviewItems={mgr.selectAllVisiblePreviewItems}
+              deselectAllVisiblePreviewItems={mgr.deselectAllVisiblePreviewItems}
+              selectAllImportablePreviewItems={mgr.selectAllImportablePreviewItems}
+              detectedFormat={mgr.importAnalysis?.formatName}
             />
           </div>
         )}
@@ -185,7 +201,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
         isOpen={isOpen}
         onClose={onClose}
         backdropClassName="bg-black/50"
-        panelClassName="max-w-2xl rounded-xl overflow-hidden"
+        panelClassName="max-w-6xl rounded-xl overflow-hidden"
         contentClassName="bg-[var(--color-surface)]"
         dataTestId="import-export-dialog"
       >

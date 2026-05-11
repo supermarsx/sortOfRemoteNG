@@ -1,11 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Connection } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
 import { CollectionManager } from '../../utils/connection/collectionManager';
 import { SettingsManager } from '../../utils/settings/settingsManager';
-import { ImportResult, ImportVpnData } from '../../components/ImportExport/types';
+import {
+  ImportFilterState,
+  ImportOptions,
+  ImportPreviewItem,
+  ImportResult,
+  ImportSourceMetadata,
+  ImportVpnData,
+} from '../../components/ImportExport/types';
 import {
   encryptWithPassword,
   decryptWithPassword,
@@ -22,6 +28,382 @@ import {
 } from '../../components/ImportExport/utils';
 import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
+import { generateId } from '../../utils/core/id';
+
+const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
+  search: '',
+  protocol: 'all',
+  issueSeverity: 'all',
+  itemKind: 'all',
+  selection: 'all',
+  conflict: 'all',
+  missingHostnameOnly: false,
+  withCredentialsOnly: false,
+};
+
+const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
+  preserveFolders: true,
+  includeCredentials: true,
+  includeVpnData: true,
+  includeTunnelChains: true,
+  conflictPolicy: 'duplicate',
+  addTags: '',
+};
+
+const EMPTY_IMPORT_PREVIEW_ITEMS: ImportPreviewItem[] = [];
+
+const normalizeSearch = (value: string): string => value.trim().toLowerCase();
+
+const safeString = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  return String(value);
+};
+
+const safeTrimmedLower = (value: unknown): string =>
+  safeString(value).trim().toLowerCase();
+
+const safeTags = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map((tag) => safeString(tag)).filter(Boolean) : [];
+
+const splitTags = (value: string): string[] =>
+  value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+const connectionHasCredentials = (connection: Connection): boolean =>
+  Boolean(
+    connection.password ||
+      connection.privateKey ||
+      connection.passphrase ||
+      connection.totpSecret ||
+      connection.basicAuthPassword,
+  );
+
+const stripConnectionCredentials = (connection: Connection): Connection => {
+  const next = { ...connection };
+  delete next.password;
+  delete next.privateKey;
+  delete next.passphrase;
+  delete next.totpSecret;
+  delete next.basicAuthPassword;
+  delete next.rustdeskPassword;
+  return next;
+};
+
+const connectionEndpointKey = (connection: Connection): string =>
+  [
+    safeTrimmedLower(connection.protocol),
+    safeTrimmedLower(connection.hostname),
+    String(Number(connection.port) || 0),
+    safeTrimmedLower(connection.username),
+  ].join('|');
+
+const getParentNameById = (connections: Connection[], parentId?: string): string | undefined => {
+  if (!parentId) return undefined;
+  const parent = connections.find((connection) => connection.id === parentId);
+  return parent ? safeString(parent.name) : undefined;
+};
+
+const getConnectionPath = (
+  connection: Connection,
+  connectionsById: Map<string, Connection>,
+): string => {
+  const names = [safeString(connection.name) || 'Unnamed item'];
+  let parentId = connection.parentId;
+  const seen = new Set<string>();
+
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = connectionsById.get(parentId);
+    if (!parent) break;
+    names.unshift(safeString(parent.name) || 'Unnamed folder');
+    parentId = parent.parentId;
+  }
+
+  return names.join(' / ');
+};
+
+const detectJsonShape = (content: string): ImportSourceMetadata['json'] => {
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      return { shape: 'array', topLevelKeys: [] };
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      return { shape: 'unknown', topLevelKeys: [] };
+    }
+    const keys = Object.keys(parsed);
+    const shape = Array.isArray(parsed.connections)
+      ? keys.includes('version') || keys.includes('exportDate')
+        ? 'collection-export'
+        : 'connections-object'
+      : 'object';
+    return { shape, topLevelKeys: keys.slice(0, 20) };
+  } catch {
+    return { shape: 'unknown', topLevelKeys: [] };
+  }
+};
+
+const detectCsvMetadata = (content: string): ImportSourceMetadata['csv'] => {
+  const lines = content.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length === 0) return { headers: [], dataRows: 0 };
+  const headers = lines[0].split(',').map((header) => header.trim().replace(/"/g, ''));
+  return { headers, dataRows: Math.max(0, lines.length - 1) };
+};
+
+const detectXmlMetadata = (content: string): ImportSourceMetadata['xml'] => {
+  try {
+    const doc = new DOMParser().parseFromString(content, 'text/xml');
+    const root = doc.documentElement;
+    return {
+      rootElement: root?.tagName,
+      nodeCount: doc.querySelectorAll('Node, server, group, session').length,
+    };
+  } catch {
+    return { nodeCount: 0 };
+  }
+};
+
+const buildImportPreviewItems = (
+  connections: Connection[],
+  existingConnections: Connection[],
+): ImportPreviewItem[] => {
+  const importedById = new Map(
+    connections.map((connection, index) => [
+      safeString(connection.id) || `import-${index + 1}`,
+      connection,
+    ]),
+  );
+  const existingById = new Map(existingConnections.map((connection) => [connection.id, connection]));
+  const existingNameKeys = new Map<string, Connection>();
+  const existingEndpointKeys = new Map<string, Connection>();
+
+  existingConnections.forEach((connection) => {
+    const nameKey = `${connection.parentId || ''}|${safeTrimmedLower(connection.name)}`;
+    existingNameKeys.set(nameKey, connection);
+    if (!connection.isGroup && safeString(connection.hostname).trim()) {
+      existingEndpointKeys.set(connectionEndpointKey(connection), connection);
+    }
+  });
+
+  return connections.map((connection, index) => {
+    const connectionId = safeString(connection.id) || `import-${index + 1}`;
+    const name = safeString(connection.name);
+    const hostname = safeString(connection.hostname);
+    const username = safeString(connection.username);
+    const port = Number(connection.port);
+    const tags = safeTags(connection.tags);
+    const issues: ImportPreviewItem['issues'] = [];
+    let conflictStatus: ImportPreviewItem['conflictStatus'] = 'none';
+    let duplicateOf: string | undefined;
+
+    if (!name.trim()) {
+      issues.push({
+        severity: 'error',
+        code: 'missing_name',
+        field: 'name',
+        message: 'Name is required.',
+      });
+    }
+
+    if (!connection.isGroup && !hostname.trim()) {
+      issues.push({
+        severity: 'warning',
+        code: 'missing_hostname',
+        field: 'hostname',
+        message: 'Hostname is empty.',
+      });
+    }
+
+    if (!connection.isGroup && (!Number.isFinite(port) || port <= 0)) {
+      issues.push({
+        severity: 'warning',
+        code: 'invalid_port',
+        field: 'port',
+        message: 'Port is missing or invalid.',
+      });
+    }
+
+    const sameId = existingById.get(connectionId);
+    if (sameId) {
+      conflictStatus = 'sameId';
+      duplicateOf = sameId.id;
+    } else {
+      const sameName = existingNameKeys.get(
+        `${connection.parentId || ''}|${safeTrimmedLower(name)}`,
+      );
+      if (sameName) {
+        conflictStatus = 'sameName';
+        duplicateOf = sameName.id;
+      } else if (!connection.isGroup && hostname.trim()) {
+        const sameEndpoint = existingEndpointKeys.get(connectionEndpointKey(connection));
+        if (sameEndpoint) {
+          conflictStatus = 'sameEndpoint';
+          duplicateOf = sameEndpoint.id;
+        }
+      }
+    }
+
+    if (conflictStatus !== 'none') {
+      issues.push({
+        severity: 'warning',
+        code: `conflict_${conflictStatus}`,
+        message:
+          conflictStatus === 'sameEndpoint'
+            ? 'Existing connection uses the same protocol, host, port, and username.'
+            : conflictStatus === 'sameName'
+              ? 'Existing item has the same name in the same folder.'
+              : 'Existing item has the same id.',
+      });
+    }
+
+    const importable = !issues.some((issue) => issue.severity === 'error');
+    return {
+      id: `${connection.isGroup ? 'folder' : 'connection'}:${connectionId}:${index}`,
+      kind: connection.isGroup ? 'folder' : 'connection',
+      sourceIndex: index + 1,
+      sourcePath: getConnectionPath(connection, importedById),
+      name: name || 'Unnamed item',
+      protocol: connection.protocol,
+      hostname,
+      port: Number.isFinite(port) ? port : undefined,
+      username,
+      parentName: getParentNameById(connections, connection.parentId),
+      tags,
+      connection,
+      importable,
+      selectedByDefault: importable,
+      conflictStatus,
+      duplicateOf,
+      issues,
+    };
+  });
+};
+
+const buildImportAnalysis = (params: {
+  filename: string;
+  sizeBytes?: number;
+  format: string;
+  formatName: string;
+  content: string;
+  connections: Connection[];
+  previewItems: ImportPreviewItem[];
+  vpnConnections?: ImportVpnData;
+  tunnelChainTemplates?: ImportResult['tunnelChainTemplates'];
+  encryption?: ImportSourceMetadata['encryption'];
+}): ImportSourceMetadata => {
+  const extension = params.filename
+    .replace(/\.encrypted\./i, '.')
+    .split('.')
+    .pop()
+    ?.toLowerCase();
+  const warnings = params.previewItems.reduce(
+    (count, item) =>
+      count + item.issues.filter((issue) => issue.severity === 'warning').length,
+    0,
+  );
+  const errors = params.previewItems.reduce(
+    (count, item) =>
+      count + item.issues.filter((issue) => issue.severity === 'error').length,
+    0,
+  );
+  const conflicts = params.previewItems.filter(
+    (item) => item.conflictStatus !== 'none',
+  ).length;
+  const rootName = (() => {
+    if (!params.content.trim().startsWith('<')) return undefined;
+    try {
+      const doc = new DOMParser().parseFromString(params.content, 'text/xml');
+      return (
+        doc.documentElement?.getAttribute('Name') ||
+        doc.documentElement?.tagName ||
+        undefined
+      );
+    } catch {
+      return undefined;
+    }
+  })();
+
+  return {
+    filename: params.filename,
+    extension,
+    sizeBytes: params.sizeBytes,
+    format: params.format,
+    formatName: params.formatName,
+    detectedAt: new Date().toISOString(),
+    confidence:
+      params.format === 'csv' && !extension ? 'medium' : params.format === 'json' ? 'high' : 'high',
+    encrypted: Boolean(params.encryption?.protected || params.encryption?.fullFileEncryption),
+    sourceApplication: params.formatName,
+    rootName,
+    counts: {
+      totalItems: params.previewItems.length,
+      connections: params.connections.filter((connection) => !connection.isGroup).length,
+      folders: params.connections.filter((connection) => connection.isGroup).length,
+      vpnConnections: params.vpnConnections
+        ? params.vpnConnections.openvpn.length +
+          params.vpnConnections.wireguard.length +
+          params.vpnConnections.tailscale.length +
+          params.vpnConnections.zerotier.length
+        : 0,
+      tunnelChains: params.tunnelChainTemplates?.length || 0,
+      warnings,
+      errors,
+      conflicts,
+    },
+    encryption: params.encryption,
+    csv: params.format === 'csv' ? detectCsvMetadata(params.content) : undefined,
+    json: params.format === 'json' ? detectJsonShape(params.content) : undefined,
+    xml: params.content.trim().startsWith('<') ? detectXmlMetadata(params.content) : undefined,
+  };
+};
+
+const filterImportPreviewItems = (
+  items: ImportPreviewItem[],
+  filters: ImportFilterState,
+  selectedIds: Set<string>,
+): ImportPreviewItem[] => {
+  const query = normalizeSearch(filters.search);
+  return items.filter((item) => {
+    if (filters.protocol !== 'all' && item.protocol !== filters.protocol) return false;
+    if (filters.issueSeverity !== 'all' && !item.issues.some((issue) => issue.severity === filters.issueSeverity)) {
+      return false;
+    }
+    if (filters.itemKind !== 'all' && item.kind !== filters.itemKind) return false;
+    if (filters.selection === 'selected' && !selectedIds.has(item.id)) return false;
+    if (filters.selection === 'unselected' && selectedIds.has(item.id)) return false;
+    if (filters.conflict === 'conflicts' && item.conflictStatus === 'none') return false;
+    if (filters.conflict === 'clean' && item.conflictStatus !== 'none') return false;
+    if (
+      filters.missingHostnameOnly &&
+      !item.issues.some((issue) => issue.code === 'missing_hostname')
+    ) {
+      return false;
+    }
+    if (filters.withCredentialsOnly && !item.connection) return false;
+    if (
+      filters.withCredentialsOnly &&
+      item.connection &&
+      !connectionHasCredentials(item.connection)
+    ) {
+      return false;
+    }
+    if (!query) return true;
+    return [
+      item.name,
+      item.hostname,
+      item.username,
+      item.sourcePath,
+      item.protocol,
+      ...item.tags,
+      ...item.issues.map((issue) => issue.message),
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+};
 
 interface UseImportExportParams {
   isOpen: boolean;
@@ -45,6 +427,14 @@ export function useImportExport({
   const [includePasswords, setIncludePasswords] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importFilename, setImportFilename] = useState<string>('');
+  const [importAnalysis, setImportAnalysis] = useState<ImportSourceMetadata | null>(null);
+  const [importFilters, setImportFilters] =
+    useState<ImportFilterState>(DEFAULT_IMPORT_FILTERS);
+  const [importOptions, setImportOptions] =
+    useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS);
+  const [selectedPreviewIds, setSelectedPreviewIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -158,6 +548,100 @@ export function useImportExport({
       zerotier: Array.isArray(candidate.zerotier) ? candidate.zerotier : [],
     };
   };
+
+  const importPreviewItems = importResult?.previewItems ?? EMPTY_IMPORT_PREVIEW_ITEMS;
+  const visiblePreviewItems = useMemo(
+    () =>
+      filterImportPreviewItems(
+        importPreviewItems,
+        importFilters,
+        selectedPreviewIds,
+      ),
+    [importFilters, importPreviewItems, selectedPreviewIds],
+  );
+  const availableImportProtocols = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          importPreviewItems
+            .map((item) => item.protocol)
+            .filter(Boolean) as Connection['protocol'][],
+        ),
+      ).sort(),
+    [importPreviewItems],
+  );
+  const selectedImportCount = useMemo(
+    () =>
+      importPreviewItems.filter((item) => selectedPreviewIds.has(item.id))
+        .length,
+    [importPreviewItems, selectedPreviewIds],
+  );
+
+  const updateImportFilters = useCallback(
+    (updates: Partial<ImportFilterState>) => {
+      setImportFilters((current) => ({ ...current, ...updates }));
+    },
+    [],
+  );
+
+  const resetImportFilters = useCallback(() => {
+    setImportFilters(DEFAULT_IMPORT_FILTERS);
+  }, []);
+
+  const updateImportOptions = useCallback(
+    (updates: Partial<ImportOptions>) => {
+      setImportOptions((current) => ({ ...current, ...updates }));
+    },
+    [],
+  );
+
+  const togglePreviewSelection = useCallback((itemId: string) => {
+    setSelectedPreviewIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectPreviewItems = useCallback((itemIds: string[]) => {
+    setSelectedPreviewIds((current) => {
+      const next = new Set(current);
+      itemIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }, []);
+
+  const deselectPreviewItems = useCallback((itemIds: string[]) => {
+    setSelectedPreviewIds((current) => {
+      const next = new Set(current);
+      itemIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const selectAllVisiblePreviewItems = useCallback(() => {
+    selectPreviewItems(
+      visiblePreviewItems.filter((item) => item.importable).map((item) => item.id),
+    );
+  }, [selectPreviewItems, visiblePreviewItems]);
+
+  const deselectAllVisiblePreviewItems = useCallback(() => {
+    deselectPreviewItems(visiblePreviewItems.map((item) => item.id));
+  }, [deselectPreviewItems, visiblePreviewItems]);
+
+  const selectAllImportablePreviewItems = useCallback(() => {
+    setSelectedPreviewIds(
+      new Set(
+        importPreviewItems
+          .filter((item) => item.importable)
+          .map((item) => item.id),
+      ),
+    );
+  }, [importPreviewItems]);
 
   // ── Export ───────────────────────────────────────────────────
 
@@ -317,13 +801,16 @@ export function useImportExport({
   const processImportFile = async (
     filename: string,
     content: string,
+    sizeBytes?: number,
   ): Promise<ImportResult> => {
     const errors: string[] = [];
     try {
       let processedContent = content;
-      if (
+      const encryptedWrapper =
         filename.includes('.encrypted.') ||
-        filename.split('.').pop()?.toLowerCase() === 'encrypted'
+        filename.split('.').pop()?.toLowerCase() === 'encrypted';
+      if (
+        encryptedWrapper
       ) {
         const password = await requestPassword({
           title: 'Decrypt import file',
@@ -360,9 +847,46 @@ export function useImportExport({
       }
 
       const detectedFormat = detectImportFormat(processedContent, filename);
-      let connections: Connection[];
+      const detectedFormatName = getFormatName(detectedFormat);
+      let encryptionAnalysis: ImportSourceMetadata['encryption'] | undefined =
+        encryptedWrapper
+          ? {
+              protected: true,
+              fullFileEncryption: false,
+              requiresPassword: true,
+            }
+          : undefined;
+      let vpnConnections: ImportVpnData | undefined;
+      let tunnelChainTemplates: ImportResult['tunnelChainTemplates'];
+      if (detectedFormat === 'json') {
+        try {
+          const parsed = JSON.parse(processedContent);
+          vpnConnections = normalizeVpnImportData(parsed.vpnConnections);
+          if (Array.isArray(parsed.tunnelChainTemplates)) {
+            tunnelChainTemplates = parsed.tunnelChainTemplates;
+          }
+        } catch {
+          // Not a JSON file or no VPN data -- ignore
+        }
+      }
+
+      const hasJsonSidecarData =
+        Boolean(
+          vpnConnections &&
+            (vpnConnections.openvpn.length > 0 ||
+              vpnConnections.wireguard.length > 0 ||
+              vpnConnections.tailscale.length > 0 ||
+              vpnConnections.zerotier.length > 0),
+        ) || Boolean(tunnelChainTemplates?.length);
+
+      let connections: Connection[] = [];
       if (detectedFormat === 'mremoteng') {
         const enc = detectMRemoteNGEncryption(processedContent);
+        encryptionAnalysis = {
+          protected: enc.isEncrypted,
+          fullFileEncryption: enc.fullFileEncryption,
+          requiresPassword: enc.requiresPassword,
+        };
         if (enc.isEncrypted) {
           // Step 1: figure out which master password to use by validating
           // against the file's `Protected` sentinel. If the user never set a
@@ -376,6 +900,7 @@ export function useImportExport({
           let masterPassword: string | null = null;
           if (defaultCheck.valid) {
             masterPassword = MREMOTENG_DEFAULT_MASTER_PASSWORD;
+            encryptionAnalysis.defaultMasterPasswordAccepted = true;
           } else {
             // Custom master password set — prompt and re-validate.
             let attemptError: string | undefined;
@@ -393,6 +918,7 @@ export function useImportExport({
               );
               if (check.valid) {
                 masterPassword = candidate;
+                encryptionAnalysis.defaultMasterPasswordAccepted = false;
                 break;
               }
               attemptError = 'Incorrect master password — try again.';
@@ -433,28 +959,20 @@ export function useImportExport({
           );
         }
       } else {
-        connections = await importConnections(
-          processedContent,
-          filename,
-          detectedFormat,
-        );
-      }
-      console.log(`Import format detected: ${getFormatName(detectedFormat)}`);
-
-      // Extract VPN connections and tunnel chain templates from JSON imports
-      let vpnConnections: ImportVpnData | undefined;
-      let tunnelChainTemplates: ImportResult['tunnelChainTemplates'];
-      if (detectedFormat === 'json') {
         try {
-          const parsed = JSON.parse(processedContent);
-          vpnConnections = normalizeVpnImportData(parsed.vpnConnections);
-          if (Array.isArray(parsed.tunnelChainTemplates)) {
-            tunnelChainTemplates = parsed.tunnelChainTemplates;
+          connections = await importConnections(
+            processedContent,
+            filename,
+            detectedFormat,
+          );
+        } catch (error) {
+          if (!hasJsonSidecarData) {
+            throw error;
           }
-        } catch {
-          // Not a JSON file or no VPN data -- ignore
+          connections = [];
         }
       }
+      console.log(`Import format detected: ${detectedFormatName}`);
 
       const actualExtension = filename
         .replace('.encrypted', '')
@@ -480,6 +998,23 @@ export function useImportExport({
           `No connections found in ${actualExtension?.toUpperCase()} file`,
         );
       }
+      const previewItems = buildImportPreviewItems(
+        connections,
+        state.connections,
+      );
+      const analysis = buildImportAnalysis({
+        filename,
+        sizeBytes,
+        format: detectedFormat,
+        formatName: detectedFormatName,
+        content: processedContent,
+        connections,
+        previewItems,
+        vpnConnections,
+        tunnelChainTemplates,
+        encryption: encryptionAnalysis,
+      });
+
       return {
         success: true,
         imported: connections.length,
@@ -487,6 +1022,13 @@ export function useImportExport({
         connections,
         vpnConnections,
         tunnelChainTemplates,
+        analysis,
+        previewItems,
+        selectedIds: previewItems
+          .filter((item) => item.selectedByDefault)
+          .map((item) => item.id),
+        selectedCount: previewItems.filter((item) => item.selectedByDefault)
+          .length,
       };
     } catch (error) {
       return {
@@ -514,11 +1056,16 @@ export function useImportExport({
     }
     setIsProcessing(true);
     setImportResult(null);
+    setImportAnalysis(null);
+    setSelectedPreviewIds(new Set());
+    setImportFilters(DEFAULT_IMPORT_FILTERS);
     setImportFilename(file.name);
     try {
       const content = await readFileContent(file);
-      const result = await processImportFile(file.name, content);
+      const result = await processImportFile(file.name, content, file.size);
       setImportResult(result);
+      setImportAnalysis(result.analysis ?? null);
+      setSelectedPreviewIds(new Set(result.selectedIds ?? []));
       if (!result.success) {
         console.error('Import failed:', result.errors);
         toast.error('Import failed. Check the file format and try again.');
@@ -533,6 +1080,8 @@ export function useImportExport({
         errors: [errorMessage],
         connections: [],
       });
+      setImportAnalysis(null);
+      setSelectedPreviewIds(new Set());
       toast.error('Import failed. Check the console for details.');
     } finally {
       setIsProcessing(false);
@@ -552,13 +1101,83 @@ export function useImportExport({
 
   const confirmImport = async (filename?: string) => {
     if (importResult && importResult.success) {
-      importResult.connections.forEach((conn) => {
+      const selectedItems = importResult.previewItems
+        ? importResult.previewItems.filter(
+            (item) =>
+              selectedPreviewIds.has(item.id) &&
+              item.importable &&
+              item.connection,
+          )
+        : importResult.connections.map((connection, index) => ({
+            id: `legacy:${connection.id}:${index}`,
+            connection,
+            conflictStatus: 'none' as const,
+          }));
+
+      const addTags = splitTags(importOptions.addTags);
+      const selectedOriginalIds = new Set(
+        selectedItems
+          .map((item) => item.connection?.id)
+          .filter(Boolean) as string[],
+      );
+      const remappedIds = new Map<string, string>();
+
+      selectedItems.forEach((item) => {
+        const connection = item.connection;
+        if (!connection) return;
+        if (
+          item.conflictStatus === 'sameId' ||
+          importOptions.conflictPolicy === 'rename'
+        ) {
+          remappedIds.set(connection.id, generateId());
+        }
+      });
+
+      const connectionsToImport = selectedItems
+        .filter((item) => {
+          if (importOptions.conflictPolicy !== 'skip') return true;
+          return item.conflictStatus === 'none';
+        })
+        .flatMap((item) => {
+          const connection = item.connection;
+          if (!connection) return [];
+
+          let next: Connection = { ...connection };
+          const remappedId = remappedIds.get(next.id);
+          if (remappedId) {
+            next.id = remappedId;
+          }
+          if (
+            next.parentId &&
+            (!importOptions.preserveFolders || !selectedOriginalIds.has(next.parentId))
+          ) {
+            next.parentId = undefined;
+          } else if (next.parentId && remappedIds.has(next.parentId)) {
+            next.parentId = remappedIds.get(next.parentId);
+          }
+          if (
+            importOptions.conflictPolicy === 'rename' &&
+            item.conflictStatus !== 'none'
+          ) {
+            next.name = `${next.name} (imported)`;
+          }
+          if (addTags.length > 0) {
+            next.tags = Array.from(new Set([...(next.tags || []), ...addTags]));
+          }
+          if (!importOptions.includeCredentials) {
+            next = stripConnectionCredentials(next);
+          }
+          return [next];
+        })
+        .filter((connection) => importOptions.preserveFolders || !connection.isGroup);
+
+      connectionsToImport.forEach((conn) => {
         dispatch({ type: 'ADD_CONNECTION', payload: conn });
       });
 
       // Restore VPN connections
       let vpnImportedCount = 0;
-      if (importResult.vpnConnections) {
+      if (importOptions.includeVpnData && importResult.vpnConnections) {
         const proxyMgr = ProxyOpenVPNManager.getInstance();
 
         for (const conn of importResult.vpnConnections.openvpn) {
@@ -597,7 +1216,10 @@ export function useImportExport({
 
       // Restore tunnel chain templates
       let tunnelChainsImportedCount = 0;
-      if (importResult.tunnelChainTemplates?.length) {
+      if (
+        importOptions.includeTunnelChains &&
+        importResult.tunnelChainTemplates?.length
+      ) {
         for (const chain of importResult.tunnelChainTemplates) {
           try {
             await proxyCollectionManager.createTunnelChain(
@@ -612,7 +1234,7 @@ export function useImportExport({
         }
       }
 
-      const connectionCount = importResult.connections.length;
+      const connectionCount = connectionsToImport.length;
       const parts: string[] = [];
       if (connectionCount > 0) {
         parts.push(`${connectionCount} connection(s)`);
@@ -637,6 +1259,9 @@ export function useImportExport({
         `Imported ${summary}${filename ? ` from ${filename}` : ''}`,
       );
       setImportResult(null);
+      setImportAnalysis(null);
+      setSelectedPreviewIds(new Set());
+      setImportFilters(DEFAULT_IMPORT_FILTERS);
       onClose();
     }
   };
@@ -644,6 +1269,9 @@ export function useImportExport({
   const cancelImport = () => {
     setImportResult(null);
     setImportFilename('');
+    setImportAnalysis(null);
+    setSelectedPreviewIds(new Set());
+    setImportFilters(DEFAULT_IMPORT_FILTERS);
   };
 
   return {
@@ -660,6 +1288,21 @@ export function useImportExport({
     setIncludePasswords,
     importResult,
     importFilename,
+    importAnalysis,
+    importFilters,
+    updateImportFilters,
+    resetImportFilters,
+    importOptions,
+    updateImportOptions,
+    importPreviewItems,
+    visiblePreviewItems,
+    availableImportProtocols,
+    selectedPreviewIds,
+    selectedImportCount,
+    togglePreviewSelection,
+    selectAllVisiblePreviewItems,
+    deselectAllVisiblePreviewItems,
+    selectAllImportablePreviewItems,
     isProcessing,
     fileInputRef,
     handleExport,
