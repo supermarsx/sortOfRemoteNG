@@ -122,7 +122,9 @@
         "importFailed": "No se pudo importar la colección",
         "exportFailed": "No se pudo exportar la colección"
       }
-    }
+    },
+    "searchPlaceholder": "Search databases...",
+    "noResults": "No databases match your search."
   },
   "connection": {
     "name": "Nombre",

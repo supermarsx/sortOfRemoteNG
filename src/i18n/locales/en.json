@@ -142,7 +142,9 @@
         "importFailed": "Failed to import database",
         "exportFailed": "Failed to export database"
       }
-    }
+    },
+    "searchPlaceholder": "Search databases...",
+    "noResults": "No databases match your search."
   },
   "connection": {
     "name": "Name",

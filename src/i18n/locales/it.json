@@ -122,7 +122,9 @@
         "importFailed": "Impossibile importare la raccolta",
         "exportFailed": "Impossibile esportare la raccolta"
       }
-    }
+    },
+    "searchPlaceholder": "Search databases...",
+    "noResults": "No databases match your search."
   },
   "connection": {
     "name": "Nome",

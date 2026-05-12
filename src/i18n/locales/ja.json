@@ -122,7 +122,9 @@
         "importFailed": "コレクションのインポートに失敗しました",
         "exportFailed": "コレクションのエクスポートに失敗しました"
       }
-    }
+    },
+    "searchPlaceholder": "Search databases...",
+    "noResults": "No databases match your search."
   },
   "connection": {
     "name": "名前",

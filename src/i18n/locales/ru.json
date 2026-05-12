@@ -122,7 +122,9 @@
         "importFailed": "Не удалось импортировать коллекцию",
         "exportFailed": "Не удалось экспортировать коллекцию"
       }
-    }
+    },
+    "searchPlaceholder": "Search databases...",
+    "noResults": "No databases match your search."
   },
   "connection": {
     "name": "Имя",

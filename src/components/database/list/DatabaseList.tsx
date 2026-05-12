@@ -128,7 +128,7 @@ function DatabaseList({ mgr }: DatabaseListProps) {
           value={searchFilter}
           onChange={(e) => setSearchFilter(e.target.value)}
           className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-          placeholder={t("connections.search", "Search…") as string}
+          placeholder={t("databaseCenter.searchPlaceholder", "Search databases...") as string}
         />
       </div>
 
@@ -181,7 +181,7 @@ function DatabaseList({ mgr }: DatabaseListProps) {
           message={
             mgr.collections.length === 0
               ? t("databaseCenter.collections.emptyTitle")
-              : t("connections.noResults", "No databases match your search.") as string
+              : t("databaseCenter.noResults", "No databases match your search.") as string
           }
           hint={
             mgr.collections.length === 0

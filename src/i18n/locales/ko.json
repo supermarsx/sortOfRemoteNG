@@ -122,7 +122,9 @@
         "importFailed": "컬렉션을 가져오지 못했습니다",
         "exportFailed": "컬렉션을 내보내지 못했습니다"
       }
-    }
+    },
+    "searchPlaceholder": "Search databases...",
+    "noResults": "No databases match your search."
   },
   "connection": {
     "name": "이름",
