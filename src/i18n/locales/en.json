@@ -70,8 +70,8 @@
       "clone": "Clone"
     },
     "connections": {
-      "title": "Connection Import / Export",
-      "description": "Manage connection backups and transfers without leaving the database center."
+      "title": "Import / Export",
+      "description": "Bring connections into the active database from third-party tools, or export the database's contents for backup and migration."
     },
     "collections": {
       "createTitle": "Create New Database",
@@ -2589,8 +2589,8 @@
     "security": "Security"
   },
   "exportTab": {
-    "title": "Export Connections",
-    "description": "Export your connections to a file. Configure encryption and password options below.",
+    "title": "Export from this database",
+    "description": "Write the connections in the currently open database to a file you can import elsewhere. Tab groups and color tags ride along when the format supports them; encryption and password options live below.",
     "totalConnections": "Total Connections",
     "groups": "Groups",
     "exportFormat": "Export Format",
@@ -2602,7 +2602,7 @@
     "encryptionPassword": "Encryption Password",
     "enterPassword": "Enter encryption password",
     "exporting": "Exporting...",
-    "exportButton": "Export Connections"
+    "exportButton": "Export"
   },
   "common": {
     "close": "Close",

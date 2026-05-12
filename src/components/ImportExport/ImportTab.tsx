@@ -610,9 +610,19 @@ const ImportTab: React.FC<ImportTabProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="mb-4 text-lg font-medium text-[var(--color-text)]">Import Connections</h3>
-        <p className="mb-4 text-[var(--color-textSecondary)]">
-          Import connections from supported tools, inspect the parsed result, filter the preview, and choose exactly what should be added.
+        <h3 className="mb-4 text-lg font-medium text-[var(--color-text)]">Import into this database</h3>
+        <p className="mb-2 text-[var(--color-textSecondary)]">
+          Bring content into the currently open database. Connection lists from
+          third-party tools are parsed, you can inspect the preview, filter and
+          choose exactly which entries to add — they get appended to the
+          database alongside its existing connections, tab groups and tags.
+        </p>
+        <p className="mb-4 text-xs text-[var(--color-textMuted)]">
+          To restore or merge a whole database file (connections + tab groups
+          + color tags) you previously exported from this app, use{" "}
+          <span className="font-medium">Databases &rarr; Import</span> instead;
+          that creates a new database entry rather than merging into the
+          current one.
         </p>
 
         <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">

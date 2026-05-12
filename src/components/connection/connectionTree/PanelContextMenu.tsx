@@ -28,7 +28,7 @@ function PanelContextMenu({ mgr, onOpenImport }: { mgr: ConnectionTreeMgr; onOpe
           className="sor-menu-item"
         >
           <Upload size={14} />
-          Import Connections
+          Import…
         </button>
       )}
       {hasSelection && (

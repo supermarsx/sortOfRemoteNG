@@ -122,7 +122,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
           icon={ArrowLeftRight}
           iconColor="text-primary"
           iconBg="bg-primary/20"
-          title="Import / Export Connections"
+          title="Import / Export"
           onClose={onClose}
         />
       )}
