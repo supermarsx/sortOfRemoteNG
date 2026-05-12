@@ -248,7 +248,11 @@
     "cancel": "キャンセル",
     "reset": "デフォルトにリセット",
     "autoSaveSuccess": "オプションが保存されました",
-    "autoSaveError": "自動保存に失敗しました"
+    "autoSaveError": "自動保存に失敗しました",
+    "updater": {
+      "title": "Updater",
+      "description": "Signed application updates, check cadence, and private feed endpoint."
+    }
   },
   "tabs": {
     "groupBy": "グループ化",
@@ -1789,14 +1793,14 @@
     "installing": "インストール中..."
   },
   "updater": {
-    "title": "Software更新",
-    "currentVersion": "現在バージョン",
-    "checkForUpdates": "更新を確認",
-    "checking": "Checking用更新...",
-    "upToDate": "You're upへdate!",
-    "updateAvailable": "更新利用可能",
-    "download": "ダウンロード",
-    "downloading": "ダウンロード中...",
+    "title": "Software Update",
+    "currentVersion": "Current version",
+    "checkForUpdates": "Check for updates",
+    "checking": "Checking for updates...",
+    "upToDate": "You're up to date!",
+    "updateAvailable": "Update available",
+    "download": "Download",
+    "downloading": "Downloading...",
     "cancelDownload": "ダウンロードをキャンセル",
     "installNow": "今すぐインストール",
     "installOnExit": "インストールでExit",
@@ -1805,7 +1809,7 @@
     "stable": "安定版",
     "beta": "ベータ版",
     "nightly": "ナイトリー版",
-    "releaseNotes": "リリースノート",
+    "releaseNotes": "Release notes",
     "highlights": "ハイライト",
     "changes": "変更",
     "breakingChanges": "破壊的変更",
@@ -1814,10 +1818,47 @@
     "rollback": "ロールバック",
     "rollbackTo": "Rollbackへ{{version}}",
     "noUpdates": "なし更新履歴",
-    "autoCheck": "更新を自動確認",
+    "autoCheck": "Auto-check for updates",
     "autoDownload": "更新を自動ダウンロード",
     "autoInstall": "更新を自動インストール",
-    "preRelease": "Include pre-リリースバージョン"
+    "preRelease": "Include pre-リリースバージョン",
+    "updateStatus": "Update status",
+    "newVersionAvailable": "New version available",
+    "installing": "Installing...",
+    "downloadAndInstall": "Download and install",
+    "restartToUpdate": "Restart to update",
+    "lastChecked": "Last checked",
+    "endpointModeLabel": "Endpoint mode",
+    "downloaded": "Downloaded",
+    "publicEndpoint": "Public endpoint",
+    "privateEndpointLabel": "Private endpoint",
+    "privateEndpointEnabled": "Use a private update feed first",
+    "privateEndpointUrl": "Private endpoint URL",
+    "privateEndpointRequired": "Private endpoint URL is required when the private endpoint is enabled.",
+    "autoChecks": "Automatic checks",
+    "autoCheckTooltip": "Checks never install updates without confirmation.",
+    "checkIntervalHours": "Check interval (hours)",
+    "artifact": "Artifact",
+    "privateEndpoint": {
+      "title": "Private update endpoint",
+      "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",
+      "inputLabel": "Private update endpoint URL",
+      "unavailable": "This control is only active inside the desktop app."
+    },
+    "status": {
+      "idle": "Idle",
+      "checking": "Checking",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading",
+      "installing": "Installing",
+      "restartRequired": "Restart required",
+      "error": "Error"
+    },
+    "endpointMode": {
+      "publicOnly": "Public feed only",
+      "privateThenPublic": "Private feed, then public fallback"
+    }
   },
   "portable": {
     "title": "ポータブルモード",
@@ -2544,6 +2585,10 @@
     "exportButton": "エクスポート接続"
   },
   "common": {
-    "close": "閉じる"
+    "close": "閉じる",
+    "save": "Save",
+    "clear": "Clear",
+    "saved": "Saved.",
+    "errorPrefix": "Error:"
   }
 }

@@ -2,20 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useUpdaterEndpoint } from "../../hooks/settings/useUpdaterEndpoint";
 
-/**
- * Settings UI for the **private updater endpoint** (t3-e39).
- *
- * Enterprise admins typically don't need this control: they bake the URL
- * in via `UPDATER_PRIVATE_ENDPOINT_URL` at build time. This surface exists
- * for end-user overrides / field support. The value is persisted into
- * `<AppData>/settings.json` under `updater.private_endpoint` and combined
- * with the public GitHub Releases endpoint at runtime — signature
- * verification uses the same embedded Ed25519 pubkey for both.
- *
- * This component is intentionally minimal (a single input + save/clear
- * buttons). Channel / cadence / history UI lives in
- * `src/components/updater/UpdaterPanel.tsx`.
- */
+/** Compatibility surface for the backend-managed private updater endpoint. */
 export interface UpdaterEndpointSettingProps {
   className?: string;
 }

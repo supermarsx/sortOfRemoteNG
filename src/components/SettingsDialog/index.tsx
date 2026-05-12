@@ -17,6 +17,7 @@ import ProxySettings from "./sections/ProxySettings";
 import VpnSettings from "./sections/VpnSettings";
 import AdvancedSettings from "./sections/AdvancedSettings";
 import StartupSettings from "./sections/StartupSettings";
+import UpdaterSettings from "./sections/UpdaterSettings";
 import ApiSettings from "./sections/ApiSettings";
 import McpSettings from "./sections/McpSettings";
 import RecoverySettings from "./sections/RecoverySettings";
@@ -175,6 +176,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         {mgr.activeTab === "startup" && (
           <StartupSettings settings={s} updateSettings={u} />
         )}
+        {mgr.activeTab === "updater" && <UpdaterSettings />}
         {mgr.activeTab === "theme" && (
           <ThemeSettings settings={s} updateSettings={u} />
         )}

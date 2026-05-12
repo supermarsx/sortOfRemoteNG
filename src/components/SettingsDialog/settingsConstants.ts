@@ -22,6 +22,7 @@ import {
   Activity,
   Info,
   Bot,
+  RefreshCw,
   LucideIcon,
 } from "lucide-react";
 import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig } from "../../types/settings/settings";
@@ -45,6 +46,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "general", labelKey: "settings.general", icon: Monitor },
   { id: "behavior", labelKey: "Behavior", icon: MousePointerClick },
   { id: "startup", labelKey: "settings.startup.title", fallback: "Startup & Tray", icon: Power },
+  { id: "updater", labelKey: "settings.updater.title", fallback: "Updater", icon: RefreshCw },
   { id: "theme", labelKey: "settings.theme", icon: Palette },
   { id: "layout", labelKey: "Layout", icon: LayoutGrid },
   { id: "security", labelKey: "settings.security", icon: Shield },

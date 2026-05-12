@@ -1,7 +1,7 @@
 # Apple Developer Program Enrollment — Action Package (t3-e37, B3/Q3)
 
 _Status: DECISION + ACTION package. Produced 2026-04-20. Does **not** enroll._
-_Owner: release engineering. Consumers: release CI (t3-e22 `release.yml`), macOS notarization pipeline._
+_Owner: release engineering. Consumers: release CI (`release.yml`), macOS notarization pipeline, signed Tauri updater feeds._
 _Primary source: <https://developer.apple.com/programs/enroll/> (fetched 2026-04-20)._
 
 ---
@@ -14,7 +14,7 @@ The macOS `.dmg` / `.app` artifacts produced by `tauri-action` must be:
 2. Notarized via `xcrun notarytool submit …` (Apple's current pipeline — `altool` is deprecated and hard-removed from recent Xcode).
 3. Stapled via `xcrun stapler staple` so the installed `.app` launches offline without Gatekeeper nagging.
 
-Without enrollment we cannot produce step (1) — which blocks (2) and (3) — which blocks v1.0 macOS ship. This doc is the purchasing + CI-wiring checklist so the membership can be ordered the day Q3 is green-lit.
+Without enrollment we cannot produce step (1) — which blocks (2) and (3) — which blocks v1.0 macOS ship and macOS updater feed promotion. The updater feed must point at notarized, stapled artifacts produced by the signed release workflow.
 
 ---
 
@@ -145,7 +145,7 @@ Configure in **GitHub → repo → Settings → Secrets and variables → Action
 | `APPLE_CERT_P12_BASE64` | `MIIK...base64...==` (multi-KB) | base64 of `.p12` from §5 step 7. |
 | `APPLE_CERT_PASSWORD` | `s3cret-p12-export-pw` | The `.p12` export password set in §5 step 6. |
 
-All five are referenced by the release workflow (t3-e22). Rotating `APPLE_PASSWORD` or `APPLE_CERT_P12_BASE64` requires a re-run of the workflow to pick up new values.
+All five are referenced by the release workflow. Rotating `APPLE_PASSWORD` or `APPLE_CERT_P12_BASE64` requires a re-run of the workflow to pick up new values. Production updater feeds must not be promoted from unsigned or unnotarized macOS artifacts.
 
 Optional but recommended companion secret for `keychain import` (see §8):
 

@@ -744,20 +744,6 @@ fn is_command_b(command: &str) -> bool {
             | "rdpfile_batch_export"
             | "rdpfile_batch_import"
             | "rdpfile_validate"
-            | "updater_check"
-            | "updater_download"
-            | "updater_cancel_download"
-            | "updater_install"
-            | "updater_schedule_install"
-            | "updater_get_status"
-            | "updater_get_config"
-            | "updater_update_config"
-            | "updater_set_channel"
-            | "updater_get_version_info"
-            | "updater_get_history"
-            | "updater_rollback"
-            | "updater_get_rollbacks"
-            | "updater_get_release_notes"
             | "mkt_search"
             | "mkt_get_listing"
             | "mkt_get_categories"
@@ -2058,21 +2044,6 @@ fn build_b() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         rdpfile_commands::rdpfile_batch_export,
         rdpfile_commands::rdpfile_batch_import,
         rdpfile_commands::rdpfile_validate,
-        // ── Updater ────────────────────────────────────────────────────
-        updater_commands::updater_check,
-        updater_commands::updater_download,
-        updater_commands::updater_cancel_download,
-        updater_commands::updater_install,
-        updater_commands::updater_schedule_install,
-        updater_commands::updater_get_status,
-        updater_commands::updater_get_config,
-        updater_commands::updater_update_config,
-        updater_commands::updater_set_channel,
-        updater_commands::updater_get_version_info,
-        updater_commands::updater_get_history,
-        updater_commands::updater_rollback,
-        updater_commands::updater_get_rollbacks,
-        updater_commands::updater_get_release_notes,
         // ── Marketplace ────────────────────────────────────────────────
         marketplace_commands::mkt_search,
         marketplace_commands::mkt_get_listing,

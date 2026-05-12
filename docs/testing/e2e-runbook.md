@@ -88,7 +88,7 @@ Examples:
 
 - Full WDIO desktop coverage until its runner model is proven stable in CI
 - Vendor appliance integrations
-- Real updater install/rollback flows
+- Real updater install/restart flows against signed staged feeds
 - Other OS-sensitive desktop scenarios
 
 These are intentionally not required PR gates.
@@ -208,4 +208,4 @@ The next implementation slices after the smoke deployment and tier mapping are:
 
 1. Refactor the worst `browser.pause(...)` and silent early-return patterns in the first promotable WDIO slice.
 2. Split WDIO usage into explicit suite manifests or tiered configs.
-3. Add emulator-backed coverage for shallow areas like updater, marketplace, and cloud sync.
+3. Add emulator-backed coverage for shallow areas like updater Settings, marketplace, and cloud sync.

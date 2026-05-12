@@ -248,7 +248,11 @@
     "cancel": "취소",
     "reset": "기본값으로 재설정",
     "autoSaveSuccess": "옵션이 저장됨",
-    "autoSaveError": "자동 저장 실패"
+    "autoSaveError": "자동 저장 실패",
+    "updater": {
+      "title": "Updater",
+      "description": "Signed application updates, check cadence, and private feed endpoint."
+    }
   },
   "tabs": {
     "groupBy": "그룹 기준",
@@ -1789,14 +1793,14 @@
     "installing": "설치 중..."
   },
   "updater": {
-    "title": "Software 업데이트",
-    "currentVersion": "현재 버전",
-    "checkForUpdates": "업데이트 확인",
-    "checking": "Checking 용 업데이트...",
-    "upToDate": "You're up 으로 date!",
-    "updateAvailable": "업데이트 사용 가능",
-    "download": "다운로드",
-    "downloading": "다운로드 중...",
+    "title": "Software Update",
+    "currentVersion": "Current version",
+    "checkForUpdates": "Check for updates",
+    "checking": "Checking for updates...",
+    "upToDate": "You're up to date!",
+    "updateAvailable": "Update available",
+    "download": "Download",
+    "downloading": "Downloading...",
     "cancelDownload": "다운로드 취소",
     "installNow": "지금 설치",
     "installOnExit": "설치 에 Exit",
@@ -1805,7 +1809,7 @@
     "stable": "안정판",
     "beta": "베타",
     "nightly": "나이틀리",
-    "releaseNotes": "릴리스 노트",
+    "releaseNotes": "Release notes",
     "highlights": "하이라이트",
     "changes": "변경 사항",
     "breakingChanges": "주요 변경 사항",
@@ -1814,10 +1818,47 @@
     "rollback": "롤백",
     "rollbackTo": "Rollback 으로 {{version}}",
     "noUpdates": "없음 업데이트 기록",
-    "autoCheck": "자동 업데이트 확인",
+    "autoCheck": "Auto-check for updates",
     "autoDownload": "자동 업데이트 다운로드",
     "autoInstall": "자동 업데이트 설치",
-    "preRelease": "Include pre-릴리스 버전"
+    "preRelease": "Include pre-릴리스 버전",
+    "updateStatus": "Update status",
+    "newVersionAvailable": "New version available",
+    "installing": "Installing...",
+    "downloadAndInstall": "Download and install",
+    "restartToUpdate": "Restart to update",
+    "lastChecked": "Last checked",
+    "endpointModeLabel": "Endpoint mode",
+    "downloaded": "Downloaded",
+    "publicEndpoint": "Public endpoint",
+    "privateEndpointLabel": "Private endpoint",
+    "privateEndpointEnabled": "Use a private update feed first",
+    "privateEndpointUrl": "Private endpoint URL",
+    "privateEndpointRequired": "Private endpoint URL is required when the private endpoint is enabled.",
+    "autoChecks": "Automatic checks",
+    "autoCheckTooltip": "Checks never install updates without confirmation.",
+    "checkIntervalHours": "Check interval (hours)",
+    "artifact": "Artifact",
+    "privateEndpoint": {
+      "title": "Private update endpoint",
+      "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",
+      "inputLabel": "Private update endpoint URL",
+      "unavailable": "This control is only active inside the desktop app."
+    },
+    "status": {
+      "idle": "Idle",
+      "checking": "Checking",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading",
+      "installing": "Installing",
+      "restartRequired": "Restart required",
+      "error": "Error"
+    },
+    "endpointMode": {
+      "publicOnly": "Public feed only",
+      "privateThenPublic": "Private feed, then public fallback"
+    }
   },
   "portable": {
     "title": "포터블 모드",
@@ -2544,6 +2585,10 @@
     "exportButton": "내보내기 연결"
   },
   "common": {
-    "close": "닫기"
+    "close": "닫기",
+    "save": "Save",
+    "clear": "Clear",
+    "saved": "Saved.",
+    "errorPrefix": "Error:"
   }
 }

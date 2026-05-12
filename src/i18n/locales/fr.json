@@ -248,7 +248,11 @@
     "cancel": "Annuler",
     "reset": "Rétablir les valeurs par défaut",
     "autoSaveSuccess": "Options enregistrées",
-    "autoSaveError": "Échec de la sauvegarde automatique"
+    "autoSaveError": "Échec de la sauvegarde automatique",
+    "updater": {
+      "title": "Updater",
+      "description": "Signed application updates, check cadence, and private feed endpoint."
+    }
   },
   "tabs": {
     "groupBy": "Grouper par",
@@ -1789,14 +1793,14 @@
     "installing": "Installation..."
   },
   "updater": {
-    "title": "Software Mise à jour",
-    "currentVersion": "Actuel Version",
-    "checkForUpdates": "Vérifier les mises à jour",
-    "checking": "Vérification for updates...",
-    "upToDate": "Vous êtes à jour !",
-    "updateAvailable": "Mise à jour Disponible",
-    "download": "Télécharger",
-    "downloading": "Téléchargement...",
+    "title": "Software Update",
+    "currentVersion": "Current version",
+    "checkForUpdates": "Check for updates",
+    "checking": "Checking for updates...",
+    "upToDate": "You're up to date!",
+    "updateAvailable": "Update available",
+    "download": "Download",
+    "downloading": "Downloading...",
     "cancelDownload": "Annuler Télécharger",
     "installNow": "Installer Now",
     "installOnExit": "Installer on Exit",
@@ -1805,7 +1809,7 @@
     "stable": "Stable",
     "beta": "Bêta",
     "nightly": "Nightly",
-    "releaseNotes": "Notes de version",
+    "releaseNotes": "Release notes",
     "highlights": "Points forts",
     "changes": "Modifications",
     "breakingChanges": "Changements incompatibles",
@@ -1814,10 +1818,47 @@
     "rollback": "Restaurer",
     "rollbackTo": "Restaurer vers {{version}}",
     "noUpdates": "Non update history",
-    "autoCheck": "Vérifier les mises à jour automatiquement",
+    "autoCheck": "Auto-check for updates",
     "autoDownload": "Télécharger automatiquement les mises à jour",
     "autoInstall": "Installer automatiquement les mises à jour",
-    "preRelease": "Inclure les pré-versions"
+    "preRelease": "Inclure les pré-versions",
+    "updateStatus": "Update status",
+    "newVersionAvailable": "New version available",
+    "installing": "Installing...",
+    "downloadAndInstall": "Download and install",
+    "restartToUpdate": "Restart to update",
+    "lastChecked": "Last checked",
+    "endpointModeLabel": "Endpoint mode",
+    "downloaded": "Downloaded",
+    "publicEndpoint": "Public endpoint",
+    "privateEndpointLabel": "Private endpoint",
+    "privateEndpointEnabled": "Use a private update feed first",
+    "privateEndpointUrl": "Private endpoint URL",
+    "privateEndpointRequired": "Private endpoint URL is required when the private endpoint is enabled.",
+    "autoChecks": "Automatic checks",
+    "autoCheckTooltip": "Checks never install updates without confirmation.",
+    "checkIntervalHours": "Check interval (hours)",
+    "artifact": "Artifact",
+    "privateEndpoint": {
+      "title": "Private update endpoint",
+      "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",
+      "inputLabel": "Private update endpoint URL",
+      "unavailable": "This control is only active inside the desktop app."
+    },
+    "status": {
+      "idle": "Idle",
+      "checking": "Checking",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading",
+      "installing": "Installing",
+      "restartRequired": "Restart required",
+      "error": "Error"
+    },
+    "endpointMode": {
+      "publicOnly": "Public feed only",
+      "privateThenPublic": "Private feed, then public fallback"
+    }
   },
   "portable": {
     "title": "Mode portable",
@@ -2544,6 +2585,10 @@
     "exportButton": "Exporter Connexions"
   },
   "common": {
-    "close": "Fermer"
+    "close": "Fermer",
+    "save": "Save",
+    "clear": "Clear",
+    "saved": "Saved.",
+    "errorPrefix": "Error:"
   }
 }

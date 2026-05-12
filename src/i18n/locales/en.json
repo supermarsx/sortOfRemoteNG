@@ -268,7 +268,11 @@
     "cancel": "Cancel",
     "reset": "Reset to Defaults",
     "autoSaveSuccess": "Options saved",
-    "autoSaveError": "Auto save failed"
+    "autoSaveError": "Auto save failed",
+    "updater": {
+      "title": "Updater",
+      "description": "Signed application updates, check cadence, and private feed endpoint."
+    }
   },
   "tabs": {
     "groupBy": "Group By",
@@ -1810,11 +1814,11 @@
   },
   "updater": {
     "title": "Software Update",
-    "currentVersion": "Current Version",
-    "checkForUpdates": "Check for Updates",
+    "currentVersion": "Current version",
+    "checkForUpdates": "Check for updates",
     "checking": "Checking for updates...",
     "upToDate": "You're up to date!",
-    "updateAvailable": "Update Available",
+    "updateAvailable": "Update available",
     "download": "Download",
     "downloading": "Downloading...",
     "cancelDownload": "Cancel Download",
@@ -1825,7 +1829,7 @@
     "stable": "Stable",
     "beta": "Beta",
     "nightly": "Nightly",
-    "releaseNotes": "Release Notes",
+    "releaseNotes": "Release notes",
     "highlights": "Highlights",
     "changes": "Changes",
     "breakingChanges": "Breaking Changes",
@@ -1837,7 +1841,44 @@
     "autoCheck": "Auto-check for updates",
     "autoDownload": "Auto-download updates",
     "autoInstall": "Auto-install updates",
-    "preRelease": "Include pre-release versions"
+    "preRelease": "Include pre-release versions",
+    "updateStatus": "Update status",
+    "newVersionAvailable": "New version available",
+    "installing": "Installing...",
+    "downloadAndInstall": "Download and install",
+    "restartToUpdate": "Restart to update",
+    "lastChecked": "Last checked",
+    "endpointModeLabel": "Endpoint mode",
+    "downloaded": "Downloaded",
+    "publicEndpoint": "Public endpoint",
+    "privateEndpointLabel": "Private endpoint",
+    "privateEndpointEnabled": "Use a private update feed first",
+    "privateEndpointUrl": "Private endpoint URL",
+    "privateEndpointRequired": "Private endpoint URL is required when the private endpoint is enabled.",
+    "autoChecks": "Automatic checks",
+    "autoCheckTooltip": "Checks never install updates without confirmation.",
+    "checkIntervalHours": "Check interval (hours)",
+    "artifact": "Artifact",
+    "privateEndpoint": {
+      "title": "Private update endpoint",
+      "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",
+      "inputLabel": "Private update endpoint URL",
+      "unavailable": "This control is only active inside the desktop app."
+    },
+    "status": {
+      "idle": "Idle",
+      "checking": "Checking",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading",
+      "installing": "Installing",
+      "restartRequired": "Restart required",
+      "error": "Error"
+    },
+    "endpointMode": {
+      "publicOnly": "Public feed only",
+      "privateThenPublic": "Private feed, then public fallback"
+    }
   },
   "portable": {
     "title": "Portable Mode",
@@ -2564,6 +2605,10 @@
     "exportButton": "Export Connections"
   },
   "common": {
-    "close": "Close"
+    "close": "Close",
+    "save": "Save",
+    "clear": "Clear",
+    "saved": "Saved.",
+    "errorPrefix": "Error:"
   }
 }

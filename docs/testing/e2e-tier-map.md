@@ -28,7 +28,7 @@ Source control cannot enforce that settings change by itself.
 - `required`: deterministic, hosted-CI-safe, no specialty environment dependency, strong assertions expected
 - `opt-in`: reproducible and useful for risky PRs, but slower, timing-heavier, or broader than a universal PR gate should carry
 - `nightly`: useful regression signal with heavier UI coverage, weaker current signal quality, or timing-sensitive behavior
-- `lab-only`: vendor, cloud, updater, multi-window, discovery, or other environment-sensitive flows that should not be treated as standard hosted-CI coverage
+- `lab-only`: vendor, cloud, real updater install, multi-window, discovery, or other environment-sensitive flows that should not be treated as standard hosted-CI coverage
 
 ## WDIO Tiers
 
@@ -119,7 +119,7 @@ too shallow, or too broad for current PR-gated usage.
 
 ### `lab-only`
 
-Environment-sensitive, vendor, cloud, update, multi-window, or discovery
+Environment-sensitive, vendor, cloud, real update install, multi-window, or discovery
 flows that should not be considered normal hosted-CI coverage.
 
 - [e2e/specs/01-startup/app-error-recovery.spec.ts](../../e2e/specs/01-startup/app-error-recovery.spec.ts)
@@ -128,6 +128,7 @@ flows that should not be considered normal hosted-CI coverage.
 - [e2e/specs/17-marketplace/marketplace-browse.spec.ts](../../e2e/specs/17-marketplace/marketplace-browse.spec.ts)
 - [e2e/specs/17-marketplace/marketplace-install.spec.ts](../../e2e/specs/17-marketplace/marketplace-install.spec.ts)
 - [e2e/specs/18-updater/updater-check.spec.ts](../../e2e/specs/18-updater/updater-check.spec.ts)
+- Settings > Updater install/restart flows that require a signed staged feed and a real Tauri updater runtime
 - [e2e/specs/19-multi-window/session-detach.spec.ts](../../e2e/specs/19-multi-window/session-detach.spec.ts)
 - [e2e/specs/19-multi-window/window-sync.spec.ts](../../e2e/specs/19-multi-window/window-sync.spec.ts)
 - [e2e/specs/24-cloud-sync/cloud-sync.spec.ts](../../e2e/specs/24-cloud-sync/cloud-sync.spec.ts)

@@ -248,7 +248,11 @@
     "cancel": "Abbrechen",
     "reset": "Auf Standard zuruecksetzen",
     "autoSaveSuccess": "Optionen gespeichert",
-    "autoSaveError": "Automatisches Speichern fehlgeschlagen"
+    "autoSaveError": "Automatisches Speichern fehlgeschlagen",
+    "updater": {
+      "title": "Updater",
+      "description": "Signed application updates, check cadence, and private feed endpoint."
+    }
   },
   "tabs": {
     "groupBy": "Gruppieren nach",
@@ -1789,14 +1793,14 @@
     "installing": "Wird installiert..."
   },
   "updater": {
-    "title": "Software Aktualisierung",
-    "currentVersion": "Aktuell Version",
-    "checkForUpdates": "Nach Aktualisierungen suchen",
-    "checking": "Pruefung for updates...",
-    "upToDate": "Sie sind auf dem neuesten Stand!",
-    "updateAvailable": "Aktualisierung Verfuegbar",
-    "download": "Herunterladen",
-    "downloading": "Wird heruntergeladen...",
+    "title": "Software Update",
+    "currentVersion": "Current version",
+    "checkForUpdates": "Check for updates",
+    "checking": "Checking for updates...",
+    "upToDate": "You're up to date!",
+    "updateAvailable": "Update available",
+    "download": "Download",
+    "downloading": "Downloading...",
     "cancelDownload": "Abbrechen Herunterladen",
     "installNow": "Jetzt installieren",
     "installOnExit": "Installieren on Exit",
@@ -1805,7 +1809,7 @@
     "stable": "Stabil",
     "beta": "Beta",
     "nightly": "Nightly",
-    "releaseNotes": "Release Hinweise",
+    "releaseNotes": "Release notes",
     "highlights": "Höhepunkte",
     "changes": "Änderungen",
     "breakingChanges": "Kompatibilitätsbrüche",
@@ -1814,10 +1818,47 @@
     "rollback": "Rückgängig",
     "rollbackTo": "Zurücksetzen auf {{version}}",
     "noUpdates": "Nein update history",
-    "autoCheck": "Automatisch nach Aktualisierungen suchen",
+    "autoCheck": "Auto-check for updates",
     "autoDownload": "Aktualisierungen automatisch herunterladen",
     "autoInstall": "Aktualisierungen automatisch installieren",
-    "preRelease": "Vorabversionen einschließen"
+    "preRelease": "Vorabversionen einschließen",
+    "updateStatus": "Update status",
+    "newVersionAvailable": "New version available",
+    "installing": "Installing...",
+    "downloadAndInstall": "Download and install",
+    "restartToUpdate": "Restart to update",
+    "lastChecked": "Last checked",
+    "endpointModeLabel": "Endpoint mode",
+    "downloaded": "Downloaded",
+    "publicEndpoint": "Public endpoint",
+    "privateEndpointLabel": "Private endpoint",
+    "privateEndpointEnabled": "Use a private update feed first",
+    "privateEndpointUrl": "Private endpoint URL",
+    "privateEndpointRequired": "Private endpoint URL is required when the private endpoint is enabled.",
+    "autoChecks": "Automatic checks",
+    "autoCheckTooltip": "Checks never install updates without confirmation.",
+    "checkIntervalHours": "Check interval (hours)",
+    "artifact": "Artifact",
+    "privateEndpoint": {
+      "title": "Private update endpoint",
+      "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",
+      "inputLabel": "Private update endpoint URL",
+      "unavailable": "This control is only active inside the desktop app."
+    },
+    "status": {
+      "idle": "Idle",
+      "checking": "Checking",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading",
+      "installing": "Installing",
+      "restartRequired": "Restart required",
+      "error": "Error"
+    },
+    "endpointMode": {
+      "publicOnly": "Public feed only",
+      "privateThenPublic": "Private feed, then public fallback"
+    }
   },
   "portable": {
     "title": "Portable Modus",
@@ -2544,6 +2585,10 @@
     "exportButton": "Exportieren Verbindungen"
   },
   "common": {
-    "close": "Schließen"
+    "close": "Schließen",
+    "save": "Save",
+    "clear": "Clear",
+    "saved": "Saved.",
+    "errorPrefix": "Error:"
   }
 }

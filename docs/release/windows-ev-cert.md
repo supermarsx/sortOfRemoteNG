@@ -8,7 +8,7 @@
 
 ## 1. Why we need this (context)
 
-sortOfRemoteNG 1.0 ships as a signed Windows installer via Tauri's updater/bundler. Without a publicly-trusted code-signing certificate the installer is flagged as "Unknown Publisher" and blocked by Microsoft Defender SmartScreen. CA/Browser Forum baseline requirements (effective 2023) mandate that the private key for any publicly-trusted code-signing certificate live inside a FIPS 140-2 Level 2 (or higher) hardware security module — either a shipped USB token or a cloud HSM. EV is confirmed over OV per plan decision Q2.
+sortOfRemoteNG 1.0 ships as a signed Windows installer via Tauri's bundler and updater plugin. Without a publicly-trusted code-signing certificate the installer is flagged as "Unknown Publisher" and blocked by Microsoft Defender SmartScreen. The updater feed must point at the same signed installer artifacts that the release workflow publishes. CA/Browser Forum baseline requirements (effective 2023) mandate that the private key for any publicly-trusted code-signing certificate live inside a FIPS 140-2 Level 2 (or higher) hardware security module — either a shipped USB token or a cloud HSM. EV is confirmed over OV per plan decision Q2.
 
 ### 2026 regulatory context (read before ordering)
 
@@ -163,7 +163,7 @@ Before placing the order, collect the following. All items marked **REQUIRED** b
 - [ ] Confirm certificate chain terminates at a Microsoft-trusted root
 - [ ] Confirm subject CN, O, and serial are correct
 - [ ] Upload signed sample to VirusTotal + Submit-a-File to seed SmartScreen reputation
-- [ ] Wire KeyLocker credentials into GitHub Actions (tracked in t3-e22)
+- [ ] Wire KeyLocker credentials into GitHub Actions and confirm the production release workflow signs artifacts before feed validation/promotion
 
 ---
 

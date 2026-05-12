@@ -81,6 +81,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'welcomeScreenTitle', label: 'Welcome Screen Title', description: 'Custom welcome screen title', tags: ['welcome', 'greeting', 'home'], section: 'startup', sectionLabel: 'Startup' },
   { key: 'welcomeScreenMessage', label: 'Welcome Screen Message', description: 'Custom welcome screen message', tags: ['welcome', 'message', 'motd'], section: 'startup', sectionLabel: 'Startup' },
 
+  // ─── Updater ────────────────────────────────────────────────────
+  { key: 'updater.status', label: 'Updater Status', description: 'Current application update status', tags: ['update', 'updater', 'version', 'release'], section: 'updater', sectionLabel: 'Updater' },
+  { key: 'updater.autoCheckEnabled', label: 'Auto-check Updates', description: 'Automatically check for signed updates', tags: ['update', 'automatic', 'check', 'cadence'], section: 'updater', sectionLabel: 'Updater' },
+  { key: 'updater.checkIntervalHours', label: 'Update Check Interval', description: 'Hours between automatic update checks', tags: ['update', 'interval', 'hours', 'schedule'], section: 'updater', sectionLabel: 'Updater' },
+  { key: 'updater.privateEndpointUrl', label: 'Private Update Endpoint', description: 'Private signed update feed URL', tags: ['update', 'private', 'feed', 'endpoint', 'enterprise'], section: 'updater', sectionLabel: 'Updater' },
+
   // ─── Theme ──────────────────────────────────────────────────────
   { key: 'theme', label: 'Theme', description: 'Color theme', tags: ['dark mode', 'light mode', 'appearance', 'colors', 'skin'], section: 'theme', sectionLabel: 'Theme' },
   { key: 'colorScheme', label: 'Color Scheme', description: 'Accent color scheme', tags: ['colors', 'palette', 'accent'], section: 'theme', sectionLabel: 'Theme' },

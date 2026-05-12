@@ -1,11 +1,11 @@
-# Private Updater Endpoint — Enterprise Deployment Guide (t3-e39)
+# Private Updater Endpoint — Enterprise Deployment Guide
 
-This document covers the **pluggable private update feed** that supplements
-the public GitHub Releases feed wired in
-[`updater-setup.md`](./updater-setup.md). It lets an enterprise admin
-distribute signed updates from a private HTTPS endpoint (typically an S3
-bucket behind CloudFront, or any TLS-terminated static host) while
-keeping the public feed available as a fallback.
+This document covers the **Settings-managed private update feed** that
+supplements the public GitHub Releases feed wired in
+[`updater-setup.md`](./updater-setup.md). It lets an enterprise admin or
+field-support user configure a private HTTPS endpoint (typically an S3 bucket
+behind CloudFront, or any TLS-terminated static host) while keeping the public
+feed available as a fallback.
 
 **Signature verification parity:** both endpoints are verified against
 the **same** embedded Ed25519 pubkey (`plugins.updater.pubkey` in
@@ -21,55 +21,34 @@ to serve artifacts signed by the current private key.
 ## 1. How the two endpoints are combined
 
 Tauri's updater plugin queries endpoints **in order** and uses the first
-that returns a valid `latest.json`. `sortOfRemoteNG` composes the list
-from three sources, in priority:
+that returns a valid `latest.json`. `sortOfRemoteNG` composes the runtime list
+inside `sorng-updater`:
 
-1. Runtime setting (`<AppData>/settings.json` → `updater.private_endpoint`)
-   — if present, the Rust runtime augments the plugin's list via
-   `UpdaterExt::updater_builder().endpoints(..)`.
-2. Build-time env var `UPDATER_PRIVATE_ENDPOINT_URL` — baked into
-   `tauri.conf.json`'s `plugins.updater.endpoints` by `src-tauri/build.rs`
-   during `tauri build`.
-3. Public GitHub Releases (always present, first entry in the committed
-   `tauri.conf.json`).
+1. Settings-managed private endpoint (`settings.json` →
+  `updater.privateEndpointEnabled` + `updater.privateEndpointUrl`), when
+  enabled and valid.
+2. Public GitHub Releases, always present:
+  `https://github.com/supermarsx/sortOfRemoteNG/releases/latest/download/latest.json`.
 
-A build with either (1) or (2) set therefore checks the private endpoint
-first, falling back to public automatically if the private host is
-unreachable or the published `latest.json` there is older.
+The runtime uses `UpdaterExt::updater_builder().endpoints(..)` to pass the
+resolved list to `tauri-plugin-updater`. A private endpoint therefore checks
+first, falling back to public automatically if no private update is available.
 
 ---
 
-## 2. Enable at build time (recommended for enterprise CI)
+## 2. Build-time endpoint configuration
 
-Set the env var before `tauri build`:
-
-```sh
-export UPDATER_PRIVATE_ENDPOINT_URL="https://updates.corp.example.com/sortofremoteng/latest.json"
-npm run tauri:build
-```
-
-`src-tauri/build.rs` reads the variable, validates it starts with
-`http(s)://`, and appends it to `plugins.updater.endpoints` in
-`tauri.conf.json`. The mutation is idempotent (re-running with the same
-URL is a no-op) but **is a real file edit on disk** — run the build in a
-fresh / throwaway checkout and do NOT commit the resulting diff.
-
-CI example (GitHub Actions):
-
-```yaml
-- name: Build signed enterprise bundle
-  env:
-    UPDATER_PRIVATE_ENDPOINT_URL: ${{ secrets.PRIVATE_UPDATE_FEED_URL }}
-    TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-  run: npm ci && npm run tauri:build
-```
+Build-time private endpoint mutation is retired. `UPDATER_PRIVATE_ENDPOINT_URL`
+is intentionally ignored by `src-tauri/build.rs`; production configuration
+belongs in backend updater settings so it can be inspected and changed from
+Settings > Updater without changing the signed app bundle.
 
 ---
 
-## 3. Enable at runtime (MDM / user override)
+## 3. Enable at runtime (Settings / MDM)
 
-For already-installed clients, push a settings file to each machine:
+Users can configure the endpoint in **Settings > Updater**. MDM systems can
+also push the same settings file to each machine:
 
 **Windows:** `%APPDATA%\com.sortofremote.ng\settings.json`
 **macOS:** `~/Library/Application Support/com.sortofremote.ng/settings.json`
@@ -81,21 +60,17 @@ should preserve other top-level entries):
 ```json
 {
   "updater": {
-    "private_endpoint": "https://updates.corp.example.com/sortofremoteng/latest.json"
+    "privateEndpointEnabled": true,
+    "privateEndpointUrl": "https://updates.corp.example.com/sortofremoteng/latest.json"
   }
 }
 ```
 
-The app reads this key via
-[`src-tauri/src/updater_config.rs::read_private_endpoint`](../../src-tauri/src/updater_config.rs)
-on demand. End users can also set/clear the value themselves through the
-optional settings pane backed by
-`src/components/settings/UpdaterEndpointSetting.tsx`.
-
-Invalid URLs (non-`http(s)://`) are silently ignored — the plugin falls
-back to the public endpoint alone. The app NEVER allows a private
-endpoint to override the embedded pubkey; signature verification always
-uses the committed key.
+Legacy `updater.private_endpoint` is still read for migration, but new writes
+use the camelCase keys above. Invalid production URLs are rejected by the
+backend settings command; local debug HTTP is the only non-HTTPS exception.
+The app never allows a private endpoint to override the embedded pubkey;
+signature verification always uses the committed key.
 
 ---
 
@@ -262,34 +237,33 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
      --distribution-id <DIST_ID> --paths "/latest.json"
    ```
 5. **Smoke-test** on a staging workstation with the private endpoint
-   configured: launch the app, hit the "Check for updates" button
-   (backed by `CheckForUpdatesButton.tsx`), confirm the new version is
-   reported and the downloaded bundle verifies against the embedded
-   pubkey.
+  configured in Settings > Updater: launch the app, check for updates,
+  confirm the new version is reported, then run Download and install to
+  verify the Tauri updater accepts the signed artifact.
 6. **Promote** by publishing the matching GitHub release with the same
    signed artifacts + `latest.json` so public-feed users receive the
    same update.
 
 ---
 
-## 8. Roll-back
+## 8. Bad release handling
 
 If a release is bad, overwrite `latest.json` at the bucket root with the
 previous release's manifest and invalidate the CDN. Clients that have
 NOT yet installed the bad version will simply see the prior version
-again. Clients that already upgraded use the in-app updater's
-rollback UI (`src/components/updater/UpdaterPanel.tsx`), backed by the
-app's own `updater_*` backend commands — this path is independent of
-the endpoint configuration.
+again.
+
+Clients that already installed the bad version must receive a forward fix
+release signed with the same updater key. P1 does not provide an in-app
+rollback installer, copy installer, or channel-history rollback command.
 
 ---
 
 ## 9. Security notes
 
-- **TLS-only**: `https://` is required in practice. `http://` is
-  accepted by the build-script / runtime parser for corp intranet lab
-  use only. Do not deploy an `http://` endpoint to real users — the
-  signature check still protects the payload, but metadata
+- **TLS-only**: `https://` is required for production. Local debug HTTP is
+  allowed only for development builds. Do not deploy an `http://` endpoint to
+  real users — the signature check still protects the payload, but metadata
   (release cadence, version numbers, user IPs) is sent in cleartext.
 - **Pubkey never changes per-endpoint.** If the private feed needs a
   different trust anchor, that is a new app build — both feeds must

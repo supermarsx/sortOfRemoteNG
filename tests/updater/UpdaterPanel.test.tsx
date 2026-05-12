@@ -1,6 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import React from "react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import type {
+  AvailableUpdate,
+  UpdaterSettings,
+  UpdaterStatusSnapshot,
+} from "../../src/types/updater/updater";
 
 const mockInvoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -9,110 +14,125 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: unknown) => {
-      try {
-        if (opts != null && typeof opts === "object" && "version" in opts) {
-          return `${key} ${(opts as Record<string, unknown>).version}`;
-        }
-      } catch {
-        /* safe fallback for non-object opts */
-      }
-      return key;
-    },
+    t: (_key: string, fallback?: unknown) =>
+      typeof fallback === "string" ? fallback : _key,
   }),
 }));
 
 import { UpdaterPanel } from "../../src/components/updater/UpdaterPanel";
+
+const settings: UpdaterSettings = {
+  autoCheckEnabled: true,
+  checkIntervalHours: 24,
+  privateEndpointEnabled: false,
+  privateEndpointUrl: null,
+  publicEndpointUrl: "https://github.example/latest.json",
+  endpointMode: "public_only",
+  resolvedEndpoints: [{ source: "public", url: "https://github.example/latest.json" }],
+  dynamicPluginEndpointsSupported: true,
+  dynamicPluginEndpointsMessage: null,
+  privateEndpointValidationError: null,
+};
+
+const update: AvailableUpdate = {
+  currentVersion: "1.5.0",
+  version: "1.6.0",
+  date: "2026-03-30T00:00:00Z",
+  body: "Bug fixes and improvements",
+  target: "x86_64-pc-windows-msvc",
+  downloadUrl: "https://example.test/update-1.6.0.msi",
+  signaturePresent: true,
+  rawJson: {},
+};
+
+const idleStatus: UpdaterStatusSnapshot = {
+  status: "idle",
+  currentVersion: "1.5.0",
+  availableUpdate: null,
+  lastCheckedAt: null,
+  lastError: null,
+  endpointMode: "public_only",
+  endpointSource: "public",
+  resolvedEndpoints: settings.resolvedEndpoints,
+  dynamicPluginEndpointsSupported: true,
+  dynamicPluginEndpointsMessage: null,
+  privateEndpointValidationError: null,
+  downloadedBytes: 0,
+  totalBytes: null,
+  progressPercent: null,
+};
+
+const availableStatus: UpdaterStatusSnapshot = {
+  ...idleStatus,
+  status: "available",
+  availableUpdate: update,
+  lastCheckedAt: "2026-03-30T12:00:00Z",
+};
 
 describe("UpdaterPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockImplementation((cmd: string) => {
       switch (cmd) {
-        case "updater_get_history": return Promise.resolve([]);
-        case "updater_get_rollbacks": return Promise.resolve([]);
-        case "updater_get_config": return Promise.resolve(null);
-        case "updater_get_version_info": return Promise.resolve(null);
-        default: return Promise.resolve(null);
+        case "updater_get_settings":
+          return Promise.resolve(settings);
+        case "updater_get_status":
+          return Promise.resolve(idleStatus);
+        case "updater_check":
+          return Promise.resolve({
+            updateAvailable: true,
+            availableUpdate: update,
+            status: availableStatus,
+          });
+        case "updater_save_settings":
+          return Promise.resolve(settings);
+        case "updater_download_and_install":
+          return Promise.resolve({
+            ...availableStatus,
+            status: "restart_required",
+            progressPercent: 100,
+          });
+        default:
+          return Promise.resolve(undefined);
       }
     });
   });
 
-  it("renders the title", () => {
+  it("renders the backend-backed Settings updater section", async () => {
     render(<UpdaterPanel />);
-    expect(screen.getByText("updater.panelTitle")).toBeInTheDocument();
-  });
 
-  it("shows version info section", () => {
-    render(<UpdaterPanel />);
-    expect(screen.getByText("updater.versionInfo")).toBeInTheDocument();
-  });
-
-  it("shows check for updates button", () => {
-    render(<UpdaterPanel />);
-    expect(screen.getByText("updater.checkForUpdates")).toBeInTheDocument();
-  });
-
-  it("shows channel selector", () => {
-    render(<UpdaterPanel />);
-    expect(screen.getByText("updater.updateChannel")).toBeInTheDocument();
-    expect(screen.getByText("Stable")).toBeInTheDocument();
-    expect(screen.getByText("Beta")).toBeInTheDocument();
-    expect(screen.getByText("Nightly")).toBeInTheDocument();
-  });
-
-  it("calls updater_check when check button clicked", async () => {
-    mockInvoke.mockResolvedValue(null);
-    render(<UpdaterPanel />);
-    const btn = screen.getByText("updater.checkForUpdates");
-    await act(async () => { fireEvent.click(btn); });
-    expect(mockInvoke).toHaveBeenCalledWith("updater_check");
-  });
-
-  it("shows check button after check completes", async () => {
-    mockInvoke.mockResolvedValue(null);
-    render(<UpdaterPanel />);
-    const btn = screen.getByText("updater.checkForUpdates");
-    await act(async () => { fireEvent.click(btn); });
-    // After check completes with no update, button should still be available
-    expect(screen.getByText("updater.checkForUpdates")).toBeInTheDocument();
-  });
-
-  it("shows release notes tab", async () => {
-    render(<UpdaterPanel />);
-    const tab = screen.getByText("updater.tabNotes");
-    act(() => { fireEvent.click(tab); });
-    expect(screen.getByText("updater.releaseNotes")).toBeInTheDocument();
-  });
-
-  it("shows update history tab", async () => {
-    render(<UpdaterPanel />);
-    const tab = screen.getByText("updater.tabHistory");
-    act(() => { fireEvent.click(tab); });
-    expect(screen.getByText("updater.updateHistory")).toBeInTheDocument();
-  });
-
-  it("shows rollback tab", async () => {
-    render(<UpdaterPanel />);
-    const tab = screen.getByText("updater.tabRollback");
-    act(() => { fireEvent.click(tab); });
-    expect(screen.getByText("updater.rollbackVersions")).toBeInTheDocument();
-  });
-
-  it("shows settings tab", async () => {
-    render(<UpdaterPanel />);
-    const tab = screen.getByText("updater.tabSettings");
-    act(() => { fireEvent.click(tab); });
-    // Config is null initially, so settings shows loading
-    // Note: version card also shows "updater.loading" (versionInfo is null), so use getAllByText
-    const loadingTexts = screen.getAllByText("updater.loading");
-    expect(loadingTexts.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("loads config on mount", async () => {
-    render(<UpdaterPanel />);
+    expect(screen.getByTestId("settings-updater-section")).toBeInTheDocument();
+    expect(screen.getByTestId("updater-check-btn")).toBeInTheDocument();
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalled();
+      expect(screen.getByText(/Current version/i)).toBeInTheDocument();
     });
+  });
+
+  it("checks and installs through the new command contract", async () => {
+    render(<UpdaterPanel />);
+
+    const checkButton = await screen.findByTestId("updater-check-btn");
+    await waitFor(() => expect(checkButton).not.toBeDisabled());
+    fireEvent.click(checkButton);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("updater_check", { force: true });
+      expect(screen.getByTestId("updater-install-btn")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("updater-install-btn"));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("updater_download_and_install", {
+        version: "1.6.0",
+      });
+    });
+  });
+
+  it("does not expose retired channel, history, or rollback UI", () => {
+    render(<UpdaterPanel />);
+
+    expect(screen.queryByText(/Update channel/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Update history/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Rollback/i)).not.toBeInTheDocument();
   });
 });

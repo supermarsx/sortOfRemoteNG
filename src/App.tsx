@@ -45,6 +45,7 @@ import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
+import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 // t5-e4: global reachability-check modal — listens for `bulk-check-connections` CustomEvent.
 import { CheckConnectionsModalMount } from "./components/connection/CheckConnectionsModal";
 
@@ -162,6 +163,7 @@ const AppContent: React.FC = () => {
     state.sidebarCollapsed, dispatch,
   );
   useDetachedSessionEvents(handleSessionClose, state.sessions, dispatch, setActiveSessionId);
+  useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
   const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } = useWindowManager({
     sessions: state.sessions,
     connections: state.connections,

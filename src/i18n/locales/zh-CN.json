@@ -248,7 +248,11 @@
     "cancel": "取消",
     "reset": "重置为默认值",
     "autoSaveSuccess": "选项已保存",
-    "autoSaveError": "自动保存失败"
+    "autoSaveError": "自动保存失败",
+    "updater": {
+      "title": "Updater",
+      "description": "Signed application updates, check cadence, and private feed endpoint."
+    }
   },
   "tabs": {
     "groupBy": "分组方式",
@@ -1789,14 +1793,14 @@
     "installing": "安装中..."
   },
   "updater": {
-    "title": "Software更新",
-    "currentVersion": "当前版本",
-    "checkForUpdates": "检查更新",
-    "checking": "Checking用于更新...",
-    "upToDate": "You're up至date!",
-    "updateAvailable": "更新可用",
-    "download": "下载",
-    "downloading": "下载中...",
+    "title": "Software Update",
+    "currentVersion": "Current version",
+    "checkForUpdates": "Check for updates",
+    "checking": "Checking for updates...",
+    "upToDate": "You're up to date!",
+    "updateAvailable": "Update available",
+    "download": "Download",
+    "downloading": "Downloading...",
     "cancelDownload": "取消下载",
     "installNow": "立即安装",
     "installOnExit": "安装在Exit",
@@ -1805,7 +1809,7 @@
     "stable": "稳定版",
     "beta": "测试版",
     "nightly": "每夜版",
-    "releaseNotes": "发行说明",
+    "releaseNotes": "Release notes",
     "highlights": "亮点",
     "changes": "更改",
     "breakingChanges": "重大变更",
@@ -1814,10 +1818,47 @@
     "rollback": "回滚",
     "rollbackTo": "Rollback至{{version}}",
     "noUpdates": "无更新历史",
-    "autoCheck": "自动检查更新",
+    "autoCheck": "Auto-check for updates",
     "autoDownload": "自动下载更新",
     "autoInstall": "自动安装更新",
-    "preRelease": "Include pre-发布版本"
+    "preRelease": "Include pre-发布版本",
+    "updateStatus": "Update status",
+    "newVersionAvailable": "New version available",
+    "installing": "Installing...",
+    "downloadAndInstall": "Download and install",
+    "restartToUpdate": "Restart to update",
+    "lastChecked": "Last checked",
+    "endpointModeLabel": "Endpoint mode",
+    "downloaded": "Downloaded",
+    "publicEndpoint": "Public endpoint",
+    "privateEndpointLabel": "Private endpoint",
+    "privateEndpointEnabled": "Use a private update feed first",
+    "privateEndpointUrl": "Private endpoint URL",
+    "privateEndpointRequired": "Private endpoint URL is required when the private endpoint is enabled.",
+    "autoChecks": "Automatic checks",
+    "autoCheckTooltip": "Checks never install updates without confirmation.",
+    "checkIntervalHours": "Check interval (hours)",
+    "artifact": "Artifact",
+    "privateEndpoint": {
+      "title": "Private update endpoint",
+      "description": "Optional HTTPS URL to a private signed update feed. The public feed remains the fallback and signatures are verified against the pinned updater key.",
+      "inputLabel": "Private update endpoint URL",
+      "unavailable": "This control is only active inside the desktop app."
+    },
+    "status": {
+      "idle": "Idle",
+      "checking": "Checking",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading",
+      "installing": "Installing",
+      "restartRequired": "Restart required",
+      "error": "Error"
+    },
+    "endpointMode": {
+      "publicOnly": "Public feed only",
+      "privateThenPublic": "Private feed, then public fallback"
+    }
   },
   "portable": {
     "title": "便携模式",
@@ -2544,6 +2585,10 @@
     "exportButton": "导出连接"
   },
   "common": {
-    "close": "关闭"
+    "close": "关闭",
+    "save": "Save",
+    "clear": "Clear",
+    "saved": "Saved.",
+    "errorPrefix": "Error:"
   }
 }

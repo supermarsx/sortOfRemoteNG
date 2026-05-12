@@ -68,7 +68,6 @@
         { "path": "$DOWNLOAD" },
         { "path": "$DOWNLOAD/**" }
       ]
-    },
-    "updater:default"
+    }
   ]
 }

@@ -1,21 +1,22 @@
-# Tauri Updater — Signing & Feed Setup (t3-e21)
+# Tauri Updater — Signing & Feed Setup
 
 This document covers the **Tauri updater plugin** wiring for
 `sortOfRemoteNG`: how the Ed25519 signing keypair is generated, where the
 private key must live, and the JSON schema of the `latest.json` feed that
 our GitHub Releases publisher produces.
 
-The updater plugin referenced here is the low-level signed-artifact
-delivery layer (`tauri-plugin-updater` / `@tauri-apps/plugin-updater`). It
-sits **alongside** the higher-level in-app updater UI
-(`src/components/updater/UpdaterPanel.tsx`), which talks to the app's own
-`updater_*` backend commands for channel switching, history and rollback.
+The production updater path is intentionally narrow: the signed
+`tauri-plugin-updater` runtime verifies and installs artifacts, and the
+application exposes it through the backend-owned `updater_*` commands in
+`sorng-updater`. Frontend code must call those commands through
+`src/hooks/updater/useUpdater.ts`; it must not call
+`@tauri-apps/plugin-updater` directly.
 
-> **Pluggable private-endpoint variant:** the dual-feed / private S3
-> endpoint support (user decision Q6) is scoped to executor **t3-e39** and
-> documented separately in
-> [`private-updater-endpoint.md`](./private-updater-endpoint.md) once that
-> executor lands. `t3-e21` ships only the public GitHub Releases feed.
+The old custom downloader, copy installer, scheduler, channel, history, and
+rollback paths are not production update mechanisms. P1 installs are signed
+Tauri updater installs only. Private feed configuration is managed by
+Settings > Updater and documented in
+[`private-updater-endpoint.md`](./private-updater-endpoint.md).
 
 ---
 
@@ -84,11 +85,15 @@ executor t3-e22) consumes these env vars when invoking
 No other updater-specific secrets are required — the pubkey is embedded
 at build time from `tauri.conf.json`.
 
+The release workflow validates updater feeds before publishing. Production
+and staging releases must include signed artifacts plus a valid `latest.json`;
+dry runs build and validate without promoting the feed.
+
 ---
 
-## 3. Feed URL
+## 3. Feed URL and runtime endpoint policy
 
-The committed endpoint list in `tauri.conf.json` is:
+The committed public endpoint in `tauri.conf.json` is:
 
 ```json
 "endpoints": [
@@ -99,7 +104,13 @@ The committed endpoint list in `tauri.conf.json` is:
 GitHub serves `latest/download/<asset>` as a 302 redirect to the most
 recent release's asset with that filename, so publishing a release with a
 `latest.json` asset is sufficient to promote it — no edits to the
-committed endpoint list are required per-release.
+committed endpoint list are required per release.
+
+At runtime, `sorng-updater` may prepend a Settings-managed private endpoint
+by constructing a plugin updater with `updater_builder().endpoints(..)`. The
+same embedded pubkey verifies both private and public artifacts. The legacy
+`UPDATER_PRIVATE_ENDPOINT_URL` build-time env var is ignored and should not
+be used for production configuration.
 
 ---
 
@@ -147,8 +158,10 @@ Platform identifier rules (per Tauri v2):
 - `pub_date` is optional for the runtime but required by our release CI
   for audit purposes.
 
-Executor **t3-e22** owns the actual generator that emits this file from
-the `tauri build` output; t3-e21 just documents the shape.
+The release workflow owns the generator that emits this file from the
+`tauri build` output. `scripts/ci/validate-updater-feed.mjs` enforces the
+schema, platform entries, artifact URLs, and signatures before a feed can be
+published.
 
 ---
 
@@ -185,8 +198,11 @@ whose embedded pubkey you can no longer sign for.
 To confirm the plugin is wired correctly after any change to this setup:
 
 ```sh
+cargo check -p sorng-updater
+cargo check -p sorng-commands-core -p sorng-commands-tools
 cargo check -p app                # embeds pubkey at compile time
-npm run lint && npm run test      # lints the CheckForUpdatesButton shim
+npm run lint && npm run test      # covers the Settings updater UI and command facade
+node scripts/ci/validate-updater-feed.mjs <latest.json>
 npm run tauri:build               # produces signed bundle if env vars set
 ```
 
