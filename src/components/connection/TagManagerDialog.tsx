@@ -586,6 +586,25 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
               </div>
             </div>
 
+            <div className="text-xs text-[var(--color-textSecondary)] space-y-1">
+              <p>
+                Label connections with free-form text tags and a curated
+                palette of color tags so you can slice the sidebar by purpose
+                (production, staging, customer-X, on-call rotation) instead
+                of relying on folder structure alone.
+              </p>
+              <p className="text-[var(--color-textMuted)]">
+                Text tags are free-form strings stored on each connection;
+                they appear in the connection editor and feed the sidebar
+                filter chips. Color tags are a shared palette saved with the
+                database — assign one per connection to tint its tab and
+                tree-row dot, and use the filter chips above the connection
+                list to scope by color. Use the Assign action to apply a
+                tag to many connections at once; renames and deletes here
+                update every connection that referenced the tag.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <StatPill label="Text" value={stats.totalTextTags} />
               <StatPill label="Color" value={stats.totalColorTags} />
