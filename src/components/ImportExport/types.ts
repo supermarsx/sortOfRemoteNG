@@ -1,4 +1,5 @@
 import { Connection } from '../../types/connection/connection';
+import type { ExportFormat, ExportSecuritySettings } from '../../types/settings/settings';
 import {
   OpenVPNConnection,
   WireGuardConnection,
@@ -6,6 +7,74 @@ import {
   ZeroTierConnection,
 } from '../../utils/network/proxyOpenVPNManager';
 import { SavedTunnelChain } from '../../types/settings/settings';
+
+export type ExportScopeMode = 'current' | 'selected' | 'all';
+
+export interface ExportInclusionConfig {
+  includeConnections: boolean;
+  includeCredentials: boolean;
+  includeSettings: boolean;
+  includeFolderItems: boolean;
+  includeEmptyFolders: boolean;
+  includeTabGroups: boolean;
+  includeColorTags: boolean;
+  includeVpnData: boolean;
+  includeTunnelChains: boolean;
+  includeExportMetadata: boolean;
+  includeDatabaseMetadata: boolean;
+  includedProtocols: Connection['protocol'][];
+  /** Specific connection ids to include. Empty array = all connections. */
+  includedConnectionIds?: string[];
+  /** Specific text tags to include. Empty array = all tags. */
+  includedTextTags?: string[];
+  /** Specific color tag ids to include. Empty array = all colors. */
+  includedColorTagIds?: string[];
+}
+
+export interface ExportConfigUpdate extends Partial<Omit<ExportConfig, 'inclusion'>> {
+  inclusion?: Partial<ExportInclusionConfig>;
+}
+
+export interface ExportDatabaseOption {
+  id: string;
+  name: string;
+  description?: string;
+  isCurrent: boolean;
+  isEncrypted: boolean;
+  isUnlocked: boolean;
+  isExportable: boolean;
+  lockedReason?: string;
+  connectionCount?: number;
+  lastAccessed?: string;
+}
+
+export interface ExportConfig {
+  format: ExportFormat;
+  scopeMode: ExportScopeMode;
+  selectedDatabaseIds: string[];
+  databaseOptions: ExportDatabaseOption[];
+  inclusion: ExportInclusionConfig;
+  includePasswords: boolean;
+  encrypted: boolean;
+  password: string;
+  keyDerivationIterations: number;
+  includeVpnData: boolean;
+  includeTunnelChains: boolean;
+  includeTabGroups: boolean;
+  includeColorTags: boolean;
+  strengthSettings: Pick<
+    ExportSecuritySettings,
+    | 'showPasswordStrength'
+    | 'showEntropyBits'
+    | 'minimumPasswordScore'
+    | 'enforceMinimumPasswordScore'
+    | 'detectCommonPasswords'
+    | 'detectRepeatedCharacters'
+    | 'detectSequentialPatterns'
+    | 'rewardUncommonSymbols'
+    | 'customCommonPasswords'
+  >;
+}
 
 export interface ImportVpnData {
   openvpn: OpenVPNConnection[];
@@ -84,7 +153,7 @@ export interface ImportSourceMetadata {
     dataRows: number;
   };
   json?: {
-    shape: 'array' | 'connections-object' | 'collection-export' | 'object' | 'unknown';
+    shape: 'array' | 'connections-object' | 'collection-export' | 'database-package' | 'object' | 'unknown';
     topLevelKeys: string[];
   };
   xml?: {
