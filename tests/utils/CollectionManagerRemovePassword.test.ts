@@ -25,18 +25,18 @@ describe('DatabaseManager remove password', () => {
   it('removes encryption with correct password', async () => {
     await manager.selectDatabase(collectionId, 'secret');
     const storedBefore = await IndexedDbService.getItem<string>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(typeof storedBefore).toBe('string');
 
     await manager.removePasswordFromDatabase(collectionId, 'secret');
     const storedAfter = await IndexedDbService.getItem<StorageData>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(storedAfter!.connections).toBeTruthy();
 
     const meta = (await IndexedDbService.getItem<ConnectionDatabase[]>(
-      'mremote-collections'
+      'mremote-databases'
     ))![0];
     expect(meta.isEncrypted).toBe(false);
   });

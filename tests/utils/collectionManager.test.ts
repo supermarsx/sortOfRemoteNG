@@ -26,7 +26,7 @@ describe("DatabaseManager", () => {
 
   it("creates and persists a collection", async () => {
     const col = await manager.createDatabase("Test");
-    const stored = await IndexedDbService.getItem<any[]>("mremote-collections");
+    const stored = await IndexedDbService.getItem<any[]>("mremote-databases");
     expect(stored).toHaveLength(1);
     expect(stored![0].id).toBe(col.id);
     expect(stored![0].name).toBe("Test");
@@ -51,7 +51,7 @@ describe("DatabaseManager", () => {
     const updated = { ...col, name: "Updated", description: "changed" };
     await manager.updateDatabase(updated);
 
-    const stored = await IndexedDbService.getItem<any[]>("mremote-collections");
+    const stored = await IndexedDbService.getItem<any[]>("mremote-databases");
     expect(stored![0].name).toBe("Updated");
     expect(stored![0].description).toBe("changed");
   });
@@ -159,6 +159,63 @@ describe("DatabaseManager", () => {
     await expect(
       manager.loadDatabaseData(col.id, "wrong"),
     ).rejects.toBeInstanceOf(InvalidPasswordError);
+  });
+
+  it("reports encrypted databases as exportable only after unlock", async () => {
+    const open = await manager.createDatabase("Open");
+    const secure = await manager.createDatabase("Secure", "desc", true, "secret");
+
+    await expect(
+      manager.loadDatabaseData(secure.id),
+    ).rejects.toBeInstanceOf(InvalidPasswordError);
+
+    let exportable = await manager.getExportableDatabases();
+    expect(exportable.find((database) => database.id === open.id)).toMatchObject({
+      isExportable: true,
+      isUnlocked: true,
+    });
+    expect(exportable.find((database) => database.id === secure.id)).toMatchObject({
+      isExportable: true,
+      isUnlocked: true,
+    });
+
+    DatabaseManager.resetInstance();
+    const freshManager = DatabaseManager.getInstance();
+    exportable = await freshManager.getExportableDatabases();
+    expect(exportable.find((database) => database.id === open.id)).toMatchObject({
+      isExportable: true,
+      isUnlocked: true,
+    });
+    expect(exportable.find((database) => database.id === secure.id)).toMatchObject({
+      isExportable: false,
+      isUnlocked: false,
+    });
+
+    await freshManager.selectDatabase(secure.id, "secret");
+    expect(freshManager.isDatabaseUnlocked(secure.id)).toBe(true);
+    expect(freshManager.getUnlockedDatabaseIds()).toContain(secure.id);
+
+    const snapshot = await freshManager.readExportableDatabaseSnapshot(secure.id);
+    expect(snapshot.collection.id).toBe(secure.id);
+  });
+
+  it("does not reuse the current password for a different encrypted database", async () => {
+    const first = await manager.createDatabase("First", "desc", true, "first-secret");
+    const second = await manager.createDatabase("Second", "desc", true, "second-secret");
+
+    DatabaseManager.resetInstance();
+    const freshManager = DatabaseManager.getInstance();
+    await freshManager.selectDatabase(first.id, "first-secret");
+
+    await expect(
+      freshManager.readExportableDatabaseSnapshot(second.id),
+    ).rejects.toBeInstanceOf(InvalidPasswordError);
+
+    await expect(
+      freshManager.readExportableDatabaseSnapshot(second.id, false, {
+        collectionPassword: "second-secret",
+      }),
+    ).resolves.toMatchObject({ collection: { id: second.id } });
   });
 
   it("throws CorruptedDataError when decrypted data is invalid", async () => {

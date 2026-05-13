@@ -1,4 +1,4 @@
-import { ConnectionDatabase } from "../../types/connection/connection";
+import { Connection, ConnectionDatabase } from "../../types/connection/connection";
 import { StorageData } from "../storage/storage";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
@@ -9,6 +9,12 @@ import {
 } from "../core/errors";
 import { SettingsManager } from "../settings/settingsManager";
 import { PBKDF2_ITERATIONS } from "../../config";
+import {
+  decryptWithPassword as decryptExportWithPassword,
+  encryptWithPassword as encryptExportWithPassword,
+  isWebCryptoPayload,
+  type PasswordEncryptionOptions,
+} from "../crypto/webCryptoAes";
 
 const invoke = (globalThis as any).__TAURI__?.core?.invoke;
 
@@ -144,6 +150,50 @@ function buildDuplicateDatabaseName(
   return candidate;
 }
 
+export interface ExportableDatabaseInfo extends ConnectionDatabase {
+  isCurrent: boolean;
+  isUnlocked: boolean;
+  isExportable: boolean;
+  lockedReason?: string;
+}
+
+export interface DatabaseExportSnapshot {
+  collection: {
+    id: string;
+    name: string;
+    description?: string;
+    isEncrypted: boolean;
+    exportDate: string;
+  };
+  connections: Connection[];
+  settings: StorageData["settings"];
+  tabGroups: StorageData["tabGroups"];
+  colorTags: StorageData["colorTags"];
+}
+
+const SECRET_PLACEHOLDER = "***ENCRYPTED***";
+
+function redactConnectionSecrets(connection: Connection): Connection {
+  const next = { ...connection } as Connection;
+
+  if (next.password) next.password = SECRET_PLACEHOLDER;
+  if (next.basicAuthPassword) next.basicAuthPassword = SECRET_PLACEHOLDER;
+  delete next.privateKey;
+  delete next.passphrase;
+  delete next.totpSecret;
+  delete next.rustdeskPassword;
+
+  if (next.cloudProvider) {
+    next.cloudProvider = { ...next.cloudProvider };
+    delete next.cloudProvider.apiKey;
+    delete next.cloudProvider.accessToken;
+    delete next.cloudProvider.clientSecret;
+    delete next.cloudProvider.serviceAccountKey;
+  }
+
+  return next;
+}
+
 /**
  * Handles persistence and encryption of connection collections.
  *
@@ -158,6 +208,7 @@ export class DatabaseManager {
   private readonly legacyDatabasesKey = "mremote-collections";
   private currentDatabase: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
+  private readonly unlockedDatabasePasswords = new Map<string, string>();
 
   static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
@@ -207,6 +258,7 @@ export class DatabaseManager {
         { connections: [], settings: {}, timestamp: Date.now() },
         password,
       );
+      this.rememberUnlockedDatabase(collection, password);
     } else {
       await this.saveDatabaseData(collection.id, {
         connections: [],
@@ -281,6 +333,7 @@ export class DatabaseManager {
     await this.loadDatabaseData(id, password);
     this.currentDatabase = collection;
     this.currentPassword = password || null;
+    this.rememberUnlockedDatabase(collection, password);
 
     // Update last accessed time
     collection.lastAccessed = new Date().toISOString();
@@ -297,6 +350,110 @@ export class DatabaseManager {
 
   getCurrentDatabase(): ConnectionDatabase | null {
     return this.currentDatabase;
+  }
+
+  isDatabaseUnlocked(databaseId: string): boolean {
+    if (this.unlockedDatabasePasswords.has(databaseId)) {
+      return true;
+    }
+
+    if (this.currentDatabase?.id !== databaseId) {
+      return false;
+    }
+
+    return !this.currentDatabase.isEncrypted || Boolean(this.currentPassword);
+  }
+
+  getUnlockedDatabaseIds(): string[] {
+    const unlockedIds = new Set(this.unlockedDatabasePasswords.keys());
+    if (this.currentDatabase && this.isDatabaseUnlocked(this.currentDatabase.id)) {
+      unlockedIds.add(this.currentDatabase.id);
+    }
+    return Array.from(unlockedIds);
+  }
+
+  async getExportableDatabases(): Promise<ExportableDatabaseInfo[]> {
+    const collections = await this.getAllDatabases();
+    const currentId = this.currentDatabase?.id;
+
+    return collections.map((collection) => {
+      const isCurrent = collection.id === currentId;
+      const isUnlocked = collection.isEncrypted
+        ? Boolean(this.getUnlockedPasswordForDatabase(collection.id))
+        : true;
+      const isExportable = !collection.isEncrypted || isUnlocked;
+
+      return {
+        ...collection,
+        isCurrent,
+        isUnlocked,
+        isExportable,
+        lockedReason: isExportable
+          ? undefined
+          : "Encrypted database is locked. Unlock it before exporting.",
+      };
+    });
+  }
+
+  private rememberUnlockedDatabase(
+    collection: ConnectionDatabase | null,
+    password?: string,
+  ): void {
+    if (collection?.isEncrypted && password) {
+      this.unlockedDatabasePasswords.set(collection.id, password);
+    }
+  }
+
+  private forgetUnlockedDatabase(databaseId: string): void {
+    this.unlockedDatabasePasswords.delete(databaseId);
+  }
+
+  private getUnlockedPasswordForDatabase(databaseId: string): string | undefined {
+    if (this.currentDatabase?.id === databaseId && this.currentPassword) {
+      return this.currentPassword;
+    }
+
+    return this.unlockedDatabasePasswords.get(databaseId);
+  }
+
+  private resolveExportPasswordForDatabase(
+    collection: ConnectionDatabase,
+    providedPassword?: string,
+  ): string | undefined {
+    if (!collection.isEncrypted) {
+      return undefined;
+    }
+
+    const password = providedPassword || this.getUnlockedPasswordForDatabase(collection.id);
+    if (!password) {
+      throw new InvalidPasswordError(
+        "Encrypted database must be unlocked before it can be exported",
+      );
+    }
+
+    return password;
+  }
+
+  private buildExportSnapshot(
+    collection: ConnectionDatabase,
+    data: StorageData,
+    includePasswords: boolean,
+  ): DatabaseExportSnapshot {
+    return {
+      collection: {
+        id: collection.id,
+        name: collection.name,
+        description: collection.description,
+        isEncrypted: collection.isEncrypted,
+        exportDate: new Date().toISOString(),
+      },
+      connections: includePasswords
+        ? data.connections
+        : data.connections.map(redactConnectionSecrets),
+      settings: data.settings ?? {},
+      tabGroups: data.tabGroups ?? [],
+      colorTags: data.colorTags ?? {},
+    };
   }
 
   async updateDatabase(collection: ConnectionDatabase): Promise<void> {
@@ -332,6 +489,7 @@ export class DatabaseManager {
       this.currentDatabase = null;
       this.currentPassword = null;
     }
+    this.forgetUnlockedDatabase(id);
   }
 
   async duplicateDatabase(
@@ -348,9 +506,7 @@ export class DatabaseManager {
 
     const duplicatePassword = sourceCollection.isEncrypted
       ? options?.password ??
-        (this.currentDatabase?.id === collectionId
-          ? this.currentPassword || undefined
-          : undefined)
+        this.getUnlockedPasswordForDatabase(collectionId)
       : undefined;
 
     if (sourceCollection.isEncrypted && !duplicatePassword) {
@@ -474,7 +630,14 @@ export class DatabaseManager {
   ): Promise<StorageData | null> {
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
+    const collection = await this.getDatabase(collectionId);
     let stored: any = null;
+
+    if (collection?.isEncrypted && !password) {
+      throw new InvalidPasswordError(
+        "Password required for encrypted collection",
+      );
+    }
 
     if (invoke) {
       try {
@@ -520,12 +683,20 @@ export class DatabaseManager {
       if (password) {
         let decrypted: string | null = null;
 
-        // Try new Web Crypto format first (salt.iv.ciphertext)
-        if (typeof stored === 'string' && stored.split('.').length === 3) {
+        // Try export WebCrypto envelopes first, then legacy salt.iv.ciphertext.
+        if (typeof stored === 'string' && isWebCryptoPayload(stored)) {
+          try {
+            decrypted = await decryptExportWithPassword(stored, password);
+          } catch {
+            // Not new format or wrong password — fall through to legacy
+          }
+        }
+
+        if (!decrypted && typeof stored === 'string' && stored.split('.').length === 3) {
           try {
             decrypted = await decryptData(stored, password);
           } catch {
-            // Not new format or wrong password — fall through to legacy
+            // Not legacy WebCrypto format or wrong password — fall through
           }
         }
 
@@ -538,7 +709,9 @@ export class DatabaseManager {
           throw new InvalidPasswordError();
         }
         try {
-          return JSON.parse(decrypted);
+          const parsed = JSON.parse(decrypted) as StorageData;
+          this.rememberUnlockedDatabase(collection, password);
+          return parsed;
         } catch (error) {
           if (error instanceof SyntaxError) {
             const trimmed = decrypted.trim();
@@ -594,47 +767,50 @@ export class DatabaseManager {
     includePasswords: boolean = false,
     exportPassword?: string,
     collectionPassword?: string,
+    exportEncryptionOptions?: PasswordEncryptionOptions,
   ): Promise<string> {
+    const exportData = await this.readExportableDatabaseSnapshot(
+      collectionId,
+      includePasswords,
+      { collectionPassword },
+    );
+
+    const jsonData = JSON.stringify(exportData, null, 2);
+
+    if (exportPassword) {
+      return encryptExportWithPassword(
+        jsonData,
+        exportPassword,
+        exportEncryptionOptions,
+      );
+    }
+
+    return jsonData;
+  }
+
+  async readExportableDatabaseSnapshot(
+    collectionId: string,
+    includePasswords: boolean = false,
+    options?: {
+      collectionPassword?: string;
+    },
+  ): Promise<DatabaseExportSnapshot> {
     const collection = await this.getDatabase(collectionId);
     if (!collection) {
       throw new Error("Collection not found");
     }
 
-    const data = await this.loadDatabaseData(
-      collectionId,
-      collectionPassword || this.currentPassword || undefined,
+    const password = this.resolveExportPasswordForDatabase(
+      collection,
+      options?.collectionPassword,
     );
+    const data = await this.loadDatabaseData(collectionId, password);
     if (!data) {
       throw new Error("Failed to load collection data");
     }
 
-    const exportData = {
-      collection: {
-        name: collection.name,
-        description: collection.description,
-        exportDate: new Date().toISOString(),
-      },
-      connections: includePasswords
-        ? data.connections
-        : data.connections.map((conn: any) => ({
-            ...conn,
-            password: conn.password ? "***ENCRYPTED***" : undefined,
-            basicAuthPassword: conn.basicAuthPassword
-              ? "***ENCRYPTED***"
-              : undefined,
-          })),
-      settings: data.settings,
-      tabGroups: data.tabGroups ?? [],
-      colorTags: data.colorTags ?? {},
-    };
-
-    const jsonData = JSON.stringify(exportData, null, 2);
-
-    if (exportPassword) {
-      return encryptData(jsonData, exportPassword);
-    }
-
-    return jsonData;
+    this.rememberUnlockedDatabase(collection, password);
+    return this.buildExportSnapshot(collection, data, includePasswords);
   }
 
   async removePasswordFromDatabase(
@@ -655,6 +831,7 @@ export class DatabaseManager {
       this.currentPassword = null;
       this.currentDatabase = { ...collection };
     }
+    this.forgetUnlockedDatabase(collectionId);
   }
 
   async changeDatabasePassword(
@@ -681,6 +858,7 @@ export class DatabaseManager {
       this.currentPassword = newPassword;
       this.currentDatabase = { ...collection };
     }
+    this.rememberUnlockedDatabase(collection, newPassword);
   }
 
   async importDatabase(
@@ -693,8 +871,20 @@ export class DatabaseManager {
   ): Promise<ConnectionDatabase> {
     let parsed: any;
     try {
-      parsed = JSON.parse(content);
+      if (isWebCryptoPayload(content)) {
+        if (!options?.importPassword) {
+          throw new InvalidPasswordError("Password required for encrypted export");
+        }
+        parsed = JSON.parse(
+          await decryptExportWithPassword(content, options.importPassword),
+        );
+      } else {
+        parsed = JSON.parse(content);
+      }
     } catch (error) {
+      if (error instanceof InvalidPasswordError) {
+        throw error;
+      }
       if (!options?.importPassword) {
         throw new InvalidPasswordError("Password required for encrypted export");
       }
@@ -702,9 +892,9 @@ export class DatabaseManager {
       let decrypted: string | null = null;
 
       // Try new Web Crypto format first
-      if (content.split('.').length === 3) {
+      if (isWebCryptoPayload(content)) {
         try {
-          decrypted = await decryptData(content, options.importPassword);
+          decrypted = await decryptExportWithPassword(content, options.importPassword);
         } catch {
           // Not new format — fall through to legacy
         }

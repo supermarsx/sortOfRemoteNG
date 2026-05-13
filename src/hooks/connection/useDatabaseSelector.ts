@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { ConnectionDatabase } from "../../types/connection/connection";
-import { SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
+import { defaultExportSecuritySettings, SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { InvalidPasswordError } from "../../utils/core/errors";
 import { useConnections } from "../../contexts/useConnections";
@@ -518,6 +519,12 @@ export function useDatabaseSelector(
         includePasswords,
         exportPassword || undefined,
         collectionPassword || undefined,
+        {
+          iterations:
+            SettingsManager.getInstance().getSettings().exportSecurity
+              ?.keyDerivationIterations ??
+            defaultExportSecuritySettings.keyDerivationIterations,
+        },
       );
       const filename = databaseManager.generateExportFilename();
       const blob = new Blob([content], { type: "application/json" });
