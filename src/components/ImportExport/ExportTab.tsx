@@ -885,78 +885,47 @@ const ExportTab: React.FC<ExportTabProps> = ({
         )}
       </section>
 
-      <div data-testid="export-format" className="space-y-4">
-        <div>
-          <h4 className="text-sm font-medium text-[var(--color-text)]">
-            {t('exportTab.exportFormat')}
-          </h4>
-          <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
-            {t('exportTab.formatGroupHint', { defaultValue: 'Pick a format. Encryption capability varies by group.' })}
-          </p>
-        </div>
+      <div data-testid="export-format">
+        <label htmlFor="export-format-select" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+          {t('exportTab.exportFormat')}
+        </label>
+        <Select
+          id="export-format-select"
+          data-testid="export-format-select"
+          label={t('exportTab.exportFormat')}
+          value={config.format}
+          onChange={(format) => onConfigChange({ format: format as ExportConfig['format'] })}
+          options={formatGroups.flatMap((group) => {
+            const optionsInGroup = formatOptions.filter((option) => option.group === group.id);
+            if (optionsInGroup.length === 0) return [];
+            return [
+              {
+                value: `__group_${group.id}` as const,
+                label: `── ${group.label} ──`,
+                disabled: true,
+                title: group.description,
+              },
+              ...optionsInGroup.map((option) => ({
+                value: option.value,
+                label: option.label,
+                icon: option.icon,
+                title: `${option.desc} • ${encryptionSchemeLabel(option.encryption)}`,
+              })),
+            ];
+          })}
+          variant="form"
+          className="w-full sm:max-w-md"
+        />
 
-        {formatGroups.map((group) => {
-          const optionsInGroup = formatOptions.filter((option) => option.group === group.id);
-          if (optionsInGroup.length === 0) return null;
-          return (
-            <div
-              key={group.id}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3"
-              data-testid={`export-format-group-${group.id}`}
-            >
-              <div className="flex items-baseline justify-between gap-3 mb-2">
-                <h5 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)]">
-                  {group.label}
-                </h5>
-                <span className="text-[10px] text-[var(--color-textMuted)]">
-                  {group.description}
-                </span>
-              </div>
-              <div
-                role="radiogroup"
-                aria-label={group.label}
-                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-              >
-                {optionsInGroup.map((option) => {
-                  const Icon = option.icon;
-                  const active = config.format === option.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      data-testid={`export-format-${option.value}`}
-                      onClick={() => onConfigChange({ format: option.value })}
-                      className={`flex items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
-                        active
-                          ? 'border-primary bg-primary/10 text-[var(--color-text)]'
-                          : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]'
-                      }`}
-                    >
-                      <Icon size={16} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">{option.label}</span>
-                        <span className="mt-0.5 block text-[11px] text-[var(--color-textMuted)]">
-                          {option.desc}
-                        </span>
-                        <span className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--color-textMuted)]">
-                          <Lock size={10} />
-                          {encryptionSchemeLabel(option.encryption)}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        <div id="export-format-details" data-testid="export-format-details" className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3">
+        <div id="export-format-details" data-testid="export-format-details" className="mt-3 flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3">
           <SelectedFormatIcon size={20} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-[var(--color-text)]">{selectedFormat.label}</div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium text-[var(--color-text)]">{selectedFormat.label}</div>
+              <span className="rounded-sm bg-[var(--color-surface)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--color-textSecondary)]">
+                {formatGroups.find((g) => g.id === selectedFormat.group)?.label}
+              </span>
+            </div>
             <div className="mt-1 text-xs text-[var(--color-textSecondary)]">{selectedFormat.desc}</div>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-[var(--color-surface)] px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--color-textSecondary)]">
               <Lock size={10} />
@@ -966,7 +935,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
         </div>
 
         {compatibilityWarnings.length > 0 && (
-          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning" data-testid="export-format-warnings">
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning" data-testid="export-format-warnings">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <ul className="space-y-1">
               {compatibilityWarnings.map((warning) => (
