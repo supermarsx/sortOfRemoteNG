@@ -178,6 +178,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
     connections: false,
     textTags: false,
     colorTags: false,
+    encryption: false,
   });
   const toggleSection = (key: keyof typeof sectionsOpen) =>
     setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1034,97 +1035,124 @@ const ExportTab: React.FC<ExportTabProps> = ({
           )}
         </AccordionSection>
 
-        <label className="flex items-center space-x-2">
-          <Checkbox checked={config.encrypted} onChange={(val: boolean) => onConfigChange({ encrypted: val })} data-testid="export-encrypt" className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary" />
-          <span className="text-[var(--color-textSecondary)]">{t('exportTab.encryptExport')}</span>
-          <Lock size={16} className="text-warning" />
-        </label>
+        <AccordionSection
+          id="export-encryption"
+          title={t('exportTab.encryptionTitle', { defaultValue: 'Encryption' })}
+          description={t('exportTab.encryptionDescription', { defaultValue: 'Optionally protect the export file with a password. AES-GCM with PBKDF2 key derivation; tune iterations for the speed/strength trade-off you want.' })}
+          icon={Lock}
+          open={sectionsOpen.encryption || config.encrypted}
+          onToggle={() => toggleSection('encryption')}
+          dataTestId="export-encryption-section"
+          badge={
+            config.encrypted ? (
+              <span className="rounded-sm bg-warning/15 px-2 py-0.5 text-warning">
+                {t('exportTab.previewEncrypted', { defaultValue: 'Encrypted' })}
+              </span>
+            ) : (
+              <span className="text-[var(--color-textMuted)]">
+                {t('exportTab.previewNotEncrypted', { defaultValue: 'Plaintext' })}
+              </span>
+            )
+          }
+        >
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox
+              checked={config.encrypted}
+              onChange={(val: boolean) => onConfigChange({ encrypted: val })}
+              data-testid="export-encrypt"
+              className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+            />
+            <span className="text-sm text-[var(--color-text)]">
+              {t('exportTab.encryptExport')}
+            </span>
+          </label>
 
-        {config.encrypted && (
-          <div className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t('exportTab.encryptionPassword')}
-              </label>
-              <PasswordInput
-                value={config.password}
-                onChange={e => onConfigChange({ password: e.target.value })}
-                className="sor-form-input"
-                placeholder={t('exportTab.enterPassword')}
-                autoComplete="new-password"
-                data-testid="export-password"
-                aria-describedby="export-password-strength"
-              />
-            </div>
+          {config.encrypted && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
+                  {t('exportTab.encryptionPassword')}
+                </label>
+                <PasswordInput
+                  value={config.password}
+                  onChange={e => onConfigChange({ password: e.target.value })}
+                  className="sor-form-input w-full"
+                  placeholder={t('exportTab.enterPassword')}
+                  autoComplete="new-password"
+                  data-testid="export-password"
+                  aria-describedby="export-password-strength"
+                />
+              </div>
 
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                <KeyRound size={16} />
-                <span>{t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}</span>
-              </label>
-              <NumberInput
-                value={config.keyDerivationIterations}
-                onChange={(value: number) => onConfigChange({ keyDerivationIterations: value })}
-                min={10000}
-                max={5000000}
-                step={10000}
-                variant="form"
-                className="w-full"
-                data-testid="export-kdf-iterations"
-                aria-label={t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}
-              />
-              <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-                {t('exportTab.iterationsHelp', { defaultValue: 'Higher values make password guessing slower, but export and import take longer.' })}
-              </p>
-            </div>
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
+                  <KeyRound size={14} />
+                  <span>{t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}</span>
+                </label>
+                <NumberInput
+                  value={config.keyDerivationIterations}
+                  onChange={(value: number) => onConfigChange({ keyDerivationIterations: value })}
+                  min={10000}
+                  max={5000000}
+                  step={10000}
+                  variant="form"
+                  className="w-full"
+                  data-testid="export-kdf-iterations"
+                  aria-label={t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}
+                />
+                <p className="text-xs text-[var(--color-textMuted)]">
+                  {t('exportTab.iterationsHelp', { defaultValue: 'Higher values make password guessing slower, but export and import take longer.' })}
+                </p>
+              </div>
 
-            {config.strengthSettings.showPasswordStrength && (
-              <div id="export-password-strength" data-testid="export-password-strength" className="space-y-3 rounded-md bg-[var(--color-surface)] p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-                    <ShieldCheck size={16} />
-                    <span>{strength.label}</span>
+              {config.strengthSettings.showPasswordStrength && (
+                <div id="export-password-strength" data-testid="export-password-strength" className="space-y-3 rounded-md bg-[var(--color-surface)] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+                      <ShieldCheck size={16} />
+                      <span>{strength.label}</span>
+                    </div>
+                    {config.strengthSettings.showEntropyBits && (
+                      <span className="text-xs text-[var(--color-textMuted)]" data-testid="export-password-entropy">
+                        {strength.entropy} bits
+                      </span>
+                    )}
                   </div>
-                  {config.strengthSettings.showEntropyBits && (
-                    <span className="text-xs text-[var(--color-textMuted)]" data-testid="export-password-entropy">
-                      {strength.entropy} bits
-                    </span>
+                  <div className="h-2 rounded-full bg-[var(--color-border)] overflow-hidden" aria-hidden="true">
+                    <div className={`h-full ${scoreColor}`} style={{ width: `${scorePercent}%` }} />
+                  </div>
+                  {passwordTooWeak && (
+                    <div className="flex items-start gap-2 text-xs text-danger" data-testid="export-password-too-weak">
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                      <span>{t('exportTab.passwordTooWeak', { defaultValue: 'This password is below the configured minimum strength.' })}</span>
+                    </div>
+                  )}
+                  {strength.warnings.length > 0 && (
+                    <ul className="space-y-1 text-xs text-warning" data-testid="export-password-warnings">
+                      {strength.warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {strength.positiveSignals.length > 0 && (
+                    <ul className="space-y-1 text-xs text-success" data-testid="export-password-positive-signals">
+                      {strength.positiveSignals.map((signal) => (
+                        <li key={signal}>{signal}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {strength.suggestions.length > 0 && (
+                    <ul className="space-y-1 text-xs text-[var(--color-textMuted)]" data-testid="export-password-suggestions">
+                      {strength.suggestions.map((suggestion) => (
+                        <li key={suggestion}>{suggestion}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
-                <div className="h-2 rounded-full bg-[var(--color-border)] overflow-hidden" aria-hidden="true">
-                  <div className={`h-full ${scoreColor}`} style={{ width: `${scorePercent}%` }} />
-                </div>
-                {passwordTooWeak && (
-                  <div className="flex items-start gap-2 text-xs text-danger" data-testid="export-password-too-weak">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                    <span>{t('exportTab.passwordTooWeak', { defaultValue: 'This password is below the configured minimum strength.' })}</span>
-                  </div>
-                )}
-                {strength.warnings.length > 0 && (
-                  <ul className="space-y-1 text-xs text-warning" data-testid="export-password-warnings">
-                    {strength.warnings.map((warning) => (
-                      <li key={warning}>{warning}</li>
-                    ))}
-                  </ul>
-                )}
-                {strength.positiveSignals.length > 0 && (
-                  <ul className="space-y-1 text-xs text-success" data-testid="export-password-positive-signals">
-                    {strength.positiveSignals.map((signal) => (
-                      <li key={signal}>{signal}</li>
-                    ))}
-                  </ul>
-                )}
-                {strength.suggestions.length > 0 && (
-                  <ul className="space-y-1 text-xs text-[var(--color-textMuted)]" data-testid="export-password-suggestions">
-                    {strength.suggestions.map((suggestion) => (
-                      <li key={suggestion}>{suggestion}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </AccordionSection>
       </div>
 
       {previewSection}
