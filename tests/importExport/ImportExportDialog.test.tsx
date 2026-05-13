@@ -42,7 +42,18 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
-      getCurrentDatabase: () => ({ id: "collection-1" }),
+      getCurrentDatabase: () => ({ id: "collection-1", name: "Default", isEncrypted: false }),
+      getExportableDatabases: vi.fn().mockResolvedValue([
+        {
+          id: "collection-1",
+          name: "Default",
+          isEncrypted: false,
+          isCurrent: true,
+          isUnlocked: true,
+          isExportable: true,
+        },
+      ]),
+      readExportableDatabaseSnapshot: vi.fn(),
       exportDatabase: mocks.exportDatabase.mockResolvedValue("[]"),
     }),
   },
@@ -52,6 +63,7 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: mocks.logAction,
+      getSettings: () => ({}),
     }),
   },
 }));
@@ -65,12 +77,30 @@ vi.mock("../../src/components/ImportExport/ExportTab", () => ({
     handleExport: () => void;
     config: {
       format: string;
+      scopeMode: string;
+      selectedDatabaseIds: string[];
+      inclusion: {
+        includeConnections: boolean;
+        includeCredentials: boolean;
+        includeSettings: boolean;
+        includeExportMetadata: boolean;
+        includeDatabaseMetadata: boolean;
+      };
       includePasswords: boolean;
       encrypted: boolean;
       password: string;
     };
     onConfigChange: (update: {
       format?: string;
+      scopeMode?: "current" | "selected" | "all";
+      selectedDatabaseIds?: string[];
+      inclusion?: {
+        includeConnections?: boolean;
+        includeCredentials?: boolean;
+        includeSettings?: boolean;
+        includeExportMetadata?: boolean;
+        includeDatabaseMetadata?: boolean;
+      };
       includePasswords?: boolean;
       encrypted?: boolean;
       password?: string;
@@ -79,12 +109,17 @@ vi.mock("../../src/components/ImportExport/ExportTab", () => ({
     <div>
       <div data-testid="export-tab-content">export-content</div>
       <div data-testid="export-tab-config">
-        {`${config.format}|${String(config.includePasswords)}|${String(config.encrypted)}|${config.password}`}
+        {`${config.format}|${config.scopeMode}|${config.selectedDatabaseIds.join(",")}|${String(config.inclusion.includeConnections)}|${String(config.inclusion.includeSettings)}|${String(config.inclusion.includeExportMetadata)}|${String(config.inclusion.includeDatabaseMetadata)}|${String(config.includePasswords)}|${String(config.encrypted)}|${config.password}`}
       </div>
       <button onClick={handleExport}>run-export</button>
       <button onClick={() => onConfigChange({ format: "csv" })}>set-format</button>
+      <button onClick={() => onConfigChange({ scopeMode: "all" })}>set-scope</button>
+      <button onClick={() => onConfigChange({ selectedDatabaseIds: ["collection-1"] })}>set-databases</button>
       <button onClick={() => onConfigChange({ includePasswords: true })}>
         set-include-passwords
+      </button>
+      <button onClick={() => onConfigChange({ inclusion: { includeConnections: false, includeSettings: false, includeExportMetadata: false, includeDatabaseMetadata: false } })}>
+        set-inclusion
       </button>
       <button onClick={() => onConfigChange({ encrypted: true })}>set-encrypted</button>
       <button onClick={() => onConfigChange({ password: "top-secret" })}>set-password</button>
@@ -115,7 +150,7 @@ describe("ImportExport dialog", () => {
 
   it("renders modal content when open", () => {
     render(<ImportExport isOpen onClose={() => {}} />);
-    expect(screen.getByText("Import / Export Connections")).toBeInTheDocument();
+    expect(screen.getByText("Import / Export")).toBeInTheDocument();
     expect(screen.getByTestId("export-tab-content")).toBeInTheDocument();
   });
 
@@ -179,18 +214,21 @@ describe("ImportExport dialog", () => {
     render(<ImportExport isOpen onClose={() => {}} />);
 
     expect(screen.getByTestId("export-tab-config")).toHaveTextContent(
-      "json|false|false|",
+      "json|current||true|true|true|true|false|false|",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "set-format" }));
+    fireEvent.click(screen.getByRole("button", { name: "set-scope" }));
+    fireEvent.click(screen.getByRole("button", { name: "set-databases" }));
     fireEvent.click(
       screen.getByRole("button", { name: "set-include-passwords" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "set-inclusion" }));
     fireEvent.click(screen.getByRole("button", { name: "set-encrypted" }));
     fireEvent.click(screen.getByRole("button", { name: "set-password" }));
 
     expect(screen.getByTestId("export-tab-config")).toHaveTextContent(
-      "csv|true|true|top-secret",
+      "csv|all|collection-1|false|false|false|false|true|true|top-secret",
     );
   });
 
@@ -201,7 +239,7 @@ describe("ImportExport dialog", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    const backdrop = container.querySelector(".sor-modal-backdrop");
+    const backdrop = document.querySelector(".sor-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
     expect(onClose).toHaveBeenCalledTimes(2);

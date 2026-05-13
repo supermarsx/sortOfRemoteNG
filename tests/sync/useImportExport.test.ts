@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import type { Connection } from "../../src/types/connection/connection";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -20,7 +21,7 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 }));
 
 const mockDispatch = vi.fn();
-const mockConnections = [
+const mockConnections: Connection[] = [
   {
     id: "conn-1",
     name: "Server A",
@@ -28,13 +29,14 @@ const mockConnections = [
     hostname: "10.0.0.1",
     port: 3389,
     username: "admin",
+    password: "secret",
     domain: "CORP",
     description: "Primary server",
     parentId: undefined,
     isGroup: false,
     tags: ["prod"],
-    createdAt: new Date("2026-01-01"),
-    updatedAt: new Date("2026-01-15"),
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-15T00:00:00.000Z",
   },
   {
     id: "conn-2",
@@ -48,8 +50,8 @@ const mockConnections = [
     parentId: undefined,
     isGroup: false,
     tags: [],
-    createdAt: new Date("2026-02-01"),
-    updatedAt: new Date("2026-02-10"),
+    createdAt: "2026-02-01T00:00:00.000Z",
+    updatedAt: "2026-02-10T00:00:00.000Z",
   },
 ];
 
@@ -63,7 +65,29 @@ vi.mock("../../src/contexts/useConnections", () => ({
 const mockExportCollection = vi.fn().mockResolvedValue('{"connections":[]}');
 const mockGetCurrentCollection = vi
   .fn()
-  .mockReturnValue({ id: "col-1", name: "Default" });
+  .mockReturnValue({ id: "col-1", name: "Default", isEncrypted: false });
+const mockGetExportableDatabases = vi.fn().mockResolvedValue([
+  {
+    id: "col-1",
+    name: "Default",
+    isEncrypted: false,
+    isCurrent: true,
+    isUnlocked: true,
+    isExportable: true,
+  },
+]);
+const mockReadExportableSnapshot = vi.fn().mockResolvedValue({
+  collection: {
+    id: "col-2",
+    name: "Archive",
+    isEncrypted: false,
+    exportDate: "2026-01-01T00:00:00.000Z",
+  },
+  connections: [],
+  settings: {},
+  tabGroups: [],
+  colorTags: {},
+});
 const mockGetAllConnections = vi.fn().mockResolvedValue([]);
 const mockAddConnection = vi.fn().mockResolvedValue(undefined);
 
@@ -73,6 +97,8 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       getAllConnections: mockGetAllConnections,
       addConnection: mockAddConnection,
       getCurrentDatabase: mockGetCurrentCollection,
+      getExportableDatabases: mockGetExportableDatabases,
+      readExportableDatabaseSnapshot: mockReadExportableSnapshot,
       exportDatabase: mockExportCollection,
     }),
     resetInstance: vi.fn(),
@@ -80,11 +106,12 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
 }));
 
 const mockLogAction = vi.fn();
+const mockGetSettings = vi.fn().mockReturnValue({});
 vi.mock("../../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: mockLogAction,
-      getSettings: vi.fn().mockReturnValue({}),
+      getSettings: mockGetSettings,
     }),
   },
 }));
@@ -101,12 +128,13 @@ vi.mock("../../src/components/ImportExport/utils", () => ({
 
 const mockEncryptWithPassword = vi.fn().mockResolvedValue("encrypted-payload");
 const mockDecryptWithPassword = vi.fn().mockResolvedValue('{"connections":[]}');
-const mockIsWebCryptoPayload = vi.fn().mockReturnValue(true);
+const mockIsWebCryptoPayload = vi.fn().mockReturnValue(false);
 
 vi.mock("../../src/utils/crypto/webCryptoAes", () => ({
   encryptWithPassword: (...args: unknown[]) => mockEncryptWithPassword(...args),
   decryptWithPassword: (...args: unknown[]) => mockDecryptWithPassword(...args),
   isWebCryptoPayload: (...args: unknown[]) => mockIsWebCryptoPayload(...args),
+  normalizePbkdf2Iterations: (value?: number) => value ?? 100000,
 }));
 
 const mockListOpenVPN = vi.fn().mockResolvedValue([]);
@@ -192,6 +220,37 @@ function renderImportExport(
   return renderHook(() => useImportExport({ ...defaults, ...overrides }));
 }
 
+function stubReadableBlob() {
+  const OriginalBlob = globalThis.Blob;
+  vi.stubGlobal(
+    "Blob",
+    class MockBlob {
+      readonly type: string;
+      private readonly parts: string[];
+
+      constructor(parts: BlobPart[], options?: BlobPropertyBag) {
+        this.parts = parts.map((part) => String(part));
+        this.type = options?.type ?? "";
+      }
+
+      async text() {
+        return this.parts.join("");
+      }
+    } as unknown as typeof Blob,
+  );
+
+  return () => vi.stubGlobal("Blob", OriginalBlob);
+}
+
+async function getLastDownloadedText() {
+  const objectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock.calls;
+  const exportedBlob = objectUrlCalls[objectUrlCalls.length - 1][0] as Blob;
+  return {
+    blob: exportedBlob,
+    text: await exportedBlob.text(),
+  };
+}
+
 // Stub downloadFile's DOM interactions
 beforeEach(() => {
   vi.clearAllMocks();
@@ -200,9 +259,37 @@ beforeEach(() => {
   mockDecryptWithPassword.mockReset();
   mockDecryptWithPassword.mockResolvedValue('{"connections":[]}');
   mockIsWebCryptoPayload.mockReset();
-  mockIsWebCryptoPayload.mockReturnValue(true);
+  mockIsWebCryptoPayload.mockReturnValue(false);
   mockPrompt.mockReset();
   mockPrompt.mockReturnValue("password");
+  mockGetSettings.mockReset();
+  mockGetSettings.mockReturnValue({});
+  mockGetCurrentCollection.mockReset();
+  mockGetCurrentCollection.mockReturnValue({ id: "col-1", name: "Default", isEncrypted: false });
+  mockGetExportableDatabases.mockReset();
+  mockGetExportableDatabases.mockResolvedValue([
+    {
+      id: "col-1",
+      name: "Default",
+      isEncrypted: false,
+      isCurrent: true,
+      isUnlocked: true,
+      isExportable: true,
+    },
+  ]);
+  mockReadExportableSnapshot.mockReset();
+  mockReadExportableSnapshot.mockResolvedValue({
+    collection: {
+      id: "col-2",
+      name: "Archive",
+      isEncrypted: false,
+      exportDate: "2026-01-01T00:00:00.000Z",
+    },
+    connections: [],
+    settings: {},
+    tabGroups: [],
+    colorTags: {},
+  });
   mockTauriInvoke.mockReset();
   mockTauriInvoke.mockResolvedValue('{"connections":[]}');
   vi.stubGlobal("prompt", mockPrompt);
@@ -242,6 +329,15 @@ describe("useImportExport", () => {
     expect(result.current.exportEncrypted).toBe(false);
     expect(result.current.exportPassword).toBe("");
     expect(result.current.includePasswords).toBe(false);
+    expect(result.current.exportInclusion).toMatchObject({
+      includeConnections: true,
+      includeCredentials: false,
+      includeSettings: true,
+      includeFolderItems: true,
+      includeEmptyFolders: true,
+      includeExportMetadata: true,
+      includeDatabaseMetadata: true,
+    });
     expect(result.current.isProcessing).toBe(false);
     expect(result.current.importResult).toBeNull();
     expect(result.current.importFilename).toBe("");
@@ -290,6 +386,10 @@ describe("useImportExport", () => {
     expect(result.current.exportFormat).toBe("csv");
     act(() => result.current.setExportFormat("xml"));
     expect(result.current.exportFormat).toBe("xml");
+    act(() => result.current.setExportFormat("excel"));
+    expect(result.current.exportFormat).toBe("excel");
+    act(() => result.current.setExportFormat("mremoteng"));
+    expect(result.current.exportFormat).toBe("mremoteng");
   });
 
   it("setExportEncrypted and setExportPassword work", () => {
@@ -304,6 +404,47 @@ describe("useImportExport", () => {
     const { result } = renderImportExport();
     act(() => result.current.setIncludePasswords(true));
     expect(result.current.includePasswords).toBe(true);
+  });
+
+  it("uses export security settings as initial defaults", () => {
+    mockGetSettings.mockReturnValueOnce({
+      exportSecurity: {
+        defaultFormat: "markdown",
+        encryptByDefault: true,
+        includeConnectionsByDefault: false,
+        includePasswordsByDefault: true,
+        includeSettingsByDefault: false,
+        includeFolderItemsByDefault: false,
+        includeEmptyFoldersByDefault: false,
+        keyDerivationIterations: 500000,
+        includeVpnDataByDefault: false,
+        includeTunnelChainsByDefault: false,
+        includeTabGroupsByDefault: false,
+        includeColorTagsByDefault: false,
+        includeExportMetadataByDefault: false,
+        includeDatabaseMetadataByDefault: false,
+      },
+    });
+
+    const { result } = renderImportExport();
+
+    expect(result.current.exportFormat).toBe("markdown");
+    expect(result.current.exportEncrypted).toBe(true);
+    expect(result.current.includePasswords).toBe(true);
+    expect(result.current.exportInclusion).toMatchObject({
+      includeConnections: false,
+      includeCredentials: true,
+      includeSettings: false,
+      includeFolderItems: false,
+      includeEmptyFolders: false,
+      includeExportMetadata: false,
+      includeDatabaseMetadata: false,
+    });
+    expect(result.current.exportKeyDerivationIterations).toBe(500000);
+    expect(result.current.includeVpnData).toBe(false);
+    expect(result.current.includeTunnelChains).toBe(false);
+    expect(result.current.includeTabGroups).toBe(false);
+    expect(result.current.includeColorTags).toBe(false);
   });
 
   it("setActiveTab switches tab", () => {
@@ -328,19 +469,22 @@ describe("useImportExport", () => {
 
   // ── Export ──────────────────────────────────────────────────
 
-  it("handleExport JSON — calls databaseManager and downloads", async () => {
-    mockExportCollection.mockResolvedValueOnce('{"data":"ok"}');
+  it("handleExport JSON builds a backward-compatible single-database payload", async () => {
+    const restoreBlob = stubReadableBlob();
     const { result } = renderImportExport();
 
     await act(async () => {
       await result.current.handleExport();
     });
 
-    expect(mockExportCollection).toHaveBeenCalledWith(
-      "col-1",
-      false,
-      undefined,
-    );
+    const { text } = await getLastDownloadedText();
+    const parsed = JSON.parse(text);
+    expect(mockExportCollection).not.toHaveBeenCalled();
+    expect(parsed).toHaveProperty("collection");
+    expect(parsed).toHaveProperty("connections");
+    expect(parsed).not.toHaveProperty("schema");
+    expect(parsed).not.toHaveProperty("databases");
+    expect(parsed.connections).toHaveLength(2);
     expect(mockToast.success).toHaveBeenCalledWith(
       expect.stringContaining("Exported successfully"),
     );
@@ -350,9 +494,56 @@ describe("useImportExport", () => {
       undefined,
       expect.stringContaining("JSON"),
     );
+    restoreBlob();
   });
 
-  it("handleExport JSON relies on collection export encryption and skips the local encrypt helper", async () => {
+  it("handleExport JSON includes export and database metadata inside the payload", async () => {
+    const restoreBlob = stubReadableBlob();
+    const { result } = renderImportExport();
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const parsed = JSON.parse(text);
+    expect(parsed.exportMetadata).toMatchObject({
+      app: { name: "sortOfRemoteNG" },
+      schema: { name: "sortOfRemoteNG.database-export", version: 1 },
+      format: "json",
+      encrypted: false,
+      scope: {
+        mode: "current",
+        effectiveDatabaseIds: ["col-1"],
+      },
+      inclusion: {
+        includeConnections: true,
+        includeSettings: true,
+        includeExportMetadata: true,
+        includeDatabaseMetadata: true,
+      },
+      totals: {
+        databases: 1,
+        connections: 2,
+      },
+    });
+    expect(parsed.exportMetadata.exportId).toEqual(expect.any(String));
+    expect(parsed.exportMetadata.exportedAt).toEqual(expect.any(String));
+    expect(parsed.exportMetadata.sourceClient.machineId).toEqual(expect.any(String));
+    expect(parsed.databaseMetadata).toMatchObject({
+      collectionId: "col-1",
+      name: "Default",
+      isEncrypted: false,
+      wasCurrentAtExport: true,
+      counts: {
+        leafConnections: 2,
+      },
+    });
+
+    restoreBlob();
+  });
+
+  it("handleExport JSON encrypts the fully assembled export package locally", async () => {
     mockExportCollection.mockResolvedValueOnce('{"connections":[]}');
     const { result } = renderImportExport();
 
@@ -365,17 +556,28 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    expect(mockExportCollection).toHaveBeenCalledWith(
-      "col-1",
-      false,
+    expect(mockExportCollection).not.toHaveBeenCalled();
+    expect(mockEncryptWithPassword).toHaveBeenCalledWith(
+      expect.stringContaining('"connections"'),
       "json-secret",
+      { iterations: 310000 },
     );
-    expect(mockEncryptWithPassword).not.toHaveBeenCalled();
+    const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[0][0] as string;
+    expect(JSON.parse(plaintextBeforeEncryption).exportMetadata).toMatchObject({
+      encrypted: true,
+      encryption: {
+        encrypted: true,
+        keyDerivationIterations: 310000,
+      },
+    });
+    const { text: downloadedText } = await getLastDownloadedText();
+    expect(downloadedText).toBe("encrypted-payload");
+    expect(downloadedText).not.toContain("exportMetadata");
     expect(mockLogAction).toHaveBeenCalledWith(
       "info",
       "Data exported",
       undefined,
-      expect.stringContaining("JSON (encrypted)"),
+      expect.stringContaining("JSON (encrypted, 310000 PBKDF2 iterations)"),
     );
   });
 
@@ -432,7 +634,94 @@ describe("useImportExport", () => {
     vi.stubGlobal("Blob", OriginalBlob);
   });
 
-  it("handleExport JSON keeps the raw payload when VPN enrichment parsing fails", async () => {
+  it("handleExport JSON encrypts sidecars after enrichment", async () => {
+    mockExportCollection.mockResolvedValueOnce('{"connections":[]}');
+    mockListOpenVPN.mockResolvedValueOnce([{ name: "OpenVPN Secure", config: "ovpn" }]);
+    mockGetTunnelChains.mockReturnValueOnce([
+      { id: "chain-secure", name: "Secure Chain", layers: [], description: "", tags: [] },
+    ]);
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setExportEncrypted(true);
+      result.current.setExportPassword("json-secret");
+      result.current.setExportKeyDerivationIterations(640000);
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[0][0] as string;
+    const parsed = JSON.parse(plaintextBeforeEncryption);
+    expect(parsed.vpnConnections.openvpn).toEqual([
+      { name: "OpenVPN Secure", config: "ovpn" },
+    ]);
+    expect(parsed.tunnelChainTemplates).toEqual([
+      { id: "chain-secure", name: "Secure Chain", layers: [], description: "", tags: [] },
+    ]);
+    expect(mockEncryptWithPassword).toHaveBeenCalledWith(
+      expect.any(String),
+      "json-secret",
+      { iterations: 640000 },
+    );
+  });
+
+  it("handleExport JSON encrypts the assembled multi-database package", async () => {
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ]);
+    mockReadExportableSnapshot.mockResolvedValueOnce({
+      collection: {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        exportDate: "2026-01-01T00:00:00.000Z",
+      },
+      connections: [],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    });
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setExportScopeMode("all");
+      result.current.setExportEncrypted(true);
+      result.current.setExportPassword("package-secret");
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[0][0] as string;
+    const parsed = JSON.parse(plaintextBeforeEncryption);
+    expect(parsed.schema).toBe("sortOfRemoteNG.database-export-package");
+    expect(parsed.databases).toHaveLength(2);
+    expect(mockEncryptWithPassword).toHaveBeenCalledWith(
+      expect.any(String),
+      "package-secret",
+      { iterations: 310000 },
+    );
+  });
+
+  it("handleExport JSON respects sidecar and metadata toggles", async () => {
     const OriginalBlob = globalThis.Blob;
     vi.stubGlobal(
       "Blob",
@@ -449,23 +738,326 @@ describe("useImportExport", () => {
       } as unknown as typeof Blob,
     );
 
-    mockExportCollection.mockResolvedValueOnce("not-json");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockExportCollection.mockResolvedValueOnce(
+      JSON.stringify({ connections: [], tabGroups: [{ id: "tabs" }], colorTags: { red: "#f00" } }),
+    );
     const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setIncludeVpnData(false);
+      result.current.setIncludeTunnelChains(false);
+      result.current.setIncludeTabGroups(false);
+      result.current.setIncludeColorTags(false);
+    });
 
     await act(async () => {
       await result.current.handleExport();
     });
 
     const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls[0][0] as Blob;
-    expect(await exportedBlob.text()).toBe("not-json");
-    expect(warnSpy).toHaveBeenCalledWith(
-      "Failed to include VPN data in export:",
-      expect.any(SyntaxError),
-    );
+    const exportedJson = JSON.parse(await exportedBlob.text());
+    expect(exportedJson).not.toHaveProperty("vpnConnections");
+    expect(exportedJson).not.toHaveProperty("tunnelChainTemplates");
+    expect(exportedJson).not.toHaveProperty("tabGroups");
+    expect(exportedJson).not.toHaveProperty("colorTags");
 
-    warnSpy.mockRestore();
     vi.stubGlobal("Blob", OriginalBlob);
+  });
+
+  it("handleExport JSON omits connections, settings, and metadata when inclusion disables them", async () => {
+    const restoreBlob = stubReadableBlob();
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.updateExportInclusion({
+        includeConnections: false,
+        includeSettings: false,
+        includeExportMetadata: false,
+        includeDatabaseMetadata: false,
+      });
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const exportedJson = JSON.parse(text);
+    expect(exportedJson).toHaveProperty("collection");
+    expect(exportedJson.connections).toEqual([]);
+    expect(exportedJson).not.toHaveProperty("settings");
+    expect(exportedJson).not.toHaveProperty("exportMetadata");
+    expect(exportedJson).not.toHaveProperty("databaseMetadata");
+
+    restoreBlob();
+  });
+
+  it("handleExport JSON redacts nested secret-ish fields when credentials are excluded", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnection = { ...mockConnections[0] } as Connection;
+    Object.assign(mockConnections[0], {
+      privateKey: "PRIVATE KEY",
+      passphrase: "key-passphrase",
+      totpSecret: "totp-secret",
+      basicAuthPassword: "basic-secret",
+      rustdeskPassword: "rustdesk-secret",
+      httpHeaders: {
+        Authorization: "Bearer token",
+        "X-Trace": "keep-me",
+      },
+      cloudProvider: {
+        provider: "gcp",
+        projectId: "project-1",
+        apiKey: "api-key",
+        accessToken: "access-token",
+        clientSecret: "client-secret",
+        serviceAccountKey: "service-account",
+      },
+      securityQuestions: [{ question: "Pet?", answer: "secret-answer" }],
+      recoveryInfo: { alternativeEmail: "ops@example.com", seedPhrase: "seed words" },
+      rdpSettings: {
+        gateway: {
+          enabled: true,
+          hostname: "gateway.example.com",
+          password: "gateway-secret",
+          accessToken: "gateway-token",
+        },
+      },
+    });
+    const { result } = renderImportExport();
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const exportedConnection = JSON.parse(text).connections[0];
+    expect(exportedConnection.password).toBe("***ENCRYPTED***");
+    expect(exportedConnection.basicAuthPassword).toBe("***ENCRYPTED***");
+    expect(exportedConnection.rustdeskPassword).toBe("***ENCRYPTED***");
+    expect(exportedConnection).not.toHaveProperty("privateKey");
+    expect(exportedConnection).not.toHaveProperty("passphrase");
+    expect(exportedConnection).not.toHaveProperty("totpSecret");
+    expect(exportedConnection.httpHeaders).toEqual({ "X-Trace": "keep-me" });
+    expect(exportedConnection.cloudProvider).toEqual({ provider: "gcp", projectId: "project-1" });
+    expect(exportedConnection.securityQuestions).toEqual([{ question: "Pet?" }]);
+    expect(exportedConnection.recoveryInfo).toEqual({ alternativeEmail: "ops@example.com" });
+    expect(exportedConnection.rdpSettings.gateway).toMatchObject({
+      hostname: "gateway.example.com",
+      password: "***ENCRYPTED***",
+    });
+    expect(exportedConnection.rdpSettings.gateway).not.toHaveProperty("accessToken");
+
+    mockConnections.splice(0, 1, originalConnection);
+    restoreBlob();
+  });
+
+  it("handleExport JSON filters protocols and keeps only needed folder ancestors", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnections = mockConnections.map((connection) => ({ ...connection }));
+    mockConnections.splice(
+      0,
+      mockConnections.length,
+      {
+        id: "folder-root",
+        name: "Root",
+        protocol: "rdp",
+        hostname: "",
+        port: 0,
+        isGroup: true,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "folder-empty",
+        name: "Empty",
+        protocol: "rdp",
+        hostname: "",
+        port: 0,
+        isGroup: true,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "rdp-child",
+        name: "RDP Host",
+        protocol: "rdp",
+        hostname: "10.0.0.10",
+        port: 3389,
+        parentId: "folder-root",
+        isGroup: false,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "ssh-child",
+        name: "SSH Host",
+        protocol: "ssh",
+        hostname: "10.0.0.11",
+        port: 22,
+        parentId: "folder-root",
+        isGroup: false,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.updateExportInclusion({
+        includeEmptyFolders: false,
+        includedProtocols: ["ssh"],
+      });
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const exportedConnections = JSON.parse(text).connections;
+    expect(exportedConnections.map((connection: Connection) => connection.id)).toEqual([
+      "folder-root",
+      "ssh-child",
+    ]);
+    expect(exportedConnections.find((connection: Connection) => connection.id === "ssh-child").parentId).toBe("folder-root");
+
+    mockConnections.splice(0, mockConnections.length, ...originalConnections);
+    restoreBlob();
+  });
+
+  it("handleExport JSON drops folder records and normalizes parents when folders are excluded", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnections = mockConnections.map((connection) => ({ ...connection }));
+    mockConnections.splice(
+      0,
+      mockConnections.length,
+      {
+        id: "folder-root",
+        name: "Root",
+        protocol: "rdp",
+        hostname: "",
+        port: 0,
+        isGroup: true,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "ssh-child",
+        name: "SSH Host",
+        protocol: "ssh",
+        hostname: "10.0.0.11",
+        port: 22,
+        parentId: "folder-root",
+        isGroup: false,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.updateExportInclusion({ includeFolderItems: false });
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const exportedConnections = JSON.parse(text).connections;
+    expect(exportedConnections).toHaveLength(1);
+    expect(exportedConnections[0]).toMatchObject({ id: "ssh-child", isGroup: false });
+    expect(exportedConnections[0]).not.toHaveProperty("parentId");
+
+    mockConnections.splice(0, mockConnections.length, ...originalConnections);
+    restoreBlob();
+  });
+
+  it("handleExport JSON packages all exportable databases and excludes locked databases", async () => {
+    const restoreBlob = stubReadableBlob();
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: true,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-locked",
+        name: "Locked",
+        isEncrypted: true,
+        isCurrent: false,
+        isUnlocked: false,
+        isExportable: false,
+        lockedReason: "Unlock first",
+      },
+    ]);
+    mockReadExportableSnapshot.mockResolvedValueOnce({
+      collection: {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: true,
+        exportDate: "2026-01-01T00:00:00.000Z",
+      },
+      connections: [
+        {
+          id: "archive-1",
+          name: "Archive Host",
+          protocol: "ssh",
+          hostname: "10.0.0.9",
+          port: 22,
+          isGroup: false,
+          tags: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    });
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setExportScopeMode("all");
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const exportedJson = JSON.parse(text);
+    expect(exportedJson).toMatchObject({
+      schema: "sortOfRemoteNG.database-export-package",
+      version: 1,
+    });
+    expect(exportedJson.databases.map((entry: any) => entry.collection.id)).toEqual([
+      "col-1",
+      "col-2",
+    ]);
+    expect(JSON.stringify(exportedJson)).not.toContain("col-locked");
+    expect(mockReadExportableSnapshot).toHaveBeenCalledWith("col-2", false);
+    expect(mockReadExportableSnapshot).not.toHaveBeenCalledWith("col-locked", expect.anything());
+
+    restoreBlob();
   });
 
   it("handleExport JSON falls back to empty VPN buckets when OpenVPN or Tailscale lookups fail", async () => {
@@ -522,6 +1114,69 @@ describe("useImportExport", () => {
     expect(mockToast.success).toHaveBeenCalledWith(
       expect.stringContaining("Exported successfully"),
     );
+  });
+
+  it("handleExport CSV includes database labels for multi-database exports", async () => {
+    const restoreBlob = stubReadableBlob();
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ]);
+    mockReadExportableSnapshot.mockResolvedValueOnce({
+      collection: {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        exportDate: "2026-01-01T00:00:00.000Z",
+      },
+      connections: [
+        {
+          id: "archive-1",
+          name: "Archive Host",
+          protocol: "ssh",
+          hostname: "10.0.0.9",
+          port: 22,
+          isGroup: false,
+          tags: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    });
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setExportFormat("csv");
+      result.current.setExportScopeMode("all");
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    expect(text.split("\n")[0]).toContain("Database,DatabaseId,ID,Name");
+    expect(text).toContain("Default,col-1");
+    expect(text).toContain("Archive,col-2,archive-1,Archive Host");
+
+    restoreBlob();
   });
 
   it("handleExport CSV leaves simple fields unquoted", async () => {
@@ -660,6 +1315,154 @@ describe("useImportExport", () => {
     );
   });
 
+  it("handleExport TXT writes a human-readable inventory outline", async () => {
+    const restoreBlob = stubReadableBlob();
+    const { result } = renderImportExport();
+    act(() => result.current.setExportFormat("txt"));
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { blob, text } = await getLastDownloadedText();
+    expect(blob.type).toBe("text/plain");
+    expect(text).toContain("sortOfRemoteNG connection inventory");
+    expect(text).toContain("Total items: 2");
+    expect(text).toContain("Credential-bearing connections: 1");
+    expect(text).toContain("- [Connection] Server A");
+    expect(text).toContain("Credentials: present (not included)");
+
+    restoreBlob();
+  });
+
+  it("handleExport Markdown writes an escaped report table", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnection = { ...mockConnections[0] };
+    Object.assign(mockConnections[0], {
+      name: "Server | A",
+      description: "<primary>\nline 2",
+    });
+    const { result } = renderImportExport();
+    act(() => result.current.setExportFormat("markdown"));
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { blob, text } = await getLastDownloadedText();
+    expect(blob.type).toBe("text/markdown");
+    expect(text).toContain("# sortOfRemoteNG Connection Inventory");
+    expect(text).toContain("| Name | Kind | Protocol | Hostname");
+    expect(text).toContain("Server \\| A");
+    expect(text).toContain("&lt;primary&gt;<br>line 2");
+
+    Object.assign(mockConnections[0], originalConnection);
+    restoreBlob();
+  });
+
+  it("handleExport HTML escapes table content safely", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnection = { ...mockConnections[0] };
+    Object.assign(mockConnections[0], {
+      name: "<script>alert(1)</script>",
+    });
+    const { result } = renderImportExport();
+    act(() => result.current.setExportFormat("html"));
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { blob, text } = await getLastDownloadedText();
+    expect(blob.type).toBe("text/html");
+    expect(text).toContain("<!DOCTYPE html>");
+    expect(text).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(text).not.toContain("<script>alert(1)</script>");
+
+    Object.assign(mockConnections[0], originalConnection);
+    restoreBlob();
+  });
+
+  it("handleExport Excel writes an Excel-openable HTML table with .xls MIME", async () => {
+    const restoreBlob = stubReadableBlob();
+    const { result } = renderImportExport();
+    act(() => result.current.setExportFormat("excel"));
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { blob, text } = await getLastDownloadedText();
+    expect(blob.type).toBe("application/vnd.ms-excel");
+    expect(text).toContain("urn:schemas-microsoft-com:office:excel");
+    expect(text).toContain("<table aria-label=\"Connection inventory\">");
+    expect(mockToast.success).toHaveBeenCalledWith(
+      expect.stringContaining(".xls"),
+    );
+
+    restoreBlob();
+  });
+
+  it("handleExport mRemoteNG writes Connections and nested Node XML without native encryption", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnections = mockConnections.map((connection) => ({ ...connection }));
+    mockConnections.splice(
+      0,
+      mockConnections.length,
+      {
+        id: "group-1",
+        name: "Ops",
+        protocol: "rdp",
+        hostname: "",
+        port: 0,
+        username: "",
+        domain: "",
+        description: "Operations",
+        parentId: undefined,
+        isGroup: true,
+        tags: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "ssh-child",
+        name: "Shell <Prod>",
+        protocol: "ssh",
+        hostname: "10.0.0.5",
+        port: 22,
+        username: "root",
+        password: "secret",
+        domain: "",
+        description: "Nested host",
+        parentId: "group-1",
+        isGroup: false,
+        tags: [],
+        createdAt: "2026-01-02T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    );
+    const { result } = renderImportExport();
+    act(() => result.current.setExportFormat("mremoteng"));
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { blob, text } = await getLastDownloadedText();
+    expect(blob.type).toBe("application/xml");
+    expect(text).toContain("<Connections Name=\"Connections\" Export=\"False\" Protected=\"\" ConfVersion=\"2.6\">");
+    expect(text).toContain("<Node Name=\"Ops\" Type=\"Container\"");
+    expect(text).toContain("<Node Name=\"Shell &lt;Prod&gt;\" Type=\"Connection\"");
+    expect(text).toContain("Protocol=\"SSH2\"");
+    expect(text).toContain("Password=\"\"");
+    expect(mockToast.success).toHaveBeenCalledWith(
+      expect.stringContaining(".mremoteng.xml"),
+    );
+
+    mockConnections.splice(0, mockConnections.length, ...originalConnections);
+    restoreBlob();
+  });
+
   it("handleExport encrypts non-JSON exports when requested", async () => {
     const { result } = renderImportExport();
 
@@ -676,6 +1479,7 @@ describe("useImportExport", () => {
     expect(mockEncryptWithPassword).toHaveBeenCalledWith(
       expect.stringContaining("<sortOfRemoteNG>"),
       "lock-it-down",
+      { iterations: 310000 },
     );
     expect(mockToast.success).toHaveBeenCalledWith(
       expect.stringContaining(".encrypted.xml"),
@@ -684,7 +1488,7 @@ describe("useImportExport", () => {
       "info",
       "Data exported",
       undefined,
-      expect.stringContaining("XML (encrypted)"),
+      expect.stringContaining("XML (encrypted, 310000 PBKDF2 iterations)"),
     );
   });
 
@@ -701,17 +1505,13 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    expect(mockExportCollection).toHaveBeenCalledWith(
-      "col-1",
-      false,
-      undefined,
-    );
+    expect(mockExportCollection).not.toHaveBeenCalled();
     expect(mockEncryptWithPassword).not.toHaveBeenCalled();
     expect(mockLogAction).toHaveBeenCalledWith(
       "info",
       "Data exported",
       undefined,
-      "Exported 2 connections to JSON",
+      "Exported 2 connections from 1 database(s) to JSON",
     );
   });
 
@@ -732,7 +1532,7 @@ describe("useImportExport", () => {
   });
 
   it("handleExport shows error toast when no collection is selected", async () => {
-    mockGetCurrentCollection.mockReturnValueOnce(null);
+    mockGetCurrentCollection.mockReturnValue(null);
     const { result } = renderImportExport();
 
     await act(async () => {
@@ -952,6 +1752,35 @@ describe("useImportExport", () => {
         ciphertext: "legacy-only-ciphertext",
         password: "legacy-only-pass",
       },
+    );
+    expect(result.current.importResult).toMatchObject({
+      success: true,
+      imported: 1,
+    });
+  });
+
+  it("handleFileSelect prompts for WebCrypto payloads even when the filename is plain JSON", async () => {
+    mockIsWebCryptoPayload.mockReturnValue(true);
+    mockDecryptWithPassword.mockResolvedValueOnce('{"connections":[{"id":"secure-1"}]}');
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    mockImportConnections.mockResolvedValueOnce([
+      { id: "secure-1", name: "Secure Import", protocol: "ssh" },
+    ]);
+
+    const { result } = renderImportExport();
+
+    const file = new File(["encrypted-json-envelope"], "renamed.json", {
+      type: "application/json",
+    });
+    const event = {
+      target: { files: [file] },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await selectFileWithPrompt(result, event, ["payload-pass"]);
+
+    expect(mockDecryptWithPassword).toHaveBeenCalledWith(
+      "encrypted-json-envelope",
+      "payload-pass",
     );
     expect(result.current.importResult).toMatchObject({
       success: true,
@@ -1313,6 +2142,7 @@ describe("useImportExport", () => {
 
   it("confirmImport restores VPNs and tunnel chains from encrypted JSON imports", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockIsWebCryptoPayload.mockReturnValueOnce(true);
     mockDecryptWithPassword.mockResolvedValueOnce(
       JSON.stringify({
         vpnConnections: {

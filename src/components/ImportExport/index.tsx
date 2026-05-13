@@ -1,7 +1,8 @@
 import React from "react";
 import { Download, Upload, ArrowLeftRight } from "lucide-react";
 import { useImportExport } from "../../hooks/sync/useImportExport";
-import ExportTab, { type ExportConfig } from "./ExportTab";
+import ExportTab from "./ExportTab";
+import type { ExportConfig } from "./types";
 import ImportTab from "./ImportTab";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
@@ -21,6 +22,15 @@ interface ImportExportProps {
 /* ── Sub-components ──────────────────────────────────────────────── */
 
 const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const selectTab = (tab: typeof TAB_ORDER[number], focus = false) => {
+    mgr.setActiveTab(tab);
+    if (focus) {
+      requestAnimationFrame(() => {
+        document.getElementById(`import-export-tab-${tab}`)?.focus();
+      });
+    }
+  };
+
   const handleKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     tab: typeof TAB_ORDER[number],
@@ -32,20 +42,20 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       case "ArrowRight":
       case "ArrowDown":
         event.preventDefault();
-        mgr.setActiveTab(TAB_ORDER[(currentIndex + 1) % TAB_ORDER.length]);
+        selectTab(TAB_ORDER[(currentIndex + 1) % TAB_ORDER.length], true);
         break;
       case "ArrowLeft":
       case "ArrowUp":
         event.preventDefault();
-        mgr.setActiveTab(TAB_ORDER[(currentIndex - 1 + TAB_ORDER.length) % TAB_ORDER.length]);
+        selectTab(TAB_ORDER[(currentIndex - 1 + TAB_ORDER.length) % TAB_ORDER.length], true);
         break;
       case "Home":
         event.preventDefault();
-        mgr.setActiveTab(TAB_ORDER[0]);
+        selectTab(TAB_ORDER[0], true);
         break;
       case "End":
         event.preventDefault();
-        mgr.setActiveTab(TAB_ORDER[TAB_ORDER.length - 1]);
+        selectTab(TAB_ORDER[TAB_ORDER.length - 1], true);
         break;
       default:
         break;
@@ -61,7 +71,8 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         data-testid="export-tab"
         aria-selected={mgr.activeTab === "export"}
         aria-controls="import-export-panel-export"
-        onClick={() => mgr.setActiveTab("export")}
+        tabIndex={mgr.activeTab === "export" ? 0 : -1}
+        onClick={() => selectTab("export")}
         onKeyDown={(event) => handleKeyDown(event, "export")}
         className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
           mgr.activeTab === "export"
@@ -79,7 +90,8 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         data-testid="import-tab"
         aria-selected={mgr.activeTab === "import"}
         aria-controls="import-export-panel-import"
-        onClick={() => mgr.setActiveTab("import")}
+        tabIndex={mgr.activeTab === "import" ? 0 : -1}
+        onClick={() => selectTab("import")}
         onKeyDown={(event) => handleKeyDown(event, "import")}
         className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
           mgr.activeTab === "import"
@@ -136,15 +148,43 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               connections={mgr.connections}
               config={{
                 format: mgr.exportFormat,
+                scopeMode: mgr.exportScopeMode,
+                selectedDatabaseIds: mgr.selectedExportDatabaseIds,
+                databaseOptions: mgr.exportDatabaseOptions,
+                inclusion: mgr.exportInclusion,
                 includePasswords: mgr.includePasswords,
                 encrypted: mgr.exportEncrypted,
                 password: mgr.exportPassword,
+                keyDerivationIterations: mgr.exportKeyDerivationIterations,
+                includeVpnData: mgr.includeVpnData,
+                includeTunnelChains: mgr.includeTunnelChains,
+                includeTabGroups: mgr.includeTabGroups,
+                includeColorTags: mgr.includeColorTags,
+                strengthSettings: {
+                  showPasswordStrength: mgr.exportSecuritySettings.showPasswordStrength,
+                  showEntropyBits: mgr.exportSecuritySettings.showEntropyBits,
+                  minimumPasswordScore: mgr.exportSecuritySettings.minimumPasswordScore,
+                  enforceMinimumPasswordScore: mgr.exportSecuritySettings.enforceMinimumPasswordScore,
+                  detectCommonPasswords: mgr.exportSecuritySettings.detectCommonPasswords,
+                  detectRepeatedCharacters: mgr.exportSecuritySettings.detectRepeatedCharacters,
+                  detectSequentialPatterns: mgr.exportSecuritySettings.detectSequentialPatterns,
+                  rewardUncommonSymbols: mgr.exportSecuritySettings.rewardUncommonSymbols,
+                  customCommonPasswords: mgr.exportSecuritySettings.customCommonPasswords,
+                },
               }}
               onConfigChange={(update) => {
                 if (update.format !== undefined) mgr.setExportFormat(update.format);
+                if (update.scopeMode !== undefined) mgr.setExportScopeMode(update.scopeMode);
+                if (update.selectedDatabaseIds !== undefined) mgr.setSelectedExportDatabaseIds(update.selectedDatabaseIds);
+                if (update.inclusion !== undefined) mgr.updateExportInclusion(update.inclusion);
                 if (update.includePasswords !== undefined) mgr.setIncludePasswords(update.includePasswords);
                 if (update.encrypted !== undefined) mgr.setExportEncrypted(update.encrypted);
                 if (update.password !== undefined) mgr.setExportPassword(update.password);
+                if (update.keyDerivationIterations !== undefined) mgr.setExportKeyDerivationIterations(update.keyDerivationIterations);
+                if (update.includeVpnData !== undefined) mgr.setIncludeVpnData(update.includeVpnData);
+                if (update.includeTunnelChains !== undefined) mgr.setIncludeTunnelChains(update.includeTunnelChains);
+                if (update.includeTabGroups !== undefined) mgr.setIncludeTabGroups(update.includeTabGroups);
+                if (update.includeColorTags !== undefined) mgr.setIncludeColorTags(update.includeColorTags);
               }}
               isProcessing={mgr.isProcessing}
               handleExport={mgr.handleExport}
