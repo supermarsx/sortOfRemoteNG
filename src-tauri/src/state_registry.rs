@@ -1,6 +1,6 @@
 pub(crate) use crate::*;
 pub(crate) use std::sync::Arc;
-pub(crate) use tauri::Manager;
+pub(crate) use tauri::{Emitter, Manager};
 pub(crate) use tokio::sync::Mutex;
 
 // ── Always-available types (core, sessions, access) ─────────────────
@@ -379,11 +379,21 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     app.manage(api_service.clone());
 
     let api_service_clone = api_service.clone();
+    let app_handle_for_api = app.app_handle().clone();
     println!("About to start REST API server...");
     tauri::async_runtime::spawn(async move {
         println!("Starting API server task...");
         if let Err(err) = Arc::new(api_service_clone).start_server(3001).await {
             eprintln!("Failed to start REST API server: {}", err);
+            // Surface a non-fatal alert to the UI; the app keeps running.
+            let _ = app_handle_for_api.emit(
+                "startup-failure",
+                serde_json::json!({
+                    "component": "rest_api_server",
+                    "port": 3001,
+                    "message": format!("Failed to start REST API server on port 3001: {}", err),
+                }),
+            );
         }
     });
     println!("API server task spawned");

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Download, FileText, Database, Settings, Lock, ShieldCheck, AlertTriangle, KeyRound, FolderTree, Tags, SlidersHorizontal, ChevronDown, ChevronRight, Server, Tag as TagIcon, Palette } from 'lucide-react';
+import { Download, FileText, Database, Settings, Lock, ShieldCheck, AlertTriangle, KeyRound, FolderTree, Tags, SlidersHorizontal, ChevronDown, ChevronRight, Server, Tag as TagIcon, Palette, Search as SearchIcon, Gauge } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PasswordInput, Checkbox, NumberInput, Select } from '../ui/forms';
 import { Connection } from '../../types/connection/connection';
 import type { ExportConfig, ExportConfigUpdate, ExportInclusionConfig } from './types';
 import { analyzePasswordStrength } from '../../hooks/security/usePasswordStrength';
+import { SettingsManager } from '../../utils/settings/settingsManager';
 
 export type { ExportConfig } from './types';
 
@@ -180,6 +181,11 @@ const ExportTab: React.FC<ExportTabProps> = ({
     colorTags: false,
     encryption: false,
   });
+  const [connectionsSearch, setConnectionsSearch] = useState('');
+  const [textTagsSearch, setTextTagsSearch] = useState('');
+  const [colorTagsSearch, setColorTagsSearch] = useState('');
+  const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const toggleSection = (key: keyof typeof sectionsOpen) =>
     setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   const inclusion: ExportInclusionConfig = {
@@ -242,6 +248,19 @@ const ExportTab: React.FC<ExportTabProps> = ({
           next.size === availableTextTags.length ? [] : Array.from(next),
       },
     });
+  };
+
+  const runPbkdf2Benchmark = async () => {
+    setBenchmarkError(null);
+    setIsBenchmarking(true);
+    try {
+      const optimal = await SettingsManager.getInstance().benchmarkKeyDerivation(10);
+      onConfigChange({ keyDerivationIterations: optimal });
+    } catch (err) {
+      setBenchmarkError(err instanceof Error ? err.message : 'Benchmark failed');
+    } finally {
+      setIsBenchmarking(false);
+    }
   };
 
   const toggleColorTagId = (id: string, checked: boolean) => {
@@ -875,10 +894,23 @@ const ExportTab: React.FC<ExportTabProps> = ({
             )
           }
         >
-          <div className="flex items-center justify-end">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
+              />
+              <input
+                type="text"
+                value={connectionsSearch}
+                onChange={(e) => setConnectionsSearch(e.target.value)}
+                placeholder={t('exportTab.connectionsSearch', { defaultValue: 'Search connections…' }) as string}
+                className="sor-form-input-xs w-full pl-7"
+              />
+            </div>
             <button
               type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)]"
+              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
               disabled={selectedConnectionIdSet.size === 0}
               onClick={() => updateInclusion({ includedConnectionIds: [] })}
             >
@@ -891,7 +923,17 @@ const ExportTab: React.FC<ExportTabProps> = ({
             </p>
           ) : (
             <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
-              {selectableConnections.map((connection) => {
+              {selectableConnections
+                .filter((c) => {
+                  const q = connectionsSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    c.name.toLowerCase().includes(q) ||
+                    c.protocol.toLowerCase().includes(q) ||
+                    (c.hostname?.toLowerCase().includes(q) ?? false)
+                  );
+                })
+                .map((connection) => {
                 const checked =
                   selectedConnectionIdSet.size === 0 ||
                   selectedConnectionIdSet.has(connection.id);
@@ -940,10 +982,23 @@ const ExportTab: React.FC<ExportTabProps> = ({
             )
           }
         >
-          <div className="flex items-center justify-end">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
+              />
+              <input
+                type="text"
+                value={textTagsSearch}
+                onChange={(e) => setTextTagsSearch(e.target.value)}
+                placeholder={t('exportTab.textTagsSearch', { defaultValue: 'Search tags…' }) as string}
+                className="sor-form-input-xs w-full pl-7"
+              />
+            </div>
             <button
               type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)]"
+              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
               disabled={selectedTextTagSet.size === 0}
               onClick={() => updateInclusion({ includedTextTags: [] })}
             >
@@ -956,7 +1011,12 @@ const ExportTab: React.FC<ExportTabProps> = ({
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {availableTextTags.map((tag) => {
+              {availableTextTags
+                .filter((tag) => {
+                  const q = textTagsSearch.trim().toLowerCase();
+                  return !q || tag.toLowerCase().includes(q);
+                })
+                .map((tag) => {
                 const checked =
                   selectedTextTagSet.size === 0 || selectedTextTagSet.has(tag);
                 return (
@@ -996,10 +1056,23 @@ const ExportTab: React.FC<ExportTabProps> = ({
             )
           }
         >
-          <div className="flex items-center justify-end">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
+              />
+              <input
+                type="text"
+                value={colorTagsSearch}
+                onChange={(e) => setColorTagsSearch(e.target.value)}
+                placeholder={t('exportTab.colorTagsSearch', { defaultValue: 'Search color tags…' }) as string}
+                className="sor-form-input-xs w-full pl-7"
+              />
+            </div>
             <button
               type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)]"
+              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
               disabled={selectedColorTagIdSet.size === 0}
               onClick={() => updateInclusion({ includedColorTagIds: [] })}
             >
@@ -1012,7 +1085,12 @@ const ExportTab: React.FC<ExportTabProps> = ({
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {availableColorTagIds.map((colorTagId) => {
+              {availableColorTagIds
+                .filter((id) => {
+                  const q = colorTagsSearch.trim().toLowerCase();
+                  return !q || id.toLowerCase().includes(q);
+                })
+                .map((colorTagId) => {
                 const checked =
                   selectedColorTagIdSet.size === 0 ||
                   selectedColorTagIdSet.has(colorTagId);
@@ -1089,20 +1167,42 @@ const ExportTab: React.FC<ExportTabProps> = ({
                   <KeyRound size={14} />
                   <span>{t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}</span>
                 </label>
-                <NumberInput
-                  value={config.keyDerivationIterations}
-                  onChange={(value: number) => onConfigChange({ keyDerivationIterations: value })}
-                  min={10000}
-                  max={5000000}
-                  step={10000}
-                  variant="form"
-                  className="w-full"
-                  data-testid="export-kdf-iterations"
-                  aria-label={t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}
-                />
+                <div className="flex items-center gap-2">
+                  <NumberInput
+                    value={config.keyDerivationIterations}
+                    onChange={(value: number) => onConfigChange({ keyDerivationIterations: value })}
+                    min={10000}
+                    max={5000000}
+                    step={10000}
+                    variant="form"
+                    className="flex-1"
+                    data-testid="export-kdf-iterations"
+                    aria-label={t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}
+                  />
+                  <button
+                    type="button"
+                    onClick={runPbkdf2Benchmark}
+                    disabled={isBenchmarking}
+                    data-testid="export-kdf-benchmark"
+                    className="sor-btn-secondary-sm flex-shrink-0"
+                    title={t('exportTab.benchmarkHint', { defaultValue: 'Run a 10-second benchmark to find the highest iteration count that completes in roughly 10 seconds on this machine.' }) as string}
+                  >
+                    <Gauge size={14} />
+                    <span>
+                      {isBenchmarking
+                        ? t('exportTab.benchmarking', { defaultValue: 'Benchmarking…' })
+                        : t('exportTab.benchmark10s', { defaultValue: 'Benchmark (10s)' })}
+                    </span>
+                  </button>
+                </div>
                 <p className="text-xs text-[var(--color-textMuted)]">
-                  {t('exportTab.iterationsHelp', { defaultValue: 'Higher values make password guessing slower, but export and import take longer.' })}
+                  {t('exportTab.iterationsHelp', { defaultValue: 'Higher values make password guessing slower, but export and import take longer. The benchmark picks the count that runs for ~10 seconds on this machine.' })}
                 </p>
+                {benchmarkError && (
+                  <p className="text-xs text-danger" data-testid="export-kdf-benchmark-error">
+                    {benchmarkError}
+                  </p>
+                )}
               </div>
 
               {config.strengthSettings.showPasswordStrength && (

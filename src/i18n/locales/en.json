@@ -2590,7 +2590,7 @@
   },
   "exportTab": {
     "title": "Export",
-    "description": "Write the contents of one or more open databases out to a file. The exporter walks the chosen scope (current database, selected databases, or all), applies the filters configured below (content types, connection list, text tags, color tags, protocols), and serializes the result into the chosen format. JSON preserves full fidelity — connections, folder structure, tab groups, color-tag palette, VPN and tunnel chain definitions, settings, and optional export / database metadata. XML, mRemoteNG, CSV, TXT, Markdown, HTML and Excel are inventory formats that carry the filtered connection list only. Optional AES-GCM encryption with PBKDF2 key derivation wraps the whole payload using a password you set, and the import side reverses everything cleanly.",
+    "description": "Pick a scope, filter what's included, choose a format, optionally encrypt — then download. JSON keeps full fidelity; other formats carry the filtered connection list only.",
     "totalConnections": "Total Connections",
     "groups": "Groups",
     "totalItems": "Total items",
