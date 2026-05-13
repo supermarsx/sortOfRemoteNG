@@ -29,6 +29,12 @@ export interface ExportInclusionConfig {
   includedTextTags?: string[];
   /** Specific color tag ids to include. Empty array = all colors. */
   includedColorTagIds?: string[];
+  /** Specific proxy profile ids. Empty array = all proxy profiles. */
+  includedProxyProfileIds?: string[];
+  /** Specific proxy chain ids. Empty array = all proxy chains. */
+  includedProxyChainIds?: string[];
+  /** Specific VPN connection ids. Empty array = all VPN connections. */
+  includedVpnConnectionIds?: string[];
 }
 
 export interface ExportConfigUpdate extends Partial<Omit<ExportConfig, 'inclusion'>> {

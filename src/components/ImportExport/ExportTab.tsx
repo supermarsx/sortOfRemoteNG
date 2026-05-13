@@ -6,6 +6,8 @@ import { Connection } from '../../types/connection/connection';
 import type { ExportConfig, ExportConfigUpdate, ExportInclusionConfig } from './types';
 import { analyzePasswordStrength } from '../../hooks/security/usePasswordStrength';
 import { SettingsManager } from '../../utils/settings/settingsManager';
+import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
+import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
 
 export type { ExportConfig } from './types';
 
@@ -179,11 +181,95 @@ const ExportTab: React.FC<ExportTabProps> = ({
     connections: false,
     textTags: false,
     colorTags: false,
+    proxyProfiles: false,
+    proxyChains: false,
+    vpnConnections: false,
     encryption: false,
   });
   const [connectionsSearch, setConnectionsSearch] = useState('');
   const [textTagsSearch, setTextTagsSearch] = useState('');
   const [colorTagsSearch, setColorTagsSearch] = useState('');
+  const [proxyProfilesSearch, setProxyProfilesSearch] = useState('');
+  const [proxyChainsSearch, setProxyChainsSearch] = useState('');
+  const [vpnSearch, setVpnSearch] = useState('');
+  const [vpnConnections, setVpnConnections] = useState<
+    Array<{ id: string; name: string; kind: string }>
+  >([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mgr = ProxyOpenVPNManager.getInstance();
+        const [ovpn, wg] = await Promise.all([
+          mgr.listOpenVPNConnections().catch(() => [] as any[]),
+          mgr.listWireGuardConnections().catch(() => [] as any[]),
+        ]);
+        if (cancelled) return;
+        setVpnConnections([
+          ...ovpn.map((c) => ({ id: c.id, name: c.name, kind: 'OpenVPN' })),
+          ...wg.map((c) => ({ id: c.id, name: c.name, kind: 'WireGuard' })),
+        ]);
+      } catch {
+        // ignore — keep list empty
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const proxyProfiles = React.useMemo(
+    () => proxyCollectionManager.getProfiles(),
+    [],
+  );
+  const proxyChains = React.useMemo(() => proxyCollectionManager.getChains(), []);
+
+  const selectedProxyProfileIdSet = new Set(
+    config.inclusion?.includedProxyProfileIds ?? [],
+  );
+  const selectedProxyChainIdSet = new Set(
+    config.inclusion?.includedProxyChainIds ?? [],
+  );
+  const selectedVpnConnectionIdSet = new Set(
+    config.inclusion?.includedVpnConnectionIds ?? [],
+  );
+
+  const toggleProxyProfileId = (id: string, checked: boolean) => {
+    const next = new Set(selectedProxyProfileIdSet);
+    if (checked) next.add(id);
+    else next.delete(id);
+    onConfigChange({
+      inclusion: {
+        includedProxyProfileIds:
+          next.size === proxyProfiles.length ? [] : Array.from(next),
+      },
+    });
+  };
+
+  const toggleProxyChainId = (id: string, checked: boolean) => {
+    const next = new Set(selectedProxyChainIdSet);
+    if (checked) next.add(id);
+    else next.delete(id);
+    onConfigChange({
+      inclusion: {
+        includedProxyChainIds:
+          next.size === proxyChains.length ? [] : Array.from(next),
+      },
+    });
+  };
+
+  const toggleVpnConnectionId = (id: string, checked: boolean) => {
+    const next = new Set(selectedVpnConnectionIdSet);
+    if (checked) next.add(id);
+    else next.delete(id);
+    onConfigChange({
+      inclusion: {
+        includedVpnConnectionIds:
+          next.size === vpnConnections.length ? [] : Array.from(next),
+      },
+    });
+  };
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const toggleSection = (key: keyof typeof sectionsOpen) =>
@@ -1109,6 +1195,254 @@ const ExportTab: React.FC<ExportTabProps> = ({
                   </label>
                 );
               })}
+            </div>
+          )}
+        </AccordionSection>
+
+        <AccordionSection
+          id="export-proxy-profiles"
+          title={t('exportTab.proxyProfilesTitle', { defaultValue: 'Specific proxy profiles' })}
+          description={t('exportTab.proxyProfilesDescription', { defaultValue: 'Restrict the export to specific saved proxy profiles. Leave empty to include them all.' })}
+          icon={Server}
+          open={sectionsOpen.proxyProfiles}
+          onToggle={() => toggleSection('proxyProfiles')}
+          dataTestId="export-proxy-profiles-section"
+          badge={
+            selectedProxyProfileIdSet.size > 0 ? (
+              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
+                {selectedProxyProfileIdSet.size}
+              </span>
+            ) : (
+              <span className="text-[var(--color-textMuted)]">all</span>
+            )
+          }
+        >
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
+              <input
+                type="text"
+                value={proxyProfilesSearch}
+                onChange={(e) => setProxyProfilesSearch(e.target.value)}
+                placeholder={t('exportTab.proxyProfilesSearch', { defaultValue: 'Search proxy profiles…' }) as string}
+                className="sor-form-input-xs w-full pl-7"
+              />
+            </div>
+            <button
+              type="button"
+              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
+              disabled={selectedProxyProfileIdSet.size === 0}
+              onClick={() => updateInclusion({ includedProxyProfileIds: [] })}
+            >
+              {t('exportTab.proxyProfilesClear', { defaultValue: 'Include all profiles' })}
+            </button>
+          </div>
+          {proxyProfiles.length === 0 ? (
+            <p className="text-xs text-[var(--color-textMuted)]">
+              {t('exportTab.proxyProfilesEmpty', { defaultValue: 'No saved proxy profiles yet.' })}
+            </p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
+              {proxyProfiles
+                .filter((p) => {
+                  const q = proxyProfilesSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    p.name.toLowerCase().includes(q) ||
+                    (p.type ?? '').toLowerCase().includes(q) ||
+                    (p.host ?? '').toLowerCase().includes(q)
+                  );
+                })
+                .map((profile) => {
+                  const checked =
+                    selectedProxyProfileIdSet.size === 0 ||
+                    selectedProxyProfileIdSet.has(profile.id);
+                  return (
+                    <label
+                      key={profile.id}
+                      className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onChange={(value: boolean) => toggleProxyProfileId(profile.id, value)}
+                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                        aria-label={profile.name}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-[var(--color-text)]">
+                          {profile.name}
+                        </span>
+                        <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
+                          {(profile.type ?? '').toUpperCase()}
+                          {profile.host ? ` — ${profile.host}` : ''}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+            </div>
+          )}
+        </AccordionSection>
+
+        <AccordionSection
+          id="export-proxy-chains"
+          title={t('exportTab.proxyChainsTitle', { defaultValue: 'Specific proxy chains' })}
+          description={t('exportTab.proxyChainsDescription', { defaultValue: 'Restrict the export to specific saved proxy chains. Leave empty to include them all.' })}
+          icon={FolderTree}
+          open={sectionsOpen.proxyChains}
+          onToggle={() => toggleSection('proxyChains')}
+          dataTestId="export-proxy-chains-section"
+          badge={
+            selectedProxyChainIdSet.size > 0 ? (
+              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
+                {selectedProxyChainIdSet.size}
+              </span>
+            ) : (
+              <span className="text-[var(--color-textMuted)]">all</span>
+            )
+          }
+        >
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
+              <input
+                type="text"
+                value={proxyChainsSearch}
+                onChange={(e) => setProxyChainsSearch(e.target.value)}
+                placeholder={t('exportTab.proxyChainsSearch', { defaultValue: 'Search proxy chains…' }) as string}
+                className="sor-form-input-xs w-full pl-7"
+              />
+            </div>
+            <button
+              type="button"
+              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
+              disabled={selectedProxyChainIdSet.size === 0}
+              onClick={() => updateInclusion({ includedProxyChainIds: [] })}
+            >
+              {t('exportTab.proxyChainsClear', { defaultValue: 'Include all chains' })}
+            </button>
+          </div>
+          {proxyChains.length === 0 ? (
+            <p className="text-xs text-[var(--color-textMuted)]">
+              {t('exportTab.proxyChainsEmpty', { defaultValue: 'No saved proxy chains yet.' })}
+            </p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
+              {proxyChains
+                .filter((c) => {
+                  const q = proxyChainsSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return c.name.toLowerCase().includes(q);
+                })
+                .map((chain) => {
+                  const checked =
+                    selectedProxyChainIdSet.size === 0 ||
+                    selectedProxyChainIdSet.has(chain.id);
+                  return (
+                    <label
+                      key={chain.id}
+                      className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onChange={(value: boolean) => toggleProxyChainId(chain.id, value)}
+                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                        aria-label={chain.name}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-[var(--color-text)]">
+                          {chain.name}
+                        </span>
+                        <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
+                          {(chain.layers?.length ?? 0)} {(chain.layers?.length ?? 0) === 1 ? 'layer' : 'layers'}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+            </div>
+          )}
+        </AccordionSection>
+
+        <AccordionSection
+          id="export-vpn-connections"
+          title={t('exportTab.vpnConnectionsTitle', { defaultValue: 'Specific VPN connections' })}
+          description={t('exportTab.vpnConnectionsDescription', { defaultValue: 'Restrict the export to specific OpenVPN or WireGuard connections. Leave empty to include them all.' })}
+          icon={Server}
+          open={sectionsOpen.vpnConnections}
+          onToggle={() => toggleSection('vpnConnections')}
+          dataTestId="export-vpn-connections-section"
+          badge={
+            selectedVpnConnectionIdSet.size > 0 ? (
+              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
+                {selectedVpnConnectionIdSet.size}
+              </span>
+            ) : (
+              <span className="text-[var(--color-textMuted)]">all</span>
+            )
+          }
+        >
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
+              <input
+                type="text"
+                value={vpnSearch}
+                onChange={(e) => setVpnSearch(e.target.value)}
+                placeholder={t('exportTab.vpnConnectionsSearch', { defaultValue: 'Search VPN connections…' }) as string}
+                className="sor-form-input-xs w-full pl-7"
+              />
+            </div>
+            <button
+              type="button"
+              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
+              disabled={selectedVpnConnectionIdSet.size === 0}
+              onClick={() => updateInclusion({ includedVpnConnectionIds: [] })}
+            >
+              {t('exportTab.vpnConnectionsClear', { defaultValue: 'Include all VPN connections' })}
+            </button>
+          </div>
+          {vpnConnections.length === 0 ? (
+            <p className="text-xs text-[var(--color-textMuted)]">
+              {t('exportTab.vpnConnectionsEmpty', { defaultValue: 'No VPN connections saved yet.' })}
+            </p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
+              {vpnConnections
+                .filter((v) => {
+                  const q = vpnSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    v.name.toLowerCase().includes(q) ||
+                    v.kind.toLowerCase().includes(q)
+                  );
+                })
+                .map((vpn) => {
+                  const checked =
+                    selectedVpnConnectionIdSet.size === 0 ||
+                    selectedVpnConnectionIdSet.has(vpn.id);
+                  return (
+                    <label
+                      key={vpn.id}
+                      className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onChange={(value: boolean) => toggleVpnConnectionId(vpn.id, value)}
+                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                        aria-label={vpn.name}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-[var(--color-text)]">
+                          {vpn.name}
+                        </span>
+                        <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
+                          {vpn.kind}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
             </div>
           )}
         </AccordionSection>
