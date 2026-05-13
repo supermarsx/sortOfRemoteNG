@@ -28,6 +28,8 @@ pub fn is_command(command: &str) -> bool {
             | "mrng_get_last_export"
             | "mrng_set_password"
             | "mrng_set_kdf_iterations"
+            | "mrng_detect_encryption"
+            | "mrng_encrypt_document"
             | "ts_get_config"
             | "ts_set_config"
             | "ts_open_server"
@@ -495,6 +497,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // mRemoteNG commands — Configuration
         mremoteng_dedicated_commands::mrng_set_password,
         mremoteng_dedicated_commands::mrng_set_kdf_iterations,
+        // mRemoteNG commands — Encryption helpers
+        mremoteng_dedicated_commands::mrng_detect_encryption,
+        mremoteng_dedicated_commands::mrng_encrypt_document,
         // Terminal Services commands — Config
         termserv_commands::ts_get_config,
         termserv_commands::ts_set_config,

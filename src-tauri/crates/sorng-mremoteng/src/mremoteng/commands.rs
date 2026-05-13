@@ -33,6 +33,22 @@ pub async fn mrng_detect_encryption(xml_content: String) -> Result<EncryptionInf
     super::service::MremotengService::detect_encryption(&xml_content).map_err(|e| e.to_string())
 }
 
+/// Encrypt a plaintext payload using mRemoteNG's native AES-256-GCM +
+/// PBKDF2 scheme. Returns the base64 envelope that mRemoteNG expects.
+///
+/// Used by the frontend export pipeline when the user picks the
+/// `mremoteng` export format with encryption enabled so the file
+/// imports back into mRemoteNG without a translation step.
+#[tauri::command]
+pub async fn mrng_encrypt_document(
+    plaintext: String,
+    password: String,
+    iterations: Option<u32>,
+) -> Result<String, String> {
+    let iters = iterations.unwrap_or(1000);
+    super::encryption::encrypt(&plaintext, &password, iters).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn mrng_validate_xml_detailed(xml_content: String) -> Result<Value, String> {
     let svc = super::service::MremotengService::new();

@@ -21,6 +21,10 @@ import {
   isWebCryptoPayload,
   normalizePbkdf2Iterations,
 } from '../../utils/crypto/webCryptoAes';
+import {
+  encryptExport,
+  type ExportFormat,
+} from '../../utils/crypto/exportEncryption';
 import { analyzePasswordStrength } from '../security/usePasswordStrength';
 import {
   defaultExportSecuritySettings,
@@ -105,6 +109,8 @@ interface ExportDatabaseDataset {
 interface ExportSidecars {
   vpnConnections?: ImportVpnData;
   tunnelChainTemplates?: ImportResult['tunnelChainTemplates'];
+  proxyProfiles?: ReturnType<typeof proxyCollectionManager.getProfiles>;
+  proxyChains?: ReturnType<typeof proxyCollectionManager.getChains>;
 }
 
 interface ExportBuildResult {
@@ -386,11 +392,28 @@ const filterConnectionsForExport = (
   if (!inclusion.includeConnections) return [];
 
   const includedProtocolSet = getIncludedProtocolSet(inclusion);
+  const includedConnectionIdSet =
+    (inclusion.includedConnectionIds ?? []).length > 0
+      ? new Set(inclusion.includedConnectionIds)
+      : null;
+  const includedTextTagSet =
+    (inclusion.includedTextTags ?? []).length > 0
+      ? new Set(inclusion.includedTextTags)
+      : null;
+  const includedColorTagIdSet =
+    (inclusion.includedColorTagIds ?? []).length > 0
+      ? new Set(inclusion.includedColorTagIds)
+      : null;
   const connectionsById = new Map(connections.map((connection) => [connection.id, connection]));
   const leafConnections = connections.filter(
     (connection) =>
       !connection.isGroup &&
-      (!includedProtocolSet || includedProtocolSet.has(connection.protocol)),
+      (!includedProtocolSet || includedProtocolSet.has(connection.protocol)) &&
+      (!includedConnectionIdSet || includedConnectionIdSet.has(connection.id)) &&
+      (!includedTextTagSet ||
+        (connection.tags ?? []).some((tag) => includedTextTagSet.has(tag))) &&
+      (!includedColorTagIdSet ||
+        (connection.colorTag != null && includedColorTagIdSet.has(connection.colorTag))),
   );
   const leafIds = new Set(leafConnections.map((connection) => connection.id));
   let keptFolderIds = new Set<string>();
@@ -1288,16 +1311,53 @@ export function useImportExport({
           proxyMgr.listZeroTierConnections(),
         ]);
 
+      const includedVpnIds =
+        (exportInclusion.includedVpnConnectionIds ?? []).length > 0
+          ? new Set(exportInclusion.includedVpnConnectionIds)
+          : null;
+      const keepVpn = <T extends { id?: string | null }>(items: T[]): T[] =>
+        includedVpnIds == null
+          ? items
+          : items.filter((item) => item.id != null && includedVpnIds.has(item.id));
+
       sidecars.vpnConnections = {
-        openvpn: vpnOpenVPN.status === 'fulfilled' ? vpnOpenVPN.value : [],
-        wireguard: vpnWireGuard.status === 'fulfilled' ? vpnWireGuard.value : [],
-        tailscale: vpnTailscale.status === 'fulfilled' ? vpnTailscale.value : [],
-        zerotier: vpnZeroTier.status === 'fulfilled' ? vpnZeroTier.value : [],
+        openvpn: keepVpn(vpnOpenVPN.status === 'fulfilled' ? vpnOpenVPN.value : []),
+        wireguard: keepVpn(vpnWireGuard.status === 'fulfilled' ? vpnWireGuard.value : []),
+        tailscale: keepVpn(vpnTailscale.status === 'fulfilled' ? vpnTailscale.value : []),
+        zerotier: keepVpn(vpnZeroTier.status === 'fulfilled' ? vpnZeroTier.value : []),
       };
     }
 
     if (includeTunnelChains) {
-      sidecars.tunnelChainTemplates = proxyCollectionManager.getTunnelChains();
+      const includedChainIds =
+        (exportInclusion.includedProxyChainIds ?? []).length > 0
+          ? new Set(exportInclusion.includedProxyChainIds)
+          : null;
+      const allChains = proxyCollectionManager.getTunnelChains();
+      sidecars.tunnelChainTemplates = includedChainIds
+        ? allChains.filter((chain) => includedChainIds.has(chain.id))
+        : allChains;
+    }
+
+    const includedProxyProfileIds =
+      (exportInclusion.includedProxyProfileIds ?? []).length > 0
+        ? new Set(exportInclusion.includedProxyProfileIds)
+        : null;
+    const includedProxyChainIds =
+      (exportInclusion.includedProxyChainIds ?? []).length > 0
+        ? new Set(exportInclusion.includedProxyChainIds)
+        : null;
+    if (includedProxyProfileIds || includedProxyChainIds) {
+      // Stash proxy collections in the sidecar payload so the exporter
+      // picks them up alongside everything else.
+      const allProfiles = proxyCollectionManager.getProfiles();
+      const allChains = proxyCollectionManager.getChains();
+      sidecars.proxyProfiles = includedProxyProfileIds
+        ? allProfiles.filter((p) => includedProxyProfileIds.has(p.id))
+        : allProfiles;
+      sidecars.proxyChains = includedProxyChainIds
+        ? allChains.filter((c) => includedProxyChainIds.has(c.id))
+        : allChains;
     }
 
     return sidecars;
@@ -1894,10 +1954,45 @@ ${tableRows}
       }
 
       if (shouldUsePasswordEncryption) {
-        content = await encryptWithPassword(content, exportPassword, {
+        const payloadBytes = new TextEncoder().encode(content);
+        const result = await encryptExport(exportFormat as ExportFormat, {
+          payload: payloadBytes,
+          payloadString: content,
+          password: exportPassword,
           iterations: normalizedExportIterations,
         });
-        filename = filename.replace(/\.[^.]+$/, '.encrypted$&');
+        // The dispatcher may swap mime / extension when it falls back
+        // (e.g. OOXML missing → AES-GCM JSON envelope) or finalize the
+        // native filename (e.g. mRemoteNG returns the XML envelope).
+        if (result.mimeType) mimeType = result.mimeType;
+        if (result.extension) {
+          filename = filename.replace(/\.[^.]+$/, '') + result.extension;
+        } else {
+          filename = filename.replace(/\.[^.]+$/, '.encrypted$&');
+        }
+        if (result.warning) {
+          toast.warning(result.warning);
+        }
+        const encryptedBlob = new Blob([result.bytes as unknown as BlobPart], {
+          type: mimeType,
+        });
+        const url = URL.createObjectURL(encryptedBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success(`Exported successfully: ${filename}`);
+        settingsManager.logAction(
+          'info',
+          'Data exported',
+          undefined,
+          `Exported ${datasets.reduce((count, dataset) => count + dataset.connections.length, 0)} connections from ${datasets.length} database(s) to ${exportFormat.toUpperCase()} (encrypted via ${result.scheme}, ${normalizedExportIterations} PBKDF2 iterations)`,
+        );
+        setIsProcessing(false);
+        return;
       }
 
       downloadFile(content, filename, mimeType);
