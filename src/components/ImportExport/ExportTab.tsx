@@ -443,18 +443,68 @@ const ExportTab: React.FC<ExportTabProps> = ({
       ? [t('exportTab.warningSingleDatabaseFormat')]
       : []),
   ];
-  const formatOptions = [
-    { value: 'json' as const, label: 'JSON', icon: FileText, desc: t('exportTab.formatJson') },
-    { value: 'xml' as const, label: 'XML', icon: Database, desc: t('exportTab.formatXml') },
-    { value: 'csv' as const, label: 'CSV', icon: Settings, desc: t('exportTab.formatCsv') },
-    { value: 'txt' as const, label: 'TXT', icon: FileText, desc: t('exportTab.formatTxt') },
-    { value: 'markdown' as const, label: 'Markdown', icon: FileText, desc: t('exportTab.formatMarkdown') },
-    { value: 'html' as const, label: 'HTML', icon: FileText, desc: t('exportTab.formatHtml') },
-    { value: 'excel' as const, label: 'Excel', icon: Settings, desc: t('exportTab.formatExcel') },
-    { value: 'mremoteng' as const, label: 'XML - mRemoteNG compatible', icon: Database, desc: t('exportTab.formatMRemoteNG') },
+  type FormatGroup = 'native' | 'readable' | 'mremoteng';
+  type EncryptionScheme = 'aes-gcm' | 'aes-cbc' | 'office' | 'mremoteng';
+  interface FormatOption {
+    value: ExportConfig['format'];
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    desc: string;
+    group: FormatGroup;
+    encryption: EncryptionScheme;
+  }
+
+  const formatOptions: FormatOption[] = [
+    // Native sortOfRemoteNG file formats — full-fidelity, AES-GCM envelope.
+    { value: 'json', label: 'JSON', icon: FileText, desc: t('exportTab.formatJson'), group: 'native', encryption: 'aes-gcm' },
+    { value: 'xml', label: 'XML', icon: Database, desc: t('exportTab.formatXml'), group: 'native', encryption: 'aes-gcm' },
+    { value: 'csv', label: 'CSV', icon: Settings, desc: t('exportTab.formatCsv'), group: 'native', encryption: 'aes-gcm' },
+    // Readable / inventory formats — simple AES-CBC for the text outputs,
+    // OOXML password protection for Excel.
+    { value: 'txt', label: 'TXT', icon: FileText, desc: t('exportTab.formatTxt'), group: 'readable', encryption: 'aes-cbc' },
+    { value: 'markdown', label: 'Markdown', icon: FileText, desc: t('exportTab.formatMarkdown'), group: 'readable', encryption: 'aes-cbc' },
+    { value: 'html', label: 'HTML', icon: FileText, desc: t('exportTab.formatHtml'), group: 'readable', encryption: 'aes-cbc' },
+    { value: 'excel', label: 'Excel', icon: Settings, desc: t('exportTab.formatExcel'), group: 'readable', encryption: 'office' },
+    // Foreign-tool target.
+    { value: 'mremoteng', label: 'XML - mRemoteNG compatible', icon: Database, desc: t('exportTab.formatMRemoteNG'), group: 'mremoteng', encryption: 'mremoteng' },
   ];
   const selectedFormat = formatOptions.find((format) => format.value === config.format) ?? formatOptions[0];
   const SelectedFormatIcon = selectedFormat.icon;
+
+  const formatGroups: Array<{
+    id: FormatGroup;
+    label: string;
+    description: string;
+  }> = [
+    {
+      id: 'native',
+      label: t('exportTab.formatGroupNativeTitle', { defaultValue: 'Native sortOfRemoteNG formats' }) as string,
+      description: t('exportTab.formatGroupNativeDescription', { defaultValue: 'Full-fidelity round-trip. Supports the full AES-GCM + PBKDF2 envelope when encrypted.' }) as string,
+    },
+    {
+      id: 'readable',
+      label: t('exportTab.formatGroupReadableTitle', { defaultValue: 'Readable / plain exports' }) as string,
+      description: t('exportTab.formatGroupReadableDescription', { defaultValue: 'Inventory list only, intended for humans or spreadsheets. Text outputs use a simple AES envelope; Excel uses the standard XLSX password (OOXML).' }) as string,
+    },
+    {
+      id: 'mremoteng',
+      label: t('exportTab.formatGroupMRemoteNGTitle', { defaultValue: 'mRemoteNG native' }) as string,
+      description: t('exportTab.formatGroupMRemoteNGDescription', { defaultValue: 'Targets mRemoteNG\'s own .xml format. Uses mRemoteNG\'s native password scheme when encrypted, so the file imports back into mRemoteNG cleanly.' }) as string,
+    },
+  ];
+
+  const encryptionSchemeLabel = (scheme: EncryptionScheme): string => {
+    switch (scheme) {
+      case 'aes-gcm':
+        return t('exportTab.encScheme.aesGcm', { defaultValue: 'AES-GCM + PBKDF2' }) as string;
+      case 'aes-cbc':
+        return t('exportTab.encScheme.aesCbc', { defaultValue: 'AES (simple)' }) as string;
+      case 'office':
+        return t('exportTab.encScheme.office', { defaultValue: 'XLSX password (OOXML)' }) as string;
+      case 'mremoteng':
+        return t('exportTab.encScheme.mremoteng', { defaultValue: 'mRemoteNG native' }) as string;
+    }
+  };
   const strength = analyzePasswordStrength(config.password, {
     detectCommonPasswords: config.strengthSettings.detectCommonPasswords,
     detectRepeatedCharacters: config.strengthSettings.detectRepeatedCharacters,
@@ -835,36 +885,88 @@ const ExportTab: React.FC<ExportTabProps> = ({
         )}
       </section>
 
-      <div data-testid="export-format">
-        <label htmlFor="export-format-select" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-          {t('exportTab.exportFormat')}
-        </label>
-        <Select
-          id="export-format-select"
-          data-testid="export-format-select"
-          label={t('exportTab.exportFormat')}
-          value={config.format}
-          onChange={(format) => onConfigChange({ format: format as ExportConfig['format'] })}
-          options={formatOptions.map((format) => ({
-            value: format.value,
-            label: format.label,
-            icon: format.icon,
-            title: format.desc,
-          }))}
-          variant="form"
-          className="w-full sm:max-w-md"
-        />
+      <div data-testid="export-format" className="space-y-4">
+        <div>
+          <h4 className="text-sm font-medium text-[var(--color-text)]">
+            {t('exportTab.exportFormat')}
+          </h4>
+          <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
+            {t('exportTab.formatGroupHint', { defaultValue: 'Pick a format. Encryption capability varies by group.' })}
+          </p>
+        </div>
 
-        <div id="export-format-details" data-testid="export-format-details" className="mt-3 flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3">
+        {formatGroups.map((group) => {
+          const optionsInGroup = formatOptions.filter((option) => option.group === group.id);
+          if (optionsInGroup.length === 0) return null;
+          return (
+            <div
+              key={group.id}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3"
+              data-testid={`export-format-group-${group.id}`}
+            >
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)]">
+                  {group.label}
+                </h5>
+                <span className="text-[10px] text-[var(--color-textMuted)]">
+                  {group.description}
+                </span>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label={group.label}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+              >
+                {optionsInGroup.map((option) => {
+                  const Icon = option.icon;
+                  const active = config.format === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      data-testid={`export-format-${option.value}`}
+                      onClick={() => onConfigChange({ format: option.value })}
+                      className={`flex items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
+                        active
+                          ? 'border-primary bg-primary/10 text-[var(--color-text)]'
+                          : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]'
+                      }`}
+                    >
+                      <Icon size={16} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">{option.label}</span>
+                        <span className="mt-0.5 block text-[11px] text-[var(--color-textMuted)]">
+                          {option.desc}
+                        </span>
+                        <span className="mt-1 inline-flex items-center gap-1 text-[10px] text-[var(--color-textMuted)]">
+                          <Lock size={10} />
+                          {encryptionSchemeLabel(option.encryption)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        <div id="export-format-details" data-testid="export-format-details" className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3">
           <SelectedFormatIcon size={20} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
           <div className="min-w-0">
             <div className="text-sm font-medium text-[var(--color-text)]">{selectedFormat.label}</div>
             <div className="mt-1 text-xs text-[var(--color-textSecondary)]">{selectedFormat.desc}</div>
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-[var(--color-surface)] px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--color-textSecondary)]">
+              <Lock size={10} />
+              {encryptionSchemeLabel(selectedFormat.encryption)}
+            </div>
           </div>
         </div>
 
         {compatibilityWarnings.length > 0 && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning" data-testid="export-format-warnings">
+          <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning" data-testid="export-format-warnings">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <ul className="space-y-1">
               {compatibilityWarnings.map((warning) => (
@@ -1467,17 +1569,29 @@ const ExportTab: React.FC<ExportTabProps> = ({
             )
           }
         >
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox
-              checked={config.encrypted}
-              onChange={(val: boolean) => onConfigChange({ encrypted: val })}
-              data-testid="export-encrypt"
-              className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-            />
-            <span className="text-sm text-[var(--color-text)]">
-              {t('exportTab.encryptExport')}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={config.encrypted}
+                onChange={(val: boolean) => onConfigChange({ encrypted: val })}
+                data-testid="export-encrypt"
+                className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+              />
+              <span className="text-sm text-[var(--color-text)]">
+                {t('exportTab.encryptExport')}
+              </span>
+              <span className="rounded-sm bg-success/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-success">
+                {t('exportTab.recommended', { defaultValue: 'Recommended' })}
+              </span>
+            </label>
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+              <Lock size={10} />
+              {encryptionSchemeLabel(selectedFormat.encryption)}
             </span>
-          </label>
+          </div>
+          <p className="text-xs text-[var(--color-textMuted)]">
+            {t('exportTab.encryptionAlwaysOptional', { defaultValue: 'Always optional, always recommended. The scheme used adapts to the chosen export format.' })}
+          </p>
 
           {config.encrypted && (
             <div className="space-y-4">
