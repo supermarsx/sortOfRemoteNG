@@ -25,7 +25,7 @@ import {
   RefreshCw,
   LucideIcon,
 } from "lucide-react";
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig } from "../../types/settings/settings";
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig, defaultExportSecuritySettings } from "../../types/settings/settings";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../ui/display/loadingElement/defaults";
 import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
 
@@ -205,6 +205,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "keyDerivationIterations",
     "autoBenchmarkIterations",
     "benchmarkTimeSeconds",
+    "exportSecurity",
     "totpEnabled",
     "totpIssuer",
     "totpDigits",
@@ -371,6 +372,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   logLevel: "info",
   maxLogEntries: 1000,
   exportEncryption: false,
+  exportSecurity: defaultExportSecuritySettings,
   globalProxy: {
     type: "http",
     host: "",

@@ -9,6 +9,7 @@ import {
   defaultCloudSyncConfig,
   defaultDiagnosticsConfig,
   defaultMemoryWatchdogSettings,
+  defaultExportSecuritySettings,
 } from '../../types/settings/settings';
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../../components/ui/display/loadingElement/defaults';
 import { DEFAULT_MCP_CONFIG } from '../../types/mcp/mcpServer';
@@ -361,6 +362,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   exportEncryption: false,
   exportPassword: undefined,
+  exportSecurity: defaultExportSecuritySettings,
 
   sshTerminal: defaultSSHTerminalConfig,
   sshConnection: defaultSSHConnectionConfig,
@@ -682,6 +684,14 @@ export class SettingsManager {
           mcpServer: {
             ...DEFAULT_SETTINGS.mcpServer,
             ...(storedSettings.mcpServer ?? {}),
+          },
+          exportSecurity: {
+            ...DEFAULT_SETTINGS.exportSecurity,
+            ...(storedSettings.exportSecurity ?? {}),
+            encryptByDefault:
+              storedSettings.exportSecurity?.encryptByDefault ??
+              storedSettings.exportEncryption ??
+              DEFAULT_SETTINGS.exportSecurity.encryptByDefault,
           },
         };
       }

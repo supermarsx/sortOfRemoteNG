@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig, defaultDiagnosticsConfig, defaultMemoryWatchdogSettings } from '../types/settings/settings';
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig, defaultDiagnosticsConfig, defaultMemoryWatchdogSettings, defaultExportSecuritySettings } from '../types/settings/settings';
 import { SettingsManager } from '../utils/settings/settingsManager';
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../components/ui/display/loadingElement/defaults';
 import { DEFAULT_MCP_CONFIG } from '../types/mcp/mcpServer';
@@ -270,7 +270,8 @@ export const defaultSettings: GlobalSettings = {
   logLevel: 'info',
   maxLogEntries: 1000,
   // Export Settings
-  exportEncryption: true,
+  exportEncryption: false,
+  exportSecurity: defaultExportSecuritySettings,
   // SSH Terminal Settings
   sshTerminal: defaultSSHTerminalConfig,
   sshConnection: defaultSSHConnectionConfig,

@@ -67,6 +67,70 @@ export interface QuickConnectHistoryEntry {
   authType?: "password" | "key";
 }
 
+export type ExportFormat =
+  | 'json'
+  | 'xml'
+  | 'csv'
+  | 'txt'
+  | 'markdown'
+  | 'html'
+  | 'excel'
+  | 'mremoteng';
+
+export type ExportPasswordScore = 0 | 1 | 2 | 3 | 4;
+
+export interface ExportSecuritySettings {
+  defaultFormat: ExportFormat;
+  includeConnectionsByDefault: boolean;
+  includePasswordsByDefault: boolean;
+  includeSettingsByDefault: boolean;
+  includeFolderItemsByDefault: boolean;
+  includeEmptyFoldersByDefault: boolean;
+  encryptByDefault: boolean;
+  keyDerivationIterations: number;
+  includeVpnDataByDefault: boolean;
+  includeTunnelChainsByDefault: boolean;
+  includeTabGroupsByDefault: boolean;
+  includeColorTagsByDefault: boolean;
+  includeExportMetadataByDefault: boolean;
+  includeDatabaseMetadataByDefault: boolean;
+  showPasswordStrength: boolean;
+  showEntropyBits: boolean;
+  minimumPasswordScore: ExportPasswordScore;
+  enforceMinimumPasswordScore: boolean;
+  detectCommonPasswords: boolean;
+  detectRepeatedCharacters: boolean;
+  detectSequentialPatterns: boolean;
+  rewardUncommonSymbols: boolean;
+  customCommonPasswords: string;
+}
+
+export const defaultExportSecuritySettings: ExportSecuritySettings = {
+  defaultFormat: 'json',
+  includeConnectionsByDefault: true,
+  includePasswordsByDefault: false,
+  includeSettingsByDefault: true,
+  includeFolderItemsByDefault: true,
+  includeEmptyFoldersByDefault: true,
+  encryptByDefault: false,
+  keyDerivationIterations: 310000,
+  includeVpnDataByDefault: true,
+  includeTunnelChainsByDefault: true,
+  includeTabGroupsByDefault: true,
+  includeColorTagsByDefault: true,
+  includeExportMetadataByDefault: true,
+  includeDatabaseMetadataByDefault: true,
+  showPasswordStrength: true,
+  showEntropyBits: true,
+  minimumPasswordScore: 2,
+  enforceMinimumPasswordScore: false,
+  detectCommonPasswords: true,
+  detectRepeatedCharacters: true,
+  detectSequentialPatterns: true,
+  rewardUncommonSymbols: true,
+  customCommonPasswords: '',
+};
+
 export interface GlobalSettings {
   // General Settings
   language: string;
@@ -407,6 +471,7 @@ export interface GlobalSettings {
   // Export Settings
   exportEncryption: boolean;
   exportPassword?: string;
+  exportSecurity: ExportSecuritySettings;
 
   // SSH Terminal Settings
   sshTerminal: SSHTerminalConfig;

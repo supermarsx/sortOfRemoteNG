@@ -28,6 +28,7 @@ import AutoLockSection from "./security/AutoLockSection";
 import CollectionKeyGenSection from "./security/CollectionKeyGenSection";
 import CredSSPSection from "./security/CredSSPSection";
 import EncryptionAlgorithmSection from "./security/EncryptionAlgorithmSection";
+import ExportSecuritySection from "./security/ExportSecuritySection";
 import KeyDerivationSection from "./security/KeyDerivationSection";
 import PasswordRevealSection from "./security/PasswordRevealSection";
 import SSHKeyGenSection from "./security/SSHKeyGenSection";
@@ -49,6 +50,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       <EncryptionAlgorithmSection settings={settings} updateSettings={updateSettings} mgr={mgr} t={t} />
       <KeyDerivationSection settings={settings} updateSettings={updateSettings} handleBenchmark={handleBenchmark} isBenchmarking={isBenchmarking} t={t} />
+      <ExportSecuritySection settings={settings} updateSettings={updateSettings} />
       <AutoLockSection settings={settings} updateSettings={updateSettings} mgr={mgr} />
       <SSHKeyGenSection mgr={mgr} />
       <CollectionKeyGenSection mgr={mgr} />
