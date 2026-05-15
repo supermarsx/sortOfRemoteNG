@@ -8,7 +8,6 @@ fn categorize_js(name: &str) -> &'static str {
             || n == "react-dom"
             || n == "@hello-pangea/dnd"
             || n == "react-grid-layout"
-            || n == "react-resizable"
             || n == "react-resizable-panels"
             || n == "react-zoom-pan-pinch"
             || n == "react-i18next"
@@ -37,7 +36,6 @@ fn categorize_js(name: &str) -> &'static str {
         n if n == "socks" || n == "ipaddr.js" => "Networking",
         "idb" => "Storage",
         "gifenc" => "Media",
-        "@anthropic-ai/sdk" => "AI",
         // Dev dependencies
         n if n.starts_with("@types/") => "Type Definitions",
         n if n.starts_with("eslint") || n == "@eslint/js" || n == "globals" => "Linting",
@@ -62,7 +60,6 @@ fn categorize_js(name: &str) -> &'static str {
 
 fn production_deps() -> Vec<DependencyInfo> {
     let raw: &[(&str, &str, &str)] = &[
-        ("@anthropic-ai/sdk", "^0.78.0", "MIT"),
         ("@tauri-apps/api", "^2.9.1", "MIT"),
         ("@tauri-apps/plugin-dialog", "^2.4.2", "MIT"),
         ("@tauri-apps/plugin-fs", "^2.4.4", "MIT"),
@@ -89,7 +86,6 @@ fn production_deps() -> Vec<DependencyInfo> {
         ("react-dom", "^18.3.1", "MIT"),
         ("react-grid-layout", "^1.4.4", "MIT"),
         ("react-i18next", "^13.5.0", "MIT"),
-        ("react-resizable", "^3.0.5", "MIT"),
         ("react-resizable-panels", "^0.0.55", "MIT"),
         ("react-zoom-pan-pinch", "^3.1.0", "MIT"),
         ("socks", "^2.7.1", "MIT"),
@@ -127,7 +123,6 @@ fn dev_deps() -> Vec<DependencyInfo> {
         ("@types/react", "^18.3.5", "MIT"),
         ("@types/react-dom", "^18.3.0", "MIT"),
         ("@types/react-grid-layout", "^1.3.5", "MIT"),
-        ("@types/react-resizable", "^3.0.7", "MIT"),
         ("@vitejs/plugin-react", "^5.2.0", "MIT"),
         ("@vitest/coverage-v8", "^3.2.4", "MIT"),
         ("@webgpu/types", "^0.1.69", "BSD-3-Clause"),
