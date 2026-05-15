@@ -49,6 +49,19 @@ pub async fn mrng_encrypt_document(
     super::encryption::encrypt(&plaintext, &password, iters).map_err(|e| e.to_string())
 }
 
+/// Decrypt a base64 mRemoteNG-native envelope produced by
+/// `mrng_encrypt_document` (or by mRemoteNG itself). Inverse of
+/// `mrng_encrypt_document`.
+#[tauri::command]
+pub async fn mrng_decrypt_document(
+    ciphertext: String,
+    password: String,
+    iterations: Option<u32>,
+) -> Result<String, String> {
+    let iters = iterations.unwrap_or(1000);
+    super::encryption::decrypt(&ciphertext, &password, iters).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn mrng_validate_xml_detailed(xml_content: String) -> Result<Value, String> {
     let svc = super::service::MremotengService::new();

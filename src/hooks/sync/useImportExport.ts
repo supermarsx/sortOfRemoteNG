@@ -23,6 +23,10 @@ import {
 } from '../../utils/crypto/webCryptoAes';
 import {
   encryptExport,
+  decryptAesCbcEnvelope,
+  decryptMremotengDocument,
+  isAesCbcEnvelope,
+  isMremotengEncryptedXml,
   type ExportFormat,
 } from '../../utils/crypto/exportEncryption';
 import { analyzePasswordStrength } from '../security/usePasswordStrength';
@@ -2021,10 +2025,14 @@ ${tableRows}
     const errors: string[] = [];
     try {
       let processedContent = content;
+      const isAesCbc = isAesCbcEnvelope(processedContent);
+      const isMremoteng = isMremotengEncryptedXml(processedContent);
       const encryptedWrapper =
         filename.includes('.encrypted.') ||
         filename.split('.').pop()?.toLowerCase() === 'encrypted' ||
-        isWebCryptoPayload(processedContent);
+        isWebCryptoPayload(processedContent) ||
+        isAesCbc ||
+        isMremoteng;
       if (
         encryptedWrapper
       ) {
@@ -2034,8 +2042,25 @@ ${tableRows}
         });
         if (!password) throw new Error('Password required for encrypted file');
         let decrypted: string | null = null;
-        // Try WebCrypto export envelopes first, then legacy salt.iv.ciphertext.
-        if (isWebCryptoPayload(processedContent)) {
+        // Try the AES-CBC text envelope first when the content matches.
+        if (!decrypted && isAesCbc) {
+          try {
+            const bytes = await decryptAesCbcEnvelope(processedContent, password);
+            decrypted = new TextDecoder().decode(bytes);
+          } catch {
+            // fall through
+          }
+        }
+        // Try the mRemoteNG-native scheme via Tauri IPC.
+        if (!decrypted && isMremoteng) {
+          try {
+            decrypted = await decryptMremotengDocument(processedContent, password);
+          } catch {
+            // fall through
+          }
+        }
+        // Try WebCrypto export envelopes next, then legacy salt.iv.ciphertext.
+        if (!decrypted && isWebCryptoPayload(processedContent)) {
           try {
             decrypted = await decryptWithPassword(processedContent, password);
           } catch {

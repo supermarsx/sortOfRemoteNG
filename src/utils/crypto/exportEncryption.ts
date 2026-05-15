@@ -258,3 +258,74 @@ export async function encryptExport(
       return encryptMremoteng(input);
   }
 }
+
+// ─── Detection / decryption on the import side ────────────────────────
+
+/** Returns true when the text looks like the AES-CBC JSON envelope
+ *  produced by encryptExport for TXT / Markdown / HTML formats. */
+export function isAesCbcEnvelope(payload: string): boolean {
+  try {
+    const trimmed = payload.trimStart();
+    if (!trimmed.startsWith('{')) return false;
+    const parsed = JSON.parse(trimmed);
+    return (
+      parsed &&
+      typeof parsed === 'object' &&
+      parsed.algorithm === 'AES-256-CBC' &&
+      parsed.kdf &&
+      parsed.kdf.name === 'PBKDF2' &&
+      typeof parsed.kdf.salt === 'string' &&
+      typeof parsed.iv === 'string' &&
+      typeof parsed.ciphertext === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Returns true when the text matches mRemoteNG's encrypted XML envelope
+ *  (the v2.6+ Confidential="...EncryptionEngine"... format). */
+export function isMremotengEncryptedXml(payload: string): boolean {
+  const head = payload.trimStart().slice(0, 1024);
+  return (
+    head.startsWith('<?xml') &&
+    /Confidential\s*=\s*"True"/i.test(head) &&
+    /EncryptionEngine\s*=/i.test(head)
+  );
+}
+
+/** Decrypt an mRemoteNG-encrypted document via the Tauri IPC. The
+ *  caller is responsible for extracting any required iterations from
+ *  the envelope's XML header before invoking. */
+export async function decryptMremotengDocument(
+  ciphertext: string,
+  password: string,
+  iterations?: number,
+): Promise<string> {
+  const invoke = getInvoke();
+  if (!invoke) {
+    throw new Error('mRemoteNG decryption requires the desktop backend.');
+  }
+  const result = await invoke('mrng_decrypt_document', {
+    ciphertext,
+    password,
+    iterations: iterations != null ? normalizePbkdf2Iterations(iterations) : 1000,
+  });
+  if (typeof result !== 'string') {
+    throw new Error('mRemoteNG decryption returned an unexpected payload.');
+  }
+  return result;
+}
+
+// ─── TODO: Excel OOXML Agile Encryption ──────────────────────────────
+//
+// The `office` scheme currently uses a Tauri IPC `crypto_xlsx_encrypt`
+// that's not yet implemented on the Rust side. Implementing it
+// properly requires the ECMA-376 Agile Encryption spec (AES + SHA-512
+// + custom block layout + HMAC integrity + a Compound File Binary
+// container holding the EncryptionInfo XML and EncryptedPackage
+// stream). A future direction is to wrap the `office-crypto-rs`
+// crate (or equivalent) behind a `crypto_xlsx_encrypt` /
+// `crypto_xlsx_decrypt` IPC pair. Until then the dispatcher detects
+// the missing IPC, falls back to the AES-GCM envelope, and warns the
+// user that the resulting file is not natively openable by Excel.
