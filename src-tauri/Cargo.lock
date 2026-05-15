@@ -5952,8 +5952,6 @@ dependencies = [
 [[package]]
 name = "office-crypto"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f65985b0b4d18bfa5be6a26d178a2028a8711eff265d32557f607698edbdcf0"
 dependencies = [
  "aes 0.8.4",
  "base64 0.22.1",

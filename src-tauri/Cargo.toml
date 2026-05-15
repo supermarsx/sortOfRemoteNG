@@ -515,3 +515,8 @@ ironrdp-connector = { path = "patches/ironrdp-connector" }
 ironrdp-blocking = { path = "patches/ironrdp-blocking" }
 ironrdp-session = { path = "patches/ironrdp-session" }
 ironrdp-dvc = { path = "patches/ironrdp-dvc" }
+# Patched copy of office-crypto 0.2.0 — fixes the segment-boundary
+# off-by-one in `decrypt_ooxml` that corrupted multi-segment plaintexts
+# and underflowed for plaintexts shorter than SEGMENT_LENGTH. See the
+# PATCH comment in patches/office-crypto/src/crypto.rs.
+office-crypto = { path = "patches/office-crypto" }

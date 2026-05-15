@@ -8,19 +8,15 @@
 //!   * `office-crypto` reverses the process for files received from
 //!     Excel users.
 //!
-//! ## Known limitation
-//!
-//! `office-crypto` 0.2.0 has an off-by-one in its segment-boundary
-//! math (`crypto.rs:185`) that corrupts the final segment of any
-//! plaintext whose length isn't exactly `SEGMENT_LENGTH` (4096) bytes.
-//! That means our self round-trip (encrypt with ms-offcrypto-writer →
-//! decrypt with office-crypto) does NOT match the original payload
-//! except for that one specific size, so we don't ship a self-tested
-//! round-trip; the encrypt path is verified to produce a CFB container
-//! that Excel's reader implementation accepts, and the decrypt path
-//! is exposed for files produced by real Excel where the segment
-//! layout may dodge the bug. Upstream tracking issue is filed; once
-//! that lands, the round-trip test below can be re-enabled.
+//! The decrypt path runs against a *patched* copy of `office-crypto`
+//! 0.2.0 vendored at `src-tauri/patches/office-crypto`. Upstream's
+//! `decrypt_ooxml` had an off-by-one that corrupted the trailing
+//! segment of any multi-segment payload and underflowed for plaintexts
+//! shorter than `SEGMENT_LENGTH`; the patched loop condition consumes
+//! every full segment with its matching block index and leaves only
+//! the final partial segment for the last-block path. See the
+//! `PATCH (sortOfRemoteNG)` comment in
+//! `patches/office-crypto/src/crypto.rs`.
 
 use std::io::{Cursor, Write};
 
@@ -51,9 +47,29 @@ pub fn encrypt_xlsx(plaintext: &[u8], password: &str) -> Result<Vec<u8>, String>
 /// Decrypt an agile-encrypted OOXML CFB container back to the plaintext
 /// zip bytes. Mirrors `encrypt_xlsx` and is also the path used when an
 /// import file is a CFB envelope produced by Excel itself.
+///
+/// `office-crypto` skips the agile-encryption verifier hash and will
+/// silently return gibberish bytes on a wrong password. Every OOXML
+/// file is a zip archive, so we add a zip-magic sanity check on the
+/// decrypted output: anything that doesn't start with the
+/// `PK\x03\x04` (or zip-empty `PK\x05\x06`) signature is treated as
+/// a wrong-password failure.
 pub fn decrypt_xlsx(ciphertext: &[u8], password: &str) -> Result<Vec<u8>, String> {
-    decrypt_from_bytes(ciphertext.to_vec(), password)
-        .map_err(|e| format!("xlsx decrypt: {e}"))
+    let plaintext = decrypt_from_bytes(ciphertext.to_vec(), password)
+        .map_err(|e| format!("xlsx decrypt: {e}"))?;
+    if !looks_like_zip(&plaintext) {
+        return Err(
+            "xlsx decrypt: output is not a valid zip archive (wrong password or corrupted envelope)"
+                .to_owned(),
+        );
+    }
+    Ok(plaintext)
+}
+
+fn looks_like_zip(bytes: &[u8]) -> bool {
+    // Local file header (most non-empty archives) or empty archive
+    // central directory end record.
+    bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
 }
 
 #[cfg(test)]
@@ -108,10 +124,48 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // NOTE: A full self round-trip test (encrypt → decrypt → assert
-    // equals plaintext) is intentionally absent because office-crypto
-    // 0.2.0 has a segment-boundary bug that corrupts the trailing
-    // bytes of multi-segment payloads. See the module-level doc-comment
-    // for details. Re-enable a round-trip here once the upstream fix
-    // lands or we vendor a patched copy.
+    /// Full encrypt → decrypt → match round-trip using the patched
+    /// office-crypto. Exercises a multi-segment payload (the bug we
+    /// patched only manifested when there were two or more agile
+    /// segments).
+    #[test]
+    fn round_trip_multi_segment() {
+        let sample = sample_payload();
+        let cipher = encrypt_xlsx(&sample, "correct horse").expect("encrypt");
+        let plain = decrypt_xlsx(&cipher, "correct horse").expect("decrypt");
+        assert_eq!(plain.len(), sample.len(), "decrypted length mismatch");
+        assert_eq!(plain, sample, "decrypted bytes diverge from plaintext");
+    }
+
+    /// Round-trip at the SEGMENT_LENGTH boundary — the size where the
+    /// upstream bug *didn't* manifest, kept as a regression guard.
+    /// Real OOXML payloads always start with the zip local-file header
+    /// `PK\x03\x04`; the decrypt wrapper enforces that as a wrong-
+    /// password sentinel.
+    #[test]
+    fn round_trip_exact_segment_length() {
+        let mut sample = b"PK\x03\x04".to_vec();
+        sample.extend((0..4092u32).map(|i| (i & 0xff) as u8));
+        let cipher = encrypt_xlsx(&sample, "pw").expect("encrypt");
+        let plain = decrypt_xlsx(&cipher, "pw").expect("decrypt");
+        assert_eq!(plain, sample);
+    }
+
+    /// Round-trip with a payload smaller than SEGMENT_LENGTH — the
+    /// case where the upstream loop's `total_size - SEGMENT_LENGTH`
+    /// underflowed and panicked in debug builds.
+    #[test]
+    fn round_trip_sub_segment() {
+        let sample = b"PK\x03\x04tiny xlsx payload".to_vec();
+        let cipher = encrypt_xlsx(&sample, "pw").expect("encrypt");
+        let plain = decrypt_xlsx(&cipher, "pw").expect("decrypt");
+        assert_eq!(plain, sample);
+    }
+
+    #[test]
+    fn wrong_password_fails_round_trip() {
+        let sample = sample_payload();
+        let cipher = encrypt_xlsx(&sample, "right").expect("encrypt");
+        assert!(decrypt_xlsx(&cipher, "wrong").is_err());
+    }
 }
