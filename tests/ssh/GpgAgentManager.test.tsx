@@ -181,9 +181,10 @@ describe("GpgAgentManager", () => {
   describe("Loading & Error States", () => {
     it("should show loading spinner when loading is true", () => {
       hookReturn = { ...makeHookReturn(), loading: true };
-      const { container } = renderComponent();
+      renderComponent();
+      // Modal portals to document.body; look for the spinner there.
       expect(
-        container.querySelector(".sor-gpg-loading .animate-spin"),
+        document.body.querySelector(".sor-gpg-loading .animate-spin"),
       ).toBeTruthy();
     });
 

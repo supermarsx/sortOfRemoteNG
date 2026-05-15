@@ -10,6 +10,10 @@ import type { ManagedSshSecretsController } from "../../src/hooks/connection/use
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
+vi.mock("../../src/contexts/useConnections", () => ({
+  useConnections: () => ({ state: { tabGroups: [] } }),
+}));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback || key,

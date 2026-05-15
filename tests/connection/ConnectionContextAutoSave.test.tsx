@@ -74,7 +74,7 @@ describe('ConnectionProvider auto-save', () => {
     await flushSave();
 
     let stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(stored!.connections).toHaveLength(1);
 
@@ -85,7 +85,7 @@ describe('ConnectionProvider auto-save', () => {
     await flushSave();
 
     stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(stored!.connections).toEqual([]);
   });
@@ -120,7 +120,7 @@ describe('ConnectionProvider auto-save', () => {
     await flushSave();
 
     const stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(stored!.connections).toHaveLength(1);
     expect(stored!.connections[0].name).toBe('renamed');
@@ -150,7 +150,7 @@ describe('ConnectionProvider auto-save', () => {
     await flushSave();
 
     const stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(stored!.connections).toHaveLength(1);
     expect(stored!.connections[0].id).toBe('a1');
@@ -193,7 +193,7 @@ describe('ConnectionProvider auto-save', () => {
     await flushSave();
 
     const stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-collection-${collectionId}`
+      `mremote-database-${collectionId}`
     );
     expect(stored!.connections).toHaveLength(2);
   });

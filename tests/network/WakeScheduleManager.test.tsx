@@ -97,7 +97,7 @@ describe("WakeScheduleManager", () => {
     );
 
     await screen.findByText("Wake Schedule Manager");
-    const backdrop = container.querySelector(".sor-modal-backdrop");
+    const backdrop = document.body.querySelector('.sor-modal-backdrop');
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
 

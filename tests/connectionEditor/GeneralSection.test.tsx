@@ -20,6 +20,20 @@ vi.mock("lucide-react", async (importOriginal) => {
   return { ...actual };
 });
 
+// GeneralSection now reads tabGroups from useConnections() to power its
+// "Default Tab Group" picker. The tests don't care about that picker, so
+// stub the hook with an empty state instead of wrapping every test in a
+// ConnectionProvider.
+vi.mock("../../src/contexts/useConnections", () => ({
+  useConnections: () => ({ state: { tabGroups: [] } }),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (_key: string, fallback?: string) => fallback ?? _key,
+  }),
+}));
+
 describe("GeneralSection validation", () => {
   const mockSetFormData = vi.fn();
 

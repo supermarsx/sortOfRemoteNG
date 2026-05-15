@@ -69,12 +69,12 @@ describe("TotpImportDialog", () => {
 
   it("renders dialog and closes via close button", () => {
     const onClose = vi.fn();
-    const { container } = render(
+    render(
       <TotpImportDialog onImport={() => {}} onClose={onClose} />,
     );
 
     expect(screen.getByText("Import 2FA / TOTP Entries")).toBeInTheDocument();
-    const closeIcon = container.querySelector("button svg.lucide-x");
+    const closeIcon = document.body.querySelector("button svg.lucide-x");
     expect(closeIcon).toBeTruthy();
     if (closeIcon?.parentElement) {
       fireEvent.click(closeIcon.parentElement);
@@ -83,10 +83,10 @@ describe("TotpImportDialog", () => {
   });
 
   it("loads entries from selected file and displays results", async () => {
-    const { container } = render(
+    render(
       <TotpImportDialog onImport={() => {}} onClose={() => {}} />,
     );
-    const fileInput = container.querySelector(
+    const fileInput = document.body.querySelector(
       'input[type="file"]',
     ) as HTMLInputElement;
     expect(fileInput).toBeTruthy();
@@ -103,7 +103,7 @@ describe("TotpImportDialog", () => {
   it("imports selected entries and closes dialog", async () => {
     const onImport = vi.fn();
     const onClose = vi.fn();
-    const { container } = render(
+    render(
       <TotpImportDialog
         onImport={onImport}
         onClose={onClose}
@@ -111,7 +111,7 @@ describe("TotpImportDialog", () => {
       />,
     );
 
-    const fileInput = container.querySelector(
+    const fileInput = document.body.querySelector(
       'input[type="file"]',
     ) as HTMLInputElement;
     const file = new File(["otpauth://totp/Test"], "tokens.txt", {
@@ -135,11 +135,11 @@ describe("TotpImportDialog", () => {
 
   it("closes on backdrop click", () => {
     const onClose = vi.fn();
-    const { container } = render(
+    render(
       <TotpImportDialog onImport={() => {}} onClose={onClose} />,
     );
 
-    const backdrop = container.querySelector(".sor-modal-backdrop");
+    const backdrop = document.body.querySelector('.sor-modal-backdrop');
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
 

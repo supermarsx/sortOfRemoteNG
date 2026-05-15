@@ -149,7 +149,7 @@ describe("TOTPManager", () => {
     const { container } = render(<TOTPManager isOpen onClose={onClose} />);
 
     await screen.findByText("TOTP Authenticator");
-    const backdrop = container.querySelector(".sor-modal-backdrop");
+    const backdrop = document.body.querySelector('.sor-modal-backdrop');
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
 

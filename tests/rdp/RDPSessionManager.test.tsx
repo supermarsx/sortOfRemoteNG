@@ -112,7 +112,7 @@ describe("RDPSessionManager", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    const backdrop = container.querySelector(".sor-modal-backdrop");
+    const backdrop = document.body.querySelector('.sor-modal-backdrop');
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
     expect(onClose).toHaveBeenCalledTimes(2);
