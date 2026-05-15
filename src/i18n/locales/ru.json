@@ -2670,6 +2670,12 @@
   },
   "exportEncryption": {
     "fallbackOoxml": "OOXML password protection is not available in this build; the file was wrapped with AES-GCM instead. Open the .enc.json file with sortOfRemoteNG to decrypt.",
-    "fallbackMremoteng": "mRemoteNG-native encryption is not available in this build; the file was wrapped with AES-GCM instead. mRemoteNG will not be able to open this file directly — open it with sortOfRemoteNG."
+    "fallbackMremoteng": "mRemoteNG-native encryption is not available in this build; the file was wrapped with AES-GCM instead. mRemoteNG will not be able to open this file directly — open it with sortOfRemoteNG.",
+    "decryptErrors": {
+      "wrongPassword": "Failed to decrypt file. The password is likely incorrect.",
+      "corrupted": "Failed to decrypt file. The encrypted envelope is corrupted or in an unrecognized shape.",
+      "unsupported": "This encrypted file uses a scheme that is not available in this build.",
+      "unknown": "Failed to decrypt file."
+    }
   }
 }

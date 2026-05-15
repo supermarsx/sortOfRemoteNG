@@ -157,20 +157,54 @@ export async function decryptAesCbcEnvelope(
 ): Promise<Uint8Array> {
   const text =
     typeof envelopeBytes === 'string' ? envelopeBytes : utf8Decode(envelopeBytes);
-  const parsed = JSON.parse(text) as AesCbcEnvelope;
-  if (parsed.algorithm !== 'AES-256-CBC') {
-    throw new Error('Not an AES-CBC envelope');
+  let parsed: AesCbcEnvelope;
+  try {
+    parsed = JSON.parse(text) as AesCbcEnvelope;
+  } catch (e) {
+    throw new DecryptError('corrupted', 'AES-CBC envelope is not valid JSON', e);
   }
-  const salt = fromBase64(parsed.kdf.salt);
-  const iv = fromBase64(parsed.iv);
-  const ciphertext = fromBase64(parsed.ciphertext);
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    parsed.algorithm !== 'AES-256-CBC' ||
+    !parsed.kdf ||
+    typeof parsed.iv !== 'string' ||
+    typeof parsed.ciphertext !== 'string'
+  ) {
+    throw new DecryptError('corrupted', 'Not a recognized AES-CBC envelope');
+  }
+  let salt: Uint8Array;
+  let iv: Uint8Array;
+  let ciphertext: Uint8Array;
+  try {
+    salt = fromBase64(parsed.kdf.salt);
+    iv = fromBase64(parsed.iv);
+    ciphertext = fromBase64(parsed.ciphertext);
+  } catch (e) {
+    throw new DecryptError(
+      'corrupted',
+      'AES-CBC envelope fields are not valid base64',
+      e,
+    );
+  }
   const key = await deriveKeyCbc(password, salt, parsed.kdf.iterations);
-  const plain = await getCrypto().subtle.decrypt(
-    { name: 'AES-CBC', iv: asBufferSource(iv) },
-    key,
-    asBufferSource(ciphertext),
-  );
-  return new Uint8Array(plain);
+  try {
+    const plain = await getCrypto().subtle.decrypt(
+      { name: 'AES-CBC', iv: asBufferSource(iv) },
+      key,
+      asBufferSource(ciphertext),
+    );
+    return new Uint8Array(plain);
+  } catch (e) {
+    // WebCrypto can't distinguish wrong key from corrupted ciphertext —
+    // both surface as OperationError. Surface as wrong-password since
+    // that's the most actionable category for the user.
+    throw new DecryptError(
+      'wrong-password',
+      'AES-CBC decryption failed; password is likely incorrect',
+      e,
+    );
+  }
 }
 
 async function encryptAesGcm(input: EncryptExportInput): Promise<EncryptExportResult> {
@@ -311,18 +345,94 @@ export async function decryptMremotengDocument(
 ): Promise<string> {
   const invoke = getInvoke();
   if (!invoke) {
-    throw new Error('mRemoteNG decryption requires the desktop backend.');
+    throw new DecryptError(
+      'unsupported',
+      'mRemoteNG decryption requires the desktop backend.',
+    );
   }
-  const result = await invoke('mrng_decrypt_document', {
-    ciphertext,
-    password,
-    iterations: iterations != null ? normalizePbkdf2Iterations(iterations) : 1000,
-  });
+  let result: unknown;
+  try {
+    result = await invoke('mrng_decrypt_document', {
+      ciphertext,
+      password,
+      iterations:
+        iterations != null ? normalizePbkdf2Iterations(iterations) : 1000,
+    });
+  } catch (e) {
+    // The Rust side returns Err on auth-tag mismatch, malformed envelope,
+    // or any IO failure. Most user-visible cases are wrong-password; we
+    // can't reliably distinguish from corruption without parsing the
+    // backend's error string, so default to wrong-password.
+    throw new DecryptError(
+      'wrong-password',
+      `mRemoteNG decryption failed: ${e instanceof Error ? e.message : String(e)}`,
+      e,
+    );
+  }
   if (typeof result !== 'string') {
-    throw new Error('mRemoteNG decryption returned an unexpected payload.');
+    throw new DecryptError(
+      'corrupted',
+      'mRemoteNG decryption returned an unexpected payload.',
+    );
   }
   return result;
 }
+
+// ─── Classified decryption errors ────────────────────────────────────
+
+export type DecryptErrorKind =
+  | 'wrong-password'
+  | 'corrupted'
+  | 'unsupported'
+  | 'unknown';
+
+/**
+ * Classified error thrown by the decrypt helpers in this module so the
+ * import-side UI can pick a targeted message instead of the generic
+ * "Failed to decrypt file" string.
+ *
+ * Categories:
+ *   - 'wrong-password': decryption ran but the auth tag / padding check
+ *     failed. Almost always a bad password; rarely corrupted ciphertext.
+ *   - 'corrupted': envelope shape / encoding is wrong (JSON parse error,
+ *     missing fields, base64 garbage). The password could not even be
+ *     tested.
+ *   - 'unsupported': detector recognized the envelope but no decoder is
+ *     available in this build (e.g. mRemoteNG IPC missing in the web
+ *     build, or an OOXML file landed without the Excel decryptor).
+ *   - 'unknown': bucket for anything we can't classify.
+ */
+export class DecryptError extends Error {
+  readonly kind: DecryptErrorKind;
+  readonly cause?: unknown;
+  constructor(kind: DecryptErrorKind, message: string, cause?: unknown) {
+    super(message);
+    this.name = 'DecryptError';
+    this.kind = kind;
+    this.cause = cause;
+  }
+}
+
+/** i18n key matching the four DecryptError kinds, useful for callers
+ *  that want to surface a localized message. The keys live under
+ *  `exportEncryption.decryptErrors.*` in the locale JSON files. */
+export const DECRYPT_ERROR_I18N_KEYS: Record<DecryptErrorKind, string> = {
+  'wrong-password': 'exportEncryption.decryptErrors.wrongPassword',
+  corrupted: 'exportEncryption.decryptErrors.corrupted',
+  unsupported: 'exportEncryption.decryptErrors.unsupported',
+  unknown: 'exportEncryption.decryptErrors.unknown',
+};
+
+/** Default English copy for each DecryptError kind. */
+export const DECRYPT_ERROR_DEFAULT_MESSAGES: Record<DecryptErrorKind, string> = {
+  'wrong-password':
+    'Failed to decrypt file. The password is likely incorrect.',
+  corrupted:
+    'Failed to decrypt file. The encrypted envelope is corrupted or in an unrecognized shape.',
+  unsupported:
+    'This encrypted file uses a scheme that is not available in this build.',
+  unknown: 'Failed to decrypt file.',
+};
 
 // ─── TODO: Excel OOXML Agile Encryption ──────────────────────────────
 //

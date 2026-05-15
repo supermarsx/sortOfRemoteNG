@@ -28,6 +28,10 @@ import {
   decryptMremotengDocument,
   isAesCbcEnvelope,
   isMremotengEncryptedXml,
+  DecryptError,
+  DECRYPT_ERROR_I18N_KEYS,
+  DECRYPT_ERROR_DEFAULT_MESSAGES,
+  type DecryptErrorKind,
 } from '../../utils/crypto/exportEncryption';
 import { analyzePasswordStrength } from '../security/usePasswordStrength';
 import {
@@ -2046,29 +2050,43 @@ ${tableRows}
         });
         if (!password) throw new Error('Password required for encrypted file');
         let decrypted: string | null = null;
+        // Track the most informative failure across all attempted decoders
+        // so the final error message can pick a targeted category.
+        const failureKinds: DecryptErrorKind[] = [];
+        const recordFailure = (e: unknown) => {
+          if (e instanceof DecryptError) {
+            failureKinds.push(e.kind);
+          } else {
+            // Native Web Crypto / unknown JS errors — most often surface as
+            // OperationError on wrong key. Treat as wrong-password by
+            // default; the corrupted/unsupported buckets are reserved for
+            // cases we can detect structurally.
+            failureKinds.push('wrong-password');
+          }
+        };
         // Try the AES-CBC text envelope first when the content matches.
         if (!decrypted && isAesCbc) {
           try {
             const bytes = await decryptAesCbcEnvelope(processedContent, password);
             decrypted = new TextDecoder().decode(bytes);
-          } catch {
-            // fall through
+          } catch (e) {
+            recordFailure(e);
           }
         }
         // Try the mRemoteNG-native scheme via Tauri IPC.
         if (!decrypted && isMremoteng) {
           try {
             decrypted = await decryptMremotengDocument(processedContent, password);
-          } catch {
-            // fall through
+          } catch (e) {
+            recordFailure(e);
           }
         }
         // Try WebCrypto export envelopes next, then legacy salt.iv.ciphertext.
         if (!decrypted && isWebCryptoPayload(processedContent)) {
           try {
             decrypted = await decryptWithPassword(processedContent, password);
-          } catch {
-            // fall through to legacy
+          } catch (e) {
+            recordFailure(e);
           }
         }
         // Fallback: legacy CryptoJS-format ciphertext decrypted via Rust backend.
@@ -2080,13 +2098,36 @@ ${tableRows}
                 'crypto_legacy_decrypt_cryptojs',
                 { ciphertext: processedContent, password },
               )) as string;
-            } catch {
-              decrypted = null;
+            } catch (e) {
+              recordFailure(e);
             }
+          } else if (failureKinds.length === 0) {
+            // No detector matched and no legacy backend available —
+            // we have nothing to try.
+            failureKinds.push('unsupported');
           }
         }
         if (!decrypted) {
-          throw new Error('Failed to decrypt file. Check your password.');
+          // Pick the most actionable category. Priority order:
+          //   corrupted > unsupported > wrong-password > unknown
+          // because "corrupted" / "unsupported" tell the user the file
+          // itself is the problem, while "wrong-password" hints at a
+          // recoverable user action.
+          const pickKind = (): DecryptErrorKind => {
+            if (failureKinds.includes('corrupted')) return 'corrupted';
+            if (failureKinds.includes('unsupported')) return 'unsupported';
+            if (failureKinds.includes('wrong-password')) return 'wrong-password';
+            // No decoder threw but none produced plaintext either — a
+            // decoder must have silently returned a falsy value. Mirror
+            // the legacy "wrong password" framing since that's the most
+            // recoverable user action.
+            return 'wrong-password';
+          };
+          const kind = pickKind();
+          const message = t(DECRYPT_ERROR_I18N_KEYS[kind], {
+            defaultValue: DECRYPT_ERROR_DEFAULT_MESSAGES[kind],
+          });
+          throw new DecryptError(kind, message);
         }
         processedContent = decrypted;
       }

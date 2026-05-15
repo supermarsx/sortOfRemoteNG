@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
   decryptAesCbcEnvelope,
+  decryptMremotengDocument,
   encryptExport,
   isAesCbcEnvelope,
   isMremotengEncryptedXml,
   schemeForFormat,
+  DecryptError,
+  DECRYPT_ERROR_I18N_KEYS,
+  DECRYPT_ERROR_DEFAULT_MESSAGES,
   type ExportFormat,
 } from '../../src/utils/crypto/exportEncryption';
 import { decryptWithPassword } from '../../src/utils/crypto/webCryptoAes';
@@ -173,6 +177,174 @@ describe('exportEncryption', () => {
           '<?xml version="1.0"?><Connections><Node Name="srv"/></Connections>',
         ),
       ).toBe(false);
+    });
+  });
+
+  describe('DecryptError classification', () => {
+    afterEach(() => {
+      (globalThis as any).__TAURI__ = undefined;
+    });
+
+    it('throws wrong-password DecryptError on AES-CBC bad password', async () => {
+      const result = await encryptExport('txt', {
+        payload: utf8Encode('payload'),
+        password: 'real',
+      });
+      let caught: unknown;
+      try {
+        await decryptAesCbcEnvelope(result.bytes, 'fake');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(DecryptError);
+      expect((caught as DecryptError).kind).toBe('wrong-password');
+    });
+
+    it('throws corrupted DecryptError on AES-CBC envelope with garbage JSON', async () => {
+      let caught: unknown;
+      try {
+        await decryptAesCbcEnvelope('not even json {{{', 'pw');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(DecryptError);
+      expect((caught as DecryptError).kind).toBe('corrupted');
+    });
+
+    it('throws corrupted DecryptError on AES-CBC envelope with missing fields', async () => {
+      let caught: unknown;
+      try {
+        await decryptAesCbcEnvelope(
+          JSON.stringify({ algorithm: 'AES-256-CBC' }),
+          'pw',
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(DecryptError);
+      expect((caught as DecryptError).kind).toBe('corrupted');
+    });
+
+    it('throws unsupported DecryptError when mRemoteNG IPC is missing', async () => {
+      (globalThis as any).__TAURI__ = undefined;
+      let caught: unknown;
+      try {
+        await decryptMremotengDocument('<xml/>', 'pw');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(DecryptError);
+      expect((caught as DecryptError).kind).toBe('unsupported');
+    });
+
+    it('throws wrong-password DecryptError when mRemoteNG IPC rejects', async () => {
+      (globalThis as any).__TAURI__ = {
+        core: {
+          invoke: vi.fn().mockRejectedValue(new Error('tag mismatch')),
+        },
+      };
+      let caught: unknown;
+      try {
+        await decryptMremotengDocument('<xml/>', 'pw');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(DecryptError);
+      expect((caught as DecryptError).kind).toBe('wrong-password');
+    });
+
+    it('exposes localized i18n keys and English defaults for every kind', () => {
+      for (const kind of [
+        'wrong-password',
+        'corrupted',
+        'unsupported',
+        'unknown',
+      ] as const) {
+        expect(DECRYPT_ERROR_I18N_KEYS[kind]).toMatch(
+          /^exportEncryption\.decryptErrors\./,
+        );
+        expect(DECRYPT_ERROR_DEFAULT_MESSAGES[kind]).toBeTruthy();
+      }
+    });
+  });
+
+  describe('Full export → decrypt round-trip', () => {
+    beforeEach(() => {
+      (globalThis as any).__TAURI__ = undefined;
+    });
+
+    it.each([
+      ['json'],
+      ['xml'],
+      ['csv'],
+    ] as Array<[ExportFormat]>)(
+      'native %s format round-trips through AES-GCM',
+      async (format) => {
+        const payload = `{"format":"${format}","items":["one","two"]}`;
+        const result = await encryptExport(format, {
+          payload: utf8Encode(payload),
+          payloadString: payload,
+          password: 'roundtrip-pw',
+          iterations: 25_000,
+        });
+        expect(result.scheme).toBe('aes-gcm');
+        const back = await decryptWithPassword(
+          utf8Decode(result.bytes),
+          'roundtrip-pw',
+        );
+        expect(back).toBe(payload);
+      },
+    );
+
+    it.each([
+      ['txt'],
+      ['markdown'],
+      ['html'],
+    ] as Array<[ExportFormat]>)(
+      'readable %s format round-trips through AES-CBC',
+      async (format) => {
+        const payload = `payload for ${format}\nline two`;
+        const result = await encryptExport(format, {
+          payload: utf8Encode(payload),
+          password: 'pw',
+          iterations: 25_000,
+        });
+        expect(result.scheme).toBe('aes-cbc');
+        const back = await decryptAesCbcEnvelope(result.bytes, 'pw');
+        expect(utf8Decode(back)).toBe(payload);
+      },
+    );
+
+    it('excel fallback round-trips back through AES-GCM (no IPC available)', async () => {
+      const payload = '<xlsx-blob/>';
+      const result = await encryptExport('excel', {
+        payload: utf8Encode(payload),
+        payloadString: payload,
+        password: 'excel-pw',
+      });
+      expect(result.scheme).toBe('aes-gcm');
+      expect(result.warning).toBeTruthy();
+      const back = await decryptWithPassword(
+        utf8Decode(result.bytes),
+        'excel-pw',
+      );
+      expect(back).toBe(payload);
+    });
+
+    it('mremoteng fallback round-trips back through AES-GCM (no IPC available)', async () => {
+      const payload = '<?xml version="1.0"?><Connections/>';
+      const result = await encryptExport('mremoteng', {
+        payload: utf8Encode(payload),
+        payloadString: payload,
+        password: 'mrng-pw',
+      });
+      expect(result.scheme).toBe('aes-gcm');
+      expect(result.warning).toBeTruthy();
+      const back = await decryptWithPassword(
+        utf8Decode(result.bytes),
+        'mrng-pw',
+      );
+      expect(back).toBe(payload);
     });
   });
 });

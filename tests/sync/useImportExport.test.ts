@@ -6,7 +6,13 @@ import type { Connection } from "../../src/types/connection/connection";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (k: string, f?: string) => f || k,
+    t: (k: string, f?: string | { defaultValue?: string }) => {
+      if (typeof f === "string") return f;
+      if (f && typeof f === "object" && typeof f.defaultValue === "string") {
+        return f.defaultValue;
+      }
+      return k;
+    },
   }),
 }));
 
@@ -1826,7 +1832,7 @@ describe("useImportExport", () => {
 
     expect(result.current.importResult).toMatchObject({
       success: false,
-      errors: ["Failed to decrypt file. Check your password."],
+      errors: ["Failed to decrypt file. The password is likely incorrect."],
     });
     expect(mockToast.error).toHaveBeenCalledWith(
       "Import failed. Check the file format and try again.",
@@ -1850,7 +1856,7 @@ describe("useImportExport", () => {
 
     expect(result.current.importResult).toMatchObject({
       success: false,
-      errors: ["Failed to decrypt file. Check your password."],
+      errors: ["Failed to decrypt file. The password is likely incorrect."],
     });
     expect(mockTauriInvoke).toHaveBeenCalledWith(
       "crypto_legacy_decrypt_cryptojs",
@@ -1879,7 +1885,7 @@ describe("useImportExport", () => {
 
     expect(result.current.importResult).toMatchObject({
       success: false,
-      errors: ["Failed to decrypt file. Check your password."],
+      errors: ["Failed to decrypt file. The password is likely incorrect."],
     });
     expect(mockTauriInvoke).toHaveBeenCalledWith(
       "crypto_legacy_decrypt_cryptojs",
