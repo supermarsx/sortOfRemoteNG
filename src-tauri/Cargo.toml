@@ -263,6 +263,10 @@ uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.21"
 cpal = "0.15"
+# rand stays at 0.8 because aes-gcm 0.10 re-exports rand_core 0.6;
+# bumping rand to 0.9 unifies one alias but breaks every aes-gcm
+# `generate_key(&mut rng)` call site with a trait-bound mismatch.
+# Re-evaluate once aes-gcm 0.11 stable ships (currently RC only).
 rand = "0.8"
 dirs = "=6.0.0"
 regex = "1.10"

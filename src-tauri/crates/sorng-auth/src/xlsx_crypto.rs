@@ -23,8 +23,9 @@ use std::io::{Cursor, Write};
 use ms_offcrypto_writer::Ecma376AgileWriter;
 use office_crypto::decrypt_from_bytes;
 // ms-offcrypto-writer is built against rand 0.9; the workspace pins
-// rand to 0.8 for unrelated callers. Pulled in under `rand_v9` so the
-// trait bounds match without disturbing anyone else.
+// rand to 0.8 for unrelated callers (see Cargo.toml note about the
+// aes-gcm 0.10 trait bounds). Pulled in under `rand_v9` so the trait
+// bounds match without disturbing anyone else.
 use rand_v9::rng;
 
 /// Encrypt a plaintext OOXML payload (the unencrypted zip bytes of an

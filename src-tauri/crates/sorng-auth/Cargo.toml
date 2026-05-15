@@ -56,8 +56,9 @@ md-5 = "0.10"
 # OOXML Agile Encryption: maintained pure-Rust pair.
 # ms-offcrypto-writer encrypts; office-crypto decrypts.
 # ms-offcrypto-writer ships against rand 0.9, while the workspace pins
-# rand to 0.8 elsewhere — pull rand 0.9 in under a different name so the
-# trait bounds line up without touching unrelated callers.
+# rand to 0.8 elsewhere (see note in src-tauri/Cargo.toml). Pulled in
+# under `rand_v9` so the trait bounds line up without disturbing the
+# aes-gcm 0.10 call sites that rely on rand 0.8's rand_core 0.6.
 ms-offcrypto-writer = "1.0.7"
 office-crypto = "0.2.0"
 rand_v9 = { package = "rand", version = "0.9" }
