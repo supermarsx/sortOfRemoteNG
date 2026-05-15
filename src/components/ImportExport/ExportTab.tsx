@@ -895,24 +895,26 @@ const ExportTab: React.FC<ExportTabProps> = ({
           label={t('exportTab.exportFormat')}
           value={config.format}
           onChange={(format) => onConfigChange({ format: format as ExportConfig['format'] })}
-          options={formatGroups.flatMap((group) => {
-            const optionsInGroup = formatOptions.filter((option) => option.group === group.id);
-            if (optionsInGroup.length === 0) return [];
-            return [
-              {
-                value: `__group_${group.id}` as const,
-                label: `── ${group.label} ──`,
-                disabled: true,
-                title: group.description,
-              },
-              ...optionsInGroup.map((option) => ({
-                value: option.value,
-                label: option.label,
-                icon: option.icon,
-                title: `${option.desc} • ${encryptionSchemeLabel(option.encryption)}`,
-              })),
-            ];
-          })}
+          options={
+            formatGroups.flatMap((group) => {
+              const optionsInGroup = formatOptions.filter((option) => option.group === group.id);
+              if (optionsInGroup.length === 0) return [];
+              return [
+                {
+                  value: `__group_${group.id}`,
+                  label: `── ${group.label} ──`,
+                  disabled: true,
+                  title: group.description,
+                },
+                ...optionsInGroup.map((option) => ({
+                  value: option.value as string,
+                  label: option.label,
+                  icon: option.icon,
+                  title: `${option.desc} • ${encryptionSchemeLabel(option.encryption)}`,
+                })),
+              ];
+            }) as unknown as Parameters<typeof Select>[0]['options']
+          }
           variant="form"
           className="w-full sm:max-w-md"
         />
@@ -1320,8 +1322,8 @@ const ExportTab: React.FC<ExportTabProps> = ({
                   if (!q) return true;
                   return (
                     p.name.toLowerCase().includes(q) ||
-                    (p.type ?? '').toLowerCase().includes(q) ||
-                    (p.host ?? '').toLowerCase().includes(q)
+                    (p.config?.type ?? '').toLowerCase().includes(q) ||
+                    (p.config?.host ?? '').toLowerCase().includes(q)
                   );
                 })
                 .map((profile) => {
@@ -1344,8 +1346,8 @@ const ExportTab: React.FC<ExportTabProps> = ({
                           {profile.name}
                         </span>
                         <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                          {(profile.type ?? '').toUpperCase()}
-                          {profile.host ? ` — ${profile.host}` : ''}
+                          {(profile.config?.type ?? '').toUpperCase()}
+                          {profile.config?.host ? ` — ${profile.config.host}` : ''}
                         </span>
                       </span>
                     </label>

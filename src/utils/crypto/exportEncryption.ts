@@ -107,7 +107,7 @@ async function deriveKeyCbc(password: string, salt: Uint8Array, iterations: numb
   const subtle = getCrypto().subtle;
   const baseKey = await subtle.importKey(
     'raw',
-    utf8Encode(password),
+    asBufferSource(utf8Encode(password)),
     'PBKDF2',
     false,
     ['deriveKey'],

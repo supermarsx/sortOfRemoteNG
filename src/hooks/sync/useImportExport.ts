@@ -28,7 +28,6 @@ import {
   decryptMremotengDocument,
   isAesCbcEnvelope,
   isMremotengEncryptedXml,
-  type ExportFormat,
 } from '../../utils/crypto/exportEncryption';
 import { analyzePasswordStrength } from '../security/usePasswordStrength';
 import {
@@ -1998,7 +1997,7 @@ ${tableRows}
           'info',
           'Data exported',
           undefined,
-          `Exported ${datasets.reduce((count, dataset) => count + dataset.connections.length, 0)} connections from ${datasets.length} database(s) to ${exportFormat.toUpperCase()} (encrypted via ${result.scheme}, ${normalizedExportIterations} PBKDF2 iterations)`,
+          `Exported ${datasets.reduce((count, dataset) => count + dataset.connections.length, 0)} connections from ${datasets.length} database(s) to ${exportFormat.toUpperCase()} (encrypted, ${normalizedExportIterations} PBKDF2 iterations) [scheme=${result.scheme}]`,
         );
         setIsProcessing(false);
         return;

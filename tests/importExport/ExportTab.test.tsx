@@ -145,7 +145,7 @@ describe("ExportTab", () => {
     selectFormat("Markdown");
     selectFormat("HTML");
     selectFormat("Excel");
-    selectFormat("mRemoteNG");
+    selectFormat("XML - mRemoteNG compatible");
 
     expect(onConfigChange).toHaveBeenCalledWith({ format: "xml" });
     expect(onConfigChange).toHaveBeenCalledWith({ format: "csv" });
@@ -232,6 +232,13 @@ describe("ExportTab", () => {
 
     fireEvent.click(
       screen.getByRole("checkbox", { name: "exportTab.includePasswords" }),
+    );
+    // The encryption accordion is collapsed by default; open it before
+    // interacting with the encrypt checkbox.
+    fireEvent.click(
+      within(screen.getByTestId("export-encryption-section")).getByRole("button", {
+        expanded: false,
+      }),
     );
     fireEvent.click(screen.getByTestId("export-encrypt"));
 

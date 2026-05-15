@@ -859,7 +859,7 @@ describe("Utility modules runtime", () => {
 
     it("DatabaseNotFoundError uses default message", () => {
       const err = new DatabaseNotFoundError();
-      expect(err.message).toBe("Collection not found");
+      expect(err.message).toBe("Database not found");
     });
 
     it("InvalidPasswordError has correct name and message", () => {
