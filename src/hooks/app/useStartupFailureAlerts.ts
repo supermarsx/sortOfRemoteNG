@@ -15,7 +15,7 @@ interface StartupFailurePayload {
  * keeps running; the user just gets told something didn't start.
  */
 export function useStartupFailureAlerts(): void {
-  const toast = useToastContext();
+  const { toast } = useToastContext();
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

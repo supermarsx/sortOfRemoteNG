@@ -1,5 +1,4 @@
 export { BulkConnectionEditor } from "./BulkConnectionEditor";
-export { CollectionSelector } from "./CollectionSelector";
 export { ColorTagManager } from "./ColorTagManager";
 export { ConnectionDiagnostics } from "./ConnectionDiagnostics";
 export { ConnectionEditor } from "./ConnectionEditor";

@@ -164,7 +164,7 @@ describe("MenuSurface", () => {
 
   it("clamps to the viewport and opens flyouts inward near the right edge", async () => {
     setViewport(700, 400);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect() {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
       const x = Number.parseFloat(this.style.left || "0") || 0;
       const y = Number.parseFloat(this.style.top || "0") || 0;
       if (this.getAttribute("data-testid") === "menu-surface") {

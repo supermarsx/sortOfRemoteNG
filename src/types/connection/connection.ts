@@ -205,6 +205,9 @@ export interface Connection {
 
   // WinRM Connection Settings
   winrmSettings?: WinrmConnectionSettings;
+
+  /** Auto-assign new sessions for this connection to this tab group. */
+  defaultTabGroupId?: string;
 }
 
 /**
@@ -1194,8 +1197,6 @@ export interface ConnectionSession {
   group?: string;
   /** Tab group ID (sessions with same tabGroupId are visually grouped) */
   tabGroupId?: string;
-  /** Auto-assign new sessions for this connection to this tab group */
-  defaultTabGroupId?: string;
 
   // Reconnection
   reconnectAttempts?: number;
