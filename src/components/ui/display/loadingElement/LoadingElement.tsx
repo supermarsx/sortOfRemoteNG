@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 import React, { useContext, useMemo, useRef } from 'react';
 import SettingsContext from '../../../../contexts/SettingsContext';
 import type { GlobalSettings } from '../../../../types/settings/settings';

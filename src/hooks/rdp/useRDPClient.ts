@@ -748,7 +748,7 @@ export function useRDPClient(session: ConnectionSession) {
     // disconnect is handled by handleDisconnect, and window detach
     // is handled by useSessionDetach which calls detach_rdp_session
     // before opening the new window.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- reads connection from ref
+   
   }, []);
 
   // ─── Trust accept / reject ─────────────────────────────────────────
@@ -887,7 +887,7 @@ export function useRDPClient(session: ConnectionSession) {
       observer.disconnect();
       window.removeEventListener('resize', rebuild);
     };
-  }, [desktopSize.width]); // eslint-disable-line react-hooks/exhaustive-deps -- rebuild cursor on desktop width change
+  }, [desktopSize.width]);  
 
   // Set initial cursor on connect
   useEffect(() => {

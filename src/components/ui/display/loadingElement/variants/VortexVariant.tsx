@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Vortex variant — a tilted disc of particles spiralling inward toward a
  * bright singularity at the center. Each particle lives on its own phase;

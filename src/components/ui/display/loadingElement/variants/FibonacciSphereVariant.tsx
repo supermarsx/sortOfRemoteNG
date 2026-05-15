@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Fibonacci sphere — golden-angle distribution; dots stay put, a brightness
  * cursor (or several, one per "arm") rolls through the index sequence so the

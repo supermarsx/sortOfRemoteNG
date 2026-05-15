@@ -1,5 +1,5 @@
 import type { SectionProps } from "./types";
-/* eslint-disable react-refresh/only-export-components */
+ 
 import Toggle from "./Toggle";
 import React from "react";
 import { BellStyles, TaskbarFlashModes } from "../../../../types/settings/settings";

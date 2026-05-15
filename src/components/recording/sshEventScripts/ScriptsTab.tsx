@@ -100,7 +100,7 @@ export const ScriptsTab: React.FC<ScriptsTabProps> = ({
                 onClick={() => {
                   const ids = [...bulkSelected];
                   setBulkSelected(new Set());
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                   
                   void Promise.all(ids.map((id) => deleteScript(id)));
                 }}
                 className="text-error hover:text-error"
@@ -111,7 +111,7 @@ export const ScriptsTab: React.FC<ScriptsTabProps> = ({
                 onClick={() => {
                   const ids = [...bulkSelected];
                   setBulkSelected(new Set());
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                   
                   void Promise.all(
                     ids.map((id) => toggleScript(id, true)),
                   );
@@ -124,7 +124,7 @@ export const ScriptsTab: React.FC<ScriptsTabProps> = ({
                 onClick={() => {
                   const ids = [...bulkSelected];
                   setBulkSelected(new Set());
-                  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                   
                   void Promise.all(
                     ids.map((id) => toggleScript(id, false)),
                   );

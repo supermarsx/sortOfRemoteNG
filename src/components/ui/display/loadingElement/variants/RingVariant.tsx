@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Ring variant — pure CSS spinner. Mirrors the legacy ConnectingSpinner ring:
  * a transparent circle with one colored bottom border, rotated by a CSS

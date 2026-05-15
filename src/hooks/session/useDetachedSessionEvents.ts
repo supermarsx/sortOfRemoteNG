@@ -42,7 +42,7 @@ export function useDetachedSessionEvents(
       unlisten?.();
     };
   // Register once — handleCloseRef keeps it current
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: event listener uses ref for current state
+   
   }, []);
 
   // Listen for detached session reattach
@@ -95,7 +95,7 @@ export function useDetachedSessionEvents(
       unlisten?.();
     };
   // Register once — sessionsRef keeps it current
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- dispatch and setActiveSessionId are stable context getters
+   
   }, [dispatch, setActiveSessionId]);
 
   // Clean stale detached-session localStorage entries on app exit

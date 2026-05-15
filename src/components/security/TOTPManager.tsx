@@ -91,7 +91,7 @@ const QRCodeDisplay: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
       Scan QR Code
     </h3>
-    {/* eslint-disable-next-line @next/next/no-img-element */}
+    { }
     <img src={mgr.qrCodeUrl} alt="TOTP QR Code" className="mx-auto mb-4" />
     <p className="text-[var(--color-textSecondary)] text-sm">
       Scan this QR code with your authenticator app (Google Authenticator,

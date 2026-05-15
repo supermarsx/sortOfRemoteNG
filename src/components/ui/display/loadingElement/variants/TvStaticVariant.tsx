@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * TV-static variant — Fibonacci sphere where every dot is independently
  * flickering on a fast random schedule, with a slow signal "band" sweeping

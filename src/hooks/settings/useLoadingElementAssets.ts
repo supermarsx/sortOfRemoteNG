@@ -261,7 +261,7 @@ export function useLoadingElementAssets(): UseLoadingElementAssetsReturn {
           await generate(t);
         } catch (err) {
           // Surface but don't abort the batch.
-          // eslint-disable-next-line no-console
+           
           console.warn(`[loading-element] precompute failed for ${t}:`, err);
         }
       }

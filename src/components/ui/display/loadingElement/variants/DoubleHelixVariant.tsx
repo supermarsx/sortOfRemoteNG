@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Double helix variant — two interleaved spirals on a sphere, offset by π.
  * Strand 1 uses the resolved `color`, strand 2 uses a `secondaryColor`

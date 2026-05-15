@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Pulsing bands variant — latitude rings (denser at the equator) with a set
  * of cosine-shaped band cursors sweeping pole to pole. Each dot picks the

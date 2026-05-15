@@ -168,7 +168,7 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
         // Upload may have already been cleaned up by the backend sweeper, or
         // the network dropped entirely. Log and continue so we propagate the
         // original cause — do not crash on abort-of-abort.
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `[TauriSFTPAdapter] sftp_upload_abort(${uploadId}) failed:`,
           abortErr,
@@ -181,7 +181,7 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
       // Pump the ReadableStream. Each read() may return a chunk of any size;
       // we buffer into `pending` and flush exactly `chunkSize` at a time to
       // match the backend's backpressure contract (4 in-flight chunks).
-      // eslint-disable-next-line no-constant-condition
+       
       while (true) {
         if (signal?.aborted) {
           await bestEffortAbort(new Error("aborted"));

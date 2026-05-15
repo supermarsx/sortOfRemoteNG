@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * WavyDensity — variant ported from .orb-previews/E-wavy-density.html.
  *
@@ -157,11 +158,14 @@ const WavyDensityVariant: FC<VariantRenderProps<'wavyDensity'>> = ({
       }
     });
 
+    // Snapshot the live-set ref so the cleanup tears down the same
+    // dots we registered into, not whatever the next effect installs.
+    const alive = aliveRef.current;
     return () => {
       unsubscribe();
       // Tear down all live dots so we don't leak DOM.
-      for (const d of aliveRef.current) d.remove();
-      aliveRef.current.clear();
+      for (const d of alive) d.remove();
+      alive.clear();
     };
   }, [baseDots, swingDots, chaos, radius, paused, reducedMotion]);
 

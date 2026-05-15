@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Orbital shells variant — atomic-style: glowing nucleus surrounded by
  * three rings on different rotateX/rotateY axes. Each ring has dots
@@ -43,17 +44,23 @@ const OrbitalShellsVariant: React.FC<VariantRenderProps<'orbitalShells'>> = ({
   const ringRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null, HTMLDivElement | null]>([null, null, null]);
   const itemsRef = useRef<RingItem[][]>([[], [], []]);
 
-  const ringColors: [string, string, string] = [color, config.secondaryColor, config.tertiaryColor];
-
   useEffect(() => {
     const sphere = sphereRef.current;
     if (!sphere) return;
+    // Snapshot ringRefs.current up-front so the cleanup uses the same
+    // ring elements we built into, not whatever React assigned later.
+    const ringEls = ringRefs.current;
+    const ringColors: [string, string, string] = [
+      color,
+      config.secondaryColor,
+      config.tertiaryColor,
+    ];
     const radius = (size / 2) * 0.9;
     const n = Math.max(2, Math.floor(config.perShell));
     const dotPx = size / 130;
     const built: RingItem[][] = [[], [], []];
     for (let r = 0; r < 3; r++) {
-      const ringEl = ringRefs.current[r];
+      const ringEl = ringEls[r];
       if (!ringEl) continue;
       ringEl.replaceChildren();
       const rad = radius * (0.55 + r * 0.22);
@@ -86,7 +93,7 @@ const OrbitalShellsVariant: React.FC<VariantRenderProps<'orbitalShells'>> = ({
     }
     itemsRef.current = built;
     return () => {
-      ringRefs.current.forEach(el => el && el.replaceChildren());
+      ringEls.forEach((el) => el && el.replaceChildren());
       itemsRef.current = [[], [], []];
     };
   }, [size, color, config.secondaryColor, config.tertiaryColor, config.perShell]);

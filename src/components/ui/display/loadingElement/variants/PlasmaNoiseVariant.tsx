@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Plasma noise variant — fibonacci-distributed dots whose brightness comes
  * from a 3-layer pseudo-noise field. Two color channels (primary `color`

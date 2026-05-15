@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Aurora bloom — pure CSS. Glassy sphere with four soft color blobs drifting
  * on irregular base periods (11s/14s/17s/13s), an outer halo that breathes

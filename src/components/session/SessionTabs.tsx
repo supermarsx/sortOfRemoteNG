@@ -269,7 +269,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     const ro = new ResizeObserver(handler);
     ro.observe(el);
     return () => { el.removeEventListener('scroll', handler); ro.disconnect(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [updateScrollState, updateThumb, sessions.length]);
 
   const handleTrackMouseDown = useCallback((e: React.MouseEvent) => {

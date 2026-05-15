@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Icosahedron variant — wireframe of 12 vertices and 30 edges, each edge
  * sampled with dots projected back onto the unit sphere. Vertices pulse on

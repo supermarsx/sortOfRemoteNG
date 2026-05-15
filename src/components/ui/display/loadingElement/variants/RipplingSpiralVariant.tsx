@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Rippling spiral variant — a Milleus-style dot spiral wrapped on a sphere
  * whose radial distance is modulated by a sine wave traveling along the

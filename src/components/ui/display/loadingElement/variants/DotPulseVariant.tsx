@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * DotPulse — pure-CSS variant ported from .orb-previews/A-pulsing-core.html.
  *

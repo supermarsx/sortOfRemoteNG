@@ -70,7 +70,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('cancel_check_run', { runId: id });
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.error('cancel_check_run failed', e);
     }
   }, []);
@@ -173,7 +173,7 @@ export function useBulkConnectionCheck(): UseBulkConnectionCheck {
         });
         acceptRunId(id);
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.error('check_all_connections failed', e);
         setError(String(e));
         teardown();

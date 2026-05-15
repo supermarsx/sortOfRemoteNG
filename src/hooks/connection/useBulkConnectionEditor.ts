@@ -225,7 +225,7 @@ export function useBulkConnectionEditor(
         saveEdit();
       }
     },
-    [isOpen, editingCell, onClose, saveEdit, cancelEdit],
+    [isOpen, editingCell, saveEdit, cancelEdit],
   );
 
   useEffect(() => {

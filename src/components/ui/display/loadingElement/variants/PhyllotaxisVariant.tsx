@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Phyllotaxis variant — 2D sunflower bloom inside a circular dish. Dots are
  * placed by rₙ = c·√(i+1), θₙ = i·GA. A brightness wave rolls outward from

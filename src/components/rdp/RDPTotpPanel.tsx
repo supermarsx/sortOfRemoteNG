@@ -76,7 +76,7 @@ function QRDisplay({
   return (
     <div className="p-3 border-b border-[var(--color-border)] flex flex-col items-center space-y-2">
       {qrUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img src={qrUrl} alt="TOTP QR Code" className="w-40 h-40 rounded" />
       ) : (
         <div className="w-40 h-40 bg-[var(--color-border)] rounded flex items-center justify-center">

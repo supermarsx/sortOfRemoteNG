@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Lissajous knot — dots traced along the 3D parametric curve
  *   x = sin(a·t + φx)

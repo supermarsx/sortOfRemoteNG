@@ -1,5 +1,5 @@
 import type { SectionProps } from "./types";
-/* eslint-disable react-refresh/only-export-components */
+ 
 import React from "react";
 import { Zap } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";

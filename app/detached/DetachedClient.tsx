@@ -1192,7 +1192,7 @@ const DetachedWindowLifecycle: React.FC<{
     return () => {
       unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   return null;

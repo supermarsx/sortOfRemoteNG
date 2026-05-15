@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Hologram — pure-CSS variant ported from .orb-previews/C-conic-shimmer.html.
  *

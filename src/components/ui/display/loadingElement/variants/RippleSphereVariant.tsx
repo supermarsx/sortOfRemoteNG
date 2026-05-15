@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
  * Ripple sphere — Fibonacci-distributed dots whose radial distance is
  * displaced by two interfering traveling sine waves:

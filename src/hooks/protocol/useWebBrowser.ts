@@ -519,7 +519,7 @@ export function useWebBrowser(session: ConnectionSession) {
     settings.proxyKeepaliveIntervalSeconds,
     settings.proxyAutoRestart,
     settings.proxyMaxAutoRestarts,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps -- all settings captured in deps
+  ]);  
 
   // Manual proxy restart
   const handleRestartProxy = useCallback(async () => {
