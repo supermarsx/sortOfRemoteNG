@@ -434,15 +434,18 @@ export const DECRYPT_ERROR_DEFAULT_MESSAGES: Record<DecryptErrorKind, string> = 
   unknown: 'Failed to decrypt file.',
 };
 
-// ─── TODO: Excel OOXML Agile Encryption ──────────────────────────────
+// ─── Excel OOXML Agile Encryption ────────────────────────────────────
 //
-// The `office` scheme currently uses a Tauri IPC `crypto_xlsx_encrypt`
-// that's not yet implemented on the Rust side. Implementing it
-// properly requires the ECMA-376 Agile Encryption spec (AES + SHA-512
-// + custom block layout + HMAC integrity + a Compound File Binary
-// container holding the EncryptionInfo XML and EncryptedPackage
-// stream). A future direction is to wrap the `office-crypto-rs`
-// crate (or equivalent) behind a `crypto_xlsx_encrypt` /
-// `crypto_xlsx_decrypt` IPC pair. Until then the dispatcher detects
-// the missing IPC, falls back to the AES-GCM envelope, and warns the
-// user that the resulting file is not natively openable by Excel.
+// The `office` scheme is backed by the Tauri IPC `crypto_xlsx_encrypt`,
+// implemented in `sorng-auth::xlsx_crypto` on top of the
+// `ms-offcrypto-writer` crate. The dispatcher above prefers that IPC
+// when running under Tauri and only falls back to the AES-GCM envelope
+// (with the localized warning) when the IPC isn't reachable — e.g. in
+// the browser dev shell or a build where the command wasn't registered.
+//
+// The companion `crypto_xlsx_decrypt` IPC is also exposed for import
+// flows that need to read a password-protected `.xlsx` file produced
+// by real Excel. The current import pipeline reads files as text and
+// would need a separate binary read path before that command can be
+// wired in; the IPC ships now so the Rust side is ready when the
+// import refactor lands.

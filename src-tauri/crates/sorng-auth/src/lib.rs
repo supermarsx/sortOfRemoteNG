@@ -14,6 +14,7 @@ pub mod cert_auth;
 pub mod cert_gen;
 pub mod cryptojs_compat;
 pub mod legacy_crypto;
+pub mod xlsx_crypto;
 pub mod login_detection;
 pub mod passkey;
 pub mod password;

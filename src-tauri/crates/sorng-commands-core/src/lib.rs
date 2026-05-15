@@ -37,6 +37,8 @@ mod commander_commands;
 mod consul_commands;
 #[path = "../../../src/cryptojs_compat_commands.rs"]
 mod cryptojs_compat_commands;
+#[path = "../../../src/xlsx_crypto_commands.rs"]
+mod xlsx_crypto_commands;
 #[path = "../../../src/db_commands.rs"]
 mod db_commands;
 #[cfg(feature = "ops")]

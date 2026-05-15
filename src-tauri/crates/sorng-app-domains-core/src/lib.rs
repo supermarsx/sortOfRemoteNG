@@ -9,6 +9,7 @@ pub use sorng_auth::cert_auth;
 pub use sorng_auth::cert_gen;
 pub use sorng_auth::cryptojs_compat;
 pub use sorng_auth::legacy_crypto;
+pub use sorng_auth::xlsx_crypto;
 pub use sorng_auth::login_detection;
 pub use sorng_auth::passkey;
 pub use sorng_auth::password;

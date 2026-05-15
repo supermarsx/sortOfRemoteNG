@@ -533,6 +533,8 @@ pub fn is_command(command: &str) -> bool {
             | "get_legacy_ssh_host_key_algorithms"
             | "is_legacy_algorithm_allowed"
             | "crypto_legacy_decrypt_cryptojs"
+            | "crypto_xlsx_encrypt"
+            | "crypto_xlsx_decrypt"
             | "parse_certificate"
             | "validate_certificate"
             | "authenticate_with_cert"
@@ -1712,6 +1714,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         legacy_crypto_commands::get_legacy_ssh_host_key_algorithms,
         legacy_crypto_commands::is_legacy_algorithm_allowed,
         cryptojs_compat_commands::crypto_legacy_decrypt_cryptojs,
+        xlsx_crypto_commands::crypto_xlsx_encrypt,
+        xlsx_crypto_commands::crypto_xlsx_decrypt,
         // Certificate authentication commands
         cert_auth_commands::parse_certificate,
         cert_auth_commands::validate_certificate,

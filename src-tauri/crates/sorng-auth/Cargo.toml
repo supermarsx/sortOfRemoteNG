@@ -53,6 +53,14 @@ pem = "3.0"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 md-5 = "0.10"
+# OOXML Agile Encryption: maintained pure-Rust pair.
+# ms-offcrypto-writer encrypts; office-crypto decrypts.
+# ms-offcrypto-writer ships against rand 0.9, while the workspace pins
+# rand to 0.8 elsewhere — pull rand 0.9 in under a different name so the
+# trait bounds line up without touching unrelated callers.
+ms-offcrypto-writer = "1.0.7"
+office-crypto = "0.2.0"
+rand_v9 = { package = "rand", version = "0.9" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Registry"] }
