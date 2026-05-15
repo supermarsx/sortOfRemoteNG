@@ -45,8 +45,13 @@ export interface EncryptExportResult {
   /** Scheme that actually ran (after any fallback). */
   scheme: ExportEncryptionScheme;
   /** Non-fatal warning the UI can surface if the requested scheme had to
-   *  fall back (e.g. OOXML / mRemoteNG IPC missing in this build). */
+   *  fall back (e.g. OOXML / mRemoteNG IPC missing in this build).
+   *  English copy; for i18n use {@link warningKey} alongside. */
   warning?: string;
+  /** i18n key matching {@link warning}, e.g. exportEncryption.fallbackOoxml.
+   *  Callers should run t(warningKey, { defaultValue: warning }) so the
+   *  English fallback shows up when the key is missing in the locale. */
+  warningKey?: string;
   /** Suggested filename extension. Format-aware schemes may add an
    *  extra `.enc` suffix; native paths keep the format's own extension. */
   extension?: string;
@@ -206,6 +211,7 @@ async function encryptOoxml(input: EncryptExportInput): Promise<EncryptExportRes
     ...fallback,
     warning:
       'OOXML password protection is not available in this build; the file was wrapped with AES-GCM instead. Open the .enc.json file with sortOfRemoteNG to decrypt.',
+    warningKey: 'exportEncryption.fallbackOoxml',
     extension: '.xlsx.enc.json',
     mimeType: 'application/json',
   };
@@ -238,6 +244,7 @@ async function encryptMremoteng(input: EncryptExportInput): Promise<EncryptExpor
     ...fallback,
     warning:
       'mRemoteNG-native encryption is not available in this build; the file was wrapped with AES-GCM instead. mRemoteNG will not be able to open this file directly — open it with sortOfRemoteNG.',
+    warningKey: 'exportEncryption.fallbackMremoteng',
     extension: '.xml.enc.json',
     mimeType: 'application/json',
   };

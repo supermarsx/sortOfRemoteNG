@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Connection, ConnectionDatabase } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -775,6 +776,7 @@ export function useImportExport({
 }: UseImportExportParams) {
   const { state, dispatch } = useConnections();
   const { toast } = useToastContext();
+  const { t } = useTranslation();
   const databaseManager = useMemo(() => DatabaseManager.getInstance(), []);
   const settingsManager = useMemo(() => SettingsManager.getInstance(), []);
   const [exportSecuritySettings] = useState(() =>
@@ -1974,8 +1976,11 @@ ${tableRows}
         } else {
           filename = filename.replace(/\.[^.]+$/, '.encrypted$&');
         }
-        if (result.warning) {
-          toast.warning(result.warning);
+        if (result.warning || result.warningKey) {
+          const translated = result.warningKey
+            ? (t(result.warningKey, { defaultValue: result.warning ?? '' }) as string)
+            : (result.warning as string);
+          if (translated) toast.warning(translated);
         }
         const encryptedBlob = new Blob([result.bytes as unknown as BlobPart], {
           type: mimeType,

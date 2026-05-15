@@ -2667,5 +2667,9 @@
     "clear": "Clear",
     "saved": "Saved.",
     "errorPrefix": "Error:"
+  },
+  "exportEncryption": {
+    "fallbackOoxml": "OOXML password protection is not available in this build; the file was wrapped with AES-GCM instead. Open the .enc.json file with sortOfRemoteNG to decrypt.",
+    "fallbackMremoteng": "mRemoteNG-native encryption is not available in this build; the file was wrapped with AES-GCM instead. mRemoteNG will not be able to open this file directly — open it with sortOfRemoteNG."
   }
 }
