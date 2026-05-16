@@ -239,7 +239,7 @@ windows-sys = "=0.61.2"
 # ── Database ──────────────────────────────────────────────────────────
 # Keep SQLx exact and feature-less at the workspace root so crate-level
 # manifests only opt into the specific backend/runtime features they need.
-sqlx = { version = "=0.7.4", default-features = false }
+sqlx = { version = "=0.8.6", default-features = false }
 
 # ── Cryptography ──────────────────────────────────────────────────────
 sha2 = "0.10"
