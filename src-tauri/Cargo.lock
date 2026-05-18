@@ -231,7 +231,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "tracing",
  "tracing-subscriber",
@@ -434,7 +434,7 @@ dependencies = [
  "log 0.4.29",
  "pin-utils",
  "pkg-config",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "winapi 0.3.9",
 ]
 
@@ -666,9 +666,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.16.3"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ec6fb3fe69024a75fa7e1bfb48aa6cf59706a101658ea01bfd33b2b248a038f"
+checksum = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -676,9 +676,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.40.0"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f50037ee5e1e41e7b8f9d161680a725bd1626cb6f8c7e901f91f942850852fe7"
+checksum = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
 dependencies = [
  "cc",
  "cmake",
@@ -713,7 +713,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_urlencoded",
  "sync_wrapper",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tower",
  "tower-layer",
  "tower-service",
@@ -1030,6 +1030,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1115,26 +1124,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "c2rust-bitfields"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcee50917f9de1a018e3f4f9a8f2ff3d030a288cffa4b18d9b391e97c12e4cfb"
-dependencies = [
- "c2rust-bitfields-derive",
-]
-
-[[package]]
-name = "c2rust-bitfields-derive"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b457277798202ccd365b9c112ebee08ddd57f1033916c8b8ea52f222e5b715d"
-dependencies = [
- "proc-macro2 1.0.106",
- "quote 1.0.45",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -1230,9 +1219,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.61"
+version = "1.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16d90359e986641506914ba71350897565610e87ce0ad9e6f28569db3dd5c6d"
+checksum = "a1dce859f0832a7d088c4f1119888ab94ef4b5d6795d1ce05afb7fe159d79f98"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1443,7 +1432,7 @@ dependencies = [
  "futures-core",
  "memchr",
  "pin-project-lite",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-util",
 ]
 
@@ -1994,9 +1983,9 @@ dependencies = [
 
 [[package]]
 name = "dashmap"
-version = "6.1.0"
+version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+checksum = "e6361d5c062261c78a176addb82d4c821ae42bed6089de0e12603cd25de2059c"
 dependencies = [
  "cfg-if 1.0.4",
  "crossbeam-utils 0.8.21",
@@ -2050,7 +2039,7 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "libc",
- "nix 0.31.2",
+ "nix 0.31.3",
  "parking_lot 0.12.5",
  "ring",
  "socket2 0.6.3",
@@ -2898,13 +2887,12 @@ dependencies = [
 
 [[package]]
 name = "filetime"
-version = "0.2.27"
+version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f98844151eee8917efc50bd9e8318cb963ae8b297431495d3f758616ea5c57db"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
 dependencies = [
  "cfg-if 1.0.4",
  "libc",
- "libredox",
 ]
 
 [[package]]
@@ -3634,9 +3622,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hashlink"
@@ -3820,9 +3808,9 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d46837a0ed51fe95bd3b05de33cd64a1ee88fc797477ca48446872504507c5"
+checksum = "9155a582abd142abc056962c29e3ce5ff2ad5469f4246b537ed42c5deba857da"
 dependencies = [
  "subtle",
  "typenum",
@@ -3873,7 +3861,7 @@ dependencies = [
  "itoa",
  "pin-project-lite",
  "smallvec 1.15.1",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "want 0.3.1",
 ]
 
@@ -3888,7 +3876,7 @@ dependencies = [
  "hyper-util",
  "rustls 0.23.40",
  "rustls-native-certs 0.8.3",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tower-service",
 ]
@@ -3911,7 +3899,7 @@ dependencies = [
  "percent-encoding 2.3.2",
  "pin-project-lite",
  "socket2 0.6.3",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tower-service",
  "tracing",
 ]
@@ -4123,7 +4111,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
- "hashbrown 0.17.0",
+ "hashbrown 0.17.1",
  "serde",
  "serde_core",
 ]
@@ -4245,16 +4233,6 @@ name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
-
-[[package]]
-name = "iri-string"
-version = "0.7.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25e659a4bb38e810ebc252e53b5814ff908a8c58c2a9ce2fae1bbec24cbf4e20"
-dependencies = [
- "memchr",
- "serde",
-]
 
 [[package]]
 name = "ironrdp"
@@ -4592,9 +4570,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.97"
+version = "0.3.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1840c94c045fbcf8ba2812c95db44499f7c64910a912551aaaa541decebcacf"
+checksum = "67df7112613f8bfd9150013a0314e196f4800d3201ae742489d999db2f979f08"
 dependencies = [
  "cfg-if 1.0.4",
  "futures-util",
@@ -4681,9 +4659,9 @@ dependencies = [
 
 [[package]]
 name = "kqueue-sys"
-version = "1.1.0"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7b65860415f949f23fa882e669f2dbd4a0f0eeb1acdd56790b30494afd7da2f"
+checksum = "07293a4e297ac234359b510362495713f75ea345d5307140414f20c69ffeb087"
 dependencies = [
  "bitflags 2.11.1",
  "libc",
@@ -4735,9 +4713,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "lettre"
-version = "0.11.21"
+version = "0.11.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dabda5859ee7c06b995b9d1165aa52c39110e079ef609db97178d86aeb051fa7"
+checksum = "0da65617f6cb926332d039cb578aad56178da86e128db6a1b09f4c94fa5b3349"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4755,7 +4733,7 @@ dependencies = [
  "quoted_printable",
  "rustls 0.23.40",
  "socket2 0.6.3",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "url",
  "webpki-roots 1.0.7",
@@ -4845,7 +4823,7 @@ dependencies = [
  "bitflags 2.11.1",
  "libc",
  "plain",
- "redox_syscall 0.7.4",
+ "redox_syscall 0.7.5",
 ]
 
 [[package]]
@@ -5100,7 +5078,7 @@ dependencies = [
  "futures-util",
  "log 0.4.29",
  "net2",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -5476,9 +5454,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.31.2"
+version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6d0705320c1e6ba1d912b5e37cf18071b6c2e9b7fa8215a1e8a7651966f5d3"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
 dependencies = [
  "bitflags 2.11.1",
  "cfg-if 1.0.4",
@@ -6018,9 +5996,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.115"
+version = "0.9.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "158fe5b292746440aa6e7a7e690e55aeb72d41505e2804c23c6973ad0e9c9781"
+checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
 dependencies = [
  "cc",
  "libc",
@@ -6366,7 +6344,6 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd6780a80ae0c52cc120a26a1a42c1ae51b247a253e4e06113d23d2c2edd078"
 dependencies = [
- "phf_macros 0.11.3",
  "phf_shared 0.11.3",
 ]
 
@@ -6376,7 +6353,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
 dependencies = [
- "phf_macros 0.13.1",
+ "phf_macros",
  "phf_shared 0.13.1",
  "serde",
 ]
@@ -6409,19 +6386,6 @@ checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
 dependencies = [
  "fastrand",
  "phf_shared 0.13.1",
-]
-
-[[package]]
-name = "phf_macros"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84ac04429c13a7ff43785d75ad27569f2951ce0ffd30a3321230db2fc727216"
-dependencies = [
- "phf_generator 0.11.3",
- "phf_shared 0.11.3",
- "proc-macro2 1.0.106",
- "quote 1.0.45",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -6695,7 +6659,7 @@ checksum = "092791278e026273c1b65bbdcfbba3a300f2994c896bd01ab01da613c29c46f1"
 dependencies = [
  "base64 0.22.1",
  "indexmap 2.14.0",
- "quick-xml 0.39.2",
+ "quick-xml 0.39.4",
  "serde",
  "time 0.3.47",
 ]
@@ -7069,9 +7033,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.2"
+version = "0.39.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "958f21e8e7ceb5a1aa7fa87fab28e7c75976e0bfe7e23ff069e0a260f894067d"
+checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
 ]
@@ -7091,7 +7055,7 @@ dependencies = [
  "rustls 0.23.40",
  "socket2 0.6.3",
  "thiserror 2.0.18",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "web-time",
 ]
@@ -7373,7 +7337,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "slab 0.4.12",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -7421,7 +7385,7 @@ dependencies = [
  "ryu",
  "sha1_smol",
  "socket2 0.5.10",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tokio-util",
  "url",
@@ -7444,9 +7408,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.7.4"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f450ad9c3b1da563fb6948a8e0fb0fb9269711c9c73d9ea1de5058c79c8d643a"
+checksum = "4666a1a60d8412eab19d94f6d13dcc9cea0a5ef4fdf6a5db306537413c661b1b"
 dependencies = [
  "bitflags 2.11.1",
 ]
@@ -7578,7 +7542,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sync_wrapper",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tokio-util",
  "tower",
@@ -7617,7 +7581,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sync_wrapper",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tokio-util",
  "tower",
@@ -7852,7 +7816,7 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-util",
 ]
 
@@ -7899,16 +7863,16 @@ dependencies = [
  "sha1 0.10.6",
  "sha2 0.10.9",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-stream",
  "yasna",
 ]
 
 [[package]]
 name = "rust_decimal"
-version = "1.41.0"
+version = "1.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce901f9a19d251159075a4c37af514c3b8ef99c22e02dd8c19161cf397ee94a"
+checksum = "0c5108e3d4d903e21aac27f12ba5377b6b34f9f44b325e4894c7924169d06995"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -8572,11 +8536,12 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.19.0"
+version = "3.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f05839ce67618e14a09b286535c0d9c94e85ef25469b0e13cb4f844e5593eb19"
+checksum = "e72c1c2cb7b223fafb600a619537a871c2818583d619401b785e7c0b746ccde2"
 dependencies = [
  "base64 0.22.1",
+ "bs58",
  "chrono",
  "hex 0.4.3",
  "indexmap 1.9.3",
@@ -8591,9 +8556,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.19.0"
+version = "3.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf2ebbe86054f9b45bc3881e865683ccfaccce97b9b4cb53f3039d67f355a334"
+checksum = "b90c488738ecb4fb0262f41f43bc40efc5868d9fb744319ddf5f5317f417bfac"
 dependencies = [
  "darling",
  "proc-macro2 1.0.106",
@@ -8959,7 +8924,7 @@ dependencies = [
  "sorng-core",
  "tempfile",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -8995,7 +8960,7 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-core",
  "tiktoken-rs",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-stream",
  "uuid",
 ]
@@ -9011,7 +8976,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-llm",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9024,7 +8989,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9039,7 +9004,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9052,7 +9017,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9303,7 +9268,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9351,7 +9316,7 @@ dependencies = [
  "sorng-biometrics",
  "sorng-notifications",
  "time 0.3.47",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "totp-rs",
  "url",
  "uuid",
@@ -9372,7 +9337,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-aws-vendor",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -9398,7 +9363,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -9417,7 +9382,7 @@ dependencies = [
  "sorng-core",
  "tempfile",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9438,7 +9403,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "windows 0.62.2",
  "windows-sys 0.61.2",
@@ -9465,7 +9430,7 @@ dependencies = [
  "sorng-core",
  "tempfile",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -9481,7 +9446,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
 ]
 
@@ -9493,7 +9458,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -9507,7 +9472,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -9521,7 +9486,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9537,7 +9502,7 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -9551,7 +9516,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "tracing-test",
  "uuid",
@@ -9566,7 +9531,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9583,7 +9548,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.10.6",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9598,7 +9563,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9614,7 +9579,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-llm",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9680,7 +9645,7 @@ dependencies = [
  "ssh2",
  "tauri",
  "tauri-plugin-autostart",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tracing",
  "uuid",
@@ -9896,7 +9861,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9907,7 +9872,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -9920,7 +9885,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9933,7 +9898,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9945,7 +9910,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -9962,7 +9927,7 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -9976,7 +9941,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -9988,7 +9953,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10008,7 +9973,7 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10024,7 +9989,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10036,7 +10001,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10049,7 +10014,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10066,7 +10031,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10085,7 +10050,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10111,7 +10076,7 @@ dependencies = [
  "sha2 0.10.9",
  "shellexpand",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
  "which 6.0.3",
@@ -10126,7 +10091,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10145,7 +10110,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10160,7 +10125,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10174,7 +10139,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10189,7 +10154,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10202,7 +10167,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10214,7 +10179,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10228,7 +10193,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10240,7 +10205,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -10252,7 +10217,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10269,7 +10234,7 @@ dependencies = [
  "rustls-native-certs 0.8.3",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "url",
  "uuid",
@@ -10288,7 +10253,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-letsencrypt",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10306,7 +10271,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10322,7 +10287,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10341,7 +10306,7 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10357,7 +10322,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10368,7 +10333,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "windows-sys 0.61.2",
 ]
 
@@ -10381,7 +10346,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10394,7 +10359,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10408,7 +10373,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10421,7 +10386,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10433,7 +10398,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10448,7 +10413,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10458,7 +10423,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "chrono",
- "dashmap 6.1.0",
+ "dashmap 6.2.1",
  "log 0.4.29",
  "notify",
  "notify-debouncer-mini",
@@ -10467,7 +10432,7 @@ dependencies = [
  "sys-locale",
  "tempfile",
  "thiserror 2.0.18",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
 ]
 
@@ -10484,7 +10449,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10503,7 +10468,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-bmc-common",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10526,7 +10491,7 @@ dependencies = [
  "sorng-bmc-common",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10540,7 +10505,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
 ]
 
@@ -10559,7 +10524,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "url",
  "uuid",
@@ -10579,7 +10544,7 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10601,7 +10566,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10613,7 +10578,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10638,7 +10603,7 @@ dependencies = [
  "sorng-core",
  "tempfile",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10651,7 +10616,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10669,7 +10634,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-bmc-common",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10686,7 +10651,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "trust-dns-resolver",
  "uuid",
 ]
@@ -10709,7 +10674,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-stream",
  "uuid",
 ]
@@ -10724,7 +10689,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10738,7 +10703,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10751,7 +10716,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10765,7 +10730,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10777,7 +10742,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10791,7 +10756,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10804,7 +10769,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10825,7 +10790,7 @@ dependencies = [
  "serde_json",
  "sha1 0.10.6",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "winreg 0.52.0",
 ]
@@ -10842,7 +10807,7 @@ dependencies = [
  "ssh2",
  "thiserror 1.0.69",
  "tiberius",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-util",
  "uuid",
 ]
@@ -10859,7 +10824,7 @@ dependencies = [
  "sqlx",
  "ssh2",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10872,7 +10837,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10886,7 +10851,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10900,7 +10865,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10912,7 +10877,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10925,7 +10890,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -10946,7 +10911,7 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10966,7 +10931,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -10980,7 +10945,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -10993,7 +10958,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11008,7 +10973,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11025,7 +10990,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
  "which 6.0.3",
@@ -11046,7 +11011,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-util",
  "url",
  "uuid",
@@ -11061,7 +11026,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11081,7 +11046,7 @@ dependencies = [
  "sorng-core",
  "sorng-dns",
  "tauri",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11096,7 +11061,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-opkssh-vendor",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11116,7 +11081,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11128,7 +11093,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -11142,7 +11107,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
 ]
 
@@ -11164,7 +11129,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11176,7 +11141,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -11189,7 +11154,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -11210,7 +11175,7 @@ dependencies = [
  "sorng-core",
  "tempfile",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11225,7 +11190,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11238,7 +11203,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11253,7 +11218,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "toml 0.8.2",
  "uuid",
@@ -11267,7 +11232,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11280,7 +11245,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11296,7 +11261,7 @@ dependencies = [
  "sqlx",
  "ssh2",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11308,7 +11273,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11334,7 +11299,7 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-core",
  "sspi",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11347,7 +11312,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-util",
  "tracing",
  "uuid",
@@ -11361,7 +11326,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -11375,7 +11340,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11388,7 +11353,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11417,7 +11382,7 @@ dependencies = [
  "sqlx",
  "ssh2",
  "suppaftp",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "uuid",
  "vnc-rs",
@@ -11436,7 +11401,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11453,7 +11418,7 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11484,7 +11449,7 @@ dependencies = [
  "sorng-dns",
  "sorng-rdp-vendor",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "uuid",
  "windows 0.62.2",
@@ -11514,7 +11479,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11529,7 +11494,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-compression-vendor",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11545,7 +11510,7 @@ dependencies = [
  "sorng-core",
  "ssh2",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11565,7 +11530,7 @@ dependencies = [
  "sha1 0.10.6",
  "sha2 0.10.9",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "which 7.0.3",
  "xxhash-rust",
@@ -11581,7 +11546,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-tungstenite",
  "uuid",
 ]
@@ -11596,7 +11561,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11609,7 +11574,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11622,7 +11587,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11639,7 +11604,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11652,7 +11617,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11677,7 +11642,7 @@ dependencies = [
  "sorng-core",
  "ssh-key",
  "ssh2",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "walkdir",
 ]
@@ -11690,7 +11655,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11710,7 +11675,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11735,7 +11700,7 @@ dependencies = [
  "sorng-core",
  "ssh-key",
  "ssh2",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "uuid",
 ]
@@ -11754,7 +11719,7 @@ dependencies = [
  "serde_json",
  "sorng-core",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11779,7 +11744,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "trust-dns-resolver",
  "uuid",
@@ -11798,7 +11763,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11811,7 +11776,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11828,7 +11793,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
  "which 6.0.3",
@@ -11845,7 +11810,7 @@ dependencies = [
  "sorng-core",
  "sqlx",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11878,7 +11843,7 @@ dependencies = [
  "ssh-key",
  "ssh2",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "totp-rs",
  "tracing",
  "uuid",
@@ -11895,7 +11860,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11909,7 +11874,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11929,7 +11894,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -11946,7 +11911,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-bmc-common",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11963,7 +11928,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -11976,7 +11941,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -11989,7 +11954,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -12003,7 +11968,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12024,7 +11989,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -12038,7 +12003,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -12053,7 +12018,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12078,7 +12043,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "windows 0.62.2",
 ]
@@ -12093,7 +12058,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12105,7 +12070,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -12118,7 +12083,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12142,7 +12107,7 @@ dependencies = [
  "serde_json",
  "sha1 0.10.6",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -12156,7 +12121,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12181,7 +12146,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12193,7 +12158,7 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
 ]
@@ -12216,7 +12181,7 @@ dependencies = [
  "sorng-biometrics",
  "sorng-vault-windows",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "zbus",
 ]
@@ -12242,7 +12207,7 @@ dependencies = [
  "rustls-native-certs 0.8.3",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "url",
  "uuid",
@@ -12258,7 +12223,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
  "winreg 0.52.0",
@@ -12283,7 +12248,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "uuid",
 ]
@@ -12318,7 +12283,7 @@ dependencies = [
  "sorng-core",
  "sorng-storage",
  "sorng-vault",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tokio-tungstenite",
  "tracing",
@@ -12337,7 +12302,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -12362,7 +12327,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-tungstenite",
  "url",
  "uuid",
@@ -12389,7 +12354,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "uuid",
 ]
@@ -12405,7 +12370,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12420,7 +12385,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
  "which 6.0.3",
 ]
@@ -12437,7 +12402,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-test",
  "uuid",
  "which 6.0.3",
@@ -12454,7 +12419,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12467,7 +12432,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12480,7 +12445,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-dns",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "uuid",
 ]
 
@@ -12582,7 +12547,7 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec 1.15.1",
  "thiserror 2.0.18",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-stream",
  "tracing",
  "url",
@@ -12623,7 +12588,7 @@ dependencies = [
  "sqlx-postgres",
  "sqlx-sqlite",
  "syn 2.0.117",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
 ]
 
@@ -12849,7 +12814,7 @@ dependencies = [
  "signature 3.0.0-rc.4",
  "spki 0.8.0-rc.4",
  "time 0.3.47",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "url",
  "uuid",
@@ -13036,9 +13001,9 @@ checksum = "b157868d8ac1f56b64604539990685fa7611d8fa9e5476cf0c02cf34d32917c5"
 
 [[package]]
 name = "tao"
-version = "0.35.0"
+version = "0.35.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cf65722394c2ac443e80120064987f8914ee1d4e4e36e63cdf10f2990f01159"
+checksum = "a33f7f9e486ade65fcf1e45c440f9236c904f5c1002cdc7fc6ae582777345ce4"
 dependencies = [
  "bitflags 2.11.1",
  "block2",
@@ -13151,7 +13116,7 @@ dependencies = [
  "tauri-runtime-wry",
  "tauri-utils",
  "thiserror 2.0.18",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tray-icon",
  "url",
  "webkit2gtk",
@@ -13183,9 +13148,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-codegen"
-version = "2.6.0"
+version = "2.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3e4e8230d565106aa19dfbaa01a7ed01abf78047fe0577a83377224bd1bf20e"
+checksum = "e4a0319528a025a38c4078e7dae2c446f4e63620ddb0659a643ede1cb38f90e9"
 dependencies = [
  "base64 0.22.1",
  "brotli",
@@ -13210,9 +13175,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-macros"
-version = "2.6.0"
+version = "2.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc8de2cddbbc33dbdf4c84f170121886595efdbcc9cb4b3d76342b79d082cedc"
+checksum = "ae6cb4e3896c21d2f6da5b31251d2faea0153bba56ed0e970f918115dbee4924"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2 1.0.106",
@@ -13224,9 +13189,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin"
-version = "2.6.0"
+version = "2.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8d5f58bfd0cdcfdbc0a68dc08b354eea2afc551b421de91b07b69e0dd769d57"
+checksum = "e126abc9e84e35cdfd01596140a73a1850cdb0df0a23acf0185776c30b469a6e"
 dependencies = [
  "anyhow",
  "glob",
@@ -13343,7 +13308,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "time 0.3.47",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "url",
  "windows-sys 0.60.2",
  "zip",
@@ -13366,9 +13331,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-runtime"
-version = "2.11.0"
+version = "2.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e42bbcb76237351fbaa02f08d808c537dc12eb5a6eabbf3e517b50056334d95"
+checksum = "48222d7116c8807eaa6fe2f372e023fae125084e61e6eca6d70b7961cdf129ef"
 dependencies = [
  "cookie",
  "dpi",
@@ -13391,9 +13356,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-runtime-wry"
-version = "2.11.0"
+version = "2.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cadb13dad0c681e1e0a2c49ae488f0e2906ded3d57e7a0017f4aaf46e387117"
+checksum = "b83849ee63ecb27a8e8d0fe51915ca215076914aca43f96db1179f0f415f6cd9"
 dependencies = [
  "gtk",
  "http",
@@ -13417,9 +13382,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-utils"
-version = "2.9.0"
+version = "2.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55f61d2bf7188fbcf2b0ed095b67a6bc498f713c939314bb19eb700118a573b7"
+checksum = "092379df9a707631978e6c56b1bc2401d387f01e2d4a3c123360d167bbb9aa95"
 dependencies = [
  "anyhow",
  "brotli",
@@ -13433,7 +13398,7 @@ dependencies = [
  "json-patch",
  "log 0.4.29",
  "memchr",
- "phf 0.11.3",
+ "phf 0.13.1",
  "plist",
  "proc-macro2 1.0.106",
  "quote 1.0.45",
@@ -13711,9 +13676,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.52.1"
+version = "1.52.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
 dependencies = [
  "bytes 1.11.1",
  "libc",
@@ -13854,7 +13819,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
 dependencies = [
  "rustls 0.21.12",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -13864,7 +13829,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls 0.23.40",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -13884,7 +13849,7 @@ checksum = "32da49809aab5c3bc678af03902d4ccddea2a87d028d86392a4b1560c6906c70"
 dependencies = [
  "futures-core",
  "pin-project-lite",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -13918,7 +13883,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
 dependencies = [
  "futures-core",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-stream",
 ]
 
@@ -13962,7 +13927,7 @@ dependencies = [
  "rustls 0.23.40",
  "rustls-native-certs 0.8.3",
  "rustls-pki-types",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-rustls 0.26.4",
  "tungstenite",
 ]
@@ -14029,7 +13994,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "pin-project-lite",
- "tokio 1.52.1",
+ "tokio 1.52.3",
 ]
 
 [[package]]
@@ -14071,7 +14036,7 @@ dependencies = [
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
  "toml_writer",
- "winnow 1.0.2",
+ "winnow 1.0.3",
 ]
 
 [[package]]
@@ -14134,7 +14099,7 @@ dependencies = [
  "indexmap 2.14.0",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
- "winnow 1.0.2",
+ "winnow 1.0.3",
 ]
 
 [[package]]
@@ -14143,7 +14108,7 @@ version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
- "winnow 1.0.2",
+ "winnow 1.0.3",
 ]
 
 [[package]]
@@ -14175,7 +14140,7 @@ dependencies = [
  "futures-util",
  "pin-project-lite",
  "sync_wrapper",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -14183,20 +14148,20 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.8"
+version = "0.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
+checksum = "68d6fdd9f81c2819c9a8b0e0cd91660e7746a8e6ea2ba7c6b2b057985f6bcb51"
 dependencies = [
  "bitflags 2.11.1",
  "bytes 1.11.1",
  "futures-util",
  "http",
  "http-body",
- "iri-string",
  "pin-project-lite",
  "tower",
  "tower-layer",
  "tower-service",
+ "url",
 ]
 
 [[package]]
@@ -14349,7 +14314,7 @@ dependencies = [
  "smallvec 1.15.1",
  "thiserror 1.0.69",
  "tinyvec",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "url",
 ]
@@ -14370,7 +14335,7 @@ dependencies = [
  "resolv-conf",
  "smallvec 1.15.1",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "trust-dns-proto",
 ]
@@ -14389,16 +14354,16 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tun"
-version = "0.8.7"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ebb3e56bb60c1e6650c9317997862ab05864c358add3cfaa34b855ffae583d0"
+checksum = "bb51dd4da3b9e08057abbaed588d4244bccb0a4122788aff2775b9a4b9aec489"
 dependencies = [
  "bytes 1.11.1",
  "cfg-if 1.0.4",
  "ipnet",
  "libc",
  "log 0.4.29",
- "nix 0.31.2",
+ "nix 0.31.3",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
  "wintun-bindings",
@@ -14813,7 +14778,7 @@ dependencies = [
  "flate2",
  "futures 0.3.32",
  "thiserror 1.0.69",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tokio-stream",
  "tokio-util",
  "tracing",
@@ -14923,9 +14888,9 @@ checksum = "b8dad83b4f25e74f184f64c43b150b91efe7647395b42289f38e50566d82855b"
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.120"
+version = "0.2.121"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df52b6d9b87e0c74c9edfa1eb2d9bf85e5d63515474513aa50fa181b3c4f5db1"
+checksum = "49ace1d07c165b0864824eee619580c4689389afa9dc9ed3a4c75040d82e6790"
 dependencies = [
  "cfg-if 1.0.4",
  "once_cell",
@@ -14936,9 +14901,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-futures"
-version = "0.4.70"
+version = "0.4.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af934872acec734c2d80e6617bbb5ff4f12b052dd8e6332b0817bce889516084"
+checksum = "96492d0d3ffba25305a7dc88720d250b1401d7edca02cc3bcd50633b424673b8"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -14946,9 +14911,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.120"
+version = "0.2.121"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78b1041f495fb322e64aca85f5756b2172e35cd459376e67f2a6c9dffcedb103"
+checksum = "8e68e6f4afd367a562002c05637acb8578ff2dea1943df76afb9e83d177c8578"
 dependencies = [
  "quote 1.0.45",
  "wasm-bindgen-macro-support",
@@ -14956,9 +14921,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.120"
+version = "0.2.121"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dcd0ff20416988a18ac686d4d4d0f6aae9ebf08a389ff5d29012b05af2a1b41"
+checksum = "d95a9ec35c64b2a7cb35d3fead40c4238d0940c86d107136999567a4703259f2"
 dependencies = [
  "bumpalo",
  "proc-macro2 1.0.106",
@@ -14969,9 +14934,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.120"
+version = "0.2.121"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49757b3c82ebf16c57d69365a142940b384176c24df52a087fb748e2085359ea"
+checksum = "c4e0100b01e9f0d03189a92b96772a1fb998639d981193d7dbab487302513441"
 dependencies = [
  "unicode-ident",
 ]
@@ -15038,9 +15003,9 @@ dependencies = [
 
 [[package]]
 name = "web-sys"
-version = "0.3.97"
+version = "0.3.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eadbac71025cd7b0834f20d1fe8472e8495821b4e9801eb0a60bd1f19827602"
+checksum = "4b572dff8bcf38bad0fa19729c89bb5748b2b9b1d8be70cf90df697e3a8f32aa"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -15863,9 +15828,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee1708bef14716a11bae175f579062d4554d95be2c6829f518df847b7b3fdd0"
+checksum = "0592e1c9d151f854e6fd382574c3a0855250e1d9b2f99d9281c6e6391af352f1"
 dependencies = [
  "memchr",
 ]
@@ -15930,18 +15895,16 @@ dependencies = [
 
 [[package]]
 name = "wintun-bindings"
-version = "0.7.34"
+version = "0.7.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27ae04d34b8569174e849128d2e36538329a27daa79c06ed0375f2c5d6704461"
+checksum = "4d94caf41ce60c37c9215c68f124835c401d2ec4f9b3b6431b491c79b3cdd335"
 dependencies = [
  "blocking",
- "c2rust-bitfields",
  "futures 0.3.32",
  "libloading 0.9.0",
  "log 0.4.29",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
- "winreg 0.55.0",
 ]
 
 [[package]]
@@ -16062,9 +16025,9 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "wry"
-version = "0.55.0"
+version = "0.55.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3013fd6116aac351dd2e18f349b28b2cfef3a5ff3253a9d0ce2d7193bb1b4429"
+checksum = "186f9871daa55fd9c016578b810d149de58367113db7fb72b462d2323ce19514"
 dependencies = [
  "base64 0.22.1",
  "block2",
@@ -16301,7 +16264,7 @@ dependencies = [
  "serde_repr",
  "sha1 0.10.6",
  "static_assertions",
- "tokio 1.52.1",
+ "tokio 1.52.3",
  "tracing",
  "uds_windows",
  "windows-sys 0.52.0",
@@ -16357,9 +16320,9 @@ dependencies = [
 
 [[package]]
 name = "zerofrom"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69faa1f2a1ea75661980b013019ed6687ed0e83d069bc1114e2cc74c6c04c4df"
+checksum = "0ec05a11813ea801ff6d75110ad09cd0824ddba17dfe17128ea0d5f68e6c5272"
 dependencies = [
  "zerofrom-derive",
 ]
