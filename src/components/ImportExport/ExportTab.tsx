@@ -1064,7 +1064,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 value={connectionsSearch}
                 onChange={(e) => setConnectionsSearch(e.target.value)}
                 placeholder={t('exportTab.connectionsSearch', { defaultValue: 'Search connections…' }) as string}
-                className="sor-form-input-xs w-full pl-7"
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               />
             </div>
             <button
@@ -1152,7 +1152,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 value={textTagsSearch}
                 onChange={(e) => setTextTagsSearch(e.target.value)}
                 placeholder={t('exportTab.textTagsSearch', { defaultValue: 'Search tags…' }) as string}
-                className="sor-form-input-xs w-full pl-7"
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               />
             </div>
             <button
@@ -1226,7 +1226,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 value={colorTagsSearch}
                 onChange={(e) => setColorTagsSearch(e.target.value)}
                 placeholder={t('exportTab.colorTagsSearch', { defaultValue: 'Search color tags…' }) as string}
-                className="sor-form-input-xs w-full pl-7"
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               />
             </div>
             <button
@@ -1298,7 +1298,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 value={proxyProfilesSearch}
                 onChange={(e) => setProxyProfilesSearch(e.target.value)}
                 placeholder={t('exportTab.proxyProfilesSearch', { defaultValue: 'Search proxy profiles…' }) as string}
-                className="sor-form-input-xs w-full pl-7"
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               />
             </div>
             <button
@@ -1383,7 +1383,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 value={proxyChainsSearch}
                 onChange={(e) => setProxyChainsSearch(e.target.value)}
                 placeholder={t('exportTab.proxyChainsSearch', { defaultValue: 'Search proxy chains…' }) as string}
-                className="sor-form-input-xs w-full pl-7"
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               />
             </div>
             <button
@@ -1463,7 +1463,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 value={vpnSearch}
                 onChange={(e) => setVpnSearch(e.target.value)}
                 placeholder={t('exportTab.vpnConnectionsSearch', { defaultValue: 'Search VPN connections…' }) as string}
-                className="sor-form-input-xs w-full pl-7"
+                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
               />
             </div>
             <button

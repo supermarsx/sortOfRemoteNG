@@ -170,8 +170,10 @@
   padding: 0.25rem 0.5rem;
 }
 
+/* Use these with form inputs that render absolute icons. Tailwind padding
+   utilities are loaded before these form classes, so they do not win here. */
 .sor-form-input-xs.sor-form-input-xs-icon-left {
-  padding-left: 2rem;
+  padding-left: 2rem !important;
 }
 
 .sor-form-input.sor-form-input-icon-left {
