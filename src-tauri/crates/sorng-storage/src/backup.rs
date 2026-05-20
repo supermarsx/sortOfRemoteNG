@@ -316,6 +316,48 @@ pub struct BackupListItem {
     pub size_bytes: u64,
     pub encrypted: bool,
     pub compressed: bool,
+    /// `target_id` from the matching `BackupTarget` so the restore
+    /// picker can show per-source badges and pick a specific
+    /// destination when the same backup exists at several. `None`
+    /// for legacy single-target sidecars that pre-date the
+    /// multi-target work.
+    #[serde(default)]
+    pub target_id: Option<String>,
+    /// Human-facing label of the destination the file lives at. Lets
+    /// the restore picker render meaningful strings without joining
+    /// against the live config on the TS side. `None` when the
+    /// listing is computed from a legacy single-target sidecar.
+    #[serde(default)]
+    pub target_label: Option<String>,
+    /// Canonical payload hash carried by the sidecar. The restore
+    /// picker uses this to coalesce duplicate rows when the same
+    /// backup landed at multiple destinations.
+    #[serde(default)]
+    pub payload_hash: Option<String>,
+}
+
+/// Per-destination view returned by `list_backups_all_targets`. The
+/// restore picker walks this to render a merged timeline grouped by
+/// destination on one side and by backup on the other.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DestinationListing {
+    /// `id` of the originating `BackupTarget`, or `"legacy-default"`
+    /// when the listing comes from the legacy `destination_path`.
+    pub target_id: String,
+    /// Human-facing label of the destination.
+    pub target_label: String,
+    /// Resolved filesystem path the listing was read from.
+    pub resolved_path: String,
+    /// Whether this destination was enabled in config at scan time.
+    pub enabled: bool,
+    /// Backups discovered at this destination, newest first.
+    pub backups: Vec<BackupListItem>,
+    /// Populated when the directory couldn't be scanned (missing
+    /// path, permission error). Other destinations still scan
+    /// independently — one failure doesn't block the rest.
+    #[serde(default)]
+    pub error_message: Option<String>,
 }
 
 /// Backup service state
@@ -817,83 +859,199 @@ impl BackupService {
         Ok(())
     }
 
-    /// List all available backups
+    /// Flat list of every backup across every enabled destination,
+    /// sorted newest-first. Preserved for back-compat callers; the
+    /// richer per-destination view lives in `list_backups_all_targets`.
     pub async fn list_backups(&self) -> Result<Vec<BackupListItem>, String> {
-        let dest_path = Path::new(&self.config.destination_path);
-        if !dest_path.exists() {
+        let mut all = Vec::new();
+        for listing in self.list_backups_all_targets().await? {
+            all.extend(listing.backups);
+        }
+        all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(all)
+    }
+
+    /// Per-destination listing of available backups. The restore
+    /// picker uses this to render the merged timeline (one row per
+    /// backup with per-source badges) and the destinations sidebar.
+    /// Errors at individual destinations land in
+    /// `DestinationListing.error_message` rather than failing the
+    /// whole call — a missing local folder shouldn't hide what's
+    /// available on the user's cloud.
+    pub async fn list_backups_all_targets(&self) -> Result<Vec<DestinationListing>, String> {
+        let targets = self.config.effective_destinations();
+        if targets.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut backups = Vec::new();
+        let mut out = Vec::with_capacity(targets.len());
+        for target in targets {
+            let resolved = match resolve_target_dir(&target, &self.config.destination_path) {
+                Ok(p) => p,
+                Err(e) => {
+                    out.push(DestinationListing {
+                        target_id: target.id.clone(),
+                        target_label: target.label.clone(),
+                        resolved_path: String::new(),
+                        enabled: target.enabled,
+                        backups: Vec::new(),
+                        error_message: Some(e),
+                    });
+                    continue;
+                }
+            };
 
-        for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let filename = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string();
+            let mut listing = DestinationListing {
+                target_id: target.id.clone(),
+                target_label: target.label.clone(),
+                resolved_path: resolved.to_string_lossy().into_owned(),
+                enabled: target.enabled,
+                backups: Vec::new(),
+                error_message: None,
+            };
 
-            if !filename.starts_with("backup_") || filename.contains(".meta.") {
+            if !resolved.exists() {
+                // Missing directory is not an error per se — it just
+                // means nothing has been written here yet.
+                out.push(listing);
                 continue;
             }
 
-            // Try to read metadata
-            let meta_path = path
-                .parent()
-                .map(|p| p.join(format!("{}.meta.json", filename)))
-                .unwrap_or_default();
-
-            let (id, backup_type, created_at, encrypted, compressed) = if meta_path.exists() {
-                let meta_content = fs::read_to_string(&meta_path).unwrap_or_default();
-                if let Ok(meta) = serde_json::from_str::<BackupMetadata>(&meta_content) {
-                    (
-                        meta.id,
-                        meta.backup_type,
-                        meta.created_at,
-                        meta.encrypted,
-                        meta.compressed,
-                    )
-                } else {
-                    (filename.clone(), "unknown".to_string(), 0, false, false)
+            let entries = match fs::read_dir(&resolved) {
+                Ok(e) => e,
+                Err(e) => {
+                    listing.error_message = Some(format!(
+                        "Failed to scan {}: {}",
+                        resolved.display(),
+                        e
+                    ));
+                    out.push(listing);
+                    continue;
                 }
-            } else {
-                (filename.clone(), "unknown".to_string(), 0, false, false)
             };
 
-            let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !filename.starts_with("backup_") || filename.contains(".meta.") {
+                    continue;
+                }
 
-            backups.push(BackupListItem {
-                id,
-                filename,
-                created_at,
-                backup_type,
-                size_bytes,
-                encrypted,
-                compressed,
+                let meta_path = resolved.join(format!("{}.meta.json", filename));
+                let (id, backup_type, created_at, encrypted, compressed, payload_hash, target_id) =
+                    if meta_path.exists() {
+                        let meta_content = fs::read_to_string(&meta_path).unwrap_or_default();
+                        if let Ok(meta) =
+                            serde_json::from_str::<BackupMetadata>(&meta_content)
+                        {
+                            (
+                                meta.id,
+                                meta.backup_type,
+                                meta.created_at,
+                                meta.encrypted,
+                                meta.compressed,
+                                meta.payload_hash,
+                                meta.target_id.or_else(|| Some(target.id.clone())),
+                            )
+                        } else {
+                            (
+                                filename.clone(),
+                                "unknown".to_string(),
+                                0,
+                                false,
+                                false,
+                                None,
+                                Some(target.id.clone()),
+                            )
+                        }
+                    } else {
+                        (
+                            filename.clone(),
+                            "unknown".to_string(),
+                            0,
+                            false,
+                            false,
+                            None,
+                            Some(target.id.clone()),
+                        )
+                    };
+
+                let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                listing.backups.push(BackupListItem {
+                    id,
+                    filename,
+                    created_at,
+                    backup_type,
+                    size_bytes,
+                    encrypted,
+                    compressed,
+                    target_id,
+                    target_label: Some(target.label.clone()),
+                    payload_hash,
+                });
+            }
+            listing.backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            out.push(listing);
+        }
+        Ok(out)
+    }
+
+    /// Restore from a backup file. When the user has multiple
+    /// destinations and the restore picker offers a specific source,
+    /// `target_id` should be set so we read from that destination
+    /// only. When `target_id` is `None`, every enabled destination is
+    /// searched and the first matching file is used (back-compat with
+    /// the legacy single-destination flow).
+    pub async fn restore_backup_from_target(
+        &self,
+        backup_id: &str,
+        target_id: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        // Build the list of directories to search.
+        let mut candidate_dirs: Vec<PathBuf> = Vec::new();
+        for target in self.config.effective_destinations() {
+            if !target.enabled {
+                continue;
+            }
+            if let Some(want) = target_id {
+                if target.id != want {
+                    continue;
+                }
+            }
+            if let Ok(p) = resolve_target_dir(&target, &self.config.destination_path) {
+                candidate_dirs.push(p);
+            }
+        }
+        if candidate_dirs.is_empty() {
+            return Err(match target_id {
+                Some(t) => format!("Backup target '{}' is not configured or disabled", t),
+                None => "No backup destinations configured".to_string(),
             });
         }
 
-        // Sort by creation time (newest first)
-        backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
-        Ok(backups)
-    }
-
-    /// Restore from a backup file
-    pub async fn restore_backup(&self, backup_id: &str) -> Result<serde_json::Value, String> {
-        let dest_path = Path::new(&self.config.destination_path);
-
-        // Find the backup file
+        // Find the backup file across every candidate directory.
         let mut backup_path: Option<PathBuf> = None;
-        for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-            if filename.contains(backup_id) && !filename.contains(".meta.") {
-                backup_path = Some(path);
+        for dir in &candidate_dirs {
+            if !dir.exists() {
+                continue;
+            }
+            let entries = match fs::read_dir(dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if filename.contains(backup_id) && !filename.contains(".meta.") {
+                    backup_path = Some(path);
+                    break;
+                }
+            }
+            if backup_path.is_some() {
                 break;
             }
         }
@@ -934,6 +1092,16 @@ impl BackupService {
             .map_err(|e| format!("Failed to parse backup JSON: {}", e))?;
 
         Ok(data)
+    }
+
+    /// Back-compat wrapper for callers that don't care which
+    /// destination the backup is restored from — searches every
+    /// enabled destination and returns the first match. New callers
+    /// should use `restore_backup_from_target` with an explicit
+    /// `target_id` so the user controls which copy is restored when
+    /// the same backup ID exists at multiple destinations.
+    pub async fn restore_backup(&self, backup_id: &str) -> Result<serde_json::Value, String> {
+        self.restore_backup_from_target(backup_id, None).await
     }
 
     /// Delete a specific backup
@@ -1452,11 +1620,35 @@ mod tests {
             size_bytes: 5120,
             encrypted: false,
             compressed: true,
+            target_id: Some("legacy-default".to_string()),
+            target_label: Some("Default".to_string()),
+            payload_hash: Some("sha256:abc".to_string()),
         };
         let json = serde_json::to_string(&item).unwrap();
         let back: BackupListItem = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, "b1");
         assert!(back.compressed);
+        assert_eq!(back.target_label.as_deref(), Some("Default"));
+    }
+
+    #[test]
+    fn backup_list_item_deserialises_legacy_json() {
+        // Legacy sidecars persisted before the multi-target work
+        // didn't carry target_id / target_label / payload_hash —
+        // confirm those default to None when missing.
+        let legacy = r#"{
+          "id": "b1",
+          "filename": "backup_full_b1.json.gz",
+          "createdAt": 1700000000,
+          "backupType": "full",
+          "sizeBytes": 5120,
+          "encrypted": false,
+          "compressed": true
+        }"#;
+        let item: BackupListItem = serde_json::from_str(legacy).unwrap();
+        assert_eq!(item.id, "b1");
+        assert!(item.target_id.is_none());
+        assert!(item.payload_hash.is_none());
     }
 
     // ── BackupService ───────────────────────────────────────────────────

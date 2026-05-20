@@ -13,6 +13,7 @@ pub fn is_command(command: &str) -> bool {
             | "backup_get_status"
             | "backup_run_now"
             | "backup_list"
+            | "backup_list_all_targets"
             | "backup_restore"
             | "backup_delete"
             | "create_desktop_shortcut"
@@ -481,6 +482,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         backup_commands::backup_get_status,
         backup_commands::backup_run_now,
         backup_commands::backup_list,
+        backup_commands::backup_list_all_targets,
         backup_commands::backup_restore,
         backup_commands::backup_delete,
         app_shell_commands::create_desktop_shortcut,
