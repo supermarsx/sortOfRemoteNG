@@ -656,9 +656,22 @@ const ImportOptionsPanel: React.FC<{
   <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
     <div className="text-xs font-medium uppercase text-[var(--color-textMuted)]">Import Options</div>
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="space-y-1 text-xs text-[var(--color-textSecondary)]">
-        Conflict policy
+      {/*
+        The labels used to wrap their inputs (`<label>text<select/></label>`),
+        which collapses the gap to 0 because `space-y-*` only inserts margin
+        between *element* children — a leading text node doesn't qualify. The
+        split block-label + control pattern mirrors how ScheduleSection /
+        EncryptionSection lay out their fields.
+      */}
+      <div className="space-y-1.5">
+        <label
+          htmlFor="import-options-conflict-policy"
+          className="block text-xs text-[var(--color-textSecondary)]"
+        >
+          Conflict policy
+        </label>
         <select
+          id="import-options-conflict-policy"
           value={options.conflictPolicy}
           onChange={(event) => updateOptions({ conflictPolicy: event.target.value as ImportOptions['conflictPolicy'] })}
           className="sor-form-input-xs w-full"
@@ -667,16 +680,22 @@ const ImportOptionsPanel: React.FC<{
           <option value="rename">Rename conflicts</option>
           <option value="skip">Skip conflicts</option>
         </select>
-      </label>
-      <label className="space-y-1 text-xs text-[var(--color-textSecondary)]">
-        Add tags to imported items
+      </div>
+      <div className="space-y-1.5">
+        <label
+          htmlFor="import-options-add-tags"
+          className="block text-xs text-[var(--color-textSecondary)]"
+        >
+          Add tags to imported items
+        </label>
         <input
+          id="import-options-add-tags"
           value={options.addTags}
           onChange={(event) => updateOptions({ addTags: event.target.value })}
           placeholder="comma-separated tags"
           className="sor-form-input-xs w-full"
         />
-      </label>
+      </div>
     </div>
     <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
       {[
