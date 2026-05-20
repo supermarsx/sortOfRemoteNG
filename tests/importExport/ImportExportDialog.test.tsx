@@ -174,6 +174,28 @@ describe("ImportExport dialog", () => {
     expect(screen.getByTestId("export-tab-content")).toBeInTheDocument();
   });
 
+  it("renders the Clone tab panel and disables the action with the only available database picked as source", async () => {
+    render(<ImportExport isOpen onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Clone" }));
+
+    // The CloneTab structure rendered: source + destination
+    // sections are present.
+    expect(
+      screen.getByTestId("clone-source-section"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("clone-destination-section"),
+    ).toBeInTheDocument();
+
+    // With only one database in the mock (the current one), the
+    // sole eligible source IS the only available target — so the
+    // action button has to reject the configuration with a clear
+    // disabled state.
+    const action = await screen.findByTestId("clone-action-button");
+    expect(action).toBeDisabled();
+  });
+
   it("supports keyboard navigation between tabs", () => {
     render(<ImportExport isOpen onClose={() => {}} />);
 
@@ -194,11 +216,14 @@ describe("ImportExport dialog", () => {
 
     const exportTab = screen.getByRole("tab", { name: "Export" });
     const importTab = screen.getByRole("tab", { name: "Import" });
+    // Clone was appended to the tab list — End should land on the
+    // last entry, which is now Clone (not Import).
+    const cloneTab = screen.getByRole("tab", { name: "Clone" });
 
     fireEvent.keyDown(exportTab, { key: "End" });
-    expect(importTab).toHaveAttribute("aria-selected", "true");
+    expect(cloneTab).toHaveAttribute("aria-selected", "true");
 
-    fireEvent.keyDown(importTab, { key: "Home" });
+    fireEvent.keyDown(cloneTab, { key: "Home" });
     expect(exportTab).toHaveAttribute("aria-selected", "true");
 
     fireEvent.click(importTab);

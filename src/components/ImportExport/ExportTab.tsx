@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { PasswordInput, Checkbox, NumberInput, Select } from '../ui/forms';
 import { Connection } from '../../types/connection/connection';
 import type { ExportConfig, ExportConfigUpdate, ExportInclusionConfig } from './types';
+import { AccordionSection } from './AccordionSection';
 import { analyzePasswordStrength } from '../../hooks/security/usePasswordStrength';
 import { SettingsManager } from '../../utils/settings/settingsManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
@@ -103,70 +104,8 @@ const filterPreviewConnections = (
   );
 };
 
-interface AccordionSectionProps {
-  id: string;
-  title: string;
-  description?: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  badge?: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  dataTestId?: string;
-}
-
-const AccordionSection: React.FC<AccordionSectionProps> = ({
-  id,
-  title,
-  description,
-  icon: Icon,
-  badge,
-  open,
-  onToggle,
-  children,
-  dataTestId,
-}) => (
-  <section
-    aria-labelledby={`${id}-heading`}
-    className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)]"
-    data-testid={dataTestId}
-  >
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      aria-controls={`${id}-panel`}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left"
-    >
-      <span className="text-[var(--color-textSecondary)] shrink-0">
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-      </span>
-      <Icon size={16} className="text-primary shrink-0" />
-      <span className="flex-1 min-w-0">
-        <span
-          id={`${id}-heading`}
-          className="block text-sm font-medium text-[var(--color-text)]"
-        >
-          {title}
-        </span>
-        {description && (
-          <span className="mt-0.5 block text-xs text-[var(--color-textSecondary)]">
-            {description}
-          </span>
-        )}
-      </span>
-      {badge && <span className="shrink-0 text-xs">{badge}</span>}
-    </button>
-    {open && (
-      <div
-        id={`${id}-panel`}
-        className="border-t border-[var(--color-border)] px-4 py-3 space-y-3"
-      >
-        {children}
-      </div>
-    )}
-  </section>
-);
+// AccordionSection lifted to its own module so CloneTab can reuse
+// the same look + a11y surface without copy-pasting 60 lines.
 
 const ExportTab: React.FC<ExportTabProps> = ({
   connections,

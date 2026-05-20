@@ -1,13 +1,14 @@
 import React from "react";
-import { Download, Upload, ArrowLeftRight } from "lucide-react";
+import { Download, Upload, ArrowLeftRight, Copy } from "lucide-react";
 import { useImportExport } from "../../hooks/sync/useImportExport";
 import ExportTab from "./ExportTab";
 import ImportTab from "./ImportTab";
+import CloneTab from "./CloneTab";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import PasswordPromptDialog from "./PasswordPromptDialog";
 
-const TAB_ORDER = ["export", "import"] as const;
+const TAB_ORDER = ["export", "import", "clone"] as const;
 
 type Mgr = ReturnType<typeof useImportExport>;
 
@@ -15,7 +16,7 @@ interface ImportExportProps {
   isOpen: boolean;
   onClose: () => void;
   embedded?: boolean;
-  initialTab?: "export" | "import";
+  initialTab?: "export" | "import" | "clone";
 }
 
 /* ── Sub-components ──────────────────────────────────────────────── */
@@ -100,6 +101,25 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       >
         <Upload size={16} className="inline mr-2" />
         Import
+      </button>
+      <button
+        id="import-export-tab-clone"
+        type="button"
+        role="tab"
+        data-testid="clone-tab"
+        aria-selected={mgr.activeTab === "clone"}
+        aria-controls="import-export-panel-clone"
+        tabIndex={mgr.activeTab === "clone" ? 0 : -1}
+        onClick={() => selectTab("clone")}
+        onKeyDown={(event) => handleKeyDown(event, "clone")}
+        className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+          mgr.activeTab === "clone"
+            ? "bg-primary text-[var(--color-text)]"
+            : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+        }`}
+      >
+        <Copy size={16} className="inline mr-2" />
+        Clone
       </button>
     </div>
   );
@@ -187,6 +207,37 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               }}
               isProcessing={mgr.isProcessing}
               handleExport={mgr.handleExport}
+            />
+          </div>
+        )}
+
+        {mgr.activeTab === "clone" && (
+          <div role="tabpanel" id="import-export-panel-clone" aria-labelledby="import-export-tab-clone">
+            <CloneTab
+              connections={mgr.connections}
+              sourceMode={mgr.cloneSourceMode}
+              setSourceMode={mgr.setCloneSourceMode}
+              selectedSourceDatabaseIds={mgr.selectedCloneSourceDatabaseIds}
+              setSelectedSourceDatabaseIds={mgr.setSelectedCloneSourceDatabaseIds}
+              inclusion={mgr.cloneInclusion}
+              updateInclusion={mgr.updateCloneInclusion}
+              targetDatabaseIds={mgr.cloneTargetDatabaseIds}
+              setTargetDatabaseIds={mgr.setCloneTargetDatabaseIds}
+              conflictPolicy={mgr.cloneConflictPolicy}
+              setConflictPolicy={mgr.setCloneConflictPolicy}
+              addTags={mgr.cloneAddTags}
+              setAddTags={mgr.setCloneAddTags}
+              preserveFolders={mgr.clonePreserveFolders}
+              setPreserveFolders={mgr.setClonePreserveFolders}
+              includeCredentials={mgr.cloneIncludeCredentials}
+              setIncludeCredentials={mgr.setCloneIncludeCredentials}
+              switchToTargetAfterClone={mgr.cloneSwitchToTargetDatabaseAfterClone}
+              setSwitchToTargetAfterClone={mgr.setCloneSwitchToTargetDatabaseAfterClone}
+              databaseOptions={mgr.cloneDatabaseOptions}
+              isCloning={mgr.isCloning}
+              cloneResult={mgr.cloneResult}
+              onClone={mgr.handleClone}
+              onClearResult={mgr.clearCloneResult}
             />
           </div>
         )}
