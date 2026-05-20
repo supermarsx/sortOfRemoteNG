@@ -987,6 +987,26 @@ const ImportTab: React.FC<ImportTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/*
+        Match the title + description preamble that ExportTab renders
+        so the two halves of the Import/Export panel feel symmetrical
+        when the user switches tabs. Strings live under `importTab.*`
+        with inline `defaultValue` fallbacks because the locale files
+        currently only carry an `exportTab.*` namespace — translators
+        can pick this up at the next i18n sweep.
+      */}
+      <div>
+        <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+          {t('importTab.title', { defaultValue: 'Import' })}
+        </h3>
+        <p className="text-[var(--color-textSecondary)] mb-4">
+          {t('importTab.description', {
+            defaultValue:
+              'Bring connections, tags, VPN profiles and tunnel chains into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import.',
+          })}
+        </p>
+      </div>
+
       <TargetDatabaseSection
         options={importDatabaseOptions}
         targetMode={importTargetMode}

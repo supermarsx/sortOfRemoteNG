@@ -2588,6 +2588,10 @@
     "debugPanel": "Debug Panel",
     "security": "Security"
   },
+  "importTab": {
+    "title": "Import",
+    "description": "Bring connections, tags, VPN profiles and tunnel chains into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import."
+  },
   "exportTab": {
     "title": "Export",
     "description": "Pick a scope, filter what's included, choose a format, optionally encrypt — then download. JSON keeps full fidelity; other formats carry the filtered connection list only.",
