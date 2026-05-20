@@ -60,6 +60,90 @@ pub enum DayOfWeek {
     Saturday,
 }
 
+/// A single user-defined destination the scheduled backup writes to.
+///
+/// Replaces the implicit single-destination model (just
+/// `destination_path` on `BackupConfig`) so one tick can fan out to
+/// several user-configured destinations — multiple local folders,
+/// multiple clouds, etc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupTarget {
+    /// Stable identifier; referenced by `TargetResult.target_id` so
+    /// the UI can correlate per-tick outcomes back to a destination
+    /// even when the user renames or reorders them.
+    pub id: String,
+    /// Human-facing label for the settings list editor and the
+    /// restore picker.
+    pub label: String,
+    /// Storage class for this destination (e.g. `custom`, `appData`,
+    /// `documents`, `googleDrive`, `oneDrive`, `nextcloud`, `dropbox`).
+    /// Free-form string so additional providers can land without a
+    /// coordinated type bump across crates.
+    pub preset: String,
+    /// Local filesystem path for filesystem presets, or cloud-side
+    /// subfolder for cloud presets. Optional because some presets
+    /// resolve to a default location (e.g. `appData`).
+    #[serde(default)]
+    pub custom_path: Option<String>,
+    /// Soft-disable a destination without removing it from the
+    /// settings list; the scheduler will skip it on the next tick.
+    pub enabled: bool,
+    /// Optional retention override; when `None`, the per-job /
+    /// per-config global retention applies.
+    #[serde(default)]
+    pub retention_override: Option<DestinationRetentionPolicy>,
+}
+
+/// Retention policy applied per destination. Kept as a subset of the
+/// full retention surface in `sorng-remote-backup::types::RetentionPolicy`
+/// — the in-app backup pipeline only needs the count-based slice.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DestinationRetentionPolicy {
+    /// Override `max_backups_to_keep` for this destination only.
+    /// `0` is treated as "unlimited" to match the global setting.
+    pub max_backups_to_keep: Option<u32>,
+}
+
+/// Outcome of writing the current tick's payload to one destination.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetResult {
+    pub target_id: String,
+    pub status: TargetStatus,
+    /// Canonical payload hash that landed at this destination on this
+    /// tick. The next tick uses this to recover destinations that
+    /// fell behind because of a previous failure: if this destination's
+    /// recorded hash differs from the current payload, we write even
+    /// when other destinations would be skipped.
+    #[serde(default)]
+    pub payload_hash_written: Option<String>,
+    /// Bytes that landed on disk (post-encrypt, post-compress). `None`
+    /// when no write happened (skipped / disabled / failed-before-write).
+    pub bytes_written: Option<u64>,
+    /// Resolved absolute file path for the backup at this destination,
+    /// useful for the restore picker.
+    #[serde(default)]
+    pub file_path: Option<String>,
+    /// Populated when `status == Failed`.
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetStatus {
+    /// Payload was written to this destination on this tick.
+    Success,
+    /// Delta-skip decided this destination already had the current
+    /// payload and the force-N threshold hadn't fired.
+    SkippedUnchanged,
+    /// `enabled = false` in the config; nothing attempted.
+    Disabled,
+    /// Write attempted and failed (path / credentials / network).
+    Failed,
+}
+
 /// Backup configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +167,30 @@ pub struct BackupConfig {
     pub backup_on_close: bool,
     pub notify_on_backup: bool,
     pub compress_backups: bool,
+    /// Destinations the payload fans out to on each scheduled tick.
+    /// Empty when the config still uses the legacy single-destination
+    /// model (`destination_path` only) — `effective_destinations()`
+    /// synthesises a single-element list in that case so the runtime
+    /// always has at least one target.
+    #[serde(default)]
+    pub destinations: Vec<BackupTarget>,
+    /// Master toggle for delta-verified backups. When on, ticks whose
+    /// canonical payload hash matches the previous successful run's
+    /// hash are skipped at every destination that's already up to
+    /// date, unless the force-N safety valve kicks in.
+    #[serde(default)]
+    pub delta_skip_enabled: bool,
+    /// After this many consecutive skipped ticks the next tick emits
+    /// regardless, so retention rotation stays healthy. `0` means
+    /// "never force" (skip indefinitely when payload is unchanged).
+    #[serde(default = "default_force_emit_every")]
+    pub force_emit_every_n_skipped_ticks: u32,
+}
+
+fn default_force_emit_every() -> u32 {
+    // 7 ticks ~= one guaranteed backup per week on a daily schedule.
+    // Matches the planning doc's default.
+    7
 }
 
 impl Default for BackupConfig {
@@ -107,7 +215,35 @@ impl Default for BackupConfig {
             backup_on_close: false,
             notify_on_backup: true,
             compress_backups: true,
+            destinations: Vec::new(),
+            delta_skip_enabled: false,
+            force_emit_every_n_skipped_ticks: default_force_emit_every(),
         }
+    }
+}
+
+impl BackupConfig {
+    /// Synthesise the effective destination list. When the user has
+    /// configured one or more entries in `destinations` we honour them
+    /// as-is. Otherwise, wrap the legacy `destination_path` into a
+    /// single-entry list so the runtime always has at least one target
+    /// to iterate over without scattering the migration check across
+    /// every caller.
+    pub fn effective_destinations(&self) -> Vec<BackupTarget> {
+        if !self.destinations.is_empty() {
+            return self.destinations.clone();
+        }
+        if self.destination_path.is_empty() {
+            return Vec::new();
+        }
+        vec![BackupTarget {
+            id: "legacy-default".to_string(),
+            label: "Default".to_string(),
+            preset: "custom".to_string(),
+            custom_path: Some(self.destination_path.clone()),
+            enabled: true,
+            retention_override: None,
+        }]
     }
 }
 
@@ -125,6 +261,19 @@ pub struct BackupMetadata {
     pub size_bytes: u64,
     pub connections_count: u32,
     pub parent_backup_id: Option<String>, // For differential backups
+    /// Canonical SHA-256 hash of the *plaintext* payload (sorted keys,
+    /// pre-encryption). Drives delta-skip on the next tick — the
+    /// checksum field above is over the rendered JSON text and varies
+    /// with formatting, so it can't be used for that comparison.
+    /// Legacy records without this field deserialise as `None`.
+    #[serde(default)]
+    pub payload_hash: Option<String>,
+    /// `target_id` of the destination this file belongs to. Used by
+    /// the restore picker to render per-source badges and by the
+    /// per-destination delta logic. `None` for legacy single-target
+    /// records.
+    #[serde(default)]
+    pub target_id: Option<String>,
 }
 
 /// Backup status for frontend updates
@@ -134,11 +283,26 @@ pub struct BackupStatus {
     pub is_running: bool,
     pub last_backup_time: Option<u64>,
     pub last_backup_type: Option<String>,
-    pub last_backup_status: Option<String>, // "success" | "failed" | "partial"
+    pub last_backup_status: Option<String>, // "success" | "failed" | "partial" | "skipped"
     pub last_error: Option<String>,
     pub next_scheduled_time: Option<u64>,
     pub backup_count: u32,
     pub total_size_bytes: u64,
+    /// Canonical payload hash of the most recent successful tick, used
+    /// by the delta-skip comparator on the next tick. `None` until the
+    /// first successful run since the feature landed.
+    #[serde(default)]
+    pub last_payload_hash: Option<String>,
+    /// How many ticks in a row have been delta-skipped. Reset to 0 by
+    /// any tick that wrote to at least one destination, including
+    /// ticks that were forced via `force_emit_every_n_skipped_ticks`.
+    #[serde(default)]
+    pub consecutive_skipped_count: u32,
+    /// Per-destination outcomes of the most recent tick (success /
+    /// skipped / disabled / failed). The UI uses this for the
+    /// "last run" panel in the backup settings dialog.
+    #[serde(default)]
+    pub last_target_results: Vec<TargetResult>,
 }
 
 /// List of available backups
@@ -179,6 +343,9 @@ impl BackupService {
                 next_scheduled_time: None,
                 backup_count: 0,
                 total_size_bytes: 0,
+                last_payload_hash: None,
+                consecutive_skipped_count: 0,
+                last_target_results: Vec::new(),
             },
             data_path,
         }))
@@ -388,6 +555,10 @@ impl BackupService {
             size_bytes,
             connections_count,
             parent_backup_id: None,
+            // Phase B1 wires the schema only; the canonical payload
+            // hash will be computed and threaded through in Phase B2.
+            payload_hash: None,
+            target_id: None,
         };
 
         // Save metadata file
@@ -810,12 +981,15 @@ mod tests {
             size_bytes: 4096,
             connections_count: 10,
             parent_backup_id: Some("parent-1".to_string()),
+            payload_hash: Some("sha256:abc".to_string()),
+            target_id: Some("legacy-default".to_string()),
         };
         let json = serde_json::to_string(&meta).unwrap();
         let back: BackupMetadata = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, "abc-123");
         assert_eq!(back.connections_count, 10);
         assert_eq!(back.parent_backup_id, Some("parent-1".to_string()));
+        assert_eq!(back.payload_hash.as_deref(), Some("sha256:abc"));
     }
 
     #[test]
@@ -831,6 +1005,8 @@ mod tests {
             size_bytes: 0,
             connections_count: 0,
             parent_backup_id: None,
+            payload_hash: None,
+            target_id: None,
         };
         let json = serde_json::to_string(&meta).unwrap();
         assert!(json.contains("createdAt"));
@@ -851,11 +1027,103 @@ mod tests {
             next_scheduled_time: Some(1700003600),
             backup_count: 5,
             total_size_bytes: 10240,
+            last_payload_hash: Some("sha256:abc".to_string()),
+            consecutive_skipped_count: 0,
+            last_target_results: Vec::new(),
         };
         let json = serde_json::to_string(&status).unwrap();
         let back: BackupStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(back.backup_count, 5);
         assert_eq!(back.last_backup_time, Some(1700000000));
+        assert_eq!(back.last_payload_hash.as_deref(), Some("sha256:abc"));
+    }
+
+    #[test]
+    fn backup_status_deserialises_legacy_json_without_new_fields() {
+        // Status records persisted before the delta-skip / multi-target
+        // work must still load — the new fields are #[serde(default)].
+        let legacy = r#"{
+          "isRunning": false,
+          "lastBackupTime": 1700000000,
+          "lastBackupType": "full",
+          "lastBackupStatus": "success",
+          "lastError": null,
+          "nextScheduledTime": null,
+          "backupCount": 3,
+          "totalSizeBytes": 2048
+        }"#;
+        let status: BackupStatus = serde_json::from_str(legacy).unwrap();
+        assert_eq!(status.backup_count, 3);
+        assert_eq!(status.consecutive_skipped_count, 0);
+        assert!(status.last_payload_hash.is_none());
+        assert!(status.last_target_results.is_empty());
+    }
+
+    #[test]
+    fn backup_config_deserialises_legacy_json_without_new_fields() {
+        // Same backward-compat check for BackupConfig.
+        let legacy = r#"{
+          "enabled": true,
+          "frequency": "daily",
+          "scheduledTime": "03:00",
+          "weeklyDay": "sunday",
+          "monthlyDay": 1,
+          "destinationPath": "C:\\backups",
+          "differentialEnabled": true,
+          "fullBackupInterval": 7,
+          "maxBackupsToKeep": 30,
+          "format": "json",
+          "includePasswords": false,
+          "encryptBackups": true,
+          "encryptionAlgorithm": "AES-256-GCM",
+          "encryptionPassword": null,
+          "includeSettings": true,
+          "includeSshKeys": false,
+          "backupOnClose": false,
+          "notifyOnBackup": true,
+          "compressBackups": true
+        }"#;
+        let cfg: BackupConfig = serde_json::from_str(legacy).unwrap();
+        assert!(cfg.destinations.is_empty());
+        assert!(!cfg.delta_skip_enabled);
+        // Default force-N applies when the field is absent.
+        assert_eq!(cfg.force_emit_every_n_skipped_ticks, 7);
+    }
+
+    #[test]
+    fn effective_destinations_wraps_legacy_destination_path() {
+        let mut cfg = BackupConfig::default();
+        cfg.destination_path = "C:\\backups".to_string();
+        let dests = cfg.effective_destinations();
+        assert_eq!(dests.len(), 1);
+        assert_eq!(dests[0].id, "legacy-default");
+        assert_eq!(dests[0].custom_path.as_deref(), Some("C:\\backups"));
+        assert!(dests[0].enabled);
+    }
+
+    #[test]
+    fn effective_destinations_returns_configured_list_when_present() {
+        let mut cfg = BackupConfig::default();
+        cfg.destination_path = "C:\\legacy".to_string();
+        cfg.destinations.push(BackupTarget {
+            id: "t1".to_string(),
+            label: "Primary".to_string(),
+            preset: "custom".to_string(),
+            custom_path: Some("D:\\primary".to_string()),
+            enabled: true,
+            retention_override: None,
+        });
+        let dests = cfg.effective_destinations();
+        // When destinations is non-empty, the legacy field is ignored.
+        assert_eq!(dests.len(), 1);
+        assert_eq!(dests[0].id, "t1");
+    }
+
+    #[test]
+    fn effective_destinations_returns_empty_when_nothing_configured() {
+        let cfg = BackupConfig::default();
+        // Default destination_path is empty and destinations is empty.
+        assert!(cfg.effective_destinations().is_empty());
     }
 
     // ── BackupListItem serde ────────────────────────────────────────────
