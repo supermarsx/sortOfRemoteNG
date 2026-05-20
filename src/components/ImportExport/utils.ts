@@ -100,19 +100,212 @@ export const importFromCSV = async (content: string): Promise<Connection[]> => {
   return connections;
 };
 
+const parseBooleanAttribute = (value: string | null): boolean =>
+  String(value ?? '').trim().toLowerCase() === 'true';
+
+const parseIsoOrNow = (value: string | null): string => {
+  const parsed = new Date(value || Date.now());
+  return Number.isNaN(parsed.getTime())
+    ? new Date().toISOString()
+    : parsed.toISOString();
+};
+
+/**
+ * Parse native sortOfRemoteNG XML exports.
+ */
+export const importFromXML = async (content: string): Promise<Connection[]> => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(content, 'text/xml');
+  const parseError = doc.querySelector('parsererror');
+  if (parseError) {
+    throw new Error('Invalid XML format: ' + parseError.textContent);
+  }
+
+  const root = doc.documentElement;
+  if (!root || root.tagName !== 'sortOfRemoteNG') {
+    throw new Error('Invalid sortOfRemoteNG XML: expected <sortOfRemoteNG> root');
+  }
+
+  const nodes = Array.from(root.querySelectorAll('Connection'));
+  if (nodes.length === 0) {
+    throw new Error('Invalid sortOfRemoteNG XML: no Connection nodes found');
+  }
+
+  return nodes.map((node) => {
+    const protocol = (node.getAttribute('Type') || 'rdp').toLowerCase() as Connection['protocol'];
+    const isGroup = parseBooleanAttribute(node.getAttribute('IsGroup'));
+    const tags = (node.getAttribute('Tags') || '')
+      .split(/[;,]/)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+    return {
+      id: node.getAttribute('Id') || generateId(),
+      name: node.getAttribute('Name') || 'Imported Connection',
+      protocol,
+      hostname: node.getAttribute('Server') || node.getAttribute('Hostname') || '',
+      port: parsePortOrDefault(node.getAttribute('Port'), protocol),
+      username: node.getAttribute('Username') || undefined,
+      domain: node.getAttribute('Domain') || undefined,
+      description: node.getAttribute('Description') || undefined,
+      parentId: node.getAttribute('ParentId') || undefined,
+      isGroup,
+      tags,
+      createdAt: parseIsoOrNow(node.getAttribute('CreatedAt')),
+      updatedAt: parseIsoOrNow(node.getAttribute('UpdatedAt')),
+    };
+  });
+};
+
 /**
  * Supported import formats
  */
 export type ImportFormat = 
+  | 'json'           // Native sortOfRemoteNG JSON
+  | 'xml'            // Native sortOfRemoteNG XML
+  | 'csv'            // Native sortOfRemoteNG CSV
   | 'mremoteng'      // mRemoteNG XML format
   | 'rdcman'         // Remote Desktop Connection Manager
   | 'royalts'        // Royal TS/TSX JSON format
   | 'mobaxterm'      // MobaXterm INI format
   | 'putty'          // PuTTY registry export
   | 'securecrt'      // SecureCRT XML sessions
-  | 'termius'        // Termius JSON export
-  | 'csv'            // Generic CSV
-  | 'json';          // Generic JSON
+  | 'termius';       // Termius JSON export
+
+export type ImportFormatGroup = 'native' | 'vendor';
+
+export interface ImportFormatCompatibility {
+  value: ImportFormat;
+  label: string;
+  group: ImportFormatGroup;
+  extensions: string[];
+  signatures: string[];
+  dataClasses: string[];
+  credentialSupport: 'full' | 'partial' | 'none';
+  description: string;
+  warning?: string;
+}
+
+export const IMPORT_FORMAT_ORDER: ImportFormat[] = [
+  'json',
+  'xml',
+  'csv',
+  'mremoteng',
+  'rdcman',
+  'termius',
+  'royalts',
+  'mobaxterm',
+  'putty',
+  'securecrt',
+];
+
+export const IMPORT_FORMAT_COMPATIBILITY: Record<ImportFormat, ImportFormatCompatibility> = {
+  json: {
+    value: 'json',
+    label: 'JSON',
+    group: 'native',
+    extensions: ['.json', '.encrypted'],
+    signatures: ['{ "connections": [...] }', '{ "databases": [...] }', '[{ ... }]'],
+    dataClasses: ['connections', 'folders', 'settings sidecars', 'VPN', 'tunnel chains'],
+    credentialSupport: 'full',
+    description: 'Native sortOfRemoteNG JSON exports and connection arrays.',
+  },
+  xml: {
+    value: 'xml',
+    label: 'XML',
+    group: 'native',
+    extensions: ['.xml', '.encrypted'],
+    signatures: ['<sortOfRemoteNG>', '<Connection ... />'],
+    dataClasses: ['connections', 'folders'],
+    credentialSupport: 'partial',
+    description: 'Native sortOfRemoteNG XML connection exports.',
+  },
+  csv: {
+    value: 'csv',
+    label: 'CSV',
+    group: 'native',
+    extensions: ['.csv', '.encrypted'],
+    signatures: ['Name,Protocol,Hostname,Port', 'ID,Name,Protocol,Hostname'],
+    dataClasses: ['connections', 'folders'],
+    credentialSupport: 'partial',
+    description: 'Native sortOfRemoteNG CSV exports and templates.',
+  },
+  mremoteng: {
+    value: 'mremoteng',
+    label: 'mRemoteNG',
+    group: 'vendor',
+    extensions: ['.xml'],
+    signatures: ['<Connections ConfVersion=...>', '<Node Protocol=...>'],
+    dataClasses: ['connections', 'folders'],
+    credentialSupport: 'partial',
+    description: 'mRemoteNG connection XML, including supported encrypted AES-GCM files.',
+    warning: 'Only common connection, folder, protocol, and credential fields can be mapped.',
+  },
+  rdcman: {
+    value: 'rdcman',
+    label: 'RDCMan',
+    group: 'vendor',
+    extensions: ['.rdg', '.xml'],
+    signatures: ['<RDCMan>', '<file><group>'],
+    dataClasses: ['RDP connections', 'groups'],
+    credentialSupport: 'partial',
+    description: 'Remote Desktop Connection Manager server groups.',
+  },
+  termius: {
+    value: 'termius',
+    label: 'Termius',
+    group: 'vendor',
+    extensions: ['.json'],
+    signatures: ['{ "hosts": [...] }'],
+    dataClasses: ['SSH hosts', 'groups'],
+    credentialSupport: 'partial',
+    description: 'Termius JSON host exports.',
+  },
+  royalts: {
+    value: 'royalts',
+    label: 'Royal TS/TSX',
+    group: 'vendor',
+    extensions: ['.rtsz', '.rtsx', '.json'],
+    signatures: ['{ "Objects": [...] }', 'RoyalFolder'],
+    dataClasses: ['connections', 'folders'],
+    credentialSupport: 'partial',
+    description: 'Royal TS/TSX object exports.',
+  },
+  mobaxterm: {
+    value: 'mobaxterm',
+    label: 'MobaXterm',
+    group: 'vendor',
+    extensions: ['.ini'],
+    signatures: ['[Bookmarks]', 'SubRep='],
+    dataClasses: ['sessions', 'folders'],
+    credentialSupport: 'none',
+    description: 'MobaXterm bookmark INI files.',
+  },
+  putty: {
+    value: 'putty',
+    label: 'PuTTY',
+    group: 'vendor',
+    extensions: ['.reg'],
+    signatures: ['REGEDIT4', 'SimonTatham\\PuTTY\\Sessions'],
+    dataClasses: ['sessions'],
+    credentialSupport: 'none',
+    description: 'PuTTY registry session exports.',
+  },
+  securecrt: {
+    value: 'securecrt',
+    label: 'SecureCRT',
+    group: 'vendor',
+    extensions: ['.xml'],
+    signatures: ['<VanDyke>', 'S:"Protocol Name"'],
+    dataClasses: ['sessions'],
+    credentialSupport: 'partial',
+    description: 'SecureCRT XML session exports.',
+  },
+};
+
+export const getImportFormatCompatibility = (
+  format: ImportFormat,
+): ImportFormatCompatibility => IMPORT_FORMAT_COMPATIBILITY[format];
 
 /**
  * Detect import format from file content
@@ -122,7 +315,7 @@ export const detectImportFormat = (content: string, filename?: string): ImportFo
   const trimmed = content.replace(/^\uFEFF/, '').trim();
   let extIsXml = false;
 
-  // Check filename extension first
+  // Check filename extension first when an extension is unambiguous.
   if (filename) {
     const lower = filename.toLowerCase();
     const ext = lower.split('.').pop();
@@ -133,6 +326,11 @@ export const detectImportFormat = (content: string, filename?: string): ImportFo
     if (ext === 'reg') return 'putty';
     if (ext === 'ini' && lower.includes('moba')) return 'mobaxterm';
     if (ext === 'xml') extIsXml = true;
+  }
+
+  // Native sortOfRemoteNG XML.
+  if (trimmed.includes('<sortOfRemoteNG') || trimmed.includes('<Connection ')) {
+    return 'xml';
   }
 
   // mRemoteNG detection - the <Connections> root tag is distinctive.
@@ -1272,6 +1470,35 @@ export const importFromJSON = async (content: string): Promise<Connection[]> => 
       } as Connection;
     });
   }
+
+  // Handle native multi-database export package format.
+  if (Array.isArray(data?.databases)) {
+    return data.databases.flatMap((database: any) =>
+      Array.isArray(database?.connections)
+        ? database.connections
+        : [],
+    ).map((conn: any) => {
+      const protocol = (conn.protocol?.toLowerCase() || 'rdp') as Connection['protocol'];
+
+      return {
+        ...conn,
+        protocol,
+        id: conn.id || generateId(),
+        name: conn.name || 'Imported Connection',
+        hostname: conn.hostname || conn.host || '',
+        port: parsePortOrDefault(conn.port, protocol),
+        username: conn.username || undefined,
+        password: conn.password || undefined,
+        domain: conn.domain || undefined,
+        description: conn.description || undefined,
+        parentId: conn.parentId || undefined,
+        isGroup: conn.isGroup || conn.isFolder || false,
+        tags: conn.tags || [],
+        createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
+        updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
+      } as Connection;
+    });
+  }
   
   // Handle object with connections array
   if (data.connections && Array.isArray(data.connections)) {
@@ -1292,6 +1519,8 @@ export const importConnections = async (
   const detectedFormat = format || detectImportFormat(content, filename);
   
   switch (detectedFormat) {
+    case 'xml':
+      return importFromXML(content);
     case 'mremoteng':
       return importFromMRemoteNG(content);
     case 'rdcman':
@@ -1319,6 +1548,9 @@ export const importConnections = async (
  */
 export const getFormatName = (format: ImportFormat): string => {
   const names: Record<ImportFormat, string> = {
+    'json': 'JSON',
+    'xml': 'XML',
+    'csv': 'CSV',
     'mremoteng': 'mRemoteNG',
     'rdcman': 'Remote Desktop Connection Manager',
     'royalts': 'Royal TS/TSX',
@@ -1326,8 +1558,6 @@ export const getFormatName = (format: ImportFormat): string => {
     'putty': 'PuTTY',
     'securecrt': 'SecureCRT',
     'termius': 'Termius',
-    'csv': 'CSV',
-    'json': 'JSON',
   };
   return names[format] || format;
 };

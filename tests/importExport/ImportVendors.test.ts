@@ -8,6 +8,7 @@ import {
   importFromRoyalTS,
   importFromSecureCRT,
   importFromJSON,
+  importFromXML,
   detectImportFormat,
   importConnections,
   getFormatName,
@@ -55,6 +56,15 @@ describe('detectImportFormat', () => {
     expect(detectImportFormat('Name,Protocol,Hostname,Port\n', 'connections.csv')).toBe('csv');
   });
 
+  it('detects native sortOfRemoteNG XML before generic XML fallbacks', () => {
+    expect(
+      detectImportFormat(
+        '<?xml version="1.0"?><sortOfRemoteNG><Connection Name="Native" /></sortOfRemoteNG>',
+        'connections.xml',
+      ),
+    ).toBe('xml');
+  });
+
   it('defaults unmatched plain text to CSV', () => {
     expect(detectImportFormat('plain text export with no structured markers')).toBe('csv');
   });
@@ -70,6 +80,46 @@ describe('detectImportFormat', () => {
     expect(detectImportFormat('REGEDIT4')).toBe('putty');
     expect(detectImportFormat(JSON.stringify({ hosts: [] }))).toBe('termius');
     expect(detectImportFormat('<Node Name="Direct" Hostname="host-only.example.com" />')).toBe('mremoteng');
+  });
+});
+
+// ──────────────────────────────────────────
+// Native sortOfRemoteNG XML
+// ──────────────────────────────────────────
+describe('importFromXML', () => {
+  it('imports native XML export rows with folders, tags, and fields', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<sortOfRemoteNG>
+  <Connection Id="folder-1" Name="Ops" Type="RDP" Server="" Port="0" IsGroup="true" Tags="" CreatedAt="2026-01-01T00:00:00.000Z" UpdatedAt="2026-01-01T00:00:00.000Z" />
+  <Connection Id="conn-1" Name="Shell" Type="SSH" Server="ssh.example.com" Port="22" Username="root" Domain="" Description="Native XML" ParentId="folder-1" IsGroup="false" Tags="prod,linux" CreatedAt="2026-01-02T00:00:00.000Z" UpdatedAt="2026-01-03T00:00:00.000Z" />
+</sortOfRemoteNG>`;
+
+    const conns = await importFromXML(xml);
+
+    expect(conns).toHaveLength(2);
+    expect(conns[0]).toMatchObject({
+      id: 'folder-1',
+      name: 'Ops',
+      isGroup: true,
+    });
+    expect(conns[1]).toMatchObject({
+      id: 'conn-1',
+      name: 'Shell',
+      protocol: 'ssh',
+      hostname: 'ssh.example.com',
+      port: 22,
+      username: 'root',
+      parentId: 'folder-1',
+      tags: ['prod', 'linux'],
+    });
+  });
+
+  it('routes native XML through importConnections when forced or detected', async () => {
+    const xml = `<?xml version="1.0"?><sortOfRemoteNG><Connection Name="Native" Type="RDP" Server="rdp.example.com" Port="3389" IsGroup="false" /></sortOfRemoteNG>`;
+    const conns = await importConnections(xml, 'native.xml', 'xml');
+
+    expect(conns).toHaveLength(1);
+    expect(conns[0].hostname).toBe('rdp.example.com');
   });
 });
 
@@ -1162,6 +1212,7 @@ describe('getFormatName', () => {
     expect(getFormatName('securecrt')).toBe('SecureCRT');
     expect(getFormatName('termius')).toBe('Termius');
     expect(getFormatName('csv')).toBe('CSV');
+    expect(getFormatName('xml')).toBe('XML');
     expect(getFormatName('json')).toBe('JSON');
   });
 
