@@ -27,6 +27,7 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 }));
 
 const mockDispatch = vi.fn();
+const mockLoadData = vi.fn().mockResolvedValue(undefined);
 const mockConnections: Connection[] = [
   {
     id: "conn-1",
@@ -65,6 +66,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: { connections: mockConnections },
     dispatch: mockDispatch,
+    loadData: mockLoadData,
   }),
 }));
 
@@ -96,6 +98,8 @@ const mockReadExportableSnapshot = vi.fn().mockResolvedValue({
 });
 const mockGetAllConnections = vi.fn().mockResolvedValue([]);
 const mockAddConnection = vi.fn().mockResolvedValue(undefined);
+const mockAppendConnectionsToDatabase = vi.fn().mockResolvedValue(undefined);
+const mockSelectDatabase = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
@@ -105,6 +109,8 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       getCurrentDatabase: mockGetCurrentCollection,
       getExportableDatabases: mockGetExportableDatabases,
       readExportableDatabaseSnapshot: mockReadExportableSnapshot,
+      appendConnectionsToDatabase: mockAppendConnectionsToDatabase,
+      selectDatabase: mockSelectDatabase,
       exportDatabase: mockExportCollection,
     }),
     resetInstance: vi.fn(),
@@ -125,11 +131,23 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
 const mockImportConnections = vi.fn().mockResolvedValue([]);
 const mockDetectImportFormat = vi.fn().mockReturnValue("json");
 const mockGetFormatName = vi.fn().mockReturnValue("JSON");
+const mockDetectMRemoteNGEncryption = vi.fn().mockReturnValue({
+  isEncrypted: false,
+  fullFileEncryption: false,
+  requiresPassword: false,
+});
+const mockDecryptMRemoteNGXml = vi.fn();
+const mockVerifyMRemoteNGPassword = vi.fn().mockResolvedValue({ valid: true });
 
 vi.mock("../../src/components/ImportExport/utils", () => ({
   importConnections: (...args: unknown[]) => mockImportConnections(...args),
   detectImportFormat: (...args: unknown[]) => mockDetectImportFormat(...args),
   getFormatName: (...args: unknown[]) => mockGetFormatName(...args),
+  getImportFormatCompatibility: (format: string) => ({ value: format, label: format.toUpperCase() }),
+  detectMRemoteNGEncryption: (...args: unknown[]) => mockDetectMRemoteNGEncryption(...args),
+  decryptMRemoteNGXml: (...args: unknown[]) => mockDecryptMRemoteNGXml(...args),
+  verifyMRemoteNGPassword: (...args: unknown[]) => mockVerifyMRemoteNGPassword(...args),
+  MREMOTENG_DEFAULT_MASTER_PASSWORD: "mR3m",
 }));
 
 const mockEncryptWithPassword = vi.fn().mockResolvedValue("encrypted-payload");
@@ -169,10 +187,14 @@ vi.mock("../../src/utils/network/proxyOpenVPNManager", () => ({
 
 const mockGetTunnelChains = vi.fn().mockReturnValue([]);
 const mockCreateTunnelChain = vi.fn().mockResolvedValue({ id: "tc-1" });
+const mockGetProfiles = vi.fn().mockReturnValue([]);
+const mockGetChains = vi.fn().mockReturnValue([]);
 
 vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
   proxyCollectionManager: {
     getTunnelChains: (...args: unknown[]) => mockGetTunnelChains(...args),
+    getProfiles: (...args: unknown[]) => mockGetProfiles(...args),
+    getChains: (...args: unknown[]) => mockGetChains(...args),
     createTunnelChain: (...args: unknown[]) => mockCreateTunnelChain(...args),
   },
 }));
@@ -2105,6 +2127,36 @@ describe("useImportExport", () => {
     );
   });
 
+  it("handleFileSelect honors a forced import format over auto-detection", async () => {
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    mockImportConnections.mockResolvedValueOnce([
+      { id: "termius-1", name: "Termius Host", protocol: "ssh" },
+    ]);
+    const { result } = renderImportExport();
+
+    await act(async () => {
+      await result.current.setImportFormatSelection("termius");
+    });
+
+    const file = new File([JSON.stringify({ hosts: [] })], "ambiguous.json", {
+      type: "application/json",
+    });
+    const event = {
+      target: { files: [file] },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await act(async () => {
+      await result.current.handleFileSelect(event);
+    });
+
+    expect(mockImportConnections).toHaveBeenCalledWith(
+      JSON.stringify({ hosts: [] }),
+      "ambiguous.json",
+      "termius",
+    );
+    expect(result.current.importAnalysis?.formatForced).toBe(true);
+  });
+
   // ── Confirm / cancel import ─────────────────────────────────
 
   it("confirmImport dispatches ADD_CONNECTION for each connection", async () => {
@@ -2144,6 +2196,65 @@ describe("useImportExport", () => {
       expect.stringContaining("Imported 2"),
     );
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("confirmImport appends to a selected non-current database and can switch after import", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    mockGetExportableDatabases
+      .mockResolvedValueOnce(databases)
+      .mockResolvedValueOnce(databases);
+    const importedConns = [{ id: "archive-1", name: "Archive Host" }];
+    mockImportConnections.mockResolvedValueOnce(importedConns);
+    const { result } = renderImportExport();
+
+    await waitFor(() => {
+      expect(result.current.importDatabaseOptions).toHaveLength(2);
+    });
+
+    await act(async () => {
+      await result.current.setSelectedImportDatabaseId("col-2");
+      result.current.updateImportOptions({ switchToTargetDatabaseAfterImport: true });
+    });
+
+    const file = new File(["data"], "archive.json", {
+      type: "application/json",
+    });
+    const event = {
+      target: { files: [file] },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await act(async () => {
+      await result.current.handleFileSelect(event);
+    });
+
+    await act(async () => {
+      await result.current.confirmImport("archive.json");
+    });
+
+    expect(mockDispatch).not.toHaveBeenCalledWith({
+      type: "ADD_CONNECTION",
+      payload: importedConns[0],
+    });
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith("col-2", importedConns);
+    expect(mockSelectDatabase).toHaveBeenCalledWith("col-2");
+    expect(mockLoadData).toHaveBeenCalled();
   });
 
   it("confirmImport restores VPNs and tunnel chains from encrypted JSON imports", async () => {

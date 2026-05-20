@@ -9,6 +9,7 @@ import {
 import { SavedTunnelChain } from '../../types/settings/settings';
 
 export type ExportScopeMode = 'current' | 'selected' | 'all';
+export type ImportTargetMode = 'current' | 'selected' | 'all';
 
 export interface ExportInclusionConfig {
   includeConnections: boolean;
@@ -133,6 +134,10 @@ export interface ImportSourceMetadata {
   sizeBytes?: number;
   format: string;
   formatName: string;
+  detectedFormat?: string;
+  detectedFormatName?: string;
+  formatForced?: boolean;
+  formatWarning?: string;
   detectedAt: string;
   confidence: 'high' | 'medium' | 'low';
   encrypted: boolean;
@@ -186,6 +191,7 @@ export interface ImportOptions {
   includeTunnelChains: boolean;
   conflictPolicy: 'duplicate' | 'skip' | 'rename';
   addTags: string;
+  switchToTargetDatabaseAfterImport: boolean;
 }
 
 export interface ImportResult {

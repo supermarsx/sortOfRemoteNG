@@ -324,16 +324,20 @@ export class DatabaseManager {
       throw new DatabaseNotFoundError();
     }
 
-    if (collection.isEncrypted && !password) {
+    const resolvedPassword = collection.isEncrypted
+      ? password || this.getUnlockedPasswordForDatabase(collection.id)
+      : undefined;
+
+    if (collection.isEncrypted && !resolvedPassword) {
       throw new InvalidPasswordError(
         "Password required for encrypted collection",
       );
     }
 
-    await this.loadDatabaseData(id, password);
+    await this.loadDatabaseData(id, resolvedPassword);
     this.currentDatabase = collection;
-    this.currentPassword = password || null;
-    this.rememberUnlockedDatabase(collection, password);
+    this.currentPassword = resolvedPassword || null;
+    this.rememberUnlockedDatabase(collection, resolvedPassword);
 
     // Update last accessed time
     collection.lastAccessed = new Date().toISOString();
@@ -813,6 +817,37 @@ export class DatabaseManager {
     return this.buildExportSnapshot(collection, data, includePasswords);
   }
 
+  async appendConnectionsToDatabase(
+    collectionId: string,
+    connections: Connection[],
+  ): Promise<void> {
+    const collection = await this.getDatabase(collectionId);
+    if (!collection) {
+      throw new DatabaseNotFoundError();
+    }
+
+    const password = this.resolveExportPasswordForDatabase(collection);
+    const data = await this.loadDatabaseData(collectionId, password);
+    if (!data) {
+      throw new DatabaseNotFoundError();
+    }
+
+    await this.saveDatabaseData(
+      collectionId,
+      {
+        ...data,
+        connections: [...(data.connections ?? []), ...connections],
+        settings: data.settings ?? {},
+        timestamp: Date.now(),
+        tabGroups: data.tabGroups ?? [],
+        colorTags: data.colorTags ?? {},
+      },
+      password,
+    );
+
+    this.rememberUnlockedDatabase(collection, password);
+  }
+
   async removePasswordFromDatabase(
     collectionId: string,
     password: string,
@@ -958,4 +993,3 @@ export class DatabaseManager {
     return `sortofremoteng-exports-${datetime}-${randomHex}.json`;
   }
 }
-

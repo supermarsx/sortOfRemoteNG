@@ -15,9 +15,9 @@ import {
   ImportResult,
   ImportSourceMetadata,
   ImportVpnData,
+  ImportTargetMode,
 } from '../../components/ImportExport/types';
 import {
-  encryptWithPassword,
   decryptWithPassword,
   isWebCryptoPayload,
   normalizePbkdf2Iterations,
@@ -43,10 +43,12 @@ import {
   importConnections,
   detectImportFormat,
   getFormatName,
+  getImportFormatCompatibility,
   detectMRemoteNGEncryption,
   decryptMRemoteNGXml,
   verifyMRemoteNGPassword,
   MREMOTENG_DEFAULT_MASTER_PASSWORD,
+  type ImportFormat,
 } from '../../components/ImportExport/utils';
 import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
@@ -70,9 +72,34 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   includeTunnelChains: true,
   conflictPolicy: 'duplicate',
   addTags: '',
+  switchToTargetDatabaseAfterImport: false,
 };
 
 const EMPTY_IMPORT_PREVIEW_ITEMS: ImportPreviewItem[] = [];
+
+const chooseImportTargetDatabaseId = (
+  options: ExportDatabaseOption[],
+  currentSelection: string,
+  mode: ImportTargetMode,
+): string => {
+  const exportableOptions = options.filter((option) => option.isExportable);
+  const currentOption = exportableOptions.find((option) => option.isCurrent);
+  const selectedOption = exportableOptions.find((option) => option.id === currentSelection);
+
+  if (mode === 'current') {
+    return currentOption?.id ?? exportableOptions[0]?.id ?? '';
+  }
+
+  if (mode === 'selected') {
+    return selectedOption?.id
+      ?? exportableOptions.find((option) => !option.isCurrent)?.id
+      ?? currentOption?.id
+      ?? exportableOptions[0]?.id
+      ?? '';
+  }
+
+  return selectedOption?.id ?? currentOption?.id ?? exportableOptions[0]?.id ?? '';
+};
 
 interface ExportInventoryRow {
   databaseId: string;
@@ -520,7 +547,7 @@ const detectXmlMetadata = (content: string): ImportSourceMetadata['xml'] => {
     const root = doc.documentElement;
     return {
       rootElement: root?.tagName,
-      nodeCount: doc.querySelectorAll('Node, server, group, session').length,
+      nodeCount: doc.querySelectorAll('Connection, Node, server, group, session').length,
     };
   } catch {
     return { nodeCount: 0 };
@@ -648,6 +675,10 @@ const buildImportAnalysis = (params: {
   sizeBytes?: number;
   format: string;
   formatName: string;
+  detectedFormat?: string;
+  detectedFormatName?: string;
+  formatForced?: boolean;
+  formatWarning?: string;
   content: string;
   connections: Connection[];
   previewItems: ImportPreviewItem[];
@@ -693,6 +724,10 @@ const buildImportAnalysis = (params: {
     sizeBytes: params.sizeBytes,
     format: params.format,
     formatName: params.formatName,
+    detectedFormat: params.detectedFormat,
+    detectedFormatName: params.detectedFormatName,
+    formatForced: params.formatForced,
+    formatWarning: params.formatWarning,
     detectedAt: new Date().toISOString(),
     confidence:
       params.format === 'csv' && !extension ? 'medium' : params.format === 'json' ? 'high' : 'high',
@@ -777,7 +812,7 @@ export function useImportExport({
   onClose,
   initialTab = 'export',
 }: UseImportExportParams) {
-  const { state, dispatch } = useConnections();
+  const { state, dispatch, loadData } = useConnections();
   const { toast } = useToastContext();
   const { t } = useTranslation();
   const databaseManager = useMemo(() => DatabaseManager.getInstance(), []);
@@ -809,6 +844,19 @@ export function useImportExport({
     useState<ImportFilterState>(DEFAULT_IMPORT_FILTERS);
   const [importOptions, setImportOptions] =
     useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS);
+  const [importDatabaseOptions, setImportDatabaseOptions] = useState<ExportDatabaseOption[]>([]);
+  const [importTargetMode, setImportTargetModeState] =
+    useState<ImportTargetMode>('current');
+  const [selectedImportDatabaseId, setSelectedImportDatabaseId] = useState<string>('');
+  const importTargetModeRef = useRef<ImportTargetMode>('current');
+  const selectedImportDatabaseIdRef = useRef<string>('');
+  const [importFormatSelection, setImportFormatSelectionState] =
+    useState<'auto' | ImportFormat>('auto');
+  const [importSourceFile, setImportSourceFile] = useState<{
+    filename: string;
+    content: string;
+    sizeBytes?: number;
+  } | null>(null);
   const [selectedPreviewIds, setSelectedPreviewIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -941,6 +989,49 @@ export function useImportExport({
     });
   }, [databaseManager, state.connections.length]);
 
+  const refreshImportDatabaseOptions = useCallback(async () => {
+    const managerWithExportability = databaseManager as DatabaseManager & {
+      getExportableDatabases?: () => ReturnType<DatabaseManager['getExportableDatabases']>;
+    };
+    const currentDatabase = databaseManager.getCurrentDatabase();
+    const databases = managerWithExportability.getExportableDatabases
+      ? await managerWithExportability.getExportableDatabases()
+      : currentDatabase
+        ? [{
+            ...currentDatabase,
+            isCurrent: true,
+            isUnlocked: true,
+            isExportable: true,
+          }]
+        : [];
+
+    const options: ExportDatabaseOption[] = databases.map((database) => ({
+      id: database.id,
+      name: database.name,
+      description: database.description,
+      isCurrent: database.id === currentDatabase?.id || database.isCurrent,
+      isEncrypted: database.isEncrypted,
+      isUnlocked: database.isUnlocked,
+      isExportable: database.isExportable,
+      lockedReason: database.isExportable
+        ? undefined
+        : 'Unlock this database before importing.',
+      connectionCount: database.id === currentDatabase?.id ? state.connections.length : undefined,
+      lastAccessed: database.lastAccessed,
+    }));
+
+    setImportDatabaseOptions(options);
+    setSelectedImportDatabaseId((currentSelection) => {
+      const nextSelection = chooseImportTargetDatabaseId(
+        options,
+        currentSelection,
+        importTargetModeRef.current,
+      );
+      selectedImportDatabaseIdRef.current = nextSelection;
+      return nextSelection;
+    });
+  }, [databaseManager, state.connections.length]);
+
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
@@ -950,7 +1041,8 @@ export function useImportExport({
   useEffect(() => {
     if (!isOpen) return;
     void refreshExportDatabaseOptions();
-  }, [isOpen, refreshExportDatabaseOptions]);
+    void refreshImportDatabaseOptions();
+  }, [isOpen, refreshExportDatabaseOptions, refreshImportDatabaseOptions]);
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -2025,10 +2117,58 @@ ${tableRows}
 
   // ── Import ───────────────────────────────────────────────────
 
+  const getImportTargetDatabases = (
+    mode: ImportTargetMode = importTargetModeRef.current,
+    selectedDatabaseId: string = selectedImportDatabaseIdRef.current,
+  ): ExportDatabaseOption[] => {
+    const exportableOptions = importDatabaseOptions.filter((option) => option.isExportable);
+    const currentOption = exportableOptions.find((option) => option.isCurrent);
+    const selectedOption = exportableOptions.find((option) => option.id === selectedDatabaseId);
+    if (mode === 'current') {
+      if (selectedOption && !selectedOption.isCurrent) {
+        return [selectedOption];
+      }
+      return currentOption ? [currentOption] : exportableOptions.slice(0, 1);
+    }
+    if (mode === 'all') {
+      return exportableOptions;
+    }
+    return selectedOption ? [selectedOption] : [];
+  };
+
+  const loadImportTargetConnections = async (
+    mode: ImportTargetMode = importTargetModeRef.current,
+    targetDatabaseId: string = selectedImportDatabaseIdRef.current,
+  ): Promise<Connection[]> => {
+    const currentDatabase = databaseManager.getCurrentDatabase();
+    const targets = getImportTargetDatabases(mode, targetDatabaseId);
+    if (targets.length === 0) {
+      return mode === 'current' ? state.connections : [];
+    }
+
+    const targetConnections = await Promise.all(
+      targets.map(async (target) => {
+        if (target.id === currentDatabase?.id) {
+          return state.connections;
+        }
+        const snapshot = await databaseManager.readExportableDatabaseSnapshot(
+          target.id,
+          true,
+        );
+        return snapshot.connections ?? [];
+      }),
+    );
+
+    return targetConnections.flat();
+  };
+
   const processImportFile = async (
     filename: string,
     content: string,
     sizeBytes?: number,
+    formatSelection: 'auto' | ImportFormat = importFormatSelection,
+    targetMode: ImportTargetMode = importTargetModeRef.current,
+    targetDatabaseId: string = selectedImportDatabaseIdRef.current,
   ): Promise<ImportResult> => {
     const errors: string[] = [];
     try {
@@ -2132,8 +2272,19 @@ ${tableRows}
         processedContent = decrypted;
       }
 
-      const detectedFormat = detectImportFormat(processedContent, filename);
+      const autoDetectedFormat = detectImportFormat(processedContent, filename);
+      const detectedFormat =
+        formatSelection === 'auto' ? autoDetectedFormat : formatSelection;
       const detectedFormatName = getFormatName(detectedFormat);
+      const autoDetectedFormatName = getFormatName(autoDetectedFormat);
+      const formatForced = formatSelection !== 'auto';
+      const forcedFormatCompatibility = getImportFormatCompatibility(detectedFormat);
+      const formatWarning = [
+        formatForced && detectedFormat !== autoDetectedFormat
+          ? `Forced ${detectedFormatName}; auto-detect suggested ${autoDetectedFormatName}.`
+          : '',
+        forcedFormatCompatibility.warning ?? '',
+      ].filter(Boolean).join(' ');
       let encryptionAnalysis: ImportSourceMetadata['encryption'] | undefined =
         encryptedWrapper
           ? {
@@ -2284,15 +2435,20 @@ ${tableRows}
           `No connections found in ${actualExtension?.toUpperCase()} file`,
         );
       }
+      const targetConnections = await loadImportTargetConnections(targetMode, targetDatabaseId);
       const previewItems = buildImportPreviewItems(
         connections,
-        state.connections,
+        targetConnections,
       );
       const analysis = buildImportAnalysis({
         filename,
         sizeBytes,
         format: detectedFormat,
         formatName: detectedFormatName,
+        detectedFormat: autoDetectedFormat,
+        detectedFormatName: autoDetectedFormatName,
+        formatForced,
+        formatWarning,
         content: processedContent,
         connections,
         previewItems,
@@ -2330,11 +2486,10 @@ ${tableRows}
     fileInputRef.current?.click();
   };
 
-  const handleFileSelect = async (
-    event: React.ChangeEvent<HTMLInputElement>,
+  const processSelectedImportFile = async (
+    file: File,
+    formatSelection: 'auto' | ImportFormat = importFormatSelection,
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
     if (file.size > MAX_FILE_SIZE) {
       toast.error('File is too large. Maximum allowed size is 50 MB.');
@@ -2348,7 +2503,15 @@ ${tableRows}
     setImportFilename(file.name);
     try {
       const content = await readFileContent(file);
-      const result = await processImportFile(file.name, content, file.size);
+      setImportSourceFile({ filename: file.name, content, sizeBytes: file.size });
+      const result = await processImportFile(
+        file.name,
+        content,
+        file.size,
+        formatSelection,
+        importTargetModeRef.current,
+        selectedImportDatabaseIdRef.current,
+      );
       setImportResult(result);
       setImportAnalysis(result.analysis ?? null);
       setSelectedPreviewIds(new Set(result.selectedIds ?? []));
@@ -2371,6 +2534,62 @@ ${tableRows}
       toast.error('Import failed. Check the console for details.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const reprocessImportSource = async (
+    source: { filename: string; content: string; sizeBytes?: number },
+    formatSelection: 'auto' | ImportFormat = importFormatSelection,
+    targetMode: ImportTargetMode = importTargetModeRef.current,
+    targetDatabaseId: string = selectedImportDatabaseIdRef.current,
+  ) => {
+    setIsProcessing(true);
+    setImportResult(null);
+    setImportAnalysis(null);
+    setSelectedPreviewIds(new Set());
+    setImportFilters(DEFAULT_IMPORT_FILTERS);
+    try {
+      const result = await processImportFile(
+        source.filename,
+        source.content,
+        source.sizeBytes,
+        formatSelection,
+        targetMode,
+        targetDatabaseId,
+      );
+      setImportResult(result);
+      setImportAnalysis(result.analysis ?? null);
+      setSelectedPreviewIds(new Set(result.selectedIds ?? []));
+      if (!result.success) {
+        console.error('Import failed:', result.errors);
+        toast.error('Import failed. Check the file format and try again.');
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      setImportResult({
+        success: false,
+        imported: 0,
+        errors: [errorMessage],
+        connections: [],
+      });
+      setImportAnalysis(null);
+      setSelectedPreviewIds(new Set());
+      toast.error('Import failed. Check the console for details.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFileSelect = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await processSelectedImportFile(file);
+    } finally {
       // Clear the file input so re-selecting the same file fires onChange again
       // (browsers suppress change events when the value is unchanged, so a user
       // who cancels the password prompt and re-picks the same file would
@@ -2382,6 +2601,49 @@ ${tableRows}
           // ignored — some test harnesses make .value read-only
         }
       }
+    }
+  };
+
+  const handleFileDrop = async (file: File) => {
+    await processSelectedImportFile(file);
+  };
+
+  const updateImportFormatSelection = async (selection: 'auto' | ImportFormat) => {
+    setImportFormatSelectionState(selection);
+    if (importSourceFile) {
+      await reprocessImportSource(importSourceFile, selection);
+    }
+  };
+
+  const updateSelectedImportDatabaseId = async (databaseId: string) => {
+    selectedImportDatabaseIdRef.current = databaseId;
+    importTargetModeRef.current = 'selected';
+    setSelectedImportDatabaseId(databaseId);
+    setImportTargetModeState('selected');
+    if (importSourceFile) {
+      await reprocessImportSource(importSourceFile, importFormatSelection, 'selected', databaseId);
+    }
+  };
+
+  const updateImportTargetMode = async (mode: ImportTargetMode) => {
+    importTargetModeRef.current = mode;
+    setImportTargetModeState(mode);
+    const nextDatabaseId = chooseImportTargetDatabaseId(
+      importDatabaseOptions,
+      selectedImportDatabaseIdRef.current,
+      mode,
+    );
+    if (nextDatabaseId !== selectedImportDatabaseIdRef.current) {
+      selectedImportDatabaseIdRef.current = nextDatabaseId;
+      setSelectedImportDatabaseId(nextDatabaseId);
+    }
+    if (importSourceFile) {
+      await reprocessImportSource(
+        importSourceFile,
+        importFormatSelection,
+        mode,
+        nextDatabaseId,
+      );
     }
   };
 
@@ -2457,9 +2719,32 @@ ${tableRows}
         })
         .filter((connection) => importOptions.preserveFolders || !connection.isGroup);
 
-      connectionsToImport.forEach((conn) => {
-        dispatch({ type: 'ADD_CONNECTION', payload: conn });
-      });
+      const currentDatabase = databaseManager.getCurrentDatabase();
+      const targetDatabases = getImportTargetDatabases();
+      const lockedSelectedTarget = importDatabaseOptions.find(
+        (option) => option.id === selectedImportDatabaseIdRef.current && !option.isExportable,
+      );
+      if (importTargetModeRef.current === 'selected' && lockedSelectedTarget) {
+        toast.error('Unlock the selected database before importing.');
+        return;
+      }
+      if (targetDatabases.length === 0) {
+        toast.error('Choose a database before importing.');
+        return;
+      }
+
+      for (const targetDatabase of targetDatabases) {
+        if (targetDatabase.id === currentDatabase?.id) {
+          connectionsToImport.forEach((conn) => {
+            dispatch({ type: 'ADD_CONNECTION', payload: conn });
+          });
+        } else {
+          await databaseManager.appendConnectionsToDatabase(
+            targetDatabase.id,
+            connectionsToImport,
+          );
+        }
+      }
 
       // Restore VPN connections
       let vpnImportedCount = 0;
@@ -2532,20 +2817,36 @@ ${tableRows}
         parts.push(`${tunnelChainsImportedCount} tunnel chain(s)`);
       }
       const summary = parts.join(', ') || '0 items';
+      const singleTarget = targetDatabases.length === 1 ? targetDatabases[0] : null;
+      const targetSuffix = singleTarget
+        ? singleTarget.isCurrent
+          ? ''
+          : ` into ${singleTarget.name}`
+        : ` into ${targetDatabases.length} databases`;
 
       toast.success(
         filename
-          ? `Imported ${summary} from ${filename}`
-          : `Imported ${summary} successfully`,
+          ? `Imported ${summary}${targetSuffix} from ${filename}`
+          : `Imported ${summary}${targetSuffix} successfully`,
       );
       settingsManager.logAction(
         'info',
         'Data imported',
         undefined,
-        `Imported ${summary}${filename ? ` from ${filename}` : ''}`,
+        `Imported ${summary}${targetSuffix}${filename ? ` from ${filename}` : ''}`,
       );
+
+      if (
+        singleTarget &&
+        !singleTarget.isCurrent &&
+        importOptions.switchToTargetDatabaseAfterImport
+      ) {
+        await databaseManager.selectDatabase(singleTarget.id);
+        await loadData();
+      }
       setImportResult(null);
       setImportAnalysis(null);
+      setImportSourceFile(null);
       setSelectedPreviewIds(new Set());
       setImportFilters(DEFAULT_IMPORT_FILTERS);
       onClose();
@@ -2556,6 +2857,7 @@ ${tableRows}
     setImportResult(null);
     setImportFilename('');
     setImportAnalysis(null);
+    setImportSourceFile(null);
     setSelectedPreviewIds(new Set());
     setImportFilters(DEFAULT_IMPORT_FILTERS);
   };
@@ -2594,6 +2896,13 @@ ${tableRows}
     importResult,
     importFilename,
     importAnalysis,
+    importDatabaseOptions,
+    importTargetMode,
+    setImportTargetMode: updateImportTargetMode,
+    selectedImportDatabaseId,
+    setSelectedImportDatabaseId: updateSelectedImportDatabaseId,
+    importFormatSelection,
+    setImportFormatSelection: updateImportFormatSelection,
     importFilters,
     updateImportFilters,
     resetImportFilters,
@@ -2613,6 +2922,7 @@ ${tableRows}
     handleExport,
     handleImport,
     handleFileSelect,
+    handleFileDrop,
     confirmImport,
     cancelImport,
     passwordPrompt,
