@@ -784,6 +784,25 @@ pub struct BackupJob {
     pub run_count: u64,
     /// Total failure count
     pub fail_count: u64,
+    /// Destinations the payload fans out to on each tick. Empty when
+    /// the job uses a legacy single-destination configuration that
+    /// hasn't been migrated yet.
+    #[serde(default)]
+    pub destinations: Vec<BackupTarget>,
+    /// Master toggle for delta-verified backups: when on, ticks that
+    /// would produce a payload identical to the previous successful
+    /// run are skipped.
+    #[serde(default)]
+    pub delta_skip_enabled: bool,
+    /// Safety valve: after this many consecutive skipped ticks the
+    /// next tick emits anyway so retention rotation doesn't stall.
+    /// `0` disables the safety valve (skip indefinitely).
+    #[serde(default)]
+    pub force_emit_every_n_skipped_ticks: u32,
+    /// How many ticks in a row have been delta-skipped. Reset to 0 on
+    /// any tick that actually emitted to at least one destination.
+    #[serde(default)]
+    pub consecutive_skipped_count: u32,
 }
 
 /// Backup schedule definition.
@@ -871,6 +890,22 @@ pub struct BackupExecutionRecord {
     pub retry_attempt: u32,
     /// Snapshot/archive ID (for restic/borg)
     pub snapshot_id: Option<String>,
+    /// Canonical hash of the *plaintext* payload that was about to be
+    /// written this tick. Drives the delta-skip comparison on the next
+    /// tick. `None` for legacy records and for runs from tools that
+    /// don't go through the unified payload pipeline.
+    #[serde(default)]
+    pub payload_hash: Option<String>,
+    /// `true` when the tick produced no write at any destination
+    /// because every enabled target already had the current payload
+    /// and the force-N threshold hadn't fired. The execution record
+    /// is still persisted so retention / history / UI stay coherent.
+    #[serde(default)]
+    pub skipped_due_to_delta: bool,
+    /// Outcome at each destination — one entry per enabled target in
+    /// the job's `destinations` list at tick time.
+    #[serde(default)]
+    pub per_target_results: Vec<TargetResult>,
 }
 
 // ─── Progress ───────────────────────────────────────────────────────
@@ -981,6 +1016,63 @@ pub enum IntegrityErrorType {
     FileMissing,
     PermissionDenied,
     ReadError,
+}
+
+// ─── Backup targets (multi-destination) ─────────────────────────────
+
+/// Where the scheduled backup pipeline writes its output. Replaces the
+/// single `destination_path` field on `BackupJob` so a tick can fan
+/// out to several user-defined destinations (local folder, multiple
+/// clouds, …) without duplicating the schedule or the payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupTarget {
+    /// Stable identifier referenced by per-target execution records.
+    pub id: String,
+    /// Human label shown in the settings UI and the restore picker.
+    pub label: String,
+    /// Storage class for this target (local, GoogleDrive, Nextcloud, …).
+    /// Kept as a free-form string so additional providers can land
+    /// without a coordinated type bump across crates.
+    pub preset: String,
+    /// Local filesystem path for `custom` / `appData` / `documents`
+    /// presets, or cloud-side subfolder for cloud presets.
+    #[serde(default)]
+    pub custom_path: Option<String>,
+    /// Soft-disable a target without removing it (the user keeps the
+    /// credentials/path but tells the scheduler to skip it).
+    pub enabled: bool,
+    /// Optional retention override; when `None`, the global policy
+    /// stored on the job applies.
+    #[serde(default)]
+    pub retention_override: Option<RetentionPolicy>,
+}
+
+/// Outcome of writing the payload to one destination during a tick.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetResult {
+    pub target_id: String,
+    pub status: TargetStatus,
+    /// Hash of the payload that was written to *this* destination on
+    /// this tick — used by the delta-skip logic next tick to recover
+    /// destinations that fell behind because of a previous failure.
+    #[serde(default)]
+    pub payload_hash_written: Option<String>,
+    pub bytes_written: Option<u64>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetStatus {
+    /// Payload landed at this destination on this tick.
+    Success,
+    /// Delta-skip decided this destination already had the current
+    /// payload and the force-N threshold hadn't fired.
+    SkippedUnchanged,
+    /// Destination is disabled in the config; nothing was attempted.
+    Disabled,
+    /// Write was attempted and failed (path / credentials / network).
+    Failed,
 }
 
 // ─── Retention ──────────────────────────────────────────────────────

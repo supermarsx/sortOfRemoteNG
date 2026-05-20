@@ -237,6 +237,9 @@ pub async fn execute(
         },
         retry_attempt: 0,
         snapshot_id: None,
+        payload_hash: None,
+        skipped_due_to_delta: false,
+        per_target_results: Vec::new(),
     };
 
     if exit_code != 0 {

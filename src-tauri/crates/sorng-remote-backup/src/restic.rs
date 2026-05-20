@@ -267,6 +267,9 @@ pub async fn backup(
         },
         retry_attempt: 0,
         snapshot_id,
+        payload_hash: None,
+        skipped_due_to_delta: false,
+        per_target_results: Vec::new(),
     };
 
     if exit_code != 0 {
