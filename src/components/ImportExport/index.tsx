@@ -2,7 +2,6 @@ import React from "react";
 import { Download, Upload, ArrowLeftRight } from "lucide-react";
 import { useImportExport } from "../../hooks/sync/useImportExport";
 import ExportTab from "./ExportTab";
-import type { ExportConfig } from "./types";
 import ImportTab from "./ImportTab";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
@@ -199,6 +198,13 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               handleImport={mgr.handleImport}
               fileInputRef={mgr.fileInputRef}
               importResult={mgr.importResult}
+              importDatabaseOptions={mgr.importDatabaseOptions}
+              importTargetMode={mgr.importTargetMode}
+              setImportTargetMode={mgr.setImportTargetMode}
+              selectedImportDatabaseId={mgr.selectedImportDatabaseId}
+              setSelectedImportDatabaseId={mgr.setSelectedImportDatabaseId}
+              importFormatSelection={mgr.importFormatSelection}
+              setImportFormatSelection={mgr.setImportFormatSelection}
               importAnalysis={mgr.importAnalysis}
               importFilters={mgr.importFilters}
               updateImportFilters={mgr.updateImportFilters}
@@ -211,6 +217,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               selectedPreviewIds={mgr.selectedPreviewIds}
               selectedCount={mgr.selectedImportCount}
               handleFileSelect={mgr.handleFileSelect}
+              handleFileDrop={mgr.handleFileDrop}
               confirmImport={() => mgr.confirmImport(mgr.importFilename)}
               cancelImport={mgr.cancelImport}
               togglePreviewSelection={mgr.togglePreviewSelection}

@@ -8,18 +8,27 @@ import {
   FileText,
   Filter,
   FolderOpen,
+  Database,
   Search,
   Shield,
 } from 'lucide-react';
 import {
+  ExportDatabaseOption,
   ImportFilterState,
   ImportOptions,
   ImportPreviewItem,
   ImportResult,
   ImportSourceMetadata,
+  ImportTargetMode,
 } from './types';
+import {
+  IMPORT_FORMAT_COMPATIBILITY,
+  IMPORT_FORMAT_ORDER,
+  type ImportFormat,
+} from './utils';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
+import { Select, type SelectOption } from '../ui/forms';
 
 interface ImportTabProps {
   isProcessing: boolean;
@@ -27,9 +36,17 @@ interface ImportTabProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   importResult: ImportResult | null;
   handleFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  handleFileDrop?: (file: File) => void | Promise<void>;
   confirmImport: () => void | Promise<void>;
   cancelImport: () => void;
   detectedFormat?: string;
+  importDatabaseOptions?: ExportDatabaseOption[];
+  importTargetMode?: ImportTargetMode;
+  setImportTargetMode?: (mode: ImportTargetMode) => void | Promise<void>;
+  selectedImportDatabaseId?: string;
+  setSelectedImportDatabaseId?: (databaseId: string) => void | Promise<void>;
+  importFormatSelection?: 'auto' | ImportFormat;
+  setImportFormatSelection?: (selection: 'auto' | ImportFormat) => void | Promise<void>;
   importAnalysis?: ImportSourceMetadata | null;
   importFilters?: ImportFilterState;
   updateImportFilters?: (updates: Partial<ImportFilterState>) => void;
@@ -65,6 +82,7 @@ const FALLBACK_OPTIONS: ImportOptions = {
   includeTunnelChains: true,
   conflictPolicy: 'duplicate',
   addTags: '',
+  switchToTargetDatabaseAfterImport: false,
 };
 
 // Template data for CSV
@@ -207,9 +225,18 @@ const AnalysisSummary: React.FC<{ analysis: ImportSourceMetadata }> = ({ analysi
         <div className="mt-1 text-xs text-[var(--color-textMuted)]">
           {formatBytes(analysis.sizeBytes)} | Confidence {analysis.confidence}
           {analysis.rootName ? ` | Root ${analysis.rootName}` : ''}
+          {analysis.formatForced && analysis.detectedFormatName
+            ? ` | Auto-detected ${analysis.detectedFormatName}`
+            : ''}
         </div>
       </div>
     </div>
+
+    {analysis.formatWarning && (
+      <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+        {analysis.formatWarning}
+      </div>
+    )}
 
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       <Stat label="Connections" value={analysis.counts.connections} />
@@ -244,6 +271,285 @@ const AnalysisSummary: React.FC<{ analysis: ImportSourceMetadata }> = ({ analysi
     </div>
   </div>
 );
+
+const ImportSection: React.FC<{
+  title: string;
+  description?: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  children: React.ReactNode;
+}> = ({ title, description, icon: Icon, children }) => (
+  <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)]">
+    <div className="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
+      <Icon size={16} className="mt-0.5 shrink-0 text-primary" />
+      <div className="min-w-0">
+        <h4 className="text-sm font-medium text-[var(--color-text)]">{title}</h4>
+        {description && (
+          <p className="mt-0.5 text-xs text-[var(--color-textSecondary)]">{description}</p>
+        )}
+      </div>
+    </div>
+    <div className="p-4">{children}</div>
+  </section>
+);
+
+const TargetDatabaseSection: React.FC<{
+  options: ExportDatabaseOption[];
+  targetMode: ImportTargetMode;
+  onSelectMode: (mode: ImportTargetMode) => void | Promise<void>;
+  selectedDatabaseId: string;
+  onSelect: (databaseId: string) => void | Promise<void>;
+}> = ({ options, targetMode, onSelectMode, selectedDatabaseId, onSelect }) => {
+  const exportableOptions = options.filter((option) => option.isExportable);
+  const currentOption = exportableOptions.find((option) => option.isCurrent);
+  const selectedOption = options.find((option) => option.id === selectedDatabaseId);
+  const selectedNames = targetMode === 'all'
+    ? exportableOptions.map((option) => option.name)
+    : targetMode === 'current'
+      ? [currentOption?.name].filter(Boolean)
+      : [selectedOption?.name].filter(Boolean);
+  const targetModes: Array<{
+    value: ImportTargetMode;
+    label: string;
+    description: string;
+    disabled?: boolean;
+  }> = [
+    {
+      value: 'current',
+      label: 'Current database',
+      description: currentOption
+        ? `Merge into ${currentOption.name}.`
+        : 'Use the open database when one is available.',
+      disabled: !currentOption,
+    },
+    {
+      value: 'selected',
+      label: 'Choose database',
+      description: 'Pick one unlocked database below.',
+      disabled: exportableOptions.length === 0,
+    },
+    {
+      value: 'all',
+      label: 'All unlocked',
+      description: `Import into ${exportableOptions.length} unlocked database(s).`,
+      disabled: exportableOptions.length === 0,
+    },
+  ];
+
+  return (
+    <section
+      aria-labelledby="import-target-heading"
+      className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-4"
+      data-testid="import-target-section"
+    >
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 id="import-target-heading" className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+            <Database size={16} className="text-primary" />
+            Target database
+          </h4>
+          <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
+            Choose where imported connections will be merged.
+          </p>
+        </div>
+        <div className="text-xs text-[var(--color-textMuted)]" data-testid="import-target-count">
+          {targetMode === 'all' ? `${exportableOptions.length} target(s)` : selectedNames[0] || 'No target'}
+        </div>
+      </div>
+
+      {options.length === 0 && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+          No open or unlocked database is available for import.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label="Import target">
+        {targetModes.map((mode) => {
+          const active = targetMode === mode.value;
+          return (
+            <button
+              key={mode.value}
+              type="button"
+              data-testid={`import-target-${mode.value}`}
+              onClick={() => {
+                if (!mode.disabled) void onSelectMode(mode.value);
+              }}
+              disabled={mode.disabled}
+              className={`rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
+                active
+                  ? 'border-primary bg-primary/15 text-[var(--color-text)]'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]'
+              }`}
+              aria-pressed={active}
+            >
+              <span className="block text-sm font-medium">{mode.label}</span>
+              <span className="mt-1 block text-xs text-[var(--color-textMuted)]">{mode.description}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {targetMode === 'selected' && (
+        <div className="space-y-2" data-testid="import-database-radio-list">
+          {options.map((database) => (
+            <label
+              key={database.id}
+              data-testid={`import-database-option-${database.id}`}
+              className={`flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${
+                database.isExportable ? 'cursor-pointer' : 'opacity-70'
+              }`}
+            >
+              <input
+                type="radio"
+                name="import-target-database"
+                value={database.id}
+                checked={database.isExportable && database.id === selectedDatabaseId}
+                disabled={!database.isExportable}
+                onChange={() => void onSelect(database.id)}
+                className="sor-form-checkbox mt-0.5 rounded-full border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                aria-label={database.name}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+                  <span>{database.name}</span>
+                  {database.isCurrent && (
+                    <span className="rounded-sm bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-normal text-primary">
+                      Current
+                    </span>
+                  )}
+                  {database.isEncrypted && (
+                    <span className="inline-flex items-center gap-1 text-xs text-warning">
+                      {database.isExportable ? 'Encrypted' : 'Locked'}
+                    </span>
+                  )}
+                </span>
+                <span className="mt-1 block text-xs text-[var(--color-textSecondary)]">
+                  {database.isExportable
+                    ? database.connectionCount !== undefined
+                      ? `${database.connectionCount} existing item(s)`
+                      : 'Available for import'
+                    : database.lockedReason || 'Unlock this database before importing.'}
+                </span>
+                {database.description && (
+                  <span className="mt-0.5 block text-xs text-[var(--color-textMuted)]">
+                    {database.description}
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      {selectedNames.length > 0 && (
+        <div className="text-xs text-[var(--color-textMuted)]" data-testid="import-target-summary">
+          {selectedNames.join(', ')}
+        </div>
+      )}
+    </section>
+  );
+};
+
+const FormatSelectionSection: React.FC<{
+  selection: 'auto' | ImportFormat;
+  onSelect: (selection: 'auto' | ImportFormat) => void | Promise<void>;
+  analysis?: ImportSourceMetadata | null;
+}> = ({ selection, onSelect, analysis }) => {
+  const effectiveFormat = analysis?.format as ImportFormat | undefined;
+  const selectedCompatibility =
+    selection === 'auto'
+      ? effectiveFormat
+        ? IMPORT_FORMAT_COMPATIBILITY[effectiveFormat]
+        : undefined
+      : IMPORT_FORMAT_COMPATIBILITY[selection];
+  const formatOptions: SelectOption[] = [
+    {
+      value: 'auto',
+      label: 'Auto Detect',
+      title: 'Detect the parser from file content and extension.',
+    },
+    {
+      value: '__group_native',
+      label: '── Native sortOfRemoteNG ──',
+      disabled: true,
+    },
+    ...IMPORT_FORMAT_ORDER
+      .filter((format) => IMPORT_FORMAT_COMPATIBILITY[format].group === 'native')
+      .map((format) => ({
+        value: format,
+        label: IMPORT_FORMAT_COMPATIBILITY[format].label,
+        title: IMPORT_FORMAT_COMPATIBILITY[format].description,
+      })),
+    {
+      value: '__group_vendor',
+      label: '── Compatible applications ──',
+      disabled: true,
+    },
+    ...IMPORT_FORMAT_ORDER
+      .filter((format) => IMPORT_FORMAT_COMPATIBILITY[format].group === 'vendor')
+      .map((format) => ({
+        value: format,
+        label: IMPORT_FORMAT_COMPATIBILITY[format].label,
+        title: IMPORT_FORMAT_COMPATIBILITY[format].description,
+      })),
+  ];
+
+  return (
+    <ImportSection
+      title="Format"
+      description="Auto-detect the source format or force a parser when a file has ambiguous content."
+      icon={FileCode}
+    >
+      <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_1fr]">
+        <div className="space-y-1">
+          <label htmlFor="import-format-select" className="block text-xs text-[var(--color-textSecondary)]">
+            Import format
+          </label>
+          <Select
+            id="import-format-select"
+            data-testid="import-format-select"
+            label="Import format"
+            value={selection}
+            onChange={(value) => void onSelect(value as 'auto' | ImportFormat)}
+            options={formatOptions}
+            variant="form"
+            className="w-full"
+          />
+        </div>
+
+        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-xs text-[var(--color-textSecondary)]">
+          <div className="flex flex-wrap items-center gap-2 text-[var(--color-text)]">
+            <span className="font-medium">
+              {selection === 'auto' ? 'Auto Detect' : selectedCompatibility?.label}
+            </span>
+            {analysis?.formatName && (
+              <span className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary">
+                Effective: {analysis.formatName}
+              </span>
+            )}
+            {analysis?.detectedFormatName && analysis.formatForced && (
+              <span className="rounded border border-warning/30 bg-warning/10 px-2 py-0.5 text-warning">
+                Detected: {analysis.detectedFormatName}
+              </span>
+            )}
+          </div>
+          {selectedCompatibility && (
+            <div className="mt-2 space-y-1">
+              <div>{selectedCompatibility.description}</div>
+              <div>Extensions: {selectedCompatibility.extensions.join(', ')}</div>
+              <div>Data: {selectedCompatibility.dataClasses.join(', ')}</div>
+              <div>Credentials: {selectedCompatibility.credentialSupport}</div>
+            </div>
+          )}
+          {analysis?.formatWarning && (
+            <div className="mt-2 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-warning">
+              {analysis.formatWarning}
+            </div>
+          )}
+        </div>
+      </div>
+    </ImportSection>
+  );
+};
 
 const ImportFilters: React.FC<{
   filters: ImportFilterState;
@@ -378,6 +684,7 @@ const ImportOptionsPanel: React.FC<{
         ['includeCredentials', 'Include credentials'],
         ['includeVpnData', 'Import VPN data'],
         ['includeTunnelChains', 'Import tunnel chains'],
+        ['switchToTargetDatabaseAfterImport', 'Switch to target after import'],
       ].map(([key, label]) => (
         <label key={key} className="inline-flex items-center gap-2">
           <input
@@ -546,9 +853,17 @@ const ImportTab: React.FC<ImportTabProps> = ({
   fileInputRef,
   importResult,
   handleFileSelect,
+  handleFileDrop,
   confirmImport,
   cancelImport,
   detectedFormat,
+  importDatabaseOptions = [],
+  importTargetMode = 'current',
+  setImportTargetMode = () => undefined,
+  selectedImportDatabaseId = '',
+  setSelectedImportDatabaseId = () => undefined,
+  importFormatSelection = 'auto',
+  setImportFormatSelection = () => undefined,
   importAnalysis,
   importFilters = FALLBACK_FILTERS,
   updateImportFilters = () => undefined,
@@ -574,7 +889,12 @@ const ImportTab: React.FC<ImportTabProps> = ({
     [focusedItemId, previewItems],
   );
   const selectedRows = selectedCount ?? selectedPreviewIds.size;
-  const canImport = importResult?.success && (previewItems.length === 0 || selectedRows > 0);
+  const selectedTarget = importDatabaseOptions.find((option) => option.id === selectedImportDatabaseId);
+  const selectedTargetLocked = importTargetMode === 'selected' && selectedTarget && !selectedTarget.isExportable;
+  const canImport =
+    importResult?.success &&
+    !selectedTargetLocked &&
+    (previewItems.length === 0 || selectedRows > 0);
 
   const downloadTemplate = (format: 'csv' | 'json') => {
     let content: string;
@@ -607,80 +927,94 @@ const ImportTab: React.FC<ImportTabProps> = ({
     }));
   };
 
+  const onDropFile = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const file = event.dataTransfer.files?.[0];
+    if (file && handleFileDrop) {
+      void handleFileDrop(file);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="mb-4 text-lg font-medium text-[var(--color-text)]">Import into this database</h3>
-        <p className="mb-2 text-[var(--color-textSecondary)]">
-          Bring content into the currently open database. Connection lists from
-          third-party tools are parsed, you can inspect the preview, filter and
-          choose exactly which entries to add — they get appended to the
-          database alongside its existing connections, tab groups and tags.
-        </p>
-        <p className="mb-4 text-xs text-[var(--color-textMuted)]">
-          To restore or merge a whole database file (connections + tab groups
-          + color tags) you previously exported from this app, use{" "}
-          <span className="font-medium">Databases &rarr; Import</span> instead;
-          that creates a new database entry rather than merging into the
-          current one.
-        </p>
+      <TargetDatabaseSection
+        options={importDatabaseOptions}
+        targetMode={importTargetMode}
+        onSelectMode={setImportTargetMode}
+        selectedDatabaseId={selectedImportDatabaseId}
+        onSelect={setSelectedImportDatabaseId}
+      />
 
-        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <div className="sor-info-pill"><FileCode className="h-4 w-4 text-primary" />mRemoteNG</div>
-          <div className="sor-info-pill"><FileCode className="h-4 w-4 text-success" />RDCMan</div>
-          <div className="sor-info-pill"><FileCode className="h-4 w-4 text-primary" />MobaXterm</div>
-          <div className="sor-info-pill"><FileCode className="h-4 w-4 text-warning" />PuTTY</div>
-          <div className="sor-info-pill"><FileCode className="h-4 w-4 text-info" />Termius</div>
-          <div className="sor-info-pill"><FileText className="h-4 w-4 text-warning" />CSV / JSON</div>
-        </div>
-      </div>
+      <FormatSelectionSection
+        selection={importFormatSelection}
+        onSelect={setImportFormatSelection}
+        analysis={importAnalysis}
+      />
 
       {!importResult && (
-        <div className="rounded-lg border-2 border-dashed border-[var(--color-border)] p-8 text-center">
-          <FolderOpen size={48} className="mx-auto mb-4 text-[var(--color-textSecondary)]" />
-          <p className="mb-4 text-[var(--color-textSecondary)]">Select a file to import connections</p>
-          <button
-            onClick={handleImport}
-            disabled={isProcessing}
-            className="mx-auto flex items-center space-x-2 rounded-lg bg-primary px-6 py-2 text-[var(--color-text)] transition-colors hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)]"
+        <ImportSection
+          title="Source file"
+          description="Choose or drop a supported native or compatible application export."
+          icon={FolderOpen}
+        >
+          <div
+            className="rounded-lg border-2 border-dashed border-[var(--color-border)] p-8 text-center"
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }}
+            onDrop={onDropFile}
+            data-testid="import-dropzone"
           >
-            {isProcessing ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-[var(--color-border)]" />
-                <span>Processing...</span>
-              </>
-            ) : (
-              <>
-                <File size={16} />
-                <span>Choose File</span>
-              </>
-            )}
-          </button>
-          <p className="mt-2 text-xs text-[var(--color-textMuted)]">
-            Formats auto-detected: .json, .xml, .csv, .ini, .reg
-          </p>
-
-          <div className="mt-6 border-t border-[var(--color-border)] pt-4">
-            <p className="mb-3 text-sm text-[var(--color-textSecondary)]">Download import templates:</p>
-            <div className="flex justify-center gap-3">
-              <button
-                onClick={() => downloadTemplate('csv')}
-                className="flex items-center gap-2 rounded-lg bg-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:bg-[var(--color-border)]"
-              >
-                <Download size={14} />
-                <span>CSV Template</span>
-              </button>
-              <button
-                onClick={() => downloadTemplate('json')}
-                className="flex items-center gap-2 rounded-lg bg-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:bg-[var(--color-border)]"
-              >
-                <Download size={14} />
-                <span>JSON Template</span>
-              </button>
-            </div>
+            <FolderOpen size={48} className="mx-auto mb-4 text-[var(--color-textSecondary)]" />
+            <p className="mb-4 text-[var(--color-textSecondary)]">Select or drop a file to import connections</p>
+            <button
+              onClick={handleImport}
+              disabled={isProcessing || Boolean(selectedTargetLocked)}
+              className="mx-auto flex items-center space-x-2 rounded-lg bg-primary px-6 py-2 text-[var(--color-text)] transition-colors hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)]"
+            >
+              {isProcessing ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-[var(--color-border)]" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <File size={16} />
+                  <span>Choose File</span>
+                </>
+              )}
+            </button>
+            <p className="mt-2 text-xs text-[var(--color-textMuted)]">
+              Formats: .json, .xml, .csv, .ini, .reg, .rdg, .rtsz, .rtsx
+            </p>
           </div>
-        </div>
+        </ImportSection>
       )}
+
+      <ImportSection
+        title="Templates"
+        description="Download native templates for hand-authored imports."
+        icon={Download}
+      >
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => downloadTemplate('csv')}
+            className="flex items-center gap-2 rounded-lg bg-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:bg-[var(--color-border)]"
+          >
+            <Download size={14} />
+            <span>CSV Template</span>
+          </button>
+          <button
+            onClick={() => downloadTemplate('json')}
+            className="flex items-center gap-2 rounded-lg bg-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:bg-[var(--color-border)]"
+          >
+            <Download size={14} />
+            <span>JSON Template</span>
+          </button>
+        </div>
+      </ImportSection>
 
       {importResult && (
         <div className="space-y-4" data-testid="import-preview">
@@ -802,7 +1136,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.xml,.csv,.ini,.reg,.encrypted"
+        accept=".json,.xml,.csv,.ini,.reg,.rdg,.rtsz,.rtsx,.encrypted"
         onChange={handleFileSelect}
         className="hidden"
         data-testid="import-file-input"

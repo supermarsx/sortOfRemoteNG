@@ -151,7 +151,7 @@ describe("ImportTab", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     expect(handleFileSelect).toHaveBeenCalledTimes(1);
-    expect(input).toHaveAttribute("accept", ".json,.xml,.csv,.ini,.reg,.encrypted");
+    expect(input).toHaveAttribute("accept", ".json,.xml,.csv,.ini,.reg,.rdg,.rtsz,.rtsx,.encrypted");
   });
 
   it("downloads CSV and JSON templates and reports the download via toast", () => {
@@ -193,7 +193,7 @@ describe("ImportTab", () => {
     expect(screen.getByTestId("import-preview")).toBeInTheDocument();
     expect(screen.getByText("Import Successful")).toBeInTheDocument();
     expect(screen.getByText("Found 3 connections ready to import.")).toBeInTheDocument();
-    expect(screen.getByText("JSON")).toBeInTheDocument();
+    expect(screen.getAllByText("JSON").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Skipped duplicate connection/, { selector: "li" }),
     ).toBeInTheDocument();
