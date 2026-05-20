@@ -416,7 +416,15 @@ impl BackupService {
         self.status.next_scheduled_time = next_time;
     }
 
-    /// Run a backup with the current configuration
+    /// Run a backup with the current configuration. Fans out to every
+    /// enabled destination configured in `BackupConfig.destinations`
+    /// (or the legacy single-destination wrapper when the user hasn't
+    /// migrated). When `delta_skip_enabled` is on, ticks whose
+    /// canonical payload hash matches the previous successful run's
+    /// hash are skipped at every destination that's already up to
+    /// date — unless `force_emit_every_n_skipped_ticks` has been hit,
+    /// in which case the next tick emits regardless to keep retention
+    /// rotation healthy.
     pub async fn run_backup(
         &mut self,
         backup_type: &str,
@@ -433,49 +441,133 @@ impl BackupService {
 
         self.status.is_running = false;
 
-        match &result {
-            Ok(metadata) => {
-                self.status.last_backup_time = Some(metadata.created_at);
-                self.status.last_backup_type = Some(metadata.backup_type.clone());
-                self.status.last_backup_status = Some("success".to_string());
-                self.calculate_next_scheduled_time();
+        match result {
+            Ok(summary) => {
+                // Always record per-destination outcomes — even a
+                // fully-skipped tick yields one row per enabled target
+                // so the UI can render the "last run" table.
+                self.status.last_target_results = summary.target_results.clone();
 
-                // Cleanup old backups
-                if self.config.max_backups_to_keep > 0 {
-                    self.cleanup_old_backups().await?;
+                if summary.skipped {
+                    // No destination wrote on this tick. Bump the
+                    // consecutive-skipped counter so the force-N
+                    // safety valve can eventually fire, but leave
+                    // `last_backup_time` alone — that's the timestamp
+                    // of the most recent *emitted* backup, not the
+                    // most recent tick.
+                    self.status.last_backup_status = Some("skipped".to_string());
+                    self.status.consecutive_skipped_count =
+                        self.status.consecutive_skipped_count.saturating_add(1);
+                    self.calculate_next_scheduled_time();
+                    // Return a synthetic metadata so the Tauri command
+                    // contract stays a `Result<BackupMetadata, String>`
+                    // — the caller can detect skips via
+                    // `backup_type == "skipped"` or status updates.
+                    return Ok(skipped_run_metadata(
+                        backup_type,
+                        summary.payload_hash,
+                    ));
                 }
 
-                // Update backup count and size
+                // At least one destination wrote — counter resets and
+                // the last-hash bookmark advances.
+                self.status.consecutive_skipped_count = 0;
+                self.status.last_payload_hash = Some(summary.payload_hash.clone());
+
+                let any_failed = summary
+                    .target_results
+                    .iter()
+                    .any(|r| r.status == TargetStatus::Failed);
+                let status_label = if any_failed { "partial" } else { "success" };
+                self.status.last_backup_status = Some(status_label.to_string());
+
+                let primary = summary
+                    .primary_metadata
+                    .ok_or_else(|| "internal: write succeeded but no metadata".to_string())?;
+                self.status.last_backup_time = Some(primary.created_at);
+                self.status.last_backup_type = Some(primary.backup_type.clone());
+                self.calculate_next_scheduled_time();
+
+                // Cleanup old backups per destination (each target may
+                // have its own retention override).
+                self.cleanup_old_backups_all_targets().await?;
                 self.update_backup_stats().await?;
+
+                Ok(primary)
             }
             Err(e) => {
                 self.status.last_backup_status = Some("failed".to_string());
                 self.status.last_error = Some(e.clone());
+                Err(e)
             }
         }
-
-        result
     }
 
-    /// Perform the actual backup operation
+    /// Encode + encrypt the payload once and fan out to every enabled
+    /// destination, honouring per-target delta-skip decisions.
+    ///
+    /// Returns a summary (per-target results, canonical payload hash,
+    /// representative metadata) that `run_backup` uses to update the
+    /// service status.
     async fn perform_backup(
         &self,
         backup_type: &str,
         data: &serde_json::Value,
-    ) -> Result<BackupMetadata, String> {
-        // Ensure destination directory exists
-        let dest_path = Path::new(&self.config.destination_path);
-        if !dest_path.exists() {
-            fs::create_dir_all(dest_path)
-                .map_err(|e| format!("Failed to create backup directory: {}", e))?;
+    ) -> Result<BackupRunSummary, String> {
+        let targets = self.config.effective_destinations();
+        if targets.is_empty() {
+            return Err(
+                "No backup destinations configured (set destinationPath or destinations[])"
+                    .to_string(),
+            );
         }
 
-        // Generate backup ID and filename
+        // ── Canonical payload hash (drives the delta-skip comparator
+        //    next tick *and* the per-target recovery check this tick). ─
+        let payload_hash = crate::payload_hash::payload_hash(data)
+            .map_err(|e| format!("Failed to canonical-hash payload: {e}"))?;
+
+        // ── Serialise + compress + encrypt the payload exactly once
+        //    so every destination receives byte-identical bytes. ─────
+        let json_data = serde_json::to_string_pretty(data)
+            .map_err(|e| format!("Failed to serialize backup data: {}", e))?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(json_data.as_bytes());
+        let checksum = format!("{:x}", hasher.finalize());
+
+        let final_data = if self.config.compress_backups {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder
+                .write_all(json_data.as_bytes())
+                .map_err(|e| format!("Failed to compress backup: {}", e))?;
+            encoder
+                .finish()
+                .map_err(|e| format!("Failed to finish compression: {}", e))?
+        } else {
+            json_data.as_bytes().to_vec()
+        };
+
+        let encrypted_data = if self.config.encrypt_backups {
+            if let Some(password) = self.config.encryption_password.as_ref() {
+                self.encrypt_backup_data(&final_data, password)?
+            } else {
+                final_data
+            }
+        } else {
+            final_data
+        };
+
+        let connections_count = data
+            .get("connections")
+            .and_then(|c| c.as_array())
+            .map(|arr| arr.len() as u32)
+            .unwrap_or(0);
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-
         let backup_id = format!(
             "{}-{}",
             now,
@@ -494,153 +586,228 @@ impl BackupService {
             (BackupFormat::Xml, false) => "xml",
         };
         let filename = format!("backup_{}_{}.{}", backup_type, backup_id, extension);
-        let file_path = dest_path.join(&filename);
 
-        // Serialize data
-        let json_data = serde_json::to_string_pretty(data)
-            .map_err(|e| format!("Failed to serialize backup data: {}", e))?;
+        // Force-emit safety valve: when the counter has caught up to
+        // the threshold, this tick must write regardless of delta-skip.
+        // `0` disables the safety valve (skip indefinitely).
+        let force_emit = self.config.force_emit_every_n_skipped_ticks > 0
+            && self.status.consecutive_skipped_count
+                >= self.config.force_emit_every_n_skipped_ticks;
 
-        // Calculate checksum before any transformations
-        let mut hasher = Sha256::new();
-        hasher.update(json_data.as_bytes());
-        let checksum = format!("{:x}", hasher.finalize());
+        // ── Fan out to every target ────────────────────────────────
+        let mut target_results: Vec<TargetResult> = Vec::with_capacity(targets.len());
+        let mut primary_metadata: Option<BackupMetadata> = None;
+        let mut any_wrote = false;
 
-        // Compress if enabled
-        let final_data = if self.config.compress_backups {
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder
-                .write_all(json_data.as_bytes())
-                .map_err(|e| format!("Failed to compress backup: {}", e))?;
-            encoder
-                .finish()
-                .map_err(|e| format!("Failed to finish compression: {}", e))?
-        } else {
-            json_data.as_bytes().to_vec()
-        };
-
-        // Encrypt if enabled
-        let encrypted_data = if self.config.encrypt_backups {
-            if let Some(password) = self.config.encryption_password.as_ref() {
-                self.encrypt_backup_data(&final_data, password)?
-            } else {
-                final_data
+        for target in &targets {
+            if !target.enabled {
+                target_results.push(TargetResult {
+                    target_id: target.id.clone(),
+                    status: TargetStatus::Disabled,
+                    payload_hash_written: None,
+                    bytes_written: None,
+                    file_path: None,
+                    error_message: None,
+                });
+                continue;
             }
-        } else {
-            final_data
-        };
 
-        // Write to file
-        let mut file =
-            File::create(&file_path).map_err(|e| format!("Failed to create backup file: {}", e))?;
-        file.write_all(&encrypted_data)
-            .map_err(|e| format!("Failed to write backup file: {}", e))?;
+            let target_dir = match resolve_target_dir(target, &self.config.destination_path) {
+                Ok(p) => p,
+                Err(e) => {
+                    target_results.push(TargetResult {
+                        target_id: target.id.clone(),
+                        status: TargetStatus::Failed,
+                        payload_hash_written: None,
+                        bytes_written: None,
+                        file_path: None,
+                        error_message: Some(e),
+                    });
+                    continue;
+                }
+            };
 
-        let size_bytes = encrypted_data.len() as u64;
+            if let Err(e) = fs::create_dir_all(&target_dir) {
+                target_results.push(TargetResult {
+                    target_id: target.id.clone(),
+                    status: TargetStatus::Failed,
+                    payload_hash_written: None,
+                    bytes_written: None,
+                    file_path: None,
+                    error_message: Some(format!(
+                        "Failed to create backup directory {}: {}",
+                        target_dir.display(),
+                        e
+                    )),
+                });
+                continue;
+            }
 
-        // Count connections
-        let connections_count = data
-            .get("connections")
-            .and_then(|c| c.as_array())
-            .map(|arr| arr.len() as u32)
-            .unwrap_or(0);
+            // Per-target delta decision: skip only when delta-skip is
+            // on, *this destination* already has the current payload,
+            // and the force-N valve hasn't fired.
+            let target_last_hash = find_last_payload_hash_for_target(&target_dir, &target.id);
+            let should_skip = self.config.delta_skip_enabled
+                && !force_emit
+                && target_last_hash.as_deref() == Some(payload_hash.as_str());
+            if should_skip {
+                target_results.push(TargetResult {
+                    target_id: target.id.clone(),
+                    status: TargetStatus::SkippedUnchanged,
+                    payload_hash_written: target_last_hash,
+                    bytes_written: None,
+                    file_path: None,
+                    error_message: None,
+                });
+                continue;
+            }
 
-        let metadata = BackupMetadata {
-            id: backup_id,
-            created_at: now,
-            backup_type: backup_type.to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            checksum,
-            encrypted: self.config.encrypt_backups && self.config.encryption_password.is_some(),
-            compressed: self.config.compress_backups,
-            size_bytes,
-            connections_count,
-            parent_backup_id: None,
-            // Phase B1 wires the schema only; the canonical payload
-            // hash will be computed and threaded through in Phase B2.
-            payload_hash: None,
-            target_id: None,
-        };
+            // Write the (already-encrypted) payload + per-target
+            // metadata sidecar.
+            let file_path = target_dir.join(&filename);
+            let write_result = (|| -> Result<u64, String> {
+                let mut file = File::create(&file_path).map_err(|e| {
+                    format!(
+                        "Failed to create backup file at {}: {}",
+                        file_path.display(),
+                        e
+                    )
+                })?;
+                file.write_all(&encrypted_data)
+                    .map_err(|e| format!("Failed to write backup file: {}", e))?;
+                Ok(encrypted_data.len() as u64)
+            })();
 
-        // Save metadata file
-        let metadata_path = dest_path.join(format!("{}.meta.json", filename));
-        let metadata_json = serde_json::to_string_pretty(&metadata)
-            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
-        fs::write(metadata_path, metadata_json)
-            .map_err(|e| format!("Failed to write metadata: {}", e))?;
+            match write_result {
+                Ok(size_bytes) => {
+                    let metadata = BackupMetadata {
+                        id: backup_id.clone(),
+                        created_at: now,
+                        backup_type: backup_type.to_string(),
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                        checksum: checksum.clone(),
+                        encrypted: self.config.encrypt_backups
+                            && self.config.encryption_password.is_some(),
+                        compressed: self.config.compress_backups,
+                        size_bytes,
+                        connections_count,
+                        parent_backup_id: None,
+                        payload_hash: Some(payload_hash.clone()),
+                        target_id: Some(target.id.clone()),
+                    };
+                    let metadata_path = target_dir.join(format!("{}.meta.json", filename));
+                    if let Err(e) = serde_json::to_string_pretty(&metadata)
+                        .map_err(|e| format!("Failed to serialize metadata: {}", e))
+                        .and_then(|s| {
+                            fs::write(&metadata_path, s)
+                                .map_err(|e| format!("Failed to write metadata: {}", e))
+                        })
+                    {
+                        // Roll back the data file so an orphan doesn't
+                        // confuse the delta comparator on the next tick.
+                        let _ = fs::remove_file(&file_path);
+                        target_results.push(TargetResult {
+                            target_id: target.id.clone(),
+                            status: TargetStatus::Failed,
+                            payload_hash_written: None,
+                            bytes_written: None,
+                            file_path: None,
+                            error_message: Some(e),
+                        });
+                        continue;
+                    }
 
-        Ok(metadata)
+                    target_results.push(TargetResult {
+                        target_id: target.id.clone(),
+                        status: TargetStatus::Success,
+                        payload_hash_written: Some(payload_hash.clone()),
+                        bytes_written: Some(size_bytes),
+                        file_path: Some(file_path.to_string_lossy().into_owned()),
+                        error_message: None,
+                    });
+                    if primary_metadata.is_none() {
+                        primary_metadata = Some(metadata);
+                    }
+                    any_wrote = true;
+                }
+                Err(e) => {
+                    target_results.push(TargetResult {
+                        target_id: target.id.clone(),
+                        status: TargetStatus::Failed,
+                        payload_hash_written: None,
+                        bytes_written: None,
+                        file_path: None,
+                        error_message: Some(e),
+                    });
+                }
+            }
+        }
+
+        Ok(BackupRunSummary {
+            payload_hash,
+            skipped: !any_wrote
+                && target_results
+                    .iter()
+                    .any(|r| r.status == TargetStatus::SkippedUnchanged),
+            target_results,
+            primary_metadata,
+        })
     }
 
-    /// Cleanup old backups keeping only the configured number
-    async fn cleanup_old_backups(&self) -> Result<(), String> {
-        let dest_path = Path::new(&self.config.destination_path);
-        if !dest_path.exists() {
-            return Ok(());
-        }
-
-        let mut backups: Vec<(PathBuf, u64)> = Vec::new();
-
-        for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-
-            if path
-                .extension()
-                .map(|e| e == "meta" || e == "json")
-                .unwrap_or(false)
-            {
-                continue; // Skip metadata files, handle them with their backup
+    /// Run `cleanup_old_backups` for every enabled destination so the
+    /// retention policy applies independently per target. Each target
+    /// may override `max_backups_to_keep` via its `retentionOverride`.
+    async fn cleanup_old_backups_all_targets(&self) -> Result<(), String> {
+        for target in self.config.effective_destinations() {
+            if !target.enabled {
+                continue;
             }
-
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-            if filename.starts_with("backup_") {
-                // Get creation time from filename or file metadata
-                let created = entry
-                    .metadata()
-                    .and_then(|m| m.created())
-                    .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs())
-                    .unwrap_or(0);
-                backups.push((path, created));
+            let dir = match resolve_target_dir(&target, &self.config.destination_path) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let limit = target
+                .retention_override
+                .as_ref()
+                .and_then(|r| r.max_backups_to_keep)
+                .unwrap_or(self.config.max_backups_to_keep);
+            if limit == 0 {
+                // 0 means "unlimited" — skip cleanup entirely.
+                continue;
             }
+            cleanup_backups_in_dir(&dir, limit as usize)?;
         }
-
-        // Sort by creation time (newest first)
-        backups.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Remove backups beyond the limit
-        let max_to_keep = self.config.max_backups_to_keep as usize;
-        for (path, _) in backups.iter().skip(max_to_keep) {
-            let _ = fs::remove_file(path);
-            // Also remove metadata file
-            let meta_path = path.with_extension("meta.json");
-            let _ = fs::remove_file(meta_path);
-        }
-
         Ok(())
     }
 
-    /// Update backup statistics
+    /// Update backup statistics across every configured destination.
+    /// When the user has multiple targets, the count is the sum of
+    /// `backup_*` files at each location and the total size is the
+    /// sum of their on-disk sizes.
     async fn update_backup_stats(&mut self) -> Result<(), String> {
-        let dest_path = Path::new(&self.config.destination_path);
-        if !dest_path.exists() {
-            self.status.backup_count = 0;
-            self.status.total_size_bytes = 0;
-            return Ok(());
-        }
-
         let mut count = 0u32;
         let mut total_size = 0u64;
 
-        for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-            if filename.starts_with("backup_") && !filename.contains(".meta.") {
-                count += 1;
-                if let Ok(meta) = entry.metadata() {
-                    total_size += meta.len();
+        for target in self.config.effective_destinations() {
+            if !target.enabled {
+                continue;
+            }
+            let dir = match resolve_target_dir(&target, &self.config.destination_path) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if !dir.exists() {
+                continue;
+            }
+            for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let path = entry.path();
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if filename.starts_with("backup_") && !filename.contains(".meta.") {
+                    count += 1;
+                    if let Ok(meta) = entry.metadata() {
+                        total_size += meta.len();
+                    }
                 }
             }
         }
@@ -837,6 +1004,153 @@ impl BackupService {
         pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 600_000, &mut key);
         key
     }
+}
+
+// ── Multi-target / delta-skip helpers ────────────────────────────────
+
+/// Summary returned by `perform_backup` describing what happened at
+/// each destination on a single scheduled tick. The owning
+/// `run_backup` uses this to update `BackupStatus` and surface the
+/// outcome to the caller.
+#[derive(Debug, Clone)]
+struct BackupRunSummary {
+    /// Canonical SHA-256 of the *plaintext* payload — used as the
+    /// `last_payload_hash` bookmark for the next tick's delta check.
+    payload_hash: String,
+    /// `true` when no destination wrote on this tick (every enabled
+    /// target was delta-skipped and force-N didn't fire). Disabled
+    /// targets alone don't count as a skip — at least one
+    /// `SkippedUnchanged` is required.
+    skipped: bool,
+    /// One entry per destination (including Disabled targets) so the
+    /// UI can render the full "last run" panel.
+    target_results: Vec<TargetResult>,
+    /// First successful per-target metadata, returned by `run_backup`
+    /// to preserve the existing `Result<BackupMetadata, String>`
+    /// Tauri command shape. `None` when every target was skipped.
+    primary_metadata: Option<BackupMetadata>,
+}
+
+/// Build a synthetic `BackupMetadata` for a tick where every enabled
+/// destination was delta-skipped, so the Tauri command contract can
+/// stay `Result<BackupMetadata, String>` and the caller can detect
+/// the skip via `backup_type == "skipped"` plus the empty checksum.
+fn skipped_run_metadata(backup_type: &str, payload_hash: String) -> BackupMetadata {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    BackupMetadata {
+        id: format!("skipped-{}", now),
+        created_at: now,
+        backup_type: format!("{}-skipped", backup_type),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        checksum: String::new(),
+        encrypted: false,
+        compressed: false,
+        size_bytes: 0,
+        connections_count: 0,
+        parent_backup_id: None,
+        payload_hash: Some(payload_hash),
+        target_id: None,
+    }
+}
+
+/// Resolve a `BackupTarget` to an absolute filesystem path. The
+/// `custom` / `appData` / `documents` presets use the supplied
+/// `custom_path` (or the legacy `BackupConfig.destination_path` when
+/// custom_path is None, for back-compat). Cloud presets are out of
+/// scope for the local-write path used by the in-app backup; the
+/// commit upstream of this one in the plan wires the cloud transports
+/// — for now they resolve to `custom_path` so a user who points
+/// `customPath` at a locally-mounted cloud sync folder (e.g. a
+/// Dropbox/OneDrive client cache) Just Works.
+fn resolve_target_dir(target: &BackupTarget, legacy_fallback: &str) -> Result<PathBuf, String> {
+    if let Some(p) = target.custom_path.as_ref() {
+        if !p.is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
+    if !legacy_fallback.is_empty() {
+        return Ok(PathBuf::from(legacy_fallback));
+    }
+    Err(format!(
+        "Backup target '{}' has no custom_path set and no legacy destination_path to fall back on",
+        target.label
+    ))
+}
+
+/// Scan `dir` for the most recent `.meta.json` sidecar whose
+/// `target_id` matches `target_id`, and return its `payload_hash` if
+/// present. Used by the delta-skip comparator to decide whether
+/// *this destination* already has the current payload — independent
+/// of what other destinations did.
+fn find_last_payload_hash_for_target(dir: &Path, target_id: &str) -> Option<String> {
+    if !dir.exists() {
+        return None;
+    }
+    let entries = fs::read_dir(dir).ok()?;
+    let mut best: Option<(u64, String)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !filename.contains(".meta.json") {
+            continue;
+        }
+        let content = match fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let meta: BackupMetadata = match serde_json::from_str(&content) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.target_id.as_deref() != Some(target_id) {
+            continue;
+        }
+        if let Some(hash) = meta.payload_hash {
+            if best.as_ref().map(|(t, _)| meta.created_at > *t).unwrap_or(true) {
+                best = Some((meta.created_at, hash));
+            }
+        }
+    }
+    best.map(|(_, h)| h)
+}
+
+/// Drop all but the `keep_last` newest `backup_*` files (and their
+/// `.meta.json` sidecars) from `dir`. Idempotent and safe to call on
+/// a missing directory.
+fn cleanup_backups_in_dir(dir: &Path, keep_last: usize) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let mut backups: Vec<(PathBuf, u64)> = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !filename.starts_with("backup_") || filename.contains(".meta.") {
+            continue;
+        }
+        let created = entry
+            .metadata()
+            .and_then(|m| m.created())
+            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs())
+            .unwrap_or(0);
+        backups.push((path, created));
+    }
+    backups.sort_by(|a, b| b.1.cmp(&a.1));
+    for (path, _) in backups.iter().skip(keep_last) {
+        let _ = fs::remove_file(path);
+        // Sidecar lives alongside as `<name>.meta.json`.
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            if let Some(parent) = path.parent() {
+                let meta = parent.join(format!("{}.meta.json", filename));
+                let _ = fs::remove_file(meta);
+            }
+        }
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -1367,6 +1681,381 @@ mod tests {
         let result = svc.run_backup("full", &serde_json::json!({})).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("already in progress"));
+    }
+
+    // ── Delta-skip + multi-target behaviour ─────────────────────────────
+
+    /// Build a `BackupConfig` aimed at a single temp directory with
+    /// no encryption/compression so test assertions can inspect the
+    /// raw output. The caller layers on `destinations`, delta-skip,
+    /// and the force-N threshold as needed.
+    fn build_test_config(tmp: &std::path::Path) -> BackupConfig {
+        let mut cfg = BackupConfig::default();
+        cfg.destination_path = tmp.to_string_lossy().to_string();
+        cfg.encrypt_backups = false;
+        cfg.compress_backups = false;
+        cfg.max_backups_to_keep = 0;
+        cfg
+    }
+
+    fn fresh_temp_dir(label: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("sorng_backup_phase_b_{}", label));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[tokio::test]
+    async fn multi_target_fan_out_writes_to_every_destination() {
+        let dir_a = fresh_temp_dir("fanout_a");
+        let dir_b = fresh_temp_dir("fanout_b");
+        let state = BackupService::new(dir_a.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&dir_a);
+        cfg.destinations = vec![
+            BackupTarget {
+                id: "a".into(),
+                label: "Primary".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_a.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: None,
+            },
+            BackupTarget {
+                id: "b".into(),
+                label: "Secondary".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_b.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: None,
+            },
+        ];
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": [{"id": "c1", "name": "srv"}]});
+        svc.run_backup("full", &data).await.unwrap();
+
+        // Both directories now contain one backup_*.json + sidecar.
+        let count_files = |d: &std::path::Path| {
+            std::fs::read_dir(d)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let n = e.file_name().to_string_lossy().into_owned();
+                    n.starts_with("backup_") && !n.contains(".meta.")
+                })
+                .count()
+        };
+        assert_eq!(count_files(&dir_a), 1);
+        assert_eq!(count_files(&dir_b), 1);
+
+        let status = svc.get_status();
+        assert_eq!(status.last_target_results.len(), 2);
+        assert!(status
+            .last_target_results
+            .iter()
+            .all(|r| r.status == TargetStatus::Success));
+        assert!(status.last_payload_hash.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[tokio::test]
+    async fn delta_skip_blocks_redundant_writes() {
+        let tmp = fresh_temp_dir("delta_skip");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&tmp);
+        cfg.delta_skip_enabled = true;
+        // Disable the safety valve so the test deterministically skips.
+        cfg.force_emit_every_n_skipped_ticks = 0;
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": [{"id": "c1"}]});
+        let first = svc.run_backup("full", &data).await.unwrap();
+        assert_eq!(first.backup_type, "full");
+
+        // Second run with the same payload: skipped, no new file.
+        let second = svc.run_backup("full", &data).await.unwrap();
+        assert!(second.backup_type.ends_with("-skipped"));
+
+        let files: Vec<_> = std::fs::read_dir(&tmp)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_") && !n.contains(".meta.")
+            })
+            .collect();
+        assert_eq!(files.len(), 1, "expected only the first backup file");
+
+        let status = svc.get_status();
+        assert_eq!(status.consecutive_skipped_count, 1);
+        assert_eq!(status.last_backup_status.as_deref(), Some("skipped"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn delta_skip_emits_for_changed_payload() {
+        let tmp = fresh_temp_dir("delta_change");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&tmp);
+        cfg.delta_skip_enabled = true;
+        cfg.force_emit_every_n_skipped_ticks = 0;
+        svc.update_config(cfg);
+
+        let payload1 = serde_json::json!({"connections": [{"id": "c1"}]});
+        let payload2 = serde_json::json!({"connections": [{"id": "c2"}]});
+        svc.run_backup("full", &payload1).await.unwrap();
+        let second = svc.run_backup("full", &payload2).await.unwrap();
+        assert_eq!(second.backup_type, "full");
+        assert!(!second.backup_type.ends_with("-skipped"));
+
+        let count = std::fs::read_dir(&tmp)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_") && !n.contains(".meta.")
+            })
+            .count();
+        assert_eq!(count, 2);
+
+        let status = svc.get_status();
+        assert_eq!(status.consecutive_skipped_count, 0);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn force_emit_every_n_safety_valve_fires() {
+        let tmp = fresh_temp_dir("force_n");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&tmp);
+        cfg.delta_skip_enabled = true;
+        // After 2 skipped ticks the next tick must emit.
+        cfg.force_emit_every_n_skipped_ticks = 2;
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": []});
+        svc.run_backup("full", &data).await.unwrap(); // emit
+        svc.run_backup("full", &data).await.unwrap(); // skip 1
+        svc.run_backup("full", &data).await.unwrap(); // skip 2
+        let forced = svc.run_backup("full", &data).await.unwrap(); // forced emit
+
+        assert_eq!(
+            forced.backup_type, "full",
+            "force-N tick should produce a real full backup, not a skip marker"
+        );
+        let status = svc.get_status();
+        assert_eq!(status.consecutive_skipped_count, 0);
+
+        let count = std::fs::read_dir(&tmp)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_") && !n.contains(".meta.")
+            })
+            .count();
+        // Two emitted backups: the first and the forced one.
+        assert_eq!(count, 2);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn per_target_recovery_writes_only_to_lagging_destination() {
+        let dir_a = fresh_temp_dir("recover_a");
+        let dir_b = fresh_temp_dir("recover_b");
+        let state = BackupService::new(dir_a.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&dir_a);
+        cfg.delta_skip_enabled = true;
+        cfg.force_emit_every_n_skipped_ticks = 0;
+        cfg.destinations = vec![
+            BackupTarget {
+                id: "a".into(),
+                label: "A".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_a.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: None,
+            },
+            BackupTarget {
+                id: "b".into(),
+                label: "B".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_b.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: None,
+            },
+        ];
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": [{"id": "c1"}]});
+        svc.run_backup("full", &data).await.unwrap();
+
+        // Simulate destination B losing its data (failed cloud sync,
+        // disk wipe, manual deletion). Both files at B vanish.
+        for entry in std::fs::read_dir(&dir_b).unwrap().flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+
+        // Next tick: A's hash matches → skipped; B's hash is missing
+        // → writes anyway. End result is a recovery, not a full skip.
+        svc.run_backup("full", &data).await.unwrap();
+
+        let count_a = std::fs::read_dir(&dir_a)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_") && !n.contains(".meta.")
+            })
+            .count();
+        let count_b = std::fs::read_dir(&dir_b)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_") && !n.contains(".meta.")
+            })
+            .count();
+        assert_eq!(count_a, 1, "A should not have been written to again");
+        assert_eq!(count_b, 1, "B should have been recovered");
+
+        let status = svc.get_status();
+        let by_id: std::collections::HashMap<_, _> = status
+            .last_target_results
+            .iter()
+            .map(|r| (r.target_id.as_str(), r.status.clone()))
+            .collect();
+        assert_eq!(by_id.get("a"), Some(&TargetStatus::SkippedUnchanged));
+        assert_eq!(by_id.get("b"), Some(&TargetStatus::Success));
+
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[tokio::test]
+    async fn disabled_target_is_skipped_with_disabled_status() {
+        let dir_a = fresh_temp_dir("disabled_a");
+        let dir_b = fresh_temp_dir("disabled_b");
+        let state = BackupService::new(dir_a.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&dir_a);
+        cfg.destinations = vec![
+            BackupTarget {
+                id: "a".into(),
+                label: "A".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_a.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: None,
+            },
+            BackupTarget {
+                id: "b".into(),
+                label: "B".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_b.to_string_lossy().to_string()),
+                enabled: false,
+                retention_override: None,
+            },
+        ];
+        svc.update_config(cfg);
+
+        svc.run_backup("full", &serde_json::json!({"connections": []}))
+            .await
+            .unwrap();
+
+        let b_empty = std::fs::read_dir(&dir_b)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_")
+            })
+            .count();
+        assert_eq!(b_empty, 0, "disabled target must not be written to");
+
+        let status = svc.get_status();
+        let by_id: std::collections::HashMap<_, _> = status
+            .last_target_results
+            .iter()
+            .map(|r| (r.target_id.as_str(), r.status.clone()))
+            .collect();
+        assert_eq!(by_id.get("a"), Some(&TargetStatus::Success));
+        assert_eq!(by_id.get("b"), Some(&TargetStatus::Disabled));
+
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    #[tokio::test]
+    async fn per_destination_retention_override_keeps_fewer() {
+        let dir_a = fresh_temp_dir("retention_a");
+        let dir_b = fresh_temp_dir("retention_b");
+        let state = BackupService::new(dir_a.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = build_test_config(&dir_a);
+        cfg.max_backups_to_keep = 5;
+        cfg.destinations = vec![
+            BackupTarget {
+                id: "a".into(),
+                label: "A".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_a.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: None,
+            },
+            BackupTarget {
+                id: "b".into(),
+                label: "B".into(),
+                preset: "custom".into(),
+                custom_path: Some(dir_b.to_string_lossy().to_string()),
+                enabled: true,
+                retention_override: Some(DestinationRetentionPolicy {
+                    max_backups_to_keep: Some(2),
+                }),
+            },
+        ];
+        svc.update_config(cfg);
+
+        // Different payload each tick so nothing gets delta-skipped.
+        for i in 0..4u32 {
+            let data = serde_json::json!({"connections": [{"id": format!("c{i}")}]});
+            svc.run_backup("full", &data).await.unwrap();
+            // Sleep briefly so file mtimes don't collide on fast systems.
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        let count = |d: &std::path::Path| {
+            std::fs::read_dir(d)
+                .unwrap()
+                .flatten()
+                .filter(|e| {
+                    let n = e.file_name().to_string_lossy().into_owned();
+                    n.starts_with("backup_") && !n.contains(".meta.")
+                })
+                .count()
+        };
+        assert_eq!(count(&dir_a), 4, "global keep=5 lets all 4 stay");
+        assert_eq!(count(&dir_b), 2, "per-target keep=2 prunes the older two");
+
+        let _ = std::fs::remove_dir_all(&dir_a);
+        let _ = std::fs::remove_dir_all(&dir_b);
     }
 }
 
