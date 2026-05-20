@@ -206,3 +206,68 @@ export interface ImportResult {
   selectedIds?: string[];
   selectedCount?: number;
 }
+
+// ─── Clone ───────────────────────────────────────────────────────────
+//
+// Clone runs Export's source-scope + connection-filter pipeline and
+// pipes the result into one or more *other* databases via
+// `databaseManager.appendConnectionsToDatabase`. Sidecars (VPN /
+// proxy / tunnel-chain templates) are global, so Clone doesn't carry
+// them — both source and target databases already share the same
+// pool. The clone-side filter therefore only needs the
+// connection-shape knobs from `ExportInclusionConfig`.
+
+export interface CloneConfig {
+  /** Same scope semantics as Export: current open / explicitly
+   *  selected / every available database. */
+  sourceMode: ExportScopeMode;
+  selectedSourceDatabaseIds: string[];
+  /** Reused so the connection-level filters (protocol / tags / color
+   *  tags / ids) work the same way users already know from Export. */
+  inclusion: ExportInclusionConfig;
+
+  /** Destinations the clone fans out to. Multi-target from V1 —
+   *  the same connections are duplicated into every selected target. */
+  targetDatabaseIds: string[];
+
+  /** Conflict-resolution policy applied per target. Defaults to
+   *  `duplicate` since clone is an explicit copy action. */
+  conflictPolicy: ImportOptions['conflictPolicy'];
+
+  /** Optional comma-separated list of tags to add to every cloned
+   *  connection (mirrors Import's `addTags` field). */
+  addTags: string;
+
+  preserveFolders: boolean;
+
+  /** Whether to carry credentials across. Defaults true for Clone
+   *  (no trust-boundary crossing) — distinct from Import's default
+   *  of false. */
+  includeCredentials: boolean;
+
+  /** When set, the active database becomes the (first) target
+   *  after a successful clone. */
+  switchToTargetDatabaseAfterClone: boolean;
+}
+
+export interface CloneConfigUpdate extends Partial<Omit<CloneConfig, 'inclusion'>> {
+  inclusion?: Partial<ExportInclusionConfig>;
+}
+
+/** Outcome of a clone run, suitable for the result toast. */
+export interface CloneResult {
+  success: boolean;
+  /** Total connections written across every target. */
+  cloned: number;
+  renamed: number;
+  skipped: number;
+  errors: string[];
+  /** Per-destination outcome so the UI can show which target landed
+   *  fully, which failed, and which had nothing to copy. */
+  perTarget: Array<{
+    databaseId: string;
+    databaseName: string;
+    cloned: number;
+    error?: string;
+  }>;
+}

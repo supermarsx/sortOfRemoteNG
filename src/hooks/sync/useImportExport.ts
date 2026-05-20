@@ -16,6 +16,7 @@ import {
   ImportSourceMetadata,
   ImportVpnData,
   ImportTargetMode,
+  CloneResult,
 } from '../../components/ImportExport/types';
 import {
   decryptWithPassword,
@@ -55,6 +56,7 @@ import { proxyCollectionManager } from '../../utils/connection/proxyCollectionMa
 import { generateId } from '../../utils/core/id';
 import {
   remapConnectionsForApply,
+  buildApplyItems,
   type ApplyConnectionsItem,
 } from '../../components/ImportExport/applyConnections';
 
@@ -805,10 +807,12 @@ const filterImportPreviewItems = (
   });
 };
 
+type ImportExportTab = 'export' | 'import' | 'clone';
+
 interface UseImportExportParams {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'export' | 'import';
+  initialTab?: ImportExportTab;
 }
 
 export function useImportExport({
@@ -824,7 +828,7 @@ export function useImportExport({
   const [exportSecuritySettings] = useState(() =>
     getExportSecuritySettings(settingsManager),
   );
-  const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialTab);
+  const [activeTab, setActiveTab] = useState<ImportExportTab>(initialTab);
   const [exportFormat, setExportFormat] = useState<ExportFormat>(
     exportSecuritySettings.defaultFormat,
   );
@@ -849,6 +853,53 @@ export function useImportExport({
   const [importOptions, setImportOptions] =
     useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS);
   const [importDatabaseOptions, setImportDatabaseOptions] = useState<ExportDatabaseOption[]>([]);
+
+  // ─── Clone tab state ──────────────────────────────────────────────
+  //
+  // Clone shares ExportInclusionConfig for the source-filter side and
+  // the apply-pipeline knobs (conflict policy / addTags /
+  // preserveFolders / includeCredentials) for the destination side.
+  // `cloneDatabaseOptions` is the same shape as
+  // `importDatabaseOptions` / `exportDatabaseOptions` so the picker
+  // UI can be reused without translation.
+  const [cloneSourceMode, setCloneSourceMode] =
+    useState<ExportScopeMode>('current');
+  const [selectedCloneSourceDatabaseIds, setSelectedCloneSourceDatabaseIds] =
+    useState<string[]>([]);
+  const [cloneInclusion, setCloneInclusion] = useState<ExportInclusionConfig>(() =>
+    createDefaultExportInclusion(exportSecuritySettings),
+  );
+  const [cloneTargetDatabaseIds, setCloneTargetDatabaseIds] = useState<string[]>([]);
+  const [cloneConflictPolicy, setCloneConflictPolicy] = useState<
+    ImportOptions['conflictPolicy']
+  >('duplicate');
+  const [cloneAddTags, setCloneAddTags] = useState<string>('');
+  const [clonePreserveFolders, setClonePreserveFolders] = useState<boolean>(true);
+  const [cloneIncludeCredentials, setCloneIncludeCredentials] =
+    useState<boolean>(true);
+  const [
+    cloneSwitchToTargetDatabaseAfterClone,
+    setCloneSwitchToTargetDatabaseAfterClone,
+  ] = useState<boolean>(false);
+  const [cloneDatabaseOptions, setCloneDatabaseOptions] = useState<
+    ExportDatabaseOption[]
+  >([]);
+  const [isCloning, setIsCloning] = useState<boolean>(false);
+  const [cloneResult, setCloneResult] = useState<CloneResult | null>(null);
+
+  const updateCloneInclusion = useCallback(
+    (updates: Partial<ExportInclusionConfig>) => {
+      setCloneInclusion((current) => ({
+        ...current,
+        ...updates,
+        includedProtocols:
+          updates.includedProtocols !== undefined
+            ? normalizeIncludedProtocols(updates.includedProtocols)
+            : current.includedProtocols,
+      }));
+    },
+    [],
+  );
   const [importTargetMode, setImportTargetModeState] =
     useState<ImportTargetMode>('current');
   const [selectedImportDatabaseId, setSelectedImportDatabaseId] = useState<string>('');
@@ -1042,11 +1093,57 @@ export function useImportExport({
     }
   }, [isOpen, initialTab]);
 
+  const refreshCloneDatabaseOptions = useCallback(async () => {
+    // Clone consumes the same per-database option shape as Import /
+    // Export, just with both sides (source + target) drawing from one
+    // list. Encryption-locked databases land in the list as
+    // non-exportable so the UI can still show them with an "unlock
+    // to use" affordance.
+    const managerWithExportability = databaseManager as DatabaseManager & {
+      getExportableDatabases?: () => ReturnType<DatabaseManager['getExportableDatabases']>;
+    };
+    const currentDatabase = databaseManager.getCurrentDatabase();
+    const databases = managerWithExportability.getExportableDatabases
+      ? await managerWithExportability.getExportableDatabases()
+      : currentDatabase
+        ? [{
+            ...currentDatabase,
+            isCurrent: true,
+            isUnlocked: true,
+            isExportable: true,
+          }]
+        : [];
+
+    const options: ExportDatabaseOption[] = databases.map((database) => ({
+      id: database.id,
+      name: database.name,
+      description: database.description,
+      isCurrent: database.id === currentDatabase?.id || database.isCurrent,
+      isEncrypted: database.isEncrypted,
+      isUnlocked: database.isUnlocked,
+      isExportable: database.isExportable,
+      lockedReason: database.isExportable
+        ? undefined
+        : 'Unlock this database before cloning to or from it.',
+      connectionCount:
+        database.id === currentDatabase?.id ? state.connections.length : undefined,
+      lastAccessed: database.lastAccessed,
+    }));
+
+    setCloneDatabaseOptions(options);
+  }, [databaseManager, state.connections.length]);
+
   useEffect(() => {
     if (!isOpen) return;
     void refreshExportDatabaseOptions();
     void refreshImportDatabaseOptions();
-  }, [isOpen, refreshExportDatabaseOptions, refreshImportDatabaseOptions]);
+    void refreshCloneDatabaseOptions();
+  }, [
+    isOpen,
+    refreshExportDatabaseOptions,
+    refreshImportDatabaseOptions,
+    refreshCloneDatabaseOptions,
+  ]);
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -2838,6 +2935,234 @@ ${tableRows}
     setImportFilters(DEFAULT_IMPORT_FILTERS);
   };
 
+  // ─── Clone action ────────────────────────────────────────────────
+  //
+  // Runs Export's filter pipeline against the selected source
+  // databases, then funnels the filtered result through the same
+  // shared `remapConnectionsForApply` helper Import uses, and writes
+  // into every selected target via `appendConnectionsToDatabase`
+  // (or directly into the active database via dispatch when it's
+  // one of the targets — same pattern as multi-target import).
+  const handleClone = useCallback(async (): Promise<CloneResult | null> => {
+    if (isCloning) return null;
+
+    // ── Resolve sources ─────────────────────────────────────────
+    const exportableIds = new Set(
+      cloneDatabaseOptions
+        .filter((option) => option.isExportable)
+        .map((option) => option.id),
+    );
+    let sourceIds: string[] = [];
+    switch (cloneSourceMode) {
+      case 'current': {
+        const current = cloneDatabaseOptions.find(
+          (option) => option.isCurrent && option.isExportable,
+        );
+        sourceIds = current ? [current.id] : [];
+        break;
+      }
+      case 'all':
+        sourceIds = [...exportableIds];
+        break;
+      case 'selected':
+      default:
+        sourceIds = selectedCloneSourceDatabaseIds.filter((id) =>
+          exportableIds.has(id),
+        );
+        break;
+    }
+    if (sourceIds.length === 0) {
+      toast.error('Pick at least one source database before cloning.');
+      return null;
+    }
+
+    // ── Resolve targets ─────────────────────────────────────────
+    const sourceIdSet = new Set(sourceIds);
+    const targetIds = cloneTargetDatabaseIds.filter(
+      (id) => !sourceIdSet.has(id),
+    );
+    if (targetIds.length === 0) {
+      toast.error(
+        cloneTargetDatabaseIds.length === 0
+          ? 'Pick at least one target database before cloning.'
+          : 'Targets cannot overlap with sources — pick a different database.',
+      );
+      return null;
+    }
+    const targetOptionsById = new Map(
+      cloneDatabaseOptions.map((option) => [option.id, option]),
+    );
+    const lockedTargets = targetIds.filter(
+      (id) => !targetOptionsById.get(id)?.isExportable,
+    );
+    if (lockedTargets.length > 0) {
+      toast.error(
+        'Unlock the target database(s) before cloning: ' +
+          lockedTargets
+            .map((id) => targetOptionsById.get(id)?.name ?? id)
+            .join(', '),
+      );
+      return null;
+    }
+
+    setIsCloning(true);
+    setCloneResult(null);
+    try {
+      // ── Collect + filter source connections ──────────────────
+      const currentDatabase = databaseManager.getCurrentDatabase();
+      const sourceConnections: Connection[] = [];
+      for (const id of sourceIds) {
+        if (id === currentDatabase?.id) {
+          sourceConnections.push(...state.connections);
+        } else {
+          try {
+            const snapshot = await databaseManager.readExportableDatabaseSnapshot(id);
+            sourceConnections.push(...(snapshot?.connections ?? []));
+          } catch (e) {
+            console.warn(
+              `[clone] Failed to read snapshot of source database ${id}:`,
+              e,
+            );
+          }
+        }
+      }
+
+      const filtered = filterConnectionsForExport(sourceConnections, cloneInclusion);
+      if (filtered.length === 0) {
+        toast.error('Nothing to clone with the current filter.');
+        return null;
+      }
+
+      // ── Fan out to every target ──────────────────────────────
+      const addTags = splitTags(cloneAddTags);
+      const perTarget: CloneResult['perTarget'] = [];
+      let totalCloned = 0;
+      let totalRenamed = 0;
+      let totalSkipped = 0;
+      const errors: string[] = [];
+
+      for (const targetId of targetIds) {
+        const targetOption = targetOptionsById.get(targetId);
+        const targetName = targetOption?.name ?? targetId;
+        try {
+          // Compute conflict status against this target's existing
+          // contents so id collisions are caught per-target.
+          let existing: Connection[] = [];
+          if (targetId === currentDatabase?.id) {
+            existing = state.connections;
+          } else {
+            const snapshot =
+              await databaseManager.readExportableDatabaseSnapshot(targetId);
+            existing = snapshot?.connections ?? [];
+          }
+          const items = buildApplyItems(
+            // Strip credentials per the user's preference. Clone
+            // defaults to keeping them; Import defaults to stripping.
+            cloneIncludeCredentials
+              ? filtered
+              : filtered.map(stripConnectionCredentials),
+            existing,
+          );
+          const applied = remapConnectionsForApply(items, {
+            conflictPolicy: cloneConflictPolicy,
+            addTags,
+            preserveFolders: clonePreserveFolders,
+          });
+
+          if (targetId === currentDatabase?.id) {
+            applied.remapped.forEach((conn) => {
+              dispatch({ type: 'ADD_CONNECTION', payload: conn });
+            });
+          } else {
+            await databaseManager.appendConnectionsToDatabase(
+              targetId,
+              applied.remapped,
+            );
+          }
+
+          totalCloned += applied.remapped.length;
+          totalRenamed += applied.renamed;
+          totalSkipped += applied.skipped;
+          perTarget.push({
+            databaseId: targetId,
+            databaseName: targetName,
+            cloned: applied.remapped.length,
+          });
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          errors.push(`${targetName}: ${message}`);
+          perTarget.push({
+            databaseId: targetId,
+            databaseName: targetName,
+            cloned: 0,
+            error: message,
+          });
+        }
+      }
+
+      // ── Optionally switch to the (first successful) target ──
+      if (cloneSwitchToTargetDatabaseAfterClone) {
+        const firstSuccessful = perTarget.find((row) => !row.error);
+        if (firstSuccessful && firstSuccessful.databaseId !== currentDatabase?.id) {
+          try {
+            await databaseManager.selectDatabase(firstSuccessful.databaseId);
+            await loadData();
+          } catch (e) {
+            console.warn('[clone] Failed to switch active database:', e);
+          }
+        }
+      }
+
+      // ── Surface result ──────────────────────────────────────
+      const success = errors.length === 0 && totalCloned > 0;
+      const result: CloneResult = {
+        success,
+        cloned: totalCloned,
+        renamed: totalRenamed,
+        skipped: totalSkipped,
+        errors,
+        perTarget,
+      };
+      setCloneResult(result);
+
+      if (success) {
+        const targetSummary =
+          targetIds.length === 1
+            ? ` to ${perTarget[0].databaseName}`
+            : ` to ${targetIds.length} databases`;
+        const renameNote = totalRenamed > 0 ? `, renamed ${totalRenamed}` : '';
+        const skipNote = totalSkipped > 0 ? `, skipped ${totalSkipped}` : '';
+        toast.success(
+          `Cloned ${totalCloned} connection(s)${targetSummary}${renameNote}${skipNote}.`,
+        );
+      } else if (errors.length > 0) {
+        toast.error(`Clone partially failed: ${errors.join('; ')}`);
+      }
+      return result;
+    } finally {
+      setIsCloning(false);
+    }
+  }, [
+    isCloning,
+    cloneSourceMode,
+    selectedCloneSourceDatabaseIds,
+    cloneTargetDatabaseIds,
+    cloneInclusion,
+    cloneConflictPolicy,
+    cloneAddTags,
+    clonePreserveFolders,
+    cloneIncludeCredentials,
+    cloneSwitchToTargetDatabaseAfterClone,
+    cloneDatabaseOptions,
+    databaseManager,
+    state.connections,
+    dispatch,
+    toast,
+    loadData,
+  ]);
+
+  const clearCloneResult = useCallback(() => setCloneResult(null), []);
+
   return {
     connections: state.connections,
     activeTab,
@@ -2904,5 +3229,30 @@ ${tableRows}
     passwordPrompt,
     submitPasswordPrompt,
     cancelPasswordPrompt,
+    // ── Clone state + actions ──
+    cloneSourceMode,
+    setCloneSourceMode,
+    selectedCloneSourceDatabaseIds,
+    setSelectedCloneSourceDatabaseIds,
+    cloneInclusion,
+    updateCloneInclusion,
+    cloneTargetDatabaseIds,
+    setCloneTargetDatabaseIds,
+    cloneConflictPolicy,
+    setCloneConflictPolicy,
+    cloneAddTags,
+    setCloneAddTags,
+    clonePreserveFolders,
+    setClonePreserveFolders,
+    cloneIncludeCredentials,
+    setCloneIncludeCredentials,
+    cloneSwitchToTargetDatabaseAfterClone,
+    setCloneSwitchToTargetDatabaseAfterClone,
+    cloneDatabaseOptions,
+    refreshCloneDatabaseOptions,
+    isCloning,
+    cloneResult,
+    clearCloneResult,
+    handleClone,
   };
 }
