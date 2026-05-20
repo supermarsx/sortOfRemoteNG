@@ -53,6 +53,10 @@ import {
 import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
 import { generateId } from '../../utils/core/id';
+import {
+  remapConnectionsForApply,
+  type ApplyConnectionsItem,
+} from '../../components/ImportExport/applyConnections';
 
 const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
   search: '',
@@ -2663,61 +2667,33 @@ ${tableRows}
           }));
 
       const addTags = splitTags(importOptions.addTags);
-      const selectedOriginalIds = new Set(
-        selectedItems
-          .map((item) => item.connection?.id)
-          .filter(Boolean) as string[],
-      );
-      const remappedIds = new Map<string, string>();
 
-      selectedItems.forEach((item) => {
-        const connection = item.connection;
-        if (!connection) return;
-        if (
-          item.conflictStatus === 'sameId' ||
-          importOptions.conflictPolicy === 'rename'
-        ) {
-          remappedIds.set(connection.id, generateId());
-        }
+      // Strip credentials *before* the shared remap so the helper
+      // stays free of secret-handling concerns. Both Import and
+      // Clone funnel through the same `remapConnectionsForApply`
+      // helper; clone keeps credentials by default, import strips
+      // unless the user opts in.
+      // Upstream already filtered `selectedItems` to importable
+      // entries with a non-null `connection` — don't double-filter
+      // here because the legacy fallback shape omits `importable`.
+      const preparedItems: ApplyConnectionsItem[] = selectedItems
+        .filter((item) => Boolean(item.connection))
+        .map((item) => {
+          const connection = item.connection as Connection;
+          return {
+            connection: importOptions.includeCredentials
+              ? connection
+              : stripConnectionCredentials(connection),
+            conflictStatus: item.conflictStatus,
+          };
+        });
+
+      const applied = remapConnectionsForApply(preparedItems, {
+        conflictPolicy: importOptions.conflictPolicy,
+        addTags,
+        preserveFolders: importOptions.preserveFolders,
       });
-
-      const connectionsToImport = selectedItems
-        .filter((item) => {
-          if (importOptions.conflictPolicy !== 'skip') return true;
-          return item.conflictStatus === 'none';
-        })
-        .flatMap((item) => {
-          const connection = item.connection;
-          if (!connection) return [];
-
-          let next: Connection = { ...connection };
-          const remappedId = remappedIds.get(next.id);
-          if (remappedId) {
-            next.id = remappedId;
-          }
-          if (
-            next.parentId &&
-            (!importOptions.preserveFolders || !selectedOriginalIds.has(next.parentId))
-          ) {
-            next.parentId = undefined;
-          } else if (next.parentId && remappedIds.has(next.parentId)) {
-            next.parentId = remappedIds.get(next.parentId);
-          }
-          if (
-            importOptions.conflictPolicy === 'rename' &&
-            item.conflictStatus !== 'none'
-          ) {
-            next.name = `${next.name} (imported)`;
-          }
-          if (addTags.length > 0) {
-            next.tags = Array.from(new Set([...(next.tags || []), ...addTags]));
-          }
-          if (!importOptions.includeCredentials) {
-            next = stripConnectionCredentials(next);
-          }
-          return [next];
-        })
-        .filter((connection) => importOptions.preserveFolders || !connection.isGroup);
+      const connectionsToImport = applied.remapped;
 
       const currentDatabase = databaseManager.getCurrentDatabase();
       const targetDatabases = getImportTargetDatabases();
