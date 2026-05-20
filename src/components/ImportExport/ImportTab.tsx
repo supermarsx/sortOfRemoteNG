@@ -221,6 +221,20 @@ const AnalysisSummary: React.FC<{ analysis: ImportSourceMetadata }> = ({ analysi
               Encrypted
             </span>
           )}
+          {analysis.encryption?.defaultMasterPasswordAccepted && (
+            // mRemoteNG's default master password is the literal string
+            // `mR3m` and is public, so encryption against it provides
+            // no practical security — surface it loudly on import so
+            // the user knows the file's credentials aren't actually
+            // protected.
+            <span
+              className="inline-flex items-center gap-1 rounded border border-error/30 bg-error/10 px-2 py-0.5 text-xs text-error"
+              title="The file is encrypted with mRemoteNG's default master password (mR3m). That password is public knowledge, so the encryption provides no real protection — anyone with the file can read it. If this export contains sensitive credentials, re-export it from mRemoteNG with a custom master password."
+            >
+              <Shield size={11} />
+              Default master password
+            </span>
+          )}
         </div>
         <div className="mt-1 text-xs text-[var(--color-textMuted)]">
           {formatBytes(analysis.sizeBytes)} | Confidence {analysis.confidence}
@@ -250,7 +264,23 @@ const AnalysisSummary: React.FC<{ analysis: ImportSourceMetadata }> = ({ analysi
     <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] md:grid-cols-2">
       {analysis.encryption && (
         <div>
-          Encryption: protected={String(analysis.encryption.protected)}, full-file={String(analysis.encryption.fullFileEncryption)}, password required={String(analysis.encryption.requiresPassword)}
+          Encryption: protected={String(analysis.encryption.protected)},
+          full-file={String(analysis.encryption.fullFileEncryption)},
+          password required={String(analysis.encryption.requiresPassword)}
+          {analysis.encryption.defaultMasterPasswordAccepted !== undefined && (
+            <>
+              , default master password=
+              <span
+                className={
+                  analysis.encryption.defaultMasterPasswordAccepted
+                    ? 'text-error font-medium'
+                    : 'text-success'
+                }
+              >
+                {String(analysis.encryption.defaultMasterPasswordAccepted)}
+              </span>
+            </>
+          )}
         </div>
       )}
       {analysis.csv && (
