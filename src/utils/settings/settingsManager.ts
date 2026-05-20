@@ -4,6 +4,7 @@ import {
   PerformanceMetrics,
   CustomScript,
   defaultBackupConfig,
+  migrateBackupConfig,
   defaultSSHTerminalConfig,
   defaultSSHConnectionConfig,
   defaultCloudSyncConfig,
@@ -693,6 +694,14 @@ export class SettingsManager {
               storedSettings.exportEncryption ??
               DEFAULT_SETTINGS.exportSecurity.encryptByDefault,
           },
+          // Wrap the legacy `backup.destinationPath` into the new
+          // `backup.destinations[]` shape on first load after the
+          // multi-target work landed. Idempotent — already-migrated
+          // configs pass through unchanged.
+          backup: migrateBackupConfig({
+            ...DEFAULT_SETTINGS.backup,
+            ...(storedSettings.backup ?? {}),
+          }),
         };
       }
       return this.settings;
