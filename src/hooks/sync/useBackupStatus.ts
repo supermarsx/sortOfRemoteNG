@@ -25,6 +25,19 @@ export interface BackupListItem {
   sizeBytes: number;
   encrypted: boolean;
   compressed: boolean;
+  /** Origin destination id when the backup came from a multi-target
+   *  configured destination. `undefined` for legacy single-target
+   *  sidecars that pre-date the multi-target work. */
+  targetId?: string;
+  /** Human-facing destination label, populated by
+   *  `backup_list_all_targets` and the flattened wrapper so the UI
+   *  can render per-source badges without joining against the live
+   *  config. */
+  targetLabel?: string;
+  /** Canonical payload hash from the sidecar; lets the restore
+   *  picker coalesce duplicate rows when the same backup landed at
+   *  multiple destinations. */
+  payloadHash?: string;
 }
 
 interface BackupRestorePayload {
@@ -191,7 +204,7 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   }, [t]);
 
   const handleRestoreBackup = useCallback(
-    async (backupId: string) => {
+    async (backupId: string, targetId?: string) => {
       if (
         !confirm(
           t(
@@ -203,7 +216,14 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
         return;
       }
       try {
-        const data = await invoke<BackupRestorePayload>('backup_restore', { backupId });
+        // `targetId` pins the read to a specific destination so the
+        // user controls which copy gets restored when the same
+        // backup ID exists at multiple destinations. Passing
+        // `undefined` falls back to the legacy "find-first" path.
+        const data = await invoke<BackupRestorePayload>('backup_restore', {
+          backupId,
+          targetId,
+        });
         const restoredConnections = Array.isArray(data?.connections)
           ? data.connections.map((conn: any) => ({
               ...conn,

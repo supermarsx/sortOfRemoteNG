@@ -191,18 +191,32 @@ const BackupList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 <div className="text-xs text-[var(--color-textSecondary)] truncate">
                   {backup.filename}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
+                <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)] flex-wrap">
                   <span>{formatRelativeTime(backup.createdAt)}</span>
                   <span>•</span>
                   <span>{formatBytes(backup.sizeBytes)}</span>
                   {backup.encrypted && (
                     <span className="text-warning">🔒</span>
                   )}
+                  {backup.targetLabel && (
+                    <span
+                      className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium"
+                      title={
+                        backup.targetId
+                          ? `Destination: ${backup.targetLabel} (${backup.targetId})`
+                          : `Destination: ${backup.targetLabel}`
+                      }
+                    >
+                      {backup.targetLabel}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-1 ml-2">
                 <button
-                  onClick={() => mgr.handleRestoreBackup(backup.id)}
+                  onClick={() =>
+                    mgr.handleRestoreBackup(backup.id, backup.targetId)
+                  }
                   className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success"
                   title={mgr.t("backup.restore", "Restore")}
                 >
