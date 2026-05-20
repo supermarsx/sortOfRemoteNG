@@ -4,6 +4,8 @@
 //! The app Connection is a JSON object with fields matching the TypeScript
 //! `Connection` interface in `src/types/connection.ts`.
 
+use std::collections::HashMap;
+
 use serde_json::{json, Map, Value};
 
 use super::error::{MremotengError, MremotengResult};
@@ -112,9 +114,34 @@ pub fn mrng_to_app_connection(mrng: &MrngConnectionInfo) -> Value {
 
 /// Convert a tree of mRemoteNG connections to a flat list of app connections
 /// with `parentId` references.
+///
+/// After the per-node conversion runs, a second pass rewrites the SSH
+/// tunnel references each connection picked up from mRemoteNG's
+/// `SSHTunnelConnectionName` attribute. That attribute identifies the
+/// jump host by *name*, but the application's `security.sshTunnel`
+/// shape (and the newer `tunnelChain` layers) reference it by the
+/// connection's stable `id`. Without this rewrite the tunnel host
+/// reference never resolves at connect time.
+///
+/// The same pass also seeds a single-layer `tunnelChain` entry of
+/// type `ssh-jump` so the imported connection participates in the
+/// app's specialized SSH tunnel pipeline alongside the legacy single
+/// `sshTunnel` field — both are written for back-compat with older
+/// runtime code that only reads `security.sshTunnel`.
 pub fn mrng_tree_to_flat_connections(root: &MrngConnectionInfo) -> Vec<Value> {
     let mut result = Vec::new();
     flatten_node(root, None, &mut result);
+
+    // Build a name → constant_id index across the whole tree so
+    // `SSHTunnelConnectionName` references (by-name) can be rewritten
+    // to the actual ids the rest of the app uses at runtime.
+    let mut name_to_id: HashMap<String, String> = HashMap::new();
+    collect_name_to_id(root, &mut name_to_id);
+
+    for conn in result.iter_mut() {
+        resolve_ssh_tunnel_reference(conn, &name_to_id);
+    }
+
     result
 }
 
@@ -131,6 +158,103 @@ fn flatten_node(node: &MrngConnectionInfo, parent_id: Option<&str>, result: &mut
     for child in &node.children {
         flatten_node(child, Some(&node_id), result);
     }
+}
+
+/// Walk the mRemoteNG tree and record every node's display name →
+/// stable id. Multiple nodes with the same name in different folders
+/// pick the first one we visit (mRemoteNG itself doesn't enforce
+/// uniqueness; the user is on the hook for naming jump hosts
+/// distinctly when they want them referenced reliably).
+fn collect_name_to_id(node: &MrngConnectionInfo, out: &mut HashMap<String, String>) {
+    if !node.name.is_empty() && !node.constant_id.is_empty() {
+        out.entry(node.name.clone())
+            .or_insert_with(|| node.constant_id.clone());
+    }
+    for child in &node.children {
+        collect_name_to_id(child, out);
+    }
+}
+
+/// Rewrite a connection's SSH tunnel reference in place:
+///   * if `security.sshTunnel.connectionId` matches a known node
+///     name, replace it with that node's id;
+///   * regardless of whether the lookup succeeded, also emit a
+///     single-layer `security.tunnelChain` of type `ssh-jump` so the
+///     specialized-tunnel pipeline sees the connection.
+///
+/// When the lookup *fails* (the named host wasn't part of this
+/// import), we leave the original name in place so the user can
+/// resolve it manually — that's still strictly more useful than the
+/// silent no-op the previous converter produced.
+fn resolve_ssh_tunnel_reference(conn: &mut Value, name_to_id: &HashMap<String, String>) {
+    let obj = match conn.as_object_mut() {
+        Some(o) => o,
+        None => return,
+    };
+
+    // Pull the existing legacy `sshTunnel` block out so we can edit
+    // it; bail when it's missing because there's nothing to do.
+    let Some(security) = obj.get_mut("security").and_then(|v| v.as_object_mut()) else {
+        return;
+    };
+    let Some(ssh_tunnel) = security
+        .get_mut("sshTunnel")
+        .and_then(|v| v.as_object_mut())
+    else {
+        return;
+    };
+
+    // The converter stored the mRemoteNG host *name* in
+    // `connectionId`. Resolve to the real id when we have it.
+    let original_reference = ssh_tunnel
+        .get("connectionId")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if original_reference.is_empty() {
+        return;
+    }
+    let resolved_id = name_to_id
+        .get(&original_reference)
+        .cloned()
+        .unwrap_or_else(|| original_reference.clone());
+    ssh_tunnel.insert("connectionId".into(), json!(resolved_id));
+
+    // Snapshot the fields we need for the new chain layer before we
+    // hand the borrow back to the `security` map.
+    let remote_host = ssh_tunnel
+        .get("remoteHost")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let remote_port = ssh_tunnel
+        .get("remotePort")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let local_port = ssh_tunnel
+        .get("localPort")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    // Seed a one-layer `tunnelChain` so the connection participates
+    // in the specialized-tunnel pipeline. The legacy `sshTunnel`
+    // field stays alongside for back-compat with older runtime code.
+    let chain_layer = json!({
+        "id": uuid::Uuid::new_v4().to_string(),
+        "type": "ssh-jump",
+        "enabled": true,
+        "name": "Imported from mRemoteNG",
+        "localBindPort": local_port,
+        "sshTunnel": {
+            "connectionId": resolved_id,
+            "forwardType": "local",
+            "remoteHost": remote_host,
+            "remotePort": remote_port,
+            "jumpTargetHost": remote_host,
+            "jumpTargetPort": remote_port,
+        }
+    });
+    security.insert("tunnelChain".into(), json!([chain_layer]));
 }
 
 // ─── App Connection → mRemoteNG ─────────────────────────────────────
@@ -218,12 +342,29 @@ pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInf
         }
     }
 
-    // SSH Tunnel
+    // SSH Tunnel — prefer the newer `tunnelChain` first layer when
+    // present (specialized tunnel pipeline), falling back to the
+    // legacy single-tunnel field. Either path stores a connection
+    // *id* here; `flat_connections_to_mrng_tree` re-resolves that id
+    // back to the destination's display name so mRemoteNG itself can
+    // find the host on re-import.
     if let Some(security) = obj.get("security").and_then(|v| v.as_object()) {
-        if let Some(tunnel) = security.get("sshTunnel").and_then(|v| v.as_object()) {
-            if let Some(conn_id) = tunnel.get("connectionId").and_then(|v| v.as_str()) {
-                mrng.ssh_tunnel_connection_name = conn_id.to_string();
-            }
+        let chain_id = security
+            .get("tunnelChain")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|layer| layer.as_object())
+            .and_then(|layer| layer.get("sshTunnel"))
+            .and_then(|v| v.as_object())
+            .and_then(|t| t.get("connectionId"))
+            .and_then(|v| v.as_str());
+        let legacy_id = security
+            .get("sshTunnel")
+            .and_then(|v| v.as_object())
+            .and_then(|t| t.get("connectionId"))
+            .and_then(|v| v.as_str());
+        if let Some(conn_id) = chain_id.or(legacy_id) {
+            mrng.ssh_tunnel_connection_name = conn_id.to_string();
         }
     }
 
@@ -239,8 +380,6 @@ pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInf
 pub fn flat_connections_to_mrng_tree(
     connections: &[Value],
 ) -> MremotengResult<Vec<MrngConnectionInfo>> {
-    use std::collections::HashMap;
-
     // First convert all to MrngConnectionInfo
     let mut node_map: HashMap<String, MrngConnectionInfo> = HashMap::new();
     let mut parent_map: HashMap<String, String> = HashMap::new();
@@ -256,6 +395,27 @@ pub fn flat_connections_to_mrng_tree(
         }
 
         node_map.insert(id, mrng);
+    }
+
+    // Build an id → display-name index so we can rewrite each node's
+    // `ssh_tunnel_connection_name` field (currently the connectionId
+    // the app stored on the source `Connection`) back to the host's
+    // actual name — that's what mRemoteNG expects on the wire.
+    let id_to_name: HashMap<String, String> = node_map
+        .iter()
+        .map(|(id, node)| (id.clone(), node.name.clone()))
+        .collect();
+    for node in node_map.values_mut() {
+        if node.ssh_tunnel_connection_name.is_empty() {
+            continue;
+        }
+        if let Some(name) = id_to_name.get(&node.ssh_tunnel_connection_name) {
+            node.ssh_tunnel_connection_name = name.clone();
+        }
+        // When the referenced id isn't part of the export set (the
+        // user only selected a subset of connections), the original
+        // value is left in place — better a dangling reference for
+        // the user to repair than a silently dropped attribute.
     }
 
     // Build tree bottom-up
@@ -798,5 +958,190 @@ mod tests {
         assert_eq!(app_protocol_to_mrng("rdp"), MrngProtocol::RDP);
         assert_eq!(app_protocol_to_mrng("ssh"), MrngProtocol::SSH2);
         assert_eq!(app_protocol_to_mrng("vnc"), MrngProtocol::VNC);
+    }
+
+    // ── SSH tunnel name → id resolution ────────────────────────────
+
+    fn make_node(name: &str, id: &str) -> MrngConnectionInfo {
+        let mut n = MrngConnectionInfo::default();
+        n.constant_id = id.into();
+        n.name = name.into();
+        n.hostname = format!("{name}.example.com");
+        n.port = 22;
+        n.protocol = MrngProtocol::SSH2;
+        n.node_type = MrngNodeType::Connection;
+        n
+    }
+
+    #[test]
+    fn import_resolves_ssh_tunnel_name_to_connection_id() {
+        // Tree: root group containing a jump host and a target whose
+        // SSHTunnelConnectionName points at the jump host *by name*.
+        let mut root = MrngConnectionInfo::default();
+        root.constant_id = "root".into();
+        root.name = "root".into();
+        root.node_type = MrngNodeType::Root;
+
+        let jump = make_node("Bastion", "jump-uuid");
+        let mut target = make_node("ProdServer", "target-uuid");
+        target.ssh_tunnel_connection_name = "Bastion".into();
+        root.children.push(jump);
+        root.children.push(target);
+
+        let flat = mrng_tree_to_flat_connections(&root);
+        // root + 2 children
+        assert_eq!(flat.len(), 3);
+
+        let target_value = flat
+            .iter()
+            .find(|c| c["id"] == "target-uuid")
+            .expect("target connection");
+        let tunnel = &target_value["security"]["sshTunnel"];
+        // Legacy field's connectionId is now the resolved id, not the
+        // human name.
+        assert_eq!(tunnel["connectionId"], "jump-uuid");
+        // A specialized-tunnel chain layer was seeded alongside.
+        let chain = target_value["security"]["tunnelChain"]
+            .as_array()
+            .expect("tunnelChain array");
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0]["type"], "ssh-jump");
+        assert_eq!(chain[0]["enabled"], true);
+        assert_eq!(chain[0]["sshTunnel"]["connectionId"], "jump-uuid");
+        assert_eq!(chain[0]["sshTunnel"]["forwardType"], "local");
+    }
+
+    #[test]
+    fn import_keeps_unresolved_ssh_tunnel_name_when_host_missing() {
+        // SSHTunnelConnectionName references a host that *isn't* in
+        // this import. We keep the original string so the user can
+        // see and repair the dangling reference rather than silently
+        // dropping it.
+        let mut root = MrngConnectionInfo::default();
+        root.constant_id = "root".into();
+        root.name = "root".into();
+        root.node_type = MrngNodeType::Root;
+
+        let mut target = make_node("ProdServer", "target-uuid");
+        target.ssh_tunnel_connection_name = "ExternalBastion".into();
+        root.children.push(target);
+
+        let flat = mrng_tree_to_flat_connections(&root);
+        let target_value = flat
+            .iter()
+            .find(|c| c["id"] == "target-uuid")
+            .expect("target connection");
+        assert_eq!(
+            target_value["security"]["sshTunnel"]["connectionId"],
+            "ExternalBastion",
+        );
+        // A chain layer is still seeded so the specialized pipeline
+        // sees the connection — the chain entry points at the same
+        // unresolved name so the user can fix it from either UI.
+        let chain = target_value["security"]["tunnelChain"]
+            .as_array()
+            .expect("tunnelChain array");
+        assert_eq!(chain.len(), 1);
+        assert_eq!(
+            chain[0]["sshTunnel"]["connectionId"],
+            "ExternalBastion",
+        );
+    }
+
+    #[test]
+    fn export_rewrites_ssh_tunnel_id_back_to_host_name() {
+        // The app stores the jump host as a connection id; mRemoteNG
+        // expects the host's display name. `flat_connections_to_mrng_tree`
+        // does the reverse mapping using the in-flight node names.
+        let jump = json!({
+            "id": "jump-uuid",
+            "name": "Bastion",
+            "protocol": "ssh",
+            "hostname": "bastion.example.com",
+            "port": 22,
+            "isGroup": false,
+        });
+        let target = json!({
+            "id": "target-uuid",
+            "name": "ProdServer",
+            "protocol": "ssh",
+            "hostname": "10.0.0.1",
+            "port": 22,
+            "isGroup": false,
+            "security": {
+                "sshTunnel": {
+                    "enabled": true,
+                    "connectionId": "jump-uuid",
+                    "localPort": 0,
+                    "remoteHost": "10.0.0.1",
+                    "remotePort": 22,
+                }
+            },
+        });
+
+        let tree = flat_connections_to_mrng_tree(&[jump, target]).unwrap();
+        let target_node = tree
+            .iter()
+            .find(|n| n.constant_id == "target-uuid")
+            .expect("target node");
+        assert_eq!(target_node.ssh_tunnel_connection_name, "Bastion");
+    }
+
+    #[test]
+    fn export_prefers_tunnel_chain_first_layer_when_legacy_field_diverges() {
+        // When the user edited the newer `tunnelChain` shape without
+        // also touching the legacy `sshTunnel`, the export should
+        // honour the chain layer's reference.
+        let jump = json!({
+            "id": "newer-uuid",
+            "name": "NewBastion",
+            "protocol": "ssh",
+            "hostname": "newbastion.example.com",
+            "port": 22,
+            "isGroup": false,
+        });
+        let stale_jump = json!({
+            "id": "stale-uuid",
+            "name": "StaleBastion",
+            "protocol": "ssh",
+            "hostname": "stale.example.com",
+            "port": 22,
+            "isGroup": false,
+        });
+        let target = json!({
+            "id": "target-uuid",
+            "name": "ProdServer",
+            "protocol": "ssh",
+            "hostname": "10.0.0.1",
+            "port": 22,
+            "isGroup": false,
+            "security": {
+                "sshTunnel": {
+                    "enabled": true,
+                    "connectionId": "stale-uuid",
+                    "localPort": 0,
+                    "remoteHost": "10.0.0.1",
+                    "remotePort": 22,
+                },
+                "tunnelChain": [{
+                    "id": "layer-1",
+                    "type": "ssh-jump",
+                    "enabled": true,
+                    "sshTunnel": {
+                        "connectionId": "newer-uuid",
+                        "forwardType": "local",
+                        "remoteHost": "10.0.0.1",
+                        "remotePort": 22,
+                    }
+                }]
+            },
+        });
+
+        let tree = flat_connections_to_mrng_tree(&[jump, stale_jump, target]).unwrap();
+        let target_node = tree
+            .iter()
+            .find(|n| n.constant_id == "target-uuid")
+            .expect("target node");
+        assert_eq!(target_node.ssh_tunnel_connection_name, "NewBastion");
     }
 }
