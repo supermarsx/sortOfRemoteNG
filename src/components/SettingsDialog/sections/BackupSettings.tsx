@@ -12,6 +12,7 @@ import locationPresetIcons from "./backup/locationPresetIcons";
 import EnableBackup from "./backup/EnableBackup";
 import DestinationSection from "./backup/DestinationSection";
 import ScheduleSection from "./backup/ScheduleSection";
+import DeltaSkipSection from "./backup/DeltaSkipSection";
 import DifferentialSection from "./backup/DifferentialSection";
 import FormatContentSection from "./backup/FormatContentSection";
 import EncryptionSection from "./backup/EncryptionSection";
@@ -24,6 +25,13 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 }) => {
   const mgr = useBackupSettings(settings, updateSettings);
 
+  // "Backup Now" is enabled when *any* destination is configured —
+  // either a non-empty legacy `destinationPath` or at least one
+  // enabled multi-target row.
+  const hasAnyDestination =
+    Boolean(mgr.backup.destinationPath) ||
+    mgr.destinations.some((d) => d.enabled);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -31,7 +39,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
         <SectionHeading icon={<Archive className="w-5 h-5" />} title="Backup" />
         <button
           onClick={mgr.handleRunBackupNow}
-          disabled={!mgr.backup.destinationPath || mgr.isRunningBackup}
+          disabled={!hasAnyDestination || mgr.isRunningBackup}
           className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
         >
           <Play className="w-4 h-4" />
@@ -46,6 +54,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
       <EnableBackup mgr={mgr} />
       <DestinationSection mgr={mgr} />
       <ScheduleSection mgr={mgr} />
+      <DeltaSkipSection mgr={mgr} />
       <DifferentialSection mgr={mgr} />
       <FormatContentSection mgr={mgr} />
       <EncryptionSection mgr={mgr} />
