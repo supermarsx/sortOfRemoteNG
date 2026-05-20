@@ -7,6 +7,9 @@ import {
   DayOfWeek,
   BackupEncryptionAlgorithm,
   BackupLocationPreset,
+  BackupTarget,
+  DestinationRetentionPolicy,
+  generateBackupTargetId,
 } from "../../types/settings/settings";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -217,6 +220,107 @@ export function useBackupSettings(
     updateBackup({ cloudCustomPath: customPath, destinationPath });
   };
 
+  /* ═══════════════════════════════════════════════════════════════
+     Multi-target list management
+     ═══════════════════════════════════════════════════════════════ */
+
+  // Always work off a concrete array — the migration helper backfills
+  // an empty array even on first load, but a defensive fallback keeps
+  // the UI alive if something upstream hands us `undefined`.
+  const destinations: BackupTarget[] = backup.destinations ?? [];
+
+  const writeDestinations = (next: BackupTarget[]) => {
+    updateBackup({ destinations: next });
+  };
+
+  /** Append a new destination row with sensible defaults for the
+   *  chosen preset. The settings UI calls this from its "Add
+   *  destination" button. */
+  const addDestination = (preset: BackupLocationPreset = "custom"): string => {
+    const id = generateBackupTargetId();
+    const presetLabel = locationPresetLabels[preset] ?? "Destination";
+    const next: BackupTarget = {
+      id,
+      label: `${presetLabel} ${destinations.length + 1}`,
+      preset,
+      customPath:
+        preset === "custom" ? "" : presetPaths[preset] || undefined,
+      enabled: true,
+    };
+    writeDestinations([...destinations, next]);
+    return id;
+  };
+
+  /** Remove a destination by id. No-op when the id isn't present. */
+  const removeDestination = (id: string) => {
+    writeDestinations(destinations.filter((d) => d.id !== id));
+  };
+
+  /** Patch one destination by id with the provided updates. */
+  const updateDestination = (
+    id: string,
+    updates: Partial<BackupTarget>,
+  ) => {
+    writeDestinations(
+      destinations.map((d) => (d.id === id ? { ...d, ...updates } : d)),
+    );
+  };
+
+  /** Toggle the per-row `enabled` flag. Shortcut for the most
+   *  common single-field update so the UI doesn't have to spell out
+   *  `{ enabled: !target.enabled }` everywhere. */
+  const toggleDestination = (id: string) => {
+    const target = destinations.find((d) => d.id === id);
+    if (!target) return;
+    updateDestination(id, { enabled: !target.enabled });
+  };
+
+  /** Reorder destinations by index. Used by the list editor's
+   *  drag-and-drop / up-down buttons. `from` and `to` are bounds-
+   *  checked; out-of-range calls become no-ops. */
+  const reorderDestinations = (from: number, to: number) => {
+    if (
+      from === to ||
+      from < 0 ||
+      from >= destinations.length ||
+      to < 0 ||
+      to >= destinations.length
+    ) {
+      return;
+    }
+    const next = [...destinations];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    writeDestinations(next);
+  };
+
+  /** Patch a destination's retention override. Pass `undefined` to
+   *  clear the override and inherit the global retention policy. */
+  const updateDestinationRetention = (
+    id: string,
+    retentionOverride: DestinationRetentionPolicy | undefined,
+  ) => {
+    updateDestination(id, { retentionOverride });
+  };
+
+  /** Open the native folder picker for one destination row and write
+   *  the result back into its `customPath`. Filters down to the local
+   *  presets — cloud presets get their subfolder edited inline. */
+  const handleSelectFolderForDestination = async (id: string) => {
+    try {
+      const result = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Select backup destination folder",
+      });
+      if (result && typeof result === "string") {
+        updateDestination(id, { customPath: result });
+      }
+    } catch (error) {
+      console.error("Failed to select destination folder:", error);
+    }
+  };
+
   return {
     backup,
     updateBackup,
@@ -228,5 +332,14 @@ export function useBackupSettings(
     handleRunBackupNow,
     handleLocationPresetChange,
     handleCloudSubfolderChange,
+    // Multi-target list management
+    destinations,
+    addDestination,
+    removeDestination,
+    updateDestination,
+    toggleDestination,
+    reorderDestinations,
+    updateDestinationRetention,
+    handleSelectFolderForDestination,
   };
 }
