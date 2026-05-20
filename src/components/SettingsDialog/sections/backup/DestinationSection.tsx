@@ -1,90 +1,269 @@
-import locationPresetIcons from "./locationPresetIcons";
-import type { Mgr } from './types';
 import React from "react";
-import { FolderOpen, Info, Cloud } from "lucide-react";
-import { BackupLocationPresets } from "../../../../types/settings/settings";
+import {
+  FolderOpen,
+  Info,
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
+import locationPresetIcons from "./locationPresetIcons";
+import type { Mgr } from "./types";
+import {
+  BackupLocationPresets,
+  type BackupLocationPreset,
+  type BackupTarget,
+} from "../../../../types/settings/settings";
 import { locationPresetLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
-const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="space-y-4">
-    <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
-      <FolderOpen className="w-4 h-4 inline mr-2" />
-      Backup Destination <InfoTooltip text="The folder where backup files are saved. Choose a local folder or a cloud-synced location." />
-    </label>
+const presetOptions = BackupLocationPresets.map((preset) => ({
+  value: preset,
+  label: locationPresetLabels[preset],
+}));
 
-    {/* Location Presets */}
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-      {BackupLocationPresets.map((preset) => (
+interface DestinationRowProps {
+  mgr: Mgr;
+  target: BackupTarget;
+  index: number;
+  total: number;
+}
+
+const DestinationRow: React.FC<DestinationRowProps> = ({
+  mgr,
+  target,
+  index,
+  total,
+}) => {
+  const [retentionExpanded, setRetentionExpanded] = React.useState(
+    Boolean(target.retentionOverride),
+  );
+
+  const isLocal =
+    target.preset === "custom" ||
+    target.preset === "appData" ||
+    target.preset === "documents";
+
+  return (
+    <div
+      className={`rounded-lg border ${
+        target.enabled
+          ? "border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30"
+          : "border-[var(--color-border)] bg-[var(--color-surface)]/50 opacity-70"
+      } p-3 space-y-3`}
+    >
+      {/* Top row: icon + label + reorder + remove + enabled toggle */}
+      <div className="flex items-center gap-2">
+        <span className="flex-shrink-0">{locationPresetIcons[target.preset]}</span>
+        <input
+          type="text"
+          value={target.label}
+          onChange={(e) =>
+            mgr.updateDestination(target.id, { label: e.target.value })
+          }
+          placeholder="Label"
+          className="sor-settings-input flex-1 text-sm"
+          aria-label="Destination label"
+        />
         <button
-          key={preset}
           type="button"
-          onClick={() => mgr.handleLocationPresetChange(preset)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-sm ${
-            mgr.backup.locationPreset === preset
-              ? "bg-primary/20 border-primary text-primary"
-              : "bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-textMuted)]"
-          }`}
+          onClick={() => mgr.reorderDestinations(index, index - 1)}
+          disabled={index === 0}
+          className="p-1 text-[var(--color-textMuted)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Move up"
+          title="Move up"
         >
-          {locationPresetIcons[preset]}
-          <span className="truncate">{locationPresetLabels[preset]}</span>
+          <ArrowUp className="w-4 h-4" />
         </button>
-      ))}
-    </div>
-
-    {/* Cloud Service Custom Subfolder */}
-    {mgr.backup.locationPreset !== "custom" &&
-      mgr.backup.locationPreset !== "appData" &&
-      mgr.backup.locationPreset !== "documents" && (
-        <div className="space-y-2">
-          <label className="block text-xs text-[var(--color-textSecondary)]">
-            Custom Subfolder (optional) <InfoTooltip text="An optional subfolder path within the cloud storage location for organizing backups." />
-          </label>
+        <button
+          type="button"
+          onClick={() => mgr.reorderDestinations(index, index + 1)}
+          disabled={index === total - 1}
+          className="p-1 text-[var(--color-textMuted)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:cursor-not-allowed"
+          aria-label="Move down"
+          title="Move down"
+        >
+          <ArrowDown className="w-4 h-4" />
+        </button>
+        <label className="flex items-center gap-1.5 text-xs cursor-pointer">
           <input
-            type="text"
-            value={mgr.backup.cloudCustomPath || ""}
-            onChange={(e) => mgr.handleCloudSubfolderChange(e.target.value)}
-            placeholder="e.g., Work/Projects"
-            className="sor-settings-input"
+            type="checkbox"
+            checked={target.enabled}
+            onChange={() => mgr.toggleDestination(target.id)}
+            className="sor-settings-checkbox"
+          />
+          <span className="text-[var(--color-textSecondary)]">Enabled</span>
+        </label>
+        <button
+          type="button"
+          onClick={() => mgr.removeDestination(target.id)}
+          className="p-1 text-[var(--color-textMuted)] hover:text-[var(--color-error)]"
+          aria-label="Remove destination"
+          title="Remove destination"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Preset + path row */}
+      <div className="flex flex-col md:flex-row gap-2">
+        <div className="md:w-48">
+          <Select
+            value={target.preset}
+            onChange={(value: string) =>
+              mgr.updateDestination(target.id, {
+                preset: value as BackupLocationPreset,
+              })
+            }
+            options={presetOptions}
+            variant="form"
+            aria-label="Destination preset"
           />
         </div>
-      )}
+        <div className="flex-1 flex gap-2">
+          <input
+            type="text"
+            value={target.customPath ?? ""}
+            onChange={(e) =>
+              mgr.updateDestination(target.id, { customPath: e.target.value })
+            }
+            placeholder={
+              isLocal ? "Folder path" : "Cloud subfolder (optional)"
+            }
+            className="sor-settings-input flex-1 text-sm"
+          />
+          {isLocal && (
+            <button
+              type="button"
+              onClick={() => mgr.handleSelectFolderForDestination(target.id)}
+              className="px-3 py-1.5 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] transition-colors flex-shrink-0"
+            >
+              Browse
+            </button>
+          )}
+        </div>
+      </div>
 
-    {/* Path Display / Custom Path Input */}
-    <div className="flex gap-2">
-      <input
-        type="text"
-        value={mgr.backup.destinationPath}
-        onChange={(e) =>
-          mgr.updateBackup({
-            destinationPath: e.target.value,
-            locationPreset: "custom",
-          })
-        }
-        placeholder="Select a folder for backups..."
-        readOnly={mgr.backup.locationPreset !== "custom"}
-        className={`flex-1 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)] ${
-          mgr.backup.locationPreset !== "custom" ? "opacity-70" : ""
-        }`}
-      />
-      <button
-        onClick={mgr.handleSelectFolder}
-        className="px-4 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] hover:bg-[var(--color-border)] transition-colors"
-      >
-        Browse
-      </button>
+      {/* Retention override (collapsible) */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setRetentionExpanded((v) => !v)}
+          className="flex items-center gap-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          aria-expanded={retentionExpanded}
+        >
+          {retentionExpanded ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
+          )}
+          <span>Retention override</span>
+          {target.retentionOverride?.maxBackupsToKeep != null && (
+            <span className="text-[var(--color-textMuted)]">
+              · keep {target.retentionOverride.maxBackupsToKeep}
+            </span>
+          )}
+        </button>
+        {retentionExpanded && (
+          <div className="mt-2 pl-4 space-y-2 border-l-2 border-[var(--color-border)]">
+            <label className="block text-xs text-[var(--color-textSecondary)]">
+              Override max backups to keep at this destination
+              <InfoTooltip text="Leave empty to inherit the global retention policy. Useful when a destination has tighter quota than the others." />
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={target.retentionOverride?.maxBackupsToKeep ?? ""}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") {
+                  mgr.updateDestinationRetention(target.id, undefined);
+                  return;
+                }
+                const parsed = Number.parseInt(raw, 10);
+                if (Number.isNaN(parsed) || parsed < 0) return;
+                mgr.updateDestinationRetention(target.id, {
+                  maxBackupsToKeep: parsed,
+                });
+              }}
+              placeholder="(use global)"
+              className="sor-settings-input text-sm w-40"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between gap-2">
+      <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
+        <FolderOpen className="w-4 h-4" />
+        Backup destinations
+        <InfoTooltip text="The scheduled backup writes the same payload to every enabled destination. Disable a row to skip it without losing the credentials/path." />
+      </label>
+      <div className="flex items-center gap-2">
+        <Select
+          value="add"
+          onChange={(value: string) => {
+            if (value === "add") return;
+            mgr.addDestination(value as BackupLocationPreset);
+          }}
+          options={[
+            { value: "add", label: "+ Add destination…" },
+            ...presetOptions,
+          ]}
+          variant="form"
+          aria-label="Add destination preset"
+        />
+      </div>
     </div>
 
-    {mgr.backup.locationPreset !== "custom" && (
-      <p className="text-xs text-[var(--color-textMuted)] flex items-center gap-1">
-        <Info className="w-3 h-3" />
-        {mgr.backup.locationPreset === "appData" ||
-        mgr.backup.locationPreset === "documents"
-          ? "Local folder - always available"
-          : "Ensure the cloud sync app is installed and running for automatic sync"}
-      </p>
+    {mgr.destinations.length === 0 ? (
+      <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 text-center">
+        <p className="text-sm text-[var(--color-textSecondary)]">
+          No destinations configured yet.
+        </p>
+        <p className="text-xs text-[var(--color-textMuted)] mt-1 flex items-center justify-center gap-1">
+          <Info className="w-3 h-3" />
+          Pick a preset above to add your first destination.
+        </p>
+        <button
+          type="button"
+          onClick={() => mgr.addDestination("custom")}
+          className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded text-xs text-primary hover:bg-primary/20 transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          Add a local folder destination
+        </button>
+      </div>
+    ) : (
+      <div className="space-y-2">
+        {mgr.destinations.map((target, index) => (
+          <DestinationRow
+            key={target.id}
+            mgr={mgr}
+            target={target}
+            index={index}
+            total={mgr.destinations.length}
+          />
+        ))}
+      </div>
     )}
+
+    <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">
+      <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
+      <span>
+        Cloud destinations rely on the corresponding sync client being
+        installed and running — sortOfRemoteNG writes to the local sync
+        folder and the client uploads from there.
+      </span>
+    </p>
   </div>
 );
 
