@@ -252,7 +252,8 @@ const CloneTab: React.FC<CloneTabProps> = ({
         dataTestId="clone-source-section"
         badge={
           <span className="text-[var(--color-textMuted)]">
-            {effectiveSourceIds.length} db
+            {effectiveSourceIds.length}{' '}
+            {effectiveSourceIds.length === 1 ? 'database' : 'databases'}
           </span>
         }
       >
@@ -429,7 +430,8 @@ const CloneTab: React.FC<CloneTabProps> = ({
                 : "text-warning"
             }
           >
-            {targetDatabaseIds.length} target(s)
+            {targetDatabaseIds.length}{' '}
+            {targetDatabaseIds.length === 1 ? 'target database' : 'target databases'}
           </span>
         }
       >
