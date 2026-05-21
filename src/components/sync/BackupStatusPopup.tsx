@@ -263,7 +263,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
         <div>
           <ToolbarPopoverHeader
             title={mgr.t("backup.title", "Local Backup")}
-            icon={<HardDrive className="w-5 h-5 text-success" />}
+            icon={<HardDrive className="w-5 h-5 text-primary" />}
             onClose={() => mgr.setIsOpen(false)}
             actions={
               <PopoverHeaderActions mgr={mgr} onOpenSettings={onOpenSettings} />

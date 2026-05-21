@@ -38,8 +38,8 @@ interface QuickConnectProps {
 const ConnectHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
   <DialogHeader
     icon={Zap}
-    iconColor="text-success"
-    iconBg="bg-success/20"
+    iconColor="text-primary"
+    iconBg="bg-primary/20"
     title="Quick Connect"
     sticky
     actions={

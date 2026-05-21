@@ -53,7 +53,7 @@ function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
     <div className="flex items-start justify-between">
       <div>
         <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-          <Power className="w-5 h-5 text-success" />
+          <Power className="w-5 h-5 text-primary" />
           {t('wake.quickTool', 'Wake-on-LAN')}
         </h3>
         <p className="text-xs text-[var(--color-textSecondary)] mt-1">
