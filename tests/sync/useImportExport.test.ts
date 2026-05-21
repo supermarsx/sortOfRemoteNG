@@ -100,6 +100,7 @@ const mockGetAllConnections = vi.fn().mockResolvedValue([]);
 const mockAddConnection = vi.fn().mockResolvedValue(undefined);
 const mockAppendConnectionsToDatabase = vi.fn().mockResolvedValue(undefined);
 const mockSelectDatabase = vi.fn().mockResolvedValue(undefined);
+const mockUnlockDatabase = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
@@ -111,6 +112,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       readExportableDatabaseSnapshot: mockReadExportableSnapshot,
       appendConnectionsToDatabase: mockAppendConnectionsToDatabase,
       selectDatabase: mockSelectDatabase,
+      unlockDatabase: mockUnlockDatabase,
       exportDatabase: mockExportCollection,
     }),
     resetInstance: vi.fn(),
@@ -2616,5 +2618,181 @@ describe("useImportExport", () => {
     );
 
     vi.stubGlobal("FileReader", OriginalFileReader);
+  });
+
+  // ── handleUnlockDatabase ────────────────────────────────────────
+
+  it("handleUnlockDatabase returns true and refreshes lists on correct password", async () => {
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "locked-1",
+        name: "Locked DB",
+        description: "",
+        isEncrypted: true,
+        isCurrent: false,
+        isUnlocked: false,
+        isExportable: false,
+        lockedReason: "Encrypted database is locked.",
+        lastAccessed: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    mockUnlockDatabase.mockResolvedValueOnce(undefined);
+
+    const { result } = renderImportExport();
+    // Wait for the initial database-options fetch to resolve so the
+    // unlock handler can look up the row by id.
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions.length).toBeGreaterThan(0);
+    });
+
+    // Kick off the unlock — it will queue a password prompt.
+    let unlockPromise: Promise<boolean> | undefined;
+    act(() => {
+      unlockPromise = result.current.handleUnlockDatabase("locked-1");
+    });
+    await waitFor(() => {
+      expect(result.current.passwordPrompt).not.toBeNull();
+    });
+    expect(result.current.passwordPrompt?.title).toContain("Locked DB");
+
+    // Submit the correct password.
+    act(() => {
+      result.current.submitPasswordPrompt("right-secret");
+    });
+
+    const success = await unlockPromise!;
+    expect(success).toBe(true);
+    expect(mockUnlockDatabase).toHaveBeenCalledWith(
+      "locked-1",
+      "right-secret",
+    );
+    // All three option lists were refreshed — getExportableDatabases
+    // is called at least once per refresh × 3 lists, plus the
+    // initial mount fetch.
+    expect(mockGetExportableDatabases.mock.calls.length).toBeGreaterThanOrEqual(
+      4,
+    );
+    expect(mockToast.success).toHaveBeenCalledWith('Unlocked "Locked DB".');
+  });
+
+  it("handleUnlockDatabase retries the prompt with a wrong-password error", async () => {
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "locked-2",
+        name: "Vault",
+        description: "",
+        isEncrypted: true,
+        isCurrent: false,
+        isUnlocked: false,
+        isExportable: false,
+        lockedReason: "",
+        lastAccessed: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    const invalid = new Error("Invalid password");
+    invalid.name = "InvalidPasswordError";
+    mockUnlockDatabase.mockRejectedValueOnce(invalid);
+    mockUnlockDatabase.mockResolvedValueOnce(undefined);
+
+    const { result } = renderImportExport();
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions.length).toBeGreaterThan(0);
+    });
+
+    let unlockPromise: Promise<boolean> | undefined;
+    act(() => {
+      unlockPromise = result.current.handleUnlockDatabase("locked-2");
+    });
+
+    // First prompt — submit a wrong password.
+    await waitFor(() => {
+      expect(result.current.passwordPrompt).not.toBeNull();
+    });
+    expect(result.current.passwordPrompt?.error).toBeUndefined();
+    act(() => {
+      result.current.submitPasswordPrompt("wrong");
+    });
+
+    // Hook re-prompts with the error string.
+    await waitFor(() => {
+      expect(result.current.passwordPrompt?.error).toBe(
+        "Wrong password — try again.",
+      );
+    });
+
+    // Second prompt — submit the correct password.
+    act(() => {
+      result.current.submitPasswordPrompt("right");
+    });
+
+    const success = await unlockPromise!;
+    expect(success).toBe(true);
+    expect(mockUnlockDatabase).toHaveBeenCalledTimes(2);
+    expect(mockUnlockDatabase).toHaveBeenLastCalledWith("locked-2", "right");
+  });
+
+  it("handleUnlockDatabase returns false when the user cancels the prompt", async () => {
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "locked-3",
+        name: "Cancel Test",
+        description: "",
+        isEncrypted: true,
+        isCurrent: false,
+        isUnlocked: false,
+        isExportable: false,
+        lockedReason: "",
+        lastAccessed: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    const { result } = renderImportExport();
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions.length).toBeGreaterThan(0);
+    });
+
+    let unlockPromise: Promise<boolean> | undefined;
+    act(() => {
+      unlockPromise = result.current.handleUnlockDatabase("locked-3");
+    });
+    await waitFor(() => {
+      expect(result.current.passwordPrompt).not.toBeNull();
+    });
+    act(() => {
+      result.current.cancelPasswordPrompt();
+    });
+
+    const success = await unlockPromise!;
+    expect(success).toBe(false);
+    expect(mockUnlockDatabase).not.toHaveBeenCalled();
+  });
+
+  it("handleUnlockDatabase short-circuits on non-encrypted databases", async () => {
+    mockGetExportableDatabases.mockResolvedValue([
+      {
+        id: "open-1",
+        name: "Open",
+        description: "",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+        lockedReason: undefined,
+        lastAccessed: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    const { result } = renderImportExport();
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions.length).toBeGreaterThan(0);
+    });
+
+    const success = await act(async () =>
+      result.current.handleUnlockDatabase("open-1"),
+    );
+    expect(success).toBe(true);
+    // No prompt was shown; no unlockDatabase call.
+    expect(result.current.passwordPrompt).toBeNull();
+    expect(mockUnlockDatabase).not.toHaveBeenCalled();
   });
 });

@@ -1133,6 +1133,93 @@ export function useImportExport({
     setCloneDatabaseOptions(options);
   }, [databaseManager, state.connections.length]);
 
+  /**
+   * Drive an inline unlock for an encrypted database from any of the
+   * three pickers (Export selected, Import target, Clone source /
+   * target). Loops the password prompt on `InvalidPasswordError`
+   * until the user cancels or enters the right password. On success
+   * the three option lists are re-fetched so every picker that was
+   * showing this row as locked instantly flips it to exportable.
+   *
+   * Returns `true` on success, `false` if the user cancelled (or the
+   * database wasn't found, or it isn't actually encrypted — those
+   * are no-ops from the UI's perspective).
+   */
+  const handleUnlockDatabase = useCallback(
+    async (databaseId: string): Promise<boolean> => {
+      // All three pickers draw from the same `getExportableDatabases()`
+      // output so any list works for the name/encryption lookup.
+      const option = [
+        ...exportDatabaseOptions,
+        ...importDatabaseOptions,
+        ...cloneDatabaseOptions,
+      ].find((entry) => entry.id === databaseId);
+      if (!option) {
+        return false;
+      }
+      if (!option.isEncrypted) {
+        // Nothing to unlock — bail with a refresh just in case the
+        // exportability flag was stale.
+        await Promise.all([
+          refreshExportDatabaseOptions(),
+          refreshImportDatabaseOptions(),
+          refreshCloneDatabaseOptions(),
+        ]);
+        return true;
+      }
+
+      // Loop until the user enters the right password or cancels.
+      let attemptError: string | undefined;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const password = await requestPassword({
+          title: `Unlock "${option.name}"`,
+          description:
+            'Enter the password for this encrypted database. The unlock lasts for this session only.',
+          error: attemptError,
+        });
+        if (password === null) {
+          return false;
+        }
+        try {
+          await databaseManager.unlockDatabase(databaseId, password);
+          break;
+        } catch (e) {
+          // InvalidPasswordError carries `Invalid password` / similar
+          // — surface to the user and re-prompt. Any other error
+          // (e.g. corrupted data) is fatal: stop the loop and toast.
+          const message = e instanceof Error ? e.message : String(e);
+          if (e instanceof Error && e.name === 'InvalidPasswordError') {
+            attemptError = 'Wrong password — try again.';
+            continue;
+          }
+          toast.error(`Failed to unlock "${option.name}": ${message}`);
+          return false;
+        }
+      }
+
+      // Refresh every picker that draws from the same source so the
+      // newly-unlocked row flips state across the whole dialog.
+      await Promise.all([
+        refreshExportDatabaseOptions(),
+        refreshImportDatabaseOptions(),
+        refreshCloneDatabaseOptions(),
+      ]);
+      toast.success(`Unlocked "${option.name}".`);
+      return true;
+    },
+    [
+      exportDatabaseOptions,
+      importDatabaseOptions,
+      cloneDatabaseOptions,
+      databaseManager,
+      refreshExportDatabaseOptions,
+      refreshImportDatabaseOptions,
+      refreshCloneDatabaseOptions,
+      toast,
+    ],
+  );
+
   useEffect(() => {
     if (!isOpen) return;
     void refreshExportDatabaseOptions();
@@ -3254,5 +3341,8 @@ ${tableRows}
     cloneResult,
     clearCloneResult,
     handleClone,
+    // Inline unlock — shared by all three pickers (Export selected,
+    // Import target, Clone source/target).
+    handleUnlockDatabase,
   };
 }
