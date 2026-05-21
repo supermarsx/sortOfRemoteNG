@@ -5,6 +5,7 @@ import { PasswordInput, Checkbox, NumberInput, Select } from '../ui/forms';
 import { Connection } from '../../types/connection/connection';
 import type { ExportConfig, ExportConfigUpdate, ExportInclusionConfig } from './types';
 import { AccordionSection } from './AccordionSection';
+import { DatabasePickerRow } from './DatabasePickerRow';
 import { analyzePasswordStrength } from '../../hooks/security/usePasswordStrength';
 import { SettingsManager } from '../../utils/settings/settingsManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
@@ -18,6 +19,10 @@ interface ExportTabProps {
   onConfigChange: (update: ExportConfigUpdate) => void;
   isProcessing: boolean;
   handleExport: () => void;
+  /** Inline-unlock handler triggered from each locked row's
+   *  "Unlock…" button. Comes from the parent hook so all three
+   *  pickers share the same prompt loop. */
+  onUnlockDatabase?: (databaseId: string) => Promise<boolean> | void;
 }
 
 const hasExportableCredentials = (connection: Connection): boolean =>
@@ -113,6 +118,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
   onConfigChange,
   isProcessing,
   handleExport,
+  onUnlockDatabase,
 }) => {
   const { t } = useTranslation();
   const [sectionsOpen, setSectionsOpen] = useState({
@@ -775,44 +781,28 @@ const ExportTab: React.FC<ExportTabProps> = ({
         {config.scopeMode === 'selected' && (
           <div className="space-y-2" data-testid="export-database-checklist">
             {config.databaseOptions.map((database) => (
-              <label
+              <DatabasePickerRow
                 key={database.id}
-                data-testid={`export-database-option-${database.id}`}
-                className={`flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${
-                  database.isExportable ? 'cursor-pointer' : 'opacity-70'
-                }`}
-              >
-                <Checkbox
-                  checked={database.isExportable && selectedDatabaseIdSet.has(database.id)}
-                  disabled={!database.isExportable}
-                  onChange={(checked: boolean) => toggleDatabaseSelection(database.id, checked)}
-                  className="mt-0.5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                  aria-label={database.name}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-                    <span>{database.name}</span>
-                    {database.isCurrent && (
-                      <span className="rounded-sm bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-normal text-primary">
-                        {t('exportTab.currentBadge')}
-                      </span>
-                    )}
-                    {database.isEncrypted && (
-                      <span className="inline-flex items-center gap-1 text-xs text-warning">
-                        <Lock size={13} />
-                        {database.isExportable ? t('exportTab.unlockedBadge') : t('exportTab.lockedBadge')}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
-                    {database.isExportable
-                      ? database.connectionCount !== undefined
-                        ? t('exportTab.currentDatabaseCount', { count: database.connectionCount })
-                        : t('exportTab.databaseExportable')
-                      : database.lockedReason || t('exportTab.databaseLockedReason')}
-                  </div>
-                </div>
-              </label>
+                option={database}
+                dataTestId={`export-database-option-${database.id}`}
+                onUnlock={onUnlockDatabase}
+                control={
+                  <Checkbox
+                    checked={database.isExportable && selectedDatabaseIdSet.has(database.id)}
+                    disabled={!database.isExportable}
+                    onChange={(checked: boolean) => toggleDatabaseSelection(database.id, checked)}
+                    className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                    aria-label={database.name}
+                  />
+                }
+                detail={
+                  database.isExportable
+                    ? database.connectionCount !== undefined
+                      ? t('exportTab.currentDatabaseCount', { count: database.connectionCount })
+                      : t('exportTab.databaseExportable')
+                    : database.lockedReason || t('exportTab.databaseLockedReason')
+                }
+              />
             ))}
           </div>
         )}

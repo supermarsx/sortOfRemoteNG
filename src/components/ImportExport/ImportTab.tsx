@@ -29,6 +29,7 @@ import {
 import { useToastContext } from '../../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { Select, type SelectOption } from '../ui/forms';
+import { DatabasePickerRow } from './DatabasePickerRow';
 
 interface ImportTabProps {
   isProcessing: boolean;
@@ -62,6 +63,10 @@ interface ImportTabProps {
   selectAllVisiblePreviewItems?: () => void;
   deselectAllVisiblePreviewItems?: () => void;
   selectAllImportablePreviewItems?: () => void;
+  /** Inline-unlock handler. Wired through to `TargetDatabaseSection`
+   *  so each locked row's "Unlock…" button can trigger the hook's
+   *  password-prompt loop. */
+  onUnlockDatabase?: (databaseId: string) => Promise<boolean> | void;
 }
 
 const FALLBACK_FILTERS: ImportFilterState = {
@@ -328,7 +333,8 @@ const TargetDatabaseSection: React.FC<{
   onSelectMode: (mode: ImportTargetMode) => void | Promise<void>;
   selectedDatabaseId: string;
   onSelect: (databaseId: string) => void | Promise<void>;
-}> = ({ options, targetMode, onSelectMode, selectedDatabaseId, onSelect }) => {
+  onUnlockDatabase?: (databaseId: string) => Promise<boolean> | void;
+}> = ({ options, targetMode, onSelectMode, selectedDatabaseId, onSelect, onUnlockDatabase }) => {
   const exportableOptions = options.filter((option) => option.isExportable);
   const currentOption = exportableOptions.find((option) => option.isCurrent);
   const selectedOption = options.find((option) => option.id === selectedDatabaseId);
@@ -421,51 +427,40 @@ const TargetDatabaseSection: React.FC<{
       {targetMode === 'selected' && (
         <div className="space-y-2" data-testid="import-database-radio-list">
           {options.map((database) => (
-            <label
+            <DatabasePickerRow
               key={database.id}
-              data-testid={`import-database-option-${database.id}`}
-              className={`flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${
-                database.isExportable ? 'cursor-pointer' : 'opacity-70'
-              }`}
-            >
-              <input
-                type="radio"
-                name="import-target-database"
-                value={database.id}
-                checked={database.isExportable && database.id === selectedDatabaseId}
-                disabled={!database.isExportable}
-                onChange={() => void onSelect(database.id)}
-                className="sor-form-checkbox mt-0.5 rounded-full border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                aria-label={database.name}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-                  <span>{database.name}</span>
-                  {database.isCurrent && (
-                    <span className="rounded-sm bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-normal text-primary">
-                      Current
-                    </span>
-                  )}
-                  {database.isEncrypted && (
-                    <span className="inline-flex items-center gap-1 text-xs text-warning">
-                      {database.isExportable ? 'Encrypted' : 'Locked'}
-                    </span>
-                  )}
-                </span>
-                <span className="mt-1 block text-xs text-[var(--color-textSecondary)]">
-                  {database.isExportable
-                    ? database.connectionCount !== undefined
-                      ? `${database.connectionCount} existing item(s)`
-                      : 'Available for import'
-                    : database.lockedReason || 'Unlock this database before importing.'}
-                </span>
-                {database.description && (
-                  <span className="mt-0.5 block text-xs text-[var(--color-textMuted)]">
-                    {database.description}
+              option={database}
+              dataTestId={`import-database-option-${database.id}`}
+              onUnlock={onUnlockDatabase}
+              control={
+                <input
+                  type="radio"
+                  name="import-target-database"
+                  value={database.id}
+                  checked={database.isExportable && database.id === selectedDatabaseId}
+                  disabled={!database.isExportable}
+                  onChange={() => void onSelect(database.id)}
+                  className="sor-form-checkbox rounded-full border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                  aria-label={database.name}
+                />
+              }
+              detail={
+                <>
+                  <span className="block">
+                    {database.isExportable
+                      ? database.connectionCount !== undefined
+                        ? `${database.connectionCount} existing item(s)`
+                        : 'Available for import'
+                      : database.lockedReason || 'Unlock this database before importing.'}
                   </span>
-                )}
-              </span>
-            </label>
+                  {database.description && (
+                    <span className="mt-0.5 block text-[var(--color-textMuted)]">
+                      {database.description}
+                    </span>
+                  )}
+                </>
+              }
+            />
           ))}
         </div>
       )}
@@ -928,6 +923,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
   selectAllVisiblePreviewItems = () => undefined,
   deselectAllVisiblePreviewItems = () => undefined,
   selectAllImportablePreviewItems = () => undefined,
+  onUnlockDatabase,
 }) => {
   const { toast } = useToastContext();
   const { t } = useTranslation();
@@ -1013,6 +1009,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
         onSelectMode={setImportTargetMode}
         selectedDatabaseId={selectedImportDatabaseId}
         onSelect={setSelectedImportDatabaseId}
+        onUnlockDatabase={onUnlockDatabase}
       />
 
       <FormatSelectionSection

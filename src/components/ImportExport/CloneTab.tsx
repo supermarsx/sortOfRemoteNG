@@ -35,6 +35,7 @@ import type {
   CloneResult,
 } from "./types";
 import { AccordionSection } from "./AccordionSection";
+import { DatabasePickerRow } from "./DatabasePickerRow";
 import { Select } from "../ui/forms";
 
 interface CloneTabProps {
@@ -68,6 +69,9 @@ interface CloneTabProps {
   cloneResult: CloneResult | null;
   onClone: () => void;
   onClearResult: () => void;
+  /** Inline-unlock handler. Locked rows in both the source and
+   *  target pickers render a "Unlock…" button that calls this. */
+  onUnlockDatabase?: (databaseId: string) => Promise<boolean> | void;
 }
 
 const CloneTab: React.FC<CloneTabProps> = ({
@@ -95,6 +99,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
   cloneResult,
   onClone,
   onClearResult,
+  onUnlockDatabase,
 }) => {
   const [openSections, setOpenSections] = useState({
     source: true,
@@ -317,50 +322,41 @@ const CloneTab: React.FC<CloneTabProps> = ({
           })}
         </div>
         {sourceMode === "selected" && (
-          <div className="mt-2 space-y-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2 max-h-48 overflow-y-auto">
+          <div className="mt-2 space-y-2 max-h-72 overflow-y-auto">
             {databaseOptions.length === 0 ? (
               <p className="text-xs text-[var(--color-textMuted)]">
                 No databases available.
               </p>
             ) : (
               databaseOptions.map((option) => (
-                <label
+                <DatabasePickerRow
                   key={option.id}
-                  className={`flex items-center gap-2 text-xs ${
-                    option.isExportable
-                      ? "text-[var(--color-text)]"
-                      : "text-[var(--color-textMuted)]"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedSourceDatabaseIds.includes(option.id)}
-                    disabled={!option.isExportable}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedSourceDatabaseIds([
-                          ...selectedSourceDatabaseIds,
-                          option.id,
-                        ]);
-                      } else {
-                        setSelectedSourceDatabaseIds(
-                          selectedSourceDatabaseIds.filter((id) => id !== option.id),
-                        );
-                      }
-                    }}
-                  />
-                  <span className="flex-1 truncate">{option.name}</span>
-                  {option.isCurrent && (
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                      current
-                    </span>
-                  )}
-                  {!option.isExportable && (
-                    <span className="text-[10px] italic text-warning">
-                      {option.lockedReason ?? "locked"}
-                    </span>
-                  )}
-                </label>
+                  option={option}
+                  dataTestId={`clone-source-option-${option.id}`}
+                  onUnlock={onUnlockDatabase}
+                  control={
+                    <input
+                      type="checkbox"
+                      checked={selectedSourceDatabaseIds.includes(option.id)}
+                      disabled={!option.isExportable}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedSourceDatabaseIds([
+                            ...selectedSourceDatabaseIds,
+                            option.id,
+                          ]);
+                        } else {
+                          setSelectedSourceDatabaseIds(
+                            selectedSourceDatabaseIds.filter(
+                              (id) => id !== option.id,
+                            ),
+                          );
+                        }
+                      }}
+                      aria-label={option.name}
+                    />
+                  }
+                />
               ))
             )}
           </div>
@@ -439,7 +435,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1.5">
             Target databases
           </label>
-          <div className="space-y-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2 max-h-48 overflow-y-auto">
+          <div className="space-y-2 max-h-72 overflow-y-auto">
             {targetOptions.length === 0 ? (
               <p className="text-xs text-[var(--color-textMuted)]">
                 No eligible target databases. Configure another database
@@ -447,40 +443,32 @@ const CloneTab: React.FC<CloneTabProps> = ({
               </p>
             ) : (
               targetOptions.map((option) => (
-                <label
+                <DatabasePickerRow
                   key={option.id}
-                  className={`flex items-center gap-2 text-xs ${
-                    option.isExportable
-                      ? "text-[var(--color-text)]"
-                      : "text-[var(--color-textMuted)]"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={targetDatabaseIds.includes(option.id)}
-                    disabled={!option.isExportable}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setTargetDatabaseIds([...targetDatabaseIds, option.id]);
-                      } else {
-                        setTargetDatabaseIds(
-                          targetDatabaseIds.filter((id) => id !== option.id),
-                        );
-                      }
-                    }}
-                  />
-                  <span className="flex-1 truncate">{option.name}</span>
-                  {option.isCurrent && (
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                      current
-                    </span>
-                  )}
-                  {!option.isExportable && (
-                    <span className="text-[10px] italic text-warning">
-                      {option.lockedReason ?? "locked"}
-                    </span>
-                  )}
-                </label>
+                  option={option}
+                  dataTestId={`clone-target-option-${option.id}`}
+                  onUnlock={onUnlockDatabase}
+                  control={
+                    <input
+                      type="checkbox"
+                      checked={targetDatabaseIds.includes(option.id)}
+                      disabled={!option.isExportable}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setTargetDatabaseIds([
+                            ...targetDatabaseIds,
+                            option.id,
+                          ]);
+                        } else {
+                          setTargetDatabaseIds(
+                            targetDatabaseIds.filter((id) => id !== option.id),
+                          );
+                        }
+                      }}
+                      aria-label={option.name}
+                    />
+                  }
+                />
               ))
             )}
           </div>

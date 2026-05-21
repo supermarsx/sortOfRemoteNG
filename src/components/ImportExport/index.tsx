@@ -207,6 +207,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               }}
               isProcessing={mgr.isProcessing}
               handleExport={mgr.handleExport}
+              onUnlockDatabase={mgr.handleUnlockDatabase}
             />
           </div>
         )}
@@ -238,6 +239,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               cloneResult={mgr.cloneResult}
               onClone={mgr.handleClone}
               onClearResult={mgr.clearCloneResult}
+              onUnlockDatabase={mgr.handleUnlockDatabase}
             />
           </div>
         )}
@@ -276,6 +278,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
               deselectAllVisiblePreviewItems={mgr.deselectAllVisiblePreviewItems}
               selectAllImportablePreviewItems={mgr.selectAllImportablePreviewItems}
               detectedFormat={mgr.importAnalysis?.formatName}
+              onUnlockDatabase={mgr.handleUnlockDatabase}
             />
           </div>
         )}
