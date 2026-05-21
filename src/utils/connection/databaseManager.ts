@@ -356,6 +356,43 @@ export class DatabaseManager {
     return this.currentDatabase;
   }
 
+  /**
+   * Validate the password for an encrypted database and remember it
+   * for this session, *without* switching the active database.
+   *
+   * The Import / Export / Clone pickers use this for inline-unlock:
+   * they want to flip a row from locked to selectable so it can be
+   * picked as a source or target, but they emphatically do not want
+   * to change which database is currently open.
+   *
+   * Non-encrypted databases short-circuit: there is nothing to
+   * unlock, so the method resolves silently. A wrong password
+   * surfaces the same `InvalidPasswordError` the select path throws,
+   * so callers can reuse their existing prompt-retry logic.
+   *
+   * The remembered password lives in `unlockedDatabasePasswords` —
+   * in-memory only, forgotten on app restart. This matches the
+   * existing security model; persistent unlock is a separate
+   * feature linked to the OS keychain.
+   */
+  async unlockDatabase(id: string, password: string): Promise<void> {
+    const collection = await this.getDatabase(id);
+    if (!collection) {
+      throw new DatabaseNotFoundError();
+    }
+    if (!collection.isEncrypted) {
+      // Nothing to unlock. Treat as success so callers don't have
+      // to special-case non-encrypted databases.
+      return;
+    }
+    // `loadDatabaseData` is the cheapest path that exercises the
+    // password — it throws `InvalidPasswordError` on a bad password
+    // (same one `selectDatabase` would have surfaced) without any
+    // side effects on `currentDatabase` / `currentPassword`.
+    await this.loadDatabaseData(id, password);
+    this.rememberUnlockedDatabase(collection, password);
+  }
+
   isDatabaseUnlocked(databaseId: string): boolean {
     if (this.unlockedDatabasePasswords.has(databaseId)) {
       return true;

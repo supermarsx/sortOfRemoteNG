@@ -218,6 +218,54 @@ describe("DatabaseManager", () => {
     ).resolves.toMatchObject({ collection: { id: second.id } });
   });
 
+  it("unlockDatabase validates password and remembers it without selecting", async () => {
+    const secure = await manager.createDatabase(
+      "Secure",
+      "desc",
+      true,
+      "real-secret",
+    );
+
+    // Fresh manager — nothing is selected yet, nothing is remembered.
+    DatabaseManager.resetInstance();
+    const freshManager = DatabaseManager.getInstance();
+    expect(freshManager.getCurrentDatabase()).toBeNull();
+    expect(freshManager.isDatabaseUnlocked(secure.id)).toBe(false);
+
+    // Wrong password surfaces the same error the select path uses.
+    await expect(
+      freshManager.unlockDatabase(secure.id, "wrong"),
+    ).rejects.toBeInstanceOf(InvalidPasswordError);
+    expect(freshManager.getCurrentDatabase()).toBeNull();
+    expect(freshManager.isDatabaseUnlocked(secure.id)).toBe(false);
+
+    // Correct password unlocks AND remembers — but does not select.
+    await freshManager.unlockDatabase(secure.id, "real-secret");
+    expect(freshManager.isDatabaseUnlocked(secure.id)).toBe(true);
+    expect(freshManager.getCurrentDatabase()).toBeNull();
+
+    // The unlocked password is now reflected in
+    // `getExportableDatabases` so picker UIs see the row flip.
+    const exportable = await freshManager.getExportableDatabases();
+    expect(
+      exportable.find((database) => database.id === secure.id),
+    ).toMatchObject({ isExportable: true, isUnlocked: true });
+  });
+
+  it("unlockDatabase short-circuits on non-encrypted databases", async () => {
+    const open = await manager.createDatabase("Open");
+    // Should resolve silently — any password is ignored.
+    await expect(
+      manager.unlockDatabase(open.id, "anything"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("unlockDatabase throws DatabaseNotFoundError for unknown id", async () => {
+    await expect(
+      manager.unlockDatabase("does-not-exist", "anything"),
+    ).rejects.toThrow();
+  });
+
   it("throws CorruptedDataError when decrypted data is invalid", async () => {
     const password = "secret";
     // Encrypt invalid JSON via the same WebCrypto helper the manager uses.
