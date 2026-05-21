@@ -256,23 +256,64 @@ const CloneTab: React.FC<CloneTabProps> = ({
           </span>
         }
       >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {(["current", "selected", "all"] as ExportScopeMode[]).map((mode) => (
-            <label
-              key={mode}
-              className="inline-flex items-center gap-2 text-xs text-[var(--color-textSecondary)]"
-            >
-              <input
-                type="radio"
-                name="clone-source-mode"
-                checked={sourceMode === mode}
-                onChange={() => setSourceMode(mode)}
-              />
-              {mode === "current" && "Current database"}
-              {mode === "selected" && "Selected databases"}
-              {mode === "all" && "All exportable databases"}
-            </label>
-          ))}
+        {/*
+          Button-card row, mirroring ExportTab's scope picker so the
+          two halves of the tool feel consistent. Each card is a
+          `role=radio` button with a label + a one-line description
+          underneath; the active card lights up in the primary colour.
+        */}
+        <div
+          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+          role="radiogroup"
+          aria-label="Clone source scope"
+        >
+          {(
+            [
+              {
+                value: "current",
+                label: "Current database",
+                description: "Just the database that's open right now.",
+              },
+              {
+                value: "selected",
+                label: "Selected databases",
+                description: "Pick one or more from the list below.",
+              },
+              {
+                value: "all",
+                label: "All databases",
+                description: "Every unlocked exportable database.",
+              },
+            ] as Array<{
+              value: ExportScopeMode;
+              label: string;
+              description: string;
+            }>
+          ).map((option) => {
+            const active = sourceMode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                data-testid={`clone-source-mode-${option.value}`}
+                onClick={() => setSourceMode(option.value)}
+                className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                  active
+                    ? "border-primary bg-primary/15 text-[var(--color-text)]"
+                    : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]"
+                }`}
+              >
+                <span className="block text-sm font-medium">
+                  {option.label}
+                </span>
+                <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
+                  {option.description}
+                </span>
+              </button>
+            );
+          })}
         </div>
         {sourceMode === "selected" && (
           <div className="mt-2 space-y-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2 max-h-48 overflow-y-auto">
