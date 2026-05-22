@@ -4,6 +4,7 @@ import {
   ExternalLink,
   Grid3X3,
   LayoutGrid,
+  Maximize2,
   Minimize2,
   MoreVertical,
   Rows,
@@ -125,7 +126,7 @@ const HiddenSessionsMenu: React.FC<{
         ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
         data-testid="tab-layout-hidden-pill"
-        className="text-warning text-xs px-2 py-1 rounded border border-warning/40 hover:bg-warning/10 transition-colors"
+        className="text-warning text-xs px-2 py-1 rounded border border-warning/40 hover:bg-warning/10 transition-colors select-none"
         title={`${hiddenSessions.length} session(s) not visible in the current tiling — click to promote one into a tile`}
       >
         +{hiddenSessions.length} hidden
@@ -169,6 +170,8 @@ interface TileHeaderProps {
   onDetach: () => void;
   onClose: () => void;
   onShowInTile: (otherSessionId: string) => void;
+  /** Switch the whole layout to tabs mode focused on this session. */
+  onMaximize: () => void;
 }
 
 const TileHeader: React.FC<TileHeaderProps> = ({
@@ -181,6 +184,7 @@ const TileHeader: React.FC<TileHeaderProps> = ({
   onDetach,
   onClose,
   onShowInTile,
+  onMaximize,
 }) => {
   const [menuOpen, setMenuOpen] = useState<{ x: number; y: number } | null>(null);
   const [showSubmenu, setShowSubmenu] = useState(false);
@@ -194,17 +198,17 @@ const TileHeader: React.FC<TileHeaderProps> = ({
   return (
     <>
       <div
-        className={`absolute top-0 left-0 right-0 z-10 bg-[var(--color-surface)] border-b px-2 py-1 flex items-center justify-between cursor-pointer ${
+        className={`absolute top-0 left-0 right-0 z-10 bg-[var(--color-surface)] border-b px-2 py-1 flex items-center justify-between cursor-pointer select-none ${
           isActive ? "border-primary" : "border-[var(--color-border)]"
         }`}
         onClick={onSelect}
         data-testid={`tile-header-${slotIndex}`}
       >
-        <div className="flex items-center min-w-0 gap-1.5">
-          <span className="text-[10px] text-[var(--color-textMuted)] shrink-0">
+        <div className="flex items-center min-w-0 gap-1.5 select-none">
+          <span className="text-[10px] text-[var(--color-textMuted)] shrink-0 select-none">
             {slotIndex + 1}/{totalSlots}
           </span>
-          <span className="text-[var(--color-text)] text-sm truncate">{session.name}</span>
+          <span className="text-[var(--color-text)] text-sm truncate select-none">{session.name}</span>
         </div>
         <div className="flex items-center space-x-0.5">
           <button
@@ -289,6 +293,9 @@ const TileHeader: React.FC<TileHeaderProps> = ({
             )}
           </div>
         </div>
+        <button onClick={() => { onMaximize(); setMenuOpen(null); }} className="sor-menu-item">
+          <Maximize2 size={14} className="mr-2" /> Maximize (switch to tabs)
+        </button>
         <div className="sor-menu-divider" />
         <button onClick={() => { onDetach(); setMenuOpen(null); }} className="sor-menu-item">
           <ExternalLink size={14} className="mr-2" /> Detach to new window
@@ -469,7 +476,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* ── Layout toolbar ───────────────────────────── */}
-      <div className="sor-toolbar-row" data-testid="tab-layout-toolbar">
+      <div className="sor-toolbar-row select-none" data-testid="tab-layout-toolbar">
         <div className="flex items-center space-x-2">
           <LayoutModeButton mode="tabs" currentMode={layout.mode} title="Tabs (single pane)" icon={<Minimize2 size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-tabs" />
           <LayoutModeButton mode="splitVertical" currentMode={layout.mode} title="Split left/right" icon={<Columns size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-splitVertical" />
@@ -534,6 +541,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                     mgr.swapSessionsInSlots(session.id, otherId);
                     onSessionSelect(otherId);
                   }}
+                  onMaximize={() => {
+                    onSessionSelect(session.id);
+                    onLayoutChange({ mode: 'tabs', sessions: [] });
+                  }}
                 />
               )}
               <div className={isVisibleTile ? "absolute inset-0 top-[29px]" : "h-full"}>
@@ -550,7 +561,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
               <button
                 key={`preview-${session.id}`}
                 type="button"
-                className={`border-2 rounded cursor-pointer transition-all text-left overflow-hidden ${
+                className={`border-2 rounded cursor-pointer transition-all text-left overflow-hidden select-none ${
                   session.id === activeSessionId ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-primary/60"
                 }`}
                 onClick={() => {
