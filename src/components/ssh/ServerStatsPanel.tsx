@@ -10,7 +10,6 @@ import { DetailTabs } from "./serverStats/DetailTabs";
 
 export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
   isOpen,
-  onClose,
 }) => {
   const { t } = useTranslation();
   const mgr = useServerStats(isOpen);
@@ -70,33 +69,39 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
           )}
 
           {/* Stats display */}
-          {mgr.lastSnapshot ? (
-            mgr.activeTab === "overview" ? (
-              <OverviewTab snapshot={mgr.lastSnapshot} />
+          <div
+            role="tabpanel"
+            id={`server-stats-panel-${mgr.activeTab}`}
+            aria-labelledby={`server-stats-tab-${mgr.activeTab}`}
+          >
+            {mgr.lastSnapshot ? (
+              mgr.activeTab === "overview" ? (
+                <OverviewTab snapshot={mgr.lastSnapshot} />
+              ) : (
+                <DetailTabs
+                  snapshot={mgr.lastSnapshot}
+                  activeTab={mgr.activeTab}
+                  searchFilter={mgr.searchFilter}
+                />
+              )
             ) : (
-              <DetailTabs
-                snapshot={mgr.lastSnapshot}
-                activeTab={mgr.activeTab}
-                searchFilter={mgr.searchFilter}
+              <EmptyState
+                icon={Server}
+                message={t("serverStats.noData", "No stats collected yet")}
+                hint={
+                  mgr.sshSessions.length === 0
+                    ? t(
+                        "serverStats.noSessionsDesc",
+                        "Connect to an SSH server first, then collect server stats.",
+                      )
+                    : t(
+                        "serverStats.selectAndCollect",
+                        "Select an SSH session and click Collect to gather server statistics.",
+                      )
+                }
               />
-            )
-          ) : (
-            <EmptyState
-              icon={Server}
-              message={t("serverStats.noData", "No stats collected yet")}
-              hint={
-                mgr.sshSessions.length === 0
-                  ? t(
-                      "serverStats.noSessionsDesc",
-                      "Connect to an SSH server first, then collect server stats.",
-                    )
-                  : t(
-                      "serverStats.selectAndCollect",
-                      "Select an SSH session and click Collect to gather server statistics.",
-                    )
-              }
-            />
-          )}
+            )}
+          </div>
 
           {/* Collection duration */}
           {mgr.lastSnapshot && (

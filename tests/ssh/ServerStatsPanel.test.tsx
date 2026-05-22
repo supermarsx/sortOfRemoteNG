@@ -138,13 +138,29 @@ describe("ServerStatsPanel", () => {
   describe("Tab Navigation", () => {
     it("should render tab buttons", () => {
       renderPanel();
-      expect(screen.getByTitle("overview")).toBeInTheDocument();
-      expect(screen.getByTitle("cpu")).toBeInTheDocument();
-      expect(screen.getByTitle("memory")).toBeInTheDocument();
-      expect(screen.getByTitle("disk")).toBeInTheDocument();
-      expect(screen.getByTitle("system")).toBeInTheDocument();
-      expect(screen.getByTitle("firewall")).toBeInTheDocument();
-      expect(screen.getByTitle("ports")).toBeInTheDocument();
+      expect(screen.getByRole("tablist", { name: "Server stats tabs" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "overview" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "cpu" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "memory" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "disk" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "system" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "firewall" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "ports" })).toBeInTheDocument();
+    });
+
+    it("uses import/export-style selected tab semantics and keyboard navigation", () => {
+      renderPanel();
+
+      const overviewTab = screen.getByRole("tab", { name: "overview" });
+      const cpuTab = screen.getByRole("tab", { name: "cpu" });
+
+      expect(overviewTab).toHaveAttribute("aria-selected", "true");
+      expect(overviewTab).toHaveClass("bg-primary");
+      expect(cpuTab).toHaveAttribute("aria-selected", "false");
+
+      fireEvent.keyDown(overviewTab, { key: "ArrowRight" });
+
+      expect(screen.getByRole("tab", { name: "cpu" })).toHaveAttribute("aria-selected", "true");
     });
   });
 });
