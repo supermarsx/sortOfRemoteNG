@@ -105,7 +105,7 @@ const BackupSection: React.FC<{ mgr: Mgr; onBackupNow?: () => void }> = ({ mgr, 
         <HardDrive className="w-4 h-4 text-success" />
         <span className="text-sm font-medium text-[var(--color-textSecondary)]">{mgr.t("syncBackup.localBackup", "Local Backup")}</span>
       </div>
-      <button onClick={mgr.handleBackupNow} disabled={mgr.isBackingUp || mgr.backupStatus?.isRunning} className="flex items-center gap-1 px-2 py-1 text-xs bg-success hover:bg-success/90 disabled:opacity-50 rounded">
+      <button onClick={mgr.handleBackupNow} disabled={mgr.isBackingUp || mgr.backupStatus?.isRunning} className="flex items-center gap-1 px-2 py-1 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] disabled:opacity-50 rounded">
         {mgr.isBackingUp || mgr.backupStatus?.isRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Archive className="w-3 h-3" />}
         {mgr.t("syncBackup.backupNow", "Backup Now")}
       </button>

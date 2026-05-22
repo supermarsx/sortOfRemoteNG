@@ -145,7 +145,7 @@ const ActionButtons: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <button
       onClick={mgr.handleBackupNow}
       disabled={mgr.isBackingUp || mgr.backupStatus?.isRunning}
-      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-success hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
     >
       {mgr.isBackingUp || mgr.backupStatus?.isRunning ? (
         <Loader2 className="w-4 h-4 animate-spin" />
