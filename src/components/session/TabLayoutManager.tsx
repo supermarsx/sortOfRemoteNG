@@ -19,6 +19,7 @@ import { useTabLayoutManager } from "../../hooks/session/useTabLayoutManager";
 import { Slider } from '../ui/forms';
 import MenuSurface from "../ui/overlays/MenuSurface";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
+import { partitionSessions } from "../../utils/session/sessionClassification";
 
 type Mgr = ReturnType<typeof useTabLayoutManager>;
 
@@ -53,7 +54,15 @@ const LayoutModeButton: React.FC<{
   </button>
 );
 
-const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number }> = ({ mgr, sessionCount }) => (
+/**
+ * Custom-grid picker. `sessionCount` is the number of *real
+ * connections* (the kind the user calls a session) — used only
+ * for the "X sessions" blurb. `totalTabCount` is the actual fill
+ * candidate count (sessions + tools + winmgmt) so the lit-up
+ * grid-preview cells reflect how many tiles will actually be
+ * occupied, not how many sessions exist.
+ */
+const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number; totalTabCount: number }> = ({ mgr, sessionCount, totalTabCount }) => (
   <div className="relative" ref={mgr.customGridButtonRef}>
     <button
       onClick={() => mgr.setShowCustomGrid(!mgr.showCustomGrid)}
@@ -94,11 +103,11 @@ const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number }> = ({ mgr, 
         <div className="border border-[var(--color-border)] rounded p-2">
           <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${mgr.customCols}, 1fr)`, gridTemplateRows: `repeat(${mgr.customRows}, 1fr)` }}>
             {Array.from({ length: mgr.customCols * mgr.customRows }).map((_, i) => (
-              <div key={i} className={`h-4 rounded ${i < sessionCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`} />
+              <div key={i} className={`h-4 rounded ${i < totalTabCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`} />
             ))}
           </div>
           <div className="text-[var(--color-textMuted)] text-xs mt-1 text-center">
-            {mgr.customCols * mgr.customRows} tiles ({Math.min(sessionCount, mgr.customCols * mgr.customRows)} sessions)
+            {mgr.customCols * mgr.customRows} tiles · {Math.min(totalTabCount, mgr.customCols * mgr.customRows)} filled · {sessionCount} session{sessionCount === 1 ? '' : 's'}
           </div>
         </div>
         <button onClick={mgr.handleCustomGridApply} className="w-full px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded text-sm transition-colors">Apply Layout</button>
@@ -431,10 +440,43 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
     [sessions],
   );
 
-  const sessionCountForCounter = useMemo(
-    () => sessions.filter((s) => !s.protocol.startsWith("tool:") && !s.protocol.startsWith("winmgmt:")).length,
-    [sessions],
-  );
+  // The toolbar counter must reflect *real connections* — tools
+  // (`tool:*`) and Windows management panels (`winmgmt:*`) are
+  // legitimate tabs but they are not sessions. Bundling them into
+  // the count inflates the number and is misleading to the user.
+  // We render a breakdown when the user actually has any of the
+  // non-connection kinds open, so the toolbar still acknowledges
+  // them without lying about the session count.
+  const sessionPartition = useMemo(() => partitionSessions(sessions), [sessions]);
+  const connectionCount = sessionPartition.connections.length;
+  const toolCount = sessionPartition.tools.length;
+  const winmgmtCount = sessionPartition.winmgmt.length;
+  const counterChips = useMemo(() => {
+    // Always render the session chip — it's the headline number,
+    // and showing "0 sessions" alongside any tool/panel chips
+    // makes the absence of real connections explicit instead of
+    // letting the toolbar look like it's hiding something.
+    const chips: Array<{ key: string; label: string }> = [
+      {
+        key: 'sessions',
+        label: `${connectionCount} session${connectionCount === 1 ? '' : 's'}`,
+      },
+    ];
+    if (toolCount > 0) {
+      chips.push({
+        key: 'tools',
+        label: `${toolCount} tool${toolCount === 1 ? '' : 's'}`,
+      });
+    }
+    if (winmgmtCount > 0) {
+      chips.push({
+        key: 'winmgmt',
+        label: `${winmgmtCount} panel${winmgmtCount === 1 ? '' : 's'}`,
+      });
+    }
+    return chips;
+  }, [connectionCount, toolCount, winmgmtCount]);
+  const counterAriaLabel = counterChips.map((chip) => chip.label).join(', ');
 
   /** Promote a hidden session into the active tile slot. */
   const promoteHidden = useCallback(
@@ -487,12 +529,25 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <LayoutModeButton mode="grid6" currentMode={layout.mode} title="6 squares (capped)" icon={<Grid3X3 size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-grid6" />
           <LayoutModeButton mode="mosaic" currentMode={layout.mode} title="Auto mosaic (sqrt grid)" icon={<Square size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-mosaic" />
           <LayoutModeButton mode="miniMosaic" currentMode={layout.mode} title="Mini mosaic (preview grid)" icon={<Grid3X3 size={14} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-miniMosaic" />
-          <CustomGridPopover mgr={mgr} sessionCount={sessions.length} />
+          <CustomGridPopover mgr={mgr} sessionCount={connectionCount} totalTabCount={sessions.length} />
         </div>
         <div className="flex items-center gap-3">
           <HiddenSessionsMenu hiddenSessions={mgr.hiddenSessions} onPromote={promoteHidden} />
-          <div className="text-[var(--color-textSecondary)] text-sm">
-            {sessionCountForCounter} session{sessionCountForCounter !== 1 ? "s" : ""}
+          <div
+            className="text-[var(--color-textSecondary)] text-sm select-none flex items-center gap-1.5"
+            aria-label={counterAriaLabel}
+            data-testid="tab-layout-session-counter"
+          >
+            {counterChips.map((chip, idx) => (
+              <React.Fragment key={chip.key}>
+                {idx > 0 && (
+                  <span className="text-[var(--color-textMuted)]" aria-hidden="true">
+                    ·
+                  </span>
+                )}
+                <span data-testid={`session-counter-${chip.key}`}>{chip.label}</span>
+              </React.Fragment>
+            ))}
           </div>
         </div>
       </div>
