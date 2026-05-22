@@ -1213,17 +1213,23 @@ export interface TabGroup {
   collapsed?: boolean;
 }
 
+export type TabLayoutMode =
+  | 'tabs'
+  | 'sideBySide'
+  | 'mosaic'
+  | 'miniMosaic'
+  | 'splitVertical'
+  | 'splitHorizontal'
+  | 'grid2'
+  | 'grid4'
+  | 'grid6'
+  | 'customGrid';
+
 export interface TabLayout {
-  mode:
-    | 'tabs'
-    | 'sideBySide'
-    | 'mosaic'
-    | 'miniMosaic'
-    | 'splitVertical'
-    | 'splitHorizontal'
-    | 'grid2'
-    | 'grid4'
-    | 'grid6';
+  mode: TabLayoutMode;
+  /** Custom grid dimensions, only meaningful when mode === 'customGrid'. */
+  customCols?: number;
+  customRows?: number;
   sessions: {
     sessionId: string;
     position: {

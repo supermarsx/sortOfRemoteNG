@@ -388,7 +388,35 @@ export interface GlobalSettings {
   // Tab Settings
   tabGrouping: "none" | "protocol" | "status" | "hostname" | "colorTag";
   hostnameOverride: boolean;
-  defaultTabLayout: "tabs" | "sideBySide" | "mosaic" | "miniMosaic";
+  defaultTabLayout:
+    | "tabs"
+    | "sideBySide"
+    | "mosaic"
+    | "miniMosaic"
+    | "splitVertical"
+    | "splitHorizontal"
+    | "grid2"
+    | "grid4"
+    | "grid6"
+    | "customGrid";
+  /** Persisted tiling state — restored at app start. The positions
+   *  are *derived* from sessions × mode at runtime, so we only keep
+   *  the mode + custom-grid dimensions. */
+  tabLayoutState?: {
+    mode:
+      | "tabs"
+      | "sideBySide"
+      | "mosaic"
+      | "miniMosaic"
+      | "splitVertical"
+      | "splitHorizontal"
+      | "grid2"
+      | "grid4"
+      | "grid6"
+      | "customGrid";
+    customCols?: number;
+    customRows?: number;
+  };
   enableTabDetachment: boolean;
   enableTabResize: boolean;
   enableZoom: boolean;
