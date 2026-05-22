@@ -10,7 +10,8 @@ import { Monitor, Zap, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { Connection, ConnectionSession, TabLayout } from "./types/connection/connection";
+import { Connection, ConnectionSession, TabLayout, TabLayoutMode } from "./types/connection/connection";
+import { buildTabLayout, clampGridDim, hasFreeSlot } from "./utils/session/tabLayoutBuilder";
 import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings/settings";
 import { SettingsManager } from "./utils/settings/settingsManager";
 import { StatusChecker } from "./utils/connection/statusChecker";
@@ -77,10 +78,17 @@ const AppContent: React.FC = () => {
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
   >(null);
-  const [tabLayout, setTabLayout] = useState<TabLayout>(() => ({
-    mode: "tabs",
-    sessions: [],
-  }));
+  const [tabLayout, setTabLayout] = useState<TabLayout>(() => {
+    // Initialize from persisted settings so the user's preferred
+    // tiling mode (and custom grid dimensions) survive restarts.
+    const initial = settingsManager.getSettings();
+    const persisted = initial.tabLayoutState;
+    const mode: TabLayoutMode = (persisted?.mode ?? initial.defaultTabLayout ?? "tabs") as TabLayoutMode;
+    return buildTabLayout(mode, [], {
+      customCols: persisted?.customCols,
+      customRows: persisted?.customRows,
+    });
+  });
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
@@ -425,80 +433,82 @@ const AppContent: React.FC = () => {
     [state.sessions],
   );
 
-  const buildTabLayout = useCallback(
-    (mode: TabLayout["mode"], sessions: ConnectionSession[]): TabLayout => {
-      const orderedSessions = activeSessionId
-        ? [
-            ...sessions.filter((session) => session.id === activeSessionId),
-            ...sessions.filter((session) => session.id !== activeSessionId),
-          ]
-        : sessions;
-
-      const buildGridLayout = (cols: number, rows?: number) => {
-        const totalRows =
-          (rows ?? Math.ceil(orderedSessions.length / cols)) || 1;
-        const width = 100 / cols;
-        const height = 100 / totalRows;
-        return orderedSessions.map((session, index) => ({
-          sessionId: session.id,
-          position: {
-            x: (index % cols) * width,
-            y: Math.floor(index / cols) * height,
-            width,
-            height,
-          },
-        }));
-      };
-
-      switch (mode) {
-        case "splitVertical": {
-          const cols = 2;
-          const rows = Math.ceil(orderedSessions.length / cols) || 1;
-          return { mode, sessions: buildGridLayout(cols, rows) };
-        }
-        case "splitHorizontal": {
-          const rows = 2;
-          const cols = Math.ceil(orderedSessions.length / rows) || 1;
-          return { mode, sessions: buildGridLayout(cols, rows) };
-        }
-        case "grid2":
-          return { mode, sessions: buildGridLayout(2, 1).slice(0, 2) };
-        case "grid4":
-          return { mode, sessions: buildGridLayout(2, 2).slice(0, 4) };
-        case "grid6":
-          return { mode, sessions: buildGridLayout(3, 2).slice(0, 6) };
-        case "sideBySide":
-          return { mode, sessions: buildGridLayout(2) };
-        case "mosaic": {
-          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
-          return { mode, sessions: buildGridLayout(cols) };
-        }
-        case "miniMosaic": {
-          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
-          return { mode, sessions: buildGridLayout(cols) };
-        }
-        default:
-          return { mode: "tabs", sessions: buildGridLayout(1, 1) };
-      }
-    },
-    [activeSessionId],
-  );
-
+  // Keep the layout in sync with whatever sessions are visible.
+  // Rebuilds preserve the user's chosen mode and custom-grid
+  // dimensions — only the positions are recomputed.
   useEffect(() => {
     setTabLayout((current) => {
       const currentIds = new Set(
         current.sessions.map((item) => item.sessionId),
       );
       const visibleIds = new Set(visibleSessions.map((session) => session.id));
-      const hasDiff =
-        current.sessions.some((item) => !visibleIds.has(item.sessionId)) ||
-        visibleSessions.some((session) => !currentIds.has(session.id));
-      if (!hasDiff) {
+      const allVisibleAlreadyPositioned = visibleSessions.every((s) => currentIds.has(s.id));
+      const noStaleEntries = current.sessions.every((item) => visibleIds.has(item.sessionId));
+      // For capped modes (grid2/4/6, customGrid) some visible sessions
+      // may not be in the layout — that's intentional, not stale.
+      // Only rebuild if the *set* changed in a way that affects the
+      // layout: a stale entry or a new session that should now claim
+      // an empty slot.
+      const hasEmptySlotAndNewSession =
+        !allVisibleAlreadyPositioned && hasFreeSlot(current, visibleSessions.length);
+      if (noStaleEntries && !hasEmptySlotAndNewSession) {
         return current;
       }
-      return buildTabLayout(current.mode, visibleSessions);
+      return buildTabLayout(current.mode, visibleSessions, {
+        activeSessionId,
+        customCols: current.customCols,
+        customRows: current.customRows,
+      });
     });
-  }, [visibleSessions, buildTabLayout]);
+  }, [visibleSessions, activeSessionId]);
+
+  // Persist the tiling mode (and custom-grid dimensions, if any)
+  // whenever they change. Positions are derived, so we don't store
+  // them — saves are cheap and the next start can rebuild deterministically.
+  const lastPersistedTabLayoutRef = useRef<string>("");
+  useEffect(() => {
+    const snapshot = JSON.stringify({
+      mode: tabLayout.mode,
+      customCols: tabLayout.customCols,
+      customRows: tabLayout.customRows,
+    });
+    if (snapshot === lastPersistedTabLayoutRef.current) return;
+    lastPersistedTabLayoutRef.current = snapshot;
+    settingsManager
+      .saveSettings(
+        {
+          tabLayoutState: {
+            mode: tabLayout.mode,
+            customCols: tabLayout.customCols != null ? clampGridDim(tabLayout.customCols) : undefined,
+            customRows: tabLayout.customRows != null ? clampGridDim(tabLayout.customRows) : undefined,
+          },
+        },
+        { silent: true },
+      )
+      .catch(console.error);
+  }, [tabLayout.mode, tabLayout.customCols, tabLayout.customRows, settingsManager]);
+
+  // SessionTabs' "Split Right" / "Split Down" context menu items
+  // dispatch `split-session` CustomEvents — wire them here so the
+  // layout actually changes when the user picks one.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId: string; direction: "right" | "down" }>).detail;
+      if (!detail || !detail.sessionId) return;
+      const mode: TabLayoutMode =
+        detail.direction === "down" ? "splitHorizontal" : "splitVertical";
+      setActiveSessionId(detail.sessionId);
+      setTabLayout((current) =>
+        buildTabLayout(mode, visibleSessions, {
+          activeSessionId: detail.sessionId,
+          customCols: current.customCols,
+          customRows: current.customRows,
+        }),
+      );
+    };
+    window.addEventListener("split-session", handler as EventListener);
+    return () => window.removeEventListener("split-session", handler as EventListener);
+  }, [visibleSessions, setActiveSessionId]);
 
   useEffect(() => {
     if (
@@ -1247,6 +1257,21 @@ const AppContent: React.FC = () => {
             onSessionDetach={handleSessionDetach}
             enableReorder={appSettings.enableTabReorder}
             middleClickCloseTab={appSettings.middleClickCloseTab}
+            tabLayout={tabLayout}
+            onAssignSessionToSlot={(sessionId, slotIndex) => {
+              setTabLayout((current) => {
+                if (slotIndex < 0 || slotIndex >= current.sessions.length) return current;
+                const existingSlot = current.sessions.findIndex((s) => s.sessionId === sessionId);
+                const next = [...current.sessions];
+                const prevOccupant = next[slotIndex].sessionId;
+                next[slotIndex] = { ...next[slotIndex], sessionId };
+                if (existingSlot >= 0 && existingSlot !== slotIndex) {
+                  next[existingSlot] = { ...next[existingSlot], sessionId: prevOccupant };
+                }
+                return { ...current, sessions: next };
+              });
+              setActiveSessionId(sessionId);
+            }}
           />
 
           {/* Session viewer */}
@@ -1266,7 +1291,6 @@ const AppContent: React.FC = () => {
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
                 renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleDatabaseSelect} />}
-                showTabBar={false}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
             ) : (
