@@ -89,7 +89,9 @@ describe("TabLayoutManager", () => {
 
     expect(onLayoutChange).toHaveBeenCalledTimes(1);
     const callArg = onLayoutChange.mock.calls[0][0] as TabLayout;
-    expect(callArg.mode).toBe("mosaic");
+    expect(callArg.mode).toBe("customGrid");
+    expect(callArg.customCols).toBe(3);
+    expect(callArg.customRows).toBe(1);
     expect(callArg.sessions.length).toBe(2);
     await waitFor(() => {
       expect(

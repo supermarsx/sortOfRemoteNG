@@ -32,7 +32,6 @@ import {
   ClipboardCopy,
   Pin,
   PinOff,
-  Settings2,
   Info,
   Maximize2,
   Columns,
@@ -47,12 +46,15 @@ import {
   Send,
   MoreHorizontal,
 } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol, getWinmgmtToolId, getWindowsToolIcon } from "../windows/WindowsToolPanel.helpers";
 import MenuSurface from "../ui/overlays/MenuSurface";
-import type { ConnectionSession, TabGroup } from "../../types/connection/connection";
+import type { ConnectionSession, TabGroup, TabLayout } from "../../types/connection/connection";
+import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
+import { SESSION_TAB_DND_TYPE } from "./TabLayoutManager";
 
 const GROUP_COLORS = [
   { name: 'Red', value: '#ef4444' },
@@ -164,6 +166,13 @@ interface SessionTabsProps {
   onSessionDuplicate?: (sessionId: string) => void;
   enableReorder?: boolean;
   middleClickCloseTab?: boolean;
+  /** Current tab tiling layout. When provided in a tiling mode,
+   *  tabs display a slot indicator and the context menu exposes
+   *  "Move to tile" actions. */
+  tabLayout?: TabLayout;
+  /** Assign a session to a specific tile slot. Required when
+   *  `tabLayout` is in a tiling mode for "Move to tile" to work. */
+  onAssignSessionToSlot?: (sessionId: string, slotIndex: number) => void;
 }
 
 export const SessionTabs: React.FC<SessionTabsProps> = ({
@@ -175,7 +184,27 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   onSessionDuplicate,
   enableReorder = true,
   middleClickCloseTab = true,
+  tabLayout,
+  onAssignSessionToSlot,
 }) => {
+  // ── Tiling awareness ─────────────────────────────────
+  // When the tabs are showing inside a tiled layout, each tab
+  // shows a small "slot N/total" badge so the user can map tabs
+  // to tiles at a glance, and the context menu exposes a "Move
+  // to tile" submenu.
+  const tilingActive = !!tabLayout && isMosaicMode(tabLayout.mode);
+  const tileSlotForSession = useMemo(() => {
+    if (!tabLayout) return new Map<string, number>();
+    const m = new Map<string, number>();
+    tabLayout.sessions.forEach((s, idx) => m.set(s.sessionId, idx));
+    return m;
+  }, [tabLayout]);
+  const totalTiles = tabLayout?.sessions.length ?? 0;
+  const [tileSubmenuOpen, setTileSubmenuOpen] = useState(false);
+  const tileSubmenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const tileSubmenuPanelRef = useRef<HTMLDivElement | null>(null);
+  const tileSubmenuTriggerId = useId();
+  const tileSubmenuPanelId = useId();
   const { state, dispatch } = useConnections();
   const { settings: appSettings } = useSettings();
   const sessions = state.sessions.filter((session) => !session.layout?.isDetached);
@@ -528,11 +557,12 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   };
 
   const handleMiddleClick = (sessionId: string, e: React.MouseEvent) => {
-    if (e.button === 1 && middleClickCloseTab) {
-      e.preventDefault();
-      e.stopPropagation();
-      onSessionClose(sessionId);
-    }
+    if (e.button !== 1 || !middleClickCloseTab) return false;
+
+    e.preventDefault();
+    e.stopPropagation();
+    onSessionClose(sessionId);
+    return true;
   };
 
   const handleDetachSession = (sessionId: string, e: React.MouseEvent) => {
@@ -546,7 +576,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     e.dataTransfer.effectAllowed = "all";
     e.dataTransfer.dropEffect = "move";
     e.dataTransfer.setData("text/plain", sessionId);
-    e.dataTransfer.setData("application/x-session-tab", sessionId);
+    e.dataTransfer.setData(SESSION_TAB_DND_TYPE, sessionId);
   };
 
   const handleDragOver = (e: React.DragEvent, sessionId: string) => {
@@ -820,7 +850,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         } : undefined}
         onClick={() => onSessionSelect(session.id)}
         onKeyDown={(event) => handleTabKeyDown(event, session.id)}
-        onAuxClick={(e) => handleMiddleClick(session.id, e)}
+        onMouseDown={(e) => handleMiddleClick(session.id, e)}
         onContextMenu={(e) => handleContextMenu(e, session.id)}
         onDragStart={(e) => handleDragStart(e, session.id)}
         onDragOver={(e) => handleDragOver(e, session.id)}
@@ -843,6 +873,32 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         )}
         <ProtocolIcon size={14} className="mr-2 flex-shrink-0" />
         {(session as any).pinned && <Pin size={10} className="mr-1 flex-shrink-0 text-[var(--color-textMuted)]" />}
+        {tilingActive && (() => {
+          const slot = tileSlotForSession.get(session.id);
+          if (slot != null) {
+            return (
+              <span
+                className={`flex items-center gap-0.5 mr-1 px-1 rounded text-[9px] font-medium flex-shrink-0 ${
+                  isActive ? "bg-primary/30 text-[var(--color-text)]" : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
+                }`}
+                title={`Tile ${slot + 1} of ${totalTiles}`}
+                data-testid={`tab-tile-indicator-${session.id}`}
+              >
+                <LayoutGrid size={8} />
+                {slot + 1}
+              </span>
+            );
+          }
+          return (
+            <span
+              className="flex items-center mr-1 text-[var(--color-textMuted)] opacity-60 flex-shrink-0"
+              title="Open but not visible in current tiling — right-click to move into a tile"
+              data-testid={`tab-tile-indicator-hidden-${session.id}`}
+            >
+              <LayoutGrid size={8} />
+            </span>
+          );
+        })()}
         {renamingSessionId === session.id ? (
           <input
             ref={renameInputRef}
@@ -1032,13 +1088,24 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               <MoreHorizontal size={14} />
             </button>
             {overflowMenuOpen && (
-              <div className="sor-menu-surface absolute top-full right-0 mt-1 min-w-[220px] max-h-[400px] overflow-y-auto z-50">
+              <div
+                className="sor-menu-surface absolute top-full right-0 mt-1 min-w-[220px] max-h-[400px] overflow-y-auto z-50"
+                role="menu"
+                aria-label="All session tabs"
+                data-testid="session-tabs-overflow-menu"
+              >
                 {sessions.map((session) => {
                   const Icon = getProtocolIcon(session.protocol);
                   const isActive = session.id === activeSessionId;
                   return (
                     <button
                       key={session.id}
+                      role="menuitem"
+                      onMouseDown={(event) => {
+                        if (handleMiddleClick(session.id, event)) {
+                          setOverflowMenuOpen(false);
+                        }
+                      }}
                       onClick={() => {
                         onSessionSelect(session.id);
                         setOverflowMenuOpen(false);
@@ -1309,6 +1376,71 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               })} className="sor-menu-item">
                 <Rows size={14} className="mr-2" /> Split Down
               </button>
+              {tilingActive && totalTiles > 0 && onAssignSessionToSlot && (
+                <div
+                  className="sor-menu-submenu"
+                  data-submenu-open={tileSubmenuOpen ? "true" : "false"}
+                  onMouseLeave={() => setTileSubmenuOpen(false)}
+                  onBlurCapture={(event) => {
+                    const next = event.relatedTarget as Node | null;
+                    if (!event.currentTarget.contains(next)) {
+                      setTileSubmenuOpen(false);
+                    }
+                  }}
+                >
+                  <button
+                    id={tileSubmenuTriggerId}
+                    ref={tileSubmenuTriggerRef}
+                    className="sor-menu-item"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={tileSubmenuOpen}
+                    aria-controls={tileSubmenuPanelId}
+                    onMouseEnter={() => setTileSubmenuOpen(true)}
+                    onKeyDown={(event) => handleSubmenuTriggerKeyDown(event, setTileSubmenuOpen, tileSubmenuPanelRef)}
+                  >
+                    <LayoutGrid size={14} className="mr-2" />
+                    <span className="flex-1">Move to tile</span>
+                    <ChevronRight size={12} className="ml-2" />
+                  </button>
+                  <div
+                    id={tileSubmenuPanelId}
+                    ref={tileSubmenuPanelRef}
+                    className="sor-menu-submenu-panel"
+                    role="menu"
+                    tabIndex={-1}
+                    aria-label="Move to tile submenu"
+                    aria-labelledby={tileSubmenuTriggerId}
+                    onKeyDown={(event) => handleSubmenuPanelKeyDown(event, setTileSubmenuOpen, tileSubmenuTriggerRef)}
+                  >
+                    {tabLayout?.sessions.map((slot, slotIdx) => {
+                      const occupying = state.sessions.find((s) => s.id === slot.sessionId);
+                      const isCurrentSlot = slot.sessionId === sessionId;
+                      return (
+                        <button
+                          key={`tile-slot-${slotIdx}`}
+                          role="menuitem"
+                          onClick={() => {
+                            onAssignSessionToSlot(sessionId, slotIdx);
+                            closeContextMenu();
+                          }}
+                          disabled={isCurrentSlot}
+                          className={`sor-menu-item ${isCurrentSlot ? "opacity-50 pointer-events-none" : ""}`}
+                          data-testid={`move-to-tile-${slotIdx}`}
+                        >
+                          <span className="text-[10px] mr-2 text-[var(--color-textMuted)] w-5">
+                            {slotIdx + 1}/{totalTiles}
+                          </span>
+                          <span className="truncate flex-1">
+                            {occupying?.name ?? "(empty)"}
+                          </span>
+                          {isCurrentSlot && <span className="text-[10px] ml-2 text-[var(--color-textMuted)]">current</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => handleMoveTab(sessionId, "left")}
                 className={`sor-menu-item ${isFirst ? "opacity-40 pointer-events-none" : ""}`}
