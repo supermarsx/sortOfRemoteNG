@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionTabs } from "../../src/components/session/SessionTabs";
 import type { Connection, ConnectionSession, TabGroup } from "../../src/types/connection/connection";
 
@@ -36,13 +37,46 @@ const onSessionSelect = vi.fn();
 const onSessionClose = vi.fn();
 const onSessionDetach = vi.fn();
 
-const renderTabs = () =>
+const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+
+const forceTabOverflow = () => {
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+    configurable: true,
+    get() {
+      return (this as HTMLElement).dataset.testid === "session-tabs-scroll" ? 500 : 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get() {
+      return (this as HTMLElement).dataset.testid === "session-tabs-scroll" ? 100 : 0;
+    },
+  });
+};
+
+const restoreTabSizing = () => {
+  if (originalScrollWidth) {
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScrollWidth);
+  } else {
+    delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+  }
+
+  if (originalClientWidth) {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+  } else {
+    delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+  }
+};
+
+const renderTabs = (props?: Partial<ComponentProps<typeof SessionTabs>>) =>
   render(
     <SessionTabs
       activeSessionId="s1"
       onSessionSelect={onSessionSelect}
       onSessionClose={onSessionClose}
       onSessionDetach={onSessionDetach}
+      {...props}
     />,
   );
 
@@ -104,6 +138,10 @@ describe("SessionTabs accessibility", () => {
     ];
   });
 
+  afterEach(() => {
+    restoreTabSizing();
+  });
+
   it("exposes tablist and tab semantics", () => {
     renderTabs();
 
@@ -155,5 +193,37 @@ describe("SessionTabs accessibility", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /rename tab/i }));
 
     expect(await screen.findByLabelText(/rename tab session one/i)).toBeInTheDocument();
+  });
+
+  it("closes a tab from the overflow menu with middle click", async () => {
+    forceTabOverflow();
+    renderTabs();
+
+    fireEvent.click(await screen.findByRole("button", { name: /show all tabs/i }));
+
+    const menu = await screen.findByTestId("session-tabs-overflow-menu");
+    fireEvent.mouseDown(within(menu).getByRole("menuitem", { name: /session two/i }), {
+      button: 1,
+    });
+
+    expect(onSessionClose).toHaveBeenCalledWith("s2");
+    expect(onSessionSelect).not.toHaveBeenCalledWith("s2");
+    await waitFor(() => {
+      expect(screen.queryByTestId("session-tabs-overflow-menu")).not.toBeInTheDocument();
+    });
+  });
+
+  it("respects the middle-click close setting in the overflow menu", async () => {
+    forceTabOverflow();
+    renderTabs({ middleClickCloseTab: false });
+
+    fireEvent.click(await screen.findByRole("button", { name: /show all tabs/i }));
+
+    const menu = await screen.findByTestId("session-tabs-overflow-menu");
+    fireEvent.mouseDown(within(menu).getByRole("menuitem", { name: /session two/i }), {
+      button: 1,
+    });
+
+    expect(onSessionClose).not.toHaveBeenCalled();
   });
 });
