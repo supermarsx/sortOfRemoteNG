@@ -992,10 +992,10 @@ const ImportTab: React.FC<ImportTabProps> = ({
         can pick this up at the next i18n sweep.
       */}
       <div>
-        <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+        <h3 className="text-lg font-medium text-[var(--color-text)] mb-4 select-none">
           {t('importTab.title', { defaultValue: 'Import' })}
         </h3>
-        <p className="text-[var(--color-textSecondary)] mb-4">
+        <p className="text-[var(--color-textSecondary)] mb-4 select-none">
           {t('importTab.description', {
             defaultValue:
               'Bring connections, tags, VPN profiles and tunnel chains into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import.',
