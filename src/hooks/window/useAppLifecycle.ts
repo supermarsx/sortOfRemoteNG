@@ -9,6 +9,10 @@ import { SecureStorage } from "../../utils/storage/storage";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
 import i18n, { loadLanguage } from "../../i18n";
 import { IndexedDbService } from "../../utils/storage/indexedDbService";
+import {
+  isRealConnectionSession,
+  realConnectionCount,
+} from "../../utils/session/sessionClassification";
 
 import { SAFE_MODE_KEY } from "../../components/app/CriticalErrorScreen";
 
@@ -268,13 +272,16 @@ export const useAppLifecycle = ({
         localStorage.setItem(CLEAN_EXIT_KEY, "true");
       }
       
-      if (settings.warnOnExit && state.sessions.length > 0) {
+      // Only real connections trigger the warn-on-exit prompt —
+      // a Settings or Wake-on-LAN tab being open does not justify
+      // interrupting the exit flow.
+      if (settings.warnOnExit && realConnectionCount(state.sessions) > 0) {
         e.preventDefault();
         e.returnValue = t("dialogs.confirmExit");
         return t("dialogs.confirmExit");
       }
     },
-    [settingsManager, state.sessions.length, t],
+    [settingsManager, state.sessions, t],
   );
 
   const checkSingleWindow = useCallback(async () => {
@@ -424,9 +431,15 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
-    if (settings.reconnectOnReload && state.sessions.length > 0) {
-      // Save full session state for restoration
-      const sessionData = state.sessions.map((session) => ({
+    // Only real connections are worth restoring across a reload.
+    // Tool tabs (`tool:*`) and Windows management panels
+    // (`winmgmt:*`) are stateless app surfaces — re-opening them
+    // recreates them from scratch, so persisting their state would
+    // just bloat sessionStorage with garbage that the next launch
+    // would discard anyway.
+    const restorable = state.sessions.filter(isRealConnectionSession);
+    if (settings.reconnectOnReload && restorable.length > 0) {
+      const sessionData = restorable.map((session) => ({
         id: session.id,
         connectionId: session.connectionId,
         name: session.name,
@@ -451,7 +464,7 @@ export const useAppLifecycle = ({
         "mremote-active-sessions",
         JSON.stringify(sessionData),
       );
-    } else if (state.sessions.length === 0) {
+    } else if (restorable.length === 0) {
       sessionStorage.removeItem("mremote-active-sessions");
     }
   }, [state.sessions, settingsManager]);

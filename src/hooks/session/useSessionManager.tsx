@@ -5,6 +5,7 @@ import { useConnections } from "../../contexts/useConnections";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/toolSession";
 import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
+import { isRealConnectionSession } from "../../utils/session/sessionClassification";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 import { ScriptEngine } from "../../utils/recording/scriptEngine";
@@ -212,19 +213,29 @@ export const useSessionManager = () => {
       }
     }
 
-    if (settings.singleConnectionMode && state.sessions.length > 0) {
+    // singleConnectionMode and maxConcurrentConnections both speak
+    // about *connections*. Tool tabs and Windows management panels
+    // share the session list for storage/UX reasons, but they are
+    // not connections — counting them against these limits would
+    // be misleading (and lock the user out of opening a session
+    // because they have a Settings tab open).
+    const realSessions = state.sessions.filter(isRealConnectionSession);
+
+    if (settings.singleConnectionMode && realSessions.length > 0) {
       const proceed = await showConfirm(
         "Close existing connection and open new one?",
       );
       if (!proceed) {
         return;
       }
-      state.sessions.forEach((session) => {
+      // Only close real connections; leave tool tabs in place so
+      // the user doesn't lose unsaved tool state when "switching".
+      realSessions.forEach((session) => {
         dispatch({ type: "REMOVE_SESSION", payload: session.id });
       });
     }
 
-    if (state.sessions.length >= settings.maxConcurrentConnections) {
+    if (realSessions.length >= settings.maxConcurrentConnections) {
       await showAlert(
         `Maximum concurrent connections (${settings.maxConcurrentConnections}) reached.`,
       );

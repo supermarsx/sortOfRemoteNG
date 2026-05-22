@@ -12,6 +12,7 @@ import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { Connection, ConnectionSession, TabLayout, TabLayoutMode } from "./types/connection/connection";
 import { buildTabLayout, clampGridDim, hasFreeSlot } from "./utils/session/tabLayoutBuilder";
+import { realConnectionCount } from "./utils/session/sessionClassification";
 import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings/settings";
 import { SettingsManager } from "./utils/settings/settingsManager";
 import { StatusChecker } from "./utils/connection/statusChecker";
@@ -1024,9 +1025,12 @@ const AppContent: React.FC = () => {
           return;
         }
         
-        // Check if we should warn the user
+        // Check if we should warn the user. Only real connections
+        // count here — closing the app while only tool tabs are
+        // open (Settings, Wake-on-LAN, etc.) is not lossy and
+        // shouldn't trigger a prompt.
         const settings = settingsManager.getSettings();
-        const hasActiveSessions = state.sessions.length > 0;
+        const hasActiveSessions = realConnectionCount(state.sessions) > 0;
 
         if ((settings.warnOnClose || settings.warnOnExit) && hasActiveSessions) {
           // Prevent close and show confirmation dialog

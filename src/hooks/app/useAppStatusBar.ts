@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { isRealConnectionSession } from "../../utils/session/sessionClassification";
 
 interface AppStatusBarInput {
   connections: Connection[];
@@ -20,9 +21,12 @@ export function useAppStatusBar({
 
   const collection = databaseManager.getCurrentDatabase();
 
-  // Only count real remote connections — exclude tools, settings, diagnostics, etc.
+  // Only count real remote connections — `isRealConnectionSession`
+  // excludes `tool:*` and `winmgmt:*` tabs (which are app surfaces,
+  // not sessions). Centralised so this filter can't drift from
+  // the rest of the app's session-counting logic.
   const realSessions = useMemo(
-    () => sessions.filter((s) => !s.protocol.startsWith("tool:") && !s.protocol.startsWith("winmgmt:")),
+    () => sessions.filter(isRealConnectionSession),
     [sessions],
   );
 
