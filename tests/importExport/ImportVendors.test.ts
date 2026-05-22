@@ -177,6 +177,36 @@ describe('importFromMRemoteNG', () => {
     expect(rdp!.domain).toBe('CORP');
   });
 
+  it('detects mRemoteNG SSH tunnel references and stores them as tunnel-chain layers', async () => {
+    const tunnelXml = `<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="false" ConfVersion="2.7">
+  <Node Name="Bastion" Type="Connection" Protocol="SSH2"
+    Hostname="bastion.example.com" Port="2222" Username="jump" Password="secret" />
+  <Node Name="Internal RDP" Type="Connection" Protocol="RDP"
+    Hostname="10.10.0.25" Port="3389" Username="admin"
+    SSHTunnelConnectionName="Bastion" />
+</Connections>`;
+
+    const conns = await importFromMRemoteNG(tunnelXml);
+    const target = conns.find((c) => c.name === 'Internal RDP');
+    const tunnelLayer = target?.security?.tunnelChain?.[0];
+
+    expect(tunnelLayer).toMatchObject({
+      type: 'ssh-tunnel',
+      enabled: true,
+      localBindHost: '127.0.0.1',
+      localBindPort: 0,
+      sshTunnel: {
+        host: 'bastion.example.com',
+        port: 2222,
+        username: 'jump',
+        password: 'secret',
+        remoteHost: '10.10.0.25',
+        remotePort: 3389,
+      },
+    });
+  });
+
   it('imports root-level nodes and preserves custom display attributes', async () => {
     const directXml = `<?xml version="1.0" encoding="utf-8"?>
 <Node Name="Edge Router" Protocol="Winbox" Hostname="router.example.com"

@@ -215,13 +215,14 @@ export const ImportExport: React.FC<ImportExportProps> = ({
         {mgr.activeTab === "clone" && (
           <div role="tabpanel" id="import-export-panel-clone" aria-labelledby="import-export-tab-clone">
             <CloneTab
-              connections={mgr.connections}
               sourceMode={mgr.cloneSourceMode}
               setSourceMode={mgr.setCloneSourceMode}
               selectedSourceDatabaseIds={mgr.selectedCloneSourceDatabaseIds}
               setSelectedSourceDatabaseIds={mgr.setSelectedCloneSourceDatabaseIds}
               inclusion={mgr.cloneInclusion}
               updateInclusion={mgr.updateCloneInclusion}
+              sourceCatalog={mgr.cloneSourceCatalog}
+              isSourceCatalogLoading={mgr.isCloneSourceCatalogLoading}
               targetDatabaseIds={mgr.cloneTargetDatabaseIds}
               setTargetDatabaseIds={mgr.setCloneTargetDatabaseIds}
               conflictPolicy={mgr.cloneConflictPolicy}

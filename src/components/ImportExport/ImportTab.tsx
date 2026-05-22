@@ -85,6 +85,7 @@ const FALLBACK_OPTIONS: ImportOptions = {
   includeCredentials: true,
   includeVpnData: true,
   includeTunnelChains: true,
+  includeSshTunnels: true,
   conflictPolicy: 'duplicate',
   addTags: '',
   switchToTargetDatabaseAfterImport: false,
@@ -197,6 +198,10 @@ function buildPreviewDetailJson(item: ImportPreviewItem): string {
         issues: item.issues,
       },
       connection: item.connection ?? null,
+      vpnType: item.vpnType ?? null,
+      vpnConnection: item.vpnConnection ?? null,
+      tunnelChainTemplate: item.tunnelChainTemplate ?? null,
+      sshTunnelLayers: item.sshTunnelLayers ?? null,
     }),
     null,
     2,
@@ -264,6 +269,7 @@ const AnalysisSummary: React.FC<{ analysis: ImportSourceMetadata }> = ({ analysi
       <Stat label="Warnings" value={analysis.counts.warnings} />
       <Stat label="VPN" value={analysis.counts.vpnConnections} />
       <Stat label="Tunnels" value={analysis.counts.tunnelChains} />
+      <Stat label="SSH tunnels" value={analysis.counts.sshTunnels} />
     </div>
 
     <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] md:grid-cols-2">
@@ -628,6 +634,9 @@ const ImportFilters: React.FC<{
         <option value="all">All item types</option>
         <option value="connection">Connections</option>
         <option value="folder">Folders</option>
+        <option value="vpn">VPN</option>
+        <option value="tunnelChain">Tunnel chains</option>
+        <option value="sshTunnel">SSH tunnels</option>
       </select>
       <select
         value={filters.selection}
@@ -728,6 +737,7 @@ const ImportOptionsPanel: React.FC<{
         ['includeCredentials', 'Include credentials'],
         ['includeVpnData', 'Import VPN data'],
         ['includeTunnelChains', 'Import tunnel chains'],
+        ['includeSshTunnels', 'Import SSH tunnels'],
         ['switchToTargetDatabaseAfterImport', 'Switch to target after import'],
       ].map(([key, label]) => (
         <label key={key} className="inline-flex items-center gap-2">
@@ -806,7 +816,13 @@ const PreviewTable: React.FC<{
               </td>
               <td className="px-3 py-2 align-top">
                 <span className="rounded border border-[var(--color-border)] px-2 py-0.5 uppercase text-[var(--color-textSecondary)]">
-                  {item.kind === 'folder' ? 'folder' : item.protocol}
+                  {item.kind === 'connection'
+                    ? item.protocol
+                    : item.kind === 'tunnelChain'
+                      ? 'tunnel'
+                      : item.kind === 'sshTunnel'
+                        ? 'ssh tunnel'
+                      : item.kind}
                 </span>
               </td>
               <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
@@ -998,7 +1014,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
         <p className="text-[var(--color-textSecondary)] mb-4 select-none">
           {t('importTab.description', {
             defaultValue:
-              'Bring connections, tags, VPN profiles and tunnel chains into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import.',
+              'Bring connections, tags, VPN profiles, tunnel chains and SSH tunnels into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import.',
           })}
         </p>
       </div>
@@ -1103,7 +1119,14 @@ const ImportTab: React.FC<ImportTabProps> = ({
 
             {importResult.success && (
               <>
-                <p className="text-[var(--color-textSecondary)]">Found {importResult.imported} connections ready to import.</p>
+                <p className="text-[var(--color-textSecondary)]">
+                  Found {importResult.imported} connections ready to import.
+                </p>
+                {previewItems.length > importResult.imported && (
+                  <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                    {previewItems.length - importResult.imported} sidecar row(s) ready to review.
+                  </p>
+                )}
                 {previewItems.length > 0 && (
                   <p className="mt-1 text-xs text-[var(--color-textMuted)]">
                     {selectedRows} selected | {visiblePreviewItems.length} visible after filters | {previewItems.length} total preview rows

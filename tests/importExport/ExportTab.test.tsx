@@ -22,6 +22,7 @@ const connections: Connection[] = [
     hostname: "10.0.0.10",
     port: 22,
     password: "secret",
+    parentId: "group-1",
     isGroup: false,
     tags: [],
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -392,6 +393,37 @@ describe("ExportTab", () => {
     expect(screen.getByTestId("export-format-select")).toHaveTextContent("CSV");
     expect(screen.getByTestId("export-format-details")).toHaveTextContent("exportTab.formatCsv");
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent("2");
+  });
+
+  it("renders a specific folder filter and updates included folder ids", () => {
+    const { onConfigChange } = renderExportTab({
+      connections: [
+        ...connections,
+        {
+          id: "group-2",
+          name: "Group B",
+          protocol: "rdp",
+          hostname: "",
+          port: 0,
+          isGroup: true,
+          tags: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    fireEvent.click(
+      within(screen.getByTestId("export-folders-section")).getByRole("button"),
+    );
+    expect(screen.getByRole("checkbox", { name: "Group A" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Group B" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Group A" }));
+
+    expect(onConfigChange).toHaveBeenCalledWith({
+      inclusion: { includedFolderIds: ["group-2"] },
+    });
   });
 
   it("shows entropy and password-pattern feedback", () => {

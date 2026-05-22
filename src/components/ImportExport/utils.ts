@@ -1,4 +1,4 @@
-import { Connection } from '../../types/connection/connection';
+import { Connection, type TunnelChainLayer } from '../../types/connection/connection';
 import { generateId } from '../../utils/core/id';
 
 export const parseCSVLine = (line: string): string[] => {
@@ -236,7 +236,7 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<ImportFormat, ImportFormatCompa
     group: 'vendor',
     extensions: ['.xml'],
     signatures: ['<Connections ConfVersion=...>', '<Node Protocol=...>'],
-    dataClasses: ['connections', 'folders'],
+    dataClasses: ['connections', 'folders', 'SSH tunnels'],
     credentialSupport: 'partial',
     description: 'mRemoteNG connection XML, including supported encrypted AES-GCM files.',
     warning: 'Only common connection, folder, protocol, and credential fields can be mapped.',
@@ -421,6 +421,39 @@ const mapMRemoteNGProtocol = (protocol: string): Connection['protocol'] => {
     'Winbox': 'rdp',        // MikroTik Winbox → rdp
   };
   return protocolMap[protocol] || 'rdp';
+};
+
+const getMRemoteNGAttribute = (
+  node: Element,
+  ...names: string[]
+): string | undefined => {
+  for (const name of names) {
+    const value = node.getAttribute(name);
+    if (value !== null) return value;
+  }
+  return undefined;
+};
+
+const parseMRemoteNGBool = (value: string | undefined): boolean | undefined => {
+  if (value === undefined) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['true', 'yes', '1'].includes(normalized)) return true;
+  if (['false', 'no', '0'].includes(normalized)) return false;
+  return undefined;
+};
+
+const resolveMRemoteNGSshTunnelName = (
+  node: Element,
+  inheritedTunnelName?: string,
+): string | undefined => {
+  const explicit = getMRemoteNGAttribute(node, 'SSHTunnelConnectionName')?.trim();
+  if (explicit) return explicit;
+
+  const inherit = parseMRemoteNGBool(
+    getMRemoteNGAttribute(node, 'InheritSSHTunnelConnectionName'),
+  );
+  if (inherit === false) return undefined;
+  return inheritedTunnelName;
 };
 
 /**
@@ -919,11 +952,25 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
 
   const connections: Connection[] = [];
   const folderIdMap = new Map<Element, string>();
+  const pendingSshTunnels: Array<{
+    connectionId: string;
+    tunnelConnectionName: string;
+    targetHost: string;
+    targetPort: number;
+  }> = [];
 
   // Recursive function to parse nodes
-  const parseNode = (node: Element, parentId?: string): void => {
+  const parseNode = (
+    node: Element,
+    parentId?: string,
+    inheritedTunnelName?: string,
+  ): void => {
     const nodeType = node.getAttribute('Type') || 'Connection';
     const name = node.getAttribute('Name') || 'Unnamed';
+    const sshTunnelConnectionName = resolveMRemoteNGSshTunnelName(
+      node,
+      inheritedTunnelName,
+    );
     
     if (nodeType === 'Container') {
       // This is a folder
@@ -948,13 +995,16 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
 
       // Parse child nodes
       const children = node.querySelectorAll(':scope > Node');
-      children.forEach(child => parseNode(child, folderId));
+      children.forEach(child =>
+        parseNode(child, folderId, sshTunnelConnectionName),
+      );
     } else {
       // This is a connection
       const protocol = node.getAttribute('Protocol') || 'RDP';
       const hostname = node.getAttribute('Hostname') || '';
       const port = parsePortOrDefault(node.getAttribute('Port'), protocol);
       const username = node.getAttribute('Username') || undefined;
+      const password = node.getAttribute('Password') || undefined;
       const domain = node.getAttribute('Domain') || undefined;
       const description = node.getAttribute('Descr') || node.getAttribute('Description') || undefined;
       
@@ -963,14 +1013,16 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
       const colors = node.getAttribute('Colors') || undefined;
       const useCredSsp = node.getAttribute('UseCredSsp') === 'True';
       const renderingEngine = node.getAttribute('RenderingEngine') || undefined;
+      const connectionId = generateId();
       
       connections.push({
-        id: generateId(),
+        id: connectionId,
         name: name,
         protocol: mapMRemoteNGProtocol(protocol),
         hostname: hostname,
         port: port,
         username: username,
+        password: password,
         domain: domain,
         description: description,
         parentId: parentId,
@@ -984,6 +1036,15 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
         ...(useCredSsp !== undefined && { useCredSsp }),
         ...(renderingEngine && { renderingEngine }),
       });
+
+      if (sshTunnelConnectionName) {
+        pendingSshTunnels.push({
+          connectionId,
+          tunnelConnectionName: sshTunnelConnectionName,
+          targetHost: hostname,
+          targetPort: port,
+        });
+      }
     }
   };
 
@@ -994,6 +1055,54 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
     : doc.querySelectorAll('Node');
 
   rootNodes.forEach(node => parseNode(node));
+
+  const sshConnections = connections.filter(
+    (connection) => !connection.isGroup && connection.protocol === 'ssh',
+  );
+  const sshConnectionsByName = new Map(
+    sshConnections.map((connection) => [connection.name, connection]),
+  );
+  const sshConnectionsByLowerName = new Map(
+    sshConnections.map((connection) => [connection.name.toLowerCase(), connection]),
+  );
+
+  pendingSshTunnels.forEach((pending) => {
+    const targetConnection = connections.find(
+      (connection) => connection.id === pending.connectionId,
+    );
+    if (!targetConnection) return;
+
+    const tunnelConnection =
+      sshConnectionsByName.get(pending.tunnelConnectionName) ||
+      sshConnectionsByLowerName.get(pending.tunnelConnectionName.toLowerCase());
+    const tunnelHost = tunnelConnection?.hostname?.trim() || '';
+    const tunnelPort =
+      tunnelConnection && Number.isFinite(Number(tunnelConnection.port))
+        ? Number(tunnelConnection.port)
+        : 22;
+    const layer: TunnelChainLayer = {
+      id: generateId(),
+      type: 'ssh-tunnel',
+      enabled: Boolean(tunnelHost),
+      name: `mRemoteNG SSH tunnel via ${pending.tunnelConnectionName}`,
+      localBindHost: '127.0.0.1',
+      localBindPort: 0,
+      sshTunnel: {
+        forwardType: 'local',
+        ...(tunnelHost && { host: tunnelHost }),
+        port: tunnelPort > 0 ? tunnelPort : 22,
+        ...(tunnelConnection?.username && { username: tunnelConnection.username }),
+        ...(tunnelConnection?.password && { password: tunnelConnection.password }),
+        remoteHost: pending.targetHost || 'localhost',
+        remotePort: pending.targetPort,
+      },
+    };
+
+    targetConnection.security = {
+      ...targetConnection.security,
+      tunnelChain: [...(targetConnection.security?.tunnelChain ?? []), layer],
+    };
+  });
 
   return connections;
 };

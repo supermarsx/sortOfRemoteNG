@@ -1,4 +1,4 @@
-import { Connection } from '../../types/connection/connection';
+import { Connection, type TunnelChainLayer } from '../../types/connection/connection';
 import type { ExportFormat, ExportSecuritySettings } from '../../types/settings/settings';
 import {
   OpenVPNConnection,
@@ -26,6 +26,8 @@ export interface ExportInclusionConfig {
   includedProtocols: Connection['protocol'][];
   /** Specific connection ids to include. Empty array = all connections. */
   includedConnectionIds?: string[];
+  /** Specific folder/group ids to include. Empty array = all folders. */
+  includedFolderIds?: string[];
   /** Specific text tags to include. Empty array = all tags. */
   includedTextTags?: string[];
   /** Specific color tag ids to include. Empty array = all colors. */
@@ -100,7 +102,7 @@ export interface ImportIssue {
   source?: string;
 }
 
-export type ImportPreviewItemKind = 'connection' | 'folder' | 'vpn' | 'tunnelChain';
+export type ImportPreviewItemKind = 'connection' | 'folder' | 'vpn' | 'tunnelChain' | 'sshTunnel';
 
 export type ImportConflictStatus =
   | 'none'
@@ -121,6 +123,11 @@ export interface ImportPreviewItem {
   parentName?: string;
   tags: string[];
   connection?: Connection;
+  vpnType?: keyof ImportVpnData;
+  vpnConnection?: ImportVpnData[keyof ImportVpnData][number];
+  tunnelChainTemplate?: SavedTunnelChain;
+  sshTunnelConnectionId?: string;
+  sshTunnelLayers?: TunnelChainLayer[];
   importable: boolean;
   selectedByDefault: boolean;
   conflictStatus: ImportConflictStatus;
@@ -149,6 +156,7 @@ export interface ImportSourceMetadata {
     folders: number;
     vpnConnections: number;
     tunnelChains: number;
+    sshTunnels: number;
     warnings: number;
     errors: number;
     conflicts: number;
@@ -189,6 +197,7 @@ export interface ImportOptions {
   includeCredentials: boolean;
   includeVpnData: boolean;
   includeTunnelChains: boolean;
+  includeSshTunnels: boolean;
   conflictPolicy: 'duplicate' | 'skip' | 'rename';
   addTags: string;
   switchToTargetDatabaseAfterImport: boolean;
@@ -209,13 +218,11 @@ export interface ImportResult {
 
 // ─── Clone ───────────────────────────────────────────────────────────
 //
-// Clone runs Export's source-scope + connection-filter pipeline and
-// pipes the result into one or more *other* databases via
-// `databaseManager.appendConnectionsToDatabase`. Sidecars (VPN /
-// proxy / tunnel-chain templates) are global, so Clone doesn't carry
-// them — both source and target databases already share the same
-// pool. The clone-side filter therefore only needs the
-// connection-shape knobs from `ExportInclusionConfig`.
+// Clone runs Export's source-scope + inclusion pipeline and pipes the
+// result into one or more *other* databases via
+// `databaseManager.appendConnectionsToDatabase`. Sidecar definitions
+// are app-global, so they are cloned once per operation and cloned
+// connections are remapped to the new sidecar ids.
 
 export interface CloneConfig {
   /** Same scope semantics as Export: current open / explicitly
@@ -254,6 +261,22 @@ export interface CloneConfigUpdate extends Partial<Omit<CloneConfig, 'inclusion'
   inclusion?: Partial<ExportInclusionConfig>;
 }
 
+export interface CloneSourceCatalogItem {
+  key: string;
+  sourceDatabaseId: string;
+  sourceDatabaseName: string;
+  connectionId: string;
+  name: string;
+  path: string;
+  protocol: Connection['protocol'];
+  hostname?: string;
+  tags: string[];
+  colorTag?: string;
+  isGroup: boolean;
+  parentId?: string;
+  ancestorKeys: string[];
+}
+
 /** Outcome of a clone run, suitable for the result toast. */
 export interface CloneResult {
   success: boolean;
@@ -261,6 +284,13 @@ export interface CloneResult {
   cloned: number;
   renamed: number;
   skipped: number;
+  sidecarsCloned?: {
+    total: number;
+    proxyProfiles: number;
+    proxyChains: number;
+    tunnelChains: number;
+    vpnConnections: number;
+  };
   errors: string[];
   /** Per-destination outcome so the UI can show which target landed
    *  fully, which failed, and which had nothing to copy. */

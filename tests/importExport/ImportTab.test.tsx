@@ -279,6 +279,7 @@ describe("ImportTab", () => {
         errors: 0,
         vpnConnections: 0,
         tunnelChains: 0,
+        sshTunnels: 0,
       },
       json: {
         shape: "connections-object",

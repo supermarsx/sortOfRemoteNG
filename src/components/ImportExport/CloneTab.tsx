@@ -9,25 +9,21 @@
  * mirror Import (conflict policy, addTags, preserveFolders) for the
  * same reason.
  *
- * Sidecars (VPN / proxy / tunnel chain templates) are *global* — both
- * databases see the same pool — so this tab doesn't need to copy
- * them across. The filter therefore only exposes connection-level
- * knobs (protocols, ids, tags, color tags); the proxy/VPN sections
- * from ExportTab are deliberately omitted.
+ * Sidecars (VPN / proxy / tunnel chain templates) are app-global, so
+ * the clone action copies selected definitions once and remaps cloned
+ * connections to the copied definition ids.
  */
 
 import React, { useMemo, useState } from "react";
 import {
   Copy,
   Database,
-  FolderTree,
-  Settings,
   Tags,
   ArrowRight,
   Server,
 } from "lucide-react";
-import type { Connection } from "../../types/connection/connection";
 import type {
+  CloneSourceCatalogItem,
   ExportDatabaseOption,
   ExportInclusionConfig,
   ExportScopeMode,
@@ -36,11 +32,18 @@ import type {
 } from "./types";
 import { AccordionSection } from "./AccordionSection";
 import { DatabasePickerRow } from "./DatabasePickerRow";
+import {
+  InclusionItemPickers,
+  InclusionProtocolFilter,
+  type InclusionConnectionOption,
+  type InclusionFolderOption,
+  type InclusionListOption,
+} from "./InclusionPickers";
 import { Select } from "../ui/forms";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
+import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 
 interface CloneTabProps {
-  connections: Connection[];
-
   // Source half
   sourceMode: ExportScopeMode;
   setSourceMode: (mode: ExportScopeMode) => void;
@@ -48,6 +51,8 @@ interface CloneTabProps {
   setSelectedSourceDatabaseIds: (ids: string[]) => void;
   inclusion: ExportInclusionConfig;
   updateInclusion: (updates: Partial<ExportInclusionConfig>) => void;
+  sourceCatalog: CloneSourceCatalogItem[];
+  isSourceCatalogLoading?: boolean;
 
   // Destination half
   targetDatabaseIds: string[];
@@ -75,13 +80,14 @@ interface CloneTabProps {
 }
 
 const CloneTab: React.FC<CloneTabProps> = ({
-  connections,
   sourceMode,
   setSourceMode,
   selectedSourceDatabaseIds,
   setSelectedSourceDatabaseIds,
   inclusion,
   updateInclusion,
+  sourceCatalog,
+  isSourceCatalogLoading = false,
   targetDatabaseIds,
   setTargetDatabaseIds,
   conflictPolicy,
@@ -104,9 +110,51 @@ const CloneTab: React.FC<CloneTabProps> = ({
   const [openSections, setOpenSections] = useState({
     source: true,
     filter: false,
+    connections: false,
+    folders: false,
+    textTags: false,
+    colorTags: false,
+    proxyProfiles: false,
+    proxyChains: false,
+    vpnConnections: false,
     destination: true,
     preview: true,
   });
+  const [vpnConnections, setVpnConnections] = useState<
+    Array<{ id: string; name: string; kind: string }>
+  >([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mgr = ProxyOpenVPNManager.getInstance();
+        const [ovpn, wg, tailscale, zerotier] = await Promise.all([
+          mgr.listOpenVPNConnections().catch(() => [] as any[]),
+          mgr.listWireGuardConnections().catch(() => [] as any[]),
+          mgr.listTailscaleConnections().catch(() => [] as any[]),
+          mgr.listZeroTierConnections().catch(() => [] as any[]),
+        ]);
+        if (cancelled) return;
+        setVpnConnections([
+          ...ovpn.map((c) => ({ id: c.id, name: c.name, kind: "OpenVPN" })),
+          ...wg.map((c) => ({ id: c.id, name: c.name, kind: "WireGuard" })),
+          ...tailscale.map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: "Tailscale",
+          })),
+          ...zerotier.map((c) => ({ id: c.id, name: c.name, kind: "ZeroTier" })),
+        ]);
+      } catch {
+        // Keep the picker empty if the native VPN bridge is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const toggle = (key: keyof typeof openSections) =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -150,11 +198,170 @@ const CloneTab: React.FC<CloneTabProps> = ({
     [databaseOptions],
   );
 
-  // Filter preview count — leaf connections only that match the
-  // current inclusion's filter knobs. Folders are excluded from the
-  // count because the user thinks in connections, not folders.
-  const previewCount = useMemo(() => {
-    if (!inclusion.includeConnections) return 0;
+  const leafSourceCatalog = useMemo(
+    () => sourceCatalog.filter((item) => !item.isGroup),
+    [sourceCatalog],
+  );
+
+  const folderSourceCatalog = useMemo(
+    () => sourceCatalog.filter((item) => item.isGroup),
+    [sourceCatalog],
+  );
+
+  const cloneConnectionOptions: InclusionConnectionOption[] = useMemo(
+    () =>
+      leafSourceCatalog.map((item) => ({
+        id: item.key,
+        name: item.name,
+        protocol: item.protocol,
+        hostname: item.hostname,
+        sourcePath: item.path,
+        databaseId: item.sourceDatabaseId,
+        databaseName: item.sourceDatabaseName,
+      })),
+    [leafSourceCatalog],
+  );
+
+  const cloneFolderOptions: InclusionFolderOption[] = useMemo(
+    () =>
+      folderSourceCatalog.map((item) => ({
+        id: item.key,
+        name: item.name,
+        sourcePath: item.path,
+        databaseId: item.sourceDatabaseId,
+        databaseName: item.sourceDatabaseName,
+      })),
+    [folderSourceCatalog],
+  );
+
+  const availableProtocols = useMemo(
+    () =>
+      Array.from(new Set(leafSourceCatalog.map((item) => item.protocol))).sort(),
+    [leafSourceCatalog],
+  );
+
+  const availableTextTags = useMemo(() => {
+    const tags = new Set<string>();
+    leafSourceCatalog.forEach((item) => {
+      item.tags.forEach((tag) => {
+        if (tag) tags.add(tag);
+      });
+    });
+    return Array.from(tags).sort();
+  }, [leafSourceCatalog]);
+
+  const availableColorTagIds = useMemo(() => {
+    const colorTags = new Set<string>();
+    leafSourceCatalog.forEach((item) => {
+      if (item.colorTag) colorTags.add(item.colorTag);
+    });
+    return Array.from(colorTags).sort();
+  }, [leafSourceCatalog]);
+
+  const proxyProfiles = useMemo(() => proxyCollectionManager.getProfiles(), []);
+  const proxyChains = useMemo(() => proxyCollectionManager.getChains(), []);
+  const tunnelChains = useMemo(
+    () => proxyCollectionManager.getTunnelChains(),
+    [],
+  );
+
+  const proxyProfileOptions: InclusionListOption[] = useMemo(
+    () =>
+      proxyProfiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+        kind: (profile.config?.type ?? "").toUpperCase(),
+        description: profile.config?.host,
+        searchText: [
+          profile.name,
+          profile.config?.type,
+          profile.config?.host,
+          profile.description,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      })),
+    [proxyProfiles],
+  );
+
+  const proxyChainOptions: InclusionListOption[] = useMemo(
+    () => [
+      ...proxyChains.map((chain) => ({
+        id: chain.id,
+        key: `proxy:${chain.id}`,
+        name: chain.name,
+        kind: "Proxy chain",
+        description: `${chain.layers?.length ?? 0} ${
+          (chain.layers?.length ?? 0) === 1 ? "layer" : "layers"
+        }`,
+        searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
+          .filter(Boolean)
+          .join(" "),
+      })),
+      ...tunnelChains.map((chain) => ({
+        id: chain.id,
+        key: `tunnel:${chain.id}`,
+        name: chain.name,
+        kind: "Tunnel chain",
+        description: `${chain.layers?.length ?? 0} ${
+          (chain.layers?.length ?? 0) === 1 ? "layer" : "layers"
+        }`,
+        searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
+          .filter(Boolean)
+          .join(" "),
+      })),
+    ],
+    [proxyChains, tunnelChains],
+  );
+
+  const vpnConnectionOptions: InclusionListOption[] = useMemo(
+    () =>
+      vpnConnections.map((connection) => ({
+        id: connection.id,
+        name: connection.name,
+        kind: connection.kind,
+        searchText: `${connection.name} ${connection.kind}`,
+      })),
+    [vpnConnections],
+  );
+
+  const proxyProfilePreviewCount = useMemo(() => {
+    if (!inclusion.includeTunnelChains) return 0;
+    const selected = inclusion.includedProxyProfileIds ?? [];
+    return selected.length > 0 ? selected.length : proxyProfileOptions.length;
+  }, [
+    inclusion.includeTunnelChains,
+    inclusion.includedProxyProfileIds,
+    proxyProfileOptions.length,
+  ]);
+
+  const proxyChainPreviewCount = useMemo(() => {
+    if (!inclusion.includeTunnelChains) return 0;
+    const selected = inclusion.includedProxyChainIds ?? [];
+    if (selected.length === 0) return proxyChainOptions.length;
+    const selectedSet = new Set(selected);
+    return proxyChainOptions.filter((option) => selectedSet.has(option.id)).length;
+  }, [
+    inclusion.includeTunnelChains,
+    inclusion.includedProxyChainIds,
+    proxyChainOptions,
+  ]);
+
+  const vpnPreviewCount = useMemo(() => {
+    if (!inclusion.includeVpnData) return 0;
+    const selected = inclusion.includedVpnConnectionIds ?? [];
+    return selected.length > 0 ? selected.length : vpnConnectionOptions.length;
+  }, [
+    inclusion.includeVpnData,
+    inclusion.includedVpnConnectionIds,
+    vpnConnectionOptions.length,
+  ]);
+
+  const sidecarPreviewCount =
+    proxyProfilePreviewCount + proxyChainPreviewCount + vpnPreviewCount;
+
+  const previewLeafItems = useMemo(() => {
+    if (!inclusion.includeConnections) return [];
     const includedProtocolSet =
       inclusion.includedProtocols.length > 0
         ? new Set(inclusion.includedProtocols)
@@ -171,16 +378,25 @@ const CloneTab: React.FC<CloneTabProps> = ({
       (inclusion.includedColorTagIds ?? []).length > 0
         ? new Set(inclusion.includedColorTagIds)
         : null;
+    const includedFolderSet =
+      (inclusion.includedFolderIds ?? []).length > 0
+        ? new Set(inclusion.includedFolderIds)
+        : null;
 
-    return connections.filter((connection) => {
-      if (connection.isGroup) return false;
+    return leafSourceCatalog.filter((connection) => {
       if (
         includedProtocolSet &&
         !includedProtocolSet.has(connection.protocol)
       ) {
         return false;
       }
-      if (includedIdSet && !includedIdSet.has(connection.id)) return false;
+      if (includedIdSet && !includedIdSet.has(connection.key)) return false;
+      if (
+        includedFolderSet &&
+        !connection.ancestorKeys.some((key) => includedFolderSet.has(key))
+      ) {
+        return false;
+      }
       if (
         includedTextTagSet &&
         !(connection.tags ?? []).some((tag) => includedTextTagSet.has(tag))
@@ -195,8 +411,55 @@ const CloneTab: React.FC<CloneTabProps> = ({
         return false;
       }
       return true;
-    }).length;
-  }, [connections, inclusion]);
+    });
+  }, [leafSourceCatalog, inclusion]);
+
+  const previewCount = previewLeafItems.length;
+
+  const folderPreviewCount = useMemo(() => {
+    if (!inclusion.includeConnections || !inclusion.includeFolderItems) return 0;
+    const includedFolderSet =
+      (inclusion.includedFolderIds ?? []).length > 0
+        ? new Set(inclusion.includedFolderIds)
+        : null;
+
+    if (inclusion.includeEmptyFolders) {
+      const selectedFolderAncestorKeys = new Set<string>();
+      if (includedFolderSet) {
+        folderSourceCatalog.forEach((folder) => {
+          if (includedFolderSet.has(folder.key)) {
+            folder.ancestorKeys.forEach((key) =>
+              selectedFolderAncestorKeys.add(key),
+            );
+          }
+        });
+      }
+
+      return folderSourceCatalog.filter((folder) => {
+        if (!includedFolderSet) return true;
+        return (
+          includedFolderSet.has(folder.key) ||
+          selectedFolderAncestorKeys.has(folder.key) ||
+          folder.ancestorKeys.some((key) => includedFolderSet.has(key))
+        );
+      }).length;
+    }
+
+    const ancestorKeys = new Set<string>();
+    previewLeafItems.forEach((connection) => {
+      connection.ancestorKeys.forEach((key) => ancestorKeys.add(key));
+    });
+    return folderSourceCatalog.filter((folder) => ancestorKeys.has(folder.key))
+      .length;
+  }, [folderSourceCatalog, inclusion, previewLeafItems]);
+
+  const previewItemCount = previewCount + folderPreviewCount;
+  const previewItemLabel = [
+    previewCount > 0 ? `${previewCount} connection(s)` : null,
+    folderPreviewCount > 0 ? `${folderPreviewCount} folder(s)` : null,
+  ]
+    .filter(Boolean)
+    .join(", ") || "0 items";
 
   // Validation gates for the action button.
   const targetOverlapsSource = targetDatabaseIds.some((id) =>
@@ -212,21 +475,31 @@ const CloneTab: React.FC<CloneTabProps> = ({
     targetDatabaseIds.length > 0 &&
     !targetOverlapsSource &&
     hasEnabledTarget &&
-    previewCount > 0;
+    (previewItemCount > 0 || sidecarPreviewCount > 0);
 
   const buttonLabel = (() => {
     if (isCloning) return "Cloning…";
     if (effectiveSourceIds.length === 0) return "Pick a source database";
     if (targetDatabaseIds.length === 0) return "Pick a target database";
-    if (previewCount === 0) return "Nothing to clone with this filter";
+    if (previewItemCount === 0 && sidecarPreviewCount === 0) {
+      return "Nothing to clone with this filter";
+    }
     if (targetOverlapsSource) return "Target overlaps with source";
     if (!hasEnabledTarget) return "Unlock target database to clone";
     if (targetDatabaseIds.length === 1) {
       const targetName =
         targetOptionsById.get(targetDatabaseIds[0])?.name ?? "target";
-      return `Clone ${previewCount} to ${targetName}`;
+      return `Clone ${
+        previewItemCount > 0
+          ? previewItemLabel
+          : `${sidecarPreviewCount} sidecar definition(s)`
+      } to ${targetName}`;
     }
-    return `Clone ${previewCount} to ${targetDatabaseIds.length} databases`;
+    return `Clone ${
+      previewItemCount > 0
+        ? previewItemLabel
+        : `${sidecarPreviewCount} sidecar definition(s)`
+    } to ${targetDatabaseIds.length} databases`;
   })();
 
   // ─── Render ─────────────────────────────────────────────────────
@@ -239,10 +512,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
         <p className="text-[var(--color-textSecondary)] mb-4">
           Copy connections from one or more source databases into another
           database (or several) in this app. Same filters as Export — but
-          the result lands in another database instead of a file. Global
-          sidecar settings (proxies, VPN profiles, tunnel chain
-          templates) are shared between databases and don't need to be
-          copied.
+          the result lands in another database instead of a file. Proxy,
+          VPN, and tunnel-chain definitions can be copied with the clone
+          and cloned connections will point to the copied definitions.
         </p>
       </div>
 
@@ -367,14 +639,16 @@ const CloneTab: React.FC<CloneTabProps> = ({
       <AccordionSection
         id="clone-filter"
         title="Filter"
-        description="Optionally narrow what gets cloned by protocol, tag, or color."
+        description="Optionally narrow what gets cloned by protocol, folder, tag, color, proxy, chain, or VPN."
         icon={Tags}
         open={openSections.filter}
         onToggle={() => toggle("filter")}
         dataTestId="clone-filter-section"
         badge={
           <span className="text-[var(--color-textMuted)]">
-            {previewCount} of {connections.filter((c) => !c.isGroup).length}
+            {isSourceCatalogLoading
+              ? "loading"
+              : `${previewItemCount} of ${sourceCatalog.length}`}
           </span>
         }
       >
@@ -400,12 +674,75 @@ const CloneTab: React.FC<CloneTabProps> = ({
             />
             Include empty folders
           </label>
-          <p className="text-xs text-[var(--color-textMuted)]">
-            Use the Export tab's filter controls if you need fine-grained
-            protocol / tag / color filtering — the same{" "}
-            <code>inclusion</code> shape is reused, so any inclusion you
-            set there flows through to Clone too.
-          </p>
+          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+            <input
+              type="checkbox"
+              checked={inclusion.includeTunnelChains}
+              onChange={(e) =>
+                updateInclusion({ includeTunnelChains: e.target.checked })
+              }
+            />
+            Clone proxy profiles, proxy chains, and tunnel chains
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+            <input
+              type="checkbox"
+              checked={inclusion.includeVpnData}
+              onChange={(e) =>
+                updateInclusion({ includeVpnData: e.target.checked })
+              }
+            />
+            Clone VPN connections
+          </label>
+          <InclusionProtocolFilter
+            inclusion={inclusion}
+            updateInclusion={updateInclusion}
+            availableProtocols={availableProtocols}
+            disabled={!inclusion.includeConnections}
+            dataTestId="clone-protocol-filter"
+          />
+          {isSourceCatalogLoading && (
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Loading source database items...
+            </p>
+          )}
+          <InclusionItemPickers
+            inclusion={inclusion}
+            updateInclusion={updateInclusion}
+            sectionsOpen={openSections}
+            onToggleSection={(section) => {
+              if (
+                section === "connections" ||
+                section === "folders" ||
+                section === "textTags" ||
+                section === "colorTags" ||
+                section === "proxyProfiles" ||
+                section === "proxyChains" ||
+                section === "vpnConnections"
+              ) {
+                toggle(section);
+              }
+            }}
+            visibleSections={[
+              "connections",
+              "folders",
+              "textTags",
+              "colorTags",
+              "proxyProfiles",
+              "proxyChains",
+              "vpnConnections",
+            ]}
+            connections={cloneConnectionOptions}
+            folders={cloneFolderOptions}
+            textTags={availableTextTags}
+            colorTagIds={availableColorTagIds}
+            proxyProfiles={inclusion.includeTunnelChains ? proxyProfileOptions : []}
+            proxyChains={inclusion.includeTunnelChains ? proxyChainOptions : []}
+            vpnConnections={inclusion.includeVpnData ? vpnConnectionOptions : []}
+            testIdPrefix="clone"
+            connectionEmptyLabel="No source connections are available for the selected source scope."
+            folderEmptyLabel="No source folders are available for the selected source scope."
+          />
         </div>
       </AccordionSection>
 
@@ -551,7 +888,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
         dataTestId="clone-preview-section"
         badge={
           <span className="text-[var(--color-textMuted)]">
-            {previewCount} connection(s)
+            {previewItemLabel}
           </span>
         }
       >
@@ -578,7 +915,11 @@ const CloneTab: React.FC<CloneTabProps> = ({
           </div>
           <div>
             <span className="text-[var(--color-text)]">Filter result</span>:{" "}
-            {previewCount} connection(s)
+            {previewItemLabel}
+          </div>
+          <div>
+            <span className="text-[var(--color-text)]">Sidecars</span>:{" "}
+            {sidecarPreviewCount} definition(s)
           </div>
         </div>
 
@@ -613,10 +954,16 @@ const CloneTab: React.FC<CloneTabProps> = ({
             {(cloneResult.renamed > 0 || cloneResult.skipped > 0) && (
               <div className="mt-1 text-[10px] opacity-80">
                 {cloneResult.renamed > 0 && `${cloneResult.renamed} renamed`}
-                {cloneResult.renamed > 0 && cloneResult.skipped > 0 && ", "}
-                {cloneResult.skipped > 0 && `${cloneResult.skipped} skipped`}
-              </div>
+              {cloneResult.renamed > 0 && cloneResult.skipped > 0 && ", "}
+              {cloneResult.skipped > 0 && `${cloneResult.skipped} skipped`}
+            </div>
             )}
+            {cloneResult.sidecarsCloned &&
+              cloneResult.sidecarsCloned.total > 0 && (
+                <div className="mt-1 text-[10px] opacity-80">
+                  {cloneResult.sidecarsCloned.total} sidecar definition(s) cloned
+                </div>
+              )}
           </div>
         )}
 

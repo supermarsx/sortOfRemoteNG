@@ -17,6 +17,7 @@ import {
   ImportVpnData,
   ImportTargetMode,
   CloneResult,
+  CloneSourceCatalogItem,
 } from '../../components/ImportExport/types';
 import {
   decryptWithPassword,
@@ -76,6 +77,7 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   includeCredentials: true,
   includeVpnData: true,
   includeTunnelChains: true,
+  includeSshTunnels: true,
   conflictPolicy: 'duplicate',
   addTags: '',
   switchToTargetDatabaseAfterImport: false,
@@ -154,6 +156,29 @@ interface ExportSidecars {
   proxyChains?: ReturnType<typeof proxyCollectionManager.getChains>;
 }
 
+type ExportProxyChain = NonNullable<ExportSidecars['proxyChains']>[number];
+type ExportTunnelChain = NonNullable<ExportSidecars['tunnelChainTemplates']>[number];
+
+interface CloneSidecarCounts {
+  total: number;
+  proxyProfiles: number;
+  proxyChains: number;
+  tunnelChains: number;
+  vpnConnections: number;
+}
+
+interface CloneSidecarResult {
+  connections: Connection[];
+  idMaps: {
+    proxyProfileIds: Map<string, string>;
+    proxyChainIds: Map<string, string>;
+    tunnelChainIds: Map<string, string>;
+    vpnConnectionIds: Map<string, string>;
+  };
+  counts: CloneSidecarCounts;
+  errors: string[];
+}
+
 interface ExportBuildResult {
   datasets: ExportDatabaseDataset[];
   options: ExportDatabaseOption[];
@@ -181,6 +206,13 @@ const createDefaultExportInclusion = (
   includeExportMetadata: settings.includeExportMetadataByDefault,
   includeDatabaseMetadata: settings.includeDatabaseMetadataByDefault,
   includedProtocols: [],
+  includedConnectionIds: [],
+  includedFolderIds: [],
+  includedTextTags: [],
+  includedColorTagIds: [],
+  includedProxyProfileIds: [],
+  includedProxyChainIds: [],
+  includedVpnConnectionIds: [],
 });
 
 const EXPORT_INVENTORY_COLUMNS: Array<{
@@ -305,6 +337,48 @@ const hasSecretishValue = (value: unknown, fieldName?: string): boolean => {
 const connectionHasCredentials = (connection: Connection): boolean =>
   hasSecretishValue(connection);
 
+const getConnectionSshTunnelLayers = (connection: Connection) =>
+  (connection.security?.tunnelChain ?? []).filter(
+    (layer) => layer.type === 'ssh-tunnel',
+  );
+
+const hasConnectionSshTunnel = (connection: Connection): boolean =>
+  Boolean(connection.security?.sshTunnel) ||
+  getConnectionSshTunnelLayers(connection).length > 0;
+
+const stripConnectionSshTunnels = (connection: Connection): Connection => {
+  if (!hasConnectionSshTunnel(connection) || !connection.security) {
+    return connection;
+  }
+
+  const nextSecurity: NonNullable<Connection['security']> = {
+    ...connection.security,
+  };
+  delete nextSecurity.sshTunnel;
+
+  if (nextSecurity.tunnelChain) {
+    const keptLayers = nextSecurity.tunnelChain.filter(
+      (layer) => layer.type !== 'ssh-tunnel',
+    );
+    if (keptLayers.length > 0) {
+      nextSecurity.tunnelChain = keptLayers;
+    } else {
+      delete nextSecurity.tunnelChain;
+    }
+  }
+
+  if (Object.keys(nextSecurity).length === 0) {
+    const next = { ...connection };
+    delete next.security;
+    return next;
+  }
+
+  return {
+    ...connection,
+    security: nextSecurity,
+  };
+};
+
 const redactSecretFields = <T,>(value: T, fieldName?: string): T | undefined => {
   const normalizedFieldName = fieldName ? normalizeSecretFieldName(fieldName) : '';
   if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
@@ -415,6 +489,25 @@ const getConnectionPath = (
   return names.join(' / ');
 };
 
+const getAncestorFolderIds = (
+  connection: Connection,
+  connectionsById: Map<string, Connection>,
+): string[] => {
+  const ids: string[] = [];
+  let parentId = connection.parentId;
+  const seen = new Set<string>();
+
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = connectionsById.get(parentId);
+    if (!parent?.isGroup) break;
+    ids.push(parent.id);
+    parentId = parent.parentId;
+  }
+
+  return ids;
+};
+
 const normalizeIncludedProtocols = (
   protocols: Connection['protocol'][] = [],
 ): Connection['protocol'][] => Array.from(new Set(protocols)).sort();
@@ -437,6 +530,10 @@ const filterConnectionsForExport = (
     (inclusion.includedConnectionIds ?? []).length > 0
       ? new Set(inclusion.includedConnectionIds)
       : null;
+  const includedFolderIdSet =
+    (inclusion.includedFolderIds ?? []).length > 0
+      ? new Set(inclusion.includedFolderIds)
+      : null;
   const includedTextTagSet =
     (inclusion.includedTextTags ?? []).length > 0
       ? new Set(inclusion.includedTextTags)
@@ -454,16 +551,46 @@ const filterConnectionsForExport = (
       (!includedTextTagSet ||
         (connection.tags ?? []).some((tag) => includedTextTagSet.has(tag))) &&
       (!includedColorTagIdSet ||
-        (connection.colorTag != null && includedColorTagIdSet.has(connection.colorTag))),
+        (connection.colorTag != null && includedColorTagIdSet.has(connection.colorTag))) &&
+      (!includedFolderIdSet ||
+        getAncestorFolderIds(connection, connectionsById).some((folderId) =>
+          includedFolderIdSet.has(folderId),
+        )),
   );
   const leafIds = new Set(leafConnections.map((connection) => connection.id));
   let keptFolderIds = new Set<string>();
 
   if (inclusion.includeFolderItems) {
     if (inclusion.includeEmptyFolders) {
-      keptFolderIds = new Set(
-        connections.filter((connection) => connection.isGroup).map((connection) => connection.id),
-      );
+      const selectedFolderAncestorIds = new Set<string>();
+      if (includedFolderIdSet) {
+        includedFolderIdSet.forEach((folderId) => {
+          const folder = connectionsById.get(folderId);
+          if (folder?.isGroup) {
+            getAncestorFolderIds(folder, connectionsById).forEach((id) =>
+              selectedFolderAncestorIds.add(id),
+            );
+          }
+        });
+      }
+
+      keptFolderIds = new Set();
+      connections
+        .filter((connection) => connection.isGroup)
+        .forEach((folder) => {
+          if (!includedFolderIdSet) {
+            keptFolderIds.add(folder.id);
+            return;
+          }
+          const ancestors = getAncestorFolderIds(folder, connectionsById);
+          if (
+            includedFolderIdSet.has(folder.id) ||
+            selectedFolderAncestorIds.has(folder.id) ||
+            ancestors.some((id) => includedFolderIdSet.has(id))
+          ) {
+            keptFolderIds.add(folder.id);
+          }
+        });
     } else {
       leafConnections.forEach((connection) => {
         let parentId = connection.parentId;
@@ -502,6 +629,117 @@ const prepareConnectionsForExport = (
     ? filteredConnections
     : filteredConnections.map(redactConnectionSecretsForExport);
 };
+
+const createEmptyCloneSidecarCounts = (): CloneSidecarCounts => ({
+  total: 0,
+  proxyProfiles: 0,
+  proxyChains: 0,
+  tunnelChains: 0,
+  vpnConnections: 0,
+});
+
+const collectConnectionSidecarReferences = (connections: Connection[]) => {
+  const proxyChainIds = new Set<string>();
+  const tunnelChainIds = new Set<string>();
+  const vpnConnectionIds = new Set<string>();
+
+  connections.forEach((connection) => {
+    if (connection.proxyChainId) proxyChainIds.add(connection.proxyChainId);
+    if (connection.tunnelChainId) tunnelChainIds.add(connection.tunnelChainId);
+    const legacyOpenVpnId = connection.security?.openvpn?.configId;
+    if (legacyOpenVpnId) vpnConnectionIds.add(legacyOpenVpnId);
+    connection.security?.tunnelChain?.forEach((layer) => {
+      const layerVpnId = layer.vpn?.configId;
+      if (layerVpnId) vpnConnectionIds.add(layerVpnId);
+    });
+  });
+
+  return { proxyChainIds, tunnelChainIds, vpnConnectionIds };
+};
+
+const remapConnectionSidecars = (
+  connection: Connection,
+  result: CloneSidecarResult,
+): Connection => {
+  let next: Connection = connection;
+  const proxyChainId = connection.proxyChainId
+    ? result.idMaps.proxyChainIds.get(connection.proxyChainId)
+    : undefined;
+  const tunnelChainId = connection.tunnelChainId
+    ? result.idMaps.tunnelChainIds.get(connection.tunnelChainId)
+    : undefined;
+  const legacyOpenVpnId = connection.security?.openvpn?.configId
+    ? result.idMaps.vpnConnectionIds.get(connection.security.openvpn.configId)
+    : undefined;
+
+  if (proxyChainId) next = { ...next, proxyChainId };
+  if (tunnelChainId) next = { ...next, tunnelChainId };
+  if (legacyOpenVpnId) {
+    next = {
+      ...next,
+      security: {
+        ...next.security,
+        openvpn: {
+          ...next.security?.openvpn,
+          enabled: next.security?.openvpn?.enabled ?? true,
+          configId: legacyOpenVpnId,
+        },
+      },
+    };
+  }
+
+  const tunnelChain = next.security?.tunnelChain;
+  if (tunnelChain?.some((layer) => layer.vpn?.configId)) {
+    next = {
+      ...next,
+      security: {
+        ...next.security,
+        tunnelChain: tunnelChain.map((layer) => {
+          const layerVpnId = layer.vpn?.configId
+            ? result.idMaps.vpnConnectionIds.get(layer.vpn.configId)
+            : undefined;
+          return layerVpnId
+            ? { ...layer, vpn: { ...layer.vpn, configId: layerVpnId } }
+            : layer;
+        }),
+      },
+    };
+  }
+
+  return next;
+};
+
+const remapProxyChain = (
+  chain: ExportProxyChain,
+  profileIds: Map<string, string>,
+  vpnConnectionIds: Map<string, string>,
+): ExportProxyChain => ({
+  ...chain,
+  layers: chain.layers.map((layer) => ({
+    ...layer,
+    proxyProfileId: layer.proxyProfileId
+      ? profileIds.get(layer.proxyProfileId) ?? layer.proxyProfileId
+      : layer.proxyProfileId,
+    vpnProfileId: layer.vpnProfileId
+      ? vpnConnectionIds.get(layer.vpnProfileId) ?? layer.vpnProfileId
+      : layer.vpnProfileId,
+  })),
+});
+
+const remapTunnelChain = (
+  chain: ExportTunnelChain,
+  vpnConnectionIds: Map<string, string>,
+): ExportTunnelChain => ({
+  ...chain,
+  layers: chain.layers.map((layer) => {
+    const mappedVpnId = layer.vpn?.configId
+      ? vpnConnectionIds.get(layer.vpn.configId)
+      : undefined;
+    return mappedVpnId
+      ? { ...layer, vpn: { ...layer.vpn, configId: mappedVpnId } }
+      : layer;
+  }),
+});
 
 const getOrCreateExportClientId = (): string => {
   const fallback = () => `sorng-client-${generateId()}`;
@@ -563,6 +801,10 @@ const detectXmlMetadata = (content: string): ImportSourceMetadata['xml'] => {
 const buildImportPreviewItems = (
   connections: Connection[],
   existingConnections: Connection[],
+  sidecars?: {
+    vpnConnections?: ImportVpnData;
+    tunnelChainTemplates?: ImportResult['tunnelChainTemplates'];
+  },
 ): ImportPreviewItem[] => {
   const importedById = new Map(
     connections.map((connection, index) => [
@@ -582,7 +824,7 @@ const buildImportPreviewItems = (
     }
   });
 
-  return connections.map((connection, index) => {
+  const connectionItems: ImportPreviewItem[] = connections.map((connection, index) => {
     const connectionId = safeString(connection.id) || `import-${index + 1}`;
     const name = safeString(connection.name);
     const hostname = safeString(connection.hostname);
@@ -674,6 +916,151 @@ const buildImportPreviewItems = (
       issues,
     };
   });
+
+  const sidecarItems: ImportPreviewItem[] = [];
+  let sourceIndex = connectionItems.length + 1;
+
+  connections.forEach((connection, index) => {
+    if (connection.isGroup || !hasConnectionSshTunnel(connection)) return;
+
+    const connectionId = safeString(connection.id) || `import-${index + 1}`;
+    const sshTunnelLayers = getConnectionSshTunnelLayers(connection);
+    const firstLayer = sshTunnelLayers[0];
+    const firstTunnel = firstLayer?.sshTunnel;
+    const legacyTunnel = connection.security?.sshTunnel;
+    const issues: ImportPreviewItem['issues'] = [];
+
+    if (
+      sshTunnelLayers.length > 0 &&
+      !firstTunnel?.host &&
+      !firstTunnel?.connectionId
+    ) {
+      issues.push({
+        severity: 'error',
+        code: 'unresolved_ssh_tunnel',
+        field: 'security.tunnelChain',
+        message:
+          'The SSH tunnel server could not be resolved from the source file.',
+      });
+    }
+
+    const importable = !issues.some((issue) => issue.severity === 'error');
+    sidecarItems.push({
+      id: `sshTunnel:${connectionId}:${index}:${sourceIndex}`,
+      kind: 'sshTunnel',
+      sourceIndex,
+      sourcePath: getConnectionPath(connection, importedById),
+      name: `${safeString(connection.name) || 'Unnamed item'} SSH tunnel`,
+      protocol: 'ssh',
+      hostname:
+        firstTunnel?.host ||
+        firstTunnel?.connectionId ||
+        legacyTunnel?.connectionId ||
+        '',
+      port: firstTunnel?.port || undefined,
+      username: firstTunnel?.username,
+      parentName: safeString(connection.name) || undefined,
+      tags: safeTags(connection.tags),
+      connection,
+      sshTunnelConnectionId: connectionId,
+      sshTunnelLayers,
+      importable,
+      selectedByDefault: importable,
+      conflictStatus: 'none',
+      issues,
+    });
+    sourceIndex += 1;
+  });
+
+  const appendVpnItems = <K extends keyof ImportVpnData>(
+    vpnType: K,
+    label: string,
+    items: ImportVpnData[K],
+  ) => {
+    items.forEach((vpnConnection, index) => {
+      const name = safeString(vpnConnection.name);
+      const issues: ImportPreviewItem['issues'] = [];
+      if (!name.trim()) {
+        issues.push({
+          severity: 'error',
+          code: 'missing_name',
+          field: 'name',
+          message: 'Name is required.',
+        });
+      }
+      if (!vpnConnection.config) {
+        issues.push({
+          severity: 'error',
+          code: 'missing_config',
+          field: 'config',
+          message: 'VPN configuration is required.',
+        });
+      }
+      const importable = !issues.some((issue) => issue.severity === 'error');
+      sidecarItems.push({
+        id: `vpn:${vpnType}:${safeString(vpnConnection.id) || index}:${sourceIndex}`,
+        kind: 'vpn',
+        sourceIndex,
+        sourcePath: `VPN / ${label}`,
+        name: name || `${label} connection`,
+        parentName: label,
+        tags: safeTags((vpnConnection as { tags?: unknown }).tags),
+        vpnType,
+        vpnConnection,
+        importable,
+        selectedByDefault: importable,
+        conflictStatus: 'none',
+        issues,
+      });
+      sourceIndex += 1;
+    });
+  };
+
+  if (sidecars?.vpnConnections) {
+    appendVpnItems('openvpn', 'OpenVPN', sidecars.vpnConnections.openvpn);
+    appendVpnItems('wireguard', 'WireGuard', sidecars.vpnConnections.wireguard);
+    appendVpnItems('tailscale', 'Tailscale', sidecars.vpnConnections.tailscale);
+    appendVpnItems('zerotier', 'ZeroTier', sidecars.vpnConnections.zerotier);
+  }
+
+  sidecars?.tunnelChainTemplates?.forEach((chain, index) => {
+    const name = safeString(chain.name);
+    const issues: ImportPreviewItem['issues'] = [];
+    if (!name.trim()) {
+      issues.push({
+        severity: 'error',
+        code: 'missing_name',
+        field: 'name',
+        message: 'Name is required.',
+      });
+    }
+    if (!Array.isArray(chain.layers)) {
+      issues.push({
+        severity: 'error',
+        code: 'missing_layers',
+        field: 'layers',
+        message: 'Tunnel chain layers are required.',
+      });
+    }
+    const importable = !issues.some((issue) => issue.severity === 'error');
+    sidecarItems.push({
+      id: `tunnelChain:${safeString(chain.id) || index}:${sourceIndex}`,
+      kind: 'tunnelChain',
+      sourceIndex,
+      sourcePath: 'Tunnel chains',
+      name: name || 'Tunnel chain',
+      parentName: 'Tunnel chain template',
+      tags: safeTags(chain.tags),
+      tunnelChainTemplate: chain,
+      importable,
+      selectedByDefault: importable,
+      conflictStatus: 'none',
+      issues,
+    });
+    sourceIndex += 1;
+  });
+
+  return [...connectionItems, ...sidecarItems];
 };
 
 const buildImportAnalysis = (params: {
@@ -751,6 +1138,8 @@ const buildImportAnalysis = (params: {
           params.vpnConnections.zerotier.length
         : 0,
       tunnelChains: params.tunnelChainTemplates?.length || 0,
+      sshTunnels: params.previewItems.filter((item) => item.kind === 'sshTunnel')
+        .length,
       warnings,
       errors,
       conflicts,
@@ -799,6 +1188,8 @@ const filterImportPreviewItems = (
       item.username,
       item.sourcePath,
       item.protocol,
+      item.kind,
+      item.vpnType,
       ...item.tags,
       ...item.issues.map((issue) => issue.message),
     ]
@@ -884,6 +1275,11 @@ export function useImportExport({
   const [cloneDatabaseOptions, setCloneDatabaseOptions] = useState<
     ExportDatabaseOption[]
   >([]);
+  const [cloneSourceCatalog, setCloneSourceCatalog] = useState<
+    CloneSourceCatalogItem[]
+  >([]);
+  const [isCloneSourceCatalogLoading, setIsCloneSourceCatalogLoading] =
+    useState<boolean>(false);
   const [isCloning, setIsCloning] = useState<boolean>(false);
   const [cloneResult, setCloneResult] = useState<CloneResult | null>(null);
 
@@ -917,6 +1313,11 @@ export function useImportExport({
   );
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentConnectionsRef = useRef<Connection[]>(state.connections);
+
+  useEffect(() => {
+    currentConnectionsRef.current = state.connections;
+  }, [state.connections]);
 
   // In-app password prompt state. `pendingPasswordRequest` carries the
   // resolver for the awaiting import flow; the dialog UI lives in
@@ -1133,6 +1534,102 @@ export function useImportExport({
     setCloneDatabaseOptions(options);
   }, [databaseManager, state.connections.length]);
 
+  const getEffectiveCloneSourceIds = useCallback(
+    (
+      options: ExportDatabaseOption[] = cloneDatabaseOptions,
+      mode: ExportScopeMode = cloneSourceMode,
+    ): string[] => {
+      const exportableIds = new Set(
+        options.filter((option) => option.isExportable).map((option) => option.id),
+      );
+      if (mode === 'current') {
+        const current = options.find(
+          (option) => option.isCurrent && option.isExportable,
+        );
+        return current ? [current.id] : [];
+      }
+      if (mode === 'all') {
+        return Array.from(exportableIds);
+      }
+      return selectedCloneSourceDatabaseIds.filter((id) => exportableIds.has(id));
+    },
+    [cloneDatabaseOptions, cloneSourceMode, selectedCloneSourceDatabaseIds],
+  );
+
+  const buildCloneSourceCatalog = useCallback(
+    async (sourceIds: string[]): Promise<CloneSourceCatalogItem[]> => {
+      const currentDatabase = databaseManager.getCurrentDatabase();
+      const optionsById = new Map(
+        cloneDatabaseOptions.map((option) => [option.id, option]),
+      );
+      const catalog: CloneSourceCatalogItem[] = [];
+
+      for (const databaseId of sourceIds) {
+        const option = optionsById.get(databaseId);
+        const databaseName = option?.name ?? databaseId;
+        let sourceConnections: Connection[] = [];
+
+        if (databaseId === currentDatabase?.id) {
+          sourceConnections = currentConnectionsRef.current;
+        } else {
+          try {
+            const snapshot =
+              await databaseManager.readExportableDatabaseSnapshot(databaseId);
+            sourceConnections = snapshot?.connections ?? [];
+          } catch (e) {
+            console.warn(
+              `[clone] Failed to read snapshot of source database ${databaseId}:`,
+              e,
+            );
+          }
+        }
+
+        const byId = new Map(
+          sourceConnections.map((connection) => [connection.id, connection]),
+        );
+        sourceConnections.forEach((connection) => {
+          const ancestorKeys = getAncestorFolderIds(connection, byId).map(
+            (ancestorId) => `${databaseId}:${ancestorId}`,
+          );
+          catalog.push({
+            key: `${databaseId}:${connection.id}`,
+            sourceDatabaseId: databaseId,
+            sourceDatabaseName: databaseName,
+            connectionId: connection.id,
+            name: safeString(connection.name) || 'Unnamed item',
+            path: getConnectionPath(connection, byId),
+            protocol: connection.protocol,
+            hostname: connection.hostname,
+            tags: safeTags(connection.tags),
+            colorTag: connection.colorTag,
+            isGroup: Boolean(connection.isGroup),
+            parentId: connection.parentId,
+            ancestorKeys,
+          });
+        });
+      }
+
+      return catalog;
+    },
+    [cloneDatabaseOptions, databaseManager],
+  );
+
+  const refreshCloneSourceCatalog = useCallback(async () => {
+    const sourceIds = getEffectiveCloneSourceIds();
+    if (sourceIds.length === 0) {
+      setCloneSourceCatalog([]);
+      return;
+    }
+
+    setIsCloneSourceCatalogLoading(true);
+    try {
+      const catalog = await buildCloneSourceCatalog(sourceIds);
+      setCloneSourceCatalog(catalog);
+    } finally {
+      setIsCloneSourceCatalogLoading(false);
+    }
+  }, [buildCloneSourceCatalog, getEffectiveCloneSourceIds]);
+
   /**
    * Drive an inline unlock for an encrypted database from any of the
    * three pickers (Export selected, Import target, Clone source /
@@ -1231,6 +1728,11 @@ export function useImportExport({
     refreshImportDatabaseOptions,
     refreshCloneDatabaseOptions,
   ]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void refreshCloneSourceCatalog();
+  }, [isOpen, refreshCloneSourceCatalog]);
 
   // ── Helpers ──────────────────────────────────────────────────
 
@@ -1587,10 +2089,13 @@ export function useImportExport({
     return { datasets, options, effectiveDatabaseIds: selectedIds };
   };
 
-  const loadExportSidecars = async (): Promise<ExportSidecars> => {
+  const loadSidecarsForInclusion = async (
+    inclusion: ExportInclusionConfig,
+    options?: { includeProxyCollectionsWhenAll?: boolean },
+  ): Promise<ExportSidecars> => {
     const sidecars: ExportSidecars = {};
 
-    if (includeVpnData) {
+    if (inclusion.includeVpnData) {
       const proxyMgr = ProxyOpenVPNManager.getInstance();
       const [vpnOpenVPN, vpnWireGuard, vpnTailscale, vpnZeroTier] =
         await Promise.allSettled([
@@ -1601,8 +2106,8 @@ export function useImportExport({
         ]);
 
       const includedVpnIds =
-        (exportInclusion.includedVpnConnectionIds ?? []).length > 0
-          ? new Set(exportInclusion.includedVpnConnectionIds)
+        (inclusion.includedVpnConnectionIds ?? []).length > 0
+          ? new Set(inclusion.includedVpnConnectionIds)
           : null;
       const keepVpn = <T extends { id?: string | null }>(items: T[]): T[] =>
         includedVpnIds == null
@@ -1617,10 +2122,10 @@ export function useImportExport({
       };
     }
 
-    if (includeTunnelChains) {
+    if (inclusion.includeTunnelChains) {
       const includedChainIds =
-        (exportInclusion.includedProxyChainIds ?? []).length > 0
-          ? new Set(exportInclusion.includedProxyChainIds)
+        (inclusion.includedProxyChainIds ?? []).length > 0
+          ? new Set(inclusion.includedProxyChainIds)
           : null;
       const allChains = proxyCollectionManager.getTunnelChains();
       sidecars.tunnelChainTemplates = includedChainIds
@@ -1629,14 +2134,19 @@ export function useImportExport({
     }
 
     const includedProxyProfileIds =
-      (exportInclusion.includedProxyProfileIds ?? []).length > 0
-        ? new Set(exportInclusion.includedProxyProfileIds)
+      (inclusion.includedProxyProfileIds ?? []).length > 0
+        ? new Set(inclusion.includedProxyProfileIds)
         : null;
     const includedProxyChainIds =
-      (exportInclusion.includedProxyChainIds ?? []).length > 0
-        ? new Set(exportInclusion.includedProxyChainIds)
+      (inclusion.includedProxyChainIds ?? []).length > 0
+        ? new Set(inclusion.includedProxyChainIds)
         : null;
-    if (includedProxyProfileIds || includedProxyChainIds) {
+    if (
+      inclusion.includeTunnelChains &&
+      (includedProxyProfileIds ||
+        includedProxyChainIds ||
+        options?.includeProxyCollectionsWhenAll)
+    ) {
       // Stash proxy collections in the sidecar payload so the exporter
       // picks them up alongside everything else.
       const allProfiles = proxyCollectionManager.getProfiles();
@@ -1650,6 +2160,213 @@ export function useImportExport({
     }
 
     return sidecars;
+  };
+
+  const loadExportSidecars = async (): Promise<ExportSidecars> =>
+    loadSidecarsForInclusion(exportInclusion);
+
+  const cloneSidecarsForConnections = async (
+    connections: Connection[],
+    inclusion: ExportInclusionConfig,
+  ): Promise<CloneSidecarResult> => {
+    const sidecars = await loadSidecarsForInclusion(inclusion, {
+      includeProxyCollectionsWhenAll: true,
+    });
+    const result: CloneSidecarResult = {
+      connections,
+      idMaps: {
+        proxyProfileIds: new Map(),
+        proxyChainIds: new Map(),
+        tunnelChainIds: new Map(),
+        vpnConnectionIds: new Map(),
+      },
+      counts: createEmptyCloneSidecarCounts(),
+      errors: [],
+    };
+
+    const references = collectConnectionSidecarReferences(connections);
+    const profileById = new Map(
+      (sidecars.proxyProfiles ?? []).map((profile) => [profile.id, profile]),
+    );
+    const proxyChainById = new Map(
+      (sidecars.proxyChains ?? []).map((chain) => [chain.id, chain]),
+    );
+    const tunnelChainById = new Map(
+      (sidecars.tunnelChainTemplates ?? []).map((chain) => [chain.id, chain]),
+    );
+
+    if (inclusion.includeTunnelChains) {
+      references.proxyChainIds.forEach((id) => {
+        const chain = proxyCollectionManager.getChain(id);
+        if (chain) proxyChainById.set(id, chain);
+      });
+      references.tunnelChainIds.forEach((id) => {
+        const chain = proxyCollectionManager.getTunnelChain(id);
+        if (chain) tunnelChainById.set(id, chain);
+      });
+    }
+
+    proxyChainById.forEach((chain) => {
+      chain.layers.forEach((layer) => {
+        if (layer.proxyProfileId && !profileById.has(layer.proxyProfileId)) {
+          const profile = proxyCollectionManager.getProfile(layer.proxyProfileId);
+          if (profile) profileById.set(layer.proxyProfileId, profile);
+        }
+        if (layer.vpnProfileId) references.vpnConnectionIds.add(layer.vpnProfileId);
+      });
+    });
+    tunnelChainById.forEach((chain) => {
+      chain.layers.forEach((layer) => {
+        if (layer.vpn?.configId) references.vpnConnectionIds.add(layer.vpn.configId);
+      });
+    });
+
+    const selectedVpnById = new Map<
+      string,
+      { type: keyof ImportVpnData; connection: ImportVpnData[keyof ImportVpnData][number] }
+    >();
+    const addVpnItems = <T extends ImportVpnData[keyof ImportVpnData][number]>(
+      type: keyof ImportVpnData,
+      items: T[] | undefined,
+    ) => {
+      (items ?? []).forEach((connection) => {
+        if (connection.id) selectedVpnById.set(connection.id, { type, connection });
+      });
+    };
+    addVpnItems('openvpn', sidecars.vpnConnections?.openvpn);
+    addVpnItems('wireguard', sidecars.vpnConnections?.wireguard);
+    addVpnItems('tailscale', sidecars.vpnConnections?.tailscale);
+    addVpnItems('zerotier', sidecars.vpnConnections?.zerotier);
+
+    if (inclusion.includeVpnData) {
+      const proxyMgr = ProxyOpenVPNManager.getInstance();
+      const [openvpn, wireguard, tailscale, zerotier] = await Promise.allSettled([
+        proxyMgr.listOpenVPNConnections(),
+        proxyMgr.listWireGuardConnections(),
+        proxyMgr.listTailscaleConnections(),
+        proxyMgr.listZeroTierConnections(),
+      ]);
+      const addReferenced = <T extends ImportVpnData[keyof ImportVpnData][number]>(
+        type: keyof ImportVpnData,
+        response: PromiseSettledResult<T[]>,
+      ) => {
+        if (response.status !== 'fulfilled') return;
+        response.value.forEach((connection) => {
+          if (
+            connection.id &&
+            references.vpnConnectionIds.has(connection.id) &&
+            !selectedVpnById.has(connection.id)
+          ) {
+            selectedVpnById.set(connection.id, { type, connection });
+          }
+        });
+      };
+      addReferenced('openvpn', openvpn);
+      addReferenced('wireguard', wireguard);
+      addReferenced('tailscale', tailscale);
+      addReferenced('zerotier', zerotier);
+    }
+
+    for (const profile of profileById.values()) {
+      try {
+        const created = await proxyCollectionManager.createProfile(
+          profile.name,
+          { ...profile.config },
+          {
+            description: profile.description,
+            tags: profile.tags ? [...profile.tags] : undefined,
+            isDefault: false,
+          },
+        );
+        result.idMaps.proxyProfileIds.set(profile.id, created.id);
+        result.counts.proxyProfiles++;
+      } catch (e) {
+        result.errors.push(
+          `Proxy profile "${profile.name}": ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    const proxyMgr = ProxyOpenVPNManager.getInstance();
+    for (const { type, connection } of selectedVpnById.values()) {
+      try {
+        let createdId: string;
+        if (type === 'openvpn') {
+          const typed = connection as ImportVpnData['openvpn'][number];
+          createdId = await proxyMgr.createOpenVPNConnection(typed.name, typed.config);
+        } else if (type === 'wireguard') {
+          const typed = connection as ImportVpnData['wireguard'][number];
+          createdId = await proxyMgr.createWireGuardConnection(typed.name, typed.config);
+        } else if (type === 'tailscale') {
+          const typed = connection as ImportVpnData['tailscale'][number];
+          createdId = await proxyMgr.createTailscaleConnection(typed.name, typed.config);
+        } else {
+          const typed = connection as ImportVpnData['zerotier'][number];
+          createdId = await proxyMgr.createZeroTierConnection(typed.name, typed.config);
+        }
+        result.idMaps.vpnConnectionIds.set(connection.id, createdId);
+        result.counts.vpnConnections++;
+      } catch (e) {
+        result.errors.push(
+          `VPN connection "${connection.name}": ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    for (const chain of proxyChainById.values()) {
+      try {
+        const remapped = remapProxyChain(
+          chain,
+          result.idMaps.proxyProfileIds,
+          result.idMaps.vpnConnectionIds,
+        );
+        const created = await proxyCollectionManager.createChain(
+          remapped.name,
+          remapped.layers.map((layer) => ({ ...layer })),
+          {
+            description: remapped.description,
+            tags: remapped.tags ? [...remapped.tags] : undefined,
+          },
+        );
+        result.idMaps.proxyChainIds.set(chain.id, created.id);
+        result.counts.proxyChains++;
+      } catch (e) {
+        result.errors.push(
+          `Proxy chain "${chain.name}": ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    for (const chain of tunnelChainById.values()) {
+      try {
+        const remapped = remapTunnelChain(chain, result.idMaps.vpnConnectionIds);
+        const created = await proxyCollectionManager.createTunnelChain(
+          remapped.name,
+          remapped.layers.map((layer) => ({ ...layer })),
+          {
+            description: remapped.description,
+            tags: remapped.tags ? [...remapped.tags] : undefined,
+          },
+        );
+        result.idMaps.tunnelChainIds.set(chain.id, created.id);
+        result.counts.tunnelChains++;
+      } catch (e) {
+        result.errors.push(
+          `Tunnel chain "${chain.name}": ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    result.counts.total =
+      result.counts.proxyProfiles +
+      result.counts.proxyChains +
+      result.counts.tunnelChains +
+      result.counts.vpnConnections;
+    result.connections = connections.map((connection) =>
+      remapConnectionSidecars(connection, result),
+    );
+
+    return result;
   };
 
   const buildDatabaseExportMetadata = (dataset: ExportDatabaseDataset) => ({
@@ -2627,6 +3344,7 @@ ${tableRows}
       const previewItems = buildImportPreviewItems(
         connections,
         targetConnections,
+        { vpnConnections, tunnelChainTemplates },
       );
       const analysis = buildImportAnalysis({
         filename,
@@ -2837,11 +3555,15 @@ ${tableRows}
 
   const confirmImport = async (filename?: string) => {
     if (importResult && importResult.success) {
-      const selectedItems = importResult.previewItems
+      const selectedPreviewItems = importResult.previewItems
         ? importResult.previewItems.filter(
+            (item) => selectedPreviewIds.has(item.id) && item.importable,
+          )
+        : null;
+      const selectedItems = selectedPreviewItems
+        ? selectedPreviewItems.filter(
             (item) =>
-              selectedPreviewIds.has(item.id) &&
-              item.importable &&
+              (item.kind === 'connection' || item.kind === 'folder') &&
               item.connection,
           )
         : importResult.connections.map((connection, index) => ({
@@ -2849,6 +3571,15 @@ ${tableRows}
             connection,
             conflictStatus: 'none' as const,
           }));
+      const hasSshTunnelPreviewRows = Boolean(
+        importResult.previewItems?.some((item) => item.kind === 'sshTunnel'),
+      );
+      const selectedSshTunnelConnectionIds = new Set<string>(
+        (selectedPreviewItems
+          ?.filter((item) => item.kind === 'sshTunnel')
+          .map((item) => item.sshTunnelConnectionId || item.connection?.id)
+          .filter((id): id is string => Boolean(id))) ?? [],
+      );
 
       const addTags = splitTags(importOptions.addTags);
 
@@ -2864,10 +3595,18 @@ ${tableRows}
         .filter((item) => Boolean(item.connection))
         .map((item) => {
           const connection = item.connection as Connection;
+          const keepSshTunnels =
+            !hasConnectionSshTunnel(connection) ||
+            (importOptions.includeSshTunnels &&
+              (!hasSshTunnelPreviewRows ||
+                selectedSshTunnelConnectionIds.has(connection.id)));
+          const connectionWithSelectedSshTunnels = keepSshTunnels
+            ? connection
+            : stripConnectionSshTunnels(connection);
           return {
             connection: importOptions.includeCredentials
-              ? connection
-              : stripConnectionCredentials(connection),
+              ? connectionWithSelectedSshTunnels
+              : stripConnectionCredentials(connectionWithSelectedSshTunnels),
             conflictStatus: item.conflictStatus,
           };
         });
@@ -2878,6 +3617,9 @@ ${tableRows}
         preserveFolders: importOptions.preserveFolders,
       });
       const connectionsToImport = applied.remapped;
+      const sshTunnelsImportedCount = importOptions.includeSshTunnels
+        ? connectionsToImport.filter(hasConnectionSshTunnel).length
+        : 0;
 
       const currentDatabase = databaseManager.getCurrentDatabase();
       const targetDatabases = getImportTargetDatabases();
@@ -2906,52 +3648,62 @@ ${tableRows}
         }
       }
 
-      // Restore VPN connections
+      const selectedVpnItems =
+        selectedPreviewItems?.filter(
+          (item) => item.kind === 'vpn' && item.vpnType && item.vpnConnection,
+        ) ?? [];
+      const selectedTunnelChainItems =
+        selectedPreviewItems?.filter(
+          (item) => item.kind === 'tunnelChain' && item.tunnelChainTemplate,
+        ) ?? [];
+
+      // Restore selected VPN connections
       let vpnImportedCount = 0;
-      if (importOptions.includeVpnData && importResult.vpnConnections) {
+      if (importOptions.includeVpnData && selectedVpnItems.length > 0) {
         const proxyMgr = ProxyOpenVPNManager.getInstance();
 
-        for (const conn of importResult.vpnConnections.openvpn) {
+        for (const item of selectedVpnItems) {
+          const conn = item.vpnConnection;
+          if (!conn || !item.vpnType) continue;
           try {
-            await proxyMgr.createOpenVPNConnection(conn.name, conn.config);
+            if (item.vpnType === 'openvpn') {
+              const openvpn = conn as ImportVpnData['openvpn'][number];
+              await proxyMgr.createOpenVPNConnection(openvpn.name, openvpn.config);
+            } else if (item.vpnType === 'wireguard') {
+              const wireguard = conn as ImportVpnData['wireguard'][number];
+              await proxyMgr.createWireGuardConnection(
+                wireguard.name,
+                wireguard.config,
+              );
+            } else if (item.vpnType === 'tailscale') {
+              const tailscale = conn as ImportVpnData['tailscale'][number];
+              await proxyMgr.createTailscaleConnection(
+                tailscale.name,
+                tailscale.config,
+              );
+            } else if (item.vpnType === 'zerotier') {
+              const zerotier = conn as ImportVpnData['zerotier'][number];
+              await proxyMgr.createZeroTierConnection(
+                zerotier.name,
+                zerotier.config,
+              );
+            }
             vpnImportedCount++;
           } catch (e) {
-            console.warn('VPN import skip (OpenVPN):', e);
-          }
-        }
-        for (const conn of importResult.vpnConnections.wireguard) {
-          try {
-            await proxyMgr.createWireGuardConnection(conn.name, conn.config);
-            vpnImportedCount++;
-          } catch (e) {
-            console.warn('VPN import skip (WireGuard):', e);
-          }
-        }
-        for (const conn of importResult.vpnConnections.tailscale) {
-          try {
-            await proxyMgr.createTailscaleConnection(conn.name, conn.config);
-            vpnImportedCount++;
-          } catch (e) {
-            console.warn('VPN import skip (Tailscale):', e);
-          }
-        }
-        for (const conn of importResult.vpnConnections.zerotier) {
-          try {
-            await proxyMgr.createZeroTierConnection(conn.name, conn.config);
-            vpnImportedCount++;
-          } catch (e) {
-            console.warn('VPN import skip (ZeroTier):', e);
+            console.warn(`VPN import skip (${item.vpnType}):`, e);
           }
         }
       }
 
-      // Restore tunnel chain templates
+      // Restore selected tunnel chain templates
       let tunnelChainsImportedCount = 0;
       if (
         importOptions.includeTunnelChains &&
-        importResult.tunnelChainTemplates?.length
+        selectedTunnelChainItems.length > 0
       ) {
-        for (const chain of importResult.tunnelChainTemplates) {
+        for (const item of selectedTunnelChainItems) {
+          const chain = item.tunnelChainTemplate;
+          if (!chain) continue;
           try {
             await proxyCollectionManager.createTunnelChain(
               chain.name,
@@ -2975,6 +3727,9 @@ ${tableRows}
       }
       if (tunnelChainsImportedCount > 0) {
         parts.push(`${tunnelChainsImportedCount} tunnel chain(s)`);
+      }
+      if (sshTunnelsImportedCount > 0) {
+        parts.push(`${sshTunnelsImportedCount} SSH tunnel(s)`);
       }
       const summary = parts.join(', ') || '0 items';
       const singleTarget = targetDatabases.length === 1 ? targetDatabases[0] : null;
@@ -3034,30 +3789,7 @@ ${tableRows}
     if (isCloning) return null;
 
     // ── Resolve sources ─────────────────────────────────────────
-    const exportableIds = new Set(
-      cloneDatabaseOptions
-        .filter((option) => option.isExportable)
-        .map((option) => option.id),
-    );
-    let sourceIds: string[] = [];
-    switch (cloneSourceMode) {
-      case 'current': {
-        const current = cloneDatabaseOptions.find(
-          (option) => option.isCurrent && option.isExportable,
-        );
-        sourceIds = current ? [current.id] : [];
-        break;
-      }
-      case 'all':
-        sourceIds = [...exportableIds];
-        break;
-      case 'selected':
-      default:
-        sourceIds = selectedCloneSourceDatabaseIds.filter((id) =>
-          exportableIds.has(id),
-        );
-        break;
-    }
+    const sourceIds = getEffectiveCloneSourceIds();
     if (sourceIds.length === 0) {
       toast.error('Pick at least one source database before cloning.');
       return null;
@@ -3097,14 +3829,20 @@ ${tableRows}
     try {
       // ── Collect + filter source connections ──────────────────
       const currentDatabase = databaseManager.getCurrentDatabase();
-      const sourceConnections: Connection[] = [];
+      const sourceDatasets: Array<{
+        databaseId: string;
+        connections: Connection[];
+      }> = [];
       for (const id of sourceIds) {
         if (id === currentDatabase?.id) {
-          sourceConnections.push(...state.connections);
+          sourceDatasets.push({ databaseId: id, connections: state.connections });
         } else {
           try {
             const snapshot = await databaseManager.readExportableDatabaseSnapshot(id);
-            sourceConnections.push(...(snapshot?.connections ?? []));
+            sourceDatasets.push({
+              databaseId: id,
+              connections: snapshot?.connections ?? [],
+            });
           } catch (e) {
             console.warn(
               `[clone] Failed to read snapshot of source database ${id}:`,
@@ -3114,8 +3852,57 @@ ${tableRows}
         }
       }
 
-      const filtered = filterConnectionsForExport(sourceConnections, cloneInclusion);
-      if (filtered.length === 0) {
+      const selectedConnectionIds = cloneInclusion.includedConnectionIds ?? [];
+      const usesQualifiedConnectionIds = selectedConnectionIds.some((id) =>
+        id.includes(':'),
+      );
+      const selectedConnectionIdSet = new Set(selectedConnectionIds);
+      const selectedFolderIds = cloneInclusion.includedFolderIds ?? [];
+      const usesQualifiedFolderIds = selectedFolderIds.some((id) =>
+        id.includes(':'),
+      );
+      const selectedFolderIdSet = new Set(selectedFolderIds);
+      const filtered = sourceDatasets.flatMap((dataset) => {
+        if (!usesQualifiedConnectionIds && !usesQualifiedFolderIds) {
+          return filterConnectionsForExport(dataset.connections, cloneInclusion);
+        }
+
+        const sourceSelectedIds = usesQualifiedConnectionIds
+          ? dataset.connections
+              .filter((connection) =>
+                selectedConnectionIdSet.has(`${dataset.databaseId}:${connection.id}`),
+              )
+              .map((connection) => connection.id)
+          : selectedConnectionIds;
+        const sourceSelectedFolderIds = usesQualifiedFolderIds
+          ? dataset.connections
+              .filter((connection) =>
+                selectedFolderIdSet.has(`${dataset.databaseId}:${connection.id}`),
+              )
+              .map((connection) => connection.id)
+          : selectedFolderIds;
+        if (
+          (usesQualifiedConnectionIds &&
+            selectedConnectionIds.length > 0 &&
+            sourceSelectedIds.length === 0) ||
+          (usesQualifiedFolderIds &&
+            selectedFolderIds.length > 0 &&
+            sourceSelectedFolderIds.length === 0)
+        ) {
+          return [];
+        }
+        return filterConnectionsForExport(dataset.connections, {
+          ...cloneInclusion,
+          includedConnectionIds: sourceSelectedIds,
+          includedFolderIds: sourceSelectedFolderIds,
+        });
+      });
+      const sidecarClone = await cloneSidecarsForConnections(
+        filtered,
+        cloneInclusion,
+      );
+      const filteredForApply = sidecarClone.connections;
+      if (filteredForApply.length === 0 && sidecarClone.counts.total === 0) {
         toast.error('Nothing to clone with the current filter.');
         return null;
       }
@@ -3126,12 +3913,21 @@ ${tableRows}
       let totalCloned = 0;
       let totalRenamed = 0;
       let totalSkipped = 0;
-      const errors: string[] = [];
+      const errors: string[] = [...sidecarClone.errors];
 
       for (const targetId of targetIds) {
         const targetOption = targetOptionsById.get(targetId);
         const targetName = targetOption?.name ?? targetId;
         try {
+          if (filteredForApply.length === 0) {
+            perTarget.push({
+              databaseId: targetId,
+              databaseName: targetName,
+              cloned: 0,
+            });
+            continue;
+          }
+
           // Compute conflict status against this target's existing
           // contents so id collisions are caught per-target.
           let existing: Connection[] = [];
@@ -3146,8 +3942,8 @@ ${tableRows}
             // Strip credentials per the user's preference. Clone
             // defaults to keeping them; Import defaults to stripping.
             cloneIncludeCredentials
-              ? filtered
-              : filtered.map(stripConnectionCredentials),
+              ? filteredForApply
+              : filteredForApply.map(stripConnectionCredentials),
             existing,
           );
           const applied = remapConnectionsForApply(items, {
@@ -3201,12 +3997,15 @@ ${tableRows}
       }
 
       // ── Surface result ──────────────────────────────────────
-      const success = errors.length === 0 && totalCloned > 0;
+      const success =
+        errors.length === 0 &&
+        (totalCloned > 0 || sidecarClone.counts.total > 0);
       const result: CloneResult = {
         success,
         cloned: totalCloned,
         renamed: totalRenamed,
         skipped: totalSkipped,
+        sidecarsCloned: sidecarClone.counts,
         errors,
         perTarget,
       };
@@ -3219,8 +4018,14 @@ ${tableRows}
             : ` to ${targetIds.length} databases`;
         const renameNote = totalRenamed > 0 ? `, renamed ${totalRenamed}` : '';
         const skipNote = totalSkipped > 0 ? `, skipped ${totalSkipped}` : '';
+        const sidecarNote =
+          sidecarClone.counts.total > 0
+            ? `, cloned ${sidecarClone.counts.total} sidecar definition(s)`
+            : '';
         toast.success(
-          `Cloned ${totalCloned} connection(s)${targetSummary}${renameNote}${skipNote}.`,
+          totalCloned > 0
+            ? `Cloned ${totalCloned} connection(s)${targetSummary}${renameNote}${skipNote}${sidecarNote}.`
+            : `Cloned ${sidecarClone.counts.total} sidecar definition(s).`,
         );
       } else if (errors.length > 0) {
         toast.error(`Clone partially failed: ${errors.join('; ')}`);
@@ -3231,8 +4036,7 @@ ${tableRows}
     }
   }, [
     isCloning,
-    cloneSourceMode,
-    selectedCloneSourceDatabaseIds,
+    getEffectiveCloneSourceIds,
     cloneTargetDatabaseIds,
     cloneInclusion,
     cloneConflictPolicy,
@@ -3337,6 +4141,9 @@ ${tableRows}
     setCloneSwitchToTargetDatabaseAfterClone,
     cloneDatabaseOptions,
     refreshCloneDatabaseOptions,
+    cloneSourceCatalog,
+    isCloneSourceCatalogLoading,
+    refreshCloneSourceCatalog,
     isCloning,
     cloneResult,
     clearCloneResult,

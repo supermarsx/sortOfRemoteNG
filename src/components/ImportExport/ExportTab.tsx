@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { Download, FileText, Database, Settings, Lock, ShieldCheck, AlertTriangle, KeyRound, FolderTree, Tags, SlidersHorizontal, ChevronDown, ChevronRight, Server, Tag as TagIcon, Palette, Search as SearchIcon, Gauge } from 'lucide-react';
+import { Download, FileText, Database, Settings, Lock, ShieldCheck, AlertTriangle, KeyRound, FolderTree, Tags, SlidersHorizontal, Gauge } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PasswordInput, Checkbox, NumberInput, Select } from '../ui/forms';
 import { Connection } from '../../types/connection/connection';
 import type { ExportConfig, ExportConfigUpdate, ExportInclusionConfig } from './types';
 import { AccordionSection } from './AccordionSection';
 import { DatabasePickerRow } from './DatabasePickerRow';
+import {
+  InclusionItemPickers,
+  InclusionProtocolFilter,
+  type InclusionConnectionOption,
+  type InclusionFolderOption,
+  type InclusionListOption,
+} from './InclusionPickers';
 import { analyzePasswordStrength } from '../../hooks/security/usePasswordStrength';
 import { SettingsManager } from '../../utils/settings/settingsManager';
 import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
@@ -50,6 +57,44 @@ const getEffectiveExportDatabaseIds = (config: ExportConfig): string[] => {
   return config.selectedDatabaseIds.filter((id) => exportableIds.has(id));
 };
 
+const getAncestorFolderIds = (
+  connection: Connection,
+  connectionsById: Map<string, Connection>,
+): string[] => {
+  const ids: string[] = [];
+  const visited = new Set<string>();
+  let parentId = connection.parentId;
+
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = connectionsById.get(parentId);
+    if (!parent?.isGroup) break;
+    ids.push(parent.id);
+    parentId = parent.parentId;
+  }
+
+  return ids;
+};
+
+const getConnectionDisplayPath = (
+  connection: Connection,
+  connectionsById: Map<string, Connection>,
+): string => {
+  const names = [connection.name || 'Unnamed item'];
+  const visited = new Set<string>();
+  let parentId = connection.parentId;
+
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = connectionsById.get(parentId);
+    if (!parent) break;
+    names.unshift(parent.name || 'Unnamed folder');
+    parentId = parent.parentId;
+  }
+
+  return names.join(' / ');
+};
+
 const filterPreviewConnections = (
   connections: Connection[],
   inclusion: ExportInclusionConfig,
@@ -68,6 +113,9 @@ const filterPreviewConnections = (
   const includedColorTagSet = (inclusion.includedColorTagIds ?? []).length > 0
     ? new Set(inclusion.includedColorTagIds)
     : null;
+  const includedFolderSet = (inclusion.includedFolderIds ?? []).length > 0
+    ? new Set(inclusion.includedFolderIds)
+    : null;
   const byId = new Map(connections.map((connection) => [connection.id, connection]));
   const leaves = connections.filter(
     (connection) =>
@@ -77,16 +125,43 @@ const filterPreviewConnections = (
       (!includedTextTagSet ||
         (connection.tags ?? []).some((tag) => includedTextTagSet.has(tag))) &&
       (!includedColorTagSet ||
-        (connection.colorTag != null && includedColorTagSet.has(connection.colorTag))),
+        (connection.colorTag != null && includedColorTagSet.has(connection.colorTag))) &&
+      (!includedFolderSet ||
+        getAncestorFolderIds(connection, byId).some((id) => includedFolderSet.has(id))),
   );
   const leafIds = new Set(leaves.map((connection) => connection.id));
   const folderIds = new Set<string>();
 
   if (inclusion.includeFolderItems) {
     if (inclusion.includeEmptyFolders) {
+      const selectedFolderAncestorIds = new Set<string>();
+      if (includedFolderSet) {
+        includedFolderSet.forEach((folderId) => {
+          const folder = byId.get(folderId);
+          if (folder?.isGroup) {
+            getAncestorFolderIds(folder, byId).forEach((id) =>
+              selectedFolderAncestorIds.add(id),
+            );
+          }
+        });
+      }
+
       connections
         .filter((connection) => connection.isGroup)
-        .forEach((connection) => folderIds.add(connection.id));
+        .forEach((connection) => {
+          if (!includedFolderSet) {
+            folderIds.add(connection.id);
+            return;
+          }
+          const ancestors = getAncestorFolderIds(connection, byId);
+          if (
+            includedFolderSet.has(connection.id) ||
+            selectedFolderAncestorIds.has(connection.id) ||
+            ancestors.some((id) => includedFolderSet.has(id))
+          ) {
+            folderIds.add(connection.id);
+          }
+        });
     } else {
       leaves.forEach((connection) => {
         let parentId = connection.parentId;
@@ -124,6 +199,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
   const [sectionsOpen, setSectionsOpen] = useState({
     inclusion: true,
     connections: false,
+    folders: false,
     textTags: false,
     colorTags: false,
     proxyProfiles: false,
@@ -131,12 +207,6 @@ const ExportTab: React.FC<ExportTabProps> = ({
     vpnConnections: false,
     encryption: false,
   });
-  const [connectionsSearch, setConnectionsSearch] = useState('');
-  const [textTagsSearch, setTextTagsSearch] = useState('');
-  const [colorTagsSearch, setColorTagsSearch] = useState('');
-  const [proxyProfilesSearch, setProxyProfilesSearch] = useState('');
-  const [proxyChainsSearch, setProxyChainsSearch] = useState('');
-  const [vpnSearch, setVpnSearch] = useState('');
   const [vpnConnections, setVpnConnections] = useState<
     Array<{ id: string; name: string; kind: string }>
   >([]);
@@ -146,14 +216,18 @@ const ExportTab: React.FC<ExportTabProps> = ({
     (async () => {
       try {
         const mgr = ProxyOpenVPNManager.getInstance();
-        const [ovpn, wg] = await Promise.all([
+        const [ovpn, wg, tailscale, zerotier] = await Promise.all([
           mgr.listOpenVPNConnections().catch(() => [] as any[]),
           mgr.listWireGuardConnections().catch(() => [] as any[]),
+          mgr.listTailscaleConnections().catch(() => [] as any[]),
+          mgr.listZeroTierConnections().catch(() => [] as any[]),
         ]);
         if (cancelled) return;
         setVpnConnections([
           ...ovpn.map((c) => ({ id: c.id, name: c.name, kind: 'OpenVPN' })),
           ...wg.map((c) => ({ id: c.id, name: c.name, kind: 'WireGuard' })),
+          ...tailscale.map((c) => ({ id: c.id, name: c.name, kind: 'Tailscale' })),
+          ...zerotier.map((c) => ({ id: c.id, name: c.name, kind: 'ZeroTier' })),
         ]);
       } catch {
         // ignore — keep list empty
@@ -169,52 +243,10 @@ const ExportTab: React.FC<ExportTabProps> = ({
     [],
   );
   const proxyChains = React.useMemo(() => proxyCollectionManager.getChains(), []);
-
-  const selectedProxyProfileIdSet = new Set(
-    config.inclusion?.includedProxyProfileIds ?? [],
+  const tunnelChains = React.useMemo(
+    () => proxyCollectionManager.getTunnelChains(),
+    [],
   );
-  const selectedProxyChainIdSet = new Set(
-    config.inclusion?.includedProxyChainIds ?? [],
-  );
-  const selectedVpnConnectionIdSet = new Set(
-    config.inclusion?.includedVpnConnectionIds ?? [],
-  );
-
-  const toggleProxyProfileId = (id: string, checked: boolean) => {
-    const next = new Set(selectedProxyProfileIdSet);
-    if (checked) next.add(id);
-    else next.delete(id);
-    onConfigChange({
-      inclusion: {
-        includedProxyProfileIds:
-          next.size === proxyProfiles.length ? [] : Array.from(next),
-      },
-    });
-  };
-
-  const toggleProxyChainId = (id: string, checked: boolean) => {
-    const next = new Set(selectedProxyChainIdSet);
-    if (checked) next.add(id);
-    else next.delete(id);
-    onConfigChange({
-      inclusion: {
-        includedProxyChainIds:
-          next.size === proxyChains.length ? [] : Array.from(next),
-      },
-    });
-  };
-
-  const toggleVpnConnectionId = (id: string, checked: boolean) => {
-    const next = new Set(selectedVpnConnectionIdSet);
-    if (checked) next.add(id);
-    else next.delete(id);
-    onConfigChange({
-      inclusion: {
-        includedVpnConnectionIds:
-          next.size === vpnConnections.length ? [] : Array.from(next),
-      },
-    });
-  };
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const toggleSection = (key: keyof typeof sectionsOpen) =>
@@ -248,38 +280,89 @@ const ExportTab: React.FC<ExportTabProps> = ({
     return Array.from(set).sort();
   }, [connections]);
 
-  const selectableConnections = React.useMemo(
-    () => connections.filter((c) => !c.isGroup),
+  const selectableConnections: InclusionConnectionOption[] = React.useMemo(
+    () =>
+      connections
+        .filter((c) => !c.isGroup)
+        .map((connection) => ({
+          id: connection.id,
+          name: connection.name,
+          protocol: connection.protocol,
+          hostname: connection.hostname,
+        })),
     [connections],
   );
 
-  const selectedConnectionIdSet = new Set(inclusion.includedConnectionIds ?? []);
-  const selectedTextTagSet = new Set(inclusion.includedTextTags ?? []);
-  const selectedColorTagIdSet = new Set(inclusion.includedColorTagIds ?? []);
+  const selectableFolders: InclusionFolderOption[] = React.useMemo(() => {
+    const byId = new Map(connections.map((connection) => [connection.id, connection]));
+    return connections
+      .filter((connection) => connection.isGroup)
+      .map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        sourcePath: getConnectionDisplayPath(folder, byId),
+      }));
+  }, [connections]);
 
-  const toggleConnectionId = (id: string, checked: boolean) => {
-    const next = new Set(selectedConnectionIdSet);
-    if (checked) next.add(id);
-    else next.delete(id);
-    onConfigChange({
-      inclusion: {
-        includedConnectionIds:
-          next.size === selectableConnections.length ? [] : Array.from(next),
-      },
-    });
-  };
+  const proxyProfileOptions: InclusionListOption[] = React.useMemo(
+    () =>
+      proxyProfiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+        kind: (profile.config?.type ?? '').toUpperCase(),
+        description: profile.config?.host,
+        searchText: [
+          profile.name,
+          profile.config?.type,
+          profile.config?.host,
+          profile.description,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      })),
+    [proxyProfiles],
+  );
 
-  const toggleTextTag = (tag: string, checked: boolean) => {
-    const next = new Set(selectedTextTagSet);
-    if (checked) next.add(tag);
-    else next.delete(tag);
-    onConfigChange({
-      inclusion: {
-        includedTextTags:
-          next.size === availableTextTags.length ? [] : Array.from(next),
-      },
-    });
-  };
+  const proxyChainOptions: InclusionListOption[] = React.useMemo(
+    () => [
+      ...proxyChains.map((chain) => ({
+        id: chain.id,
+        key: `proxy:${chain.id}`,
+        name: chain.name,
+        kind: 'Proxy chain',
+        description: `${chain.layers?.length ?? 0} ${
+          (chain.layers?.length ?? 0) === 1 ? 'layer' : 'layers'
+        }`,
+        searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
+          .filter(Boolean)
+          .join(' '),
+      })),
+      ...tunnelChains.map((chain) => ({
+        id: chain.id,
+        key: `tunnel:${chain.id}`,
+        name: chain.name,
+        kind: 'Tunnel chain',
+        description: `${chain.layers?.length ?? 0} ${
+          (chain.layers?.length ?? 0) === 1 ? 'layer' : 'layers'
+        }`,
+        searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
+          .filter(Boolean)
+          .join(' '),
+      })),
+    ],
+    [proxyChains, tunnelChains],
+  );
+
+  const vpnConnectionOptions: InclusionListOption[] = React.useMemo(
+    () =>
+      vpnConnections.map((connection) => ({
+        id: connection.id,
+        name: connection.name,
+        kind: connection.kind,
+        searchText: `${connection.name} ${connection.kind}`,
+      })),
+    [vpnConnections],
+  );
 
   const runPbkdf2Benchmark = async () => {
     setBenchmarkError(null);
@@ -294,17 +377,6 @@ const ExportTab: React.FC<ExportTabProps> = ({
     }
   };
 
-  const toggleColorTagId = (id: string, checked: boolean) => {
-    const next = new Set(selectedColorTagIdSet);
-    if (checked) next.add(id);
-    else next.delete(id);
-    onConfigChange({
-      inclusion: {
-        includedColorTagIds:
-          next.size === availableColorTagIds.length ? [] : Array.from(next),
-      },
-    });
-  };
   const previewConnections = filterPreviewConnections(connections, inclusion);
   const folderCount = previewConnections.filter((connection) => connection.isGroup).length;
   const leafConnectionCount = previewConnections.filter((connection) => !connection.isGroup).length;
@@ -515,23 +587,6 @@ const ExportTab: React.FC<ExportTabProps> = ({
   const updateCredentialInclusion = (includeCredentials: boolean) => {
     onConfigChange({ includePasswords: includeCredentials });
     updateInclusion({ includeCredentials });
-  };
-
-  const toggleProtocol = (protocol: Connection['protocol'], checked: boolean) => {
-    const current = inclusion.includedProtocols.length > 0
-      ? new Set(inclusion.includedProtocols)
-      : new Set(availableProtocols);
-
-    if (checked) {
-      current.add(protocol);
-    } else {
-      current.delete(protocol);
-    }
-
-    updateInclusion({
-      includedProtocols:
-        current.size === availableProtocols.length ? [] : Array.from(current).sort(),
-    });
   };
 
   const inclusionOptions: Array<{
@@ -919,535 +974,29 @@ const ExportTab: React.FC<ExportTabProps> = ({
             ))}
           </div>
 
-          <div className="space-y-2" data-testid="export-protocol-filter">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm font-medium text-[var(--color-text)]">
-                {t('exportTab.protocolFilterTitle', { defaultValue: 'Protocols' })}
-              </div>
-              <button
-                type="button"
-                className="self-start text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)]"
-                disabled={!inclusion.includeConnections || inclusion.includedProtocols.length === 0}
-                onClick={() => updateInclusion({ includedProtocols: [] })}
-              >
-                {t('exportTab.protocolFilterAll', { defaultValue: 'Include all protocols' })}
-              </button>
-            </div>
-            {availableProtocols.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {availableProtocols.map((protocol) => {
-                  const checked =
-                    inclusion.includedProtocols.length === 0 ||
-                    inclusion.includedProtocols.includes(protocol);
-                  return (
-                    <label
-                      key={protocol}
-                      className={`inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs ${inclusion.includeConnections ? 'cursor-pointer' : 'opacity-60'}`}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        disabled={!inclusion.includeConnections}
-                        onChange={(value: boolean) => toggleProtocol(protocol, value)}
-                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                        aria-label={protocol.toUpperCase()}
-                      />
-                      <span className="font-medium text-[var(--color-textSecondary)]">{protocol.toUpperCase()}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t('exportTab.protocolFilterEmpty', { defaultValue: 'No protocols are visible in the open database yet.' })}
-              </p>
-            )}
-          </div>
+          <InclusionProtocolFilter
+            inclusion={inclusion}
+            updateInclusion={updateInclusion}
+            availableProtocols={availableProtocols}
+            disabled={!inclusion.includeConnections}
+            dataTestId="export-protocol-filter"
+          />
         </AccordionSection>
 
-        <AccordionSection
-          id="export-connections"
-          title={t('exportTab.connectionsTitle', { defaultValue: 'Specific connections' })}
-          description={t('exportTab.connectionsDescription', { defaultValue: 'Restrict the export to specific connections. Leave the list empty to include every connection that matches the other filters.' })}
-          icon={Server}
-          open={sectionsOpen.connections}
-          onToggle={() => toggleSection('connections')}
-          dataTestId="export-connections-section"
-          badge={
-            selectedConnectionIdSet.size > 0 ? (
-              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
-                {selectedConnectionIdSet.size}
-              </span>
-            ) : (
-              <span className="text-[var(--color-textMuted)]">all</span>
-            )
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon
-                size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
-              />
-              <input
-                type="text"
-                value={connectionsSearch}
-                onChange={(e) => setConnectionsSearch(e.target.value)}
-                placeholder={t('exportTab.connectionsSearch', { defaultValue: 'Search connections…' }) as string}
-                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              />
-            </div>
-            <button
-              type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
-              disabled={selectedConnectionIdSet.size === 0}
-              onClick={() => updateInclusion({ includedConnectionIds: [] })}
-            >
-              {t('exportTab.connectionsClear', { defaultValue: 'Include all connections' })}
-            </button>
-          </div>
-          {selectableConnections.length === 0 ? (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t('exportTab.connectionsEmpty', { defaultValue: 'No connections in the open database yet.' })}
-            </p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
-              {selectableConnections
-                .filter((c) => {
-                  const q = connectionsSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return (
-                    c.name.toLowerCase().includes(q) ||
-                    c.protocol.toLowerCase().includes(q) ||
-                    (c.hostname?.toLowerCase().includes(q) ?? false)
-                  );
-                })
-                .map((connection) => {
-                const checked =
-                  selectedConnectionIdSet.size === 0 ||
-                  selectedConnectionIdSet.has(connection.id);
-                return (
-                  <label
-                    key={connection.id}
-                    className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onChange={(value: boolean) => toggleConnectionId(connection.id, value)}
-                      className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                      aria-label={connection.name}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-[var(--color-text)]">
-                        {connection.name}
-                      </span>
-                      <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                        {connection.protocol.toUpperCase()}
-                        {connection.hostname ? ` — ${connection.hostname}` : ''}
-                      </span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </AccordionSection>
-
-        <AccordionSection
-          id="export-text-tags"
-          title={t('exportTab.textTagsTitle', { defaultValue: 'Specific text tags' })}
-          description={t('exportTab.textTagsDescription', { defaultValue: 'Restrict the export to connections carrying any of these text tags. Leave empty to include connections with or without tags.' })}
-          icon={TagIcon}
-          open={sectionsOpen.textTags}
-          onToggle={() => toggleSection('textTags')}
-          dataTestId="export-text-tags-section"
-          badge={
-            selectedTextTagSet.size > 0 ? (
-              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
-                {selectedTextTagSet.size}
-              </span>
-            ) : (
-              <span className="text-[var(--color-textMuted)]">all</span>
-            )
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon
-                size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
-              />
-              <input
-                type="text"
-                value={textTagsSearch}
-                onChange={(e) => setTextTagsSearch(e.target.value)}
-                placeholder={t('exportTab.textTagsSearch', { defaultValue: 'Search tags…' }) as string}
-                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              />
-            </div>
-            <button
-              type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
-              disabled={selectedTextTagSet.size === 0}
-              onClick={() => updateInclusion({ includedTextTags: [] })}
-            >
-              {t('exportTab.textTagsClear', { defaultValue: 'Include all tags' })}
-            </button>
-          </div>
-          {availableTextTags.length === 0 ? (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t('exportTab.textTagsEmpty', { defaultValue: 'No text tags are used in the open database yet.' })}
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {availableTextTags
-                .filter((tag) => {
-                  const q = textTagsSearch.trim().toLowerCase();
-                  return !q || tag.toLowerCase().includes(q);
-                })
-                .map((tag) => {
-                const checked =
-                  selectedTextTagSet.size === 0 || selectedTextTagSet.has(tag);
-                return (
-                  <label
-                    key={tag}
-                    className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onChange={(value: boolean) => toggleTextTag(tag, value)}
-                      className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                      aria-label={tag}
-                    />
-                    <span className="font-medium text-[var(--color-textSecondary)]">{tag}</span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </AccordionSection>
-
-        <AccordionSection
-          id="export-color-tags"
-          title={t('exportTab.colorTagsTitle', { defaultValue: 'Specific color tags' })}
-          description={t('exportTab.colorTagsDescription', { defaultValue: 'Restrict the export to connections tagged with a chosen color. Leave empty to ignore color when filtering.' })}
-          icon={Palette}
-          open={sectionsOpen.colorTags}
-          onToggle={() => toggleSection('colorTags')}
-          dataTestId="export-color-tags-section"
-          badge={
-            selectedColorTagIdSet.size > 0 ? (
-              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
-                {selectedColorTagIdSet.size}
-              </span>
-            ) : (
-              <span className="text-[var(--color-textMuted)]">all</span>
-            )
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon
-                size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
-              />
-              <input
-                type="text"
-                value={colorTagsSearch}
-                onChange={(e) => setColorTagsSearch(e.target.value)}
-                placeholder={t('exportTab.colorTagsSearch', { defaultValue: 'Search color tags…' }) as string}
-                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              />
-            </div>
-            <button
-              type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
-              disabled={selectedColorTagIdSet.size === 0}
-              onClick={() => updateInclusion({ includedColorTagIds: [] })}
-            >
-              {t('exportTab.colorTagsClear', { defaultValue: 'Include all colors' })}
-            </button>
-          </div>
-          {availableColorTagIds.length === 0 ? (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t('exportTab.colorTagsEmpty', { defaultValue: 'No color tags are used in the open database yet.' })}
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {availableColorTagIds
-                .filter((id) => {
-                  const q = colorTagsSearch.trim().toLowerCase();
-                  return !q || id.toLowerCase().includes(q);
-                })
-                .map((colorTagId) => {
-                const checked =
-                  selectedColorTagIdSet.size === 0 ||
-                  selectedColorTagIdSet.has(colorTagId);
-                return (
-                  <label
-                    key={colorTagId}
-                    className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onChange={(value: boolean) => toggleColorTagId(colorTagId, value)}
-                      className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                      aria-label={colorTagId}
-                    />
-                    <span className="font-mono text-[var(--color-textSecondary)]">{colorTagId}</span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </AccordionSection>
-
-        <AccordionSection
-          id="export-proxy-profiles"
-          title={t('exportTab.proxyProfilesTitle', { defaultValue: 'Specific proxy profiles' })}
-          description={t('exportTab.proxyProfilesDescription', { defaultValue: 'Restrict the export to specific saved proxy profiles. Leave empty to include them all.' })}
-          icon={Server}
-          open={sectionsOpen.proxyProfiles}
-          onToggle={() => toggleSection('proxyProfiles')}
-          dataTestId="export-proxy-profiles-section"
-          badge={
-            selectedProxyProfileIdSet.size > 0 ? (
-              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
-                {selectedProxyProfileIdSet.size}
-              </span>
-            ) : (
-              <span className="text-[var(--color-textMuted)]">all</span>
-            )
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
-              <input
-                type="text"
-                value={proxyProfilesSearch}
-                onChange={(e) => setProxyProfilesSearch(e.target.value)}
-                placeholder={t('exportTab.proxyProfilesSearch', { defaultValue: 'Search proxy profiles…' }) as string}
-                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              />
-            </div>
-            <button
-              type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
-              disabled={selectedProxyProfileIdSet.size === 0}
-              onClick={() => updateInclusion({ includedProxyProfileIds: [] })}
-            >
-              {t('exportTab.proxyProfilesClear', { defaultValue: 'Include all profiles' })}
-            </button>
-          </div>
-          {proxyProfiles.length === 0 ? (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t('exportTab.proxyProfilesEmpty', { defaultValue: 'No saved proxy profiles yet.' })}
-            </p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
-              {proxyProfiles
-                .filter((p) => {
-                  const q = proxyProfilesSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return (
-                    p.name.toLowerCase().includes(q) ||
-                    (p.config?.type ?? '').toLowerCase().includes(q) ||
-                    (p.config?.host ?? '').toLowerCase().includes(q)
-                  );
-                })
-                .map((profile) => {
-                  const checked =
-                    selectedProxyProfileIdSet.size === 0 ||
-                    selectedProxyProfileIdSet.has(profile.id);
-                  return (
-                    <label
-                      key={profile.id}
-                      className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onChange={(value: boolean) => toggleProxyProfileId(profile.id, value)}
-                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                        aria-label={profile.name}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-[var(--color-text)]">
-                          {profile.name}
-                        </span>
-                        <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                          {(profile.config?.type ?? '').toUpperCase()}
-                          {profile.config?.host ? ` — ${profile.config.host}` : ''}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-            </div>
-          )}
-        </AccordionSection>
-
-        <AccordionSection
-          id="export-proxy-chains"
-          title={t('exportTab.proxyChainsTitle', { defaultValue: 'Specific proxy chains' })}
-          description={t('exportTab.proxyChainsDescription', { defaultValue: 'Restrict the export to specific saved proxy chains. Leave empty to include them all.' })}
-          icon={FolderTree}
-          open={sectionsOpen.proxyChains}
-          onToggle={() => toggleSection('proxyChains')}
-          dataTestId="export-proxy-chains-section"
-          badge={
-            selectedProxyChainIdSet.size > 0 ? (
-              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
-                {selectedProxyChainIdSet.size}
-              </span>
-            ) : (
-              <span className="text-[var(--color-textMuted)]">all</span>
-            )
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
-              <input
-                type="text"
-                value={proxyChainsSearch}
-                onChange={(e) => setProxyChainsSearch(e.target.value)}
-                placeholder={t('exportTab.proxyChainsSearch', { defaultValue: 'Search proxy chains…' }) as string}
-                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              />
-            </div>
-            <button
-              type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
-              disabled={selectedProxyChainIdSet.size === 0}
-              onClick={() => updateInclusion({ includedProxyChainIds: [] })}
-            >
-              {t('exportTab.proxyChainsClear', { defaultValue: 'Include all chains' })}
-            </button>
-          </div>
-          {proxyChains.length === 0 ? (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t('exportTab.proxyChainsEmpty', { defaultValue: 'No saved proxy chains yet.' })}
-            </p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
-              {proxyChains
-                .filter((c) => {
-                  const q = proxyChainsSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return c.name.toLowerCase().includes(q);
-                })
-                .map((chain) => {
-                  const checked =
-                    selectedProxyChainIdSet.size === 0 ||
-                    selectedProxyChainIdSet.has(chain.id);
-                  return (
-                    <label
-                      key={chain.id}
-                      className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onChange={(value: boolean) => toggleProxyChainId(chain.id, value)}
-                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                        aria-label={chain.name}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-[var(--color-text)]">
-                          {chain.name}
-                        </span>
-                        <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                          {(chain.layers?.length ?? 0)} {(chain.layers?.length ?? 0) === 1 ? 'layer' : 'layers'}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-            </div>
-          )}
-        </AccordionSection>
-
-        <AccordionSection
-          id="export-vpn-connections"
-          title={t('exportTab.vpnConnectionsTitle', { defaultValue: 'Specific VPN connections' })}
-          description={t('exportTab.vpnConnectionsDescription', { defaultValue: 'Restrict the export to specific OpenVPN or WireGuard connections. Leave empty to include them all.' })}
-          icon={Server}
-          open={sectionsOpen.vpnConnections}
-          onToggle={() => toggleSection('vpnConnections')}
-          dataTestId="export-vpn-connections-section"
-          badge={
-            selectedVpnConnectionIdSet.size > 0 ? (
-              <span className="rounded-sm bg-primary/15 px-2 py-0.5 text-primary">
-                {selectedVpnConnectionIdSet.size}
-              </span>
-            ) : (
-              <span className="text-[var(--color-textMuted)]">all</span>
-            )
-          }
-        >
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
-              <input
-                type="text"
-                value={vpnSearch}
-                onChange={(e) => setVpnSearch(e.target.value)}
-                placeholder={t('exportTab.vpnConnectionsSearch', { defaultValue: 'Search VPN connections…' }) as string}
-                className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-              />
-            </div>
-            <button
-              type="button"
-              className="text-xs text-primary hover:text-primary/80 disabled:text-[var(--color-textMuted)] flex-shrink-0"
-              disabled={selectedVpnConnectionIdSet.size === 0}
-              onClick={() => updateInclusion({ includedVpnConnectionIds: [] })}
-            >
-              {t('exportTab.vpnConnectionsClear', { defaultValue: 'Include all VPN connections' })}
-            </button>
-          </div>
-          {vpnConnections.length === 0 ? (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t('exportTab.vpnConnectionsEmpty', { defaultValue: 'No VPN connections saved yet.' })}
-            </p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
-              {vpnConnections
-                .filter((v) => {
-                  const q = vpnSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return (
-                    v.name.toLowerCase().includes(q) ||
-                    v.kind.toLowerCase().includes(q)
-                  );
-                })
-                .map((vpn) => {
-                  const checked =
-                    selectedVpnConnectionIdSet.size === 0 ||
-                    selectedVpnConnectionIdSet.has(vpn.id);
-                  return (
-                    <label
-                      key={vpn.id}
-                      className="flex items-center gap-3 border-b border-[var(--color-border)] last:border-b-0 px-3 py-2 cursor-pointer hover:bg-[var(--color-surfaceHover)]"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onChange={(value: boolean) => toggleVpnConnectionId(vpn.id, value)}
-                        className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                        aria-label={vpn.name}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-[var(--color-text)]">
-                          {vpn.name}
-                        </span>
-                        <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                          {vpn.kind}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-            </div>
-          )}
-        </AccordionSection>
+        <InclusionItemPickers
+          inclusion={inclusion}
+          updateInclusion={updateInclusion}
+          sectionsOpen={sectionsOpen}
+          onToggleSection={(section) => toggleSection(section)}
+          connections={selectableConnections}
+          folders={selectableFolders}
+          textTags={availableTextTags}
+          colorTagIds={availableColorTagIds}
+          proxyProfiles={proxyProfileOptions}
+          proxyChains={proxyChainOptions}
+          vpnConnections={vpnConnectionOptions}
+          testIdPrefix="export"
+        />
 
         <AccordionSection
           id="export-encryption"

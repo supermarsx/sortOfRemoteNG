@@ -188,15 +188,25 @@ vi.mock("../../src/utils/network/proxyOpenVPNManager", () => ({
 }));
 
 const mockGetTunnelChains = vi.fn().mockReturnValue([]);
+const mockGetTunnelChain = vi.fn();
 const mockCreateTunnelChain = vi.fn().mockResolvedValue({ id: "tc-1" });
 const mockGetProfiles = vi.fn().mockReturnValue([]);
+const mockGetProfile = vi.fn();
+const mockCreateProfile = vi.fn().mockResolvedValue({ id: "profile-cloned" });
 const mockGetChains = vi.fn().mockReturnValue([]);
+const mockGetChain = vi.fn();
+const mockCreateChain = vi.fn().mockResolvedValue({ id: "chain-cloned" });
 
 vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
   proxyCollectionManager: {
     getTunnelChains: (...args: unknown[]) => mockGetTunnelChains(...args),
+    getTunnelChain: (...args: unknown[]) => mockGetTunnelChain(...args),
     getProfiles: (...args: unknown[]) => mockGetProfiles(...args),
+    getProfile: (...args: unknown[]) => mockGetProfile(...args),
+    createProfile: (...args: unknown[]) => mockCreateProfile(...args),
     getChains: (...args: unknown[]) => mockGetChains(...args),
+    getChain: (...args: unknown[]) => mockGetChain(...args),
+    createChain: (...args: unknown[]) => mockCreateChain(...args),
     createTunnelChain: (...args: unknown[]) => mockCreateTunnelChain(...args),
   },
 }));
@@ -320,6 +330,40 @@ beforeEach(() => {
     tabGroups: [],
     colorTags: {},
   });
+  mockListOpenVPN.mockReset();
+  mockListOpenVPN.mockResolvedValue([]);
+  mockListWireGuard.mockReset();
+  mockListWireGuard.mockResolvedValue([]);
+  mockListTailscale.mockReset();
+  mockListTailscale.mockResolvedValue([]);
+  mockListZeroTier.mockReset();
+  mockListZeroTier.mockResolvedValue([]);
+  mockCreateOpenVPN.mockReset();
+  mockCreateOpenVPN.mockResolvedValue("vpn-1");
+  mockCreateWireGuard.mockReset();
+  mockCreateWireGuard.mockResolvedValue("vpn-2");
+  mockCreateTailscale.mockReset();
+  mockCreateTailscale.mockResolvedValue("vpn-3");
+  mockCreateZeroTier.mockReset();
+  mockCreateZeroTier.mockResolvedValue("vpn-4");
+  mockGetTunnelChains.mockReset();
+  mockGetTunnelChains.mockReturnValue([]);
+  mockGetTunnelChain.mockReset();
+  mockGetTunnelChain.mockReturnValue(undefined);
+  mockCreateTunnelChain.mockReset();
+  mockCreateTunnelChain.mockResolvedValue({ id: "tc-1" });
+  mockGetProfiles.mockReset();
+  mockGetProfiles.mockReturnValue([]);
+  mockGetProfile.mockReset();
+  mockGetProfile.mockReturnValue(undefined);
+  mockCreateProfile.mockReset();
+  mockCreateProfile.mockResolvedValue({ id: "profile-cloned" });
+  mockGetChains.mockReset();
+  mockGetChains.mockReturnValue([]);
+  mockGetChain.mockReset();
+  mockGetChain.mockReturnValue(undefined);
+  mockCreateChain.mockReset();
+  mockCreateChain.mockResolvedValue({ id: "chain-cloned" });
   mockTauriInvoke.mockReset();
   mockTauriInvoke.mockResolvedValue('{"connections":[]}');
   vi.stubGlobal("prompt", mockPrompt);
@@ -1963,8 +2007,200 @@ describe("useImportExport", () => {
     expect(result.current.importResult?.tunnelChainTemplates).toEqual([
       { name: "Chain Only", layers: [], description: "desc", tags: [] },
     ]);
+    expect(result.current.importPreviewItems.map((item) => item.kind)).toEqual([
+      "vpn",
+      "tunnelChain",
+    ]);
     expect(mockToast.error).not.toHaveBeenCalledWith(
       "Import failed. Check the file format and try again.",
+    );
+  });
+
+  it("confirmImport restores only selected VPN and tunnel-chain preview rows", async () => {
+    mockImportConnections.mockResolvedValueOnce([]);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    const { result } = renderImportExport();
+
+    const file = new File(
+      [
+        JSON.stringify({
+          vpnConnections: {
+            openvpn: [{ name: "OpenVPN Selected", config: "ovpn-selected" }],
+            wireguard: [{ name: "WireGuard Skipped", config: "wg-skipped" }],
+            tailscale: [],
+            zerotier: [],
+          },
+          tunnelChainTemplates: [
+            { name: "Chain Selected", layers: [], description: "keep", tags: [] },
+            { name: "Chain Skipped", layers: [], description: "drop", tags: [] },
+          ],
+        }),
+      ],
+      "selected-sidecars.json",
+      { type: "application/json" },
+    );
+    const event = {
+      target: { files: [file] },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await act(async () => {
+      await result.current.handleFileSelect(event);
+    });
+
+    const wireGuardRow = result.current.importPreviewItems.find(
+      (item) => item.name === "WireGuard Skipped",
+    );
+    const skippedChainRow = result.current.importPreviewItems.find(
+      (item) => item.name === "Chain Skipped",
+    );
+    expect(wireGuardRow?.kind).toBe("vpn");
+    expect(skippedChainRow?.kind).toBe("tunnelChain");
+
+    await act(async () => {
+      result.current.togglePreviewSelection(wireGuardRow!.id);
+      result.current.togglePreviewSelection(skippedChainRow!.id);
+    });
+
+    await act(async () => {
+      await result.current.confirmImport("selected-sidecars.json");
+    });
+
+    expect(mockCreateOpenVPN).toHaveBeenCalledWith(
+      "OpenVPN Selected",
+      "ovpn-selected",
+    );
+    expect(mockCreateWireGuard).not.toHaveBeenCalled();
+    expect(mockCreateTunnelChain).toHaveBeenCalledTimes(1);
+    expect(mockCreateTunnelChain).toHaveBeenCalledWith("Chain Selected", [], {
+      description: "keep",
+      tags: [],
+    });
+  });
+
+  it("confirmImport master toggles block selected VPN and tunnel-chain rows", async () => {
+    mockImportConnections.mockResolvedValueOnce([]);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    const { result } = renderImportExport();
+
+    const file = new File(
+      [
+        JSON.stringify({
+          vpnConnections: {
+            openvpn: [{ name: "OpenVPN Blocked", config: "ovpn-blocked" }],
+            wireguard: [],
+            tailscale: [],
+            zerotier: [],
+          },
+          tunnelChainTemplates: [
+            { name: "Chain Blocked", layers: [], description: "blocked", tags: [] },
+          ],
+        }),
+      ],
+      "blocked-sidecars.json",
+      { type: "application/json" },
+    );
+    const event = {
+      target: { files: [file] },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await act(async () => {
+      await result.current.handleFileSelect(event);
+      result.current.updateImportOptions({
+        includeVpnData: false,
+        includeTunnelChains: false,
+      });
+    });
+
+    await act(async () => {
+      await result.current.confirmImport("blocked-sidecars.json");
+    });
+
+    expect(mockCreateOpenVPN).not.toHaveBeenCalled();
+    expect(mockCreateTunnelChain).not.toHaveBeenCalled();
+    expect(mockToast.success).toHaveBeenCalledWith(
+      "Imported 0 items from blocked-sidecars.json",
+    );
+  });
+
+  it("handleFileSelect lists SSH tunnel rows and confirmImport strips deselected tunnels", async () => {
+    mockDetectImportFormat.mockReturnValueOnce("mremoteng");
+    mockGetFormatName.mockReturnValueOnce("mRemoteNG");
+    mockImportConnections.mockResolvedValueOnce([
+      {
+        id: "jump-1",
+        name: "Bastion",
+        protocol: "ssh",
+        hostname: "bastion.example.com",
+        port: 22,
+        username: "jump",
+        isGroup: false,
+        tags: [],
+      },
+      {
+        id: "target-1",
+        name: "Internal RDP",
+        protocol: "rdp",
+        hostname: "10.10.0.25",
+        port: 3389,
+        isGroup: false,
+        tags: [],
+        security: {
+          tunnelChain: [
+            {
+              id: "layer-1",
+              type: "ssh-tunnel",
+              enabled: true,
+              localBindPort: 0,
+              sshTunnel: {
+                forwardType: "local",
+                host: "bastion.example.com",
+                port: 22,
+                username: "jump",
+                remoteHost: "10.10.0.25",
+                remotePort: 3389,
+              },
+            },
+          ],
+        },
+      },
+    ] as Connection[]);
+    const { result } = renderImportExport();
+
+    const file = new File(["<Connections />"], "tunnels.xml", {
+      type: "text/xml",
+    });
+    const event = {
+      target: { files: [file] },
+    } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+    await act(async () => {
+      await result.current.handleFileSelect(event);
+    });
+
+    const sshTunnelRow = result.current.importPreviewItems.find(
+      (item) => item.kind === "sshTunnel",
+    );
+    expect(sshTunnelRow).toMatchObject({
+      name: "Internal RDP SSH tunnel",
+      hostname: "bastion.example.com",
+      sshTunnelConnectionId: "target-1",
+    });
+    expect(result.current.importAnalysis?.counts.sshTunnels).toBe(1);
+
+    await act(async () => {
+      result.current.togglePreviewSelection(sshTunnelRow!.id);
+    });
+
+    await act(async () => {
+      await result.current.confirmImport("tunnels.xml");
+    });
+
+    const importedTarget = mockDispatch.mock.calls
+      .map(([action]) => action?.payload)
+      .find((connection) => connection?.name === "Internal RDP");
+    expect(importedTarget?.security?.tunnelChain).toBeUndefined();
+    expect(mockToast.success).toHaveBeenCalledWith(
+      "Imported 2 connection(s) from tunnels.xml",
     );
   });
 
@@ -2492,6 +2728,371 @@ describe("useImportExport", () => {
     act(() => result.current.cancelImport());
     expect(result.current.importResult).toBeNull();
     expect(result.current.importFilename).toBe("");
+  });
+
+  it("handleClone filters qualified connection ids against each source database", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-3",
+        name: "Target",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    const archiveConnections: Connection[] = [
+      {
+        id: "conn-1",
+        name: "Archive SSH",
+        protocol: "ssh",
+        hostname: "10.0.0.50",
+        port: 22,
+        isGroup: false,
+        tags: [],
+      },
+    ];
+    mockGetExportableDatabases.mockResolvedValue(databases);
+    mockReadExportableSnapshot.mockImplementation(async (databaseId: string) => ({
+      collection: {
+        id: databaseId,
+        name: databaseId === "col-2" ? "Archive" : "Target",
+        isEncrypted: false,
+      },
+      connections: databaseId === "col-2" ? archiveConnections : [],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    }));
+
+    const { result } = renderImportExport({ initialTab: "clone" });
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions).toHaveLength(3);
+    });
+
+    act(() => {
+      result.current.setCloneSourceMode("selected");
+      result.current.setSelectedCloneSourceDatabaseIds(["col-1", "col-2"]);
+      result.current.setCloneTargetDatabaseIds(["col-3"]);
+      result.current.updateCloneInclusion({
+        includedConnectionIds: ["col-2:conn-1"],
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.cloneSourceMode).toBe("selected");
+    });
+
+    await act(async () => {
+      await result.current.handleClone();
+    });
+
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+      "col-3",
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Archive SSH", hostname: "10.0.0.50" }),
+      ]),
+    );
+    expect(mockAppendConnectionsToDatabase.mock.calls[0][1]).toHaveLength(1);
+  });
+
+  it("handleClone filters qualified folder ids and preserves selected parent folders", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-3",
+        name: "Target",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    const archiveConnections: Connection[] = [
+      {
+        id: "folder-prod",
+        name: "Production",
+        protocol: "rdp",
+        hostname: "",
+        port: 0,
+        isGroup: true,
+        tags: [],
+      },
+      {
+        id: "conn-prod",
+        name: "Production SSH",
+        protocol: "ssh",
+        hostname: "10.0.0.60",
+        port: 22,
+        parentId: "folder-prod",
+        isGroup: false,
+        tags: [],
+      },
+      {
+        id: "conn-outside",
+        name: "Outside SSH",
+        protocol: "ssh",
+        hostname: "10.0.0.61",
+        port: 22,
+        isGroup: false,
+        tags: [],
+      },
+    ];
+    mockGetExportableDatabases.mockResolvedValue(databases);
+    mockReadExportableSnapshot.mockImplementation(async (databaseId: string) => ({
+      collection: {
+        id: databaseId,
+        name: databaseId === "col-2" ? "Archive" : "Target",
+        isEncrypted: false,
+      },
+      connections: databaseId === "col-2" ? archiveConnections : [],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    }));
+
+    const { result } = renderImportExport({ initialTab: "clone" });
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions).toHaveLength(3);
+    });
+
+    act(() => {
+      result.current.setCloneSourceMode("selected");
+      result.current.setSelectedCloneSourceDatabaseIds(["col-2"]);
+      result.current.setCloneTargetDatabaseIds(["col-3"]);
+      result.current.updateCloneInclusion({
+        includedFolderIds: ["col-2:folder-prod"],
+        includeEmptyFolders: false,
+      });
+    });
+
+    await act(async () => {
+      await result.current.handleClone();
+    });
+
+    const cloned = mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[];
+    expect(cloned.map((connection) => connection.name)).toEqual([
+      "Production",
+      "Production SSH",
+    ]);
+    expect(cloned.find((connection) => connection.name === "Production SSH")?.parentId)
+      .toBe("folder-prod");
+  });
+
+  it("handleClone clones selected sidecars and remaps cloned connection references", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Source",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-3",
+        name: "Target",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    const sourceConnections: Connection[] = [
+      {
+        id: "conn-sidecars",
+        name: "Sidecar SSH",
+        protocol: "ssh",
+        hostname: "10.0.0.60",
+        port: 22,
+        isGroup: false,
+        tags: [],
+        proxyChainId: "proxy-chain-1",
+        tunnelChainId: "tunnel-chain-1",
+        security: {
+          openvpn: { enabled: true, configId: "vpn-old" },
+        },
+      },
+    ];
+    const proxyProfile = {
+      id: "profile-1",
+      name: "HTTP Proxy",
+      config: { type: "http", host: "proxy.local", port: 8080 },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const proxyChain = {
+      id: "proxy-chain-1",
+      name: "Proxy Chain",
+      layers: [{ position: 0, type: "proxy", proxyProfileId: "profile-1" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const tunnelChain = {
+      id: "tunnel-chain-1",
+      name: "Tunnel Chain",
+      layers: [
+        {
+          id: "layer-1",
+          type: "openvpn",
+          enabled: true,
+          vpn: { configId: "vpn-old" },
+        },
+      ],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    mockGetExportableDatabases.mockResolvedValue(databases);
+    mockReadExportableSnapshot.mockImplementation(async (databaseId: string) => ({
+      collection: {
+        id: databaseId,
+        name: databaseId === "col-2" ? "Source" : "Target",
+        isEncrypted: false,
+      },
+      connections: databaseId === "col-2" ? sourceConnections : [],
+      settings: {},
+      tabGroups: [],
+      colorTags: {},
+    }));
+    mockGetProfiles.mockReturnValue([proxyProfile]);
+    mockGetProfile.mockReturnValue(proxyProfile);
+    mockGetChains.mockReturnValue([proxyChain]);
+    mockGetChain.mockReturnValue(proxyChain);
+    mockGetTunnelChains.mockReturnValue([tunnelChain]);
+    mockGetTunnelChain.mockReturnValue(tunnelChain);
+    mockListOpenVPN.mockResolvedValue([
+      {
+        id: "vpn-old",
+        name: "VPN Old",
+        config: { remoteHost: "vpn.local" },
+        status: "disconnected",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+    mockCreateProfile.mockResolvedValue({ ...proxyProfile, id: "profile-new" });
+    mockCreateOpenVPN.mockResolvedValue("vpn-new");
+    mockCreateChain.mockResolvedValue({ ...proxyChain, id: "proxy-chain-new" });
+    mockCreateTunnelChain.mockResolvedValue({
+      ...tunnelChain,
+      id: "tunnel-chain-new",
+    });
+
+    const { result } = renderImportExport({ initialTab: "clone" });
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions).toHaveLength(3);
+    });
+
+    act(() => {
+      result.current.setCloneSourceMode("selected");
+      result.current.setSelectedCloneSourceDatabaseIds(["col-2"]);
+      result.current.setCloneTargetDatabaseIds(["col-3"]);
+      result.current.updateCloneInclusion({
+        includedConnectionIds: ["col-2:conn-sidecars"],
+        includeTunnelChains: true,
+        includeVpnData: true,
+        includedProxyProfileIds: ["profile-1"],
+        includedProxyChainIds: ["proxy-chain-1", "tunnel-chain-1"],
+        includedVpnConnectionIds: ["vpn-old"],
+      });
+    });
+
+    await act(async () => {
+      await result.current.handleClone();
+    });
+
+    expect(mockCreateProfile).toHaveBeenCalledWith(
+      "HTTP Proxy",
+      { type: "http", host: "proxy.local", port: 8080 },
+      {
+        description: undefined,
+        tags: undefined,
+        isDefault: false,
+      },
+    );
+    expect(mockCreateOpenVPN).toHaveBeenCalledWith("VPN Old", {
+      remoteHost: "vpn.local",
+    });
+    expect(mockCreateChain).toHaveBeenCalledWith(
+      "Proxy Chain",
+      [{ position: 0, type: "proxy", proxyProfileId: "profile-new" }],
+      {
+        description: undefined,
+        tags: undefined,
+      },
+    );
+    expect(mockCreateTunnelChain).toHaveBeenCalledWith(
+      "Tunnel Chain",
+      [
+        {
+          id: "layer-1",
+          type: "openvpn",
+          enabled: true,
+          vpn: { configId: "vpn-new" },
+        },
+      ],
+      {
+        description: undefined,
+        tags: undefined,
+      },
+    );
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+      "col-3",
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Sidecar SSH",
+          proxyChainId: "proxy-chain-new",
+          tunnelChainId: "tunnel-chain-new",
+          security: expect.objectContaining({
+            openvpn: expect.objectContaining({ configId: "vpn-new" }),
+          }),
+        }),
+      ]),
+    );
+    expect(result.current.cloneResult?.sidecarsCloned).toMatchObject({
+      proxyProfiles: 1,
+      proxyChains: 1,
+      tunnelChains: 1,
+      vpnConnections: 1,
+      total: 4,
+    });
   });
 
   // ── Error handling ──────────────────────────────────────────
