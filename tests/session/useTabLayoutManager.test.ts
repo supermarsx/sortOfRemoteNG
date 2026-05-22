@@ -261,7 +261,7 @@ describe('useTabLayoutManager', () => {
       expect(layout.sessions[0].position.width).toBe(50);
     });
 
-    it('creates miniMosaic layout', () => {
+    it('creates miniMosaic layout (positions are full-bleed since the renderer shows a preview grid)', () => {
       const sessions = Array.from({ length: 9 }, (_, i) => makeSession(String(i)));
       const { result } = renderHook(() =>
         useTabLayoutManager(sessions, '0', defaultLayout(), onLayoutChange, onSessionClose, false),
@@ -273,8 +273,11 @@ describe('useTabLayoutManager', () => {
 
       const layout = onLayoutChange.mock.calls[0][0] as TabLayout;
       expect(layout.mode).toBe('miniMosaic');
-      // sqrt(9) = 3 cols → width ≈ 33.33
-      expect(layout.sessions[0].position.width).toBeCloseTo(33.33, 0);
+      // miniMosaic doesn't actually position tiles — the renderer
+      // hides them and shows a preview grid instead. We still emit
+      // one position record per session so click-to-promote works.
+      expect(layout.sessions).toHaveLength(9);
+      expect(layout.sessions[0].position.width).toBe(100);
     });
 
     it('creates sideBySide layout with 2 columns', () => {
@@ -354,48 +357,194 @@ describe('useTabLayoutManager', () => {
     });
   });
 
-  // ── handleSessionResize ────────────────────────────────────
+  // ── swapSessionsInSlots ────────────────────────────────────
 
-  describe('handleSessionResize', () => {
-    it('updates position width and height in the layout', () => {
-      const sessions = [makeSession('a')];
-      const layout: TabLayout = {
-        mode: 'tabs',
-        sessions: [{ sessionId: 'a', position: { x: 0, y: 0, width: 100, height: 100 } }],
-      };
+  describe('swapSessionsInSlots', () => {
+    const layoutWithSlots: TabLayout = {
+      mode: 'grid2',
+      sessions: [
+        { sessionId: 'a', position: { x: 0, y: 0, width: 50, height: 100 } },
+        { sessionId: 'b', position: { x: 50, y: 0, width: 50, height: 100 } },
+      ],
+    };
 
+    it('swaps two sessions both in the layout, preserving positions', () => {
       const { result } = renderHook(() =>
-        useTabLayoutManager(sessions, 'a', layout, onLayoutChange, onSessionClose, false),
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
       );
-
-      act(() => {
-        result.current.handleSessionResize('a', 500, 300);
-      });
-
-      expect(onLayoutChange).toHaveBeenCalled();
-      const updated = onLayoutChange.mock.calls[0][0] as TabLayout;
-      expect(updated.sessions[0].sessionId).toBe('a');
-      // Width and height converted to percentages (relative to container, which defaults to 1×1)
-      expect(updated.sessions[0].position.width).toBeGreaterThan(0);
-      expect(updated.sessions[0].position.height).toBeGreaterThan(0);
+      act(() => result.current.swapSessionsInSlots('a', 'b'));
+      const next = onLayoutChange.mock.calls[0][0] as TabLayout;
+      // Positions are unchanged, only session ids flip
+      expect(next.sessions[0].sessionId).toBe('b');
+      expect(next.sessions[1].sessionId).toBe('a');
+      expect(next.sessions[0].position).toEqual(layoutWithSlots.sessions[0].position);
     });
 
-    it('does nothing if sessionId not found in layout', () => {
-      const sessions = [makeSession('a')];
+    it('promotes a hidden session into the destination slot', () => {
+      const { result } = renderHook(() =>
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b'), makeSession('hidden')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
+      );
+      act(() => result.current.swapSessionsInSlots('hidden', 'a'));
+      const next = onLayoutChange.mock.calls[0][0] as TabLayout;
+      expect(next.sessions[0].sessionId).toBe('hidden');
+      expect(next.sessions[1].sessionId).toBe('b');
+    });
+
+    it('is a no-op when source equals destination', () => {
+      const { result } = renderHook(() =>
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
+      );
+      act(() => result.current.swapSessionsInSlots('a', 'a'));
+      expect(onLayoutChange).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when neither id is in the layout', () => {
+      const { result } = renderHook(() =>
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
+      );
+      act(() => result.current.swapSessionsInSlots('ghost1', 'ghost2'));
+      expect(onLayoutChange).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── assignSessionToSlot ────────────────────────────────────
+
+  describe('assignSessionToSlot', () => {
+    const layoutWithSlots: TabLayout = {
+      mode: 'grid2',
+      sessions: [
+        { sessionId: 'a', position: { x: 0, y: 0, width: 50, height: 100 } },
+        { sessionId: 'b', position: { x: 50, y: 0, width: 50, height: 100 } },
+      ],
+    };
+
+    it('moves a session to a slot, displacing the previous occupant to its old slot', () => {
+      const { result } = renderHook(() =>
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
+      );
+      // Move 'a' into slot 1, displacing 'b' into slot 0
+      act(() => result.current.assignSessionToSlot('a', 1));
+      const next = onLayoutChange.mock.calls[0][0] as TabLayout;
+      expect(next.sessions[0].sessionId).toBe('b');
+      expect(next.sessions[1].sessionId).toBe('a');
+    });
+
+    it('replaces the destination slot when source is hidden', () => {
+      const { result } = renderHook(() =>
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b'), makeSession('hidden')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
+      );
+      act(() => result.current.assignSessionToSlot('hidden', 0));
+      const next = onLayoutChange.mock.calls[0][0] as TabLayout;
+      expect(next.sessions[0].sessionId).toBe('hidden');
+      expect(next.sessions[1].sessionId).toBe('b');
+    });
+
+    it('ignores out-of-range slot indices', () => {
+      const { result } = renderHook(() =>
+        useTabLayoutManager(
+          [makeSession('a'), makeSession('b')],
+          'a',
+          layoutWithSlots,
+          onLayoutChange,
+          onSessionClose,
+          false,
+        ),
+      );
+      act(() => result.current.assignSessionToSlot('a', 99));
+      act(() => result.current.assignSessionToSlot('a', -1));
+      expect(onLayoutChange).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── hiddenSessions ─────────────────────────────────────────
+
+  describe('hiddenSessions', () => {
+    it('reports sessions that arent in the layout', () => {
+      const layout: TabLayout = {
+        mode: 'grid2',
+        sessions: [
+          { sessionId: 'a', position: { x: 0, y: 0, width: 50, height: 100 } },
+          { sessionId: 'b', position: { x: 50, y: 0, width: 50, height: 100 } },
+        ],
+      };
+      const sessions = [makeSession('a'), makeSession('b'), makeSession('c'), makeSession('d')];
+      const { result } = renderHook(() =>
+        useTabLayoutManager(sessions, 'a', layout, onLayoutChange, onSessionClose, false),
+      );
+      expect(result.current.hiddenSessions.map((s) => s.id).sort()).toEqual(['c', 'd']);
+    });
+
+    it('is empty when all sessions fit', () => {
       const layout: TabLayout = {
         mode: 'tabs',
         sessions: [{ sessionId: 'a', position: { x: 0, y: 0, width: 100, height: 100 } }],
       };
-
       const { result } = renderHook(() =>
-        useTabLayoutManager(sessions, 'a', layout, onLayoutChange, onSessionClose, false),
+        useTabLayoutManager([makeSession('a')], 'a', layout, onLayoutChange, onSessionClose, false),
       );
+      expect(result.current.hiddenSessions).toHaveLength(0);
+    });
+  });
 
+  // ── customGrid mode integration ────────────────────────────
+
+  describe('handleCustomGridApply mode tagging', () => {
+    it('sets mode to customGrid (not mosaic) so persistence preserves user intent', () => {
+      const sessions = Array.from({ length: 6 }, (_, i) => makeSession(String(i)));
+      const { result } = renderHook(() =>
+        useTabLayoutManager(sessions, '0', defaultLayout(), onLayoutChange, onSessionClose, false),
+      );
       act(() => {
-        result.current.handleSessionResize('nonexistent', 500, 300);
+        result.current.setCustomCols(3);
+        result.current.setCustomRows(2);
       });
-
-      expect(onLayoutChange).not.toHaveBeenCalled();
+      act(() => result.current.handleCustomGridApply());
+      const layout = onLayoutChange.mock.calls[0][0] as TabLayout;
+      expect(layout.mode).toBe('customGrid');
+      expect(layout.customCols).toBe(3);
+      expect(layout.customRows).toBe(2);
     });
   });
 

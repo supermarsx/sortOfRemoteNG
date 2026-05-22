@@ -1,35 +1,11 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
-import { ConnectionSession, TabLayout } from '../../types/connection/connection';
-
-const orderSessions = (sessions: ConnectionSession[], activeSessionId?: string) => {
-  if (!activeSessionId) return sessions;
-  const active = sessions.find((session) => session.id === activeSessionId);
-  if (!active) return sessions;
-  return [active, ...sessions.filter((session) => session.id !== activeSessionId)];
-};
-
-const buildGridLayout = (
-  mode: TabLayout['mode'],
-  sessions: ConnectionSession[],
-  cols: number,
-  rows?: number,
-) => {
-  const totalRows = (rows ?? Math.ceil(sessions.length / cols)) || 1;
-  const width = 100 / cols;
-  const height = 100 / totalRows;
-
-  return {
-    mode,
-    sessions: sessions.map((session, index) => {
-      const colIndex = index % cols;
-      const rowIndex = Math.floor(index / cols);
-      return {
-        sessionId: session.id,
-        position: { x: colIndex * width, y: rowIndex * height, width, height },
-      };
-    }),
-  };
-};
+import { ConnectionSession, TabLayout, TabLayoutMode } from '../../types/connection/connection';
+import {
+  buildTabLayout,
+  clampGridDim,
+  layoutCapacity,
+  MAX_CUSTOM_GRID_DIM,
+} from '../../utils/session/tabLayoutBuilder';
 
 export function useTabLayoutManager(
   sessions: ConnectionSession[],
@@ -42,13 +18,30 @@ export function useTabLayoutManager(
   const containerRef = useRef<HTMLDivElement>(null);
   const customGridButtonRef = useRef<HTMLDivElement>(null);
   const [showCustomGrid, setShowCustomGrid] = useState(false);
-  const [customCols, setCustomCols] = useState(2);
-  const [customRows, setCustomRows] = useState(2);
-
-  const orderedSessions = useMemo(
-    () => orderSessions(sessions, activeSessionId),
-    [sessions, activeSessionId],
+  const [customCols, setCustomColsRaw] = useState<number>(
+    () => clampGridDim(layout.customCols ?? 2),
   );
+  const [customRows, setCustomRowsRaw] = useState<number>(
+    () => clampGridDim(layout.customRows ?? 2),
+  );
+
+  // Wrap the col/row setters so out-of-band values can never reach
+  // the renderer (e.g. a stale slider event).
+  const setCustomCols = useCallback(
+    (n: number) => setCustomColsRaw(clampGridDim(n)),
+    [],
+  );
+  const setCustomRows = useCallback(
+    (n: number) => setCustomRowsRaw(clampGridDim(n)),
+    [],
+  );
+
+  const orderedSessions = useMemo(() => {
+    if (!activeSessionId) return sessions;
+    const active = sessions.find((s) => s.id === activeSessionId);
+    if (!active) return sessions;
+    return [active, ...sessions.filter((s) => s.id !== activeSessionId)];
+  }, [sessions, activeSessionId]);
 
   const handleMiddleClick = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
@@ -62,89 +55,94 @@ export function useTabLayoutManager(
   );
 
   const handleCustomGridApply = useCallback(() => {
-    const maxSessions = customCols * customRows;
-    const sessionsToUse = orderedSessions.slice(0, maxSessions);
-    const customLayout = buildGridLayout(
-      'customGrid' as TabLayout['mode'],
-      sessionsToUse,
-      customCols,
-      customRows,
+    onLayoutChange(
+      buildTabLayout('customGrid', orderedSessions, {
+        activeSessionId,
+        customCols,
+        customRows,
+      }),
     );
-    onLayoutChange({ ...customLayout, mode: 'mosaic' as TabLayout['mode'] });
     setShowCustomGrid(false);
-  }, [customCols, customRows, orderedSessions, onLayoutChange]);
+  }, [customCols, customRows, orderedSessions, activeSessionId, onLayoutChange]);
 
   const handleLayoutModeChange = useCallback(
-    (mode: TabLayout['mode']) => {
-      let updatedLayout: TabLayout;
-      switch (mode) {
-        case 'splitVertical': {
-          const cols = 2;
-          const rows = Math.ceil(orderedSessions.length / cols) || 1;
-          updatedLayout = buildGridLayout(mode, orderedSessions, cols, rows);
-          break;
-        }
-        case 'splitHorizontal': {
-          const rows = 2;
-          const cols = Math.ceil(orderedSessions.length / rows) || 1;
-          updatedLayout = buildGridLayout(mode, orderedSessions, cols, rows);
-          break;
-        }
-        case 'grid2':
-          updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 2), 2, 1);
-          break;
-        case 'grid4':
-          updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 4), 2, 2);
-          break;
-        case 'grid6':
-          updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 6), 3, 2);
-          break;
-        case 'sideBySide':
-          updatedLayout = buildGridLayout(mode, orderedSessions, 2);
-          break;
-        case 'mosaic': {
-          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
-          updatedLayout = buildGridLayout(mode, orderedSessions, cols);
-          break;
-        }
-        case 'miniMosaic': {
-          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
-          updatedLayout = buildGridLayout(mode, orderedSessions, cols);
-          break;
-        }
-        default:
-          updatedLayout = buildGridLayout('tabs', orderedSessions, 1, 1);
-          break;
-      }
-      onLayoutChange(updatedLayout);
+    (mode: TabLayoutMode) => {
+      onLayoutChange(
+        buildTabLayout(mode, orderedSessions, {
+          activeSessionId,
+          customCols,
+          customRows,
+        }),
+      );
     },
-    [orderedSessions, onLayoutChange],
+    [orderedSessions, activeSessionId, customCols, customRows, onLayoutChange],
   );
 
-  const handleSessionResize = useCallback(
-    (sessionId: string, width: number, height: number) => {
-      const sessionLayout = layout.sessions.find((s) => s.sessionId === sessionId);
-      if (!sessionLayout) return;
-      const containerWidth = containerRef.current?.clientWidth || 1;
-      const containerHeight = containerRef.current?.clientHeight || 1;
-      const newLayout: TabLayout = {
-        ...layout,
-        sessions: layout.sessions.map((s) =>
-          s.sessionId === sessionId
-            ? {
-                ...s,
-                position: {
-                  ...s.position,
-                  width: (width / containerWidth) * 100,
-                  height: (height / containerHeight) * 100,
-                },
-              }
-            : s,
-        ),
-      };
-      onLayoutChange(newLayout);
+  /**
+   * Swap two slots in the current layout. Used by tile drag-and-drop
+   * and by the "Show in this tile" menu item. The mode stays the
+   * same; only the slot-to-session mapping changes. If the target
+   * session isn't currently in the layout (capped mode, overflow),
+   * it replaces the session at the destination slot.
+   */
+  const swapSessionsInSlots = useCallback(
+    (sourceSessionId: string, destSessionId: string) => {
+      if (sourceSessionId === destSessionId) return;
+      const srcIdx = layout.sessions.findIndex((s) => s.sessionId === sourceSessionId);
+      const dstIdx = layout.sessions.findIndex((s) => s.sessionId === destSessionId);
+      const nextSessions = [...layout.sessions];
+      if (srcIdx >= 0 && dstIdx >= 0) {
+        // Both in layout — swap their session ids, keep positions
+        nextSessions[srcIdx] = { ...nextSessions[srcIdx], sessionId: destSessionId };
+        nextSessions[dstIdx] = { ...nextSessions[dstIdx], sessionId: sourceSessionId };
+      } else if (dstIdx >= 0) {
+        // Source is hidden — promote it into the destination slot
+        nextSessions[dstIdx] = { ...nextSessions[dstIdx], sessionId: sourceSessionId };
+      } else if (srcIdx >= 0) {
+        // Destination is hidden — promote it into the source slot
+        nextSessions[srcIdx] = { ...nextSessions[srcIdx], sessionId: destSessionId };
+      } else {
+        return;
+      }
+      onLayoutChange({ ...layout, sessions: nextSessions });
     },
     [layout, onLayoutChange],
+  );
+
+  /**
+   * Move a session into a specific slot index. Used by the tab
+   * context menu's "Move to tile N" submenu. Slots out of range
+   * are no-ops so the caller doesn't need to bounds-check.
+   */
+  const assignSessionToSlot = useCallback(
+    (sessionId: string, slotIndex: number) => {
+      if (slotIndex < 0 || slotIndex >= layout.sessions.length) return;
+      const existingSlot = layout.sessions.findIndex((s) => s.sessionId === sessionId);
+      const nextSessions = [...layout.sessions];
+      const previousOccupant = nextSessions[slotIndex].sessionId;
+      nextSessions[slotIndex] = { ...nextSessions[slotIndex], sessionId };
+      if (existingSlot >= 0 && existingSlot !== slotIndex) {
+        nextSessions[existingSlot] = { ...nextSessions[existingSlot], sessionId: previousOccupant };
+      }
+      onLayoutChange({ ...layout, sessions: nextSessions });
+    },
+    [layout, onLayoutChange],
+  );
+
+  /**
+   * Sessions that are open but not assigned to a slot in the current
+   * layout — only meaningful in capped modes (grid2/4/6, customGrid).
+   * The TabLayoutManager toolbar shows a "+N hidden" pill so the user
+   * can promote one of these into a slot.
+   */
+  const hiddenSessions = useMemo(() => {
+    const visibleSet = new Set(layout.sessions.map((s) => s.sessionId));
+    return sessions.filter((s) => !visibleSet.has(s.id));
+  }, [layout.sessions, sessions]);
+
+  const capacity = useMemo(
+    () => layoutCapacity(layout, sessions.length),
+    [layout, sessions.length],
   );
 
   return {
@@ -156,10 +154,14 @@ export function useTabLayoutManager(
     setCustomCols,
     customRows,
     setCustomRows,
+    maxCustomGridDim: MAX_CUSTOM_GRID_DIM,
     orderedSessions,
     handleMiddleClick,
     handleCustomGridApply,
     handleLayoutModeChange,
-    handleSessionResize,
+    swapSessionsInSlots,
+    assignSessionToSlot,
+    hiddenSessions,
+    capacity,
   };
 }
