@@ -4,9 +4,18 @@ import { Modal } from "../../../ui/overlays/Modal";
 import { NumberInput } from "../../../ui/forms";
 import type { Mgr } from "./types";
 function AuthTokenModal({ mgr }: { mgr: Mgr }) {
+  const target = (mgr.syncTargets ?? []).find(
+    (t) => t.id === mgr.authTargetId,
+  );
+  const providerLabel =
+    target?.provider === "googleDrive"
+      ? "Google Drive"
+      : target?.provider === "oneDrive"
+        ? "OneDrive"
+        : "provider";
   return (
     <Modal
-      isOpen={Boolean(mgr.authProvider)}
+      isOpen={Boolean(mgr.authTargetId)}
       onClose={mgr.closeTokenDialog}
       closeOnEscape={false}
       backdropClassName="z-50 bg-black/60 p-4"
@@ -16,9 +25,8 @@ function AuthTokenModal({ mgr }: { mgr: Mgr }) {
       <div className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-[var(--color-text)]">
-            {mgr.authProvider === "googleDrive"
-              ? "Connect Google Drive"
-              : "Connect OneDrive"}
+            Connect {providerLabel}
+            {target ? ` — ${target.label}` : ""}
           </h3>
           <button
             onClick={mgr.closeTokenDialog}

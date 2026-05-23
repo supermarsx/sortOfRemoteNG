@@ -1,38 +1,98 @@
-import { PasswordInput, Textarea} from '../../../ui/forms';
-import { Check, Globe, Folder, Key } from "lucide-react";
-import { CloudSyncProvider } from "../../../../types/settings/settings";
+import { PasswordInput, Textarea } from '../../../ui/forms';
+import { Check, Globe } from "lucide-react";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
+import type {
+  CloudSyncTarget,
+  GoogleDriveProviderConfig,
+  OneDriveProviderConfig,
+  NextcloudProviderConfig,
+  WebDavProviderConfig,
+  SftpProviderConfig,
+} from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
+
+/**
+ * Per-target provider configuration editor. Reads from and writes to
+ * the matching provider sub-object on the supplied `target`, not the
+ * legacy top-level CloudSyncConfig provider blocks.
+ */
 function ProviderConfig({
-  provider,
+  target,
   mgr,
 }: {
-  provider: CloudSyncProvider;
+  target: CloudSyncTarget;
   mgr: Mgr;
 }) {
-  const cs = mgr.cloudSync;
+  const writeGoogle = (patch: Partial<GoogleDriveProviderConfig>) =>
+    mgr.updateSyncTarget(target.id, {
+      googleDrive: {
+        folderPath: "/sortOfRemoteNG",
+        ...target.googleDrive,
+        ...patch,
+      },
+    });
+  const writeOneDrive = (patch: Partial<OneDriveProviderConfig>) =>
+    mgr.updateSyncTarget(target.id, {
+      oneDrive: {
+        folderPath: "/sortOfRemoteNG",
+        ...target.oneDrive,
+        ...patch,
+      },
+    });
+  const writeNextcloud = (patch: Partial<NextcloudProviderConfig>) =>
+    mgr.updateSyncTarget(target.id, {
+      nextcloud: {
+        serverUrl: "",
+        username: "",
+        folderPath: "/sortOfRemoteNG",
+        useAppPassword: true,
+        ...target.nextcloud,
+        ...patch,
+      },
+    });
+  const writeWebdav = (patch: Partial<WebDavProviderConfig>) =>
+    mgr.updateSyncTarget(target.id, {
+      webdav: {
+        serverUrl: "",
+        username: "",
+        folderPath: "/sortOfRemoteNG",
+        authMethod: "basic",
+        ...target.webdav,
+        ...patch,
+      },
+    });
+  const writeSftp = (patch: Partial<SftpProviderConfig>) =>
+    mgr.updateSyncTarget(target.id, {
+      sftp: {
+        host: "",
+        port: 22,
+        username: "",
+        folderPath: "/sortOfRemoteNG",
+        authMethod: "password",
+        ...target.sftp,
+        ...patch,
+      },
+    });
 
-  switch (provider) {
-    case "googleDrive":
+  switch (target.provider) {
+    case "googleDrive": {
+      const gd = target.googleDrive;
       return (
         <div className="space-y-4">
-          {cs.googleDrive.accountEmail ? (
+          {gd?.accountEmail ? (
             <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg border border-success/30">
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-success" />
                 <span className="text-sm text-[var(--color-text)]">
-                  Connected as {cs.googleDrive.accountEmail}
+                  Connected as {gd.accountEmail}
                 </span>
               </div>
               <button
                 onClick={() =>
-                  mgr.updateCloudSync({
-                    googleDrive: {
-                      ...cs.googleDrive,
-                      accessToken: undefined,
-                      refreshToken: undefined,
-                      accountEmail: undefined,
-                    },
+                  writeGoogle({
+                    accessToken: undefined,
+                    refreshToken: undefined,
+                    accountEmail: undefined,
                   })
                 }
                 className="text-xs text-error hover:text-error"
@@ -42,7 +102,7 @@ function ProviderConfig({
             </div>
           ) : (
             <button
-              onClick={() => mgr.openTokenDialog("googleDrive")}
+              onClick={() => mgr.openTokenDialog(target.id)}
               className="w-full px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Globe className="w-4 h-4" />
@@ -56,42 +116,34 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.googleDrive.folderPath}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  googleDrive: {
-                    ...cs.googleDrive,
-                    folderPath: e.target.value,
-                  },
-                })
-              }
+              value={gd?.folderPath ?? ""}
+              onChange={(e) => writeGoogle({ folderPath: e.target.value })}
               placeholder="/sortOfRemoteNG"
               className="sor-settings-input"
             />
           </div>
         </div>
       );
+    }
 
-    case "oneDrive":
+    case "oneDrive": {
+      const od = target.oneDrive;
       return (
         <div className="space-y-4">
-          {cs.oneDrive.accountEmail ? (
+          {od?.accountEmail ? (
             <div className="flex items-center justify-between p-3 bg-primary/10 rounded-lg border border-primary/30">
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-primary" />
                 <span className="text-sm text-[var(--color-text)]">
-                  Connected as {cs.oneDrive.accountEmail}
+                  Connected as {od.accountEmail}
                 </span>
               </div>
               <button
                 onClick={() =>
-                  mgr.updateCloudSync({
-                    oneDrive: {
-                      ...cs.oneDrive,
-                      accessToken: undefined,
-                      refreshToken: undefined,
-                      accountEmail: undefined,
-                    },
+                  writeOneDrive({
+                    accessToken: undefined,
+                    refreshToken: undefined,
+                    accountEmail: undefined,
                   })
                 }
                 className="text-xs text-error hover:text-error"
@@ -101,7 +153,7 @@ function ProviderConfig({
             </div>
           ) : (
             <button
-              onClick={() => mgr.openTokenDialog("oneDrive")}
+              onClick={() => mgr.openTokenDialog(target.id)}
               className="w-full px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Globe className="w-4 h-4" />
@@ -115,20 +167,18 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.oneDrive.folderPath}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  oneDrive: { ...cs.oneDrive, folderPath: e.target.value },
-                })
-              }
+              value={od?.folderPath ?? ""}
+              onChange={(e) => writeOneDrive({ folderPath: e.target.value })}
               placeholder="/sortOfRemoteNG"
               className="sor-settings-input"
             />
           </div>
         </div>
       );
+    }
 
-    case "nextcloud":
+    case "nextcloud": {
+      const nc = target.nextcloud;
       return (
         <div className="space-y-4">
           <div>
@@ -137,12 +187,8 @@ function ProviderConfig({
             </label>
             <input
               type="url"
-              value={cs.nextcloud.serverUrl}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  nextcloud: { ...cs.nextcloud, serverUrl: e.target.value },
-                })
-              }
+              value={nc?.serverUrl ?? ""}
+              onChange={(e) => writeNextcloud({ serverUrl: e.target.value })}
               placeholder="https://cloud.example.com"
               className="sor-settings-input"
             />
@@ -154,24 +200,19 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.nextcloud.username}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  nextcloud: { ...cs.nextcloud, username: e.target.value },
-                })
-              }
+              value={nc?.username ?? ""}
+              onChange={(e) => writeNextcloud({ username: e.target.value })}
               placeholder="your-username"
               className="sor-settings-input"
             />
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={cs.nextcloud.useAppPassword} onChange={(v: boolean) => mgr.updateCloudSync({
-                  nextcloud: {
-                    ...cs.nextcloud,
-                    useAppPassword: v,
-                  },
-                })} className="sor-checkbox-sm" />
+            <Checkbox
+              checked={Boolean(nc?.useAppPassword)}
+              onChange={(v: boolean) => writeNextcloud({ useAppPassword: v })}
+              className="sor-checkbox-sm"
+            />
             <span className="text-sm text-[var(--color-text)]">
               Use App Password (Recommended)
             </span>
@@ -179,26 +220,21 @@ function ProviderConfig({
 
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              {cs.nextcloud.useAppPassword ? "App Password" : "Password"}
+              {nc?.useAppPassword ? "App Password" : "Password"}
             </label>
             <PasswordInput
               value={
-                cs.nextcloud.useAppPassword
-                  ? cs.nextcloud.appPassword || ""
-                  : cs.nextcloud.password || ""
+                nc?.useAppPassword ? nc?.appPassword || "" : nc?.password || ""
               }
               onChange={(e) =>
-                mgr.updateCloudSync({
-                  nextcloud: {
-                    ...cs.nextcloud,
-                    ...(cs.nextcloud.useAppPassword
-                      ? { appPassword: e.target.value }
-                      : { password: e.target.value }),
-                  },
-                })
+                writeNextcloud(
+                  nc?.useAppPassword
+                    ? { appPassword: e.target.value }
+                    : { password: e.target.value },
+                )
               }
               placeholder={
-                cs.nextcloud.useAppPassword
+                nc?.useAppPassword
                   ? "xxxxx-xxxxx-xxxxx-xxxxx"
                   : "••••••••"
               }
@@ -212,20 +248,18 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.nextcloud.folderPath}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  nextcloud: { ...cs.nextcloud, folderPath: e.target.value },
-                })
-              }
+              value={nc?.folderPath ?? ""}
+              onChange={(e) => writeNextcloud({ folderPath: e.target.value })}
               placeholder="/sortOfRemoteNG"
               className="sor-settings-input"
             />
           </div>
         </div>
       );
+    }
 
-    case "webdav":
+    case "webdav": {
+      const wd = target.webdav;
       return (
         <div className="space-y-4">
           <div>
@@ -234,12 +268,8 @@ function ProviderConfig({
             </label>
             <input
               type="url"
-              value={cs.webdav.serverUrl}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  webdav: { ...cs.webdav, serverUrl: e.target.value },
-                })
-              }
+              value={wd?.serverUrl ?? ""}
+              onChange={(e) => writeWebdav({ serverUrl: e.target.value })}
               placeholder="https://webdav.example.com/dav/"
               className="sor-settings-input"
             />
@@ -249,26 +279,30 @@ function ProviderConfig({
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Authentication Method
             </label>
-            <Select value={cs.webdav.authMethod} onChange={(v: string) => mgr.updateCloudSync({
-                  webdav: {
-                    ...cs.webdav,
-                    authMethod: v as "basic" | "digest" | "bearer",
-                  },
-                })} options={[{ value: "basic", label: "Basic Authentication" }, { value: "digest", label: "Digest Authentication" }, { value: "bearer", label: "Bearer Token" }]} className="sor-settings-input" />
+            <Select
+              value={wd?.authMethod ?? "basic"}
+              onChange={(v: string) =>
+                writeWebdav({
+                  authMethod: v as "basic" | "digest" | "bearer",
+                })
+              }
+              options={[
+                { value: "basic", label: "Basic Authentication" },
+                { value: "digest", label: "Digest Authentication" },
+                { value: "bearer", label: "Bearer Token" },
+              ]}
+              className="sor-settings-input"
+            />
           </div>
 
-          {cs.webdav.authMethod === "bearer" ? (
+          {wd?.authMethod === "bearer" ? (
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Bearer Token
               </label>
               <PasswordInput
-                value={cs.webdav.bearerToken || ""}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    webdav: { ...cs.webdav, bearerToken: e.target.value },
-                  })
-                }
+                value={wd?.bearerToken || ""}
+                onChange={(e) => writeWebdav({ bearerToken: e.target.value })}
                 placeholder="Your bearer token"
                 className="sor-settings-input"
               />
@@ -281,12 +315,8 @@ function ProviderConfig({
                 </label>
                 <input
                   type="text"
-                  value={cs.webdav.username}
-                  onChange={(e) =>
-                    mgr.updateCloudSync({
-                      webdav: { ...cs.webdav, username: e.target.value },
-                    })
-                  }
+                  value={wd?.username ?? ""}
+                  onChange={(e) => writeWebdav({ username: e.target.value })}
                   placeholder="your-username"
                   className="sor-settings-input"
                 />
@@ -297,12 +327,8 @@ function ProviderConfig({
                   Password
                 </label>
                 <PasswordInput
-                  value={cs.webdav.password || ""}
-                  onChange={(e) =>
-                    mgr.updateCloudSync({
-                      webdav: { ...cs.webdav, password: e.target.value },
-                    })
-                  }
+                  value={wd?.password || ""}
+                  onChange={(e) => writeWebdav({ password: e.target.value })}
                   placeholder="••••••••"
                   className="sor-settings-input"
                 />
@@ -316,20 +342,18 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.webdav.folderPath}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  webdav: { ...cs.webdav, folderPath: e.target.value },
-                })
-              }
+              value={wd?.folderPath ?? ""}
+              onChange={(e) => writeWebdav({ folderPath: e.target.value })}
               placeholder="/sortOfRemoteNG"
               className="sor-settings-input"
             />
           </div>
         </div>
       );
+    }
 
-    case "sftp":
+    case "sftp": {
+      const sf = target.sftp;
       return (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -339,12 +363,8 @@ function ProviderConfig({
               </label>
               <input
                 type="text"
-                value={cs.sftp.host}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    sftp: { ...cs.sftp, host: e.target.value },
-                  })
-                }
+                value={sf?.host ?? ""}
+                onChange={(e) => writeSftp({ host: e.target.value })}
                 placeholder="sftp.example.com"
                 className="sor-settings-input"
               />
@@ -354,12 +374,11 @@ function ProviderConfig({
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Port
               </label>
-              <NumberInput value={cs.sftp.port} onChange={(v: number) => mgr.updateCloudSync({
-                    sftp: {
-                      ...cs.sftp,
-                      port: v,
-                    },
-                  })} className="sor-settings-input" />
+              <NumberInput
+                value={sf?.port ?? 22}
+                onChange={(v: number) => writeSftp({ port: v })}
+                className="sor-settings-input"
+              />
             </div>
           </div>
 
@@ -369,12 +388,8 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.sftp.username}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  sftp: { ...cs.sftp, username: e.target.value },
-                })
-              }
+              value={sf?.username ?? ""}
+              onChange={(e) => writeSftp({ username: e.target.value })}
               placeholder="your-username"
               className="sor-settings-input"
             />
@@ -384,27 +399,28 @@ function ProviderConfig({
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Authentication Method
             </label>
-            <Select value={cs.sftp.authMethod} onChange={(v: string) => mgr.updateCloudSync({
-                  sftp: {
-                    ...cs.sftp,
-                    authMethod: v as "password" | "key",
-                  },
-                })} options={[{ value: "password", label: "Password" }, { value: "key", label: "SSH Key" }]} className="sor-settings-input" />
+            <Select
+              value={sf?.authMethod ?? "password"}
+              onChange={(v: string) =>
+                writeSftp({ authMethod: v as "password" | "key" })
+              }
+              options={[
+                { value: "password", label: "Password" },
+                { value: "key", label: "SSH Key" },
+              ]}
+              className="sor-settings-input"
+            />
           </div>
 
-          {cs.sftp.authMethod === "key" ? (
+          {sf?.authMethod === "key" ? (
             <>
               <div>
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                   Private Key
                 </label>
                 <Textarea
-                  value={cs.sftp.privateKey || ""}
-                  onChange={(v) =>
-                    mgr.updateCloudSync({
-                      sftp: { ...cs.sftp, privateKey: v },
-                    })
-                  }
+                  value={sf?.privateKey || ""}
+                  onChange={(v) => writeSftp({ privateKey: v })}
                   placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                   rows={4}
                   className="sor-settings-input font-mono"
@@ -416,12 +432,8 @@ function ProviderConfig({
                   Passphrase (if encrypted)
                 </label>
                 <PasswordInput
-                  value={cs.sftp.passphrase || ""}
-                  onChange={(e) =>
-                    mgr.updateCloudSync({
-                      sftp: { ...cs.sftp, passphrase: e.target.value },
-                    })
-                  }
+                  value={sf?.passphrase || ""}
+                  onChange={(e) => writeSftp({ passphrase: e.target.value })}
                   placeholder="Key passphrase"
                   className="sor-settings-input"
                 />
@@ -433,12 +445,8 @@ function ProviderConfig({
                 Password
               </label>
               <PasswordInput
-                value={cs.sftp.password || ""}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    sftp: { ...cs.sftp, password: e.target.value },
-                  })
-                }
+                value={sf?.password || ""}
+                onChange={(e) => writeSftp({ password: e.target.value })}
                 placeholder="••••••••"
                 className="sor-settings-input"
               />
@@ -451,18 +459,15 @@ function ProviderConfig({
             </label>
             <input
               type="text"
-              value={cs.sftp.folderPath}
-              onChange={(e) =>
-                mgr.updateCloudSync({
-                  sftp: { ...cs.sftp, folderPath: e.target.value },
-                })
-              }
+              value={sf?.folderPath ?? ""}
+              onChange={(e) => writeSftp({ folderPath: e.target.value })}
               placeholder="/home/user/sortOfRemoteNG"
               className="sor-settings-input"
             />
           </div>
         </div>
       );
+    }
 
     default:
       return null;

@@ -56,7 +56,7 @@ import ConflictResolutionSection from "./cloudSync/ConflictResolutionSection";
 import EnableSyncToggle from "./cloudSync/EnableSyncToggle";
 import EncryptionSection from "./cloudSync/EncryptionSection";
 import NotificationsGrid from "./cloudSync/NotificationsGrid";
-import ProviderList from "./cloudSync/ProviderList";
+import SyncTargetsSection from "./cloudSync/SyncTargetsSection";
 import StartupShutdownGrid from "./cloudSync/StartupShutdownGrid";
 import SyncFrequencySelect from "./cloudSync/SyncFrequencySelect";
 import SyncItemsGrid from "./cloudSync/SyncItemsGrid";
@@ -73,12 +73,12 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <SectionHeading icon={<CloudCog className="w-5 h-5" />} title="Cloud Sync" />
+        <SectionHeading icon={<CloudCog className="w-5 h-5 text-primary" />} title="Cloud Sync" />
         <button
           onClick={() => mgr.handleSyncNow()}
           disabled={
             !mgr.cloudSync.enabled ||
-            mgr.enabledProviders.length === 0 ||
+            mgr.syncTargets.length === 0 ||
             mgr.isSyncing
           }
           className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
@@ -93,15 +93,15 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       </p>
 
       {/* Multi-Target Sync Status Overview */}
-      {mgr.cloudSync.enabled && mgr.enabledProviders.length > 0 && (
+      {mgr.cloudSync.enabled && mgr.syncTargets.length > 0 && (
         <SyncStatusOverview mgr={mgr} />
       )}
 
       {/* Enable Cloud Sync */}
       <EnableSyncToggle mgr={mgr} />
 
-      {/* Multi-Target Cloud Providers */}
-      <ProviderList mgr={mgr} />
+      {/* Named multi-target sync destinations — credentials live per target */}
+      <SyncTargetsSection mgr={mgr} />
 
       {/* Sync Frequency */}
       <SyncFrequencySelect mgr={mgr} />
@@ -124,8 +124,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       {/* Advanced Options */}
       <AdvancedSection mgr={mgr} />
 
-      {/* Auth Token Modal */}
-      {mgr.authProvider && <AuthTokenModal mgr={mgr} />}
+      {/* Auth Token Modal (scoped to a single target) */}
+      {mgr.authTargetId && <AuthTokenModal mgr={mgr} />}
     </div>
   );
 };

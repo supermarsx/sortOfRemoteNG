@@ -5,6 +5,7 @@ import {
   CustomScript,
   defaultBackupConfig,
   migrateBackupConfig,
+  migrateCloudSyncConfig,
   defaultSSHTerminalConfig,
   defaultSSHConnectionConfig,
   defaultCloudSyncConfig,
@@ -701,6 +702,13 @@ export class SettingsManager {
           backup: migrateBackupConfig({
             ...DEFAULT_SETTINGS.backup,
             ...(storedSettings.backup ?? {}),
+          }),
+          // Wrap the legacy `cloudSync.enabledProviders` flat list
+          // into the new `cloudSync.syncTargets[]` shape on first
+          // load after the multi-target work landed. Idempotent.
+          cloudSync: migrateCloudSyncConfig({
+            ...DEFAULT_SETTINGS.cloudSync,
+            ...(storedSettings.cloudSync ?? {}),
           }),
         };
       }

@@ -3,7 +3,7 @@ import { Checkbox } from "../../../ui/forms";
 import type { Mgr } from "./types";
 function EnableSyncToggle({ mgr }: { mgr: Mgr }) {
   return (
-    <div className="sor-section-card">
+    <div className="sor-settings-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-primary/20 rounded-lg">

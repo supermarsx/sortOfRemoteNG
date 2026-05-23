@@ -16,7 +16,10 @@ import {
   CloudSyncProvider,
   CloudSyncFrequency,
   ConflictResolutionStrategy,
+  CloudSyncTarget,
   defaultCloudSyncConfig,
+  defaultProviderConfigFor,
+  generateCloudSyncTargetId,
   ProviderSyncStatus,
 } from "../../types/settings/settings";
 
@@ -95,15 +98,10 @@ export function useCloudSyncSettings(
   settings: GlobalSettings,
   updateSettings: (updates: Partial<GlobalSettings>) => void,
 ) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [expandedProvider, setExpandedProvider] =
-    useState<CloudSyncProvider | null>(null);
+  const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncingProvider, setSyncingProvider] =
-    useState<CloudSyncProvider | null>(null);
-  const [authProvider, setAuthProvider] = useState<CloudSyncProvider | null>(
-    null,
-  );
+  const [syncingTargetId, setSyncingTargetId] = useState<string | null>(null);
+  const [authTargetId, setAuthTargetId] = useState<string | null>(null);
   const [authForm, setAuthForm] = useState({
     accessToken: "",
     refreshToken: "",
@@ -113,8 +111,18 @@ export function useCloudSyncSettings(
 
   // Derived / backward-compat
   const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
-  const enabledProviders = cloudSync.enabledProviders ?? [];
   const providerStatus = cloudSync.providerStatus ?? {};
+  // Legacy callers (sync status badges, etc.) still ask which
+  // providers are "active". Derive from the new per-target list:
+  // a provider is active when at least one enabled target points
+  // at it.
+  const enabledProviders: CloudSyncProvider[] = Array.from(
+    new Set(
+      (cloudSync.syncTargets ?? [])
+        .filter((t) => t.enabled)
+        .map((t) => t.provider),
+    ),
+  );
 
   const updateCloudSync = (updates: Partial<CloudSyncConfig>) => {
     updateSettings({
@@ -122,55 +130,64 @@ export function useCloudSyncSettings(
     });
   };
 
-  // ── Token dialog ──
+  // ── Token dialog (scoped to a single target) ──
 
-  const openTokenDialog = (provider: CloudSyncProvider) => {
-    if (provider === "googleDrive") {
+  const openTokenDialog = (targetId: string) => {
+    const target = (cloudSync.syncTargets ?? []).find((t) => t.id === targetId);
+    if (!target) return;
+    if (target.provider === "googleDrive") {
+      const gd = target.googleDrive;
       setAuthForm({
-        accessToken: cloudSync.googleDrive.accessToken ?? "",
-        refreshToken: cloudSync.googleDrive.refreshToken ?? "",
-        accountEmail: cloudSync.googleDrive.accountEmail ?? "",
-        tokenExpiry: cloudSync.googleDrive.tokenExpiry
-          ? String(cloudSync.googleDrive.tokenExpiry)
-          : "",
+        accessToken: gd?.accessToken ?? "",
+        refreshToken: gd?.refreshToken ?? "",
+        accountEmail: gd?.accountEmail ?? "",
+        tokenExpiry: gd?.tokenExpiry ? String(gd.tokenExpiry) : "",
       });
-    } else if (provider === "oneDrive") {
+    } else if (target.provider === "oneDrive") {
+      const od = target.oneDrive;
       setAuthForm({
-        accessToken: cloudSync.oneDrive.accessToken ?? "",
-        refreshToken: cloudSync.oneDrive.refreshToken ?? "",
-        accountEmail: cloudSync.oneDrive.accountEmail ?? "",
-        tokenExpiry: cloudSync.oneDrive.tokenExpiry
-          ? String(cloudSync.oneDrive.tokenExpiry)
-          : "",
+        accessToken: od?.accessToken ?? "",
+        refreshToken: od?.refreshToken ?? "",
+        accountEmail: od?.accountEmail ?? "",
+        tokenExpiry: od?.tokenExpiry ? String(od.tokenExpiry) : "",
       });
+    } else {
+      return;
     }
-    setAuthProvider(provider);
+    setAuthTargetId(targetId);
   };
 
   const saveTokenDialog = () => {
-    if (!authProvider) return;
+    if (!authTargetId) return;
+    const target = (cloudSync.syncTargets ?? []).find(
+      (t) => t.id === authTargetId,
+    );
+    if (!target) {
+      setAuthTargetId(null);
+      return;
+    }
     const tokenExpiry = authForm.tokenExpiry.trim();
     const parsedExpiry = tokenExpiry ? Number(tokenExpiry) : undefined;
     const expiryValue = Number.isFinite(parsedExpiry)
       ? parsedExpiry
       : undefined;
 
-    if (authProvider === "googleDrive") {
-      updateCloudSync({
+    if (target.provider === "googleDrive") {
+      updateSyncTarget(authTargetId, {
         googleDrive: {
-          ...cloudSync.googleDrive,
+          folderPath: target.googleDrive?.folderPath ?? "/sortOfRemoteNG",
+          ...target.googleDrive,
           accessToken: authForm.accessToken || undefined,
           refreshToken: authForm.refreshToken || undefined,
           accountEmail: authForm.accountEmail || undefined,
           tokenExpiry: expiryValue,
         },
       });
-    }
-
-    if (authProvider === "oneDrive") {
-      updateCloudSync({
+    } else if (target.provider === "oneDrive") {
+      updateSyncTarget(authTargetId, {
         oneDrive: {
-          ...cloudSync.oneDrive,
+          folderPath: target.oneDrive?.folderPath ?? "/sortOfRemoteNG",
+          ...target.oneDrive,
           accessToken: authForm.accessToken || undefined,
           refreshToken: authForm.refreshToken || undefined,
           accountEmail: authForm.accountEmail || undefined,
@@ -179,41 +196,11 @@ export function useCloudSyncSettings(
       });
     }
 
-    setAuthProvider(null);
+    setAuthTargetId(null);
   };
 
   const closeTokenDialog = () => {
-    setAuthProvider(null);
-  };
-
-  // ── Provider management ──
-
-  const toggleProvider = (provider: CloudSyncProvider) => {
-    if (provider === "none") return;
-
-    const newEnabledProviders = enabledProviders.includes(provider)
-      ? enabledProviders.filter((p) => p !== provider)
-      : [...enabledProviders, provider];
-
-    const newStatus = { ...providerStatus };
-    if (!enabledProviders.includes(provider)) {
-      newStatus[provider] = { enabled: true };
-      setExpandedProvider(provider);
-    } else {
-      if (newStatus[provider]) {
-        newStatus[provider] = { ...newStatus[provider], enabled: false };
-      }
-      if (expandedProvider === provider) {
-        setExpandedProvider(null);
-      }
-    }
-
-    updateCloudSync({
-      enabledProviders: newEnabledProviders,
-      providerStatus: newStatus,
-      provider:
-        newEnabledProviders.length > 0 ? newEnabledProviders[0] : "none",
-    });
+    setAuthTargetId(null);
   };
 
   const getProviderStatus = (
@@ -252,38 +239,102 @@ export function useCloudSyncSettings(
     });
   };
 
-  // ── Sync ──
+  /* ═══════════════════════════════════════════════════════════════
+     Multi-target list management — mirrors useBackupSettings
+     ═══════════════════════════════════════════════════════════════ */
 
-  const handleSyncNow = async (provider?: CloudSyncProvider) => {
-    if (!cloudSync.enabled || enabledProviders.length === 0) return;
+  const syncTargets: CloudSyncTarget[] = cloudSync.syncTargets ?? [];
+
+  const writeSyncTargets = (next: CloudSyncTarget[]) => {
+    updateCloudSync({ syncTargets: next });
+  };
+
+  /** Append a new sync target row pointing at the chosen provider. */
+  const addSyncTarget = (
+    provider: CloudSyncProvider = "googleDrive",
+  ): string => {
+    const id = generateCloudSyncTargetId();
+    const providerLabel = providerLabels[provider] ?? "Sync Target";
+    const next: CloudSyncTarget = {
+      id,
+      label: `${providerLabel} ${syncTargets.length + 1}`,
+      provider,
+      enabled: true,
+      ...defaultProviderConfigFor(provider),
+    };
+    writeSyncTargets([...syncTargets, next]);
+    return id;
+  };
+
+  /** Remove a sync target by id. No-op when the id isn't present. */
+  const removeSyncTarget = (id: string) => {
+    writeSyncTargets(syncTargets.filter((t) => t.id !== id));
+  };
+
+  /** Patch one sync target by id with the provided updates. */
+  const updateSyncTarget = (id: string, updates: Partial<CloudSyncTarget>) => {
+    writeSyncTargets(
+      syncTargets.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    );
+  };
+
+  /** Toggle the per-row `enabled` flag for a target. */
+  const toggleSyncTarget = (id: string) => {
+    const target = syncTargets.find((t) => t.id === id);
+    if (!target) return;
+    updateSyncTarget(id, { enabled: !target.enabled });
+  };
+
+  /** Reorder targets by index. Out-of-range calls become no-ops. */
+  const reorderSyncTargets = (from: number, to: number) => {
+    if (
+      from === to ||
+      from < 0 ||
+      from >= syncTargets.length ||
+      to < 0 ||
+      to >= syncTargets.length
+    ) {
+      return;
+    }
+    const next = [...syncTargets];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    writeSyncTargets(next);
+  };
+
+  // ── Sync (target-scoped) ──
+
+  const handleSyncNow = async (targetId?: string) => {
+    if (!cloudSync.enabled || syncTargets.length === 0) return;
     if (isSyncing) return;
 
-    const targetProviders = provider
-      ? enabledProviders.includes(provider)
-        ? [provider]
-        : []
-      : enabledProviders;
+    const targetsToRun = targetId
+      ? syncTargets.filter((t) => t.id === targetId && t.enabled)
+      : syncTargets.filter((t) => t.enabled);
 
-    if (targetProviders.length === 0) return;
+    if (targetsToRun.length === 0) return;
 
     setIsSyncing(true);
-    setSyncingProvider(provider ?? null);
+    setSyncingTargetId(targetId ?? null);
     try {
-      applySyncStatusUpdate(targetProviders, "success");
+      const providersTouched = Array.from(
+        new Set(targetsToRun.map((t) => t.provider)),
+      );
+      applySyncStatusUpdate(providersTouched, "success");
     } finally {
       setIsSyncing(false);
-      setSyncingProvider(null);
+      setSyncingTargetId(null);
     }
   };
 
-  const handleSyncProvider = async (provider: CloudSyncProvider) => {
-    await handleSyncNow(provider);
+  const handleSyncTarget = async (targetId: string) => {
+    await handleSyncNow(targetId);
   };
 
   // ── Sync status icon helpers ──
 
   const getSyncStatusIcon = () => {
-    if (!cloudSync.enabled || enabledProviders.length === 0) {
+    if (!cloudSync.enabled || syncTargets.length === 0) {
       return React.createElement(CloudOff, {
         className: "w-5 h-5 text-[var(--color-textSecondary)]",
       });
@@ -314,13 +365,11 @@ export function useCloudSyncSettings(
 
   return {
     // State
-    showAdvanced,
-    setShowAdvanced,
-    expandedProvider,
-    setExpandedProvider,
+    expandedTargetId,
+    setExpandedTargetId,
     isSyncing,
-    syncingProvider,
-    authProvider,
+    syncingTargetId,
+    authTargetId,
     authForm,
     setAuthForm,
 
@@ -328,17 +377,24 @@ export function useCloudSyncSettings(
     cloudSync,
     enabledProviders,
     providerStatus,
+    syncTargets,
 
     // Actions
     updateCloudSync,
     openTokenDialog,
     saveTokenDialog,
     closeTokenDialog,
-    toggleProvider,
     getProviderStatus,
     getSyncTimestampMs,
     handleSyncNow,
-    handleSyncProvider,
+    handleSyncTarget,
     getSyncStatusIcon,
+
+    // Multi-target list management
+    addSyncTarget,
+    removeSyncTarget,
+    updateSyncTarget,
+    toggleSyncTarget,
+    reorderSyncTargets,
   };
 }
