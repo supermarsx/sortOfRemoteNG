@@ -180,4 +180,26 @@ describe("Secondary settings section centralization", () => {
     fireEvent.click(startMinimizedCheckbox);
     expect(updateSettings).toHaveBeenCalled();
   });
+
+  it("uses the accent color for StartupSettings heading and subsection icons", () => {
+    const { container } = render(
+      <StartupSettings
+        settings={baseSettings}
+        updateSettings={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+
+    const sectionIcons = Array.from(
+      container.querySelectorAll(".sor-settings-section-header > svg"),
+    );
+
+    expect(sectionIcons).toHaveLength(3);
+    for (const icon of sectionIcons) {
+      expect(icon.getAttribute("class")).toContain("text-primary");
+    }
+  });
 });

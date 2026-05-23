@@ -19,6 +19,9 @@ import {
 import { Checkbox, Textarea} from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 import { InfoTooltip } from '../../ui/InfoTooltip';
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../ui/settings/SettingsPrimitives";
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -44,13 +47,14 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Power className="w-5 h-5" />} title={t("settings.startup.title", "Startup & Tray")} description="Application launch behavior, system tray options, and welcome screen customization." />
+      <SectionHeading icon={<Power className="w-5 h-5 text-primary" />} title={t("settings.startup.title", "Startup & Tray")} description="Application launch behavior, system tray options, and welcome screen customization." />
 
       {/* Startup Behavior */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          {t("settings.startup.behavior", "Startup Behavior")}
-        </h4>
+        <SectionHeader
+          icon={<Play className="w-4 h-4 text-primary" />}
+          title={t("settings.startup.behavior", "Startup Behavior")}
+        />
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
@@ -117,9 +121,10 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Tray Behavior */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          {t("settings.startup.trayBehavior", "System Tray Behavior")}
-        </h4>
+        <SectionHeader
+          icon={<AppWindow className="w-4 h-4 text-primary" />}
+          title={t("settings.startup.trayBehavior", "System Tray Behavior")}
+        />
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
@@ -166,9 +171,10 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Welcome Screen */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          {t("settings.startup.welcomeScreen", "Welcome Screen")}
-        </h4>
+        <SectionHeader
+          icon={<MessageSquare className="w-4 h-4 text-primary" />}
+          title={t("settings.startup.welcomeScreen", "Welcome Screen")}
+        />
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
