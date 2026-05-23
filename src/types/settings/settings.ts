@@ -372,6 +372,13 @@ export interface GlobalSettings {
   // Proxy Settings
   globalProxy?: ProxyConfig;
 
+  /**
+   * Saved global-proxy configurations the user can apply on demand.
+   * Defaults to an empty list; the UI seeds entries via the
+   * Proxy → Presets subsection.
+   */
+  globalProxyPresets?: ProxyPreset[];
+
   // OpenVPN Settings
   openvpn?: OpenVPNConfig;
 
@@ -991,6 +998,29 @@ export interface ProxyConfig {
   quicCertFile?: string; // For QUIC tunneling
   shadowsocksMethod?: string; // Shadowsocks encryption method
   shadowsocksPlugin?: string; // Shadowsocks plugin
+}
+
+/**
+ * A reusable global-proxy configuration the user can save once and
+ * apply to `globalProxy` on demand. Holds everything `ProxyConfig`
+ * carries except `enabled` — switching the proxy on/off is a
+ * separate concern from picking which preset is active.
+ */
+export interface ProxyPreset {
+  /** Stable identifier referenced by the UI list and persistence. */
+  id: string;
+  /** Human label shown in the presets list. */
+  name: string;
+  /** Frozen proxy configuration. `enabled` is omitted on purpose. */
+  config: Omit<ProxyConfig, 'enabled'>;
+}
+
+/** Mint a stable id for a new `ProxyPreset`. */
+export function generateProxyPresetId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `proxy-preset-${crypto.randomUUID()}`;
+  }
+  return `proxy-preset-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
 }
 
 export interface SecurityConfig {

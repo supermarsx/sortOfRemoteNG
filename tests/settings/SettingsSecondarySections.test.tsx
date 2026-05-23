@@ -99,6 +99,36 @@ describe("Secondary settings section centralization", () => {
     );
 
     expect(container.querySelectorAll(".sor-settings-card").length).toBe(4);
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionHeaders = Array.from(
+      container.querySelectorAll(".sor-settings-section-header"),
+    );
+    expect(sectionHeaders).toHaveLength(4);
+    for (const header of sectionHeaders) {
+      const icon = header.firstElementChild;
+      expect(icon?.tagName.toLowerCase()).toBe("svg");
+      expect(icon?.getAttribute("class")).toContain("text-primary");
+    }
+
+    const performanceTrackingIcon = screen
+      .getByText("Enable Performance Tracking")
+      .closest("label")
+      ?.querySelector("svg");
+    expect(performanceTrackingIcon?.getAttribute("class")).toContain(
+      "group-hover:text-primary",
+    );
+
+    const actionLoggingIcon = screen
+      .getByText("Enable Action Logging")
+      .closest("label")
+      ?.querySelector("svg");
+    expect(actionLoggingIcon?.getAttribute("class")).toContain(
+      "group-hover:text-primary",
+    );
     expect(
       container.querySelector('input[type="number"]')?.className,
     ).toContain("sor-settings-input");
@@ -134,13 +164,41 @@ describe("Secondary settings section centralization", () => {
     );
   });
 
-  it("uses centralized card/input/checkbox classes in ProxySettings", () => {
-    const updateProxy = vi.fn();
+  it("uses standard section headers with accent-colored icons in ThemeSettings", () => {
     const { container } = render(
-      <ProxySettings settings={baseSettings} updateProxy={updateProxy} />,
+      <ThemeSettings settings={baseSettings} updateSettings={vi.fn()} />,
     );
 
-    expect(container.querySelectorAll(".sor-settings-card").length).toBe(3);
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionHeaders = Array.from(
+      container.querySelectorAll(".sor-settings-section-header"),
+    );
+
+    expect(sectionHeaders).toHaveLength(6);
+    for (const header of sectionHeaders) {
+      const icon = header.firstElementChild;
+      expect(icon?.tagName.toLowerCase()).toBe("svg");
+      expect(icon?.getAttribute("class")).toContain("text-primary");
+    }
+  });
+
+  it("uses centralized card/input/checkbox classes in ProxySettings", () => {
+    const updateProxy = vi.fn();
+    const updateSettings = vi.fn();
+    const { container } = render(
+      <ProxySettings
+        settings={baseSettings}
+        updateProxy={updateProxy}
+        updateSettings={updateSettings}
+      />,
+    );
+
+    // Enable Proxy + Proxy Type + Connection Details + Authentication + Presets
+    expect(container.querySelectorAll(".sor-settings-card").length).toBe(5);
     expect(
       container.querySelector('input[type="checkbox"]')?.className,
     ).toContain("sor-settings-checkbox");

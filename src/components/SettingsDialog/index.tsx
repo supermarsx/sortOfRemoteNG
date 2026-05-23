@@ -207,7 +207,11 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           <CloudSyncSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "proxy" && (
-          <ProxySettings settings={s} updateProxy={mgr.updateProxy} />
+          <ProxySettings
+            settings={s}
+            updateProxy={mgr.updateProxy}
+            updateSettings={u}
+          />
         )}
         {mgr.activeTab === "vpn" && (
           <VpnSettings settings={s} updateSettings={u} />
