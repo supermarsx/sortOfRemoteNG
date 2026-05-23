@@ -83,7 +83,7 @@ describe("UpdaterSettings", () => {
 
     const interval = screen.getByTestId("updater-check-interval");
     fireEvent.change(interval, { target: { value: "6" } });
-    fireEvent.click(screen.getByTestId("updater-save-interval-btn"));
+    fireEvent.blur(interval);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
@@ -92,7 +92,54 @@ describe("UpdaterSettings", () => {
     });
   });
 
-  it("saves and clears the private endpoint through backend settings", async () => {
+  it("uses standard subsection headers with accent-colored icons", async () => {
+    const { container } = render(<UpdaterSettingsSection />);
+
+    await screen.findByTestId("settings-updater-section");
+
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionIcons = Array.from(
+      container.querySelectorAll(".sor-settings-section-header > svg"),
+    );
+
+    expect(sectionIcons).toHaveLength(3);
+    for (const icon of sectionIcons) {
+      expect(icon.getAttribute("class")).toContain("text-primary");
+    }
+
+    expect(screen.queryByTestId("updater-save-interval-btn")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("updater-private-endpoint-save-btn")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("updater-private-endpoint-clear-btn")).not.toBeInTheDocument();
+    expect(screen.getByTestId("updater-reset-defaults-btn")).toBeInTheDocument();
+  });
+
+  it("uses standard updater field label/input groups without extra left margin", async () => {
+    render(<UpdaterSettingsSection />);
+
+    const intervalInput = await screen.findByTestId("updater-check-interval");
+    const intervalField = intervalInput.parentElement;
+    expect(intervalField?.className).not.toContain("ml-7");
+    expect(intervalField?.querySelector(".sor-settings-row-label")).not.toBeNull();
+    expect(intervalField?.querySelector(".sor-settings-row-label svg")).not.toBeNull();
+
+    const endpointToggle = screen.getByTestId("updater-private-endpoint-toggle");
+    await waitFor(() => expect(endpointToggle).not.toBeDisabled());
+    fireEvent.click(endpointToggle);
+
+    const endpointInput = screen.getByTestId("updater-private-endpoint-input");
+    await waitFor(() => expect(endpointInput).not.toBeDisabled());
+    const endpointField = endpointInput.parentElement;
+    expect(endpointField?.className).not.toContain("ml-7");
+    expect(endpointField?.querySelector(".sor-settings-row-label")).not.toBeNull();
+    expect(endpointField?.querySelector(".sor-settings-row-label svg")).not.toBeNull();
+    expect(document.querySelectorAll(".sor-settings-toggle-row")).toHaveLength(2);
+  });
+
+  it("saves the private endpoint on blur and resets updater defaults from the footer", async () => {
     render(<UpdaterSettingsSection />);
 
     const toggle = await screen.findByTestId("updater-private-endpoint-toggle");
@@ -103,7 +150,7 @@ describe("UpdaterSettings", () => {
     fireEvent.change(input, {
       target: { value: "https://updates.example.com/latest.json" },
     });
-    fireEvent.click(screen.getByTestId("updater-private-endpoint-save-btn"));
+    fireEvent.blur(input);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
@@ -114,10 +161,15 @@ describe("UpdaterSettings", () => {
       });
     });
 
-    fireEvent.click(screen.getByTestId("updater-private-endpoint-clear-btn"));
+    fireEvent.click(screen.getByTestId("updater-reset-defaults-btn"));
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
-        patch: { privateEndpointEnabled: false, privateEndpointUrl: "" },
+        patch: {
+          autoCheckEnabled: true,
+          checkIntervalHours: 24,
+          privateEndpointEnabled: false,
+          privateEndpointUrl: "",
+        },
       });
     });
   });
