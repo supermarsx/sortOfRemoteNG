@@ -1,10 +1,12 @@
-import { inputClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
 import { selectClass, RESOLUTION_PRESETS } from "./selectClass";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const currentW = rdp.defaultWidth ?? 1920;
@@ -17,12 +19,13 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
     : "custom";
 
   return (
-    <div className="sor-settings-card">
-      <h4 className="sor-section-heading">
-        <Monitor className="w-4 h-4 text-primary" />
-        Display Defaults
-      </h4>
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Monitor className="w-4 h-4 text-primary" />}
+        title="Display Defaults"
+      />
 
+      <div className="sor-settings-card">
       <div>
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Default Resolution <InfoTooltip text="The screen resolution used when opening a new RDP connection." />
@@ -100,6 +103,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           Lossy Compression (reduce bandwidth) <InfoTooltip text="Enables lossy image compression to reduce bandwidth usage at the cost of minor visual artifacts." />
         </span>
       </label>
+      </div>
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { Layers, Clock, Monitor, ShieldAlert, Zap } from "lucide-react";
+import { Layers, Clock, Monitor, ShieldAlert, Zap, History } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -66,6 +66,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
       {s.enableRecentlyClosedTabs && (
         <SliderRow
           label="Max recently closed"
+          icon={<History size={16} />}
           value={s.recentlyClosedTabsMax}
           min={1}
           max={50}

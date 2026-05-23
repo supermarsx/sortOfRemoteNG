@@ -1,15 +1,97 @@
 import React, { useEffect, useState } from "react";
 import { GlobalSettings, MacroConfig } from "../../../types/settings/settings";
-import { ListVideo, Clock, AlertCircle, Hash } from "lucide-react";
+import {
+  ListVideo,
+  Clock,
+  AlertCircle,
+  Hash,
+  Play,
+  HardDrive,
+  Gauge,
+} from "lucide-react";
 import * as macroService from "../../../utils/recording/macroService";
-import { Checkbox, NumberInput, Slider } from '../../ui/forms';
-import SectionHeading from '../../ui/SectionHeading';
-import { InfoTooltip } from '../../ui/InfoTooltip';
+import { Checkbox, NumberInput, Slider } from "../../ui/forms";
+import SectionHeading from "../../ui/SectionHeading";
+import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 interface MacroSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
+
+/* ── Shared row primitives ───────────────────────────── */
+
+const ToggleRow: React.FC<{
+  settingKey: string;
+  icon: React.ReactNode;
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  tooltip?: string;
+}> = ({ settingKey, icon, label, description, checked, onChange, tooltip }) => (
+  <label
+    data-setting-key={settingKey}
+    className="flex items-center justify-between gap-3 cursor-pointer"
+  >
+    <div className="flex items-center gap-3 min-w-0">
+      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <span className="text-[var(--color-text)] flex items-center gap-1">
+          {label}
+          {tooltip && <InfoTooltip text={tooltip} />}
+        </span>
+        {description && (
+          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+            {description}
+          </p>
+        )}
+      </div>
+    </div>
+    <Checkbox
+      checked={checked}
+      onChange={(v: boolean) => onChange(v)}
+      className="sor-checkbox-lg flex-shrink-0"
+    />
+  </label>
+);
+
+const FieldRow: React.FC<{
+  settingKey: string;
+  icon: React.ReactNode;
+  label: string;
+  description?: string;
+  tooltip?: string;
+  children: React.ReactNode;
+}> = ({ settingKey, icon, label, description, tooltip, children }) => (
+  <div
+    data-setting-key={settingKey}
+    className="flex items-center justify-between gap-3"
+  >
+    <div className="flex items-center gap-3 min-w-0">
+      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
+          {label}
+          {tooltip && <InfoTooltip text={tooltip} />}
+        </span>
+        {description && (
+          <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
+            {description}
+          </p>
+        )}
+      </div>
+    </div>
+    <div className="flex items-center gap-2 flex-shrink-0">{children}</div>
+  </div>
+);
+
+/* ── Main Component ──────────────────────────────────── */
 
 const MacroSettings: React.FC<MacroSettingsProps> = ({
   settings,
@@ -28,84 +110,80 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <div>
-        <SectionHeading icon={<ListVideo className="w-5 h-5" />} title="Macros" description="Configure terminal macro recording and replay behavior." />
-      </div>
+      <SectionHeading
+        icon={<ListVideo className="w-5 h-5 text-primary" />}
+        title="Macros"
+        description="Configure terminal macro recording and replay behavior."
+      />
 
-      {/* Default delay */}
-      <div className="space-y-3">
-        <div
-          data-setting-key="macros.defaultStepDelayMs"
-          className="flex items-center justify-between"
-        >
-          <div className="flex items-center gap-3">
-            <Clock size={14} className="text-primary" />
-            <div>
-              <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
-                Default delay between steps
-                <InfoTooltip text="Time in milliseconds to wait between each step when replaying a macro. Increase for slower remote hosts." />
-              </span>
-              <p className="text-[10px] text-[var(--color-textMuted)]">
-                Delay in milliseconds when replaying macros
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Slider value={macros.defaultStepDelayMs} onChange={(v: number) => update({ defaultStepDelayMs: v })} min={0} max={2000} variant="wide" step={50} />
-            <span className="text-xs text-[var(--color-textSecondary)] w-14 text-right">
+      {/* Replay */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Play className="w-4 h-4 text-primary" />}
+          title="Replay Behavior"
+        />
+        <div className="sor-settings-card">
+          <FieldRow
+            settingKey="macros.defaultStepDelayMs"
+            icon={<Clock size={14} />}
+            label="Default delay between steps"
+            description="Delay in milliseconds when replaying macros"
+            tooltip="Time in milliseconds to wait between each step when replaying a macro. Increase for slower remote hosts."
+          >
+            <Slider
+              value={macros.defaultStepDelayMs}
+              onChange={(v: number) => update({ defaultStepDelayMs: v })}
+              min={0}
+              max={2000}
+              variant="wide"
+              step={50}
+            />
+            <span className="text-xs text-[var(--color-textSecondary)] w-14 text-right font-mono">
               {macros.defaultStepDelayMs}ms
             </span>
-          </div>
-        </div>
+          </FieldRow>
 
-        {/* Confirm before replay */}
-        <label
-          data-setting-key="macros.confirmBeforeReplay"
-          className="flex items-center justify-between cursor-pointer group"
-        >
-          <div className="flex items-center gap-3">
-            <AlertCircle size={14} className="text-warning" />
-            <div>
-              <span className="sor-toggle-label flex items-center gap-1">
-                Confirm before replay
-                <InfoTooltip text="Show a confirmation dialog before executing a macro to prevent accidental replay." />
-              </span>
-              <p className="text-[10px] text-[var(--color-textMuted)]">
-                Show confirmation dialog before replaying a macro
-              </p>
-            </div>
-          </div>
-          <Checkbox checked={macros.confirmBeforeReplay} onChange={(v: boolean) => update({ confirmBeforeReplay: v })} />
-        </label>
-
-        {/* Max steps */}
-        <div
-          data-setting-key="macros.maxMacroSteps"
-          className="flex items-center justify-between"
-        >
-          <div className="flex items-center gap-3">
-            <Hash size={14} className="text-success" />
-            <div>
-              <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
-                Max steps per macro
-                <InfoTooltip text="Upper limit on the number of recorded steps in a single macro. Prevents excessively large recordings." />
-              </span>
-              <p className="text-[10px] text-[var(--color-textMuted)]">
-                Maximum number of steps allowed in a single macro
-              </p>
-            </div>
-          </div>
-          <NumberInput value={macros.maxMacroSteps} onChange={(v: number) => update({ maxMacroSteps: v })} variant="settings-compact" className="w-20 text-right" min={1} />
+          <ToggleRow
+            settingKey="macros.confirmBeforeReplay"
+            icon={<AlertCircle size={14} />}
+            label="Confirm before replay"
+            description="Show confirmation dialog before replaying a macro"
+            checked={macros.confirmBeforeReplay}
+            onChange={(v) => update({ confirmBeforeReplay: v })}
+            tooltip="Show a confirmation dialog before executing a macro to prevent accidental replay."
+          />
         </div>
       </div>
 
-      {/* Storage info */}
-      <div className="pt-2 border-t border-[var(--color-border)]">
-        <div className="flex items-center gap-3 text-xs text-[var(--color-textMuted)]">
-          <ListVideo size={12} />
-          <span>
-            {macroCount} macro{macroCount !== 1 ? "s" : ""} saved
-          </span>
+      {/* Limits */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Gauge className="w-4 h-4 text-primary" />}
+          title="Limits & Library"
+        />
+        <div className="sor-settings-card">
+          <FieldRow
+            settingKey="macros.maxMacroSteps"
+            icon={<Hash size={14} />}
+            label="Max steps per macro"
+            description="Maximum number of steps allowed in a single macro"
+            tooltip="Upper limit on the number of recorded steps in a single macro. Prevents excessively large recordings."
+          >
+            <NumberInput
+              value={macros.maxMacroSteps}
+              onChange={(v: number) => update({ maxMacroSteps: v })}
+              variant="settings-compact"
+              className="w-20 text-right"
+              min={1}
+            />
+          </FieldRow>
+
+          <div className="flex items-center gap-4 pt-3 mt-1 border-t border-[var(--color-border)] text-xs text-[var(--color-textMuted)]">
+            <span className="flex items-center gap-1">
+              <HardDrive size={12} />
+              {macroCount} macro{macroCount !== 1 ? "s" : ""} saved
+            </span>
+          </div>
         </div>
       </div>
     </div>

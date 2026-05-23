@@ -2,15 +2,16 @@ import type { Mgr } from './types';
 import React from "react";
 import { HardDrive } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 
 const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <HardDrive className="w-4 h-4 text-primary" />
-      Differential Backups
-    </h4>
+    <SectionHeader
+      icon={<HardDrive className="w-4 h-4 text-primary" />}
+      title="Differential Backups"
+    />
 
-    <div className="sor-settings-sub-card">
+    <div className="sor-settings-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div>
           <span className="text-[var(--color-text)]">

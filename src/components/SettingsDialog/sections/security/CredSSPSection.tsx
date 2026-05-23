@@ -1,7 +1,22 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
-import { ShieldAlert } from "lucide-react";
-import { Checkbox, Select } from "../../../ui/forms";
+import {
+  ShieldAlert,
+  Zap,
+  ArrowLeftRight,
+  KeyRound,
+  UserMinus,
+  Lock as LockIcon,
+  Network,
+  Globe,
+  Users,
+} from "lucide-react";
+import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 function CredSSPSection({
   settings,
   updateSettings,
@@ -10,17 +25,21 @@ function CredSSPSection({
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }) {
   return (
-    <div className="sor-settings-card space-y-4">
-      <div>
-        <h4 className="sor-section-heading">
-          <ShieldAlert className="w-4 h-4 text-warning" />
-          <span className="flex items-center gap-1">CredSSP Remediation Defaults <InfoTooltip text="Global defaults for RDP Credential Security Support Provider and Network Level Authentication behavior" /></span>
-        </h4>
-        <p className="text-xs text-[var(--color-textMuted)] mt-1">
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<ShieldAlert className="w-4 h-4 text-primary" />}
+        title={
+          <span className="flex items-center gap-1">
+            CredSSP Remediation Defaults <InfoTooltip text="Global defaults for RDP Credential Security Support Provider and Network Level Authentication behavior" />
+          </span>
+        }
+      />
+
+      <Card>
+        <p className="text-xs text-[var(--color-textMuted)]">
           Global defaults for RDP CredSSP / NLA behaviour. Individual
           connections can override these.
         </p>
-      </div>
 
       {/* Oracle Remediation Policy */}
       <div>
@@ -111,79 +130,102 @@ function CredSSPSection({
             default: false,
             label: "Allow HYBRID_EX protocol (Early User Auth Result)",
             tooltip: "Enable the HYBRID_EX extension that returns authentication results before full connection setup completes",
+            icon: <Zap size={16} />,
           },
           {
             key: "nlaFallbackToTls" as const,
             default: true,
             label: "Allow NLA fallback to TLS on failure",
             tooltip: "Fall back to plain TLS authentication when Network Level Authentication negotiation fails",
+            icon: <ArrowLeftRight size={16} />,
           },
           {
             key: "enforceServerPublicKeyValidation" as const,
             default: true,
             label: "Enforce server public key validation during CredSSP",
             tooltip: "Verify the server's public key during the CredSSP handshake to prevent man-in-the-middle attacks",
+            icon: <KeyRound size={16} />,
           },
           {
             key: "restrictedAdmin" as const,
             default: false,
             label: "Restricted Admin mode (no credential delegation)",
             tooltip: "Connect without forwarding your credentials to the remote server — prevents credential theft on compromised hosts",
+            icon: <UserMinus size={16} />,
           },
           {
             key: "remoteCredentialGuard" as const,
             default: false,
             label: "Remote Credential Guard (Kerberos delegation)",
             tooltip: "Use Kerberos-based credential delegation that keeps credentials on the local machine and never exposes them to the remote host",
+            icon: <LockIcon size={16} />,
           },
-        ].map(({ key, default: def, label, tooltip }) => (
-          <label
+        ].map(({ key, default: def, label, tooltip, icon }) => (
+          <Toggle
             key={key}
-            className="flex items-center space-x-3 cursor-pointer group"
-          >
-            <Checkbox checked={settings.credsspDefaults?.[key] ?? def} onChange={(v: boolean) => updateSettings({
-                  credsspDefaults: {
-                    ...settings.credsspDefaults,
-                    [key]: v,
-                  },
-                })} />
-            <span className="sor-toggle-label flex items-center gap-1">
-              {label} <InfoTooltip text={tooltip} />
-            </span>
-          </label>
+            checked={settings.credsspDefaults?.[key] ?? def}
+            onChange={(v) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...settings.credsspDefaults,
+                  [key]: v,
+                },
+              })
+            }
+            icon={icon}
+            label={label}
+            infoTooltip={tooltip}
+          />
         ))}
       </div>
 
       {/* Authentication packages */}
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-textSecondary)]">
-          <span className="flex items-center gap-1">Authentication Packages <InfoTooltip text="Select which authentication protocols are available for CredSSP negotiation" /></span>
+          <span className="flex items-center gap-1">
+            Authentication Packages{" "}
+            <InfoTooltip text="Select which authentication protocols are available for CredSSP negotiation" />
+          </span>
         </label>
         <div className="space-y-2 pl-1">
           {[
-            { key: "ntlmEnabled" as const, default: true, label: "NTLM", tooltip: "NT LAN Manager authentication — widely supported legacy protocol for Windows credential exchange" },
+            {
+              key: "ntlmEnabled" as const,
+              default: true,
+              label: "NTLM",
+              tooltip: "NT LAN Manager authentication — widely supported legacy protocol for Windows credential exchange",
+              icon: <Network size={16} />,
+            },
             {
               key: "kerberosEnabled" as const,
               default: false,
               label: "Kerberos",
               tooltip: "Kerberos ticket-based authentication — requires a domain controller and is more secure than NTLM",
+              icon: <Globe size={16} />,
             },
-            { key: "pku2uEnabled" as const, default: false, label: "PKU2U", tooltip: "Public Key User-to-User protocol — allows peer-to-peer authentication without a domain controller" },
-          ].map(({ key, default: def, label, tooltip }) => (
-            <label
+            {
+              key: "pku2uEnabled" as const,
+              default: false,
+              label: "PKU2U",
+              tooltip: "Public Key User-to-User protocol — allows peer-to-peer authentication without a domain controller",
+              icon: <Users size={16} />,
+            },
+          ].map(({ key, default: def, label, tooltip, icon }) => (
+            <Toggle
               key={key}
-              className="flex items-center space-x-3 cursor-pointer group"
-            >
-              <Checkbox checked={settings.credsspDefaults?.[key] ?? def} onChange={(v: boolean) => updateSettings({
-                    credsspDefaults: {
-                      ...settings.credsspDefaults,
-                      [key]: v,
-                    },
-                  })} />
-              <span className="sor-toggle-label flex items-center gap-1">
-                {label} <InfoTooltip text={tooltip} />
-              </span>
-            </label>
+              checked={settings.credsspDefaults?.[key] ?? def}
+              onChange={(v) =>
+                updateSettings({
+                  credsspDefaults: {
+                    ...settings.credsspDefaults,
+                    [key]: v,
+                  },
+                })
+              }
+              icon={icon}
+              label={label}
+              infoTooltip={tooltip}
+            />
           ))}
         </div>
       </div>
@@ -212,6 +254,7 @@ function CredSSPSection({
           to exclude.
         </p>
       </div>
+      </Card>
     </div>
   );
 }

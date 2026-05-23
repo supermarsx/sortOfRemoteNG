@@ -1,7 +1,12 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Shield } from "lucide-react";
-import { Checkbox, Select } from "../../../ui/forms";
+import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 function TOTPDefaultsSection({
   settings,
   updateSettings,
@@ -10,27 +15,31 @@ function TOTPDefaultsSection({
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }) {
   return (
-    <div className="sor-settings-card space-y-4">
-      <div>
-        <h4 className="sor-section-heading">
-          <Shield className="w-4 h-4 text-primary" />
-          <span className="flex items-center gap-1">2FA / TOTP Defaults <InfoTooltip text="Default values applied when adding new Time-based One-Time Password configurations to connections" /></span>
-        </h4>
-        <p className="text-xs text-[var(--color-textMuted)] mt-1">
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Shield className="w-4 h-4 text-primary" />}
+        title={
+          <span className="flex items-center gap-1">
+            2FA / TOTP Defaults <InfoTooltip text="Default values applied when adding new Time-based One-Time Password configurations to connections" />
+          </span>
+        }
+      />
+
+      <Card>
+        <p className="text-xs text-[var(--color-textMuted)]">
           Default values used when adding new TOTP configurations to
           connections.
         </p>
-      </div>
 
-      <label
-        data-setting-key="totpEnabled"
-        className="flex items-center space-x-3 cursor-pointer group"
-      >
-        <Checkbox checked={settings.totpEnabled} onChange={(v: boolean) => updateSettings({ totpEnabled: v })} />
-        <span className="sor-toggle-label flex items-center gap-1">
-          Enable TOTP functionality <InfoTooltip text="Turn on built-in TOTP code generation for connections that have a shared secret configured" />
-        </span>
-      </label>
+        <Toggle
+          checked={settings.totpEnabled}
+          onChange={(v) => updateSettings({ totpEnabled: v })}
+          icon={<Shield size={16} />}
+          label="Enable TOTP functionality"
+          description="Generate TOTP codes for connections that have a shared secret configured"
+          settingKey="totpEnabled"
+          infoTooltip="Turn on built-in TOTP code generation for connections that have a shared secret configured"
+        />
 
       <div data-setting-key="totpIssuer">
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
@@ -69,6 +78,7 @@ function TOTPDefaultsSection({
               })} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="w-full" />
         </div>
       </div>
+      </Card>
     </div>
   );
 }

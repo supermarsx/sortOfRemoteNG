@@ -4,14 +4,18 @@ import React from "react";
 import { Mouse } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const InputDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Mouse className="w-4 h-4 text-warning" />
-      Input Defaults
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Mouse className="w-4 h-4 text-primary" />}
+      title="Input Defaults"
+    />
 
+    <div className="sor-settings-card">
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
         Mouse Mode <InfoTooltip text="Absolute mode sends exact cursor coordinates; relative mode sends movement deltas, useful for some remote applications." />
@@ -33,6 +37,7 @@ const InputDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       <Checkbox checked={rdp.enableUnicodeInput ?? true} onChange={(v: boolean) => update({ enableUnicodeInput: v })} />
       <span className="sor-toggle-label">Enable Unicode keyboard input <InfoTooltip text="Sends keystrokes as Unicode characters, enabling support for non-Latin scripts and special characters." /></span>
     </label>
+    </div>
   </div>
 );
 

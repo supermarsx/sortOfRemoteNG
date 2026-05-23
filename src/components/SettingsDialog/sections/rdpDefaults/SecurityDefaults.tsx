@@ -1,17 +1,20 @@
-import { selectClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Shield, Network } from "lucide-react";
+import { Shield } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Shield className="w-4 h-4 text-error" />
-      Security Defaults
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Shield className="w-4 h-4 text-primary" />}
+      title="Security Defaults"
+    />
 
+    <div className="sor-settings-card">
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.useCredSsp ?? true} onChange={(v: boolean) => update({ useCredSsp: v })} />
       <span className="sor-toggle-label font-medium">
@@ -49,6 +52,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         Auto logon (send credentials in INFO packet) <InfoTooltip text="Automatically sends stored credentials during connection to bypass the remote login screen." />
       </span>
     </label>
+    </div>
   </div>
 );
 

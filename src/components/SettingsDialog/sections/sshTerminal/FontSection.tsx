@@ -3,16 +3,17 @@ import Toggle from "./Toggle";
 import React from "react";
 import { Type } from "lucide-react";
 import { TextInput, FormField } from "../../../ui/forms";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.font", "Font Configuration")}
-    icon={<Type className="w-4 h-4 text-primary" />}
-    defaultOpen={false}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Type className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.font", "Font Configuration")}
+    />
+    <div className="sor-settings-card">
     <Toggle
       checked={cfg.useCustomFont}
       onChange={(v) => up({ useCustomFont: v })}
@@ -109,7 +110,8 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </FormField>
       </div>
     )}
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export default FontSection;

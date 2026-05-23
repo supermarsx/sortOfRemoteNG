@@ -1,7 +1,7 @@
 import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { MonitorDot } from "lucide-react";
-import { selectClass, type RDPDefaultSettingsProps, type Rdp } from "./rdpDefaults/selectClass";
+import { type RDPDefaultSettingsProps, type Rdp } from "./rdpDefaults/selectClass";
 import SessionManagement from "./rdpDefaults/SessionManagement";
 import SecurityDefaults from "./rdpDefaults/SecurityDefaults";
 import DisplayDefaults from "./rdpDefaults/DisplayDefaults";
@@ -28,9 +28,7 @@ export const RDPDefaultSettings: React.FC<RDPDefaultSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <div>
-        <SectionHeading icon={<MonitorDot className="w-5 h-5" />} title="RDP" description="Default configuration applied to all new RDP connections. Individual connections can override these settings." />
-      </div>
+      <SectionHeading icon={<MonitorDot className="w-5 h-5 text-primary" />} title="RDP" description="Default configuration applied to all new RDP connections. Individual connections can override these settings." />
 
       <SessionManagement settings={settings} updateSettings={updateSettings} />
       <SecurityDefaults rdp={rdp} update={update} />

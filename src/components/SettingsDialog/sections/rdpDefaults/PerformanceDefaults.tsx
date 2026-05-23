@@ -4,6 +4,9 @@ import React from "react";
 import { Zap } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const SPEED_PRESETS: Record<
   string,
@@ -77,12 +80,13 @@ const SPEED_PRESETS: Record<
 };
 
 const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Zap className="w-4 h-4 text-warning" />
-      Performance / Frame Delivery Defaults
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Zap className="w-4 h-4 text-primary" />}
+      title="Performance / Frame Delivery Defaults"
+    />
 
+    <div className="sor-settings-card">
     {/* Connection Speed Preset */}
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
@@ -204,6 +208,7 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       <p className="text-xs text-[var(--color-textMuted)] mt-1">
         Lower = more responsive but higher CPU. 16ms ≈ 60hz poll rate.
       </p>
+    </div>
     </div>
   </div>
 );

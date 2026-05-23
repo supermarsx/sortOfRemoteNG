@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { GripVertical, Eye, FileUp, FolderInput } from "lucide-react";
+import { GripVertical, Eye, FileUp, FolderInput, MousePointer2 } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -38,6 +38,8 @@ const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
       />
       <SliderRow
         label="Drag sensitivity"
+        icon={<MousePointer2 size={16} />}
+        description="Pixels the mouse must move before a drag starts"
         value={s.dragSensitivityPx}
         min={1}
         max={20}

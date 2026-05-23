@@ -91,7 +91,6 @@ export function useBackupSettings(
   updateSettings: (updates: Partial<GlobalSettings>) => void,
 ) {
   const { state } = useConnections();
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isRunningBackup, setIsRunningBackup] = useState(false);
   const [presetPaths, setPresetPaths] = useState<
     Record<BackupLocationPreset, string>
@@ -324,8 +323,6 @@ export function useBackupSettings(
   return {
     backup,
     updateBackup,
-    showAdvanced,
-    setShowAdvanced,
     isRunningBackup,
     presetPaths,
     handleSelectFolder,

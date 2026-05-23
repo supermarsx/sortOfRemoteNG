@@ -43,30 +43,47 @@ export interface SettingsTab {
 /** Ordered list of sidebar tabs. `labelKey` is used with `t()`;
  *  if it doesn't resolve, `fallback` (or the raw key) is shown. */
 export const SETTINGS_TABS: SettingsTab[] = [
+  // ── Core experience ──
   { id: "general", labelKey: "settings.general", icon: Monitor },
   { id: "behavior", labelKey: "Behavior", icon: MousePointerClick },
   { id: "startup", labelKey: "settings.startup.title", fallback: "Startup & Tray", icon: Power },
-  { id: "updater", labelKey: "settings.updater.title", fallback: "Updater", icon: RefreshCw },
-  { id: "theme", labelKey: "settings.theme", icon: Palette },
   { id: "layout", labelKey: "Layout", icon: LayoutGrid },
+  { id: "theme", labelKey: "settings.theme", icon: Palette },
+  { id: "updater", labelKey: "settings.updater.title", fallback: "Updater", icon: RefreshCw },
+
+  // ── Security ──
   { id: "security", labelKey: "settings.security", icon: Shield },
   { id: "trust", labelKey: "Trust Center", icon: Fingerprint },
   { id: "performance", labelKey: "settings.performance", icon: Zap },
+
+  // ── Protocol defaults ──
   { id: "rdpDefaults", labelKey: "RDP", icon: MonitorDot },
-  { id: "backup", labelKey: "Backup", icon: Archive },
-  { id: "cloudSync", labelKey: "Cloud Sync", icon: CloudCog },
+  { id: "sshTerminal", labelKey: "settings.sshTerminal.tab", fallback: "SSH Terminal", icon: Terminal },
+  { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
+
+  // ── Networking ──
   { id: "proxy", labelKey: "Proxy", icon: Wifi },
   { id: "vpn", labelKey: "VPN", icon: Shield },
-  { id: "sshTerminal", labelKey: "settings.sshTerminal.tab", fallback: "SSH Terminal", icon: Terminal },
+
+  // ── Storage & sync ──
+  { id: "backup", labelKey: "Backup", icon: Archive },
+  { id: "cloudSync", labelKey: "Cloud Sync", icon: CloudCog },
+
+  // ── Sessions & automation ──
   { id: "recording", labelKey: "Recording", icon: Circle },
   { id: "macros", labelKey: "Macros", icon: ListVideo },
-  { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
-  { id: "backend", labelKey: "Backend", icon: Cpu },
+
+  // ── Server / integration surfaces ──
   { id: "api", labelKey: "API Server", icon: Server },
   { id: "mcpServer", labelKey: "mcpServer.title", fallback: "MCP Server", icon: Bot },
+
+  // ── System & diagnostics ──
+  { id: "backend", labelKey: "Backend", icon: Cpu },
   { id: "diagnostics", labelKey: "Diagnostics", icon: Activity },
   { id: "advanced", labelKey: "settings.advanced", icon: Code },
   { id: "recovery", labelKey: "Recovery", icon: RotateCcw },
+
+  // ── Meta ──
   { id: "about", labelKey: "About", icon: Info },
 ];
 

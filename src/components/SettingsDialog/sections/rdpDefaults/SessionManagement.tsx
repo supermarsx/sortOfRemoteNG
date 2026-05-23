@@ -1,20 +1,23 @@
 import type { SessionSectionProps } from "./selectClass";
-import { selectClass } from "./selectClass";
 import React from "react";
 import { Layers } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const SessionManagement: React.FC<SessionSectionProps> = ({
   settings,
   updateSettings,
 }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Layers className="w-4 h-4 text-primary" />
-      Session Management
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Layers className="w-4 h-4 text-primary" />}
+      title="Session Management"
+    />
 
+    <div className="sor-settings-card">
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
         Session Panel Display Mode <InfoTooltip text="Controls how the RDP Sessions manager is presented -- as a floating modal overlay or a docked sidebar panel." />
@@ -81,6 +84,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
         </div>
       </div>
     )}
+    </div>
   </div>
 );
 

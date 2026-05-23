@@ -1,5 +1,4 @@
 import React from "react";
-import { useTranslation } from "react-i18next";
 import { GlobalSettings, StatusCheckMethod } from "../../../types/settings/settings";
 import {
   Activity,
@@ -16,6 +15,9 @@ import {
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 import { InfoTooltip } from '../../ui/InfoTooltip';
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../ui/settings/SettingsPrimitives";
 
 interface PerformanceSettingsProps {
   settings: GlobalSettings;
@@ -42,17 +44,16 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
   settings,
   updateSettings,
 }) => {
-  const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Zap className="w-5 h-5" />} title="Performance" description="Connection retry, performance monitoring, status checking, and action logging." />
+      <SectionHeading icon={<Zap className="w-5 h-5 text-primary" />} title="Performance" description="Connection retry, performance monitoring, status checking, and action logging." />
 
       {/* Retry Settings Section */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <RefreshCw className="w-4 h-4 text-primary" />
-          Connection Retry
-        </h4>
+        <SectionHeader
+          icon={<RefreshCw className="w-4 h-4 text-primary" />}
+          title="Connection Retry"
+        />
 
         <div className="sor-settings-card">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -79,15 +80,15 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
       {/* Monitoring Section */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <Gauge className="w-4 h-4 text-success" />
-          Performance Monitoring
-        </h4>
+        <SectionHeader
+          icon={<Gauge className="w-4 h-4 text-primary" />}
+          title="Performance Monitoring"
+        />
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enablePerformanceTracking} onChange={(v: boolean) => updateSettings({ enablePerformanceTracking: v })} />
-            <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
+            <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
               Enable Performance Tracking
               <InfoTooltip text="Collect CPU, memory, and network latency metrics at regular intervals for monitoring dashboard display." />
@@ -133,10 +134,10 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
       {/* Status Checking Section */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <Wifi className="w-4 h-4 text-primary" />
-          Status Checking
-        </h4>
+        <SectionHeader
+          icon={<Wifi className="w-4 h-4 text-primary" />}
+          title="Status Checking"
+        />
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
@@ -205,15 +206,15 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
       {/* Logging Section */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <FileText className="w-4 h-4 text-warning" />
-          Action Logging
-        </h4>
+        <SectionHeader
+          icon={<FileText className="w-4 h-4 text-primary" />}
+          title="Action Logging"
+        />
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableActionLog} onChange={(v: boolean) => updateSettings({ enableActionLog: v })} />
-            <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
+            <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
               Enable Action Logging
               <InfoTooltip text="Record user actions like connections, disconnections, and setting changes in an internal log." />

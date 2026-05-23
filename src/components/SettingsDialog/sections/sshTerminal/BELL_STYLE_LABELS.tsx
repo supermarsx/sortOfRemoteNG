@@ -4,7 +4,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { BellStyles, TaskbarFlashModes } from "../../../../types/settings/settings";
 import { Bell, Volume2, VolumeX } from "lucide-react";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select, FormField } from "../../../ui/forms";
 
 const BELL_STYLE_LABELS: Record<string, string> = {
@@ -16,10 +16,12 @@ const BELL_STYLE_LABELS: Record<string, string> = {
 };
 
 const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.bellSettings", "Bell Settings")}
-    icon={<Bell className="w-4 h-4 text-warning" />}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Bell className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.bellSettings", "Bell Settings")}
+    />
+    <div className="sor-settings-card">
     <FormField label={t("settings.sshTerminal.bellStyle", "Bell Style")}>
       <Select
         value={cfg.bellStyle}
@@ -146,7 +148,8 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         />
       </FormField>
     </div>
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export { BellSection };

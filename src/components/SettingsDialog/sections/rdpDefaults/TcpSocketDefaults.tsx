@@ -1,16 +1,20 @@
 import type { SectionProps } from "./selectClass";
-import { selectClass } from "./selectClass";
 import React from "react";
 import { Cable } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Cable className="w-4 h-4 text-success" />
-      TCP / Socket Defaults
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Cable className="w-4 h-4 text-primary" />}
+      title="TCP / Socket Defaults"
+    />
+
+    <div className="sor-settings-card">
     <p className="text-xs text-[var(--color-textMuted)]">
       Low-level socket settings applied during the TCP connection phase.
       Incorrect values may cause connectivity issues.
@@ -70,6 +74,7 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         </label>
         <Select value={rdp.tcpSendBufferSize ?? 262144} onChange={(v: string) => update({ tcpSendBufferSize: parseInt(v) })} options={[{ value: "65536", label: "64 KB" }, { value: "131072", label: "128 KB" }, { value: "262144", label: "256 KB (default)" }, { value: "524288", label: "512 KB" }, { value: "1048576", label: "1 MB" }, { value: "2097152", label: "2 MB" }]} className="selectClass" />
       </div>
+    </div>
     </div>
   </div>
 );

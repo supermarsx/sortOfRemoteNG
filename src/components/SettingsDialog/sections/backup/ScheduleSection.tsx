@@ -5,15 +5,17 @@ import { BackupFrequencies, DaysOfWeek, BackupFrequency, DayOfWeek } from "../..
 import { frequencyLabels, dayLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 
 const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <Clock className="w-4 h-4 text-primary" />
-      Schedule
-    </h4>
+    <SectionHeader
+      icon={<Clock className="w-4 h-4 text-primary" />}
+      title="Schedule"
+    />
 
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="sor-settings-card">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-textSecondary)]">
           Frequency <InfoTooltip text="How often automatic backups are created. Choose manual to only back up on demand." />
@@ -60,6 +62,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               mgr.updateBackup({ monthlyDay: parseInt(v) })} options={[...Array.from({ length: 28 }, (_, i) => i + 1).map((day) => ({ value: day, label: String(day) }))]} className="sor-settings-input" />
         </div>
       )}
+      </div>
     </div>
   </div>
 );

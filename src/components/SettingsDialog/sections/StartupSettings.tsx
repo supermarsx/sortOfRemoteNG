@@ -16,11 +16,13 @@ import {
   MessageSquare,
   RotateCcw,
 } from "lucide-react";
-import { Checkbox, Textarea} from '../../ui/forms';
-import SectionHeading from '../../ui/SectionHeading';
-import { InfoTooltip } from '../../ui/InfoTooltip';
+import { Textarea } from "../../ui/forms";
+import SectionHeading from "../../ui/SectionHeading";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 
 interface StartupSettingsProps {
@@ -47,7 +49,11 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Power className="w-5 h-5 text-primary" />} title={t("settings.startup.title", "Startup & Tray")} description="Application launch behavior, system tray options, and welcome screen customization." />
+      <SectionHeading
+        icon={<Power className="w-5 h-5 text-primary" />}
+        title={t("settings.startup.title", "Startup & Tray")}
+        description="Application launch behavior, system tray options, and welcome screen customization."
+      />
 
       {/* Startup Behavior */}
       <div className="space-y-4">
@@ -55,68 +61,59 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           icon={<Play className="w-4 h-4 text-primary" />}
           title={t("settings.startup.behavior", "Startup Behavior")}
         />
-
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.startWithSystem} onChange={(v: boolean) => handleStartWithSystemChange(v)} />
-            <div className="flex items-center gap-2">
-              <Play className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t("settings.startup.startWithSystem", "Start with system")} <InfoTooltip text="Automatically launch the application when the operating system starts" />
-              </span>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.startMinimized} onChange={(v: boolean) => updateSettings({ startMinimized: v })} disabled={settings.startMaximized} />
-            <div className="flex items-center gap-2">
-              <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span
-                className={`text-[var(--color-textSecondary)] ${settings.startMaximized ? "opacity-50" : ""}`}
-              >
-                {t("settings.startup.startMinimized", "Start minimized")} <InfoTooltip text="Start the application minimized to the taskbar or system tray" />
-              </span>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.startMaximized} onChange={(v: boolean) => updateSettings({ startMaximized: v })} disabled={settings.startMinimized} />
-            <div className="flex items-center gap-2">
-              <Monitor className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span
-                className={`text-[var(--color-textSecondary)] ${settings.startMinimized ? "opacity-50" : ""}`}
-              >
-                {t("settings.startup.startMaximized", "Start maximized")} <InfoTooltip text="Open the application window in maximized (full-screen) mode" />
-              </span>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.reconnectPreviousSessions} onChange={(v: boolean) => updateSettings({ reconnectPreviousSessions: v })} />
-            <div className="flex items-center gap-2">
-              <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t(
-                  "settings.startup.reconnectSessions",
-                  "Reconnect previous sessions on startup",
-                )} <InfoTooltip text="Automatically reconnect all sessions that were active when the application was last closed" />
-              </span>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.autoOpenLastCollection} onChange={(v: boolean) => updateSettings({ autoOpenLastCollection: v })} />
-            <div className="flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t(
-                  "settings.startup.autoOpenLastCollection",
-                  "Auto-open last used connection collection",
-                )} <InfoTooltip text="Automatically load the most recently used connection collection on startup" />
-              </span>
-            </div>
-          </label>
-        </div>
+        <Card>
+          <Toggle
+            checked={settings.startWithSystem}
+            onChange={(v) => void handleStartWithSystemChange(v)}
+            icon={<Play size={16} />}
+            label={t("settings.startup.startWithSystem", "Start with system")}
+            description="Launch the application when the operating system starts"
+            settingKey="startWithSystem"
+            infoTooltip="Automatically launch the application when the operating system starts"
+          />
+          <Toggle
+            checked={settings.startMinimized}
+            onChange={(v) => updateSettings({ startMinimized: v })}
+            icon={<Minimize2 size={16} />}
+            label={t("settings.startup.startMinimized", "Start minimized")}
+            description="Open the application minimized to the taskbar or system tray"
+            settingKey="startMinimized"
+            infoTooltip="Start the application minimized to the taskbar or system tray"
+          />
+          <Toggle
+            checked={settings.startMaximized}
+            onChange={(v) => updateSettings({ startMaximized: v })}
+            icon={<Monitor size={16} />}
+            label={t("settings.startup.startMaximized", "Start maximized")}
+            description="Open the application window in full-screen mode"
+            settingKey="startMaximized"
+            infoTooltip="Open the application window in maximized (full-screen) mode"
+          />
+          <Toggle
+            checked={settings.reconnectPreviousSessions}
+            onChange={(v) => updateSettings({ reconnectPreviousSessions: v })}
+            icon={<RefreshCw size={16} />}
+            label={t(
+              "settings.startup.reconnectSessions",
+              "Reconnect previous sessions on startup",
+            )}
+            description="Re-establish sessions that were active at the last shutdown"
+            settingKey="reconnectPreviousSessions"
+            infoTooltip="Automatically reconnect all sessions that were active when the application was last closed"
+          />
+          <Toggle
+            checked={settings.autoOpenLastCollection}
+            onChange={(v) => updateSettings({ autoOpenLastCollection: v })}
+            icon={<FolderOpen size={16} />}
+            label={t(
+              "settings.startup.autoOpenLastCollection",
+              "Auto-open last used connection collection",
+            )}
+            description="Load the most recently used connection collection on launch"
+            settingKey="autoOpenLastCollection"
+            infoTooltip="Automatically load the most recently used connection collection on startup"
+          />
+        </Card>
       </div>
 
       {/* Tray Behavior */}
@@ -125,48 +122,55 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           icon={<AppWindow className="w-4 h-4 text-primary" />}
           title={t("settings.startup.trayBehavior", "System Tray Behavior")}
         />
+        <Card>
+          <Toggle
+            checked={settings.showTrayIcon}
+            onChange={(v) => updateSettings({ showTrayIcon: v })}
+            icon={<AppWindow size={16} />}
+            label={t("settings.startup.showTrayIcon", "Show system tray icon")}
+            description="Display an icon in the system notification area"
+            settingKey="showTrayIcon"
+            infoTooltip="Display an icon in the system notification area for quick access"
+          />
 
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.showTrayIcon} onChange={(v: boolean) => updateSettings({ showTrayIcon: v })} />
-            <div className="flex items-center gap-2">
-              <AppWindow className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t("settings.startup.showTrayIcon", "Show system tray icon")} <InfoTooltip text="Display an icon in the system notification area for quick access" />
-              </span>
-            </div>
-          </label>
+          <div
+            className={
+              !settings.showTrayIcon ? "opacity-50 pointer-events-none" : undefined
+            }
+          >
+            <Toggle
+              checked={settings.minimizeToTray}
+              onChange={(v) => updateSettings({ minimizeToTray: v })}
+              icon={<Minimize2 size={16} />}
+              label={t(
+                "settings.startup.minimizeToTray",
+                "Minimize to notification area",
+              )}
+              description="Hide the window on minimize, accessible from the tray icon"
+              settingKey="minimizeToTray"
+              infoTooltip="When minimizing, hide the window and keep it accessible from the system tray icon"
+            />
+          </div>
 
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.minimizeToTray} onChange={(v: boolean) => updateSettings({ minimizeToTray: v })} disabled={!settings.showTrayIcon} />
-            <div className="flex items-center gap-2">
-              <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span
-                className={`text-[var(--color-textSecondary)] ${!settings.showTrayIcon ? "opacity-50" : ""}`}
-              >
-                {t(
-                  "settings.startup.minimizeToTray",
-                  "Minimize to notification area",
-                )} <InfoTooltip text="When minimizing, hide the window and keep it accessible from the system tray icon" />
-              </span>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.closeToTray} onChange={(v: boolean) => updateSettings({ closeToTray: v })} disabled={!settings.showTrayIcon} />
-            <div className="flex items-center gap-2">
-              <XIcon className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span
-                className={`text-[var(--color-textSecondary)] ${!settings.showTrayIcon ? "opacity-50" : ""}`}
-              >
-                {t(
-                  "settings.startup.closeToTray",
-                  "Close to notification area",
-                )} <InfoTooltip text="When closing the window, minimize to the system tray instead of quitting the application" />
-              </span>
-            </div>
-          </label>
-        </div>
+          <div
+            className={
+              !settings.showTrayIcon ? "opacity-50 pointer-events-none" : undefined
+            }
+          >
+            <Toggle
+              checked={settings.closeToTray}
+              onChange={(v) => updateSettings({ closeToTray: v })}
+              icon={<XIcon size={16} />}
+              label={t(
+                "settings.startup.closeToTray",
+                "Close to notification area",
+              )}
+              description="Minimize to tray on window close instead of quitting"
+              settingKey="closeToTray"
+              infoTooltip="When closing the window, minimize to the system tray instead of quitting the application"
+            />
+          </div>
+        </Card>
       </div>
 
       {/* Welcome Screen */}
@@ -175,36 +179,35 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           icon={<MessageSquare className="w-4 h-4 text-primary" />}
           title={t("settings.startup.welcomeScreen", "Welcome Screen")}
         />
+        <Card>
+          <Toggle
+            checked={settings.hideQuickStartMessage ?? false}
+            onChange={(v) => updateSettings({ hideQuickStartMessage: v })}
+            icon={<EyeOff size={16} />}
+            label={t(
+              "settings.startup.hideQuickStartMessage",
+              "Hide welcome message",
+            )}
+            description="Hide the introductory text shown on the start screen"
+            settingKey="hideQuickStartMessage"
+            infoTooltip="Hide the introductory welcome message shown on the start screen"
+          />
 
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.hideQuickStartMessage ?? false} onChange={(v: boolean) => updateSettings({ hideQuickStartMessage: v })} />
-            <div className="flex items-center gap-2">
-              <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t(
-                  "settings.startup.hideQuickStartMessage",
-                  "Hide welcome message",
-                )} <InfoTooltip text="Hide the introductory welcome message shown on the start screen" />
-              </span>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer">
-            <Checkbox checked={settings.hideQuickStartButtons ?? false} onChange={(v: boolean) => updateSettings({ hideQuickStartButtons: v })} />
-            <div className="flex items-center gap-2">
-              <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              <span className="text-[var(--color-textSecondary)]">
-                {t(
-                  "settings.startup.hideQuickStartButtons",
-                  "Hide quick action buttons",
-                )} <InfoTooltip text="Hide the shortcut buttons for common actions on the welcome screen" />
-              </span>
-            </div>
-          </label>
+          <Toggle
+            checked={settings.hideQuickStartButtons ?? false}
+            onChange={(v) => updateSettings({ hideQuickStartButtons: v })}
+            icon={<EyeOff size={16} />}
+            label={t(
+              "settings.startup.hideQuickStartButtons",
+              "Hide quick action buttons",
+            )}
+            description="Hide the shortcut buttons for common actions"
+            settingKey="hideQuickStartButtons"
+            infoTooltip="Hide the shortcut buttons for common actions on the welcome screen"
+          />
 
           {/* Custom Welcome Screen Content */}
-          <div className="space-y-3 pt-2 border-t border-[var(--color-border)]/50 mt-3">
+          <div className="space-y-3 pt-3 mt-1 border-t border-[var(--color-border)]/50">
             <div className="flex items-center justify-between">
               <span className="text-xs text-[var(--color-textMuted)]">
                 {t(
@@ -237,7 +240,8 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Type className="w-4 h-4 text-[var(--color-textSecondary)]" />
-                {t("settings.startup.customTitle", "Custom Title")} <InfoTooltip text="Set a custom title to display on the welcome screen instead of the default" />
+                {t("settings.startup.customTitle", "Custom Title")}{" "}
+                <InfoTooltip text="Set a custom title to display on the welcome screen instead of the default" />
               </label>
               <input
                 type="text"
@@ -258,7 +262,8 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <MessageSquare className="w-4 h-4 text-[var(--color-textSecondary)]" />
-                {t("settings.startup.customMessage", "Custom Message")} <InfoTooltip text="Set a custom message to display on the welcome screen instead of the default" />
+                {t("settings.startup.customMessage", "Custom Message")}{" "}
+                <InfoTooltip text="Set a custom message to display on the welcome screen instead of the default" />
               </label>
               <Textarea
                 value={settings.welcomeScreenMessage ?? ""}
@@ -276,14 +281,14 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
               />
             </div>
 
-            <p className="text-xs text-[var(--color-textMuted)] pl-7">
+            <p className="text-xs text-[var(--color-textMuted)]">
               {t(
                 "settings.startup.welcomeScreenNote",
                 "Controls what is shown when no connection is active.",
               )}
             </p>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Info notice */}

@@ -62,6 +62,7 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         onChange={(v) => u({ confirmDeleteAllBookmarks: v })}
         icon={<Trash2 size={16} />}
         label="Confirm before deleting all bookmarks"
+        description="Ask before wiping every saved bookmark for a web browser connection"
         settingKey="confirmDeleteAllBookmarks"
         infoTooltip="Require confirmation before clearing all saved bookmarks. This action cannot be undone."
       />

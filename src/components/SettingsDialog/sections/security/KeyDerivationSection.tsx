@@ -1,7 +1,12 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Key, Timer, Gauge, Loader2 } from "lucide-react";
-import { Checkbox, NumberInput } from "../../../ui/forms";
+import { NumberInput } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { TFunc } from "./types";
 function KeyDerivationSection({
   settings,
@@ -18,12 +23,16 @@ function KeyDerivationSection({
 }) {
   return (
     <div className="space-y-4">
-      <h4 className="sor-section-heading">
-        <Key className="w-4 h-4 text-primary" />
-        <span className="flex items-center gap-1">Key Derivation (PBKDF2) <InfoTooltip text="PBKDF2 derives encryption keys from your master password — more iterations make brute-force attacks harder but slow down unlock" /></span>
-      </h4>
+      <SectionHeader
+        icon={<Key className="w-4 h-4 text-primary" />}
+        title={
+          <span className="flex items-center gap-1">
+            Key Derivation (PBKDF2) <InfoTooltip text="PBKDF2 derives encryption keys from your master password — more iterations make brute-force attacks harder but slow down unlock" />
+          </span>
+        }
+      />
 
-      <div className="sor-settings-card space-y-4">
+      <Card>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -72,14 +81,15 @@ function KeyDerivationSection({
           </div>
         </div>
 
-        <label className="flex items-center space-x-3 cursor-pointer group pt-2">
-          <Checkbox checked={settings.autoBenchmarkIterations} onChange={(v: boolean) => updateSettings({ autoBenchmarkIterations: v })} />
-          <Gauge className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-            {t("security.autoBenchmark")} <InfoTooltip text="Automatically re-run the iteration benchmark on startup to keep the count optimal for the current machine" />
-          </span>
-        </label>
-      </div>
+        <Toggle
+          checked={settings.autoBenchmarkIterations}
+          onChange={(v) => updateSettings({ autoBenchmarkIterations: v })}
+          icon={<Gauge size={16} />}
+          label={t("security.autoBenchmark")}
+          description="Re-run the iteration benchmark on each launch"
+          infoTooltip="Automatically re-run the iteration benchmark on startup to keep the count optimal for the current machine"
+        />
+      </Card>
     </div>
   );
 }

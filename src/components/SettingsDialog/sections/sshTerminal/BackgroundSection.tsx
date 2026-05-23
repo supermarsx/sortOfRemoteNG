@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Image, Layers, Sparkles } from "lucide-react";
 import { Select } from "../../../ui/forms";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import Toggle from "./Toggle";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
@@ -403,14 +403,15 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
   };
 
   return (
-    <SettingsCollapsibleSection
-      title={t(
-        "settings.sshTerminal.bg.title",
-        "Backgrounds, Fading & Overlays",
-      )}
-      icon={<Layers className="w-4 h-4 text-primary" />}
-      defaultOpen={false}
-    >
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Layers className="w-4 h-4 text-primary" />}
+        title={t(
+          "settings.sshTerminal.bg.title",
+          "Backgrounds, Fading & Overlays",
+        )}
+      />
+      <div className="sor-settings-card">
       <div className="space-y-5">
         {/* ── Master toggle ── */}
         <Toggle
@@ -661,14 +662,11 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
             )}
 
             {/* ── Fading ── */}
-            <SettingsCollapsibleSection
-              title={t(
-                "settings.sshTerminal.bg.fadingTitle",
-                "Edge Fading",
-              )}
-              icon={<Sparkles className="w-4 h-4 text-primary" />}
-              defaultOpen={false}
-            >
+            <div className="space-y-3 pt-3 border-t border-[var(--color-border)]">
+              <h5 className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
+                <Sparkles className="w-4 h-4 text-primary" />
+                {t("settings.sshTerminal.bg.fadingTitle", "Edge Fading")}
+              </h5>
               <div className="space-y-3">
                 <Toggle
                   checked={fading.enabled}
@@ -739,27 +737,25 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                   </div>
                 )}
               </div>
-            </SettingsCollapsibleSection>
+            </div>
 
             {/* ── Overlay stack ── */}
-            <SettingsCollapsibleSection
-              title={t(
-                "settings.sshTerminal.bg.overlaysTitle",
-                "Overlays",
-              )}
-              icon={<Image className="w-4 h-4 text-teal-400" />}
-              defaultOpen={false}
-            >
+            <div className="space-y-3 pt-3 border-t border-[var(--color-border)]">
+              <h5 className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
+                <Image className="w-4 h-4 text-primary" />
+                {t("settings.sshTerminal.bg.overlaysTitle", "Overlays")}
+              </h5>
               <OverlayEditor
                 overlays={bg.overlays || []}
                 onChange={(o) => ubg({ overlays: o })}
                 t={t}
               />
-            </SettingsCollapsibleSection>
+            </div>
           </>
         )}
       </div>
-    </SettingsCollapsibleSection>
+      </div>
+    </div>
   );
 };
 

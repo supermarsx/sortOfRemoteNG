@@ -19,7 +19,7 @@ export const McpSettings: React.FC<McpSettingsProps> = ({
   return (
     <div className="space-y-6" data-testid="section-mcp-server">
       <SectionHeading
-        icon={<Bot className="w-5 h-5" />}
+        icon={<Bot className="w-5 h-5 text-primary" />}
         title={mgr.t("mcpServer.title", "MCP Server")}
         description={mgr.t(
           "settings.mcpServer.description",

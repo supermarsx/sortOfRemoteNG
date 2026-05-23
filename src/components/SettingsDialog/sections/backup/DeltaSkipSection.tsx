@@ -2,6 +2,7 @@ import React from "react";
 import { Diff, Info } from "lucide-react";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 
 /**
  * Delta-verified backups: skip emitting a backup when the canonical
@@ -16,14 +17,19 @@ const DeltaSkipSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const forceN = mgr.backup.forceEmitEveryNSkippedTicks ?? 7;
 
   return (
-    <div className="space-y-3">
-      <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
-        <Diff className="w-4 h-4" />
-        Delta verification
-        <InfoTooltip text="When on, the scheduled tick is skipped if the payload is byte-identical to the previous successful backup. Saves space on disk and in the cloud without changing retention." />
-      </label>
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Diff className="w-4 h-4 text-primary" />}
+        title={
+          <span className="flex items-center gap-2">
+            Delta verification
+            <InfoTooltip text="When on, the scheduled tick is skipped if the payload is byte-identical to the previous successful backup. Saves space on disk and in the cloud without changing retention." />
+          </span>
+        }
+      />
 
-      <label className="flex items-start gap-2 text-sm cursor-pointer">
+      <div className="sor-settings-card">
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
         <input
           type="checkbox"
           checked={Boolean(mgr.backup.deltaSkipEnabled)}
@@ -83,6 +89,7 @@ const DeltaSkipSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             recovered automatically without waiting for this counter.
           </span>
         </p>
+      </div>
       </div>
     </div>
   );

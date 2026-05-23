@@ -15,6 +15,7 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
           onChange={(v) => u({ singleWindowMode: v })}
           icon={<AppWindow size={16} />}
           label="Disallow multiple instances"
+          description="Focus the existing window instead of launching a new one"
           settingKey="singleWindowMode"
           infoTooltip="Prevent opening more than one instance of the application. If another instance is already running, the existing window will be focused instead."
         />

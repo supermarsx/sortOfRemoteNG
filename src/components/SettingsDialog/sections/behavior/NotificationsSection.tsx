@@ -41,6 +41,7 @@ const NotificationsSection: React.FC<SectionProps> = ({ s, u }) => (
         onChange={(v) => u({ notificationSound: v })}
         icon={<Volume2 size={16} />}
         label="Play sound with notifications"
+        description="Play an audible alert alongside each notification"
         settingKey="notificationSound"
         infoTooltip="Play an audible alert along with each OS notification. Disable for silent visual-only notifications."
       />

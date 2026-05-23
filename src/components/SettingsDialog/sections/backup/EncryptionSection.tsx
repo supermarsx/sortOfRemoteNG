@@ -6,15 +6,16 @@ import { BackupEncryptionAlgorithms, BackupEncryptionAlgorithm } from "../../../
 import { encryptionAlgorithmLabels, encryptionAlgorithmDescriptions } from "../../../../hooks/settings/useBackupSettings";
 import { Checkbox, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 
 const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <Lock className="w-4 h-4 text-warning" />
-      Encryption
-    </h4>
+    <SectionHeader
+      icon={<Lock className="w-4 h-4 text-primary" />}
+      title="Encryption"
+    />
 
-    <div className="sor-settings-sub-card">
+    <div className="sor-settings-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div>
           <span className="text-[var(--color-text)]">Encrypt Backups <InfoTooltip text="Encrypts backup files with a password so they cannot be read without the correct credentials." /></span>

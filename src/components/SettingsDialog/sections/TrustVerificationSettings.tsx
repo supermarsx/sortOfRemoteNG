@@ -27,8 +27,14 @@ import {
   classifyTrustRecords,
   useTrustVerificationSettings,
 } from "../../../hooks/settings/useTrustVerificationSettings";
-import { Checkbox, NumberInput, Select } from "../../ui/forms";
+import { NumberInput, Select } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
+import {
+  Card,
+  SettingsSectionHeader,
+  Toggle,
+} from "../../ui/settings/SettingsPrimitives";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -79,14 +85,12 @@ const INHERITABLE_POLICY_OPTIONS = [
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
 
-const SectionHeader: React.FC = () => (
-  <div>
-    <SectionHeading
-      icon={<Fingerprint className="w-5 h-5" />}
-      title="Trust Center"
-      description="Control how HTTPS certificates, general certificates, RDP certificates, SSH host keys, and legacy TLS identities are verified and memorized. These settings apply globally but can be overridden per connection."
-    />
-  </div>
+const TrustCenterHeading: React.FC = () => (
+  <SectionHeading
+    icon={<Fingerprint className="w-5 h-5 text-primary" />}
+    title="Trust Center"
+    description="Control how HTTPS certificates, general certificates, RDP certificates, SSH host keys, and legacy TLS identities are verified and memorized. These settings apply globally but can be overridden per connection."
+  />
 );
 
 function policyLabel(value: TrustPolicy): string {
@@ -125,8 +129,8 @@ const PolicyCard: React.FC<PolicyCardProps> = ({
   onChange,
   children,
 }) => (
-  <div className="sor-settings-card">
-    <div className="flex items-center gap-2 mb-3">
+  <Card>
+    <div className="flex items-center gap-2">
       <span className={iconClassName}>{icon}</span>
       <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
         {title}
@@ -138,11 +142,11 @@ const PolicyCard: React.FC<PolicyCardProps> = ({
       options={options}
       className="sor-settings-select w-full text-sm"
     />
-    <p className="text-xs text-[var(--color-textMuted)] mt-2">
+    <p className="text-xs text-[var(--color-textMuted)]">
       {effectivePolicyDescription(effectivePolicy)}
     </p>
     {children}
-  </div>
+  </Card>
 );
 
 const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -153,193 +157,226 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const rdpPolicy = mgr.settings.rdpTrustPolicy ?? "inherit";
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      <PolicyCard
-        title="Default Trust Policy"
-        icon={<ShieldCheck size={16} />}
-        iconClassName="text-success"
-        value={rootPolicy}
-        options={CONCRETE_POLICY_OPTIONS}
-        effectivePolicy={rootPolicy}
-        onChange={(v: string) =>
-          mgr.updateSettings({
-            trustPolicy: v as GlobalSettings["trustPolicy"],
-          })
-        }
+    <div className="space-y-4">
+      <SettingsSectionHeader
+        icon={<ShieldCheck className="w-4 h-4 text-primary" />}
+        title="Trust Policies"
       />
 
-      <PolicyCard
-        title="General Certificate Policy"
-        icon={<ShieldAlert size={16} />}
-        iconClassName="text-primary"
-        value={certificatePolicy}
-        options={INHERITABLE_POLICY_OPTIONS}
-        effectivePolicy={resolveEffectiveTrustPolicy(
-          undefined,
-          certificatePolicy,
-          rootPolicy,
-        )}
-        onChange={(v: string) =>
-          mgr.updateSettings({
-            certificateTrustPolicy:
-              v as GlobalSettings["certificateTrustPolicy"],
-          })
-        }
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <PolicyCard
+          title="Default Trust Policy"
+          icon={<ShieldCheck size={16} />}
+          iconClassName="text-primary"
+          value={rootPolicy}
+          options={CONCRETE_POLICY_OPTIONS}
+          effectivePolicy={rootPolicy}
+          onChange={(v: string) =>
+            mgr.updateSettings({
+              trustPolicy: v as GlobalSettings["trustPolicy"],
+            })
+          }
+        />
 
-      <PolicyCard
-        title="HTTPS Certificate Policy"
-        icon={<Lock size={16} />}
-        iconClassName="text-success"
-        value={httpsPolicy}
-        options={INHERITABLE_POLICY_OPTIONS}
-        effectivePolicy={resolveEffectiveTrustPolicy(
-          undefined,
-          httpsPolicy,
-          rootPolicy,
-        )}
-        onChange={(v: string) =>
-          mgr.updateSettings({
-            httpsTrustPolicy: v as GlobalSettings["httpsTrustPolicy"],
-          })
-        }
-      />
+        <PolicyCard
+          title="General Certificate Policy"
+          icon={<ShieldAlert size={16} />}
+          iconClassName="text-primary"
+          value={certificatePolicy}
+          options={INHERITABLE_POLICY_OPTIONS}
+          effectivePolicy={resolveEffectiveTrustPolicy(
+            undefined,
+            certificatePolicy,
+            rootPolicy,
+          )}
+          onChange={(v: string) =>
+            mgr.updateSettings({
+              certificateTrustPolicy:
+                v as GlobalSettings["certificateTrustPolicy"],
+            })
+          }
+        />
 
-      <PolicyCard
-        title="SSH Host Key Policy"
-        icon={<Fingerprint size={16} />}
-        iconClassName="text-primary"
-        value={sshPolicy}
-        options={INHERITABLE_POLICY_OPTIONS}
-        effectivePolicy={resolveEffectiveTrustPolicy(
-          undefined,
-          sshPolicy,
-          rootPolicy,
-        )}
-        onChange={(v: string) =>
-          mgr.updateSettings({
-            sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
-          })
-        }
-      />
+        <PolicyCard
+          title="HTTPS Certificate Policy"
+          icon={<Lock size={16} />}
+          iconClassName="text-primary"
+          value={httpsPolicy}
+          options={INHERITABLE_POLICY_OPTIONS}
+          effectivePolicy={resolveEffectiveTrustPolicy(
+            undefined,
+            httpsPolicy,
+            rootPolicy,
+          )}
+          onChange={(v: string) =>
+            mgr.updateSettings({
+              httpsTrustPolicy: v as GlobalSettings["httpsTrustPolicy"],
+            })
+          }
+        />
 
-      <PolicyCard
-        title="RDP Certificate Policy"
-        icon={<Monitor size={16} />}
-        iconClassName="text-warning"
-        value={rdpPolicy}
-        options={INHERITABLE_POLICY_OPTIONS}
-        effectivePolicy={resolveEffectiveTrustPolicy(
-          undefined,
-          rdpPolicy,
-          rootPolicy,
-        )}
-        onChange={(v: string) =>
-          mgr.updateSettings({
-            rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
-          })
-        }
-      >
-        <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
-          Separate from HTTPS certificates and legacy TLS identities. RDP servers
-          are typically self-signed, so most users keep this at TOFU even when
-          HTTPS is set to Strict.
-        </p>
-      </PolicyCard>
+        <PolicyCard
+          title="SSH Host Key Policy"
+          icon={<Fingerprint size={16} />}
+          iconClassName="text-primary"
+          value={sshPolicy}
+          options={INHERITABLE_POLICY_OPTIONS}
+          effectivePolicy={resolveEffectiveTrustPolicy(
+            undefined,
+            sshPolicy,
+            rootPolicy,
+          )}
+          onChange={(v: string) =>
+            mgr.updateSettings({
+              sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
+            })
+          }
+        />
+
+        <PolicyCard
+          title="RDP Certificate Policy"
+          icon={<Monitor size={16} />}
+          iconClassName="text-primary"
+          value={rdpPolicy}
+          options={INHERITABLE_POLICY_OPTIONS}
+          effectivePolicy={resolveEffectiveTrustPolicy(
+            undefined,
+            rdpPolicy,
+            rootPolicy,
+          )}
+          onChange={(v: string) =>
+            mgr.updateSettings({
+              rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
+            })
+          }
+        >
+          <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
+            Separate from HTTPS certificates and legacy TLS identities. RDP servers
+            are typically self-signed, so most users keep this at TOFU even when
+            HTTPS is set to Strict.
+          </p>
+        </PolicyCard>
+      </div>
     </div>
   );
 };
 
 const PolicyExplanations: React.FC = () => (
-  <details className="group [&>summary]:list-none bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg">
-    <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors flex items-center gap-2">
-      <ChevronRight
-        size={14}
-        className="text-[var(--color-textMuted)] transition-transform group-open:rotate-90 flex-shrink-0"
-      />
-      <ShieldAlert
-        size={14}
-        className="text-[var(--color-textMuted)] flex-shrink-0"
-      />
-      What do these policies mean?
-    </summary>
-    <div className="px-4 pb-4 pt-2 space-y-3 text-xs text-[var(--color-textMuted)] leading-relaxed border-t border-[var(--color-border)] mt-1">
-      <div>
-        <span className="text-[var(--color-text)] font-medium">
-          Trust On First Use (TOFU)
-        </span>
-        <p className="mt-0.5">
-          The first time you connect to a host, its certificate or host key is
-          shown to you and you decide whether to continue. If you choose to
-          remember it, subsequent connections compare against the stored
-          identity and warn if it changes later.
-        </p>
+  <div className="space-y-4">
+    <SettingsSectionHeader
+      icon={<ShieldAlert className="w-4 h-4 text-primary" />}
+      title="Policy Guide"
+    />
+
+    <details className="sor-settings-card group [&>summary]:list-none">
+      <summary className="cursor-pointer select-none text-sm font-medium text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors flex items-center gap-2">
+        <ChevronRight
+          size={14}
+          className="text-[var(--color-textMuted)] transition-transform group-open:rotate-90 flex-shrink-0"
+        />
+        <ShieldAlert
+          size={14}
+          className="text-[var(--color-textMuted)] flex-shrink-0"
+        />
+        What do these policies mean?
+      </summary>
+      <div className="pt-3 space-y-3 text-xs text-[var(--color-textMuted)] leading-relaxed border-t border-[var(--color-border)]">
+        <div>
+          <span className="text-[var(--color-text)] font-medium">
+            Trust On First Use (TOFU)
+          </span>
+          <p className="mt-0.5">
+            The first time you connect to a host, its certificate or host key is
+            shown to you and you decide whether to continue. If you choose to
+            remember it, subsequent connections compare against the stored
+            identity and warn if it changes later.
+          </p>
+        </div>
+        <div>
+          <span className="text-[var(--color-text)] font-medium">
+            Always Ask
+          </span>
+          <p className="mt-0.5">
+            Every time a new or previously unseen identity is encountered you will
+            be prompted to manually approve or reject it. Use this when you prefer
+            explicit confirmation for every identity, for example in
+            high-security environments.
+          </p>
+        </div>
+        <div>
+          <span className="text-[var(--color-text)] font-medium">
+            Always Trust
+          </span>
+          <p className="mt-0.5">
+            All certificates and host keys are accepted without any verification
+            or prompts. This is convenient for development or lab environments but
+            should{" "}
+            <em className="text-[var(--color-textSecondary)] not-italic font-medium">
+              never
+            </em>{" "}
+            be used in production or on untrusted networks — it leaves you
+            vulnerable to man-in-the-middle attacks.
+          </p>
+        </div>
+        <div>
+          <span className="text-[var(--color-text)] font-medium">Strict</span>
+          <p className="mt-0.5">
+            Connections are only allowed if the host&apos;s identity has been
+            manually pre-approved and stored beforehand. Any unknown or changed
+            identity is immediately rejected. Ideal when you manage a fixed set of
+            known servers and want maximum security.
+          </p>
+        </div>
       </div>
-      <div>
-        <span className="text-[var(--color-text)] font-medium">
-          Always Ask
-        </span>
-        <p className="mt-0.5">
-          Every time a new or previously unseen identity is encountered you will
-          be prompted to manually approve or reject it. Use this when you prefer
-          explicit confirmation for every identity, for example in
-          high-security environments.
-        </p>
-      </div>
-      <div>
-        <span className="text-[var(--color-text)] font-medium">
-          Always Trust
-        </span>
-        <p className="mt-0.5">
-          All certificates and host keys are accepted without any verification
-          or prompts. This is convenient for development or lab environments but
-          should{" "}
-          <em className="text-[var(--color-textSecondary)] not-italic font-medium">
-            never
-          </em>{" "}
-          be used in production or on untrusted networks — it leaves you
-          vulnerable to man-in-the-middle attacks.
-        </p>
-      </div>
-      <div>
-        <span className="text-[var(--color-text)] font-medium">Strict</span>
-        <p className="mt-0.5">
-          Connections are only allowed if the host&apos;s identity has been
-          manually pre-approved and stored beforehand. Any unknown or changed
-          identity is immediately rejected. Ideal when you manage a fixed set of
-          known servers and want maximum security.
-        </p>
-      </div>
-    </div>
-  </details>
+    </details>
+  </div>
 );
 
 const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
-    <label className="flex items-center gap-3 text-sm text-[var(--color-textSecondary)]">
-      <Checkbox checked={mgr.settings.showTrustIdentityInfo ?? true} onChange={(v: boolean) => mgr.updateSettings({ showTrustIdentityInfo: v })} />
-      <div className="flex items-center gap-2">
-        <Eye size={14} className="text-[var(--color-textSecondary)]" />
-        <span>
-          Show certificate / host key info in URL bar &amp; terminal toolbar
-        </span>
-      </div>
-    </label>
+    <SettingsSectionHeader
+      icon={<Eye className="w-4 h-4 text-primary" />}
+      title="Verification Options"
+    />
 
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-2">
-        <Clock size={14} className="text-[var(--color-textSecondary)]" />
-        <label className="text-sm text-[var(--color-textSecondary)]">
-          Warn when certificates expire within
-        </label>
+    <Card>
+      <Toggle
+        checked={mgr.settings.showTrustIdentityInfo ?? true}
+        onChange={(v) => mgr.updateSettings({ showTrustIdentityInfo: v })}
+        icon={<Eye size={16} />}
+        label="Show certificate / host key info"
+        description="Reveal the resolved identity in the URL bar and terminal toolbar"
+        infoTooltip="Display the verified certificate or SSH host key information inline in the URL bar (web browser sessions) and the terminal toolbar (SSH sessions)."
+      />
+
+      <div className="flex items-center justify-between gap-3 pt-3 border-t border-[var(--color-border)]">
+        <div className="flex items-center gap-3 min-w-0">
+          <Clock size={16} className="text-[var(--color-textSecondary)] flex-shrink-0" />
+          <div className="min-w-0">
+            <span className="text-[var(--color-text)] flex items-center gap-1">
+              Warn when certificates expire
+              <InfoTooltip text="Show a warning when a stored certificate's expiry date is within this many days. Set to 0 to disable expiry warnings entirely." />
+            </span>
+            <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+              Show an inline warning this many days before expiry (0 = off)
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <NumberInput
+            value={mgr.settings.certExpiryWarningDays ?? 5}
+            onChange={(v: number) =>
+              mgr.updateSettings({ certExpiryWarningDays: v })
+            }
+            variant="settings-compact"
+            className="w-20 text-right"
+            min={0}
+            max={365}
+          />
+          <span className="text-xs text-[var(--color-textSecondary)]">days</span>
+        </div>
       </div>
-      <NumberInput value={mgr.settings.certExpiryWarningDays ?? 5} onChange={(v: number) => mgr.updateSettings({
-            certExpiryWarningDays: v,
-          })} className="w-20" min={0} max={365} />
-      <span className="text-sm text-[var(--color-textSecondary)]">
-        days (0 = disabled)
-      </span>
-    </div>
+    </Card>
   </div>
 );
 
@@ -473,17 +510,18 @@ function renderTrustRecordGroups(
 }
 
 const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div>
-    <div className="flex items-center justify-between mb-3">
-      <h4 className="sor-section-heading">
-        <ShieldAlert size={16} className="text-warning" />
-        Stored Identities ({mgr.totalCount})
-      </h4>
+  <div className="space-y-4">
+    <div className="flex items-start justify-between gap-3">
+      <SettingsSectionHeader
+        className="flex-1"
+        icon={<ShieldAlert size={16} className="text-primary" />}
+        title={`Stored Identities (${mgr.totalCount})`}
+      />
       <ClearAllButton mgr={mgr} />
     </div>
 
     {mgr.totalCount === 0 ? (
-      <div className="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)] text-center">
+      <div className="sor-settings-card py-6 text-center">
         <ShieldCheck size={24} className="text-[var(--color-textMuted)] mx-auto mb-2" />
         <p className="text-sm text-[var(--color-textMuted)]">No stored identities yet.</p>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -491,7 +529,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </p>
       </div>
     ) : (
-      <div className="space-y-4">
+      <div className="sor-settings-card space-y-4">
         {/* Global Store */}
         {mgr.trustRecords.length > 0 && (
           <details className="group" open>
@@ -546,7 +584,7 @@ export const TrustVerificationSettings: React.FC<
 
   return (
     <div className="space-y-6">
-      <SectionHeader />
+      <TrustCenterHeading />
       <GlobalPolicies mgr={mgr} />
       <PolicyExplanations />
       <AdditionalOptions mgr={mgr} />

@@ -1,8 +1,10 @@
 import React from 'react';
 import { CircleDotDashed } from 'lucide-react';
-import SectionHeading from '../../../../ui/SectionHeading';
 import type { GlobalSettings } from '../../../../../types/settings/settings';
 import { useLoadingElementSettings } from '../../../../../hooks/settings/useLoadingElementSettings';
+import {
+  SettingsSectionHeader as SectionHeader,
+} from '../../../../ui/settings/SettingsPrimitives';
 import { TypeBrowserPanel } from './TypeBrowserPanel';
 import { CommonPanel } from './CommonPanel';
 import { VariantConfigPanel } from './VariantConfigPanel';
@@ -20,12 +22,14 @@ export const LoadingElementSection: React.FC<LoadingElementSectionProps> = ({
   const mgr = useLoadingElementSettings(settings, updateSettings);
 
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        icon={<CircleDotDashed className="w-5 h-5" />}
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<CircleDotDashed className="w-4 h-4 text-primary" />}
         title="Loading Element"
-        description="Pick the global loader, tune its parameters, and manage precomputed fallback assets."
       />
+      <p className="text-xs text-[var(--color-textMuted)]">
+        Pick the global loader, tune its parameters, and manage precomputed fallback assets.
+      </p>
       <TypeBrowserPanel mgr={mgr} />
       <CommonPanel mgr={mgr} />
       <VariantConfigPanel mgr={mgr} />

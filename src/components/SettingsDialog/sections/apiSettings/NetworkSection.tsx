@@ -2,15 +2,16 @@ import React from "react";
 import { Server, Globe, AlertTriangle, Shuffle } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <Globe className="w-4 h-4 text-primary" />
-      {mgr.t("settings.api.network", "Network")}
-    </h4>
+    <SectionHeader
+      icon={<Globe className="w-4 h-4 text-primary" />}
+      title={mgr.t("settings.api.network", "Network")}
+    />
 
     <div className="sor-settings-card">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

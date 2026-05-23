@@ -1,19 +1,22 @@
 import { inputClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
-import { selectClass } from "./selectClass";
 import React from "react";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Network } from "lucide-react";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Network className="w-4 h-4 text-info" />
-      RDP Gateway Defaults
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Network className="w-4 h-4 text-primary" />}
+      title="RDP Gateway Defaults"
+    />
 
+    <div className="sor-settings-card">
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.gatewayEnabled ?? false} onChange={(v: boolean) => update({ gatewayEnabled: v })} />
       <span className="sor-toggle-label">
@@ -69,6 +72,7 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         </label>
       </div>
     )}
+    </div>
   </div>
 );
 

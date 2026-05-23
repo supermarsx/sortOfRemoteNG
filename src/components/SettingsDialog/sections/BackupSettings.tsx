@@ -33,23 +33,20 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
     mgr.destinations.some((d) => d.enabled);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <SectionHeading icon={<Archive className="w-5 h-5" />} title="Backup" />
-        <button
-          onClick={mgr.handleRunBackupNow}
-          disabled={!hasAnyDestination || mgr.isRunningBackup}
-          className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
-        >
-          <Play className="w-4 h-4" />
-          Backup Now
-        </button>
-      </div>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Automatic and manual backup scheduling, encryption, destination, and
-        retention settings.
-      </p>
+    <div className="space-y-6 relative">
+      <SectionHeading
+        icon={<Archive className="w-5 h-5 text-primary" />}
+        title="Backup"
+        description="Automatic and manual backup scheduling, encryption, destination, and retention settings."
+      />
+      <button
+        onClick={mgr.handleRunBackupNow}
+        disabled={!hasAnyDestination || mgr.isRunningBackup}
+        className="absolute top-0 right-0 !mt-0 flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
+      >
+        <Play className="w-4 h-4" />
+        Backup Now
+      </button>
 
       <EnableBackup mgr={mgr} />
       <DestinationSection mgr={mgr} />

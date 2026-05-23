@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { Clock, Wifi, Timer, Eye } from "lucide-react";
+import { Clock, Wifi, Timer, Eye, MoonStar, Activity } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const IdleTimeout: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -11,6 +11,7 @@ const IdleTimeout: React.FC<SectionProps> = ({ s, u }) => (
     <Card>
       <SliderRow
         label="Idle disconnect"
+        icon={<MoonStar size={16} />}
         value={s.idleDisconnectMinutes}
         min={0}
         max={480}
@@ -37,6 +38,7 @@ const IdleTimeout: React.FC<SectionProps> = ({ s, u }) => (
       {s.sendKeepaliveOnIdle && (
         <SliderRow
           label="Keepalive interval"
+          icon={<Activity size={16} />}
           value={s.keepaliveIntervalSeconds}
           min={5}
           max={300}

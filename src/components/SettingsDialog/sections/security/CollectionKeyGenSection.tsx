@@ -1,15 +1,23 @@
 import { Lock, Key, Loader2, FileKey, CheckCircle, Database } from "lucide-react";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
-      <h4 className="sor-section-heading">
-        <Database className="w-4 h-4 text-primary" />
-        <span className="flex items-center gap-1">Generate Collection Encryption Key File <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your connection collections instead of using a password" /></span>
-      </h4>
+      <SectionHeader
+        icon={<Database className="w-4 h-4 text-primary" />}
+        title={
+          <span className="flex items-center gap-1">
+            Generate Collection Encryption Key File <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your connection collections instead of using a password" />
+          </span>
+        }
+      />
 
-      <div className="sor-settings-card space-y-4">
+      <Card>
         <p className="text-sm text-[var(--color-textSecondary)]">
           Generate a secure encryption key file that can be used to encrypt your
           connection collections. This key file can be used instead of a password
@@ -80,7 +88,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
             {mgr.collectionKeyError}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

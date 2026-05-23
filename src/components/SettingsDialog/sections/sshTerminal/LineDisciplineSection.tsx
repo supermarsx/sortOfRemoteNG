@@ -2,15 +2,17 @@ import type { SectionProps } from "./types";
 import React from "react";
 import { LocalEchoModes, LineEditingModes } from "../../../../types/settings/settings";
 import { Keyboard } from "lucide-react";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { Select, FormField } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const LineDisciplineSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.lineDiscipline", "Line Discipline")}
-    icon={<Keyboard className="w-4 h-4 text-primary" />}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Keyboard className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.lineDiscipline", "Line Discipline")}
+    />
+    <div className="sor-settings-card">
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.localEcho", "Local Echo")} <InfoTooltip text="Controls whether typed characters are echoed locally. Auto lets the server decide; Force On always echoes." /></span>}>
         <Select
@@ -52,7 +54,8 @@ const LineDisciplineSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         />
       </FormField>
     </div>
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export default LineDisciplineSection;

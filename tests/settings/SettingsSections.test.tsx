@@ -117,10 +117,16 @@ describe("Settings sections centralization", () => {
       />,
     );
 
-    const intervalRow = screen
-      .getByText("Health-check interval")
-      .closest(".sor-settings-tile");
-    expect(intervalRow).toHaveClass("sor-settings-tile-disabled");
+    // Health-check interval row is dimmed/inert when keepalive is off —
+    // the new layout uses opacity + pointer-events-none on a wrapper
+    // div around the FieldRow.
+    const intervalRow = container.querySelector(
+      '[data-setting-key="proxyKeepaliveIntervalSeconds"]',
+    );
+    expect(intervalRow?.parentElement?.className).toContain("opacity-50");
+    expect(intervalRow?.parentElement?.className).toContain(
+      "pointer-events-none",
+    );
 
     const numberInput = container.querySelector(
       'input[value="10"]',

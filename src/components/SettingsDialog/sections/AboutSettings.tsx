@@ -402,28 +402,33 @@ const openRepositoryUrl = (url: string) => {
 const AboutSettings: React.FC = () => (
   <div className="space-y-6">
     <SectionHeading
-      icon={<Info className="w-5 h-5" />}
+      icon={<Info className="w-5 h-5 text-primary" />}
       title="About"
       description="Application credits, maintainers, major libraries, and upstream projects used by sortOfRemoteNG."
     />
 
-    <div
-      data-setting-key="about.summary"
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
-    >
-      {SUMMARY_ITEMS.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3"
-        >
-          <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
-            {item.label}
-          </div>
-          <div className="mt-1 text-sm font-medium text-[var(--color-text)] break-words">
-            {item.value}
-          </div>
+    <div className="space-y-4" data-setting-key="about.summary">
+      <SectionHeader
+        icon={<Archive className="w-4 h-4 text-primary" />}
+        title="Summary"
+      />
+      <Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {SUMMARY_ITEMS.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3"
+            >
+              <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+                {item.label}
+              </div>
+              <div className="mt-1 text-sm font-medium text-[var(--color-text)] break-words">
+                {item.value}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      </Card>
     </div>
 
     <div className="space-y-4" data-setting-key="about.description">

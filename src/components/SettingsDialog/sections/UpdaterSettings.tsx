@@ -13,10 +13,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import SectionHeading from "../../ui/SectionHeading";
-import { Checkbox, NumberInput, TextInput } from "../../ui/forms";
+import { NumberInput, TextInput } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 import { useUpdater } from "../../../hooks/updater/useUpdater";
 import type {
@@ -244,7 +246,7 @@ export const UpdaterSettings: React.FC = () => {
           icon={<ShieldCheck className="w-4 h-4 text-primary" />}
           title={t("updater.updateStatus", "Update status")}
         />
-        <div className="sor-settings-card space-y-4">
+        <Card>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-[var(--color-textMuted)]">
               {t("updater.currentVersion", "Current version")}: {updater.currentVersion ?? "-"}
@@ -387,7 +389,7 @@ export const UpdaterSettings: React.FC = () => {
               </button>
             )}
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="space-y-4">
@@ -395,38 +397,40 @@ export const UpdaterSettings: React.FC = () => {
           icon={<RefreshCw className="w-4 h-4 text-primary" />}
           title={t("updater.autoChecks", "Automatic checks")}
         />
-        <div className="sor-settings-card space-y-4">
-          <label className="sor-settings-toggle-row" data-setting-key="updater.autoCheckEnabled">
-            <Checkbox
-              checked={updater.settings?.autoCheckEnabled ?? true}
-              onChange={handleAutoCheckChange}
-              disabled={updater.savingSettings || !updater.settings}
-              data-testid="updater-auto-check-toggle"
-            />
-            <div className="sor-settings-toggle-icon">
-              <RefreshCw size={16} />
-            </div>
-            <div className="min-w-0">
-              <span className="sor-settings-toggle-label flex items-center gap-1">
-                {t("updater.autoCheck", "Auto-check for updates")}
-                <InfoTooltip text={t("updater.autoCheckTooltip", "Checks never install updates without confirmation.")} />
-              </span>
-              <p className="sor-settings-toggle-description">
-                {t(
-                  "updater.autoCheckDescription",
-                  "Check in the background without installing updates automatically.",
-                )}
-              </p>
-            </div>
-          </label>
+        <Card>
+          <Toggle
+            checked={updater.settings?.autoCheckEnabled ?? true}
+            onChange={handleAutoCheckChange}
+            icon={<RefreshCw size={16} />}
+            label={t("updater.autoCheck", "Auto-check for updates")}
+            description={t(
+              "updater.autoCheckDescription",
+              "Check in the background without installing updates automatically.",
+            )}
+            settingKey="updater.autoCheckEnabled"
+            testId="updater-auto-check-toggle"
+            disabled={updater.savingSettings || !updater.settings}
+            infoTooltip={t(
+              "updater.autoCheckTooltip",
+              "Checks never install updates without confirmation.",
+            )}
+          />
           <div
             data-setting-key="updater.checkIntervalHours"
-            className={`space-y-2 ${!(updater.settings?.autoCheckEnabled ?? true) ? "opacity-50" : ""}`}
+            className={`space-y-2 ${!(updater.settings?.autoCheckEnabled ?? true) ? "opacity-50 pointer-events-none" : ""}`}
           >
-            <label className="flex items-center gap-2 sor-settings-row-label" htmlFor="updater-check-interval">
+            <label
+              className="flex items-center gap-2 sor-settings-row-label"
+              htmlFor="updater-check-interval"
+            >
               <Clock3 className="w-4 h-4 text-[var(--color-textSecondary)]" />
               {t("updater.checkIntervalHours", "Check interval (hours)")}
-              <InfoTooltip text={t("updater.checkIntervalTooltip", "How often the app checks for signed updates while automatic checks are enabled.")} />
+              <InfoTooltip
+                text={t(
+                  "updater.checkIntervalTooltip",
+                  "How often the app checks for signed updates while automatic checks are enabled.",
+                )}
+              />
             </label>
             <NumberInput
               id="updater-check-interval"
@@ -440,10 +444,13 @@ export const UpdaterSettings: React.FC = () => {
               data-testid="updater-check-interval"
             />
             <p className="text-xs text-[var(--color-textMuted)]">
-              {t("updater.checkIntervalDescription", "Valid range: 1 to 720 hours.")}
+              {t(
+                "updater.checkIntervalDescription",
+                "Valid range: 1 to 720 hours.",
+              )}
             </p>
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="space-y-4">
@@ -451,62 +458,73 @@ export const UpdaterSettings: React.FC = () => {
           icon={<Server className="w-4 h-4 text-primary" />}
           title={t("updater.privateEndpointLabel", "Private endpoint")}
         />
-        <div className="sor-settings-card space-y-4">
-          <label className="sor-settings-toggle-row" data-setting-key="updater.privateEndpointEnabled">
-            <Checkbox
-              id="updater-private-endpoint-toggle"
-              checked={endpointEnabledDraft}
-              onChange={handleEndpointEnabledChange}
-              disabled={updater.savingSettings || !updater.settings}
-              data-testid="updater-private-endpoint-toggle"
-            />
-            <div className="sor-settings-toggle-icon">
-              <Server size={16} />
-            </div>
-            <div className="min-w-0">
-              <span className="sor-settings-toggle-label flex items-center gap-1">
-                {t("updater.privateEndpointEnabled", "Use a private update feed first")}
-                <InfoTooltip text={t("updater.privateEndpointTooltip", "Try the configured private update feed before falling back to the public endpoint.")} />
-              </span>
-              <p className="sor-settings-toggle-description">
-                {t(
-                  "updater.privateEndpointDescription",
-                  "Useful for staged releases, internal builds, or controlled update feeds.",
-                )}
-              </p>
-            </div>
-          </label>
-          <div className="space-y-2">
-            <div
-              data-setting-key="updater.privateEndpointUrl"
-              className={`space-y-2 ${!endpointEnabledDraft ? "opacity-50" : ""}`}
+        <Card>
+          <Toggle
+            checked={endpointEnabledDraft}
+            onChange={handleEndpointEnabledChange}
+            icon={<Server size={16} />}
+            label={t(
+              "updater.privateEndpointEnabled",
+              "Use a private update feed first",
+            )}
+            description={t(
+              "updater.privateEndpointDescription",
+              "Useful for staged releases, internal builds, or controlled update feeds.",
+            )}
+            settingKey="updater.privateEndpointEnabled"
+            inputId="updater-private-endpoint-toggle"
+            testId="updater-private-endpoint-toggle"
+            disabled={updater.savingSettings || !updater.settings}
+            infoTooltip={t(
+              "updater.privateEndpointTooltip",
+              "Try the configured private update feed before falling back to the public endpoint.",
+            )}
+          />
+          <div
+            data-setting-key="updater.privateEndpointUrl"
+            className={`space-y-2 ${!endpointEnabledDraft ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            <label
+              className="flex items-center gap-2 sor-settings-row-label"
+              htmlFor="updater-private-endpoint-url"
             >
-              <label className="flex items-center gap-2 sor-settings-row-label" htmlFor="updater-private-endpoint-url">
-                <Server className="w-4 h-4 text-[var(--color-textSecondary)]" />
-                {t("updater.privateEndpointUrl", "Private endpoint URL")}
-                <InfoTooltip text={t("updater.privateEndpointUrlTooltip", "HTTPS URL for a Tauri-compatible update manifest.")} />
-              </label>
-              <TextInput
-                id="updater-private-endpoint-url"
-                inputMode="url"
-                value={endpointDraft}
-                onChange={setEndpointDraft}
-                onBlur={handleEndpointBlur}
-                variant="settings"
-                disabled={updater.savingSettings || !updater.settings || !endpointEnabledDraft}
-                placeholder="https://updates.example.com/latest.json"
-                className="w-full"
-                data-testid="updater-private-endpoint-input"
+              <Server className="w-4 h-4 text-[var(--color-textSecondary)]" />
+              {t("updater.privateEndpointUrl", "Private endpoint URL")}
+              <InfoTooltip
+                text={t(
+                  "updater.privateEndpointUrlTooltip",
+                  "HTTPS URL for a Tauri-compatible update manifest.",
+                )}
               />
-              {(endpointLocalError || updater.settings?.privateEndpointValidationError) && (
-                <p className="text-xs text-error" role="alert" data-testid="updater-private-endpoint-error">
-                  {endpointLocalError ?? updater.settings?.privateEndpointValidationError}
-                </p>
-              )}
-            </div>
+            </label>
+            <TextInput
+              id="updater-private-endpoint-url"
+              inputMode="url"
+              value={endpointDraft}
+              onChange={setEndpointDraft}
+              onBlur={handleEndpointBlur}
+              variant="settings"
+              disabled={
+                updater.savingSettings || !updater.settings || !endpointEnabledDraft
+              }
+              placeholder="https://updates.example.com/latest.json"
+              className="w-full"
+              data-testid="updater-private-endpoint-input"
+            />
+            {(endpointLocalError ||
+              updater.settings?.privateEndpointValidationError) && (
+              <p
+                className="text-xs text-error"
+                role="alert"
+                data-testid="updater-private-endpoint-error"
+              >
+                {endpointLocalError ??
+                  updater.settings?.privateEndpointValidationError}
+              </p>
+            )}
           </div>
           <EndpointList endpoints={endpoints} />
-        </div>
+        </Card>
       </div>
 
       <div className="sticky bottom-0 flex justify-end border-t border-[var(--color-border)]/30 bg-[var(--color-surface)]/80 px-0 py-2 backdrop-blur-sm">

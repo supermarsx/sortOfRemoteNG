@@ -28,7 +28,43 @@ import type { McpTabProps } from "./types";
 import type { McpServerConfig, McpLogLevel } from "../../../types/mcp/mcpServer";
 import { MCP_LOG_LEVELS } from "../../../types/mcp/mcpServer";
 import { Checkbox, NumberInput, Select, TextInput } from "../../ui/forms";
+import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
+
+/* ── Shared row primitives ───────────────────────────── */
+
+const ToggleRow: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  tooltip?: string;
+}> = ({ icon, label, description, checked, onChange, tooltip }) => (
+  <label className="flex items-center justify-between gap-3 cursor-pointer">
+    <div className="flex items-center gap-3 min-w-0">
+      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <span className="text-[var(--color-text)] flex items-center gap-1">
+          {label}
+          {tooltip && <InfoTooltip text={tooltip} />}
+        </span>
+        {description && (
+          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+            {description}
+          </p>
+        )}
+      </div>
+    </div>
+    <Checkbox
+      checked={checked}
+      onChange={(v: boolean) => onChange(v)}
+      className="sor-checkbox-lg flex-shrink-0"
+    />
+  </label>
+);
 
 export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -71,346 +107,329 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const isRunning = !!mgr.status?.running;
   const isBusy = mgr.isStarting || mgr.isStopping;
 
+  const statusLabel = isRunning
+    ? "Running"
+    : mgr.isStarting
+      ? "Starting…"
+      : mgr.isStopping
+        ? "Stopping…"
+        : "Stopped";
+
+  const statusBadgeClass = isRunning
+    ? "bg-success/20 text-success"
+    : isBusy
+      ? "bg-warning/20 text-warning"
+      : "bg-[var(--color-surfaceHover)]/50 text-[var(--color-textSecondary)]";
+
+  const statusDotClass = isRunning
+    ? "bg-success"
+    : isBusy
+      ? "bg-warning animate-pulse"
+      : "bg-[var(--color-secondary)]";
+
   return (
     <div className="space-y-6" data-testid="mcp-config-tab">
       {/* Enable MCP Server */}
       <div className="sor-settings-card">
-        <label className="flex items-center space-x-3 cursor-pointer group">
+        <label className="flex items-center justify-between cursor-pointer">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/20 rounded-lg">
+              <Power className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <span className="text-[var(--color-text)] font-medium">
+                {t("mcpServer.config.enabled", "Enable MCP Server")}{" "}
+                <InfoTooltip text="Allow AI assistants to connect to this application via the Model Context Protocol." />
+              </span>
+              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+                {t(
+                  "mcpServer.config.enabledDesc",
+                  "Allow AI assistants to connect to this application via MCP",
+                )}
+              </p>
+            </div>
+          </div>
           <Checkbox
             checked={draft.enabled}
             onChange={(v: boolean) => update("enabled", v)}
+            className="sor-checkbox-lg"
           />
-          <Power className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-          <div>
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-              {t("mcpServer.config.enabled", "Enable MCP Server")}
-              <InfoTooltip text="Allow AI assistants to connect to this application via the Model Context Protocol." />
-            </span>
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t(
-                "mcpServer.config.enabledDesc",
-                "Allow AI assistants to connect to this application via MCP",
-              )}
-            </p>
-          </div>
         </label>
-      </div>
 
-      {/* Auto-start on Launch */}
-      {draft.enabled && (
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox
-              checked={draft.auto_start}
-              onChange={(v: boolean) => update("auto_start", v)}
-            />
-            <Clock className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
-            <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
+        <label className="flex items-center justify-between gap-3 cursor-pointer pt-3 mt-1 border-t border-[var(--color-border)]">
+          <div className="flex items-center gap-3 min-w-0">
+            <Clock className="w-4 h-4 text-[var(--color-textSecondary)] flex-shrink-0" />
+            <div className="min-w-0">
+              <span className="text-[var(--color-text)] flex items-center gap-1">
                 {t("mcpServer.config.autoStart", "Auto-start on launch")}
                 <InfoTooltip text="Start the MCP server automatically when the application opens, without manual activation." />
               </span>
-              <p className="text-xs text-[var(--color-textMuted)]">
+              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                 {t(
                   "mcpServer.config.autoStartDesc",
                   "Start the MCP server automatically when the app opens",
                 )}
               </p>
             </div>
-          </label>
+          </div>
+          <Checkbox
+            checked={draft.auto_start}
+            onChange={(v: boolean) => update("auto_start", v)}
+            className="sor-checkbox-lg flex-shrink-0"
+          />
+        </label>
+      </div>
+
+      {/* Server Controls */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Settings className="w-4 h-4 text-primary" />}
+          title={t("mcpServer.config.serverControls", "Server Controls")}
+        />
+        <div className="sor-settings-card">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[var(--color-textSecondary)]">
+              {t("mcpServer.config.serverStatus", "Server status")}
+            </span>
+            <div
+              className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${statusBadgeClass}`}
+            >
+              <div className={`w-2 h-2 rounded-full ${statusDotClass}`} />
+              {statusLabel}
+              {isRunning && mgr.status?.listen_address && (
+                <span className="text-[var(--color-textSecondary)]">
+                  @{mgr.status.listen_address}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleStart}
+              disabled={isRunning || isBusy}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-success hover:bg-success/90 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
+              data-testid="mcp-start-btn"
+            >
+              {mgr.isStarting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              {t("mcpServer.actions.start", "Start")}
+            </button>
+            <button
+              type="button"
+              onClick={handleStop}
+              disabled={!isRunning || isBusy}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-error hover:bg-error/90 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
+              data-testid="mcp-stop-btn"
+            >
+              {mgr.isStopping ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              {t("mcpServer.actions.stop", "Stop")}
+            </button>
+            <button
+              type="button"
+              onClick={handleRestart}
+              disabled={!isRunning || isBusy}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-warning hover:bg-warning/90 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              {t("mcpServer.actions.restart", "Restart")}
+            </button>
+          </div>
         </div>
-      )}
+      </div>
 
-      {draft.enabled && (
-        <>
-          {/* Server Controls */}
-          <div className="sor-settings-card">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-2">
-                <Settings className="w-4 h-4 text-primary" />
-                {t("mcpServer.config.serverControls", "Server Controls")}
-              </h4>
-              <div
-                className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${
-                  isRunning
-                    ? "bg-success/20 text-success"
-                    : isBusy
-                      ? "bg-warning/20 text-warning"
-                      : "bg-[var(--color-surfaceHover)]/50 text-[var(--color-textSecondary)]"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    isRunning
-                      ? "bg-success"
-                      : isBusy
-                        ? "bg-warning animate-pulse"
-                        : "bg-[var(--color-secondary)]"
-                  }`}
-                />
-                {isRunning
-                  ? "Running"
-                  : mgr.isStarting
-                    ? "Starting..."
-                    : mgr.isStopping
-                      ? "Stopping..."
-                      : "Stopped"}
-                {isRunning && mgr.status?.listen_address && (
-                  <span className="text-[var(--color-textSecondary)]">
-                    @{mgr.status.listen_address}
-                  </span>
-                )}
-              </div>
+      {/* General (Network) */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Globe className="w-4 h-4 text-primary" />}
+          title={t("mcpServer.config.general", "General")}
+        />
+        <div className="sor-settings-card">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+                <Globe className="w-4 h-4" />
+                {t("mcpServer.config.host", "Host")}
+                <InfoTooltip text="Network interface the MCP server binds to. Use 127.0.0.1 for localhost only or 0.0.0.0 to listen on all interfaces." />
+              </label>
+              <TextInput
+                value={draft.host}
+                onChange={(v) => update("host", v)}
+                placeholder="127.0.0.1"
+                variant="settings"
+                className="w-full"
+              />
             </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleStart}
-                disabled={isRunning || isBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-success hover:bg-success/90 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
-                data-testid="mcp-start-btn"
-              >
-                {mgr.isStarting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Play className="w-4 h-4" />
-                )}
-                {t("mcpServer.actions.start", "Start")}
-              </button>
-              <button
-                type="button"
-                onClick={handleStop}
-                disabled={!isRunning || isBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-error hover:bg-error/90 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
-                data-testid="mcp-stop-btn"
-              >
-                {mgr.isStopping ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Square className="w-4 h-4" />
-                )}
-                {t("mcpServer.actions.stop", "Stop")}
-              </button>
-              <button
-                type="button"
-                onClick={handleRestart}
-                disabled={!isRunning || isBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-warning hover:bg-warning/90 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
-              >
-                <RotateCcw className="w-4 h-4" />
-                {t("mcpServer.actions.restart", "Restart")}
-              </button>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+                <Server className="w-4 h-4" />
+                {t("mcpServer.config.port", "Port")}
+                <InfoTooltip text="TCP port number the MCP server listens on. Choose a port not used by other services." />
+              </label>
+              <NumberInput
+                value={draft.port}
+                onChange={(v: number) => update("port", v)}
+                min={1024}
+                max={65535}
+                className="w-full"
+              />
             </div>
           </div>
-
-          {/* General (Network) */}
-          <div className="space-y-4">
-            <h4 className="sor-section-heading">
-              <Globe className="w-4 h-4 text-primary" />
-              {t("mcpServer.config.general", "General")}
-            </h4>
-
-            <div className="sor-settings-card">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                    <Globe className="w-4 h-4" />
-                    {t("mcpServer.config.host", "Host")}
-                    <InfoTooltip text="Network interface the MCP server binds to. Use 127.0.0.1 for localhost only or 0.0.0.0 to listen on all interfaces." />
-                  </label>
-                  <TextInput
-                    value={draft.host}
-                    onChange={(v) => update("host", v)}
-                    placeholder="127.0.0.1"
-                    variant="settings"
-                    className="w-full"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                    <Server className="w-4 h-4" />
-                    {t("mcpServer.config.port", "Port")}
-                    <InfoTooltip text="TCP port number the MCP server listens on. Choose a port not used by other services." />
-                  </label>
-                  <NumberInput
-                    value={draft.port}
-                    onChange={(v: number) => update("port", v)}
-                    min={1024}
-                    max={65535}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+        </div>
+      </div>
 
       {/* Security */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <Shield className="w-4 h-4 text-success" />
-          {t("mcpServer.config.security", "Security")}
-        </h4>
+        <SectionHeader
+          icon={<Shield className="w-4 h-4 text-primary" />}
+          title={t("mcpServer.config.security", "Security")}
+        />
+        <div className="sor-settings-card">
+          <ToggleRow
+            icon={<Key className="w-4 h-4" />}
+            label={t("mcpServer.config.requireAuth", "Require authentication")}
+            description={t(
+              "mcpServer.config.requireAuthDesc",
+              "Require API key for all requests",
+            )}
+            checked={draft.require_auth}
+            onChange={(v) => update("require_auth", v)}
+            tooltip="Require an API key (Bearer token) for all incoming MCP requests. Strongly recommended when remote connections are allowed."
+          />
 
-        <div className="sor-settings-card space-y-4">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox
-              checked={draft.require_auth}
-              onChange={(v: boolean) => update("require_auth", v)}
-            />
-            <Key className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
-            <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-                {t("mcpServer.config.requireAuth", "Require authentication")}
-                <InfoTooltip text="Require an API key (Bearer token) for all incoming MCP requests. Strongly recommended when remote connections are allowed." />
-              </span>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t(
-                  "mcpServer.config.requireAuthDesc",
-                  "Require API key for all requests",
-                )}
-              </p>
-            </div>
-          </label>
-
-          {draft.require_auth && (
-            <div className="space-y-2 pt-2 border-t border-[var(--color-border)]">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Key className="w-4 h-4" />
-                {t("mcpServer.config.apiKey", "API Key")}
-                <InfoTooltip text="Secret key clients must include as a Bearer token to authenticate MCP requests." />
-              </label>
-              <div className="flex gap-2">
-                <div className="flex flex-1 items-center gap-1 sor-settings-input min-w-0 px-2">
-                  <input
-                    type={showApiKey ? "text" : "password"}
-                    value={draft.api_key}
-                    readOnly
-                    className="min-w-0 flex-1 bg-transparent border-0 p-0 text-sm font-mono text-[var(--color-text)] outline-none"
-                    data-testid="mcp-api-key-input"
-                    placeholder={t(
-                      "mcpServer.config.noApiKey",
-                      "No API key generated",
-                    )}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                    aria-label={
-                      showApiKey
-                        ? t("mcpServer.config.hideKey", "Hide key")
-                        : t("mcpServer.config.showKey", "Show key")
-                    }
-                  >
-                    {showApiKey ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                  {draft.api_key && (
-                    <button
-                      type="button"
-                      onClick={handleCopyKey}
-                      className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                      aria-label={t("mcpServer.config.copyKey", "Copy key")}
-                    >
-                      {copiedKey ? (
-                        <Check className="w-4 h-4 text-success" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </button>
+          <div
+            className={`space-y-2 pt-3 border-t border-[var(--color-border)] ${!draft.require_auth ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <Key className="w-4 h-4" />
+              {t("mcpServer.config.apiKey", "API Key")}
+              <InfoTooltip text="Secret key clients must include as a Bearer token to authenticate MCP requests." />
+            </label>
+            <div className="flex gap-2">
+              <div className="flex flex-1 items-center gap-1 sor-settings-input min-w-0 px-2">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={draft.api_key}
+                  readOnly
+                  className="min-w-0 flex-1 bg-transparent border-0 p-0 text-sm font-mono text-[var(--color-text)] outline-none"
+                  data-testid="mcp-api-key-input"
+                  placeholder={t(
+                    "mcpServer.config.noApiKey",
+                    "No API key generated",
                   )}
-                </div>
+                />
                 <button
                   type="button"
-                  onClick={handleGenerateKey}
-                  disabled={mgr.isGeneratingKey}
-                  className="shrink-0 px-3 py-2 bg-primary border border-primary rounded-md text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50"
-                  data-testid="mcp-generate-key-btn"
-                  title={t("mcpServer.config.generateKey", "Generate New Key")}
-                  aria-label={t("mcpServer.config.generateKey", "Generate")}
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  aria-label={
+                    showApiKey
+                      ? t("mcpServer.config.hideKey", "Hide key")
+                      : t("mcpServer.config.showKey", "Show key")
+                  }
                 >
-                  {mgr.isGeneratingKey ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  {showApiKey ? (
+                    <EyeOff className="w-4 h-4" />
                   ) : (
-                    <RefreshCw className="w-4 h-4" />
+                    <Eye className="w-4 h-4" />
                   )}
                 </button>
+                {draft.api_key && (
+                  <button
+                    type="button"
+                    onClick={handleCopyKey}
+                    className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                    aria-label={t("mcpServer.config.copyKey", "Copy key")}
+                  >
+                    {copiedKey ? (
+                      <Check className="w-4 h-4 text-success" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
               </div>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t(
-                  "mcpServer.config.apiKeyDescription",
-                  "Include this key as a Bearer token in the Authorization header",
+              <button
+                type="button"
+                onClick={handleGenerateKey}
+                disabled={mgr.isGeneratingKey}
+                className="shrink-0 px-3 py-2 bg-primary border border-primary rounded-md text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50"
+                data-testid="mcp-generate-key-btn"
+                title={t("mcpServer.config.generateKey", "Generate New Key")}
+                aria-label={t("mcpServer.config.generateKey", "Generate")}
+              >
+                {mgr.isGeneratingKey ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
                 )}
-              </p>
+              </button>
             </div>
-          )}
+            <p className="text-xs text-[var(--color-textMuted)]">
+              {t(
+                "mcpServer.config.apiKeyDescription",
+                "Include this key as a Bearer token in the Authorization header",
+              )}
+            </p>
+          </div>
 
-          <label className="flex items-center space-x-3 cursor-pointer group pt-2 border-t border-[var(--color-border)]">
-            <Checkbox
+          <div className="pt-3 border-t border-[var(--color-border)]">
+            <ToggleRow
+              icon={<Globe className="w-4 h-4" />}
+              label={t(
+                "mcpServer.config.allowRemote",
+                "Allow remote connections",
+              )}
+              description={t(
+                "mcpServer.config.allowRemoteDesc",
+                "Allow connections from non-localhost addresses (security risk)",
+              )}
               checked={draft.allow_remote}
-              onChange={(v: boolean) => update("allow_remote", v)}
+              onChange={(v) => update("allow_remote", v)}
+              tooltip="Listen on non-localhost addresses. Exposes the API to other machines on your network — ensure authentication is enabled."
             />
-            <Globe className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
-            <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-                {t("mcpServer.config.allowRemote", "Allow remote connections")}
-                <InfoTooltip text="Listen on non-localhost addresses. Exposes the API to other machines on your network — ensure authentication is enabled." />
-              </span>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t(
-                  "mcpServer.config.allowRemoteDesc",
-                  "Allow connections from non-localhost addresses (security risk)",
-                )}
-              </p>
-            </div>
-          </label>
+            {draft.allow_remote && (
+              <div className="flex items-start gap-2 p-2 mt-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>
+                  {t(
+                    "mcpServer.config.remoteWarning",
+                    "Warning: This exposes the MCP server to your network. Ensure authentication is enabled.",
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
 
-          {draft.allow_remote && (
-            <div className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>
-                {t(
-                  "mcpServer.config.remoteWarning",
-                  "Warning: This exposes the MCP server to your network. Ensure authentication is enabled.",
-                )}
-              </span>
-            </div>
-          )}
-
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox
-              checked={draft.expose_sensitive_data}
-              onChange={(v: boolean) => update("expose_sensitive_data", v)}
-            />
-            <AlertTriangle className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-error" />
-            <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-                {t("mcpServer.config.exposeSensitive", "Expose sensitive data")}
-                <InfoTooltip text="Include passwords, tokens, and other secrets in resource responses. Only enable if you trust connecting clients." />
-              </span>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t(
-                  "mcpServer.config.exposeSensitiveDesc",
-                  "Include passwords and secrets in resource responses",
-                )}
-              </p>
-            </div>
-          </label>
+          <ToggleRow
+            icon={<AlertTriangle className="w-4 h-4" />}
+            label={t("mcpServer.config.exposeSensitive", "Expose sensitive data")}
+            description={t(
+              "mcpServer.config.exposeSensitiveDesc",
+              "Include passwords and secrets in resource responses",
+            )}
+            checked={draft.expose_sensitive_data}
+            onChange={(v) => update("expose_sensitive_data", v)}
+            tooltip="Include passwords, tokens, and other secrets in resource responses. Only enable if you trust connecting clients."
+          />
         </div>
       </div>
 
       {/* Sessions & Limits */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <Cpu className="w-4 h-4 text-info" />
-          {t("mcpServer.config.limits", "Sessions & Limits")}
-        </h4>
-
+        <SectionHeader
+          icon={<Cpu className="w-4 h-4 text-primary" />}
+          title={t("mcpServer.config.limits", "Sessions & Limits")}
+        />
         <div className="sor-settings-card">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -481,61 +500,43 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
 
       {/* CORS / Transport */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <RefreshCw className="w-4 h-4 text-primary" />
-          {t("mcpServer.config.cors", "CORS")}
-        </h4>
+        <SectionHeader
+          icon={<RefreshCw className="w-4 h-4 text-primary" />}
+          title={t("mcpServer.config.cors", "CORS")}
+        />
+        <div className="sor-settings-card">
+          <ToggleRow
+            icon={<Globe className="w-4 h-4" />}
+            label={t("mcpServer.config.corsEnabled", "Enable CORS")}
+            description={t(
+              "mcpServer.config.corsDesc",
+              "Allow cross-origin browser requests",
+            )}
+            checked={draft.cors_enabled}
+            onChange={(v) => update("cors_enabled", v)}
+            tooltip="Allow cross-origin requests to the MCP server from web-based clients."
+          />
 
-        <div className="sor-settings-card space-y-4">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox
-              checked={draft.cors_enabled}
-              onChange={(v: boolean) => update("cors_enabled", v)}
-            />
-            <Globe className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-            <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-                {t("mcpServer.config.corsEnabled", "Enable CORS")}
-                <InfoTooltip text="Allow cross-origin requests to the MCP server from web-based clients." />
-              </span>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t(
-                  "mcpServer.config.corsDesc",
-                  "Allow cross-origin browser requests",
-                )}
-              </p>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox
-              checked={draft.sse_enabled}
-              onChange={(v: boolean) => update("sse_enabled", v)}
-            />
-            <RefreshCw className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-            <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-                {t("mcpServer.config.sseEnabled", "Enable SSE")}
-                <InfoTooltip text="Enable Server-Sent Events for real-time notifications to MCP clients." />
-              </span>
-              <p className="text-xs text-[var(--color-textMuted)]">
-                {t(
-                  "mcpServer.config.sseDesc",
-                  "Enable Server-Sent Events for real-time notifications",
-                )}
-              </p>
-            </div>
-          </label>
+          <ToggleRow
+            icon={<RefreshCw className="w-4 h-4" />}
+            label={t("mcpServer.config.sseEnabled", "Enable SSE")}
+            description={t(
+              "mcpServer.config.sseDesc",
+              "Enable Server-Sent Events for real-time notifications",
+            )}
+            checked={draft.sse_enabled}
+            onChange={(v) => update("sse_enabled", v)}
+            tooltip="Enable Server-Sent Events for real-time notifications to MCP clients."
+          />
         </div>
       </div>
 
       {/* Server Instructions */}
       <div className="space-y-4">
-        <h4 className="sor-section-heading">
-          <FileText className="w-4 h-4 text-info" />
-          {t("mcpServer.config.instructions", "Server Instructions")}
-        </h4>
-
+        <SectionHeader
+          icon={<FileText className="w-4 h-4 text-primary" />}
+          title={t("mcpServer.config.instructions", "Server Instructions")}
+        />
         <div className="sor-settings-card">
           <div className="space-y-2 w-full">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -566,7 +567,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
       {/* Tools */}
       <CapabilityListSection
         title={t("mcpServer.config.toolsTitle", "Tools")}
-        icon={<Wrench className="w-4 h-4 text-success" />}
+        icon={<Wrench className="w-4 h-4 text-primary" />}
         infoText="Choose which MCP tools are exposed to AI clients. When all are enabled, the server exposes its full toolset by default."
         items={(mgr.tools ?? []).map((tool) => ({
           name: tool.name,
@@ -602,7 +603,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
       {/* Prompts */}
       <CapabilityListSection
         title={t("mcpServer.config.promptsTitle", "Prompts")}
-        icon={<MessageSquare className="w-4 h-4 text-warning" />}
+        icon={<MessageSquare className="w-4 h-4 text-primary" />}
         infoText="Choose which MCP prompts (templates) are exposed to AI clients."
         items={(mgr.prompts ?? []).map((p) => ({
           name: p.name,
@@ -616,8 +617,6 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           "Expose all prompts (default)",
         )}
       />
-        </>
-      )}
     </div>
   );
 };
@@ -654,15 +653,19 @@ const CapabilityListSection: React.FC<{
 
   return (
     <div className="space-y-4">
-      <h4 className="sor-section-heading">
-        {icon}
-        {title}
-        <span className="ml-auto text-xs font-normal text-[var(--color-textMuted)]">
-          {enabledCount}/{items.length}
-        </span>
-      </h4>
+      <SectionHeader
+        icon={icon}
+        title={
+          <span className="flex items-center gap-2">
+            {title}
+            <span className="text-xs font-normal text-[var(--color-textMuted)]">
+              {enabledCount}/{items.length}
+            </span>
+          </span>
+        }
+      />
 
-      <div className="sor-settings-card space-y-3">
+      <div className="sor-settings-card">
         <div className="flex items-center justify-between text-xs text-[var(--color-textMuted)]">
           <span className="flex items-center gap-1">
             {allEnabled

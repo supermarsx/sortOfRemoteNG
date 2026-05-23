@@ -11,7 +11,7 @@ interface BaseSettingProps {
 
 export const SettingsSectionHeader: React.FC<{
   icon: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   className?: string;
 }> = ({ icon, title, className }) => (
   <h4 className={cx('sor-settings-section-header', className)}>
@@ -31,9 +31,15 @@ interface SettingsToggleRowProps extends BaseSettingProps {
   checked: boolean;
   onChange: (value: boolean) => void;
   icon?: React.ReactNode;
-  label: string;
+  label: React.ReactNode;
   description?: string;
   infoTooltip?: string;
+  /** Optional id forwarded to the underlying checkbox. */
+  inputId?: string;
+  /** Optional data-testid forwarded to the underlying checkbox. */
+  testId?: string;
+  /** Optional disabled forwarded to the underlying checkbox. */
+  disabled?: boolean;
 }
 
 export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
@@ -45,6 +51,9 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
   settingKey,
   className,
   infoTooltip,
+  inputId,
+  testId,
+  disabled,
 }) => (
   <label
     className={cx('sor-settings-toggle-row', className)}
@@ -55,6 +64,9 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
       className="sor-settings-checkbox"
+      {...(inputId ? { id: inputId } : {})}
+      {...(testId ? { 'data-testid': testId } : {})}
+      disabled={disabled}
     />
     {icon && <div className="sor-settings-toggle-icon">{icon}</div>}
     <div className="min-w-0">
@@ -66,6 +78,8 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
 
 interface SettingsSliderRowProps extends BaseSettingProps {
   label: string;
+  icon?: React.ReactNode;
+  description?: string;
   value: number;
   min: number;
   max: number;
@@ -77,6 +91,8 @@ interface SettingsSliderRowProps extends BaseSettingProps {
 
 export const SettingsSliderRow: React.FC<SettingsSliderRowProps> = ({
   label,
+  icon,
+  description,
   value,
   min,
   max,
@@ -91,7 +107,17 @@ export const SettingsSliderRow: React.FC<SettingsSliderRowProps> = ({
     className={cx('sor-settings-slider-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
+    <div className="min-w-0">
+      <span className="sor-settings-row-label flex items-center gap-1">
+        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+      </span>
+      {description && (
+        <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+          {description}
+        </p>
+      )}
+    </div>
     <div className="sor-settings-slider-controls">
       <input
         type="range"
@@ -117,6 +143,8 @@ interface SelectOption {
 
 interface SettingsSelectRowProps extends BaseSettingProps {
   label: string;
+  icon?: React.ReactNode;
+  description?: string;
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
@@ -125,6 +153,8 @@ interface SettingsSelectRowProps extends BaseSettingProps {
 
 export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
   label,
+  icon,
+  description,
   value,
   options,
   onChange,
@@ -136,7 +166,17 @@ export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
     className={cx('sor-settings-select-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
+    <div className="min-w-0">
+      <span className="sor-settings-row-label flex items-center gap-1">
+        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+      </span>
+      {description && (
+        <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+          {description}
+        </p>
+      )}
+    </div>
     <Select
       value={value}
       onChange={onChange}
@@ -178,6 +218,7 @@ interface SettingsTextRowProps extends BaseSettingProps {
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
+  infoTooltip?: string;
 }
 
 export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
@@ -187,12 +228,13 @@ export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
   onChange,
   settingKey,
   className,
+  infoTooltip,
 }) => (
   <div
     className={cx('sor-settings-select-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label">{label}</span>
+    <span className="sor-settings-row-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
     <input
       type="text"
       value={value}
@@ -205,16 +247,19 @@ export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
 
 interface SettingsNumberRowProps extends BaseSettingProps {
   label: string;
+  icon?: React.ReactNode;
   value: number;
   min?: number;
   max?: number;
   step?: number;
   unit?: string;
   onChange: (value: number) => void;
+  infoTooltip?: string;
 }
 
 export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
   label,
+  icon,
   value,
   min,
   max,
@@ -223,12 +268,16 @@ export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
   onChange,
   settingKey,
   className,
+  infoTooltip,
 }) => (
   <div
     className={cx('sor-settings-select-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label">{label}{unit && ` (${unit})`}</span>
+    <span className="sor-settings-row-label flex items-center gap-1">
+      {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+      {label}{unit && ` (${unit})`}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+    </span>
     <input
       type="number"
       value={value}

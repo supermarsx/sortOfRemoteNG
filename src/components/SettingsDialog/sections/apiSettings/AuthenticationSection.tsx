@@ -2,33 +2,43 @@ import React from "react";
 import { Shield, Key, Copy, RefreshCw } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
-export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
-  <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <Shield className="w-4 h-4 text-success" />
-      {mgr.t("settings.api.authentication", "Authentication")}
-    </h4>
+export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => {
+  const authOn = settings.restApi?.authentication ?? false;
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Shield className="w-4 h-4 text-primary" />}
+        title={mgr.t("settings.api.authentication", "Authentication")}
+      />
 
-    <div className="sor-settings-card space-y-4">
-      <label className="flex items-center space-x-3 cursor-pointer group">
-        <Checkbox checked={settings.restApi?.authentication || false} onChange={(v: boolean) => mgr.updateRestApi({ authentication: v })} />
-        <Key className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
-        <div>
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-            {mgr.t("settings.api.requireAuth", "Require Authentication")}
-            <InfoTooltip text="Require a valid API key in the X-API-Key header for all incoming requests. Strongly recommended when remote connections are allowed." />
-          </span>
-          <p className="text-xs text-[var(--color-textMuted)]">
-            {mgr.t("settings.api.requireAuthDescription", "Require an API key for all requests")}
-          </p>
-        </div>
-      </label>
+      <div className="sor-settings-card">
+        <label className="flex items-center justify-between gap-3 cursor-pointer">
+          <div className="flex items-center gap-3 min-w-0">
+            <Key className="w-4 h-4 text-[var(--color-textSecondary)] flex-shrink-0" />
+            <div className="min-w-0">
+              <span className="text-[var(--color-text)] flex items-center gap-1">
+                {mgr.t("settings.api.requireAuth", "Require Authentication")}
+                <InfoTooltip text="Require a valid API key in the X-API-Key header for all incoming requests. Strongly recommended when remote connections are allowed." />
+              </span>
+              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+                {mgr.t("settings.api.requireAuthDescription", "Require an API key for all requests")}
+              </p>
+            </div>
+          </div>
+          <Checkbox
+            checked={authOn}
+            onChange={(v: boolean) => mgr.updateRestApi({ authentication: v })}
+            className="sor-checkbox-lg flex-shrink-0"
+          />
+        </label>
 
-      {settings.restApi?.authentication && (
-        <div className="space-y-2 pt-2 border-t border-[var(--color-border)]">
+        <div
+          className={`space-y-2 pt-3 border-t border-[var(--color-border)] ${!authOn ? "opacity-50 pointer-events-none" : ""}`}
+        >
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Key className="w-4 h-4" />
             {mgr.t("settings.api.apiKey", "API Key")}
@@ -64,9 +74,9 @@ export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mg
             {mgr.t("settings.api.apiKeyDescription", "Include this key in the X-API-Key header for all requests")}
           </p>
         </div>
-      )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default AuthenticationSection;

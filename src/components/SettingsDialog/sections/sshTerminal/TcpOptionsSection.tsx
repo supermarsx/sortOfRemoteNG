@@ -3,16 +3,17 @@ import Toggle from "./Toggle";
 import React from "react";
 import { IPProtocols } from "../../../../types/settings/settings";
 import { Network } from "lucide-react";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select, FormField } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.tcpOptions", "Low-level TCP Options")}
-    icon={<Network className="w-4 h-4 text-teal-400" />}
-    defaultOpen={false}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Network className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.tcpOptions", "Low-level TCP Options")}
+    />
+    <div className="sor-settings-card">
     <Toggle
       checked={cfg.tcpOptions.tcpNoDelay}
       onChange={(v) =>
@@ -125,7 +126,8 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </FormField>
       </div>
     )}
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export default TcpOptionsSection;

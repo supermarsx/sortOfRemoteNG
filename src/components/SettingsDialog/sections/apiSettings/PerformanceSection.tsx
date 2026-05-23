@@ -2,15 +2,16 @@ import React from "react";
 import { Cpu, Clock } from "lucide-react";
 import { NumberInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <Cpu className="w-4 h-4 text-info" />
-      {mgr.t("settings.api.performance", "Performance")}
-    </h4>
+    <SectionHeader
+      icon={<Cpu className="w-4 h-4 text-primary" />}
+      title={mgr.t("settings.api.performance", "Performance")}
+    />
 
     <div className="sor-settings-card">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

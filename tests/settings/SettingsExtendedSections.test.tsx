@@ -242,6 +242,43 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
+    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(4);
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionHeaders = Array.from(
+      container.querySelectorAll(".sor-settings-section-header"),
+    );
+    expect(sectionHeaders).toHaveLength(4);
+    for (const header of sectionHeaders) {
+      const icon = header.firstElementChild;
+      expect(icon?.tagName.toLowerCase()).toBe("svg");
+      expect(icon?.getAttribute("class")).toContain("text-primary");
+    }
+
+    const secondaryBarHeader = screen
+      .getByText("Secondary Bar Icons")
+      .closest(".sor-settings-section-header") as HTMLElement;
+    const secondaryBarCard = secondaryBarHeader.nextElementSibling as HTMLElement;
+    // Each row is a <label> rendered by the shared Toggle primitive,
+    // wrapping a leading icon span (text-textSecondary).
+    const secondaryBarRows = Array.from(
+      secondaryBarCard.querySelectorAll("label"),
+    );
+
+    expect(secondaryBarRows).toHaveLength(22);
+    for (const row of secondaryBarRows) {
+      const iconWrapper = row.querySelector(".sor-settings-toggle-icon");
+      expect(iconWrapper).not.toBeNull();
+      const wrapperClass = iconWrapper?.getAttribute("class") ?? "";
+      expect(wrapperClass).not.toMatch(
+        /\btext-(primary|warning|success|error|info)\b/,
+      );
+    }
+    expect(secondaryBarCard.querySelectorAll("[data-tooltip]")).toHaveLength(22);
+
     expect(
       container.querySelectorAll(
         'input[type="checkbox"][class*="sor-settings-checkbox"]',
@@ -263,9 +300,10 @@ describe("Extended settings section centralization", () => {
       <ApiSettings settings={apiSettings} updateSettings={updateSettings} />,
     );
 
+    // Enable + ServerControls + Network + Auth + SSL + Performance + RateLimit
     expect(
       container.querySelectorAll(".sor-settings-card").length,
-    ).toBeGreaterThanOrEqual(8);
+    ).toBeGreaterThanOrEqual(7);
     expect(
       container.querySelector('input[type="checkbox"]')?.className,
     ).toContain("sor-settings-checkbox");
@@ -298,9 +336,36 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    expect(
-      container.querySelectorAll(".sor-settings-card").length,
-    ).toBeGreaterThanOrEqual(7);
+    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(9);
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionHeaders = Array.from(
+      container.querySelectorAll(".sor-settings-section-header"),
+    );
+    expect(sectionHeaders).toHaveLength(9);
+    for (const header of sectionHeaders) {
+      const icon = header.firstElementChild;
+      expect(icon?.tagName.toLowerCase()).toBe("svg");
+      expect(icon?.getAttribute("class")).toContain("text-primary");
+    }
+
+    const sshKeyTypeButton = screen.getByRole("button", {
+      name: /ed25519/i,
+    });
+    expect(sshKeyTypeButton.className).toContain("bg-primary/30");
+    expect(sshKeyTypeButton.className).toContain("border-primary");
+    expect(sshKeyTypeButton.className).toContain("text-primary");
+    expect(sshKeyTypeButton.className).not.toContain("success");
+
+    const generateSshKeyButton = screen.getByRole("button", {
+      name: /generate & save key file/i,
+    });
+    expect(generateSshKeyButton.className).toContain("bg-primary");
+    expect(generateSshKeyButton.className).toContain("hover:bg-primary/90");
+    expect(generateSshKeyButton.className).not.toContain("success");
 
     const algorithmSelect = container.querySelector(
       '[data-setting-key="encryptionAlgorithm"] [role="combobox"]',
@@ -329,6 +394,38 @@ describe("Extended settings section centralization", () => {
 
     expect(screen.getByText("Default Trust Policy")).toBeInTheDocument();
     expect(screen.getByText("General Certificate Policy")).toBeInTheDocument();
+    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(8);
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionHeaders = Array.from(
+      container.querySelectorAll(".sor-settings-section-header"),
+    );
+    expect(sectionHeaders).toHaveLength(4);
+    for (const header of sectionHeaders) {
+      const icon = header.firstElementChild;
+      expect(icon?.tagName.toLowerCase()).toBe("svg");
+      expect(icon?.getAttribute("class")).toContain("text-primary");
+    }
+
+    for (const policyTitle of [
+      "Default Trust Policy",
+      "General Certificate Policy",
+      "HTTPS Certificate Policy",
+      "SSH Host Key Policy",
+      "RDP Certificate Policy",
+    ]) {
+      const policyCard = screen
+        .getByText(policyTitle)
+        .closest(".sor-settings-card") as HTMLElement;
+      const policyIcon = policyCard.querySelector("div > span");
+      expect(policyIcon?.getAttribute("class")).toContain("text-primary");
+      expect(policyIcon?.getAttribute("class")).not.toMatch(
+        /\btext-(success|warning)\b/,
+      );
+    }
 
     const tlsPolicySelect = screen.getAllByText(
       "Trust On First Use (TOFU)",

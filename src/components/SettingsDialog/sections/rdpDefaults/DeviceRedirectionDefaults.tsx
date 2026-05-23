@@ -4,7 +4,10 @@ import {
   HardDrive, FolderOpen, Copy, Printer, Cable, CreditCard,
   ShieldCheck, Video, Mic, Usb,
 } from "lucide-react";
-import { Toggle } from "../../../ui/settings/SettingsPrimitives";
+import {
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import { DriveMappingEditor } from "../../../connectionEditor/rdpOptions/DeviceRedirectionSection";
 import type { ClipboardDirection, RdpDriveRedirection, RdpPrinterOutputMode } from "../../../../types/connection/connection";
@@ -35,12 +38,14 @@ const devices: { key: keyof Rdp; label: string; description: string; defaultVal:
 ];
 
 const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <HardDrive className="w-4 h-4 text-primary" />
-      Local Resource Defaults
-    </h4>
-    <p className="text-xs text-[var(--color-textMuted)] -mt-2">
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<HardDrive className="w-4 h-4 text-primary" />}
+      title="Local Resource Defaults"
+    />
+
+    <div className="sor-settings-card">
+    <p className="text-xs text-[var(--color-textMuted)]">
       Global device redirection settings inherited by all connections. Per-connection settings can override these.
     </p>
 
@@ -105,6 +110,7 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         }}
         selectClass="sor-form-input"
       />
+    </div>
     </div>
   </div>
 );

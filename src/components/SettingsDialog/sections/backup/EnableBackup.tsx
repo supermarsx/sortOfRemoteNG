@@ -5,11 +5,11 @@ import { Checkbox } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="sor-section-card">
+  <div className="sor-settings-card">
     <label className="flex items-center justify-between cursor-pointer">
       <div className="flex items-center gap-3">
-        <div className="p-2 bg-success/20 rounded-lg">
-          <Archive className="w-5 h-5 text-success" />
+        <div className="p-2 bg-primary/20 rounded-lg">
+          <Archive className="w-5 h-5 text-primary" />
         </div>
         <div>
           <span className="text-[var(--color-text)] font-medium">

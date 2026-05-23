@@ -1,18 +1,21 @@
 import type { SectionProps } from "./selectClass";
-import { selectClass } from "./selectClass";
 import React from "react";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Zap } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Zap className="w-4 h-4 text-warning" />
-      Connection Negotiation Defaults
-    </h4>
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Zap className="w-4 h-4 text-primary" />}
+      title="Connection Negotiation Defaults"
+    />
 
+    <div className="sor-settings-card">
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.autoDetect ?? false} onChange={(v: boolean) => update({ autoDetect: v })} />
       <span className="sor-toggle-label">
@@ -53,6 +56,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         <span>100ms</span>
         <span>5000ms</span>
       </div>
+    </div>
     </div>
   </div>
 );

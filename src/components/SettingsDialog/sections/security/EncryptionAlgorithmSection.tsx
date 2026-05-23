@@ -3,6 +3,10 @@ import { Lock, ShieldCheck } from "lucide-react";
 import { ENCRYPTION_ALGORITHMS } from "../../../../hooks/settings/useSecuritySettings";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr, TFunc } from "./types";
 function EncryptionAlgorithmSection({
   settings,
@@ -21,12 +25,16 @@ function EncryptionAlgorithmSection({
 
   return (
     <div className="space-y-4">
-      <h4 className="sor-section-heading">
-        <Lock className="w-4 h-4 text-primary" />
-        <span className="flex items-center gap-1">{t("security.algorithm")} <InfoTooltip text="Choose the symmetric encryption algorithm used to protect stored credentials and connection files" /></span>
-      </h4>
+      <SectionHeader
+        icon={<Lock className="w-4 h-4 text-primary" />}
+        title={
+          <span className="flex items-center gap-1">
+            {t("security.algorithm")} <InfoTooltip text="Choose the symmetric encryption algorithm used to protect stored credentials and connection files" />
+          </span>
+        }
+      />
 
-      <div className="sor-settings-card space-y-4">
+      <Card>
         <div data-setting-key="encryptionAlgorithm" className="flex items-center gap-3">
           <Lock className="w-5 h-5 text-primary flex-shrink-0" />
           <div className="flex-1">
@@ -68,7 +76,7 @@ function EncryptionAlgorithmSection({
             Stream cipher with built-in AEAD (no block mode needed)
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

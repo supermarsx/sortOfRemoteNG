@@ -2,18 +2,19 @@ import type { SectionProps } from "./types";
  
 import React from "react";
 import { Zap } from "lucide-react";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { Textarea } from '../../../ui/forms';
 
 const TEXTAREA_CLASS =
   "w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary";
 
 const AdvancedSSHSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.advancedSSH", "Advanced SSH Options")}
-    icon={<Zap className="w-4 h-4 text-warning" />}
-    defaultOpen={false}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Zap className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.advancedSSH", "Advanced SSH Options")}
+    />
+    <div className="sor-settings-card">
     <p className="text-xs text-[var(--color-textSecondary)] mb-4">
       {t(
         "settings.sshTerminal.advancedSSHDesc",
@@ -72,7 +73,8 @@ const AdvancedSSHSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </div>
       ))}
     </div>
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export { AdvancedSSHSection };

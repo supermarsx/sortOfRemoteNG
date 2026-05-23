@@ -128,9 +128,24 @@ describe("Core settings section centralization", () => {
       />,
     );
 
-    expect(
-      container.querySelectorAll(".sor-settings-card").length,
-    ).toBeGreaterThanOrEqual(8);
+    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(13);
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(container.querySelector(".sor-section-heading")).toBeNull();
+
+    const sectionHeaders = Array.from(
+      container.querySelectorAll(".sor-settings-section-header"),
+    );
+    expect(sectionHeaders).toHaveLength(13);
+    for (const header of sectionHeaders) {
+      const icon = header.firstElementChild;
+      expect(icon?.tagName.toLowerCase()).toBe("svg");
+      expect(icon?.getAttribute("class")).toContain("text-primary");
+      expect(icon?.getAttribute("class")).not.toMatch(
+        /\btext-(error|success|warning|info)\b/,
+      );
+    }
 
     const firstSelect = container.querySelector('[role="combobox"]') as HTMLElement;
     expect(firstSelect.className).toContain("sor-settings-select");

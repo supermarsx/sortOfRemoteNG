@@ -39,22 +39,29 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Terminal className="w-5 h-5" />} title="SSH Terminal" description="Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings." />
+      <SectionHeading icon={<Terminal className="w-5 h-5 text-primary" />} title="SSH Terminal" description="Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings." />
 
-      <LineHandlingSection cfg={cfg} up={up} t={t} />
-      <LineDisciplineSection cfg={cfg} up={up} t={t} />
-      <BellSection cfg={cfg} up={up} t={t} />
-      <KeyboardSection cfg={cfg} up={up} t={t} />
+      {/* ── Appearance ───────────────────────────────── */}
       <DimensionsSection cfg={cfg} up={up} t={t} />
-      <CharacterSetSection cfg={cfg} up={up} t={t} />
       <FontSection cfg={cfg} up={up} t={t} />
       <ColorsSection cfg={cfg} up={up} t={t} />
       <BackgroundSection cfg={cfg} up={up} t={t} />
-      <TcpOptionsSection cfg={cfg} up={up} t={t} />
-      <SSHProtocolSection cfg={cfg} up={up} t={t} />
+      <CharacterSetSection cfg={cfg} up={up} t={t} />
+
+      {/* ── Terminal behavior / input ─────────────────── */}
+      <LineHandlingSection cfg={cfg} up={up} t={t} />
+      <LineDisciplineSection cfg={cfg} up={up} t={t} />
+      <KeyboardSection cfg={cfg} up={up} t={t} />
       <ScrollbackSection cfg={cfg} up={up} t={t} />
-      <MiscSection cfg={cfg} up={up} t={t} />
+      <BellSection cfg={cfg} up={up} t={t} />
+
+      {/* ── SSH connection / network ──────────────────── */}
+      <SSHProtocolSection cfg={cfg} up={up} t={t} />
+      <TcpOptionsSection cfg={cfg} up={up} t={t} />
       <AdvancedSSHSection cfg={cfg} up={up} t={t} />
+
+      {/* ── Catch-all ─────────────────────────────────── */}
+      <MiscSection cfg={cfg} up={up} t={t} />
     </div>
   );
 };

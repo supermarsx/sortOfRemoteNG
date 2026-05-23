@@ -5,15 +5,17 @@ import { BackupFormats, BackupFormat } from "../../../../types/settings/settings
 import { formatLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 
 const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <FileArchive className="w-4 h-4 text-warning" />
-      Format & Content
-    </h4>
+    <SectionHeader
+      icon={<FileArchive className="w-4 h-4 text-primary" />}
+      title="Format & Content"
+    />
 
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="sor-settings-card">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-textSecondary)]">
           Backup Format <InfoTooltip text="The file format used for backup archives. JSON is human-readable; binary formats are more compact." />
@@ -51,9 +53,10 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           Older backups are automatically deleted. 0 or ∞ = keep all.
         </p>
       </div>
+      </div>
     </div>
 
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4 space-y-3">
+    <div className="sor-settings-card">
       {(
         [
           ["includePasswords", "Include Passwords", "Include saved connection passwords in backups. Passwords are stored encrypted."],

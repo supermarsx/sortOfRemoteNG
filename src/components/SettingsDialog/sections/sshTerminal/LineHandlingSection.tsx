@@ -2,14 +2,16 @@ import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Type } from "lucide-react";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const LineHandlingSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.lineHandling", "Line Handling")}
-    icon={<Type className="w-4 h-4 text-primary" />}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Type className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.lineHandling", "Line Handling")}
+    />
+    <div className="sor-settings-card">
     <Toggle
       checked={cfg.implicitCrInLf}
       onChange={(v) => up({ implicitCrInLf: v })}
@@ -43,7 +45,8 @@ const LineHandlingSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         "Automatically wrap text at terminal edge",
       )}
     />
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export default LineHandlingSection;

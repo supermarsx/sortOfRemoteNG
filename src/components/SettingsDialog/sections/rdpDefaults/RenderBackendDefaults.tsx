@@ -1,9 +1,11 @@
 import type { SectionProps } from "./selectClass";
-import { selectClass } from "./selectClass";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
@@ -12,12 +14,14 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const backendBypassed = nalPassthrough || isWebCodecsFrontend;
 
   return (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Monitor className="w-4 h-4 text-info" />
-      Render Backend Default
-    </h4>
-    <p className="text-xs text-[var(--color-textMuted)] -mt-2">
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Monitor className="w-4 h-4 text-primary" />}
+      title="Render Backend Default"
+    />
+
+    <div className="sor-settings-card">
+    <p className="text-xs text-[var(--color-textMuted)]">
       Controls how decoded RDP frames are displayed. Native renderers bypass JS
       entirely by blitting pixels straight to a Win32 child window — zero IPC,
       zero canvas overhead.
@@ -91,6 +95,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         — ping-pong textures to avoid GPU stalls
       </span>
     </label>
+    </div>
   </div>
   );
 };

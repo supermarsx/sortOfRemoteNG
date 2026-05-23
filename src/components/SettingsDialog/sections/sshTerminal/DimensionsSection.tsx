@@ -2,16 +2,17 @@ import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Terminal, LayoutGrid } from "lucide-react";
-import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, FormField } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
-  <SettingsCollapsibleSection
-    title={t("settings.sshTerminal.dimensions", "Terminal Dimensions")}
-    icon={<LayoutGrid className="w-4 h-4 text-success" />}
-    defaultOpen={false}
-  >
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<LayoutGrid className="w-4 h-4 text-primary" />}
+      title={t("settings.sshTerminal.dimensions", "Terminal Dimensions")}
+    />
+    <div className="sor-settings-card">
     <Toggle
       checked={cfg.useCustomDimensions}
       onChange={(v) => up({ useCustomDimensions: v })}
@@ -44,7 +45,8 @@ const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </FormField>
       </div>
     )}
-  </SettingsCollapsibleSection>
+    </div>
+  </div>
 );
 
 export default DimensionsSection;

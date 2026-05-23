@@ -1,9 +1,11 @@
 import type { SectionProps } from "./selectClass";
-import { selectClass } from "./selectClass";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
@@ -12,12 +14,14 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const backendBypassed = nalPassthrough || isWebCodecsFrontend;
 
   return (
-  <div className="sor-settings-card">
-    <h4 className="sor-section-heading">
-      <Monitor className="w-4 h-4 text-primary" />
-      Bitmap Codec Negotiation Defaults
-    </h4>
-    <p className="text-xs text-[var(--color-textMuted)] -mt-2">
+  <div className="space-y-4">
+    <SectionHeader
+      icon={<Monitor className="w-4 h-4 text-primary" />}
+      title="Bitmap Codec Negotiation Defaults"
+    />
+
+    <div className="sor-settings-card">
+    <p className="text-xs text-[var(--color-textMuted)]">
       Controls which bitmap compression codecs are advertised to the server.
       When disabled, only raw/RLE bitmaps are used (higher bandwidth, lower
       CPU).
@@ -97,6 +101,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         </div>
       </>
     )}
+    </div>
   </div>
   );
 };

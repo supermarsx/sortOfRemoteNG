@@ -2,15 +2,16 @@ import React from "react";
 import { Clock } from "lucide-react";
 import { NumberInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 export const RateLimitSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <Clock className="w-4 h-4 text-warning" />
-      {mgr.t("settings.api.rateLimit", "Rate Limiting")}
-    </h4>
+    <SectionHeader
+      icon={<Clock className="w-4 h-4 text-primary" />}
+      title={mgr.t("settings.api.rateLimit", "Rate Limiting")}
+    />
 
     <div className="sor-settings-card">
       <div className="space-y-2">

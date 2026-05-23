@@ -19,6 +19,7 @@ import {
 import { locationPresetLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 
 const presetOptions = BackupLocationPresets.map((preset) => ({
   value: preset,
@@ -201,13 +202,52 @@ const DestinationRow: React.FC<DestinationRowProps> = ({
 
 const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
-    <div className="flex items-center justify-between gap-2">
-      <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
-        <FolderOpen className="w-4 h-4" />
-        Backup destinations
-        <InfoTooltip text="The scheduled backup writes the same payload to every enabled destination. Disable a row to skip it without losing the credentials/path." />
-      </label>
-      <div className="flex items-center gap-2">
+    <SectionHeader
+      icon={<FolderOpen className="w-4 h-4 text-primary" />}
+      title={
+        <span className="flex items-center gap-2">
+          Backup destinations
+          <InfoTooltip text="The scheduled backup writes the same payload to every enabled destination. Disable a row to skip it without losing the credentials/path." />
+        </span>
+      }
+    />
+
+    <div className="sor-settings-card">
+      {mgr.destinations.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 text-center">
+          <p className="text-sm text-[var(--color-textSecondary)]">
+            No destinations configured yet.
+          </p>
+          <button
+            type="button"
+            onClick={() => mgr.addDestination("custom")}
+            className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded text-xs text-primary hover:bg-primary/20 transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            Add a local folder destination
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {mgr.destinations.map((target, index) => (
+            <DestinationRow
+              key={target.id}
+              mgr={mgr}
+              target={target}
+              index={index}
+              total={mgr.destinations.length}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <label
+          htmlFor="backup-add-destination"
+          className="text-xs text-[var(--color-textSecondary)]"
+        >
+          Add destination
+        </label>
         <Select
           value="add"
           onChange={(value: string) => {
@@ -215,55 +255,23 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             mgr.addDestination(value as BackupLocationPreset);
           }}
           options={[
-            { value: "add", label: "+ Add destination…" },
+            { value: "add", label: "Choose a preset…" },
             ...presetOptions,
           ]}
           variant="form"
           aria-label="Add destination preset"
         />
       </div>
+
+      <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">
+        <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
+        <span>
+          Cloud destinations rely on the corresponding sync client being
+          installed and running — sortOfRemoteNG writes to the local sync
+          folder and the client uploads from there.
+        </span>
+      </p>
     </div>
-
-    {mgr.destinations.length === 0 ? (
-      <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 text-center">
-        <p className="text-sm text-[var(--color-textSecondary)]">
-          No destinations configured yet.
-        </p>
-        <p className="text-xs text-[var(--color-textMuted)] mt-1 flex items-center justify-center gap-1">
-          <Info className="w-3 h-3" />
-          Pick a preset above to add your first destination.
-        </p>
-        <button
-          type="button"
-          onClick={() => mgr.addDestination("custom")}
-          className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded text-xs text-primary hover:bg-primary/20 transition-colors"
-        >
-          <Plus className="w-3 h-3" />
-          Add a local folder destination
-        </button>
-      </div>
-    ) : (
-      <div className="space-y-2">
-        {mgr.destinations.map((target, index) => (
-          <DestinationRow
-            key={target.id}
-            mgr={mgr}
-            target={target}
-            index={index}
-            total={mgr.destinations.length}
-          />
-        ))}
-      </div>
-    )}
-
-    <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">
-      <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
-      <span>
-        Cloud destinations rely on the corresponding sync client being
-        installed and running — sortOfRemoteNG writes to the local sync
-        folder and the client uploads from there.
-      </span>
-    </p>
   </div>
 );
 

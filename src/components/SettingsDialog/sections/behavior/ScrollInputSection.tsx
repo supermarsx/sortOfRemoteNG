@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { ScrollText, ArrowUpDown } from "lucide-react";
+import { ScrollText, ArrowUpDown, MousePointer, MousePointerClick, ArrowLeft, ArrowRight } from "lucide-react";
 import { Card, SectionHeader, SelectRow, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -31,6 +31,8 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
       />
       <SelectRow
         label="Right-click in tree"
+        icon={<MousePointerClick size={16} />}
+        description="What happens when you right-click a connection in the sidebar"
         value={s.treeRightClickAction}
         options={[
           { value: "contextMenu", label: "Context menu" },
@@ -46,6 +48,8 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
       />
       <SelectRow
         label="Mouse back button"
+        icon={<ArrowLeft size={16} />}
+        description="Action for the back side button (Button 4)"
         value={s.mouseBackAction}
         options={[
           { value: "none", label: "Do nothing" },
@@ -62,6 +66,8 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
       />
       <SelectRow
         label="Mouse forward button"
+        icon={<ArrowRight size={16} />}
+        description="Action for the forward side button (Button 5)"
         value={s.mouseForwardAction}
         options={[
           { value: "none", label: "Do nothing" },

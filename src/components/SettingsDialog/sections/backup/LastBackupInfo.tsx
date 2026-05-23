@@ -6,7 +6,7 @@ const LastBackupInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.backup.lastBackupTime) return null;
 
   return (
-    <div className="sor-section-card">
+    <div className="sor-settings-card">
       <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
         <Info className="w-4 h-4 text-primary" />
         <span>

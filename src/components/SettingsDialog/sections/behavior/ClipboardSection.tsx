@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { Clipboard, ShieldAlert } from "lucide-react";
+import { Clipboard, ShieldAlert, Eraser, Type } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -47,6 +47,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
       />
       <SliderRow
         label="Clear clipboard after paste"
+        icon={<Eraser size={16} />}
         value={s.clearClipboardAfterSeconds}
         min={0}
         max={120}
@@ -63,6 +64,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
       </div>
       <SliderRow
         label="Max paste length"
+        icon={<Type size={16} />}
         value={s.maxPasteLengthChars}
         min={0}
         max={100000}

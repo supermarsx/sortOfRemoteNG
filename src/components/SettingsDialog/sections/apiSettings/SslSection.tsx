@@ -3,33 +3,43 @@ import { FileKey, Shield, Key, Globe, Zap } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 import { TextInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
+import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
-export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
-  <div className="space-y-4">
-    <h4 className="sor-section-heading">
-      <FileKey className="w-4 h-4 text-primary" />
-      {mgr.t("settings.api.ssl", "SSL/TLS")}
-    </h4>
+export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => {
+  const sslOn = settings.restApi?.sslEnabled ?? false;
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<FileKey className="w-4 h-4 text-primary" />}
+        title={mgr.t("settings.api.ssl", "SSL/TLS")}
+      />
 
-    <div className="sor-settings-card space-y-4">
-      <label className="flex items-center space-x-3 cursor-pointer group">
-        <Checkbox checked={settings.restApi?.sslEnabled || false} onChange={(v: boolean) => mgr.updateRestApi({ sslEnabled: v })} />
-        <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-        <div>
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-            {mgr.t("settings.api.enableSsl", "Enable HTTPS")}
-            <InfoTooltip text="Encrypt all API traffic with SSL/TLS. Required for secure communication, especially over public networks." />
-          </span>
-          <p className="text-xs text-[var(--color-textMuted)]">
-            {mgr.t("settings.api.enableSslDescription", "Use SSL/TLS encryption for API connections")}
-          </p>
-        </div>
-      </label>
+      <div className="sor-settings-card">
+        <label className="flex items-center justify-between gap-3 cursor-pointer">
+          <div className="flex items-center gap-3 min-w-0">
+            <Shield className="w-4 h-4 text-[var(--color-textSecondary)] flex-shrink-0" />
+            <div className="min-w-0">
+              <span className="text-[var(--color-text)] flex items-center gap-1">
+                {mgr.t("settings.api.enableSsl", "Enable HTTPS")}
+                <InfoTooltip text="Encrypt all API traffic with SSL/TLS. Required for secure communication, especially over public networks." />
+              </span>
+              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+                {mgr.t("settings.api.enableSslDescription", "Use SSL/TLS encryption for API connections")}
+              </p>
+            </div>
+          </div>
+          <Checkbox
+            checked={sslOn}
+            onChange={(v: boolean) => mgr.updateRestApi({ sslEnabled: v })}
+            className="sor-checkbox-lg flex-shrink-0"
+          />
+        </label>
 
-      {settings.restApi?.sslEnabled && (
-        <div className="space-y-4 pt-2 border-t border-[var(--color-border)]">
+        <div
+          className={`space-y-4 pt-3 border-t border-[var(--color-border)] ${!sslOn ? "opacity-50 pointer-events-none" : ""}`}
+        >
           {/* SSL Mode Selection */}
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -129,9 +139,9 @@ export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ s
             </>
           )}
         </div>
-      )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default SslSection;
