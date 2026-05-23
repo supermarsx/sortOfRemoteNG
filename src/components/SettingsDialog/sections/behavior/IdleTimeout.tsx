@@ -5,7 +5,7 @@ import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/Set
 const IdleTimeout: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Timer className="w-4 h-4 text-warning" />}
+      icon={<Timer className="w-4 h-4 text-primary" />}
       title="Idle & Timeout"
     />
     <Card>

@@ -5,7 +5,7 @@ import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/Set
 const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Clipboard className="w-4 h-4 text-warning" />}
+      icon={<Clipboard className="w-4 h-4 text-primary" />}
       title="Clipboard"
     />
     <Card>

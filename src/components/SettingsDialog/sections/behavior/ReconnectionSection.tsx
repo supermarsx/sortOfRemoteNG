@@ -5,7 +5,7 @@ import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/Set
 const ReconnectionSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Wifi className="w-4 h-4 text-sky-400" />}
+      icon={<Wifi className="w-4 h-4 text-primary" />}
       title="Reconnection"
     />
     <Card>

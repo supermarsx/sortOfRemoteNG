@@ -5,7 +5,7 @@ import { Card, SectionHeader, SelectRow, SliderRow, Toggle } from "../../../ui/s
 const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<ScrollText className="w-4 h-4 text-teal-400" />}
+      icon={<ScrollText className="w-4 h-4 text-primary" />}
       title="Scroll & Input"
     />
     <Card>

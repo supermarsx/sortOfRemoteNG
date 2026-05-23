@@ -28,7 +28,7 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<MousePointerClick className="w-5 h-5" />} title="Behavior" description="Click actions, tab behavior, clipboard, notifications, and reconnection settings." />
+      <SectionHeading icon={<MousePointerClick className="w-5 h-5 text-primary" />} title="Behavior" description="Click actions, tab behavior, clipboard, notifications, and reconnection settings." />
 
       <ClickActions s={settings} u={updateSettings} />
       <TabBehavior s={settings} u={updateSettings} />

@@ -38,7 +38,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Monitor className="w-5 h-5" />} title="General" description="Language, autosave, connection timeouts, and general application preferences." />
+      <SectionHeading icon={<Monitor className="w-5 h-5 text-primary" />} title="General" description="Language, autosave, connection timeouts, and general application preferences." />
 
       <div className="space-y-4">
         <SectionHeader
@@ -72,7 +72,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<Save className="w-4 h-4 text-success" />}
+          icon={<Save className="w-4 h-4 text-primary" />}
           title="Autosave Settings"
         />
         <Card>
@@ -103,7 +103,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<AlertTriangle className="w-4 h-4 text-warning" />}
+          icon={<AlertTriangle className="w-4 h-4 text-primary" />}
           title="Confirmation Warnings"
         />
         <Card>
@@ -147,7 +147,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<History className="w-4 h-4 text-info" />}
+          icon={<History className="w-4 h-4 text-primary" />}
           title="Quick Connect History"
         />
         <Card>

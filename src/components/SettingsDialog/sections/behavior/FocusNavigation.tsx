@@ -5,7 +5,7 @@ import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimit
 const FocusNavigation: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Focus className="w-4 h-4 text-success" />}
+      icon={<Focus className="w-4 h-4 text-primary" />}
       title="Focus & Navigation"
     />
     <Card>

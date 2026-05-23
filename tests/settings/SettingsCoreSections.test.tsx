@@ -77,6 +77,24 @@ describe("Core settings section centralization", () => {
     );
   });
 
+  it("uses the accent color for GeneralSettings section icons", () => {
+    const { container } = render(
+      <GeneralSettings
+        settings={baseSettings}
+        updateSettings={vi.fn()}
+      />,
+    );
+
+    const sectionIcons = Array.from(
+      container.querySelectorAll(".sor-settings-section-header > svg"),
+    );
+
+    expect(sectionIcons).toHaveLength(4);
+    for (const icon of sectionIcons) {
+      expect(icon.getAttribute("class")).toContain("text-primary");
+    }
+  });
+
   it("uses centralized cards and form controls in BackendSettings", () => {
     const updateSettings = vi.fn();
     const { container } = render(

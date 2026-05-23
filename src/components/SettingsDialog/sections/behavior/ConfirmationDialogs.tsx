@@ -5,7 +5,7 @@ import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimit
 const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<ShieldAlert className="w-4 h-4 text-error" />}
+      icon={<ShieldAlert className="w-4 h-4 text-primary" />}
       title="Confirmation Dialogs"
     />
     <p className="text-xs text-[var(--color-textMuted)]">

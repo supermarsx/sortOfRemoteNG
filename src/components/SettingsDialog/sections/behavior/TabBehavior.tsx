@@ -5,7 +5,7 @@ import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/Set
 const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Layers className="w-4 h-4 text-info" />}
+      icon={<Layers className="w-4 h-4 text-primary" />}
       title="Tab Behavior"
     />
     <Card>
