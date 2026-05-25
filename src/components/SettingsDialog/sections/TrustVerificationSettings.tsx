@@ -349,18 +349,18 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         infoTooltip="Display the verified certificate or SSH host key information inline in the URL bar (web browser sessions) and the terminal toolbar (SSH sessions)."
       />
 
-      <div className="flex items-center justify-between gap-3 pt-3 border-t border-[var(--color-border)]">
-        <div className="flex items-center gap-3 min-w-0">
-          <Clock size={16} className="text-[var(--color-textSecondary)] flex-shrink-0" />
-          <div className="min-w-0">
-            <span className="text-[var(--color-text)] flex items-center gap-1">
-              Warn when certificates expire
-              <InfoTooltip text="Show a warning when a stored certificate's expiry date is within this many days. Set to 0 to disable expiry warnings entirely." />
-            </span>
-            <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-              Show an inline warning this many days before expiry (0 = off)
-            </p>
-          </div>
+      <div className="sor-settings-toggle-row !cursor-default pt-3 border-t border-[var(--color-border)] justify-between">
+        <div className="sor-settings-toggle-icon">
+          <Clock size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <span className="sor-settings-toggle-label flex items-center gap-1">
+            Warn when certificates expire
+            <InfoTooltip text="Show a warning when a stored certificate's expiry date is within this many days. Set to 0 to disable expiry warnings entirely." />
+          </span>
+          <p className="sor-settings-toggle-description">
+            Show an inline warning this many days before expiry (0 = off)
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <NumberInput
@@ -369,7 +369,8 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               mgr.updateSettings({ certExpiryWarningDays: v })
             }
             variant="settings-compact"
-            className="w-20 text-right"
+            className="text-right"
+            style={{ width: "5rem" }}
             min={0}
             max={365}
           />
