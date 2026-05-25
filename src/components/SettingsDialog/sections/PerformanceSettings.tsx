@@ -12,11 +12,13 @@ import {
   Zap,
   History,
 } from "lucide-react";
-import { Checkbox, NumberInput } from '../../ui/forms';
-import SectionHeading from '../../ui/SectionHeading';
-import { InfoTooltip } from '../../ui/InfoTooltip';
+import { NumberInput } from "../../ui/forms";
+import SectionHeading from "../../ui/SectionHeading";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 
 interface PerformanceSettingsProps {
@@ -46,16 +48,19 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Zap className="w-5 h-5 text-primary" />} title="Performance" description="Connection retry, performance monitoring, status checking, and action logging." />
+      <SectionHeading
+        icon={<Zap className="w-5 h-5 text-primary" />}
+        title="Performance"
+        description="Connection retry, performance monitoring, status checking, and action logging."
+      />
 
-      {/* Retry Settings Section */}
+      {/* Connection Retry */}
       <div className="space-y-4">
         <SectionHeader
           icon={<RefreshCw className="w-4 h-4 text-primary" />}
           title="Connection Retry"
         />
-
-        <div className="sor-settings-card">
+        <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -63,7 +68,13 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 Retry Attempts
                 <InfoTooltip text="Number of times to retry a failed connection before giving up. Set to 0 to disable retries." />
               </label>
-              <NumberInput value={settings.retryAttempts} onChange={(v: number) => updateSettings({ retryAttempts: v })} className="w-full" min={0} max={10} />
+              <NumberInput
+                value={settings.retryAttempts}
+                onChange={(v: number) => updateSettings({ retryAttempts: v })}
+                className="w-full"
+                min={0}
+                max={10}
+              />
             </div>
 
             <div className="space-y-2">
@@ -72,28 +83,34 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 Retry Delay (ms)
                 <InfoTooltip text="Time in milliseconds to wait between connection retry attempts." />
               </label>
-              <NumberInput value={settings.retryDelay} onChange={(v: number) => updateSettings({ retryDelay: v })} className="w-full" min={1000} max={60000} step={1000} />
+              <NumberInput
+                value={settings.retryDelay}
+                onChange={(v: number) => updateSettings({ retryDelay: v })}
+                className="w-full"
+                min={1000}
+                max={60000}
+                step={1000}
+              />
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* Monitoring Section */}
+      {/* Performance Monitoring */}
       <div className="space-y-4">
         <SectionHeader
           icon={<Gauge className="w-4 h-4 text-primary" />}
           title="Performance Monitoring"
         />
-
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox checked={settings.enablePerformanceTracking} onChange={(v: boolean) => updateSettings({ enablePerformanceTracking: v })} />
-            <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-              Enable Performance Tracking
-              <InfoTooltip text="Collect CPU, memory, and network latency metrics at regular intervals for monitoring dashboard display." />
-            </span>
-          </label>
+        <Card>
+          <Toggle
+            checked={settings.enablePerformanceTracking}
+            onChange={(v) => updateSettings({ enablePerformanceTracking: v })}
+            icon={<Activity size={16} />}
+            label="Enable Performance Tracking"
+            description="Sample CPU, memory, and latency metrics on a schedule"
+            infoTooltip="Collect CPU, memory, and network latency metrics at regular intervals for monitoring dashboard display."
+          />
 
           <div
             className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!settings.enablePerformanceTracking ? "opacity-50 pointer-events-none" : ""}`}
@@ -104,10 +121,17 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 Poll Interval (seconds)
                 <InfoTooltip text="How often performance metrics are sampled. Lower values give more detail but use more resources." />
               </label>
-              <NumberInput value={Math.round(settings.performancePollIntervalMs / 1000)} onChange={(v: number) => updateSettings({
-                    performancePollIntervalMs:
-                      Math.max(1, v) * 1000,
-                  })} className="w-full" min={1} max={120} />
+              <NumberInput
+                value={Math.round(settings.performancePollIntervalMs / 1000)}
+                onChange={(v: number) =>
+                  updateSettings({
+                    performancePollIntervalMs: Math.max(1, v) * 1000,
+                  })
+                }
+                className="w-full"
+                min={1}
+                max={120}
+              />
             </div>
 
             <div className="space-y-2">
@@ -129,25 +153,24 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               />
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* Status Checking Section */}
+      {/* Status Checking */}
       <div className="space-y-4">
         <SectionHeader
           icon={<Wifi className="w-4 h-4 text-primary" />}
           title="Status Checking"
         />
-
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox checked={settings.enableStatusChecking} onChange={(v: boolean) => updateSettings({ enableStatusChecking: v })} />
-            <Zap className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-              Enable Status Checking
-              <InfoTooltip text="Periodically probe connections to determine if remote hosts are reachable and update their status indicators." />
-            </span>
-          </label>
+        <Card>
+          <Toggle
+            checked={settings.enableStatusChecking}
+            onChange={(v) => updateSettings({ enableStatusChecking: v })}
+            icon={<Zap size={16} />}
+            label="Enable Status Checking"
+            description="Periodically probe hosts and update connection status indicators"
+            infoTooltip="Periodically probe connections to determine if remote hosts are reachable and update their status indicators."
+          />
 
           <div
             className={`space-y-4 ${!settings.enableStatusChecking ? "opacity-50 pointer-events-none" : ""}`}
@@ -158,9 +181,15 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 Check Interval (seconds)
                 <InfoTooltip text="Time in seconds between status check probes sent to each connection's host." />
               </label>
-              <NumberInput value={settings.statusCheckInterval} onChange={(v: number) => updateSettings({
-                    statusCheckInterval: v,
-                  })} className="w-full" min={10} max={300} />
+              <NumberInput
+                value={settings.statusCheckInterval}
+                onChange={(v: number) =>
+                  updateSettings({ statusCheckInterval: v })
+                }
+                className="w-full"
+                min={10}
+                max={300}
+              />
             </div>
 
             <div className="space-y-2">
@@ -201,25 +230,24 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* Logging Section */}
+      {/* Action Logging */}
       <div className="space-y-4">
         <SectionHeader
           icon={<FileText className="w-4 h-4 text-primary" />}
           title="Action Logging"
         />
-
-        <div className="sor-settings-card">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <Checkbox checked={settings.enableActionLog} onChange={(v: boolean) => updateSettings({ enableActionLog: v })} />
-            <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
-              Enable Action Logging
-              <InfoTooltip text="Record user actions like connections, disconnections, and setting changes in an internal log." />
-            </span>
-          </label>
+        <Card>
+          <Toggle
+            checked={settings.enableActionLog}
+            onChange={(v) => updateSettings({ enableActionLog: v })}
+            icon={<History size={16} />}
+            label="Enable Action Logging"
+            description="Record connections, disconnections, and setting changes in an internal log"
+            infoTooltip="Record user actions like connections, disconnections, and setting changes in an internal log."
+          />
 
           <div
             className={`space-y-2 ${!settings.enableActionLog ? "opacity-50 pointer-events-none" : ""}`}
@@ -229,9 +257,16 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               Max Log Entries
               <InfoTooltip text="Maximum number of log entries to keep in memory. Oldest entries are discarded when the limit is reached." />
             </label>
-            <NumberInput value={settings.maxLogEntries} onChange={(v: number) => updateSettings({ maxLogEntries: v })} className="w-full" min={100} max={10000} step={100} />
+            <NumberInput
+              value={settings.maxLogEntries}
+              onChange={(v: number) => updateSettings({ maxLogEntries: v })}
+              className="w-full"
+              min={100}
+              max={10000}
+              step={100}
+            />
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

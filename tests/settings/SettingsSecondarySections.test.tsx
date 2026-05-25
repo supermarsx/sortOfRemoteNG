@@ -114,21 +114,22 @@ describe("Secondary settings section centralization", () => {
       expect(icon?.getAttribute("class")).toContain("text-primary");
     }
 
-    const performanceTrackingIcon = screen
+    // Performance Tracking / Action Logging toggles use the shared
+    // Toggle primitive (label + description + sor-settings-toggle-icon
+    // wrapper, no per-row hover-tint).
+    const performanceTrackingRow = screen
       .getByText("Enable Performance Tracking")
-      .closest("label")
-      ?.querySelector("svg");
-    expect(performanceTrackingIcon?.getAttribute("class")).toContain(
-      "group-hover:text-primary",
-    );
+      .closest("label");
+    expect(
+      performanceTrackingRow?.querySelector(".sor-settings-toggle-icon"),
+    ).not.toBeNull();
 
-    const actionLoggingIcon = screen
+    const actionLoggingRow = screen
       .getByText("Enable Action Logging")
-      .closest("label")
-      ?.querySelector("svg");
-    expect(actionLoggingIcon?.getAttribute("class")).toContain(
-      "group-hover:text-primary",
-    );
+      .closest("label");
+    expect(
+      actionLoggingRow?.querySelector(".sor-settings-toggle-icon"),
+    ).not.toBeNull();
     expect(
       container.querySelector('input[type="number"]')?.className,
     ).toContain("sor-settings-input");
