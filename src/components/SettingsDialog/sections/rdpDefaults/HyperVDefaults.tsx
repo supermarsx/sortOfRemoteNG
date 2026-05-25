@@ -1,10 +1,10 @@
 import type { SectionProps } from "./selectClass";
 import React from "react";
 import { Server } from "lucide-react";
-import { Checkbox } from "../../../ui/forms";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const HyperVDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
@@ -14,18 +14,16 @@ const HyperVDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       title="Hyper-V Defaults"
     />
 
-    <div className="sor-settings-card">
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.enhancedSessionMode ?? false} onChange={(v: boolean) => update({ enhancedSessionMode: v })} />
-      <span className="sor-toggle-label">
-        Use Enhanced Session Mode by default <InfoTooltip text="Enables Enhanced Session Mode for Hyper-V VMs, providing clipboard sharing, drive redirection, and improved audio." />
-      </span>
-    </label>
-    <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">
-      Enhanced Session Mode enables clipboard, drive redirection and better
-      audio in Hyper-V VMs.
-    </p>
-    </div>
+    <Card>
+      <Toggle
+        checked={rdp.enhancedSessionMode ?? false}
+        onChange={(v) => update({ enhancedSessionMode: v })}
+        icon={<Server size={16} />}
+        label="Use Enhanced Session Mode by default"
+        description="Enable clipboard, drive redirection, and improved audio in Hyper-V VMs"
+        infoTooltip="Enables Enhanced Session Mode for Hyper-V VMs, providing clipboard sharing, drive redirection, and improved audio."
+      />
+    </Card>
   </div>
 );
 

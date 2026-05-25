@@ -5,6 +5,7 @@ import {
   ShieldCheck, Video, Mic, Usb,
 } from "lucide-react";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
@@ -44,7 +45,7 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       title="Local Resource Defaults"
     />
 
-    <div className="sor-settings-card">
+    <Card>
     <p className="text-xs text-[var(--color-textMuted)]">
       Global device redirection settings inherited by all connections. Per-connection settings can override these.
     </p>
@@ -111,7 +112,7 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         selectClass="sor-form-input"
       />
     </div>
-    </div>
+    </Card>
   </div>
 );
 

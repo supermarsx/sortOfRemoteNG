@@ -5,6 +5,7 @@ import { Volume2 } from "lucide-react";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
 } from "../../../ui/settings/SettingsPrimitives";
 
@@ -15,7 +16,7 @@ const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       title="Audio Defaults"
     />
 
-    <div className="sor-settings-card">
+    <Card>
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
         Audio Playback <InfoTooltip text="Controls where remote session audio is played back -- locally, on the remote machine, or not at all." />
@@ -53,7 +54,7 @@ const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
             { value: "high", label: "High" },
           ]} className={selectClass} />
     </div>
-    </div>
+    </Card>
   </div>
 );
 

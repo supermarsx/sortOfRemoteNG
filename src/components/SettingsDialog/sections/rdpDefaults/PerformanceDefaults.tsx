@@ -1,11 +1,13 @@
 import { selectClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Zap } from "lucide-react";
-import { Checkbox, Select, Slider } from "../../../ui/forms";
+import { Zap, Image, MoveHorizontal, Sparkles, Palette, MousePointer, Settings, Type, Layers, Database, Boxes } from "lucide-react";
+import { Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const SPEED_PRESETS: Record<
@@ -86,7 +88,7 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       title="Performance / Frame Delivery Defaults"
     />
 
-    <div className="sor-settings-card">
+    <Card>
     {/* Connection Speed Preset */}
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
@@ -118,25 +120,33 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     </div>
 
     {([
-      ["disableWallpaper", true, "Disable wallpaper", "Prevents the desktop wallpaper from being rendered, reducing bandwidth usage."],
-      ["disableFullWindowDrag", true, "Disable full-window drag", "Shows only a window outline while dragging instead of rendering full window contents."],
-      ["disableMenuAnimations", true, "Disable menu animations", "Turns off menu fade and slide animations to improve responsiveness."],
-      ["disableTheming", false, "Disable visual themes", "Disables Windows visual themes on the remote desktop to save bandwidth."],
-      ["disableCursorShadow", true, "Disable cursor shadow", "Removes the shadow effect beneath the mouse cursor in the remote session."],
-      ["disableCursorSettings", false, "Disable cursor settings", "Disables custom cursor rendering settings on the remote machine."],
-      ["enableFontSmoothing", true, "Enable font smoothing (ClearType)", "Enables ClearType font smoothing for clearer text on the remote desktop."],
-      ["enableDesktopComposition", false, "Enable desktop composition (Aero)", "Enables Aero glass and transparency effects on the remote desktop. Uses more bandwidth."],
-    ] as [string, boolean, string, string][]).map(([key, def, label, tooltip]) => (
-      <label key={key} className="flex items-center space-x-3 cursor-pointer group">
-        <Checkbox checked={(rdp[key as keyof typeof rdp] as boolean | undefined) ?? def} onChange={(v: boolean) => update({ [key]: v } as any)} />
-        <span className="sor-toggle-label">{label} <InfoTooltip text={tooltip} /></span>
-      </label>
+      ["disableWallpaper", true, "Disable wallpaper", "Prevents the desktop wallpaper from being rendered, reducing bandwidth usage.", <Image size={16} />],
+      ["disableFullWindowDrag", true, "Disable full-window drag", "Shows only a window outline while dragging instead of rendering full window contents.", <MoveHorizontal size={16} />],
+      ["disableMenuAnimations", true, "Disable menu animations", "Turns off menu fade and slide animations to improve responsiveness.", <Sparkles size={16} />],
+      ["disableTheming", false, "Disable visual themes", "Disables Windows visual themes on the remote desktop to save bandwidth.", <Palette size={16} />],
+      ["disableCursorShadow", true, "Disable cursor shadow", "Removes the shadow effect beneath the mouse cursor in the remote session.", <MousePointer size={16} />],
+      ["disableCursorSettings", false, "Disable cursor settings", "Disables custom cursor rendering settings on the remote machine.", <Settings size={16} />],
+      ["enableFontSmoothing", true, "Enable font smoothing (ClearType)", "Enables ClearType font smoothing for clearer text on the remote desktop.", <Type size={16} />],
+      ["enableDesktopComposition", false, "Enable desktop composition (Aero)", "Enables Aero glass and transparency effects on the remote desktop. Uses more bandwidth.", <Layers size={16} />],
+    ] as [string, boolean, string, string, React.ReactNode][]).map(([key, def, label, tooltip, icon]) => (
+      <Toggle
+        key={key}
+        checked={(rdp[key as keyof typeof rdp] as boolean | undefined) ?? def}
+        onChange={(v) => update({ [key]: v } as any)}
+        icon={icon}
+        label={label}
+        infoTooltip={tooltip}
+      />
     ))}
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.persistentBitmapCaching ?? false} onChange={(v: boolean) => update({ persistentBitmapCaching: v })} />
-      <span className="sor-toggle-label">Persistent bitmap caching <InfoTooltip text="Caches frequently used bitmaps to disk, reducing bandwidth on reconnection to the same server." /></span>
-    </label>
+    <Toggle
+      checked={rdp.persistentBitmapCaching ?? false}
+      onChange={(v) => update({ persistentBitmapCaching: v })}
+      icon={<Database size={16} />}
+      label="Persistent bitmap caching"
+      description="Cache frequently used bitmaps to disk for faster reconnection"
+      infoTooltip="Caches frequently used bitmaps to disk, reducing bandwidth on reconnection to the same server."
+    />
 
     {/* Frame Delivery */}
     <div className="text-sm text-[var(--color-textMuted)] font-medium pt-2">
@@ -154,20 +164,17 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       </div>
     </div>
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.frameBatching ?? true} onChange={(v: boolean) => update({ frameBatching: v })} />
-      <span className="sor-toggle-label">
-        Frame Batching (accumulate dirty regions) <InfoTooltip text="Accumulates changed screen regions and sends them in batches to reduce IPC overhead." />
-      </span>
-    </label>
-    <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">
-      When enabled, dirty regions are accumulated on the Rust side and emitted
-      in batches. When disabled, each region is pushed immediately (lower
-      latency, JS rAF handles pacing).
-    </p>
+    <Toggle
+      checked={rdp.frameBatching ?? true}
+      onChange={(v) => update({ frameBatching: v })}
+      icon={<Boxes size={16} />}
+      label="Frame Batching"
+      description="Accumulate dirty regions on the Rust side and emit them in batches (off = each region pushed immediately, lower latency with JS rAF pacing)"
+      infoTooltip="Accumulates changed screen regions and sends them in batches to reduce IPC overhead."
+    />
 
     {(rdp.frameBatching ?? true) && (
-      <div className="ml-7">
+      <div className="pl-7">
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Batch Interval: {rdp.frameBatchIntervalMs ?? 33}ms <InfoTooltip text="Time between batch flushes. Lower values mean smoother updates but higher CPU usage." /> (
           {Math.round(1000 / (rdp.frameBatchIntervalMs || 33))} fps max)
@@ -209,7 +216,7 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         Lower = more responsive but higher CPU. 16ms ≈ 60hz poll rate.
       </p>
     </div>
-    </div>
+    </Card>
   </div>
 );
 

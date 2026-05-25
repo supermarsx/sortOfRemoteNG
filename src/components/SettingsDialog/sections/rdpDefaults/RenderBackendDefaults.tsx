@@ -1,10 +1,12 @@
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Monitor } from "lucide-react";
-import { Checkbox, Select } from "../../../ui/forms";
+import { Monitor, Boxes } from "lucide-react";
+import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
@@ -20,7 +22,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
       title="Render Backend Default"
     />
 
-    <div className="sor-settings-card">
+    <Card>
     <p className="text-xs text-[var(--color-textMuted)]">
       Controls how decoded RDP frames are displayed. Native renderers bypass JS
       entirely by blitting pixels straight to a Win32 child window — zero IPC,
@@ -86,16 +88,15 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           })} options={[{ value: "vsync", label: "VSync (~16ms, synced to display refresh)" }, { value: "low-latency", label: "Low-Latency (~1ms, unbound from vsync)" }, { value: "adaptive", label: "Adaptive — start vsync, escalate under pressure" }]} className="selectClass" />
     </div>
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.tripleBuffering ?? true} onChange={(v: boolean) => update({ tripleBuffering: v })} />
-      <span className="sor-toggle-label">
-        Triple Buffering (WebGL) <InfoTooltip text="Uses ping-pong textures to prevent GPU stalls during WebGL rendering, improving frame smoothness." />
-      </span>
-      <span className="text-xs text-[var(--color-textMuted)]">
-        — ping-pong textures to avoid GPU stalls
-      </span>
-    </label>
-    </div>
+    <Toggle
+      checked={rdp.tripleBuffering ?? true}
+      onChange={(v) => update({ tripleBuffering: v })}
+      icon={<Boxes size={16} />}
+      label="Triple Buffering (WebGL)"
+      description="Ping-pong textures avoid GPU stalls during WebGL rendering"
+      infoTooltip="Uses ping-pong textures to prevent GPU stalls during WebGL rendering, improving frame smoothness."
+    />
+    </Card>
   </div>
   );
 };

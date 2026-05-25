@@ -1,11 +1,13 @@
 import type { SectionProps } from "./selectClass";
 import { selectClass, RESOLUTION_PRESETS } from "./selectClass";
 import React from "react";
-import { Monitor } from "lucide-react";
-import { Checkbox, NumberInput, Select } from "../../../ui/forms";
+import { Monitor, Minimize2 } from "lucide-react";
+import { NumberInput, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
@@ -25,7 +27,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         title="Display Defaults"
       />
 
-      <div className="sor-settings-card">
+      <Card>
       <div>
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Default Resolution <InfoTooltip text="The screen resolution used when opening a new RDP connection." />
@@ -97,13 +99,15 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         />
       </div>
 
-      <label className="flex items-center space-x-3 cursor-pointer group">
-        <Checkbox checked={rdp.lossyCompression ?? true} onChange={(v: boolean) => update({ lossyCompression: v })} />
-        <span className="sor-toggle-label">
-          Lossy Compression (reduce bandwidth) <InfoTooltip text="Enables lossy image compression to reduce bandwidth usage at the cost of minor visual artifacts." />
-        </span>
-      </label>
-      </div>
+      <Toggle
+        checked={rdp.lossyCompression ?? true}
+        onChange={(v) => update({ lossyCompression: v })}
+        icon={<Minimize2 size={16} />}
+        label="Lossy Compression"
+        description="Trade minor visual fidelity for lower bandwidth"
+        infoTooltip="Enables lossy image compression to reduce bandwidth usage at the cost of minor visual artifacts."
+      />
+      </Card>
     </div>
   );
 };

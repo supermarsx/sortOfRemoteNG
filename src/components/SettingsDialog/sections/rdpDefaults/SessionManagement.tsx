@@ -1,10 +1,12 @@
 import type { SessionSectionProps } from "./selectClass";
 import React from "react";
-import { Layers } from "lucide-react";
-import { Checkbox, Select, Slider } from "../../../ui/forms";
+import { Layers, Image } from "lucide-react";
+import { Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const SessionManagement: React.FC<SessionSectionProps> = ({
@@ -17,7 +19,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
       title="Session Management"
     />
 
-    <div className="sor-settings-card">
+    <Card>
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
         Session Panel Display Mode <InfoTooltip text="Controls how the RDP Sessions manager is presented -- as a floating modal overlay or a docked sidebar panel." />
@@ -48,15 +50,17 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
       </p>
     </div>
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={settings.rdpSessionThumbnailsEnabled ?? true} onChange={(v: boolean) => updateSettings({ rdpSessionThumbnailsEnabled: v })} />
-      <span className="sor-toggle-label">
-        Show session thumbnails <InfoTooltip text="Displays live preview thumbnails of active RDP sessions in the session manager." />
-      </span>
-    </label>
+    <Toggle
+      checked={settings.rdpSessionThumbnailsEnabled ?? true}
+      onChange={(v) => updateSettings({ rdpSessionThumbnailsEnabled: v })}
+      icon={<Image size={16} />}
+      label="Show session thumbnails"
+      description="Display live previews of active RDP sessions in the session manager"
+      infoTooltip="Displays live preview thumbnails of active RDP sessions in the session manager."
+    />
 
     {(settings.rdpSessionThumbnailsEnabled ?? true) && (
-      <div className="ml-7 space-y-3">
+      <div className="pl-7 space-y-3">
         <div>
           <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Thumbnail Capture Policy <InfoTooltip text="Controls when session thumbnails are captured -- continuously, on tab blur, on detach, or manually." />
@@ -84,7 +88,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
         </div>
       </div>
     )}
-    </div>
+    </Card>
   </div>
 );
 

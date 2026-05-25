@@ -1,10 +1,12 @@
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Cable } from "lucide-react";
-import { Checkbox, Select, Slider } from "../../../ui/forms";
+import { Cable, Zap, Activity } from "lucide-react";
+import { Select, Slider } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
@@ -14,7 +16,7 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       title="TCP / Socket Defaults"
     />
 
-    <div className="sor-settings-card">
+    <Card>
     <p className="text-xs text-[var(--color-textMuted)]">
       Low-level socket settings applied during the TCP connection phase.
       Incorrect values may cause connectivity issues.
@@ -31,25 +33,26 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       </div>
     </div>
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.tcpNodelay ?? true} onChange={(v: boolean) => update({ tcpNodelay: v })} />
-      <span className="sor-toggle-label">
-        TCP_NODELAY (disable Nagle&apos;s algorithm) <InfoTooltip text="Disables Nagle's algorithm to send packets immediately, reducing latency for interactive sessions." />
-      </span>
-    </label>
-    <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">
-      Reduces latency for interactive sessions. Recommended ON.
-    </p>
+    <Toggle
+      checked={rdp.tcpNodelay ?? true}
+      onChange={(v) => update({ tcpNodelay: v })}
+      icon={<Zap size={16} />}
+      label="TCP_NODELAY (disable Nagle's algorithm)"
+      description="Send packets immediately to reduce latency for interactive sessions (recommended ON)"
+      infoTooltip="Disables Nagle's algorithm to send packets immediately, reducing latency for interactive sessions."
+    />
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.tcpKeepAlive ?? true} onChange={(v: boolean) => update({ tcpKeepAlive: v })} />
-      <span className="sor-toggle-label">
-        TCP Keep-Alive <InfoTooltip text="Sends periodic keep-alive probes to detect and prevent stale connections from being dropped." />
-      </span>
-    </label>
+    <Toggle
+      checked={rdp.tcpKeepAlive ?? true}
+      onChange={(v) => update({ tcpKeepAlive: v })}
+      icon={<Activity size={16} />}
+      label="TCP Keep-Alive"
+      description="Send periodic probes to detect stale connections before they're dropped"
+      infoTooltip="Sends periodic keep-alive probes to detect and prevent stale connections from being dropped."
+    />
 
     {(rdp.tcpKeepAlive ?? true) && (
-      <div className="ml-7">
+      <div className="pl-7">
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Keep-Alive Interval: {rdp.tcpKeepAliveIntervalSecs ?? 60}s <InfoTooltip text="Time in seconds between TCP keep-alive probes sent to maintain the connection." />
         </label>
@@ -75,7 +78,7 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         <Select value={rdp.tcpSendBufferSize ?? 262144} onChange={(v: string) => update({ tcpSendBufferSize: parseInt(v) })} options={[{ value: "65536", label: "64 KB" }, { value: "131072", label: "128 KB" }, { value: "262144", label: "256 KB (default)" }, { value: "524288", label: "512 KB" }, { value: "1048576", label: "1 MB" }, { value: "2097152", label: "2 MB" }]} className="selectClass" />
       </div>
     </div>
-    </div>
+    </Card>
   </div>
 );
 

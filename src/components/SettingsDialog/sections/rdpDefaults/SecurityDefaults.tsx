@@ -1,59 +1,63 @@
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Shield } from "lucide-react";
-import { Checkbox } from "../../../ui/forms";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { Shield, KeyRound, Lock, Network, LogIn } from "lucide-react";
 import {
+  Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
-const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
-  <div className="space-y-4">
-    <SectionHeader
-      icon={<Shield className="w-4 h-4 text-primary" />}
-      title="Security Defaults"
-    />
+const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
+  const credsspOn = rdp.useCredSsp ?? true;
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Shield className="w-4 h-4 text-primary" />}
+        title="Security Defaults"
+      />
 
-    <div className="sor-settings-card">
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.useCredSsp ?? true} onChange={(v: boolean) => update({ useCredSsp: v })} />
-      <span className="sor-toggle-label font-medium">
-        Use CredSSP <InfoTooltip text="Enables Credential Security Support Provider for secure credential delegation during authentication." />
-      </span>
-    </label>
-    <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">
-      Master toggle – when disabled, CredSSP is entirely skipped for new
-      connections.
-    </p>
+      <Card>
+        <Toggle
+          checked={credsspOn}
+          onChange={(v) => update({ useCredSsp: v })}
+          icon={<KeyRound size={16} />}
+          label="Use CredSSP"
+          description="Master switch — when off, CredSSP is skipped entirely for new connections"
+          infoTooltip="Enables Credential Security Support Provider for secure credential delegation during authentication."
+        />
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.enableTls ?? true} onChange={(v: boolean) => update({ enableTls: v })} />
-      <span className="sor-toggle-label">
-        Enable TLS <InfoTooltip text="Encrypts the RDP connection using TLS to protect data in transit." />
-      </span>
-    </label>
+        <Toggle
+          checked={rdp.enableTls ?? true}
+          onChange={(v) => update({ enableTls: v })}
+          icon={<Lock size={16} />}
+          label="Enable TLS"
+          description="Encrypt the RDP transport with TLS to protect data in transit"
+          infoTooltip="Encrypts the RDP connection using TLS to protect data in transit."
+        />
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.enableNla ?? true} onChange={(v: boolean) => update({ enableNla: v })} disabled={!(rdp.useCredSsp ?? true)} />
-      <span
-        className={`text-sm transition-colors ${
-          !(rdp.useCredSsp ?? true)
-            ? "text-[var(--color-textMuted)]"
-            : "text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]"
-        }`}
-      >
-        Enable NLA (Network Level Authentication) <InfoTooltip text="Requires authentication before establishing a full RDP session, reducing exposure to denial-of-service attacks." />
-      </span>
-    </label>
+        <div className={!credsspOn ? "opacity-50 pointer-events-none" : undefined}>
+          <Toggle
+            checked={rdp.enableNla ?? true}
+            onChange={(v) => update({ enableNla: v })}
+            disabled={!credsspOn}
+            icon={<Network size={16} />}
+            label="Enable NLA (Network Level Authentication)"
+            description="Require authentication before opening the full RDP session"
+            infoTooltip="Requires authentication before establishing a full RDP session, reducing exposure to denial-of-service attacks."
+          />
+        </div>
 
-    <label className="flex items-center space-x-3 cursor-pointer group">
-      <Checkbox checked={rdp.autoLogon ?? false} onChange={(v: boolean) => update({ autoLogon: v })} />
-      <span className="sor-toggle-label">
-        Auto logon (send credentials in INFO packet) <InfoTooltip text="Automatically sends stored credentials during connection to bypass the remote login screen." />
-      </span>
-    </label>
+        <Toggle
+          checked={rdp.autoLogon ?? false}
+          onChange={(v) => update({ autoLogon: v })}
+          icon={<LogIn size={16} />}
+          label="Auto logon"
+          description="Send stored credentials in the connection INFO packet to bypass the remote login screen"
+          infoTooltip="Automatically sends stored credentials during connection to bypass the remote login screen."
+        />
+      </Card>
     </div>
-  </div>
-);
+  );
+};
 
 export default SecurityDefaults;
