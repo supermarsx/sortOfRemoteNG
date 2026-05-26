@@ -117,27 +117,11 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(({
   const maskChar = pr.maskCharacter;
   const useCustomMask = !visible && !showLockedPlaceholder && !!maskChar;
 
-  const mergedStyle = useMemo(() => {
-    if (showLockedPlaceholder) {
-      // Hide the real value entirely — we render a fixed overlay instead
-      return { ...style, color: 'transparent', caretColor: 'transparent' } as React.CSSProperties;
-    }
-    if (!useCustomMask) return style;
-    return {
-      ...style,
-      WebkitTextSecurity: 'none',
-      color: 'transparent',
-      caretColor: 'var(--color-text)',
-    } as React.CSSProperties;
-  }, [useCustomMask, showLockedPlaceholder, style]);
-
-  // Build the masked overlay text
-  const maskedOverlay = showLockedPlaceholder
-    ? (maskChar || '•').repeat(LOCKED_PLACEHOLDER.length)
-    : useCustomMask && typeof rest.value === 'string'
-      ? maskChar.repeat(rest.value.length)
-      : null;
-
+  // Right-padding for the eye button needs to be enforced via inline
+  // style because the project's component CSS (`.sor-settings-input`,
+  // `.sor-form-input`, etc.) sets the `padding` shorthand and is
+  // emitted AFTER Tailwind utilities, so `pr-9` on the className gets
+  // overridden — leaving the eye icon visually overlapping the text.
   const showButton = isRevealable || isLocked;
   const IconComponent = isLocked ? Lock : visible ? EyeOff : Eye;
   const iconOpacity = isLocked
@@ -146,13 +130,36 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(({
       ? 'opacity-30'
       : 'opacity-60';
 
+  const mergedStyle = useMemo(() => {
+    const base: React.CSSProperties = { ...style };
+    if (showButton) base.paddingRight = '2.25rem';
+    if (showLockedPlaceholder) {
+      base.color = 'transparent';
+      base.caretColor = 'transparent';
+      return base;
+    }
+    if (useCustomMask) {
+      (base as React.CSSProperties & { WebkitTextSecurity?: string }).WebkitTextSecurity = 'none';
+      base.color = 'transparent';
+      base.caretColor = 'var(--color-text)';
+    }
+    return base;
+  }, [useCustomMask, showLockedPlaceholder, style, showButton]);
+
+  // Build the masked overlay text
+  const maskedOverlay = showLockedPlaceholder
+    ? (maskChar || '•').repeat(LOCKED_PLACEHOLDER.length)
+    : useCustomMask && typeof rest.value === 'string'
+      ? maskChar.repeat(rest.value.length)
+      : null;
+
   return (
     <div className="relative w-full">
       <input
         {...rest}
         ref={ref}
         type={visible ? 'text' : 'password'}
-        className={`${className ?? ''} ${showButton ? 'pr-9' : ''}`}
+        className={`${className ?? ''} block`}
         style={mergedStyle}
       />
       {/* Custom mask character overlay */}
