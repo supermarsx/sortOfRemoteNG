@@ -1,7 +1,11 @@
 import { Bell, AlertTriangle } from "lucide-react";
-import { Checkbox } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function NotificationsGrid({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
@@ -9,25 +13,25 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
         icon={<Bell className="w-4 h-4 text-primary" />}
         title="Notifications"
       />
-      <div className="sor-settings-card">
-        <div className="grid grid-cols-2 gap-4">
-          <label className="sor-toggle-card">
-            <Checkbox checked={mgr.cloudSync.notifyOnSync} onChange={(v: boolean) => mgr.updateCloudSync({ notifyOnSync: v })} className="sor-checkbox-sm" />
-            <Bell className="w-4 h-4 text-primary" />
-            <span className="text-sm text-[var(--color-text)]">
-              Notify on Sync
-            </span>
-          </label>
+      <Card>
+        <Toggle
+          icon={<Bell size={16} />}
+          label="Notify on Sync"
+          description="Show a desktop notification when a sync completes"
+          checked={mgr.cloudSync.notifyOnSync}
+          onChange={(v) => mgr.updateCloudSync({ notifyOnSync: v })}
+          infoTooltip="Show a desktop notification each time a cloud sync completes successfully."
+        />
 
-          <label className="sor-toggle-card">
-            <Checkbox checked={mgr.cloudSync.notifyOnConflict} onChange={(v: boolean) => mgr.updateCloudSync({ notifyOnConflict: v })} className="sor-checkbox-sm" />
-            <AlertTriangle className="w-4 h-4 text-warning" />
-            <span className="text-sm text-[var(--color-text)]">
-              Notify on Conflict
-            </span>
-          </label>
-        </div>
-      </div>
+        <Toggle
+          icon={<AlertTriangle size={16} />}
+          label="Notify on Conflict"
+          description="Show a notification when a sync conflict needs attention"
+          checked={mgr.cloudSync.notifyOnConflict}
+          onChange={(v) => mgr.updateCloudSync({ notifyOnConflict: v })}
+          infoTooltip="Show a desktop notification when the local and cloud copies have diverged and the configured strategy needs to step in."
+        />
+      </Card>
     </div>
   );
 }

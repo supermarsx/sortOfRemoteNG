@@ -1,7 +1,14 @@
-import { Upload, Download, Zap } from "lucide-react";
-import { Checkbox, NumberInput, Textarea} from '../../../ui/forms';
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Upload, Download, Zap, FileBox, Filter, FileArchive } from "lucide-react";
+import { Textarea } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsNumberRow,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function AdvancedSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
@@ -9,64 +16,72 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
         icon={<Zap className="w-4 h-4 text-primary" />}
         title="Advanced Options"
       />
-      <div className="sor-settings-card">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <Checkbox checked={mgr.cloudSync.compressionEnabled} onChange={(v: boolean) => mgr.updateCloudSync({ compressionEnabled: v })} className="sor-checkbox-sm" />
-          <span className="text-sm text-[var(--color-text)]">
-            Enable Compression
+      <Card>
+        <Toggle
+          icon={<FileArchive size={16} />}
+          label="Enable Compression"
+          description="Compress payloads before uploading to save bandwidth"
+          checked={mgr.cloudSync.compressionEnabled}
+          onChange={(v) => mgr.updateCloudSync({ compressionEnabled: v })}
+          infoTooltip="Gzip-compress payloads before uploading. Reduces bandwidth at the cost of slightly more CPU per sync."
+        />
+
+        <SettingsNumberRow
+          icon={<FileBox size={16} />}
+          label="Max File Size"
+          value={mgr.cloudSync.maxFileSizeMB}
+          min={1}
+          max={500}
+          unit="MB"
+          onChange={(v) => mgr.updateCloudSync({ maxFileSizeMB: v })}
+          infoTooltip="Files larger than this are skipped during sync. Set generously high to allow large attachments."
+        />
+
+        <SettingsNumberRow
+          icon={<Upload size={16} />}
+          label="Upload Limit"
+          value={mgr.cloudSync.uploadLimitKBs}
+          min={0}
+          unit="KB/s"
+          onChange={(v) => mgr.updateCloudSync({ uploadLimitKBs: v })}
+          infoTooltip="Throttle upload bandwidth in kilobytes per second. 0 means unlimited."
+        />
+
+        <SettingsNumberRow
+          icon={<Download size={16} />}
+          label="Download Limit"
+          value={mgr.cloudSync.downloadLimitKBs}
+          min={0}
+          unit="KB/s"
+          onChange={(v) => mgr.updateCloudSync({ downloadLimitKBs: v })}
+          infoTooltip="Throttle download bandwidth in kilobytes per second. 0 means unlimited."
+        />
+
+        <div className="sor-settings-select-row !items-start">
+          <span className="sor-settings-row-label flex items-center gap-1">
+            <span className="text-[var(--color-textSecondary)] mr-1">
+              <Filter size={16} />
+            </span>
+            Exclude Patterns
+            <InfoTooltip text="Glob patterns (one per line) for files to skip during sync. Useful for temp files, caches, or local-only data." />
           </span>
-        </label>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-              Max File Size (MB)
-            </label>
-            <NumberInput value={mgr.cloudSync.maxFileSizeMB} onChange={(v: number) => mgr.updateCloudSync({
-                  maxFileSizeMB: v,
-                })} className="sor-settings-input" min={1} max={500} />
-          </div>
-
-          <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-              <Upload className="w-3 h-3 inline mr-1" />
-              Upload Limit (KB/s, 0=∞)
-            </label>
-            <NumberInput value={mgr.cloudSync.uploadLimitKBs} onChange={(v: number) => mgr.updateCloudSync({
-                  uploadLimitKBs: v,
-                })} className="sor-settings-input" min={0} />
-          </div>
-
-          <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-              <Download className="w-3 h-3 inline mr-1" />
-              Download Limit (KB/s, 0=∞)
-            </label>
-            <NumberInput value={mgr.cloudSync.downloadLimitKBs} onChange={(v: number) => mgr.updateCloudSync({
-                  downloadLimitKBs: v,
-                })} className="sor-settings-input" min={0} />
+          <div style={{ width: "20rem" }}>
+            <Textarea
+              value={mgr.cloudSync.excludePatterns.join("\n")}
+              onChange={(v) =>
+                mgr.updateCloudSync({
+                  excludePatterns: v
+                    .split("\n")
+                    .filter((p: string) => p.trim()),
+                })
+              }
+              placeholder={"*.tmp\n*.bak\ntemp/*"}
+              rows={3}
+              className="sor-settings-input font-mono"
+            />
           </div>
         </div>
-
-        <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-            Exclude Patterns (one per line)
-          </label>
-          <Textarea
-            value={mgr.cloudSync.excludePatterns.join("\n")}
-            onChange={(v) =>
-              mgr.updateCloudSync({
-                excludePatterns: v
-                  .split("\n")
-                  .filter((p: string) => p.trim()),
-              })
-            }
-            placeholder="*.tmp&#10;*.bak&#10;temp/*"
-            rows={3}
-            className="sor-settings-input font-mono"
-          />
-        </div>
-      </div>
+      </Card>
     </div>
   );
 }

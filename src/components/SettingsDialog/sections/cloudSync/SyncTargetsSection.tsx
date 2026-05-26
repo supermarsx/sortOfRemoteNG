@@ -68,7 +68,7 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
           className="sor-settings-input flex-1 text-sm"
           aria-label="Sync target label"
         />
-        <div className="md:w-40">
+        <div style={{ width: "10rem" }}>
           <Select
             value={target.provider}
             onChange={(value: string) =>
@@ -77,7 +77,7 @@ const SyncTargetRow: React.FC<SyncTargetRowProps> = ({
               })
             }
             options={providerOptions}
-            variant="form"
+            variant="settings"
             aria-label="Sync target provider"
           />
         </div>
@@ -201,26 +201,28 @@ const SyncTargetsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-1">
+      <div className="flex items-center gap-2 pt-1">
         <label
           htmlFor="cloudsync-add-target"
           className="text-xs text-[var(--color-textSecondary)]"
         >
           Add target
         </label>
-        <Select
-          value="add"
-          onChange={(value: string) => {
-            if (value === "add") return;
-            mgr.addSyncTarget(value as CloudSyncProvider);
-          }}
-          options={[
-            { value: "add", label: "Choose a provider…" },
-            ...providerOptions,
-          ]}
-          variant="form"
-          aria-label="Add sync target provider"
-        />
+        <div style={{ width: "14rem" }}>
+          <Select
+            value="add"
+            onChange={(value: string) => {
+              if (value === "add") return;
+              mgr.addSyncTarget(value as CloudSyncProvider);
+            }}
+            options={[
+              { value: "add", label: "Choose a provider…" },
+              ...providerOptions,
+            ]}
+            variant="settings"
+            aria-label="Add sync target provider"
+          />
+        </div>
       </div>
 
       <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">

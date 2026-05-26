@@ -1,9 +1,21 @@
-import { Clock } from "lucide-react";
-import { CloudSyncFrequencies, CloudSyncFrequency } from "../../../../types/settings/settings";
+import { Clock, Repeat } from "lucide-react";
+import {
+  CloudSyncFrequencies,
+  CloudSyncFrequency,
+} from "../../../../types/settings/settings";
 import { frequencyLabels } from "../../../../hooks/settings/useCloudSyncSettings";
-import { Select } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsSelectRow,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
+const frequencyOptions = CloudSyncFrequencies.map((freq) => ({
+  value: freq,
+  label: frequencyLabels[freq],
+}));
+
 function SyncFrequencySelect({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
@@ -11,12 +23,18 @@ function SyncFrequencySelect({ mgr }: { mgr: Mgr }) {
         icon={<Clock className="w-4 h-4 text-primary" />}
         title="Sync Frequency"
       />
-      <div className="sor-settings-card">
-        <Select value={mgr.cloudSync.frequency} onChange={(v: string) =>
-            mgr.updateCloudSync({
-              frequency: v as CloudSyncFrequency,
-            })} options={[...CloudSyncFrequencies.map((freq) => ({ value: freq, label: frequencyLabels[freq] }))]} className="sor-settings-input" />
-      </div>
+      <Card>
+        <SettingsSelectRow
+          icon={<Repeat size={16} />}
+          label="Frequency"
+          value={mgr.cloudSync.frequency}
+          options={frequencyOptions}
+          onChange={(v) =>
+            mgr.updateCloudSync({ frequency: v as CloudSyncFrequency })
+          }
+          infoTooltip="How often the app syncs in the background. Set to manual to only sync on demand."
+        />
+      </Card>
     </div>
   );
 }

@@ -1,9 +1,16 @@
-import { PasswordInput } from '../../../ui/forms';
-import { Shield, Lock, Info } from "lucide-react";
-import { Checkbox } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { PasswordInput } from "../../../ui/forms";
+import { Shield, Lock, Info, ShieldCheck } from "lucide-react";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function EncryptionSection({ mgr }: { mgr: Mgr }) {
+  const enabled = Boolean(mgr.cloudSync.encryptBeforeSync);
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -11,42 +18,51 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
         title="Encryption"
       />
 
-      <div className="sor-settings-card">
-        <label className="flex items-center justify-between cursor-pointer">
-          <div>
-            <span className="text-[var(--color-text)]">
-              Encrypt Before Sync
-            </span>
-            <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-              End-to-end encrypt data before uploading to cloud
-            </p>
-          </div>
-          <Checkbox checked={mgr.cloudSync.encryptBeforeSync} onChange={(v: boolean) => mgr.updateCloudSync({ encryptBeforeSync: v })} className="sor-checkbox-lg" />
-        </label>
+      <Card>
+        <Toggle
+          icon={<ShieldCheck size={16} />}
+          label="Encrypt Before Sync"
+          description="End-to-end encrypt data before uploading to cloud"
+          checked={enabled}
+          onChange={(v) => mgr.updateCloudSync({ encryptBeforeSync: v })}
+          infoTooltip="When enabled, payloads are encrypted locally before being sent to the provider. The provider never sees plaintext."
+        />
 
-        {mgr.cloudSync.encryptBeforeSync && (
-          <div className="space-y-2 pl-4 border-l-2 border-primary/30">
-            <label className="block text-sm text-[var(--color-textSecondary)]">
-              <Lock className="w-4 h-4 inline mr-1" />
-              Encryption Password
-            </label>
-            <PasswordInput
-              value={mgr.cloudSync.syncEncryptionPassword || ""}
-              onChange={(e) =>
-                mgr.updateCloudSync({ syncEncryptionPassword: e.target.value })
-              }
-              placeholder="Enter a strong password"
-              className="sor-settings-input"
-            />
-            <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">
-              <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
-              <span>
-                This password is required on all devices to decrypt synced data.
+        <div
+          className={
+            enabled ? undefined : "opacity-50 pointer-events-none"
+          }
+        >
+          <div className="sor-settings-select-row">
+            <span className="sor-settings-row-label flex items-center gap-1">
+              <span className="text-[var(--color-textSecondary)] mr-1">
+                <Lock size={16} />
               </span>
-            </p>
+              Encryption Password
+              <InfoTooltip text="The password used to derive the encryption key. The same password is required on every device that participates in the sync." />
+            </span>
+            <div style={{ width: "18rem" }}>
+              <PasswordInput
+                value={mgr.cloudSync.syncEncryptionPassword || ""}
+                onChange={(e) =>
+                  mgr.updateCloudSync({
+                    syncEncryptionPassword: e.target.value,
+                  })
+                }
+                placeholder="Enter a strong password"
+                className="sor-settings-input"
+                disabled={!enabled}
+              />
+            </div>
           </div>
-        )}
-      </div>
+          <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1 mt-1">
+            <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <span>
+              This password is required on all devices to decrypt synced data.
+            </span>
+          </p>
+        </div>
+      </Card>
     </div>
   );
 }
