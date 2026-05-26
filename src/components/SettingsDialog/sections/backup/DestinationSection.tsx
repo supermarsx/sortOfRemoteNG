@@ -110,8 +110,8 @@ const DestinationRow: React.FC<DestinationRowProps> = ({
       </div>
 
       {/* Preset + path row */}
-      <div className="flex flex-col md:flex-row gap-2">
-        <div className="md:w-48">
+      <div className="flex items-center gap-2">
+        <div style={{ width: "11rem" }}>
           <Select
             value={target.preset}
             onChange={(value: string) =>
@@ -120,32 +120,33 @@ const DestinationRow: React.FC<DestinationRowProps> = ({
               })
             }
             options={presetOptions}
-            variant="form"
+            variant="settings"
             aria-label="Destination preset"
           />
         </div>
-        <div className="flex-1 flex gap-2">
-          <input
-            type="text"
-            value={target.customPath ?? ""}
-            onChange={(e) =>
-              mgr.updateDestination(target.id, { customPath: e.target.value })
-            }
-            placeholder={
-              isLocal ? "Folder path" : "Cloud subfolder (optional)"
-            }
-            className="sor-settings-input flex-1 text-sm"
-          />
-          {isLocal && (
-            <button
-              type="button"
-              onClick={() => mgr.handleSelectFolderForDestination(target.id)}
-              className="px-3 py-1.5 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] hover:bg-[var(--color-border)] transition-colors flex-shrink-0"
-            >
-              Browse
-            </button>
-          )}
-        </div>
+        <input
+          type="text"
+          value={target.customPath ?? ""}
+          onChange={(e) =>
+            mgr.updateDestination(target.id, { customPath: e.target.value })
+          }
+          placeholder={
+            isLocal ? "Folder path" : "Cloud subfolder (optional)"
+          }
+          className="sor-settings-input text-sm"
+          style={{ width: "20rem" }}
+        />
+        {isLocal && (
+          <button
+            type="button"
+            onClick={() => mgr.handleSelectFolderForDestination(target.id)}
+            aria-label="Browse for folder"
+            title="Browse for folder"
+            className="inline-flex items-center justify-center p-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-border)] text-[var(--color-text)] transition-colors flex-shrink-0"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Retention override (collapsible) */}
@@ -241,26 +242,28 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-1">
+      <div className="flex items-center gap-2 pt-1">
         <label
           htmlFor="backup-add-destination"
           className="text-xs text-[var(--color-textSecondary)]"
         >
           Add destination
         </label>
-        <Select
-          value="add"
-          onChange={(value: string) => {
-            if (value === "add") return;
-            mgr.addDestination(value as BackupLocationPreset);
-          }}
-          options={[
-            { value: "add", label: "Choose a preset…" },
-            ...presetOptions,
-          ]}
-          variant="form"
-          aria-label="Add destination preset"
-        />
+        <div style={{ width: "14rem" }}>
+          <Select
+            value="add"
+            onChange={(value: string) => {
+              if (value === "add") return;
+              mgr.addDestination(value as BackupLocationPreset);
+            }}
+            options={[
+              { value: "add", label: "Choose a preset…" },
+              ...presetOptions,
+            ]}
+            variant="settings"
+            aria-label="Add destination preset"
+          />
+        </div>
       </div>
 
       <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1">

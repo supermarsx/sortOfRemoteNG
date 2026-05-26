@@ -1,11 +1,32 @@
-import type { Mgr } from './types';
+import type { Mgr } from "./types";
 import React from "react";
-import { Settings, FileArchive } from "lucide-react";
-import { BackupFormats, BackupFormat } from "../../../../types/settings/settings";
+import {
+  FileArchive,
+  FileCode2,
+  Archive,
+  KeyRound,
+  SlidersHorizontal,
+  KeySquare,
+  FileDown,
+} from "lucide-react";
+import {
+  BackupFormats,
+  BackupFormat,
+} from "../../../../types/settings/settings";
 import { formatLabels } from "../../../../hooks/settings/useBackupSettings";
-import { Checkbox, NumberInput, Select } from "../../../ui/forms";
+import { NumberInput } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsSelectRow,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
+
+const formatOptions = BackupFormats.map((fmt) => ({
+  value: fmt,
+  label: formatLabels[fmt],
+}));
 
 const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
@@ -14,22 +35,26 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       title="Format & Content"
     />
 
-    <div className="sor-settings-card">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-textSecondary)]">
-          Backup Format <InfoTooltip text="The file format used for backup archives. JSON is human-readable; binary formats are more compact." />
-        </label>
-        <Select value={mgr.backup.format} onChange={(v: string) =>
-            mgr.updateBackup({ format: v as BackupFormat })} options={[...BackupFormats.map((fmt) => ({ value: fmt, label: formatLabels[fmt] }))]} className="sor-settings-input" />
-      </div>
+    <Card>
+      <SettingsSelectRow
+        icon={<FileCode2 size={16} />}
+        label="Backup Format"
+        value={mgr.backup.format}
+        options={formatOptions}
+        onChange={(v) => mgr.updateBackup({ format: v as BackupFormat })}
+        infoTooltip="The file format used for backup archives. JSON is human-readable; binary formats are more compact."
+      />
 
-      <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-textSecondary)]">
-          Keep Last X Backups <InfoTooltip text="Maximum number of backup files to retain. Older backups are automatically deleted. Set to 0 to keep all." />
-        </label>
-        <div className="flex gap-2">
-          <div className="flex flex-wrap gap-1.5 flex-1">
+      <div className="sor-settings-select-row">
+        <span className="sor-settings-row-label flex items-center gap-1">
+          <span className="text-[var(--color-textSecondary)] mr-1">
+            <Archive size={16} />
+          </span>
+          Keep Last X Backups
+          <InfoTooltip text="Maximum number of backup files to retain. Older backups are automatically deleted. Set to 0 to keep all." />
+        </span>
+        <div className="flex items-center gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {[5, 10, 30, 60, 0].map((count) => (
               <button
                 key={count}
@@ -45,35 +70,58 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               </button>
             ))}
           </div>
-          <NumberInput value={mgr.backup.maxBackupsToKeep} onChange={(v: number) => mgr.updateBackup({
-                maxBackupsToKeep: v,
-              })} className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  text-center" min={0} max={365} />
+          <NumberInput
+            value={mgr.backup.maxBackupsToKeep}
+            onChange={(v: number) =>
+              mgr.updateBackup({ maxBackupsToKeep: v })
+            }
+            className="text-center"
+            style={{ width: "5rem" }}
+            min={0}
+            max={365}
+            variant="settings-compact"
+          />
         </div>
-        <p className="text-xs text-[var(--color-textMuted)]">
-          Older backups are automatically deleted. 0 or ∞ = keep all.
-        </p>
       </div>
-      </div>
-    </div>
+    </Card>
 
-    <div className="sor-settings-card">
-      {(
-        [
-          ["includePasswords", "Include Passwords", "Include saved connection passwords in backups. Passwords are stored encrypted."],
-          ["includeSettings", "Include Settings", "Include application preferences and global settings in backup files."],
-          ["includeSSHKeys", "Include SSH Keys", "Include SSH private keys in backup files. Handle with care as these grant server access."],
-          ["compressBackups", "Compress Backups", "Compress backup files to reduce disk space usage at the cost of slightly longer backup times."],
-        ] as const
-      ).map(([key, label, tooltip]) => (
-        <label
-          key={key}
-          className="flex items-center justify-between cursor-pointer"
-        >
-          <span className="text-[var(--color-text)]">{label} <InfoTooltip text={tooltip} /></span>
-          <Checkbox checked={mgr.backup[key]} onChange={(v: boolean) => mgr.updateBackup({ [key]: v })} className="sor-checkbox-lg" />
-        </label>
-      ))}
-    </div>
+    <Card>
+      <Toggle
+        icon={<KeyRound size={16} />}
+        label="Include Passwords"
+        description="Include saved connection passwords in backups (encrypted)"
+        checked={mgr.backup.includePasswords}
+        onChange={(v) => mgr.updateBackup({ includePasswords: v })}
+        infoTooltip="Include saved connection passwords in backups. Passwords are stored encrypted."
+      />
+
+      <Toggle
+        icon={<SlidersHorizontal size={16} />}
+        label="Include Settings"
+        description="Include application preferences and global settings"
+        checked={mgr.backup.includeSettings}
+        onChange={(v) => mgr.updateBackup({ includeSettings: v })}
+        infoTooltip="Include application preferences and global settings in backup files."
+      />
+
+      <Toggle
+        icon={<KeySquare size={16} />}
+        label="Include SSH Keys"
+        description="Include SSH private keys (handle with care — grants server access)"
+        checked={mgr.backup.includeSSHKeys}
+        onChange={(v) => mgr.updateBackup({ includeSSHKeys: v })}
+        infoTooltip="Include SSH private keys in backup files. Handle with care as these grant server access."
+      />
+
+      <Toggle
+        icon={<FileDown size={16} />}
+        label="Compress Backups"
+        description="Compress backup files to reduce disk space usage"
+        checked={mgr.backup.compressBackups}
+        onChange={(v) => mgr.updateBackup({ compressBackups: v })}
+        infoTooltip="Compress backup files to reduce disk space usage at the cost of slightly longer backup times."
+      />
+    </Card>
   </div>
 );
 

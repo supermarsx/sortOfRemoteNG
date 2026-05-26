@@ -1,37 +1,76 @@
 import type { Mgr } from './types';
 import React from "react";
-import { Clock } from "lucide-react";
-import { BackupFrequencies, DaysOfWeek, BackupFrequency, DayOfWeek } from "../../../../types/settings/settings";
-import { frequencyLabels, dayLabels } from "../../../../hooks/settings/useBackupSettings";
-import { Select } from "../../../ui/forms";
+import { Clock, Repeat, Calendar, CalendarDays } from "lucide-react";
+import {
+  BackupFrequencies,
+  DaysOfWeek,
+  BackupFrequency,
+  DayOfWeek,
+} from "../../../../types/settings/settings";
+import {
+  frequencyLabels,
+  dayLabels,
+} from "../../../../hooks/settings/useBackupSettings";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsSelectRow,
+} from "../../../ui/settings/SettingsPrimitives";
 
-const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="space-y-4">
-    <SectionHeader
-      icon={<Clock className="w-4 h-4 text-primary" />}
-      title="Schedule"
-    />
+const frequencyOptions = BackupFrequencies.map((freq) => ({
+  value: freq,
+  label: frequencyLabels[freq],
+}));
 
-    <div className="sor-settings-card">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-textSecondary)]">
-          Frequency <InfoTooltip text="How often automatic backups are created. Choose manual to only back up on demand." />
-        </label>
-        <Select value={mgr.backup.frequency} onChange={(v: string) =>
-            mgr.updateBackup({
-              frequency: v as BackupFrequency,
-            })} options={[...BackupFrequencies.map((freq) => ({ value: freq, label: frequencyLabels[freq] }))]} className="sor-settings-input" />
-      </div>
+const dayOfWeekOptions = DaysOfWeek.map((day) => ({
+  value: day,
+  label: dayLabels[day],
+}));
 
-      {mgr.backup.frequency !== "manual" &&
-        mgr.backup.frequency !== "hourly" && (
-          <div className="space-y-2">
-            <label className="block text-sm text-[var(--color-textSecondary)]">
-              Time <InfoTooltip text="The time of day when the scheduled backup will run." />
-            </label>
+const dayOfMonthOptions = Array.from({ length: 28 }, (_, i) => i + 1).map(
+  (day) => ({ value: String(day), label: String(day) }),
+);
+
+const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const showTime =
+    mgr.backup.frequency !== "manual" &&
+    mgr.backup.frequency !== "hourly";
+  const showWeekly = mgr.backup.frequency === "weekly";
+  const showMonthly = mgr.backup.frequency === "monthly";
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        icon={<Clock className="w-4 h-4 text-primary" />}
+        title="Schedule"
+      />
+
+      <Card>
+        <SettingsSelectRow
+          icon={<Repeat size={16} />}
+          label="Frequency"
+          value={mgr.backup.frequency}
+          options={frequencyOptions}
+          onChange={(v) =>
+            mgr.updateBackup({ frequency: v as BackupFrequency })
+          }
+          infoTooltip="How often automatic backups are created. Choose manual to only back up on demand."
+        />
+
+        <div
+          className={
+            showTime ? undefined : "opacity-50 pointer-events-none"
+          }
+        >
+          <div className="sor-settings-select-row">
+            <span className="sor-settings-row-label flex items-center gap-1">
+              <span className="text-[var(--color-textSecondary)] mr-1">
+                <Clock size={16} />
+              </span>
+              Time
+              <InfoTooltip text="The time of day when the scheduled backup will run (local time)." />
+            </span>
             <input
               type="time"
               value={mgr.backup.scheduledTime}
@@ -39,32 +78,48 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                 mgr.updateBackup({ scheduledTime: e.target.value })
               }
               className="sor-settings-input"
+              style={{ width: "9rem" }}
+              disabled={!showTime}
             />
           </div>
-        )}
-
-      {mgr.backup.frequency === "weekly" && (
-        <div className="space-y-2">
-          <label className="block text-sm text-[var(--color-textSecondary)]">
-            Day of Week <InfoTooltip text="The day of the week on which the weekly backup will run." />
-          </label>
-          <Select value={mgr.backup.weeklyDay} onChange={(v: string) =>
-              mgr.updateBackup({ weeklyDay: v as DayOfWeek })} options={[...DaysOfWeek.map((day) => ({ value: day, label: dayLabels[day] }))]} className="sor-settings-input" />
         </div>
-      )}
 
-      {mgr.backup.frequency === "monthly" && (
-        <div className="space-y-2">
-          <label className="block text-sm text-[var(--color-textSecondary)]">
-            Day of Month <InfoTooltip text="The day of the month on which the monthly backup will run." />
-          </label>
-          <Select value={mgr.backup.monthlyDay} onChange={(v: string) =>
-              mgr.updateBackup({ monthlyDay: parseInt(v) })} options={[...Array.from({ length: 28 }, (_, i) => i + 1).map((day) => ({ value: day, label: String(day) }))]} className="sor-settings-input" />
+        <div
+          className={
+            showWeekly ? undefined : "opacity-50 pointer-events-none"
+          }
+        >
+          <SettingsSelectRow
+            icon={<Calendar size={16} />}
+            label="Day of Week"
+            value={mgr.backup.weeklyDay}
+            options={dayOfWeekOptions}
+            onChange={(v) =>
+              mgr.updateBackup({ weeklyDay: v as DayOfWeek })
+            }
+            infoTooltip="The day of the week on which the weekly backup will run."
+          />
         </div>
-      )}
-      </div>
+
+        <div
+          className={
+            showMonthly ? undefined : "opacity-50 pointer-events-none"
+          }
+        >
+          <SettingsSelectRow
+            icon={<CalendarDays size={16} />}
+            label="Day of Month"
+            value={String(mgr.backup.monthlyDay)}
+            options={dayOfMonthOptions}
+            onChange={(v) =>
+              mgr.updateBackup({ monthlyDay: parseInt(v, 10) })
+            }
+            infoTooltip="The day of the month on which the monthly backup will run. Capped at 28 to avoid skipped months."
+          />
+        </div>
+      </Card>
     </div>
-  </div>
-);
+  );
+};
 
 export default ScheduleSection;

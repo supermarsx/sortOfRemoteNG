@@ -1,8 +1,12 @@
 import type { Mgr } from './types';
 import React from "react";
-import { HardDrive } from "lucide-react";
-import { Checkbox, NumberInput } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { HardDrive, Layers, Hash } from "lucide-react";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsNumberRow,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
@@ -11,34 +15,38 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       title="Differential Backups"
     />
 
-    <div className="sor-settings-card">
-      <label className="flex items-center justify-between cursor-pointer">
-        <div>
-          <span className="text-[var(--color-text)]">
-            Enable Differential Backups
-          </span>
-          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-            Only backup changes since the last full backup (saves space)
-          </p>
-        </div>
-        <Checkbox checked={mgr.backup.differentialEnabled} onChange={(v: boolean) => mgr.updateBackup({ differentialEnabled: v })} className="sor-checkbox-lg" />
-      </label>
+    <Card>
+      <Toggle
+        icon={<Layers size={16} />}
+        label="Enable Differential Backups"
+        description="Only backup changes since the last full backup (saves space)"
+        checked={mgr.backup.differentialEnabled}
+        onChange={(v) => mgr.updateBackup({ differentialEnabled: v })}
+        infoTooltip="Emits a compact diff against the previous full backup, periodically anchored by a fresh full backup."
+      />
 
-      {mgr.backup.differentialEnabled && (
-        <div className="space-y-2 pl-4 border-l-2 border-accent/30">
-          <label className="block text-sm text-[var(--color-textSecondary)]">
-            Full backup every N backups
-          </label>
-          <NumberInput value={mgr.backup.fullBackupInterval} onChange={(v: number) => mgr.updateBackup({
-                fullBackupInterval: v,
-              })} className="w-24 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]" min={1} max={30} />
-          <p className="text-xs text-[var(--color-textMuted)]">
-            A full backup will be created every{" "}
-            {mgr.backup.fullBackupInterval} differential backups
-          </p>
-        </div>
-      )}
-    </div>
+      <div
+        className={
+          mgr.backup.differentialEnabled
+            ? undefined
+            : "opacity-50 pointer-events-none"
+        }
+      >
+        <SettingsNumberRow
+          icon={<Hash size={16} />}
+          label="Full backup interval"
+          value={mgr.backup.fullBackupInterval}
+          min={1}
+          max={30}
+          onChange={(v) => mgr.updateBackup({ fullBackupInterval: v })}
+          infoTooltip="A full backup is created every N differential backups so restores never need to replay too many diffs."
+        />
+        <p className="text-xs text-[var(--color-textMuted)] mt-1">
+          A full backup will be created every{" "}
+          {mgr.backup.fullBackupInterval} differential backups
+        </p>
+      </div>
+    </Card>
   </div>
 );
 
