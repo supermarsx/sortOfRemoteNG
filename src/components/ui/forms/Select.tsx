@@ -82,11 +82,15 @@ export const Select: React.FC<SelectProps> = ({
     const top = spaceBelow < ddHeight && spaceAbove > spaceBelow
       ? rect.top - ddHeight - 4
       : rect.bottom + 4;
-    // Clamp horizontal
+    // Clamp horizontal — use the dropdown's actual rendered width
+    // when it's already mounted so wide option labels don't push the
+    // panel past the right edge of the viewport. Falls back to the
+    // 200px minimum for the first paint (before the dropdown mounts).
     let left = rect.left;
-    const minW = Math.max(rect.width, 200);
-    if (left + minW > window.innerWidth - 8) {
-      left = Math.max(8, window.innerWidth - minW - 8);
+    const measuredWidth = dd?.offsetWidth ?? 0;
+    const effectiveWidth = Math.max(rect.width, 200, measuredWidth);
+    if (left + effectiveWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - effectiveWidth - 8);
     }
     setPos({ top, left, width: rect.width });
   }, []);
@@ -131,10 +135,15 @@ export const Select: React.FC<SelectProps> = ({
   // ── Scroll / resize ─────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
+    // Re-measure after the dropdown mounts so wide option labels can
+    // clamp the panel back inside the viewport (first call inside
+    // `open` ran before the dropdown existed).
+    const raf = requestAnimationFrame(() => updatePosition());
     const reposition = () => updatePosition();
     window.addEventListener('resize', reposition);
     window.addEventListener('scroll', reposition, true);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
     };
