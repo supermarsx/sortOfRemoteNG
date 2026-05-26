@@ -5,7 +5,10 @@ import { GlobalSettings, ProxyConfig } from "../../../types/settings/settings";
 import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
-import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from '../../ui/InfoTooltip';
 import ProxyPresetsSection from "./proxy/ProxyPresetsSection";
 
@@ -37,7 +40,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
       />
 
       {/* Enable Global Proxy */}
-      <div className="sor-settings-card">
+      <Card>
         <label className="flex items-center justify-between cursor-pointer">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/20 rounded-lg">
@@ -58,7 +61,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
             className="sor-checkbox-lg"
           />
         </label>
-      </div>
+      </Card>
 
       {/* Proxy Type */}
       <div className="space-y-4">
@@ -72,7 +75,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           }
         />
 
-        <div className="sor-settings-card">
+        <Card>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {PROXY_TYPES.map((type) => (
               <button
@@ -94,7 +97,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Connection Details */}
@@ -104,7 +107,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           title="Connection Details"
         />
 
-        <div className="sor-settings-card">
+        <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -136,7 +139,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
               />
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Authentication */}
@@ -146,7 +149,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           title="Authentication (Optional)"
         />
 
-        <div className="sor-settings-card">
+        <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -180,7 +183,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           <p className="text-xs text-[var(--color-textMuted)] mt-3">
             Leave blank if your proxy server doesn't require authentication.
           </p>
-        </div>
+        </Card>
       </div>
 
       {/* Saved presets */}

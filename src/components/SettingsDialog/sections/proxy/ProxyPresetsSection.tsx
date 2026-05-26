@@ -15,7 +15,10 @@ import {
   type ProxyPreset,
 } from "../../../../types/settings/settings";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 interface Props {
   settings: GlobalSettings;
@@ -120,7 +123,7 @@ const ProxyPresetsSection: React.FC<Props> = ({
         }
       />
 
-      <div className="sor-settings-card">
+      <Card>
         {presets.length === 0 ? (
           <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 text-center">
             <p className="text-sm text-[var(--color-textSecondary)]">
@@ -249,7 +252,7 @@ const ProxyPresetsSection: React.FC<Props> = ({
             switch proxies without dropping connections.
           </span>
         </p>
-      </div>
+      </Card>
     </div>
   );
 };
