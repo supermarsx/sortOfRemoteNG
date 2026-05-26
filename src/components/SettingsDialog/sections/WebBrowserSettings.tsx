@@ -1,9 +1,13 @@
 import React from "react";
 import { Globe, Wifi, Bookmark, RefreshCw, Trash2, Timer, Repeat } from "lucide-react";
 import { GlobalSettings } from "../../../types/settings/settings";
-import { Checkbox, NumberInput } from "../../ui/forms";
+import { NumberInput } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
-import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+} from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 
 interface WebBrowserSettingsProps {
@@ -11,46 +15,7 @@ interface WebBrowserSettingsProps {
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
 
-/* ── Shared row primitives ───────────────────────────── */
-
-const ToggleRow: React.FC<{
-  settingKey?: string;
-  icon: React.ReactNode;
-  label: string;
-  description?: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (v: boolean) => void;
-  tooltip?: string;
-}> = ({ settingKey, icon, label, description, checked, disabled, onChange, tooltip }) => (
-  <label
-    {...(settingKey ? { "data-setting-key": settingKey } : {})}
-    className="flex items-center justify-between gap-3 cursor-pointer"
-  >
-    <div className="flex items-center gap-3 min-w-0">
-      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <span className="text-[var(--color-text)] flex items-center gap-1">
-          {label}
-          {tooltip && <InfoTooltip text={tooltip} />}
-        </span>
-        {description && (
-          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-            {description}
-          </p>
-        )}
-      </div>
-    </div>
-    <Checkbox
-      checked={checked}
-      onChange={(v: boolean) => onChange(v)}
-      disabled={disabled}
-      className="sor-checkbox-lg flex-shrink-0"
-    />
-  </label>
-);
+/* ── Local field row matching the Toggle row's typography ──── */
 
 const FieldRow: React.FC<{
   settingKey?: string;
@@ -62,23 +27,17 @@ const FieldRow: React.FC<{
 }> = ({ settingKey, icon, label, description, tooltip, children }) => (
   <div
     {...(settingKey ? { "data-setting-key": settingKey } : {})}
-    className="flex items-center justify-between gap-3"
+    className="sor-settings-toggle-row !cursor-default justify-between"
   >
-    <div className="flex items-center gap-3 min-w-0">
-      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
-        {icon}
+    <div className="sor-settings-toggle-icon">{icon}</div>
+    <div className="min-w-0 flex-1">
+      <span className="sor-settings-toggle-label flex items-center gap-1">
+        {label}
+        {tooltip && <InfoTooltip text={tooltip} />}
       </span>
-      <div className="min-w-0">
-        <span className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
-          {label}
-          {tooltip && <InfoTooltip text={tooltip} />}
-        </span>
-        {description && (
-          <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
-            {description}
-          </p>
-        )}
-      </div>
+      {description && (
+        <p className="sor-settings-toggle-description">{description}</p>
+      )}
     </div>
     <div className="flex items-center gap-2 flex-shrink-0">{children}</div>
   </div>
@@ -107,21 +66,21 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           icon={<Wifi className="w-4 h-4 text-primary" />}
           title="Internal Proxy Keepalive"
         />
-        <div className="sor-settings-card">
+        <Card>
           <p className="text-xs text-[var(--color-textSecondary)]">
             When the web browser connects through an internal authentication
             proxy, these settings control how dead proxy sessions are
             detected and recovered.
           </p>
 
-          <ToggleRow
+          <Toggle
             settingKey="proxyKeepaliveEnabled"
-            icon={<Wifi size={14} />}
+            icon={<Wifi size={16} />}
             label="Enable proxy health checks"
             description="Periodically verify the local proxy is still alive"
             checked={settings.proxyKeepaliveEnabled}
             onChange={(v) => updateSettings({ proxyKeepaliveEnabled: v })}
-            tooltip="Periodically verify the local authentication proxy is still alive and responsive."
+            infoTooltip="Periodically verify the local authentication proxy is still alive and responsive."
           />
 
           <div
@@ -131,7 +90,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           >
             <FieldRow
               settingKey="proxyKeepaliveIntervalSeconds"
-              icon={<Timer size={14} />}
+              icon={<Timer size={16} />}
               label="Health-check interval"
               description="How often to probe the proxy port (seconds)"
               tooltip="How often, in seconds, the proxy port is probed to verify it is still responding."
@@ -146,7 +105,9 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                     ),
                   })
                 }
-                className="w-20 text-right"
+                variant="settings-compact"
+                className="text-right"
+                style={{ width: "5rem" }}
                 min={3}
                 max={120}
               />
@@ -161,14 +122,14 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
               !keepaliveOn ? "opacity-50 pointer-events-none" : undefined
             }
           >
-            <ToggleRow
+            <Toggle
               settingKey="proxyAutoRestart"
-              icon={<RefreshCw size={14} />}
+              icon={<RefreshCw size={16} />}
               label="Auto-restart dead proxies"
               description="Automatically restart the proxy when a health check fails"
               checked={settings.proxyAutoRestart}
               onChange={(v) => updateSettings({ proxyAutoRestart: v })}
-              tooltip="Automatically restart the local proxy process when a health check detects it has stopped responding."
+              infoTooltip="Automatically restart the local proxy process when a health check detects it has stopped responding."
             />
           </div>
 
@@ -179,7 +140,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           >
             <FieldRow
               settingKey="proxyMaxAutoRestarts"
-              icon={<Repeat size={14} />}
+              icon={<Repeat size={16} />}
               label="Max consecutive auto-restarts"
               description="Stop auto-restarting after this many attempts (0 = unlimited)"
               tooltip="Stop auto-restarting the proxy after this many consecutive failed attempts. Set to 0 for unlimited retries."
@@ -194,13 +155,15 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                     ),
                   })
                 }
-                className="w-20 text-right"
+                variant="settings-compact"
+                className="text-right"
+                style={{ width: "5rem" }}
                 min={0}
                 max={100}
               />
             </FieldRow>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Bookmarks */}
@@ -209,17 +172,17 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           icon={<Bookmark className="w-4 h-4 text-primary" />}
           title="Bookmarks"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
+        <Card>
+          <Toggle
             settingKey="confirmDeleteAllBookmarks"
-            icon={<Trash2 size={14} />}
+            icon={<Trash2 size={16} />}
             label="Confirm before deleting all bookmarks"
             description="Show a confirmation dialog before clearing all bookmarks for a connection"
             checked={settings.confirmDeleteAllBookmarks}
             onChange={(v) => updateSettings({ confirmDeleteAllBookmarks: v })}
-            tooltip="Show a confirmation dialog before clearing all saved bookmarks for a web browser connection."
+            infoTooltip="Show a confirmation dialog before clearing all saved bookmarks for a web browser connection."
           />
-        </div>
+        </Card>
       </div>
     </div>
   );
