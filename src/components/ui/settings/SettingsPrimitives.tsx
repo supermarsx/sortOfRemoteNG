@@ -215,33 +215,64 @@ export const SettingsCollapsibleSection: React.FC<{
 
 interface SettingsTextRowProps extends BaseSettingProps {
   label: string;
+  icon?: React.ReactNode;
+  description?: string;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
   infoTooltip?: string;
+  /** Optional element rendered after the input (e.g. a Browse button). */
+  trailing?: React.ReactNode;
 }
 
 export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
   label,
+  icon,
+  description,
   value,
   placeholder,
   onChange,
   settingKey,
   className,
   infoTooltip,
+  trailing,
 }) => (
   <div
     className={cx('sor-settings-select-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
-    <input
-      type="text"
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      className="sor-settings-input"
-    />
+    <div className="min-w-0">
+      <span className="sor-settings-row-label flex items-center gap-1">
+        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+      </span>
+      {description && (
+        <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+          {description}
+        </p>
+      )}
+    </div>
+    {trailing ? (
+      <div className="flex items-center gap-2 min-w-0 sor-settings-row-control ml-auto">
+        <input
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className="sor-settings-input"
+          style={{ width: '22rem' }}
+        />
+        {trailing}
+      </div>
+    ) : (
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="sor-settings-input"
+      />
+    )}
   </div>
 );
 

@@ -170,6 +170,59 @@
   box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 45%);
 }
 
+/* ── Native time/date/datetime pickers ─────────────────────────
+ * Theme the calendar/clock indicator and the dropdown panel via
+ * color-scheme so the browser-supplied popup picks up dark colors
+ * automatically. The indicator filter inverts the default black
+ * glyph to match text color in dark themes.
+ */
+.sor-settings-input[type="time"],
+.sor-settings-input[type="date"],
+.sor-settings-input[type="datetime-local"],
+.sor-settings-input[type="week"],
+.sor-settings-input[type="month"] {
+  color-scheme: dark;
+  font-variant-numeric: tabular-nums;
+}
+.sor-settings-input[type="time"]::-webkit-calendar-picker-indicator,
+.sor-settings-input[type="date"]::-webkit-calendar-picker-indicator,
+.sor-settings-input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.sor-settings-input[type="week"]::-webkit-calendar-picker-indicator,
+.sor-settings-input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.5);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 120ms ease;
+}
+.sor-settings-input[type="time"]::-webkit-calendar-picker-indicator:hover,
+.sor-settings-input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.sor-settings-input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+.sor-settings-input[type="week"]::-webkit-calendar-picker-indicator:hover,
+.sor-settings-input[type="month"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+.sor-settings-input[type="time"]::-webkit-datetime-edit-fields-wrapper,
+.sor-settings-input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  color: var(--color-text);
+}
+.sor-settings-input[type="time"]::-webkit-datetime-edit-text,
+.sor-settings-input[type="date"]::-webkit-datetime-edit-text {
+  color: var(--color-textSecondary);
+  padding: 0 0.1em;
+}
+.sor-settings-input[type="time"]::-webkit-datetime-edit-hour-field:focus,
+.sor-settings-input[type="time"]::-webkit-datetime-edit-minute-field:focus,
+.sor-settings-input[type="time"]::-webkit-datetime-edit-second-field:focus,
+.sor-settings-input[type="time"]::-webkit-datetime-edit-ampm-field:focus,
+.sor-settings-input[type="date"]::-webkit-datetime-edit-year-field:focus,
+.sor-settings-input[type="date"]::-webkit-datetime-edit-month-field:focus,
+.sor-settings-input[type="date"]::-webkit-datetime-edit-day-field:focus {
+  background: var(--color-primary);
+  color: var(--color-text);
+  outline: none;
+  border-radius: 2px;
+}
+
 /* ── Toggle option label (group-hover color swap) ─────────────── */
 .sor-toggle-label {
   font-size: 0.875rem;
