@@ -3,7 +3,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { Type } from "lucide-react";
 import { TextInput, FormField } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
@@ -13,7 +13,7 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Type className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.font", "Font Configuration")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <Toggle
       checked={cfg.useCustomFont}
       onChange={(v) => up({ useCustomFont: v })}
@@ -110,7 +110,7 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </FormField>
       </div>
     )}
-    </div>
+    </Card>
   </div>
 );
 

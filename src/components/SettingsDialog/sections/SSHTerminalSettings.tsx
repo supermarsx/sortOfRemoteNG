@@ -39,7 +39,7 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Terminal className="w-5 h-5 text-primary" />} title="SSH Terminal" description="Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings." />
+      <SectionHeading icon={<Terminal className="w-5 h-5 text-primary" />} title="SSH" description="Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings." />
 
       {/* ── Appearance ───────────────────────────────── */}
       <DimensionsSection cfg={cfg} up={up} t={t} />

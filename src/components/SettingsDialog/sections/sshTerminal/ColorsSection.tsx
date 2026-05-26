@@ -2,7 +2,7 @@ import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Palette } from "lucide-react";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
@@ -11,7 +11,7 @@ const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Palette className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.colors", "Color Settings")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <Toggle
       checked={cfg.allowTerminalAnsiColors}
       onChange={(v) => up({ allowTerminalAnsiColors: v })}
@@ -48,7 +48,7 @@ const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         "Enable full RGB color support (16 million colors)",
       )}
     />
-    </div>
+    </Card>
   </div>
 );
 

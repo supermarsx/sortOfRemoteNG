@@ -3,7 +3,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { Settings2 } from "lucide-react";
 import { TextInput, FormField } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
@@ -12,9 +12,10 @@ const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Settings2 className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.misc", "Miscellaneous")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.answerback", "Answerback String")} <InfoTooltip text="Terminal identification string sent to the remote host in response to an ENQ character." /></span>}>
       <TextInput
+        variant="settings"
         value={cfg.answerbackString}
         onChange={(v) => up({ answerbackString: v })}
         placeholder="Optional terminal identification string"
@@ -44,7 +45,7 @@ const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         "Allow remote host to trigger printing",
       )}
     />
-    </div>
+    </Card>
   </div>
 );
 

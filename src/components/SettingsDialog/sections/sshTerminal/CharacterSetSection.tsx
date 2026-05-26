@@ -2,7 +2,7 @@ import type { SectionProps } from "./types";
 import React from "react";
 import { CharacterSets } from "../../../../types/settings/settings";
 import { Type } from "lucide-react";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { Select, FormField } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
@@ -12,7 +12,7 @@ const CharacterSetSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Type className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.characterSet", "Character Set")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <FormField label={<span className="flex items-center gap-1">{t(
         "settings.sshTerminal.remoteCharset",
         "Remote Character Set",
@@ -38,7 +38,7 @@ const CharacterSetSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         ]}
       />
     </FormField>
-    </div>
+    </Card>
   </div>
 );
 

@@ -3,7 +3,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { TextInput, FormField } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
@@ -13,7 +13,7 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Monitor className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.scrollback", "Scrollback & Selection")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.scrollbackLines", "Scrollback Lines")} <InfoTooltip text="Maximum number of lines kept in the scrollback buffer. Higher values use more memory." /></span>}>
       <NumberInput
         value={cfg.scrollbackLines}
@@ -79,7 +79,7 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </FormField>
       </div>
     </div>
-    </div>
+    </Card>
   </div>
 );
 

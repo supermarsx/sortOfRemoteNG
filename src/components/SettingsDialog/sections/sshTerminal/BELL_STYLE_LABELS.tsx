@@ -4,7 +4,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { BellStyles, TaskbarFlashModes } from "../../../../types/settings/settings";
 import { Bell, Volume2, VolumeX } from "lucide-react";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select, FormField } from "../../../ui/forms";
 
 const BELL_STYLE_LABELS: Record<string, string> = {
@@ -21,7 +21,7 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Bell className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.bellSettings", "Bell Settings")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <FormField label={t("settings.sshTerminal.bellStyle", "Bell Style")}>
       <Select
         value={cfg.bellStyle}
@@ -148,7 +148,7 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         />
       </FormField>
     </div>
-    </div>
+    </Card>
   </div>
 );
 

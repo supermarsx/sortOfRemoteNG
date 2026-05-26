@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Image, Layers, Sparkles } from "lucide-react";
 import { Select } from "../../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import Toggle from "./Toggle";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
@@ -411,7 +411,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
           "Backgrounds, Fading & Overlays",
         )}
       />
-      <div className="sor-settings-card">
+      <Card>
       <div className="space-y-5">
         {/* ── Master toggle ── */}
         <Toggle
@@ -754,7 +754,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
           </>
         )}
       </div>
-      </div>
+      </Card>
     </div>
   );
 };

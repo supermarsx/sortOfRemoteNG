@@ -1,33 +1,11 @@
-import React from "react";
-import { Checkbox } from "../../../ui/forms";
-
 /**
- * SSH-section toggle row. Matches the look used elsewhere in the
- * settings dialog (EnableBackup, EnableSyncToggle, DifferentialSection
- * etc.): label + description on the left, large checkbox on the right,
- * full-row `justify-between` so a column of toggles aligns cleanly.
+ * SSH-section toggle re-export.
+ *
+ * Earlier this file rolled its own checkbox-on-the-right layout, but
+ * every other settings panel uses the shared `SettingsToggleRow`
+ * primitive (checkbox on the left via `sor-settings-toggle-row`,
+ * matched font sizes via `sor-settings-toggle-label` /
+ * `sor-settings-toggle-description`). Re-export the shared one so
+ * the SSH panel renders identically to the rest of the dialog.
  */
-const Toggle: React.FC<{
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label: React.ReactNode;
-  description?: string;
-}> = ({ checked, onChange, label, description }) => (
-  <label className="flex items-center justify-between gap-3 cursor-pointer">
-    <div className="min-w-0">
-      <span className="text-[var(--color-text)]">{label}</span>
-      {description && (
-        <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-          {description}
-        </p>
-      )}
-    </div>
-    <Checkbox
-      checked={checked}
-      onChange={(v: boolean) => onChange(v)}
-      className="sor-checkbox-lg flex-shrink-0"
-    />
-  </label>
-);
-
-export default Toggle;
+export { SettingsToggleRow as default } from "../../../ui/settings/SettingsPrimitives";

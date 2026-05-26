@@ -58,7 +58,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
   // ── Protocol defaults ──
   { id: "rdpDefaults", labelKey: "RDP", icon: MonitorDot },
-  { id: "sshTerminal", labelKey: "settings.sshTerminal.tab", fallback: "SSH Terminal", icon: Terminal },
+  { id: "sshTerminal", labelKey: "settings.sshTerminal.tab", fallback: "SSH", icon: Terminal },
   { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
 
   // ── Networking ──

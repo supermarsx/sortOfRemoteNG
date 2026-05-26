@@ -3,7 +3,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { SSHVersions } from "../../../../types/settings/settings";
 import { Shield } from "lucide-react";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select, FormField } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
@@ -13,7 +13,7 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Shield className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.sshProtocol", "SSH Protocol Settings")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.sshVersion", "SSH Version")} <InfoTooltip text="SSH protocol version to use. Auto will negotiate the best version supported by the server." /></span>}>
         <Select
@@ -58,7 +58,7 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         </div>
       )}
     </div>
-    </div>
+    </Card>
   </div>
 );
 

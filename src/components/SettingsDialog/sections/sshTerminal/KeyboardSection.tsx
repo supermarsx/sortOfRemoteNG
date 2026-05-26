@@ -2,7 +2,7 @@ import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Keyboard } from "lucide-react";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const KeyboardSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
@@ -11,7 +11,7 @@ const KeyboardSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       icon={<Keyboard className="w-4 h-4 text-primary" />}
       title={t("settings.sshTerminal.keyboard", "Keyboard")}
     />
-    <div className="sor-settings-card">
+    <Card>
     <Toggle
       checked={cfg.disableKeypadMode}
       onChange={(v) => up({ disableKeypadMode: v })}
@@ -36,7 +36,7 @@ const KeyboardSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         "Force cursor keys to always send ANSI sequences",
       )}
     />
-    </div>
+    </Card>
   </div>
 );
 
