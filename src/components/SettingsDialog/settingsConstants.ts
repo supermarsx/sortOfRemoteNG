@@ -110,6 +110,8 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "language",
     "autoDetectOsLanguage",
     "region",
+    "timeFormat",
+    "dateFormat",
     "rtlLayout",
   ],
   behavior: [

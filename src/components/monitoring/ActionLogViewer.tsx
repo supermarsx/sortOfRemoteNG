@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { useActionLogViewer } from "../../hooks/monitoring/useActionLogViewer";
+import { useLocaleFormat } from "../../hooks/settings/useLocaleFormat";
 import { EmptyState } from '../ui/display';import { Select } from '../ui/forms';
 
 const LEVEL_ICONS: Record<string, React.ReactElement> = {
@@ -90,6 +91,7 @@ function FilterBar({ m }: { m: Mgr }) {
 }
 
 function LogTable({ m }: { m: Mgr }) {
+  const { formatDate, formatTime } = useLocaleFormat();
   return (
     <div className="flex-1 overflow-y-auto min-h-0">
       <table className="sor-data-table w-full">
@@ -106,7 +108,7 @@ function LogTable({ m }: { m: Mgr }) {
         <tbody className="divide-y divide-[var(--color-border)]">
           {m.filteredLogs.map((log) => (
             <tr key={log.id} className="hover:bg-[var(--color-border)]">
-              <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]"><div><div>{new Date(log.timestamp).toLocaleDateString()}</div><div className="text-xs text-[var(--color-textMuted)]">{new Date(log.timestamp).toLocaleTimeString()}</div></div></td>
+              <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]"><div><div>{formatDate(log.timestamp)}</div><div className="text-xs text-[var(--color-textMuted)]">{formatTime(log.timestamp)}</div></div></td>
               <td className="px-4 py-3 text-sm"><div className={`flex items-center space-x-2 ${getLevelColor(log.level)}`}>{getLevelIcon(log.level)}<span className="capitalize">{log.level}</span></div></td>
               <td className="px-4 py-3 text-sm text-[var(--color-text)] font-medium">{log.action}</td>
               <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]">{log.connectionName || "-"}</td>

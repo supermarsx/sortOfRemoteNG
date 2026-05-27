@@ -140,6 +140,10 @@ export interface GlobalSettings {
   /** Regional/country code for locale-aware formatting (e.g. "US", "GB").
    *  "auto" or empty follows the system region. */
   region?: string;
+  /** Clock format for displayed timestamps. "auto" follows the locale. */
+  timeFormat?: 'auto' | '12h' | '24h';
+  /** Date display style for timestamps. "auto" follows the locale. */
+  dateFormat?: 'auto' | 'short' | 'medium' | 'long';
   /** Render the UI right-to-left (sets document dir = "rtl"). */
   rtlLayout?: boolean;
   theme: Theme;

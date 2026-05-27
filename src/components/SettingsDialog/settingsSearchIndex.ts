@@ -12,6 +12,8 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'language', label: 'Language', description: 'Application display language', tags: ['locale', 'i18n', 'translation', 'english', 'spanish', 'french', 'region'], section: 'language', sectionLabel: 'Language' },
   { key: 'autoDetectOsLanguage', label: 'Auto-detect Language', description: 'Follow the OS/browser locale', tags: ['locale', 'os', 'system', 'detect', 'automatic'], section: 'language', sectionLabel: 'Language' },
   { key: 'region', label: 'Region / Country', description: 'Country used for regional formatting', tags: ['country', 'region', 'locale', 'format'], section: 'language', sectionLabel: 'Language' },
+  { key: 'timeFormat', label: 'Time Format', description: '12-hour or 24-hour clock for timestamps', tags: ['time', '12h', '24h', 'clock', 'format', 'locale'], section: 'language', sectionLabel: 'Language' },
+  { key: 'dateFormat', label: 'Date Format', description: 'Date display style for timestamps', tags: ['date', 'format', 'short', 'long', 'locale'], section: 'language', sectionLabel: 'Language' },
   { key: 'rtlLayout', label: 'RTL Layout', description: 'Right-to-left interface direction', tags: ['rtl', 'right-to-left', 'arabic', 'hebrew', 'direction', 'mirror'], section: 'language', sectionLabel: 'Language' },
 
   // ─── General ────────────────────────────────────────────────────

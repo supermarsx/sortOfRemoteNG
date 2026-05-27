@@ -75,6 +75,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
   autoDetectOsLanguage: true,
   region: 'auto',
+  timeFormat: 'auto',
+  dateFormat: 'auto',
   rtlLayout: false,
   theme: 'dark',
   colorScheme: 'blue',

@@ -1,12 +1,22 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Languages, Globe, MapPin, ScanText, AlignRight } from "lucide-react";
+import {
+  Languages,
+  Globe,
+  MapPin,
+  ScanText,
+  AlignRight,
+  Clock,
+  CalendarDays,
+  CalendarClock,
+} from "lucide-react";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
   SUPPORTED_LANGUAGES,
   resolveSupportedLanguage,
 } from "../../../i18n";
 import { COUNTRIES } from "../../../data/countries";
+import { formatDateTime } from "../../../utils/i18n/localeFormat";
 import SectionHeading from "../../ui/SectionHeading";
 import {
   Card,
@@ -99,6 +109,54 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
             searchPlaceholder="Search countries…"
             infoTooltip="Country used for regional formatting (dates, numbers). Set to System default to follow the OS."
           />
+        </Card>
+      </div>
+
+      {/* Formatting */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<CalendarClock className="w-4 h-4 text-primary" />}
+          title="Date & Time Formatting"
+        />
+        <Card>
+          <SettingsSelectRow
+            settingKey="timeFormat"
+            icon={<Clock size={16} />}
+            label="Time Format"
+            value={settings.timeFormat ?? "auto"}
+            options={[
+              { value: "auto", label: "Locale default" },
+              { value: "12h", label: "12-hour (1:30 PM)" },
+              { value: "24h", label: "24-hour (13:30)" },
+            ]}
+            onChange={(v) =>
+              updateSettings({
+                timeFormat: v as NonNullable<GlobalSettings["timeFormat"]>,
+              })
+            }
+            infoTooltip="How clock times are displayed across the app (logs, recordings, status). Locale default follows the selected language/region."
+          />
+          <SettingsSelectRow
+            settingKey="dateFormat"
+            icon={<CalendarDays size={16} />}
+            label="Date Format"
+            value={settings.dateFormat ?? "auto"}
+            options={[
+              { value: "auto", label: "Locale default" },
+              { value: "short", label: "Short" },
+              { value: "medium", label: "Medium" },
+              { value: "long", label: "Long" },
+            ]}
+            onChange={(v) =>
+              updateSettings({
+                dateFormat: v as NonNullable<GlobalSettings["dateFormat"]>,
+              })
+            }
+            infoTooltip="How dates are displayed. Locale default follows the selected language/region; Short/Medium/Long pick an explicit style."
+          />
+          <p className="text-xs text-[var(--color-textMuted)] mt-1 ml-7">
+            Preview: {formatDateTime(new Date(), settings)}
+          </p>
         </Card>
       </div>
 
