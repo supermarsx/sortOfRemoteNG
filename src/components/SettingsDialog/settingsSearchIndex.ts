@@ -99,6 +99,8 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'reduceMotion', label: 'Reduce Motion', description: 'Reduce UI animations for accessibility', tags: ['accessibility', 'a11y', 'motion'], section: 'theme', sectionLabel: 'Theme' },
 
   // ─── Layout ─────────────────────────────────────────────────────
+  { key: 'defaultTabLayout', label: 'Default Tab Layout', description: 'Tiling mode used when the app starts', tags: ['tabs', 'layout', 'tiling', 'grid', 'split', 'mosaic'], section: 'layout', sectionLabel: 'Layout' },
+  { key: 'tabGrouping', label: 'Tab Grouping', description: 'Tab grouping strategy', tags: ['tabs', 'group', 'organize'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'persistWindowSize', label: 'Persist Window Size', description: 'Remember window size', tags: ['window', 'size', 'remember'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'persistWindowPosition', label: 'Persist Window Position', description: 'Remember window position', tags: ['window', 'position', 'remember'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'persistSidebarWidth', label: 'Persist Sidebar Width', description: 'Remember sidebar width', tags: ['sidebar', 'width', 'tab'], section: 'layout', sectionLabel: 'Layout' },
@@ -210,7 +212,6 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'mcpServer.server_instructions', label: 'MCP Server Instructions', description: 'Instructions sent to MCP clients during initialization', tags: ['mcp', 'instructions', 'prompt', 'client'], section: 'mcpServer', sectionLabel: 'MCP Server' },
 
   // ─── Advanced ───────────────────────────────────────────────────
-  { key: 'tabGrouping', label: 'Tab Grouping', description: 'Tab grouping strategy', tags: ['tabs', 'group', 'organize'], section: 'advanced', sectionLabel: 'Advanced' },
   { key: 'enableTabDetachment', label: 'Tab Detachment', description: 'Allow tabs to be detached to separate windows', tags: ['tabs', 'detach', 'floating', 'popup', 'window'], section: 'advanced', sectionLabel: 'Advanced' },
   { key: 'enableZoom', label: 'Zoom', description: 'Enable zoom controls', tags: ['zoom', 'scale', 'magnify'], section: 'advanced', sectionLabel: 'Advanced' },
   { key: 'enableStatusChecking', label: 'Status Checking', description: 'Enable connection status checking', tags: ['status', 'ping', 'health', 'monitoring'], section: 'advanced', sectionLabel: 'Advanced' },

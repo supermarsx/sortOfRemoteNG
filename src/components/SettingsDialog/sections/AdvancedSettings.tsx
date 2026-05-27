@@ -3,8 +3,6 @@ import { useTranslation } from "react-i18next";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
   Code,
-  Layers,
-  LayoutGrid,
   FileText,
   Terminal,
   Tags,
@@ -69,42 +67,6 @@ const LOG_LEVEL_CONFIG = [
   },
 ];
 
-const TAB_GROUPING_CONFIG = [
-  { value: "none", label: "None", description: "No grouping" },
-  {
-    value: "protocol",
-    label: "By Protocol",
-    description: "Group by SSH, RDP, etc.",
-  },
-  {
-    value: "status",
-    label: "By Status",
-    description: "Group by connection state",
-  },
-  {
-    value: "hostname",
-    label: "By Hostname",
-    description: "Group by server name",
-  },
-];
-
-const DEFAULT_TAB_LAYOUT_CONFIG: Array<{
-  value: GlobalSettings["defaultTabLayout"];
-  label: string;
-  description: string;
-}> = [
-  { value: "tabs", label: "Tabs", description: "One session visible at a time" },
-  { value: "splitVertical", label: "Split L/R", description: "2 columns, fills rows" },
-  { value: "splitHorizontal", label: "Split T/B", description: "2 rows, fills columns" },
-  { value: "sideBySide", label: "Side-by-Side", description: "2 cols, all sessions" },
-  { value: "grid2", label: "Grid 2", description: "Capped at 2 tiles" },
-  { value: "grid4", label: "Grid 4", description: "Capped at 4 tiles" },
-  { value: "grid6", label: "Grid 6", description: "Capped at 6 tiles" },
-  { value: "mosaic", label: "Mosaic", description: "Auto sqrt grid" },
-  { value: "miniMosaic", label: "Mini Mosaic", description: "Preview tiles" },
-  { value: "customGrid", label: "Custom Grid", description: "Pick rows × cols" },
-];
-
 /* ── Main component ──────────────────────────────────── */
 
 export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
@@ -117,77 +79,8 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       <SectionHeading
         icon={<Code className="w-5 h-5 text-primary" />}
         title="Advanced"
-        description="Tab grouping, logging level, tab naming, and diagnostics."
+        description="Logging level, tab naming, diagnostics, and the memory watchdog."
       />
-
-      {/* Tab Grouping */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Layers className="w-4 h-4 text-primary" />}
-          title={
-            <span className="flex items-center gap-2">
-              Tab Grouping
-              <InfoTooltip text="Organize open connection tabs into groups based on a shared property." />
-            </span>
-          }
-        />
-        <Card>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {TAB_GROUPING_CONFIG.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => updateSettings({ tabGrouping: option.value as any })}
-                className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                  settings.tabGrouping === option.value
-                    ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
-                    : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
-                }`}
-              >
-                <Layers className="w-5 h-5 mb-1" />
-                <span className="text-sm font-medium">{option.label}</span>
-                <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
-                  {option.description}
-                </span>
-              </button>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Default Tab Layout */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<LayoutGrid className="w-4 h-4 text-primary" />}
-          title={
-            <span className="flex items-center gap-2">
-              Default Tab Layout
-              <InfoTooltip text="Tiling mode used when the app starts. The active mode is also persisted across launches once you change it from the toolbar." />
-            </span>
-          }
-        />
-        <Card>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {DEFAULT_TAB_LAYOUT_CONFIG.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => updateSettings({ defaultTabLayout: option.value })}
-                data-testid={`default-tab-layout-${option.value}`}
-                className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                  settings.defaultTabLayout === option.value
-                    ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
-                    : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
-                }`}
-              >
-                <LayoutGrid className="w-5 h-5 mb-1" />
-                <span className="text-sm font-medium">{option.label}</span>
-                <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
-                  {option.description}
-                </span>
-              </button>
-            ))}
-          </div>
-        </Card>
-      </div>
 
       {/* Logging */}
       <div className="space-y-4">
