@@ -1103,15 +1103,7 @@ export interface BackendConfig {
   tempFileCleanupEnabled: boolean;
   tempFileCleanupIntervalMinutes: number;
   cacheSizeMb: number;
-  tlsMinVersion: '1.2' | '1.3';
-  certValidationMode: 'strict' | 'tofu' | 'permissive';
   allowedCipherSuites: string[];
-  enableInternalApi: boolean;
-  internalApiPort: number;
-  internalApiAuth: boolean;
-  internalApiCors: boolean;
-  internalApiRateLimit: number;
-  internalApiSsl: boolean;
 }
 
 export interface DiagnosticsConfig {

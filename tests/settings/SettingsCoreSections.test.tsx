@@ -39,15 +39,7 @@ const baseSettings = {
     tempFileCleanupEnabled: true,
     tempFileCleanupIntervalMinutes: 60,
     cacheSizeMb: 256,
-    tlsMinVersion: "1.2",
-    certValidationMode: "tofu",
     allowedCipherSuites: [],
-    enableInternalApi: true,
-    internalApiPort: 9876,
-    internalApiAuth: true,
-    internalApiCors: false,
-    internalApiRateLimit: 100,
-    internalApiSsl: false,
   },
 } as unknown as GlobalSettings;
 
@@ -106,7 +98,7 @@ describe("Core settings section centralization", () => {
 
     expect(
       container.querySelectorAll(".sor-settings-card").length,
-    ).toBeGreaterThanOrEqual(6);
+    ).toBeGreaterThanOrEqual(4);
 
     const numericInput = container.querySelector(
       'input[type="number"]',
