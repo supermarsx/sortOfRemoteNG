@@ -1,45 +1,47 @@
 import React from "react";
 import { Cpu, Clock } from "lucide-react";
-import { NumberInput } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsNumberRow,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
 
-export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
+export const PerformanceSection: React.FC<{
+  settings: GlobalSettings;
+  mgr: Mgr;
+}> = ({ settings, mgr }) => (
   <div className="space-y-4">
     <SectionHeader
       icon={<Cpu className="w-4 h-4 text-primary" />}
       title={mgr.t("settings.api.performance", "Performance")}
     />
 
-    <div className="sor-settings-card">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-            <Cpu className="w-4 h-4" />
-            {mgr.t("settings.api.maxThreads", "Max Worker Threads")}
-            <InfoTooltip text="Number of worker threads allocated to handle API requests concurrently. More threads improve throughput under load." />
-          </label>
-          <NumberInput value={settings.restApi?.maxThreads || 4} onChange={(v: number) => mgr.updateRestApi({ maxThreads: v })} className="w-full" min={1} max={64} />
-          <p className="text-xs text-[var(--color-textMuted)]">
-            {mgr.t("settings.api.maxThreadsDescription", "Number of threads to handle requests (1-64)")}
-          </p>
-        </div>
+    <Card>
+      <SettingsNumberRow
+        settingKey="restApi.maxThreads"
+        icon={<Cpu size={16} />}
+        label={mgr.t("settings.api.maxThreads", "Max Worker Threads")}
+        value={settings.restApi?.maxThreads || 4}
+        min={1}
+        max={64}
+        onChange={(v) => mgr.updateRestApi({ maxThreads: v })}
+        infoTooltip="Number of worker threads allocated to handle API requests concurrently. More threads improve throughput under load."
+      />
 
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-            <Clock className="w-4 h-4" />
-            {mgr.t("settings.api.requestTimeout", "Request Timeout (seconds)")}
-            <InfoTooltip text="Maximum time in seconds to wait for a single API request to complete before aborting it." />
-          </label>
-          <NumberInput value={settings.restApi?.requestTimeout || 30} onChange={(v: number) => mgr.updateRestApi({ requestTimeout: v })} className="w-full" min={1} max={300} />
-          <p className="text-xs text-[var(--color-textMuted)]">
-            {mgr.t("settings.api.requestTimeoutDescription", "Maximum time for a request before timeout")}
-          </p>
-        </div>
-      </div>
-    </div>
+      <SettingsNumberRow
+        settingKey="restApi.requestTimeout"
+        icon={<Clock size={16} />}
+        label={mgr.t("settings.api.requestTimeout", "Request Timeout")}
+        value={settings.restApi?.requestTimeout || 30}
+        min={1}
+        max={300}
+        unit="s"
+        onChange={(v) => mgr.updateRestApi({ requestTimeout: v })}
+        infoTooltip="Maximum time in seconds to wait for a single API request to complete before aborting it."
+      />
+    </Card>
   </div>
 );
 

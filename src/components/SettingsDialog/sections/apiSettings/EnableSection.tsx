@@ -4,12 +4,13 @@ import { Checkbox } from "../../../ui/forms";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { Card, Toggle } from "../../../ui/settings/SettingsPrimitives";
 
 export const EnableSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({
   settings,
   mgr,
 }) => (
-  <div className="sor-settings-card">
+  <Card>
     <label className="flex items-center justify-between cursor-pointer">
       <div className="flex items-center gap-3">
         <div className="p-2 bg-primary/20 rounded-lg">
@@ -35,32 +36,21 @@ export const EnableSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = (
       />
     </label>
 
-    <label className="flex items-center justify-between gap-3 cursor-pointer pt-3 mt-1 border-t border-[var(--color-border)]">
-      <div className="flex items-center gap-3 min-w-0">
-        <Clock className="w-4 h-4 text-[var(--color-textSecondary)] flex-shrink-0" />
-        <div className="min-w-0">
-          <span className="text-[var(--color-text)] flex items-center gap-1">
-            {mgr.t(
-              "settings.api.startOnLaunch",
-              "Start on Application Launch",
-            )}
-            <InfoTooltip text="Automatically start the API server when the application opens, without requiring manual activation." />
-          </span>
-          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-            {mgr.t(
-              "settings.api.startOnLaunchDescription",
-              "Automatically start the API server when the application opens",
-            )}
-          </p>
-        </div>
-      </div>
-      <Checkbox
+    <div className="pt-3 border-t border-[var(--color-border)]">
+      <Toggle
+        settingKey="restApi.startOnLaunch"
+        icon={<Clock size={16} />}
+        label={mgr.t("settings.api.startOnLaunch", "Start on Application Launch")}
+        description={mgr.t(
+          "settings.api.startOnLaunchDescription",
+          "Automatically start the API server when the application opens",
+        )}
         checked={settings.restApi?.startOnLaunch || false}
-        onChange={(v: boolean) => mgr.updateRestApi({ startOnLaunch: v })}
-        className="sor-checkbox-lg flex-shrink-0"
+        onChange={(v) => mgr.updateRestApi({ startOnLaunch: v })}
+        infoTooltip="Automatically start the API server when the application opens, without requiring manual activation."
       />
-    </label>
-  </div>
+    </div>
+  </Card>
 );
 
 export default EnableSection;

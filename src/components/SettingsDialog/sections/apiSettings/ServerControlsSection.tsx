@@ -1,6 +1,9 @@
 import React from "react";
 import { Settings, Play, Square, RotateCcw } from "lucide-react";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
 export const ServerControlsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -33,7 +36,7 @@ export const ServerControlsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         icon={<Settings className="w-4 h-4 text-primary" />}
         title={mgr.t("settings.api.serverControls", "Server Controls")}
       />
-      <div className="sor-settings-card">
+      <Card>
         <div className="flex items-center justify-between">
           <span className="text-sm text-[var(--color-textSecondary)]">
             {mgr.t("settings.api.serverStatus", "Server status")}
@@ -92,7 +95,7 @@ export const ServerControlsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {mgr.t("settings.api.restart", "Restart")}
           </button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

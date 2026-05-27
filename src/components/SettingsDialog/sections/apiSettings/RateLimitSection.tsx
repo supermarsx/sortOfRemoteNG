@@ -1,31 +1,35 @@
 import React from "react";
-import { Clock } from "lucide-react";
-import { NumberInput } from "../../../ui/forms";
+import { Gauge } from "lucide-react";
 import { GlobalSettings } from "../../../../types/settings/settings";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsNumberRow,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
 
-export const RateLimitSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
+export const RateLimitSection: React.FC<{
+  settings: GlobalSettings;
+  mgr: Mgr;
+}> = ({ settings, mgr }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Clock className="w-4 h-4 text-primary" />}
+      icon={<Gauge className="w-4 h-4 text-primary" />}
       title={mgr.t("settings.api.rateLimit", "Rate Limiting")}
     />
 
-    <div className="sor-settings-card">
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-          <Clock className="w-4 h-4" />
-          {mgr.t("settings.api.maxRequests", "Max Requests Per Minute")}
-          <InfoTooltip text="Maximum number of API requests allowed per minute from a single client. Set to 0 to disable rate limiting entirely." />
-        </label>
-        <NumberInput value={settings.restApi?.maxRequestsPerMinute || 60} onChange={(v: number) => mgr.updateRestApi({ maxRequestsPerMinute: v })} className="w-full" min={0} max={10000} />
-        <p className="text-xs text-[var(--color-textMuted)]">
-          {mgr.t("settings.api.maxRequestsDescription", "Set to 0 to disable rate limiting. Recommended: 60-120 for normal use.")}
-        </p>
-      </div>
-    </div>
+    <Card>
+      <SettingsNumberRow
+        settingKey="restApi.maxRequestsPerMinute"
+        icon={<Gauge size={16} />}
+        label={mgr.t("settings.api.maxRequests", "Max Requests Per Minute")}
+        value={settings.restApi?.maxRequestsPerMinute || 60}
+        min={0}
+        max={10000}
+        onChange={(v) => mgr.updateRestApi({ maxRequestsPerMinute: v })}
+        infoTooltip="Maximum number of API requests allowed per minute from a single client. Set to 0 to disable rate limiting entirely. Recommended: 60-120 for normal use."
+      />
+    </Card>
   </div>
 );
 

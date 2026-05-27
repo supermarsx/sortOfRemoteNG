@@ -23,48 +23,24 @@ import {
   Play,
   Square,
   RotateCcw,
+  Gauge,
+  Timer,
+  Network,
+  Share2,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
 import type { McpServerConfig, McpLogLevel } from "../../../types/mcp/mcpServer";
 import { MCP_LOG_LEVELS } from "../../../types/mcp/mcpServer";
-import { Checkbox, NumberInput, Select, TextInput } from "../../ui/forms";
-import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
+import { Checkbox } from "../../ui/forms";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsTextRow,
+  SettingsNumberRow,
+  SettingsSelectRow,
+} from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
-
-/* ── Shared row primitives ───────────────────────────── */
-
-const ToggleRow: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  description?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  tooltip?: string;
-}> = ({ icon, label, description, checked, onChange, tooltip }) => (
-  <label className="flex items-center justify-between gap-3 cursor-pointer">
-    <div className="flex items-center gap-3 min-w-0">
-      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <span className="text-[var(--color-text)] flex items-center gap-1">
-          {label}
-          {tooltip && <InfoTooltip text={tooltip} />}
-        </span>
-        {description && (
-          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-            {description}
-          </p>
-        )}
-      </div>
-    </div>
-    <Checkbox
-      checked={checked}
-      onChange={(v: boolean) => onChange(v)}
-      className="sor-checkbox-lg flex-shrink-0"
-    />
-  </label>
-);
 
 export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -130,7 +106,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   return (
     <div className="space-y-6" data-testid="mcp-config-tab">
       {/* Enable MCP Server */}
-      <div className="sor-settings-card">
+      <Card>
         <label className="flex items-center justify-between cursor-pointer">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/20 rounded-lg">
@@ -156,29 +132,20 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           />
         </label>
 
-        <label className="flex items-center justify-between gap-3 cursor-pointer pt-3 mt-1 border-t border-[var(--color-border)]">
-          <div className="flex items-center gap-3 min-w-0">
-            <Clock className="w-4 h-4 text-[var(--color-textSecondary)] flex-shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[var(--color-text)] flex items-center gap-1">
-                {t("mcpServer.config.autoStart", "Auto-start on launch")}
-                <InfoTooltip text="Start the MCP server automatically when the application opens, without manual activation." />
-              </span>
-              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-                {t(
-                  "mcpServer.config.autoStartDesc",
-                  "Start the MCP server automatically when the app opens",
-                )}
-              </p>
-            </div>
-          </div>
-          <Checkbox
+        <div className="pt-3 border-t border-[var(--color-border)]">
+          <Toggle
+            icon={<Clock size={16} />}
+            label={t("mcpServer.config.autoStart", "Auto-start on launch")}
+            description={t(
+              "mcpServer.config.autoStartDesc",
+              "Start the MCP server automatically when the app opens",
+            )}
             checked={draft.auto_start}
-            onChange={(v: boolean) => update("auto_start", v)}
-            className="sor-checkbox-lg flex-shrink-0"
+            onChange={(v) => update("auto_start", v)}
+            infoTooltip="Start the MCP server automatically when the application opens, without manual activation."
           />
-        </label>
-      </div>
+        </div>
+      </Card>
 
       {/* Server Controls */}
       <div className="space-y-4">
@@ -186,7 +153,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           icon={<Settings className="w-4 h-4 text-primary" />}
           title={t("mcpServer.config.serverControls", "Server Controls")}
         />
-        <div className="sor-settings-card">
+        <Card>
           <div className="flex items-center justify-between">
             <span className="text-sm text-[var(--color-textSecondary)]">
               {t("mcpServer.config.serverStatus", "Server status")}
@@ -243,7 +210,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
               {t("mcpServer.actions.restart", "Restart")}
             </button>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* General (Network) */}
@@ -252,39 +219,25 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           icon={<Globe className="w-4 h-4 text-primary" />}
           title={t("mcpServer.config.general", "General")}
         />
-        <div className="sor-settings-card">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Globe className="w-4 h-4" />
-                {t("mcpServer.config.host", "Host")}
-                <InfoTooltip text="Network interface the MCP server binds to. Use 127.0.0.1 for localhost only or 0.0.0.0 to listen on all interfaces." />
-              </label>
-              <TextInput
-                value={draft.host}
-                onChange={(v) => update("host", v)}
-                placeholder="127.0.0.1"
-                variant="settings"
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Server className="w-4 h-4" />
-                {t("mcpServer.config.port", "Port")}
-                <InfoTooltip text="TCP port number the MCP server listens on. Choose a port not used by other services." />
-              </label>
-              <NumberInput
-                value={draft.port}
-                onChange={(v: number) => update("port", v)}
-                min={1024}
-                max={65535}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </div>
+        <Card>
+          <SettingsTextRow
+            icon={<Network size={16} />}
+            label={t("mcpServer.config.host", "Host")}
+            value={draft.host}
+            onChange={(v) => update("host", v)}
+            placeholder="127.0.0.1"
+            infoTooltip="Network interface the MCP server binds to. Use 127.0.0.1 for localhost only or 0.0.0.0 to listen on all interfaces."
+          />
+          <SettingsNumberRow
+            icon={<Server size={16} />}
+            label={t("mcpServer.config.port", "Port")}
+            value={draft.port}
+            min={1024}
+            max={65535}
+            onChange={(v) => update("port", v)}
+            infoTooltip="TCP port number the MCP server listens on. Choose a port not used by other services."
+          />
+        </Card>
       </div>
 
       {/* Security */}
@@ -293,9 +246,9 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           icon={<Shield className="w-4 h-4 text-primary" />}
           title={t("mcpServer.config.security", "Security")}
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Key className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Key size={16} />}
             label={t("mcpServer.config.requireAuth", "Require authentication")}
             description={t(
               "mcpServer.config.requireAuthDesc",
@@ -303,78 +256,87 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             )}
             checked={draft.require_auth}
             onChange={(v) => update("require_auth", v)}
-            tooltip="Require an API key (Bearer token) for all incoming MCP requests. Strongly recommended when remote connections are allowed."
+            infoTooltip="Require an API key (Bearer token) for all incoming MCP requests. Strongly recommended when remote connections are allowed."
           />
 
           <div
-            className={`space-y-2 pt-3 border-t border-[var(--color-border)] ${!draft.require_auth ? "opacity-50 pointer-events-none" : ""}`}
+            className={`pt-3 border-t border-[var(--color-border)] ${
+              !draft.require_auth ? "opacity-50 pointer-events-none" : ""
+            }`}
           >
-            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              <Key className="w-4 h-4" />
-              {t("mcpServer.config.apiKey", "API Key")}
-              <InfoTooltip text="Secret key clients must include as a Bearer token to authenticate MCP requests." />
-            </label>
-            <div className="flex gap-2">
-              <div className="flex flex-1 items-center gap-1 sor-settings-input min-w-0 px-2">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  value={draft.api_key}
-                  readOnly
-                  className="min-w-0 flex-1 bg-transparent border-0 p-0 text-sm font-mono text-[var(--color-text)] outline-none"
-                  data-testid="mcp-api-key-input"
-                  placeholder={t(
-                    "mcpServer.config.noApiKey",
-                    "No API key generated",
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                  aria-label={
-                    showApiKey
-                      ? t("mcpServer.config.hideKey", "Hide key")
-                      : t("mcpServer.config.showKey", "Show key")
-                  }
+            <div className="sor-settings-select-row">
+              <span className="sor-settings-row-label flex items-center gap-1">
+                <span className="text-[var(--color-textSecondary)] mr-1">
+                  <Key size={16} />
+                </span>
+                {t("mcpServer.config.apiKey", "API Key")}
+                <InfoTooltip text="Secret key clients must include as a Bearer token to authenticate MCP requests." />
+              </span>
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex items-center gap-1 sor-settings-input min-w-0 px-2"
+                  style={{ width: "16rem" }}
                 >
-                  {showApiKey ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-                {draft.api_key && (
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={draft.api_key}
+                    readOnly
+                    className="min-w-0 flex-1 bg-transparent border-0 p-0 text-sm font-mono text-[var(--color-text)] outline-none"
+                    data-testid="mcp-api-key-input"
+                    placeholder={t(
+                      "mcpServer.config.noApiKey",
+                      "No API key generated",
+                    )}
+                  />
                   <button
                     type="button"
-                    onClick={handleCopyKey}
+                    onClick={() => setShowApiKey(!showApiKey)}
                     className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                    aria-label={t("mcpServer.config.copyKey", "Copy key")}
+                    aria-label={
+                      showApiKey
+                        ? t("mcpServer.config.hideKey", "Hide key")
+                        : t("mcpServer.config.showKey", "Show key")
+                    }
                   >
-                    {copiedKey ? (
-                      <Check className="w-4 h-4 text-success" />
+                    {showApiKey ? (
+                      <EyeOff className="w-4 h-4" />
                     ) : (
-                      <Copy className="w-4 h-4" />
+                      <Eye className="w-4 h-4" />
                     )}
                   </button>
-                )}
+                  {draft.api_key && (
+                    <button
+                      type="button"
+                      onClick={handleCopyKey}
+                      className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                      aria-label={t("mcpServer.config.copyKey", "Copy key")}
+                    >
+                      {copiedKey ? (
+                        <Check className="w-4 h-4 text-success" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGenerateKey}
+                  disabled={mgr.isGeneratingKey}
+                  className="shrink-0 inline-flex items-center justify-center p-2 bg-primary border border-primary rounded-md text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  data-testid="mcp-generate-key-btn"
+                  title={t("mcpServer.config.generateKey", "Generate New Key")}
+                  aria-label={t("mcpServer.config.generateKey", "Generate")}
+                >
+                  {mgr.isGeneratingKey ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleGenerateKey}
-                disabled={mgr.isGeneratingKey}
-                className="shrink-0 px-3 py-2 bg-primary border border-primary rounded-md text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50"
-                data-testid="mcp-generate-key-btn"
-                title={t("mcpServer.config.generateKey", "Generate New Key")}
-                aria-label={t("mcpServer.config.generateKey", "Generate")}
-              >
-                {mgr.isGeneratingKey ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
-                )}
-              </button>
             </div>
-            <p className="text-xs text-[var(--color-textMuted)]">
+            <p className="text-xs text-[var(--color-textMuted)] mt-1 ml-7">
               {t(
                 "mcpServer.config.apiKeyDescription",
                 "Include this key as a Bearer token in the Authorization header",
@@ -382,36 +344,31 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             </p>
           </div>
 
-          <div className="pt-3 border-t border-[var(--color-border)]">
-            <ToggleRow
-              icon={<Globe className="w-4 h-4" />}
-              label={t(
-                "mcpServer.config.allowRemote",
-                "Allow remote connections",
-              )}
-              description={t(
-                "mcpServer.config.allowRemoteDesc",
-                "Allow connections from non-localhost addresses (security risk)",
-              )}
-              checked={draft.allow_remote}
-              onChange={(v) => update("allow_remote", v)}
-              tooltip="Listen on non-localhost addresses. Exposes the API to other machines on your network — ensure authentication is enabled."
-            />
-            {draft.allow_remote && (
-              <div className="flex items-start gap-2 p-2 mt-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span>
-                  {t(
-                    "mcpServer.config.remoteWarning",
-                    "Warning: This exposes the MCP server to your network. Ensure authentication is enabled.",
-                  )}
-                </span>
-              </div>
+          <Toggle
+            icon={<Globe size={16} />}
+            label={t("mcpServer.config.allowRemote", "Allow remote connections")}
+            description={t(
+              "mcpServer.config.allowRemoteDesc",
+              "Allow connections from non-localhost addresses (security risk)",
             )}
-          </div>
+            checked={draft.allow_remote}
+            onChange={(v) => update("allow_remote", v)}
+            infoTooltip="Listen on non-localhost addresses. Exposes the API to other machines on your network — ensure authentication is enabled."
+          />
+          {draft.allow_remote && (
+            <div className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>
+                {t(
+                  "mcpServer.config.remoteWarning",
+                  "Warning: This exposes the MCP server to your network. Ensure authentication is enabled.",
+                )}
+              </span>
+            </div>
+          )}
 
-          <ToggleRow
-            icon={<AlertTriangle className="w-4 h-4" />}
+          <Toggle
+            icon={<AlertTriangle size={16} />}
             label={t("mcpServer.config.exposeSensitive", "Expose sensitive data")}
             description={t(
               "mcpServer.config.exposeSensitiveDesc",
@@ -419,9 +376,9 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             )}
             checked={draft.expose_sensitive_data}
             onChange={(v) => update("expose_sensitive_data", v)}
-            tooltip="Include passwords, tokens, and other secrets in resource responses. Only enable if you trust connecting clients."
+            infoTooltip="Include passwords, tokens, and other secrets in resource responses. Only enable if you trust connecting clients."
           />
-        </div>
+        </Card>
       </div>
 
       {/* Sessions & Limits */}
@@ -430,72 +387,45 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           icon={<Cpu className="w-4 h-4 text-primary" />}
           title={t("mcpServer.config.limits", "Sessions & Limits")}
         />
-        <div className="sor-settings-card">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Cpu className="w-4 h-4" />
-                {t("mcpServer.config.maxSessions", "Max concurrent sessions")}
-                <InfoTooltip text="Maximum number of MCP client sessions that can be active simultaneously." />
-              </label>
-              <NumberInput
-                value={draft.max_sessions}
-                onChange={(v: number) => update("max_sessions", v)}
-                min={1}
-                max={100}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Clock className="w-4 h-4" />
-                {t(
-                  "mcpServer.config.sessionTimeout",
-                  "Session timeout (seconds)",
-                )}
-                <InfoTooltip text="Idle MCP sessions are disconnected after this many seconds without activity." />
-              </label>
-              <NumberInput
-                value={draft.session_timeout_secs}
-                onChange={(v: number) => update("session_timeout_secs", v)}
-                min={60}
-                max={86400}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Clock className="w-4 h-4" />
-                {t("mcpServer.config.rateLimit", "Rate limit (req/min)")}
-                <InfoTooltip text="Maximum number of requests per minute per session. Set high to effectively disable rate limiting." />
-              </label>
-              <NumberInput
-                value={draft.rate_limit_per_minute}
-                onChange={(v: number) => update("rate_limit_per_minute", v)}
-                min={1}
-                max={10000}
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <FileText className="w-4 h-4" />
-                {t("mcpServer.config.logLevel", "Log level")}
-                <InfoTooltip text="Verbosity of MCP server log output." />
-              </label>
-              <Select
-                value={draft.log_level}
-                onChange={(v: string) => update("log_level", v as McpLogLevel)}
-                variant="settings"
-                className="w-full"
-                options={MCP_LOG_LEVELS.map((l) => ({ value: l, label: l }))}
-              />
-            </div>
-          </div>
-        </div>
+        <Card>
+          <SettingsNumberRow
+            icon={<Cpu size={16} />}
+            label={t("mcpServer.config.maxSessions", "Max concurrent sessions")}
+            value={draft.max_sessions}
+            min={1}
+            max={100}
+            onChange={(v) => update("max_sessions", v)}
+            infoTooltip="Maximum number of MCP client sessions that can be active simultaneously."
+          />
+          <SettingsNumberRow
+            icon={<Timer size={16} />}
+            label={t("mcpServer.config.sessionTimeout", "Session timeout")}
+            value={draft.session_timeout_secs}
+            min={60}
+            max={86400}
+            unit="s"
+            onChange={(v) => update("session_timeout_secs", v)}
+            infoTooltip="Idle MCP sessions are disconnected after this many seconds without activity."
+          />
+          <SettingsNumberRow
+            icon={<Gauge size={16} />}
+            label={t("mcpServer.config.rateLimit", "Rate limit")}
+            value={draft.rate_limit_per_minute}
+            min={1}
+            max={10000}
+            unit="req/min"
+            onChange={(v) => update("rate_limit_per_minute", v)}
+            infoTooltip="Maximum number of requests per minute per session. Set high to effectively disable rate limiting."
+          />
+          <SettingsSelectRow
+            icon={<FileText size={16} />}
+            label={t("mcpServer.config.logLevel", "Log level")}
+            value={draft.log_level}
+            options={MCP_LOG_LEVELS.map((l) => ({ value: l, label: l }))}
+            onChange={(v) => update("log_level", v as McpLogLevel)}
+            infoTooltip="Verbosity of MCP server log output."
+          />
+        </Card>
       </div>
 
       {/* CORS / Transport */}
@@ -504,9 +434,9 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           icon={<RefreshCw className="w-4 h-4 text-primary" />}
           title={t("mcpServer.config.cors", "CORS")}
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Globe className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Globe size={16} />}
             label={t("mcpServer.config.corsEnabled", "Enable CORS")}
             description={t(
               "mcpServer.config.corsDesc",
@@ -514,11 +444,11 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             )}
             checked={draft.cors_enabled}
             onChange={(v) => update("cors_enabled", v)}
-            tooltip="Allow cross-origin requests to the MCP server from web-based clients."
+            infoTooltip="Allow cross-origin requests to the MCP server from web-based clients."
           />
 
-          <ToggleRow
-            icon={<RefreshCw className="w-4 h-4" />}
+          <Toggle
+            icon={<Share2 size={16} />}
             label={t("mcpServer.config.sseEnabled", "Enable SSE")}
             description={t(
               "mcpServer.config.sseDesc",
@@ -526,9 +456,9 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             )}
             checked={draft.sse_enabled}
             onChange={(v) => update("sse_enabled", v)}
-            tooltip="Enable Server-Sent Events for real-time notifications to MCP clients."
+            infoTooltip="Enable Server-Sent Events for real-time notifications to MCP clients."
           />
-        </div>
+        </Card>
       </div>
 
       {/* Server Instructions */}
@@ -537,7 +467,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           icon={<FileText className="w-4 h-4 text-primary" />}
           title={t("mcpServer.config.instructions", "Server Instructions")}
         />
-        <div className="sor-settings-card">
+        <Card>
           <div className="space-y-2 w-full">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <FileText className="w-4 h-4" />
@@ -561,7 +491,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
               )}
             </p>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Tools */}
@@ -665,7 +595,7 @@ const CapabilityListSection: React.FC<{
         }
       />
 
-      <div className="sor-settings-card">
+      <Card>
         <div className="flex items-center justify-between text-xs text-[var(--color-textMuted)]">
           <span className="flex items-center gap-1">
             {allEnabled
@@ -713,7 +643,7 @@ const CapabilityListSection: React.FC<{
             ))}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 };
