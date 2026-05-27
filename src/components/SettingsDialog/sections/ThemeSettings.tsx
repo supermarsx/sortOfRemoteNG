@@ -19,7 +19,6 @@ import {
   formatLabel,
 } from "../../../hooks/settings/useThemeSettings";
 import {
-  Checkbox,
   NumberInput,
   Slider,
   Select,
@@ -97,41 +96,41 @@ const AppearanceSection: React.FC<{
           ))}
         </div>
       </div>
-      <div className="flex items-center justify-between gap-3">
-        <label className="flex items-center gap-3 cursor-pointer min-w-0">
-          <Palette
-            size={16}
-            className="text-[var(--color-textSecondary)] flex-shrink-0"
-          />
-          <div className="min-w-0">
-            <span className="text-[var(--color-text)] flex items-center gap-1">
-              Custom Accent
-              <InfoTooltip text="Override the color scheme with a custom accent color of your choice" />
+      <Toggle
+        icon={<Palette size={16} />}
+        label="Custom Accent"
+        description="Replace the preset scheme with any color you pick"
+        checked={settings.useCustomAccent ?? false}
+        onChange={(v) => mgr.handleToggleCustomAccent(v)}
+        infoTooltip="Override the color scheme with a custom accent color of your choice"
+      />
+
+      <div
+        className={
+          settings.useCustomAccent
+            ? undefined
+            : "opacity-50 pointer-events-none"
+        }
+      >
+        <div className="sor-settings-select-row">
+          <span className="sor-settings-row-label flex items-center gap-1">
+            <span className="text-[var(--color-textSecondary)] mr-1">
+              <Droplets size={16} />
             </span>
-            <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-              Replace the preset scheme with any color you pick
-            </p>
-          </div>
-        </label>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div
-            className={`flex items-center gap-2 ${!settings.useCustomAccent ? "opacity-40 pointer-events-none" : ""}`}
-          >
+            Accent Color
+            <InfoTooltip text="The custom color used as the primary accent throughout the UI when Custom Accent is enabled." />
+          </span>
+          <div className="flex items-center gap-2">
             <input
               type="color"
               value={settings.primaryAccentColor || "#3b82f6"}
               onChange={(e) => mgr.handleAccentChange(e.target.value)}
               className="w-10 h-8 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
             />
-            <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded">
+            <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded font-mono">
               {settings.primaryAccentColor || "#3b82f6"}
             </span>
           </div>
-          <Checkbox
-            checked={settings.useCustomAccent ?? false}
-            onChange={(v: boolean) => mgr.handleToggleCustomAccent(v)}
-            className="sor-checkbox-lg"
-          />
         </div>
       </div>
     </Card>
