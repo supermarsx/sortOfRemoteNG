@@ -508,15 +508,7 @@ export const defaultSettings: GlobalSettings = {
     tempFileCleanupEnabled: true,
     tempFileCleanupIntervalMinutes: 60,
     cacheSizeMb: 256,
-    tlsMinVersion: '1.2' as const,
-    certValidationMode: 'tofu' as const,
     allowedCipherSuites: [],
-    enableInternalApi: false,
-    internalApiPort: 9876,
-    internalApiAuth: true,
-    internalApiCors: false,
-    internalApiRateLimit: 100,
-    internalApiSsl: false,
   },
 };
 
@@ -526,16 +518,36 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [settings, setSettings] = useState<GlobalSettings>(defaultSettings);
   const settingsManager = SettingsManager.getInstance();
 
-  const reloadSettings = useCallback(async () => {
-    const loadedSettings = await settingsManager.loadSettings();
-    setSettings(loadedSettings);
-  }, [settingsManager]);
-
   // Use a ref so updateSettings has a stable identity
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
+  // Tracks the initial load so updateSettings never computes a merged
+  // object on top of the default settings during the startup window.
+  const loadedRef = useRef(false);
+  const loadPromiseRef = useRef<Promise<GlobalSettings> | null>(null);
+
+  const reloadSettings = useCallback(async () => {
+    const promise = settingsManager.loadSettings();
+    loadPromiseRef.current = promise;
+    const loadedSettings = await promise;
+    loadedRef.current = true;
+    settingsRef.current = loadedSettings;
+    setSettings(loadedSettings);
+  }, [settingsManager]);
+
   const updateSettings = useCallback(async (updates: Partial<GlobalSettings>) => {
+    // Before the initial load completes, settingsRef.current is still the
+    // defaults. Merging onto it would persist a full defaults-based object
+    // and wipe the user's stored settings. Wait for the load first.
+    if (!loadedRef.current && loadPromiseRef.current) {
+      try {
+        const loaded = await loadPromiseRef.current;
+        settingsRef.current = loaded;
+      } catch {
+        // Load failed — fall through and merge onto whatever we have.
+      }
+    }
     // Capture old values BEFORE mutating the ref
     const previous = settingsRef.current;
     const merged = { ...previous, ...updates };

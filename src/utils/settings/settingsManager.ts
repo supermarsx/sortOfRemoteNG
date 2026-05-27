@@ -601,15 +601,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tempFileCleanupEnabled: true,
     tempFileCleanupIntervalMinutes: 60,
     cacheSizeMb: 256,
-    tlsMinVersion: '1.2' as const,
-    certValidationMode: 'tofu' as const,
     allowedCipherSuites: [],
-    enableInternalApi: false,
-    internalApiPort: 9876,
-    internalApiAuth: true,
-    internalApiCors: false,
-    internalApiRateLimit: 100,
-    internalApiSsl: false,
   },
 };
 
@@ -624,6 +616,15 @@ export class SettingsManager {
   private actionLog: ActionLogEntry[] = [];
   private performanceMetrics: PerformanceMetrics[] = [];
   private customScripts: CustomScript[] = [];
+
+  /**
+   * Whether the initial load from persistent storage has completed.
+   * Until this is true, `this.settings` still holds DEFAULT_SETTINGS, so
+   * any save would persist defaults and clobber the user's stored config.
+   */
+  private loaded = false;
+  /** The in-flight (or last) load promise, awaited by `ensureLoaded()`. */
+  private loadPromise: Promise<GlobalSettings> | null = null;
 
   /**
    * Retrieves the singleton instance of the manager.
@@ -649,6 +650,27 @@ export class SettingsManager {
    * @returns {Promise<GlobalSettings>} Resolves with the merged settings; returns defaults if retrieval fails.
    */
   async loadSettings(): Promise<GlobalSettings> {
+    const promise = this.doLoadSettings();
+    this.loadPromise = promise;
+    return promise;
+  }
+
+  /**
+   * Ensures the initial load from storage has happened before a save, so
+   * that partial saves merge onto the user's stored config instead of
+   * clobbering it with defaults during the startup window.
+   */
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) return;
+    try {
+      await (this.loadPromise ?? this.loadSettings());
+    } catch {
+      // Load genuinely failed (e.g. storage unavailable) — allow the save
+      // to proceed rather than hang forever.
+    }
+  }
+
+  private async doLoadSettings(): Promise<GlobalSettings> {
     try {
       const stored = await IndexedDbService.getItem<Partial<GlobalSettings>>('mremote-settings');
       if (stored) {
@@ -712,9 +734,11 @@ export class SettingsManager {
           }),
         };
       }
+      this.loaded = true;
       return this.settings;
     } catch (error) {
       console.error('Failed to load settings:', error);
+      this.loaded = true;
       return DEFAULT_SETTINGS;
     }
   }
@@ -727,6 +751,12 @@ export class SettingsManager {
    */
   async saveSettings(settings: Partial<GlobalSettings>, options?: { silent?: boolean }): Promise<void> {
     try {
+      // Guard against the startup race: if a caller (e.g. window-geometry
+      // persistence) saves before the initial load has finished,
+      // `this.settings` is still DEFAULT_SETTINGS and merging a partial
+      // here would persist defaults over the user's stored config. Wait
+      // for the load to complete first.
+      await this.ensureLoaded();
       this.settings = { ...this.settings, ...settings };
       await IndexedDbService.setItem('mremote-settings', this.settings);
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes

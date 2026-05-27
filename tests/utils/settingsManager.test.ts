@@ -50,6 +50,36 @@ describe('SettingsManager colorScheme', () => {
   });
 });
 
+describe('SettingsManager save-before-load race', () => {
+  it('does not clobber stored settings when a partial save races the initial load', async () => {
+    // Seed storage with a non-default user config, as if from a prior run.
+    await IndexedDbService.setItem('mremote-settings', {
+      colorScheme: 'green',
+      theme: 'light',
+      autoSaveEnabled: true,
+    } as any);
+
+    SettingsManager.resetInstance();
+    const manager = SettingsManager.getInstance();
+
+    // Simulate a startup saver (e.g. window-geometry persistence) firing a
+    // partial save WITHOUT first awaiting loadSettings(). The save must wait
+    // for the load internally so it merges onto the stored config, not the
+    // in-memory defaults.
+    await manager.saveSettings({ windowSize: { width: 800, height: 600 } } as any);
+
+    SettingsManager.resetInstance();
+    const reloaded = await SettingsManager.getInstance().loadSettings();
+
+    // The pre-existing custom values must survive.
+    expect(reloaded.colorScheme).toBe('green');
+    expect(reloaded.theme).toBe('light');
+    expect(reloaded.autoSaveEnabled).toBe(true);
+    // And the new partial value must be persisted too.
+    expect(reloaded.windowSize).toEqual({ width: 800, height: 600 });
+  });
+});
+
 describe('SettingsManager loadSettings', () => {
   it('applies default network discovery TTLs when missing', async () => {
     await IndexedDbService.setItem('mremote-settings', {
