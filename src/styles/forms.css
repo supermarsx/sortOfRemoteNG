@@ -259,6 +259,37 @@
   overflow: hidden;
 }
 
+/* ── Searchable Select filter input ─────────────────────────── */
+.sor-select-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0.375rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sor-select-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-textMuted);
+  pointer-events: none;
+}
+
+.sor-select-search-input {
+  width: 100%;
+  padding: 0.375rem 0.5rem 0.375rem 1.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-input);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  outline: none;
+}
+
+.sor-select-search-input:focus {
+  border-color: var(--color-primary);
+}
+
 .sor-select-dropdown-scroll {
   max-height: 18rem;
   overflow-y: auto;

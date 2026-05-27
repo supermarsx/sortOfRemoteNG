@@ -149,6 +149,9 @@ interface SettingsSelectRowProps extends BaseSettingProps {
   options: SelectOption[];
   onChange: (value: string) => void;
   infoTooltip?: string;
+  /** Show a filter input in the dropdown (for long option lists). */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
 
 export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
@@ -161,6 +164,8 @@ export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
   settingKey,
   className,
   infoTooltip,
+  searchable,
+  searchPlaceholder,
 }) => (
   <div
     className={cx('sor-settings-select-row', className)}
@@ -182,6 +187,8 @@ export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
       onChange={onChange}
       options={options}
       variant="settings"
+      searchable={searchable}
+      searchPlaceholder={searchPlaceholder}
     />
   </div>
 );

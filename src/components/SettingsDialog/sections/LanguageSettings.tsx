@@ -6,6 +6,7 @@ import {
   SUPPORTED_LANGUAGES,
   resolveSupportedLanguage,
 } from "../../../i18n";
+import { COUNTRIES } from "../../../data/countries";
 import SectionHeading from "../../ui/SectionHeading";
 import {
   Card,
@@ -23,21 +24,7 @@ interface LanguageSettingsProps {
  * "auto" follows the system region. */
 const REGION_OPTIONS: { value: string; label: string }[] = [
   { value: "auto", label: "System default" },
-  { value: "US", label: "United States" },
-  { value: "GB", label: "United Kingdom" },
-  { value: "CA", label: "Canada" },
-  { value: "ES", label: "Spain" },
-  { value: "MX", label: "Mexico" },
-  { value: "FR", label: "France" },
-  { value: "DE", label: "Germany" },
-  { value: "PT", label: "Portugal" },
-  { value: "BR", label: "Brazil" },
-  { value: "IT", label: "Italy" },
-  { value: "RU", label: "Russia" },
-  { value: "CN", label: "China" },
-  { value: "TW", label: "Taiwan" },
-  { value: "JP", label: "Japan" },
-  { value: "KR", label: "South Korea" },
+  ...COUNTRIES.map((c) => ({ value: c.code, label: c.name })),
 ];
 
 const languageLabel = (value: string): string =>
@@ -108,6 +95,8 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
             value={settings.region ?? "auto"}
             options={REGION_OPTIONS}
             onChange={(v) => updateSettings({ region: v })}
+            searchable
+            searchPlaceholder="Search countries…"
             infoTooltip="Country used for regional formatting (dates, numbers). Set to System default to follow the OS."
           />
         </Card>

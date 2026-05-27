@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Search } from 'lucide-react';
 import { cx } from '../lib/cx';
 
 /* ── Variant → CSS class mapping ──────────────────────────────── */
@@ -37,6 +37,10 @@ export interface SelectProps {
   id?: string;
   title?: string;
   'data-testid'?: string;
+  /** Show a filter input at the top of the dropdown to search options. */
+  searchable?: boolean;
+  /** Placeholder for the search input (when `searchable`). */
+  searchPlaceholder?: string;
 }
 
 /**
@@ -57,11 +61,22 @@ export const Select: React.FC<SelectProps> = ({
   label,
   title,
   'data-testid': dataTestId,
+  searchable = false,
+  searchPlaceholder,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(-1);
+  const [search, setSearch] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Options visible after the search filter (case-insensitive label match).
+  const visibleOptions = useMemo(() => {
+    if (!searchable || !search.trim()) return options;
+    const q = search.trim().toLowerCase();
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [searchable, search, options]);
   const itemsRef = useRef<(HTMLDivElement | null)[]>([]);
 
   const selectedOption = options.find((o) => String(o.value) === String(value));
@@ -102,11 +117,16 @@ export const Select: React.FC<SelectProps> = ({
     // Pre-highlight current value
     const idx = options.findIndex((o) => String(o.value) === String(value));
     setHighlightIdx(idx >= 0 ? idx : 0);
-  }, [disabled, updatePosition, options, value]);
+    if (searchable) {
+      // Focus the filter input once the portal has mounted.
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [disabled, updatePosition, options, value, searchable]);
 
   const close = useCallback(() => {
     setIsOpen(false);
     setHighlightIdx(-1);
+    setSearch('');
     triggerRef.current?.focus();
   }, []);
 
@@ -172,36 +192,44 @@ export const Select: React.FC<SelectProps> = ({
         case 'ArrowDown': {
           e.preventDefault();
           let next = highlightIdx + 1;
-          while (next < options.length && options[next].disabled) next++;
-          if (next < options.length) setHighlightIdx(next);
+          while (next < visibleOptions.length && visibleOptions[next].disabled) next++;
+          if (next < visibleOptions.length) setHighlightIdx(next);
           break;
         }
         case 'ArrowUp': {
           e.preventDefault();
           let prev = highlightIdx - 1;
-          while (prev >= 0 && options[prev].disabled) prev--;
+          while (prev >= 0 && visibleOptions[prev].disabled) prev--;
           if (prev >= 0) setHighlightIdx(prev);
           break;
         }
         case 'Home': {
           e.preventDefault();
           let first = 0;
-          while (first < options.length && options[first].disabled) first++;
-          if (first < options.length) setHighlightIdx(first);
+          while (first < visibleOptions.length && visibleOptions[first].disabled) first++;
+          if (first < visibleOptions.length) setHighlightIdx(first);
           break;
         }
         case 'End': {
           e.preventDefault();
-          let last = options.length - 1;
-          while (last >= 0 && options[last].disabled) last--;
+          let last = visibleOptions.length - 1;
+          while (last >= 0 && visibleOptions[last].disabled) last--;
           if (last >= 0) setHighlightIdx(last);
           break;
         }
-        case 'Enter':
         case ' ': {
+          // In searchable mode let Space type into the filter input.
+          if (searchable) break;
           e.preventDefault();
-          if (highlightIdx >= 0 && highlightIdx < options.length) {
-            selectOption(options[highlightIdx]);
+          if (highlightIdx >= 0 && highlightIdx < visibleOptions.length) {
+            selectOption(visibleOptions[highlightIdx]);
+          }
+          break;
+        }
+        case 'Enter': {
+          e.preventDefault();
+          if (highlightIdx >= 0 && highlightIdx < visibleOptions.length) {
+            selectOption(visibleOptions[highlightIdx]);
           }
           break;
         }
@@ -212,7 +240,7 @@ export const Select: React.FC<SelectProps> = ({
           break;
       }
     },
-    [isOpen, disabled, highlightIdx, options, open, close, selectOption],
+    [isOpen, disabled, highlightIdx, visibleOptions, searchable, open, close, selectOption],
   );
 
   const dropdownMinWidth = Math.max(pos.width, 200);
@@ -268,8 +296,31 @@ export const Select: React.FC<SelectProps> = ({
               zIndex: 99999,
             }}
           >
+            {searchable && (
+              <div className="sor-select-search">
+                <Search size={14} className="sor-select-search-icon" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={search}
+                  placeholder={searchPlaceholder ?? 'Search…'}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setHighlightIdx(0);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  className="sor-select-search-input"
+                  aria-label={searchPlaceholder ?? 'Search options'}
+                />
+              </div>
+            )}
             <div className="sor-select-dropdown-scroll">
-              {options.map((opt, i) => {
+              {visibleOptions.length === 0 && (
+                <div className="sor-select-option sor-select-option-disabled">
+                  <span className="sor-select-option-label">No matches</span>
+                </div>
+              )}
+              {visibleOptions.map((opt, i) => {
                 const isSelected = String(opt.value) === String(value);
                 const isHighlighted = i === highlightIdx;
                 return (
