@@ -1303,11 +1303,7 @@ const AppContent: React.FC = () => {
                 <div className="welcome-glow pointer-events-none absolute inset-0" />
                 {!appSettings.hideQuickStartMessage && (
                   <>
-                    {databaseManager.getCurrentDatabase() ? (
-                      <Monitor size={64} className="mb-4 text-primary relative z-10" />
-                    ) : (
-                      <Database size={64} className="mb-4 text-primary relative z-10" />
-                    )}
+                    <Monitor size={64} className="mb-4 text-primary relative z-10" />
                     <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
                       {appSettings.welcomeScreenTitle || `Welcome to ${t("app.title")}`}
                     </h2>
