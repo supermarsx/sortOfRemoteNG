@@ -1303,13 +1303,19 @@ const AppContent: React.FC = () => {
                 <div className="welcome-glow pointer-events-none absolute inset-0" />
                 {!appSettings.hideQuickStartMessage && (
                   <>
-                    <Monitor size={64} className="mb-4 text-primary relative z-10" />
+                    {databaseManager.getCurrentDatabase() ? (
+                      <Monitor size={64} className="mb-4 text-primary relative z-10" />
+                    ) : (
+                      <Database size={64} className="mb-4 text-primary relative z-10" />
+                    )}
                     <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
                       {appSettings.welcomeScreenTitle || `Welcome to ${t("app.title")}`}
                     </h2>
                     <p className="text-center max-w-md mb-6 whitespace-pre-wrap text-[var(--color-textMuted)] relative z-10">
                       {appSettings.welcomeScreenMessage ||
-                        `Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.`}
+                        (databaseManager.getCurrentDatabase()
+                          ? `Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.`
+                          : `No database is open yet. Select or create a database to start adding and managing connections.`)}
                     </p>
                   </>
                 )}
