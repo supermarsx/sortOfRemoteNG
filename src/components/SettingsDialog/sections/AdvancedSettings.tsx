@@ -17,9 +17,14 @@ import {
   RotateCcw,
   Cpu,
 } from "lucide-react";
-import { Checkbox, NumberInput } from "../../ui/forms";
+import { NumberInput } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
-import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsNumberRow,
+} from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
   defaultMemoryWatchdogSettings,
@@ -30,45 +35,6 @@ interface AdvancedSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
-
-/* ── Shared row primitive ────────────────────────────── */
-
-const ToggleRow: React.FC<{
-  settingKey?: string;
-  icon: React.ReactNode;
-  label: string;
-  description?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  tooltip?: string;
-}> = ({ settingKey, icon, label, description, checked, onChange, tooltip }) => (
-  <label
-    {...(settingKey ? { "data-setting-key": settingKey } : {})}
-    className="flex items-center justify-between gap-3 cursor-pointer"
-  >
-    <div className="flex items-center gap-3 min-w-0">
-      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <span className="text-[var(--color-text)] flex items-center gap-1">
-          {label}
-          {tooltip && <InfoTooltip text={tooltip} />}
-        </span>
-        {description && (
-          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-            {description}
-          </p>
-        )}
-      </div>
-    </div>
-    <Checkbox
-      checked={checked}
-      onChange={(v: boolean) => onChange(v)}
-      className="sor-checkbox-lg flex-shrink-0"
-    />
-  </label>
-);
 
 /* ── Static option configs ───────────────────────────── */
 
@@ -165,7 +131,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             </span>
           }
         />
-        <div className="sor-settings-card">
+        <Card>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {TAB_GROUPING_CONFIG.map((option) => (
               <button
@@ -185,7 +151,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Default Tab Layout */}
@@ -199,7 +165,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             </span>
           }
         />
-        <div className="sor-settings-card">
+        <Card>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             {DEFAULT_TAB_LAYOUT_CONFIG.map((option) => (
               <button
@@ -220,7 +186,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Logging */}
@@ -229,7 +195,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
           icon={<FileText className="w-4 h-4 text-primary" />}
           title="Logging"
         />
-        <div className="sor-settings-card">
+        <Card>
           <label className="text-sm text-[var(--color-textSecondary)] mb-3 flex items-center gap-1">
             Log Level
             <InfoTooltip text="Minimum severity of log messages to record. Debug captures everything; Error captures only failures." />
@@ -258,7 +224,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               );
             })}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Tab Naming */}
@@ -267,16 +233,16 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
           icon={<Tags className="w-4 h-4 text-primary" />}
           title="Tab Naming"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Terminal className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Terminal size={16} />}
             label="Override tab names with hostname"
             description="Display the server hostname instead of the connection name in tabs"
             checked={settings.hostnameOverride}
             onChange={(v) => updateSettings({ hostnameOverride: v })}
-            tooltip="Display the resolved server hostname in tab titles instead of the user-defined connection name."
+            infoTooltip="Display the resolved server hostname in tab titles instead of the user-defined connection name."
           />
-        </div>
+        </Card>
       </div>
 
       {/* Diagnostics */}
@@ -285,16 +251,16 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
           icon={<ShieldAlert className="w-4 h-4 text-primary" />}
           title="Diagnostics"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<ShieldAlert className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<ShieldAlert size={16} />}
             label="Detect unexpected app close"
             description="Show recovery options if the app was closed unexpectedly"
             checked={settings.detectUnexpectedClose ?? true}
             onChange={(v) => updateSettings({ detectUnexpectedClose: v })}
-            tooltip="Monitor for abnormal application exits and offer session recovery options on next launch."
+            infoTooltip="Monitor for abnormal application exits and offer session recovery options on next launch."
           />
-        </div>
+        </Card>
       </div>
 
       {/* Memory Watchdog */}
@@ -306,10 +272,10 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
           icon={<Settings className="w-4 h-4 text-primary" />}
           title="Settings Dialog"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
+        <Card>
+          <Toggle
             settingKey="settingsDialog.autoSave"
-            icon={<Save className="w-4 h-4" />}
+            icon={<Save size={16} />}
             label="Auto-save settings"
             description="Automatically save changes as you make them (debounced). Disable to require an explicit Save click."
             checked={settings.settingsDialog?.autoSave ?? true}
@@ -323,12 +289,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 },
               })
             }
-            tooltip="Automatically persist settings changes as you make them, with a short debounce delay."
+            infoTooltip="Automatically persist settings changes as you make them, with a short debounce delay."
           />
 
-          <ToggleRow
+          <Toggle
             settingKey="settingsDialog.showSaveButton"
-            icon={<Save className="w-4 h-4" />}
+            icon={<Save size={16} />}
             label="Show save button"
             description="Show a manual save button in the settings header. Useful when auto-save is disabled."
             checked={settings.settingsDialog?.showSaveButton ?? false}
@@ -342,12 +308,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 },
               })
             }
-            tooltip="Display a manual save button in the settings header for explicit saving, useful when auto-save is disabled."
+            infoTooltip="Display a manual save button in the settings header for explicit saving, useful when auto-save is disabled."
           />
 
-          <ToggleRow
+          <Toggle
             settingKey="settingsDialog.confirmBeforeReset"
-            icon={<RotateCcw className="w-4 h-4" />}
+            icon={<RotateCcw size={16} />}
             label="Confirm before reset"
             description="Show a confirmation dialog before resetting a tab's settings to defaults."
             checked={settings.settingsDialog?.confirmBeforeReset ?? true}
@@ -361,9 +327,9 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 },
               })
             }
-            tooltip="Show a confirmation dialog before resetting a settings tab back to its default values."
+            infoTooltip="Show a confirmation dialog before resetting a settings tab back to its default values."
           />
-        </div>
+        </Card>
       </div>
     </div>
   );
@@ -389,7 +355,8 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
     });
   };
 
-  const inputCls = "sor-form-input text-sm w-24";
+  // Default NumberInput variant already applies `.sor-settings-input`.
+  const inputCls = "text-sm";
 
   return (
     <div className="space-y-4">
@@ -403,34 +370,30 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
         }
       />
 
-      <div className="sor-settings-card">
-        <ToggleRow
-          icon={<Cpu className="w-4 h-4" />}
+      <Card>
+        <Toggle
+          icon={<Cpu size={16} />}
           label="Enable memory watchdog"
           description="Monitor JS heap and system RAM; tear down the page when thresholds are exceeded."
           checked={mw.enabled}
           onChange={(v) => update({ enabled: v })}
-          tooltip="When disabled, no memory monitoring runs. The application will not be protected from runaway memory usage."
+          infoTooltip="When disabled, no memory monitoring runs. The application will not be protected from runaway memory usage."
         />
 
         <div
           className={`space-y-4 pt-3 border-t border-[var(--color-border)] ${!mw.enabled ? "opacity-50 pointer-events-none" : ""}`}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-                Poll Interval (ms)
-                <InfoTooltip text="How often the watchdog checks memory usage. Lower values detect leaks faster but use slightly more CPU." />
-              </label>
-              <NumberInput
-                value={mw.intervalMs}
-                onChange={(v: number) => update({ intervalMs: v })}
-                className={inputCls}
-                min={1000}
-                max={30000}
-              />
-            </div>
-          </div>
+          <SettingsNumberRow
+            icon={<RotateCcw size={16} />}
+            label="Poll Interval"
+            value={mw.intervalMs}
+            min={1000}
+            max={30000}
+            step={500}
+            unit="ms"
+            onChange={(v) => update({ intervalMs: v })}
+            infoTooltip="How often the watchdog checks memory usage. Lower values detect leaks faster but use slightly more CPU."
+          />
 
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
@@ -539,7 +502,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 };
