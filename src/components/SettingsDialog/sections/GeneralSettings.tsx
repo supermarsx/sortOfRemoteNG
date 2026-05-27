@@ -40,44 +40,14 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Monitor className="w-5 h-5 text-primary" />} title="General" description="Autosave, connection timeouts, and general application preferences." />
+      <SectionHeading icon={<Monitor className="w-5 h-5 text-primary" />} title="General" description="Autosave, safety prompts, connection behavior, and general application preferences." />
 
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Clock className="w-4 h-4 text-primary" />}
-          title="Timing"
-        />
-        <Card>
-          <div
-            data-setting-key="connectionTimeout"
-            className="sor-settings-select-row"
-          >
-            <span className="sor-settings-row-label flex items-center gap-1">
-              <span className="text-[var(--color-textSecondary)] mr-1">
-                <Clock size={16} />
-              </span>
-              Connection Timeout (seconds)
-              <InfoTooltip text="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks." />
-            </span>
-            <NumberInput
-              value={settings.connectionTimeout}
-              onChange={(v: number) =>
-                updateSettings({ connectionTimeout: v })
-              }
-              variant="settings-compact"
-              className="text-right"
-              style={{ width: "5rem" }}
-              min={5}
-              max={300}
-            />
-          </div>
-        </Card>
-      </div>
+      {/* ── Data & safety ──────────────────────────────── */}
 
       <div className="space-y-4">
         <SectionHeader
           icon={<Save className="w-4 h-4 text-primary" />}
-          title="Autosave Settings"
+          title="Autosave"
         />
         <Card>
           <Toggle
@@ -151,6 +121,74 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
+          icon={<ShieldAlert className="w-4 h-4 text-primary" />}
+          title="Crash Recovery"
+        />
+        <Card>
+          <Toggle
+            icon={<ShieldAlert className="w-4 h-4" />}
+            label="Detect unexpected app close"
+            description="Show recovery options if the app was closed unexpectedly"
+            checked={settings.detectUnexpectedClose ?? true}
+            onChange={(v) => updateSettings({ detectUnexpectedClose: v })}
+            infoTooltip="Monitor for abnormal application exits and offer session recovery options on next launch."
+          />
+        </Card>
+      </div>
+
+      {/* ── Connection behavior ────────────────────────── */}
+
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Clock className="w-4 h-4 text-primary" />}
+          title="Connections"
+        />
+        <Card>
+          <div
+            data-setting-key="connectionTimeout"
+            className="sor-settings-select-row"
+          >
+            <span className="sor-settings-row-label flex items-center gap-1">
+              <span className="text-[var(--color-textSecondary)] mr-1">
+                <Clock size={16} />
+              </span>
+              Connection Timeout (seconds)
+              <InfoTooltip text="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks." />
+            </span>
+            <NumberInput
+              value={settings.connectionTimeout}
+              onChange={(v: number) =>
+                updateSettings({ connectionTimeout: v })
+              }
+              variant="settings-compact"
+              className="text-right"
+              style={{ width: "5rem" }}
+              min={5}
+              max={300}
+            />
+          </div>
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Terminal className="w-4 h-4 text-primary" />}
+          title="Tab Naming"
+        />
+        <Card>
+          <Toggle
+            icon={<Terminal className="w-4 h-4" />}
+            label="Override tab names with hostname"
+            description="Display the server hostname instead of the connection name in tabs"
+            checked={settings.hostnameOverride}
+            onChange={(v) => updateSettings({ hostnameOverride: v })}
+            infoTooltip="Display the resolved server hostname in tab titles instead of the user-defined connection name."
+          />
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <SectionHeader
           icon={<History className="w-4 h-4 text-primary" />}
           title="Quick Connect History"
         />
@@ -183,39 +221,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         </Card>
       </div>
 
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Terminal className="w-4 h-4 text-primary" />}
-          title="Tab Naming"
-        />
-        <Card>
-          <Toggle
-            icon={<Terminal className="w-4 h-4" />}
-            label="Override tab names with hostname"
-            description="Display the server hostname instead of the connection name in tabs"
-            checked={settings.hostnameOverride}
-            onChange={(v) => updateSettings({ hostnameOverride: v })}
-            infoTooltip="Display the resolved server hostname in tab titles instead of the user-defined connection name."
-          />
-        </Card>
-      </div>
-
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<ShieldAlert className="w-4 h-4 text-primary" />}
-          title="Diagnostics"
-        />
-        <Card>
-          <Toggle
-            icon={<ShieldAlert className="w-4 h-4" />}
-            label="Detect unexpected app close"
-            description="Show recovery options if the app was closed unexpectedly"
-            checked={settings.detectUnexpectedClose ?? true}
-            onChange={(v) => updateSettings({ detectUnexpectedClose: v })}
-            infoTooltip="Monitor for abnormal application exits and offer session recovery options on next launch."
-          />
-        </Card>
-      </div>
+      {/* ── Settings dialog (meta) ─────────────────────── */}
 
       <div className="space-y-4">
         <SectionHeader
