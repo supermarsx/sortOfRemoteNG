@@ -189,7 +189,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             settingKey="settingsDialog.showSaveButton"
             icon={<Save size={16} />}
             label="Show save button"
-            description="Show a manual save button in the settings header. Useful when auto-save is disabled."
+            description="Always show a manual Save button in the settings footer. When auto-save is off it is shown regardless."
             checked={settings.settingsDialog?.showSaveButton ?? false}
             onChange={(v) =>
               updateSettings({
@@ -201,7 +201,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 },
               })
             }
-            infoTooltip="Display a manual save button in the settings header for explicit saving, useful when auto-save is disabled."
+            infoTooltip="Always show a manual Save button in the settings footer for explicit saving. When auto-save is disabled the Save button appears automatically regardless of this setting."
           />
 
           <Toggle

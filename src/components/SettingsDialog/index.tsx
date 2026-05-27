@@ -250,20 +250,42 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         <div ref={mgr.bottomSentinelRef} className="h-px" />
       </div>
 
-      {/* Per-tab reset footer */}
-      {mgr.hasScrolledToBottom &&
-        mgr.activeTab !== "recovery" &&
-        TAB_DEFAULTS[mgr.activeTab] && (
-          <div className="sticky bottom-0 flex justify-end px-6 py-2 border-t border-[var(--color-border)]/30 bg-[var(--color-surface)]/80 backdrop-blur-sm">
-            <button
-              onClick={mgr.handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
-            >
-              <RotateCcw size={12} />
-              {mgr.t("settings.reset", "Reset to Defaults")}
-            </button>
+      {/* Per-tab footer: Reset (after scrolling through the tab) and Save.
+          The Save button is mandatory when auto-save is off — otherwise
+          there'd be no way to persist changes — and is also shown when the
+          "show save button" preference is enabled. */}
+      {(() => {
+        const saveRequired =
+          mgr.activeTab !== "recovery" &&
+          (!mgr.dialogConfig.autoSave || mgr.dialogConfig.showSaveButton);
+        const showReset =
+          mgr.hasScrolledToBottom &&
+          mgr.activeTab !== "recovery" &&
+          Boolean(TAB_DEFAULTS[mgr.activeTab]);
+        if (!saveRequired && !showReset) return null;
+        return (
+          <div className="sticky bottom-0 flex justify-end items-center gap-2 px-6 py-2 border-t border-[var(--color-border)]/30 bg-[var(--color-surface)]/80 backdrop-blur-sm">
+            {showReset && (
+              <button
+                onClick={mgr.handleReset}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
+              >
+                <RotateCcw size={12} />
+                {mgr.t("settings.reset", "Reset to Defaults")}
+              </button>
+            )}
+            {saveRequired && (
+              <button
+                onClick={mgr.handleSave}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors"
+              >
+                <Save size={14} />
+                {mgr.t("settings.save", "Save")}
+              </button>
+            )}
           </div>
-        )}
+        );
+      })()}
     </div>
   );
 };
@@ -337,18 +359,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           icon={SettingsIcon}
           title={mgr.t("settings.title")}
           sticky
-          actions={
-            mgr.dialogConfig.showSaveButton ? (
-              <button
-                onClick={mgr.handleSave}
-                data-tooltip={mgr.t("settings.save")}
-                aria-label={mgr.t("settings.save")}
-                className="p-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors"
-              >
-                <Save size={16} />
-              </button>
-            ) : undefined
-          }
           onClose={onClose}
         />
 
