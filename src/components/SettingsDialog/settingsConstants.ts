@@ -95,12 +95,16 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
 export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   general: [
+    "connectionTimeout",
     "autoSaveEnabled",
     "autoSaveIntervalMinutes",
     "warnOnClose",
     "warnOnExit",
     "warnOnDetachClose",
     "quickConnectHistoryEnabled",
+    "hostnameOverride",
+    "detectUnexpectedClose",
+    "settingsDialog",
   ],
   language: [
     "language",
@@ -197,6 +201,8 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "loadingElement",
   ],
   layout: [
+    "defaultTabLayout",
+    "tabGrouping",
     "persistWindowSize",
     "persistWindowPosition",
     "persistSidebarWidth",
@@ -261,9 +267,6 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   proxy: ["globalProxy"],
   vpn: ["vpnSettings"],
   advanced: [
-    "tabGrouping",
-    "hostnameOverride",
-    "defaultTabLayout",
     "enableTabDetachment",
     "enableTabResize",
     "enableZoom",
@@ -279,7 +282,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "logLevel",
     "maxLogEntries",
     "exportEncryption",
-    "settingsDialog",
+    "memoryWatchdog",
   ],
   recording: [
     "recording",

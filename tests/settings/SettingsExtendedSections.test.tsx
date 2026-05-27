@@ -221,15 +221,15 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    expect(container.querySelectorAll(".sor-settings-card").length).toBeGreaterThanOrEqual(5);
-    const hostnameOverride = screen.getByRole("checkbox", {
-      name: /override tab names with hostname/i,
+    expect(container.querySelectorAll(".sor-settings-card").length).toBeGreaterThanOrEqual(2);
+    const watchdogToggle = screen.getByRole("checkbox", {
+      name: /enable memory watchdog/i,
     });
-    expect(hostnameOverride.className).toContain("sor-settings-checkbox");
+    expect(watchdogToggle.className).toContain("sor-settings-checkbox");
 
-    fireEvent.click(hostnameOverride);
+    fireEvent.click(watchdogToggle);
     expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ hostnameOverride: false }),
+      expect.objectContaining({ memoryWatchdog: expect.any(Object) }),
     );
   });
 

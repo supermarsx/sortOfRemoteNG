@@ -227,10 +227,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'wolEnabled', label: 'Wake-on-LAN', description: 'Enable Wake-on-LAN', tags: ['wol', 'wake', 'lan', 'power'], section: 'advanced', sectionLabel: 'Advanced' },
   { key: 'exportEncryption', label: 'Export Encryption', description: 'Encrypt exported data', tags: ['export', 'encryption', 'secure', 'password'], section: 'advanced', sectionLabel: 'Advanced' },
 
-  // Settings Dialog
-  { key: 'settingsDialog.autoSave', label: 'Auto-save Settings', description: 'Automatically save settings changes', tags: ['auto', 'save', 'settings', 'dialog', 'debounce'], section: 'advanced', sectionLabel: 'Advanced' },
-  { key: 'settingsDialog.showSaveButton', label: 'Show Save Button', description: 'Show manual save button in settings header', tags: ['save', 'button', 'settings', 'dialog', 'manual'], section: 'advanced', sectionLabel: 'Advanced' },
-  { key: 'settingsDialog.confirmBeforeReset', label: 'Confirm Before Reset', description: 'Show confirmation before resetting tab settings to defaults', tags: ['confirm', 'reset', 'defaults', 'settings', 'dialog'], section: 'advanced', sectionLabel: 'Advanced' },
+  // Settings Dialog (lives in General)
+  { key: 'hostnameOverride', label: 'Override Tab Names with Hostname', description: 'Show server hostname instead of connection name in tabs', tags: ['tab', 'name', 'hostname', 'title'], section: 'general', sectionLabel: 'General' },
+  { key: 'detectUnexpectedClose', label: 'Detect Unexpected Close', description: 'Show recovery options after an unexpected app close', tags: ['crash', 'recovery', 'unexpected', 'close', 'diagnostics'], section: 'general', sectionLabel: 'General' },
+  { key: 'settingsDialog.autoSave', label: 'Auto-save Settings', description: 'Automatically save settings changes', tags: ['auto', 'save', 'settings', 'dialog', 'debounce'], section: 'general', sectionLabel: 'General' },
+  { key: 'settingsDialog.showSaveButton', label: 'Show Save Button', description: 'Show manual save button in the settings footer', tags: ['save', 'button', 'settings', 'dialog', 'manual'], section: 'general', sectionLabel: 'General' },
+  { key: 'settingsDialog.confirmBeforeReset', label: 'Confirm Before Reset', description: 'Show confirmation before resetting tab settings to defaults', tags: ['confirm', 'reset', 'defaults', 'settings', 'dialog'], section: 'general', sectionLabel: 'General' },
 
   // ─── Diagnostics ──────────────────────────────────────────────
   { key: 'diagnostics.pingCount', label: 'Ping Count', description: 'Number of pings to send', tags: ['ping', 'count', 'icmp', 'network'], section: 'diagnostics', sectionLabel: 'Diagnostics' },

@@ -11,6 +11,10 @@ import {
   LogOut,
   Trash2,
   MessageSquareWarning,
+  Terminal,
+  ShieldAlert,
+  RotateCcw,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   SettingsCard as Card,
@@ -176,6 +180,105 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           <p className="text-xs text-[var(--color-textMuted)]">
             {settings.quickConnectHistory?.length || 0} entries stored
           </p>
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Terminal className="w-4 h-4 text-primary" />}
+          title="Tab Naming"
+        />
+        <Card>
+          <Toggle
+            icon={<Terminal className="w-4 h-4" />}
+            label="Override tab names with hostname"
+            description="Display the server hostname instead of the connection name in tabs"
+            checked={settings.hostnameOverride}
+            onChange={(v) => updateSettings({ hostnameOverride: v })}
+            infoTooltip="Display the resolved server hostname in tab titles instead of the user-defined connection name."
+          />
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<ShieldAlert className="w-4 h-4 text-primary" />}
+          title="Diagnostics"
+        />
+        <Card>
+          <Toggle
+            icon={<ShieldAlert className="w-4 h-4" />}
+            label="Detect unexpected app close"
+            description="Show recovery options if the app was closed unexpectedly"
+            checked={settings.detectUnexpectedClose ?? true}
+            onChange={(v) => updateSettings({ detectUnexpectedClose: v })}
+            infoTooltip="Monitor for abnormal application exits and offer session recovery options on next launch."
+          />
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<SlidersHorizontal className="w-4 h-4 text-primary" />}
+          title="Settings Dialog"
+        />
+        <Card>
+          <Toggle
+            settingKey="settingsDialog.autoSave"
+            icon={<Save className="w-4 h-4" />}
+            label="Auto-save settings"
+            description="Automatically save changes as you make them (debounced). Disable to require an explicit Save click."
+            checked={settings.settingsDialog?.autoSave ?? true}
+            onChange={(v) =>
+              updateSettings({
+                settingsDialog: {
+                  ...settings.settingsDialog,
+                  showSaveButton: settings.settingsDialog?.showSaveButton ?? false,
+                  confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true,
+                  autoSave: v,
+                },
+              })
+            }
+            infoTooltip="Automatically persist settings changes as you make them, with a short debounce delay."
+          />
+
+          <Toggle
+            settingKey="settingsDialog.showSaveButton"
+            icon={<Save className="w-4 h-4" />}
+            label="Show save button"
+            description="Always show a manual Save button in the settings footer. When auto-save is off it is shown regardless."
+            checked={settings.settingsDialog?.showSaveButton ?? false}
+            onChange={(v) =>
+              updateSettings({
+                settingsDialog: {
+                  ...settings.settingsDialog,
+                  autoSave: settings.settingsDialog?.autoSave ?? true,
+                  confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true,
+                  showSaveButton: v,
+                },
+              })
+            }
+            infoTooltip="Always show a manual Save button in the settings footer for explicit saving. When auto-save is disabled the Save button appears automatically regardless of this setting."
+          />
+
+          <Toggle
+            settingKey="settingsDialog.confirmBeforeReset"
+            icon={<RotateCcw className="w-4 h-4" />}
+            label="Confirm before reset"
+            description="Show a confirmation dialog before resetting a tab's settings to defaults."
+            checked={settings.settingsDialog?.confirmBeforeReset ?? true}
+            onChange={(v) =>
+              updateSettings({
+                settingsDialog: {
+                  ...settings.settingsDialog,
+                  autoSave: settings.settingsDialog?.autoSave ?? true,
+                  showSaveButton: settings.settingsDialog?.showSaveButton ?? false,
+                  confirmBeforeReset: v,
+                },
+              })
+            }
+            infoTooltip="Show a confirmation dialog before resetting a settings tab back to its default values."
+          />
         </Card>
       </div>
     </div>

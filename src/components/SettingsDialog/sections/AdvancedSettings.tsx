@@ -4,14 +4,9 @@ import { GlobalSettings } from "../../../types/settings/settings";
 import {
   Code,
   FileText,
-  Terminal,
-  Tags,
   AlertCircle,
   Bug,
   Info,
-  ShieldAlert,
-  Settings,
-  Save,
   RotateCcw,
   Cpu,
 } from "lucide-react";
@@ -79,7 +74,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       <SectionHeading
         icon={<Code className="w-5 h-5 text-primary" />}
         title="Advanced"
-        description="Logging level, tab naming, diagnostics, and the memory watchdog."
+        description="Logging level and the memory watchdog."
       />
 
       {/* Logging */}
@@ -120,110 +115,8 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
         </Card>
       </div>
 
-      {/* Tab Naming */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Tags className="w-4 h-4 text-primary" />}
-          title="Tab Naming"
-        />
-        <Card>
-          <Toggle
-            icon={<Terminal size={16} />}
-            label="Override tab names with hostname"
-            description="Display the server hostname instead of the connection name in tabs"
-            checked={settings.hostnameOverride}
-            onChange={(v) => updateSettings({ hostnameOverride: v })}
-            infoTooltip="Display the resolved server hostname in tab titles instead of the user-defined connection name."
-          />
-        </Card>
-      </div>
-
-      {/* Diagnostics */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<ShieldAlert className="w-4 h-4 text-primary" />}
-          title="Diagnostics"
-        />
-        <Card>
-          <Toggle
-            icon={<ShieldAlert size={16} />}
-            label="Detect unexpected app close"
-            description="Show recovery options if the app was closed unexpectedly"
-            checked={settings.detectUnexpectedClose ?? true}
-            onChange={(v) => updateSettings({ detectUnexpectedClose: v })}
-            infoTooltip="Monitor for abnormal application exits and offer session recovery options on next launch."
-          />
-        </Card>
-      </div>
-
       {/* Memory Watchdog */}
       <MemoryWatchdogSection settings={settings} updateSettings={updateSettings} />
-
-      {/* Settings Dialog */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Settings className="w-4 h-4 text-primary" />}
-          title="Settings Dialog"
-        />
-        <Card>
-          <Toggle
-            settingKey="settingsDialog.autoSave"
-            icon={<Save size={16} />}
-            label="Auto-save settings"
-            description="Automatically save changes as you make them (debounced). Disable to require an explicit Save click."
-            checked={settings.settingsDialog?.autoSave ?? true}
-            onChange={(v) =>
-              updateSettings({
-                settingsDialog: {
-                  ...settings.settingsDialog,
-                  showSaveButton: settings.settingsDialog?.showSaveButton ?? false,
-                  confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true,
-                  autoSave: v,
-                },
-              })
-            }
-            infoTooltip="Automatically persist settings changes as you make them, with a short debounce delay."
-          />
-
-          <Toggle
-            settingKey="settingsDialog.showSaveButton"
-            icon={<Save size={16} />}
-            label="Show save button"
-            description="Always show a manual Save button in the settings footer. When auto-save is off it is shown regardless."
-            checked={settings.settingsDialog?.showSaveButton ?? false}
-            onChange={(v) =>
-              updateSettings({
-                settingsDialog: {
-                  ...settings.settingsDialog,
-                  autoSave: settings.settingsDialog?.autoSave ?? true,
-                  confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true,
-                  showSaveButton: v,
-                },
-              })
-            }
-            infoTooltip="Always show a manual Save button in the settings footer for explicit saving. When auto-save is disabled the Save button appears automatically regardless of this setting."
-          />
-
-          <Toggle
-            settingKey="settingsDialog.confirmBeforeReset"
-            icon={<RotateCcw size={16} />}
-            label="Confirm before reset"
-            description="Show a confirmation dialog before resetting a tab's settings to defaults."
-            checked={settings.settingsDialog?.confirmBeforeReset ?? true}
-            onChange={(v) =>
-              updateSettings({
-                settingsDialog: {
-                  ...settings.settingsDialog,
-                  autoSave: settings.settingsDialog?.autoSave ?? true,
-                  showSaveButton: settings.settingsDialog?.showSaveButton ?? false,
-                  confirmBeforeReset: v,
-                },
-              })
-            }
-            infoTooltip="Show a confirmation dialog before resetting a settings tab back to its default values."
-          />
-        </Card>
-      </div>
     </div>
   );
 };

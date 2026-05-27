@@ -102,7 +102,7 @@ describe("Core settings section centralization", () => {
       container.querySelectorAll(".sor-settings-section-header > svg"),
     );
 
-    expect(sectionIcons).toHaveLength(4);
+    expect(sectionIcons).toHaveLength(7);
     for (const icon of sectionIcons) {
       expect(icon.getAttribute("class")).toContain("text-primary");
     }
