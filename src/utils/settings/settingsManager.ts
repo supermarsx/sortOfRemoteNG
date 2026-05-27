@@ -73,7 +73,7 @@ function tauriInvoke():
  */
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
-  autoDetectOsLanguage: false,
+  autoDetectOsLanguage: true,
   region: 'auto',
   rtlLayout: false,
   theme: 'dark',
