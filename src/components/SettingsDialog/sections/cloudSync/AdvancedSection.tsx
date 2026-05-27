@@ -1,5 +1,13 @@
-import { Upload, Download, Zap, FileBox, Filter, FileArchive } from "lucide-react";
-import { Textarea } from "../../../ui/forms";
+import {
+  Upload,
+  Download,
+  Zap,
+  FileBox,
+  Filter,
+  FileArchive,
+  Plus,
+} from "lucide-react";
+import { Textarea, Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
@@ -9,7 +17,77 @@ import {
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 
+/* ── Built-in exclude-pattern presets ────────────────────────────
+ * Each preset appends a small bundle of globs that targets a common
+ * "don't sync this" category. Selecting a preset merges into the
+ * current list (dedupe-by-string) without clobbering custom entries.
+ */
+const EXCLUDE_PRESETS: Array<{
+  value: string;
+  label: string;
+  patterns: string[];
+}> = [
+  {
+    value: "temp",
+    label: "Temp & backup files",
+    patterns: ["*.tmp", "*.bak", "*.swp", "*.swo", "*~", "*.cache"],
+  },
+  {
+    value: "os",
+    label: "OS metadata files",
+    patterns: [".DS_Store", "Thumbs.db", "desktop.ini", "$RECYCLE.BIN/*"],
+  },
+  {
+    value: "logs",
+    label: "Logs",
+    patterns: ["*.log", "*.log.*", "logs/*"],
+  },
+  {
+    value: "vcs",
+    label: "Version control",
+    patterns: [".git/*", ".svn/*", ".hg/*"],
+  },
+  {
+    value: "build",
+    label: "Build artifacts",
+    patterns: [
+      "node_modules/*",
+      "dist/*",
+      "build/*",
+      "target/*",
+      "*.pyc",
+      "__pycache__/*",
+    ],
+  },
+  {
+    value: "secrets",
+    label: "Secrets & env files",
+    patterns: [".env", ".env.*", "*.pem", "*.key", "id_rsa", "id_ed25519"],
+  },
+];
+
+const presetOptions = [
+  { value: "", label: "Add a preset…" },
+  ...EXCLUDE_PRESETS.map((p) => ({ value: p.value, label: p.label })),
+];
+
 function AdvancedSection({ mgr }: { mgr: Mgr }) {
+  const applyPreset = (value: string) => {
+    if (!value) return;
+    const preset = EXCLUDE_PRESETS.find((p) => p.value === value);
+    if (!preset) return;
+    const existing = mgr.cloudSync.excludePatterns ?? [];
+    const seen = new Set(existing.map((p) => p.trim()));
+    const merged = [...existing];
+    for (const pat of preset.patterns) {
+      if (!seen.has(pat.trim())) {
+        merged.push(pat);
+        seen.add(pat.trim());
+      }
+    }
+    mgr.updateCloudSync({ excludePatterns: merged });
+  };
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -65,7 +143,19 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
             Exclude Patterns
             <InfoTooltip text="Glob patterns (one per line) for files to skip during sync. Useful for temp files, caches, or local-only data." />
           </span>
-          <div style={{ width: "20rem" }}>
+          <div className="flex flex-col gap-2" style={{ width: "20rem" }}>
+            <div className="flex items-center gap-2">
+              <Plus size={14} className="text-[var(--color-textMuted)] flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <Select
+                  value=""
+                  onChange={applyPreset}
+                  options={presetOptions}
+                  variant="settings"
+                  aria-label="Add an exclude-pattern preset"
+                />
+              </div>
+            </div>
             <Textarea
               value={mgr.cloudSync.excludePatterns.join("\n")}
               onChange={(v) =>
@@ -76,7 +166,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
                 })
               }
               placeholder={"*.tmp\n*.bak\ntemp/*"}
-              rows={3}
+              rows={4}
               className="sor-settings-input font-mono"
             />
           </div>
