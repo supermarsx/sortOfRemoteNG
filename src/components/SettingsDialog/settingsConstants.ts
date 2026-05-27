@@ -112,6 +112,9 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "region",
     "timeFormat",
     "dateFormat",
+    "timeZone",
+    "calendarSystem",
+    "numberingSystem",
     "rtlLayout",
   ],
   behavior: [

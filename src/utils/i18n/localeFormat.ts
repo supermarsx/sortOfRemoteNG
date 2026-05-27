@@ -11,7 +11,14 @@ import { resolveSupportedLanguage } from "../../i18n/languages";
 export type LocaleFormatSettings = Partial<
   Pick<
     GlobalSettings,
-    "language" | "autoDetectOsLanguage" | "region" | "timeFormat" | "dateFormat"
+    | "language"
+    | "autoDetectOsLanguage"
+    | "region"
+    | "timeFormat"
+    | "dateFormat"
+    | "timeZone"
+    | "calendarSystem"
+    | "numberingSystem"
   >
 >;
 
@@ -52,14 +59,53 @@ const dateStyleFrom = (
 const toDate = (value: Date | number | string): Date =>
   value instanceof Date ? value : new Date(value);
 
+/** Layer the specialty Intl options (time zone, calendar, numbering
+ *  system) onto a base options object when they aren't "auto". */
+const withSpecialtyOptions = (
+  settings: LocaleFormatSettings,
+  base: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormatOptions => {
+  const opts: Intl.DateTimeFormatOptions = { ...base };
+  if (settings.timeZone && settings.timeZone !== "auto") {
+    opts.timeZone = settings.timeZone;
+  }
+  if (settings.calendarSystem && settings.calendarSystem !== "auto") {
+    opts.calendar = settings.calendarSystem;
+  }
+  if (settings.numberingSystem && settings.numberingSystem !== "auto") {
+    opts.numberingSystem = settings.numberingSystem;
+  }
+  return opts;
+};
+
+/** Format defensively: a stale/invalid specialty option (e.g. a time zone
+ *  from a downgraded build) must never throw and break a render. */
+const safeFormat = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+  date: Date,
+): string => {
+  try {
+    return new Intl.DateTimeFormat(locale, options).format(date);
+  } catch {
+    try {
+      return new Intl.DateTimeFormat(locale).format(date);
+    } catch {
+      return date.toLocaleString();
+    }
+  }
+};
+
 export function formatDate(
   value: Date | number | string,
   settings: LocaleFormatSettings,
   navLang?: string,
 ): string {
-  return new Intl.DateTimeFormat(getEffectiveLocale(settings, navLang), {
-    dateStyle: dateStyleFrom(settings.dateFormat),
-  }).format(toDate(value));
+  return safeFormat(
+    getEffectiveLocale(settings, navLang),
+    withSpecialtyOptions(settings, { dateStyle: dateStyleFrom(settings.dateFormat) }),
+    toDate(value),
+  );
 }
 
 export function formatTime(
@@ -67,10 +113,14 @@ export function formatTime(
   settings: LocaleFormatSettings,
   navLang?: string,
 ): string {
-  return new Intl.DateTimeFormat(getEffectiveLocale(settings, navLang), {
-    timeStyle: "medium",
-    hour12: hour12From(settings.timeFormat),
-  }).format(toDate(value));
+  return safeFormat(
+    getEffectiveLocale(settings, navLang),
+    withSpecialtyOptions(settings, {
+      timeStyle: "medium",
+      hour12: hour12From(settings.timeFormat),
+    }),
+    toDate(value),
+  );
 }
 
 export function formatDateTime(
@@ -78,9 +128,13 @@ export function formatDateTime(
   settings: LocaleFormatSettings,
   navLang?: string,
 ): string {
-  return new Intl.DateTimeFormat(getEffectiveLocale(settings, navLang), {
-    dateStyle: dateStyleFrom(settings.dateFormat),
-    timeStyle: "medium",
-    hour12: hour12From(settings.timeFormat),
-  }).format(toDate(value));
+  return safeFormat(
+    getEffectiveLocale(settings, navLang),
+    withSpecialtyOptions(settings, {
+      dateStyle: dateStyleFrom(settings.dateFormat),
+      timeStyle: "medium",
+      hour12: hour12From(settings.timeFormat),
+    }),
+    toDate(value),
+  );
 }

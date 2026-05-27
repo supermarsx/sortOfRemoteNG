@@ -9,6 +9,8 @@ import {
   Clock,
   CalendarDays,
   CalendarClock,
+  Hash,
+  Sparkles,
 } from "lucide-react";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
@@ -39,6 +41,79 @@ const REGION_OPTIONS: { value: string; label: string }[] = [
 
 const languageLabel = (value: string): string =>
   SUPPORTED_LANGUAGES.find((l) => l.value === value)?.label ?? value;
+
+/* Specialty formatting option lists, sourced from the engine's
+ * `Intl.supportedValuesOf` where available with a static fallback so the
+ * pickers still populate in environments that lack it. */
+function intlSupportedValues(
+  key: "calendar" | "numberingSystem" | "timeZone",
+  fallback: string[],
+): string[] {
+  try {
+    const fn = (
+      Intl as unknown as {
+        supportedValuesOf?: (k: string) => string[];
+      }
+    ).supportedValuesOf;
+    if (typeof fn === "function") {
+      const values = fn(key);
+      if (Array.isArray(values) && values.length) return values;
+    }
+  } catch {
+    /* not supported — use fallback */
+  }
+  return fallback;
+}
+
+const AUTO_OPTION = { value: "auto", label: "Locale default" };
+
+const TIME_ZONE_OPTIONS = [
+  { value: "auto", label: "System default" },
+  ...intlSupportedValues("timeZone", [
+    "UTC",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "Asia/Tokyo",
+    "Asia/Shanghai",
+    "Asia/Kolkata",
+    "Australia/Sydney",
+  ]).map((z) => ({ value: z, label: z.replace(/_/g, " ") })),
+];
+
+const CALENDAR_OPTIONS = [
+  AUTO_OPTION,
+  ...intlSupportedValues("calendar", [
+    "gregory",
+    "buddhist",
+    "chinese",
+    "coptic",
+    "ethiopic",
+    "hebrew",
+    "indian",
+    "islamic",
+    "japanese",
+    "persian",
+  ]).map((c) => ({ value: c, label: c })),
+];
+
+const NUMBERING_OPTIONS = [
+  AUTO_OPTION,
+  ...intlSupportedValues("numberingSystem", [
+    "latn",
+    "arab",
+    "arabext",
+    "beng",
+    "deva",
+    "fullwide",
+    "hanidec",
+    "thai",
+  ]).map((n) => ({ value: n, label: n })),
+];
 
 export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
   settings,
@@ -157,6 +232,49 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
           <p className="text-xs text-[var(--color-textMuted)] mt-1 ml-7">
             Preview: {formatDateTime(new Date(), settings)}
           </p>
+        </Card>
+      </div>
+
+      {/* Specialty / advanced regional formats */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<Sparkles className="w-4 h-4 text-primary" />}
+          title="Regional Formats (Advanced)"
+        />
+        <Card>
+          <SettingsSelectRow
+            settingKey="timeZone"
+            icon={<Globe size={16} />}
+            label="Time Zone"
+            value={settings.timeZone ?? "auto"}
+            options={TIME_ZONE_OPTIONS}
+            onChange={(v) => updateSettings({ timeZone: v })}
+            searchable
+            searchPlaceholder="Search time zones…"
+            infoTooltip="Display timestamps in a specific IANA time zone instead of the system zone — useful when operating servers in another region."
+          />
+          <SettingsSelectRow
+            settingKey="calendarSystem"
+            icon={<CalendarDays size={16} />}
+            label="Calendar System"
+            value={settings.calendarSystem ?? "auto"}
+            options={CALENDAR_OPTIONS}
+            onChange={(v) => updateSettings({ calendarSystem: v })}
+            searchable
+            searchPlaceholder="Search calendars…"
+            infoTooltip="Calendar used to render dates (Gregorian, Islamic, Hebrew, Buddhist, Japanese, Persian, …). Locale default follows the language/region."
+          />
+          <SettingsSelectRow
+            settingKey="numberingSystem"
+            icon={<Hash size={16} />}
+            label="Numbering System"
+            value={settings.numberingSystem ?? "auto"}
+            options={NUMBERING_OPTIONS}
+            onChange={(v) => updateSettings({ numberingSystem: v })}
+            searchable
+            searchPlaceholder="Search numbering systems…"
+            infoTooltip="Digit set used in numbers and dates (Latin, Arabic-Indic, Devanagari, Thai, …). Locale default follows the language/region."
+          />
         </Card>
       </div>
 

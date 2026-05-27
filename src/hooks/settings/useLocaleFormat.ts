@@ -19,8 +19,16 @@ export function useLocaleFormat() {
   const ctx = useContext(SettingsContext);
   const settings = (ctx?.settings ?? {}) as LocaleFormatSettings;
 
-  const { language, autoDetectOsLanguage, region, timeFormat, dateFormat } =
-    settings;
+  const {
+    language,
+    autoDetectOsLanguage,
+    region,
+    timeFormat,
+    dateFormat,
+    timeZone,
+    calendarSystem,
+    numberingSystem,
+  } = settings;
 
   return useMemo(() => {
     const s: LocaleFormatSettings = {
@@ -29,6 +37,9 @@ export function useLocaleFormat() {
       region,
       timeFormat,
       dateFormat,
+      timeZone,
+      calendarSystem,
+      numberingSystem,
     };
     return {
       locale: getEffectiveLocale(s),
@@ -36,7 +47,16 @@ export function useLocaleFormat() {
       formatTime: (v: Date | number | string) => formatTime(v, s),
       formatDateTime: (v: Date | number | string) => formatDateTime(v, s),
     };
-  }, [language, autoDetectOsLanguage, region, timeFormat, dateFormat]);
+  }, [
+    language,
+    autoDetectOsLanguage,
+    region,
+    timeFormat,
+    dateFormat,
+    timeZone,
+    calendarSystem,
+    numberingSystem,
+  ]);
 }
 
 export default useLocaleFormat;

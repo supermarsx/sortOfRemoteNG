@@ -144,6 +144,12 @@ export interface GlobalSettings {
   timeFormat?: 'auto' | '12h' | '24h';
   /** Date display style for timestamps. "auto" follows the locale. */
   dateFormat?: 'auto' | 'short' | 'medium' | 'long';
+  /** IANA time zone for displayed timestamps. "auto" uses the system zone. */
+  timeZone?: string;
+  /** Unicode calendar system (e.g. "gregory", "islamic"). "auto" = locale. */
+  calendarSystem?: string;
+  /** Unicode numbering system (e.g. "latn", "arab"). "auto" = locale. */
+  numberingSystem?: string;
   /** Render the UI right-to-left (sets document dir = "rtl"). */
   rtlLayout?: boolean;
   theme: Theme;
