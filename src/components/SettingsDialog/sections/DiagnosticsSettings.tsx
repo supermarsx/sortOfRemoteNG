@@ -21,51 +21,21 @@ import {
   Search,
   AlertTriangle,
   Zap,
+  Hash,
 } from "lucide-react";
-import { Checkbox, NumberInput } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
-import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
-import { InfoTooltip } from "../../ui/InfoTooltip";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsNumberRow,
+  SettingsSliderRow,
+} from "../../ui/settings/SettingsPrimitives";
 
 interface DiagnosticsSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
-
-/* ── Shared row primitive ────────────────────────────── */
-
-const ToggleRow: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  description?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  tooltip?: string;
-}> = ({ icon, label, description, checked, onChange, tooltip }) => (
-  <label className="flex items-center justify-between gap-3 cursor-pointer">
-    <div className="flex items-center gap-3 min-w-0">
-      <span className="flex-shrink-0 text-[var(--color-textSecondary)]">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <span className="text-[var(--color-text)] flex items-center gap-1">
-          {label}
-          {tooltip && <InfoTooltip text={tooltip} />}
-        </span>
-        {description && (
-          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-            {description}
-          </p>
-        )}
-      </div>
-    </div>
-    <Checkbox
-      checked={checked}
-      onChange={(v: boolean) => onChange(v)}
-      className="sor-checkbox-lg flex-shrink-0"
-    />
-  </label>
-);
 
 /* ── Main Component ──────────────────────────────────── */
 
@@ -93,116 +63,69 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           icon={<Wifi className="w-4 h-4 text-primary" />}
           title="Network"
         />
-        <div className="sor-settings-card">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Radio className="w-4 h-4" />
-                Ping Count
-                <InfoTooltip text="Number of ICMP echo requests to send during the sequential ping test. Higher values give more accurate latency and jitter statistics." />
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={50}
-                value={diag.pingCount}
-                onChange={(e) => update({ pingCount: Number(e.target.value) })}
-                className="w-full accent-[var(--color-primary)]"
-              />
-              <div className="text-xs text-[var(--color-textMuted)] text-right">
-                {diag.pingCount} pings
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Timer className="w-4 h-4" />
-                Ping Timeout (s)
-                <InfoTooltip text="Maximum time in seconds to wait for each ping reply before marking it as timed out." />
-              </label>
-              <NumberInput
-                value={diag.pingTimeoutSecs}
-                onChange={(v: number) => update({ pingTimeoutSecs: v })}
-                className="w-full"
-                min={1}
-                max={30}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Timer className="w-4 h-4" />
-                Ping Interval (ms)
-                <InfoTooltip text="Delay in milliseconds between consecutive pings. Lower values complete faster but may be rate-limited by firewalls." />
-              </label>
-              <input
-                type="range"
-                min={100}
-                max={2000}
-                step={100}
-                value={diag.pingIntervalMs}
-                onChange={(e) =>
-                  update({ pingIntervalMs: Number(e.target.value) })
-                }
-                className="w-full accent-[var(--color-primary)]"
-              />
-              <div className="text-xs text-[var(--color-textMuted)] text-right">
-                {diag.pingIntervalMs}ms
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Route className="w-4 h-4" />
-                Traceroute Max Hops
-                <InfoTooltip text="Maximum number of network hops (routers) to traverse before stopping the traceroute. Increase for distant hosts." />
-              </label>
-              <input
-                type="range"
-                min={5}
-                max={64}
-                value={diag.tracerouteMaxHops}
-                onChange={(e) =>
-                  update({ tracerouteMaxHops: Number(e.target.value) })
-                }
-                className="w-full accent-[var(--color-primary)]"
-              />
-              <div className="text-xs text-[var(--color-textMuted)] text-right">
-                {diag.tracerouteMaxHops} hops
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Timer className="w-4 h-4" />
-                Traceroute Timeout (s)
-                <InfoTooltip text="Per-hop timeout in seconds. Hops that don't respond within this window are shown as timeouts." />
-              </label>
-              <NumberInput
-                value={diag.tracerouteTimeoutSecs}
-                onChange={(v: number) => update({ tracerouteTimeoutSecs: v })}
-                className="w-full"
-                min={1}
-                max={10}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Zap className="w-4 h-4" />
-                Port Check Timeout (s)
-                <InfoTooltip text="Maximum time in seconds to wait for a TCP connection to the target port before declaring it closed or filtered." />
-              </label>
-              <NumberInput
-                value={diag.portCheckTimeoutSecs}
-                onChange={(v: number) => update({ portCheckTimeoutSecs: v })}
-                className="w-full"
-                min={1}
-                max={30}
-              />
-            </div>
-          </div>
-        </div>
+        <Card>
+          <SettingsSliderRow
+            icon={<Radio size={16} />}
+            label="Ping Count"
+            value={diag.pingCount}
+            min={1}
+            max={50}
+            unit=" pings"
+            onChange={(v) => update({ pingCount: v })}
+            infoTooltip="Number of ICMP echo requests to send during the sequential ping test. Higher values give more accurate latency and jitter statistics."
+          />
+          <SettingsNumberRow
+            icon={<Timer size={16} />}
+            label="Ping Timeout"
+            value={diag.pingTimeoutSecs}
+            min={1}
+            max={30}
+            unit="s"
+            onChange={(v) => update({ pingTimeoutSecs: v })}
+            infoTooltip="Maximum time in seconds to wait for each ping reply before marking it as timed out."
+          />
+          <SettingsSliderRow
+            icon={<Timer size={16} />}
+            label="Ping Interval"
+            value={diag.pingIntervalMs}
+            min={100}
+            max={2000}
+            step={100}
+            unit="ms"
+            onChange={(v) => update({ pingIntervalMs: v })}
+            infoTooltip="Delay in milliseconds between consecutive pings. Lower values complete faster but may be rate-limited by firewalls."
+          />
+          <SettingsSliderRow
+            icon={<Route size={16} />}
+            label="Traceroute Max Hops"
+            value={diag.tracerouteMaxHops}
+            min={5}
+            max={64}
+            unit=" hops"
+            onChange={(v) => update({ tracerouteMaxHops: v })}
+            infoTooltip="Maximum number of network hops (routers) to traverse before stopping the traceroute. Increase for distant hosts."
+          />
+          <SettingsNumberRow
+            icon={<Timer size={16} />}
+            label="Traceroute Timeout"
+            value={diag.tracerouteTimeoutSecs}
+            min={1}
+            max={10}
+            unit="s"
+            onChange={(v) => update({ tracerouteTimeoutSecs: v })}
+            infoTooltip="Per-hop timeout in seconds. Hops that don't respond within this window are shown as timeouts."
+          />
+          <SettingsNumberRow
+            icon={<Zap size={16} />}
+            label="Port Check Timeout"
+            value={diag.portCheckTimeoutSecs}
+            min={1}
+            max={30}
+            unit="s"
+            onChange={(v) => update({ portCheckTimeoutSecs: v })}
+            infoTooltip="Maximum time in seconds to wait for a TCP connection to the target port before declaring it closed or filtered."
+          />
+        </Card>
       </div>
 
       {/* Advanced Checks */}
@@ -211,76 +134,73 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           icon={<Layers className="w-4 h-4 text-primary" />}
           title="Advanced Checks"
         />
-        <div className="sor-settings-card">
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              <Timer className="w-4 h-4" />
-              TCP Timing Timeout (s)
-              <InfoTooltip text="Timeout for the TCP connection timing measurement, which measures how long it takes to establish a full TCP handshake." />
-            </label>
-            <NumberInput
-              value={diag.tcpTimingTimeoutSecs}
-              onChange={(v: number) => update({ tcpTimingTimeoutSecs: v })}
-              className="w-full md:w-48"
-              min={1}
-              max={60}
-            />
-          </div>
+        <Card>
+          <SettingsNumberRow
+            icon={<Timer size={16} />}
+            label="TCP Timing Timeout"
+            value={diag.tcpTimingTimeoutSecs}
+            min={1}
+            max={60}
+            unit="s"
+            onChange={(v) => update({ tcpTimingTimeoutSecs: v })}
+            infoTooltip="Timeout for the TCP connection timing measurement, which measures how long it takes to establish a full TCP handshake."
+          />
 
-          <ToggleRow
-            icon={<Network className="w-4 h-4" />}
+          <Toggle
+            icon={<Network size={16} />}
             label="MTU Path Discovery"
+            description="Detect the maximum transmission unit along the network path"
             checked={diag.mtuCheckEnabled}
             onChange={(v) => update({ mtuCheckEnabled: v })}
-            tooltip="Detect the maximum transmission unit along the network path. Helps identify fragmentation issues that can cause slow or failed connections."
+            infoTooltip="Detect the maximum transmission unit along the network path. Helps identify fragmentation issues that can cause slow or failed connections."
           />
 
-          <ToggleRow
-            icon={<Shield className="w-4 h-4" />}
+          <Toggle
+            icon={<Shield size={16} />}
             label="ICMP Blockade Detection"
+            description="Compare ICMP vs TCP reachability to detect firewall filtering"
             checked={diag.icmpBlockadeEnabled}
             onChange={(v) => update({ icmpBlockadeEnabled: v })}
-            tooltip="Determine if ICMP packets are being blocked by a firewall. Compares ICMP reachability with TCP reachability to detect filtering."
+            infoTooltip="Determine if ICMP packets are being blocked by a firewall. Compares ICMP reachability with TCP reachability to detect filtering."
           />
 
-          <ToggleRow
-            icon={<Fingerprint className="w-4 h-4" />}
+          <Toggle
+            icon={<Fingerprint size={16} />}
             label="Service Fingerprinting"
+            description="Identify the service and version on the target port"
             checked={diag.serviceFingerprintEnabled}
             onChange={(v) => update({ serviceFingerprintEnabled: v })}
-            tooltip="Attempt to identify the service and version running on the target port by analyzing the banner and protocol responses."
+            infoTooltip="Attempt to identify the service and version running on the target port by analyzing the banner and protocol responses."
           />
 
-          <ToggleRow
-            icon={<ArrowLeftRight className="w-4 h-4" />}
+          <Toggle
+            icon={<ArrowLeftRight size={16} />}
             label="Asymmetric Routing Detection"
+            description="Detect when packets take different paths to and from the target"
             checked={diag.asymmetricRoutingEnabled}
             onChange={(v) => update({ asymmetricRoutingEnabled: v })}
-            tooltip="Detect if packets take different paths to and from the target, which can cause connection instability, packet loss, or firewall issues."
+            infoTooltip="Detect if packets take different paths to and from the target, which can cause connection instability, packet loss, or firewall issues."
           />
 
           <div
-            className={`pl-7 space-y-2 ${!diag.asymmetricRoutingEnabled ? "opacity-50 pointer-events-none" : ""}`}
+            className={
+              diag.asymmetricRoutingEnabled
+                ? undefined
+                : "opacity-50 pointer-events-none"
+            }
           >
-            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              Sample Count
-              <InfoTooltip text="Number of probe samples used to analyze routing symmetry. More samples improve detection accuracy but take longer." />
-            </label>
-            <input
-              type="range"
+            <SettingsSliderRow
+              icon={<Hash size={16} />}
+              label="Sample Count"
+              value={diag.asymmetricRoutingSamples}
               min={2}
               max={20}
-              value={diag.asymmetricRoutingSamples}
-              onChange={(e) =>
-                update({ asymmetricRoutingSamples: Number(e.target.value) })
-              }
-              className="w-full accent-[var(--color-primary)]"
+              unit=" samples"
+              onChange={(v) => update({ asymmetricRoutingSamples: v })}
+              infoTooltip="Number of probe samples used to analyze routing symmetry. More samples improve detection accuracy but take longer."
             />
-            <div className="text-xs text-[var(--color-textMuted)] text-right">
-              {diag.asymmetricRoutingSamples} samples
-            </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* TLS / Certificate */}
@@ -289,15 +209,16 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           icon={<Lock className="w-4 h-4 text-primary" />}
           title="TLS / Certificate"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Lock className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Lock size={16} />}
             label="TLS Certificate Check"
+            description="Verify server certificate, TLS version, cipher, and expiry"
             checked={diag.tlsCheckEnabled}
             onChange={(v) => update({ tlsCheckEnabled: v })}
-            tooltip="For HTTPS and TLS-enabled ports, verify the server certificate, report the TLS version, cipher suite, and certificate expiry date."
+            infoTooltip="For HTTPS and TLS-enabled ports, verify the server certificate, report the TLS version, cipher suite, and certificate expiry date."
           />
-        </div>
+        </Card>
       </div>
 
       {/* Extended Checks */}
@@ -306,48 +227,54 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           icon={<Globe className="w-4 h-4 text-primary" />}
           title="Extended Checks"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Globe className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Globe size={16} />}
             label="IP Geolocation Lookup"
+            description="Look up location, ISP, and ASN for the target IP"
             checked={diag.ipGeoEnabled}
             onChange={(v) => update({ ipGeoEnabled: v })}
-            tooltip="Look up the geographic location, ISP, and ASN information for the target IP address."
+            infoTooltip="Look up the geographic location, ISP, and ASN information for the target IP address."
           />
 
-          <ToggleRow
-            icon={<Radio className="w-4 h-4" />}
+          <Toggle
+            icon={<Radio size={16} />}
             label="UDP Port Probing"
+            description="Probe UDP services like DNS, NTP, SNMP, and TFTP"
             checked={diag.udpProbeEnabled}
             onChange={(v) => update({ udpProbeEnabled: v })}
-            tooltip="Send UDP probes to detect services on UDP-based protocols like DNS, NTP, SNMP, and TFTP."
+            infoTooltip="Send UDP probes to detect services on UDP-based protocols like DNS, NTP, SNMP, and TFTP."
           />
 
           <div
-            className={`pl-7 space-y-2 ${!diag.udpProbeEnabled ? "opacity-50 pointer-events-none" : ""}`}
+            className={
+              diag.udpProbeEnabled
+                ? undefined
+                : "opacity-50 pointer-events-none"
+            }
           >
-            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              UDP Probe Timeout (ms)
-              <InfoTooltip text="Maximum time in milliseconds to wait for a UDP response before considering the port as not responding." />
-            </label>
-            <NumberInput
+            <SettingsNumberRow
+              icon={<Timer size={16} />}
+              label="UDP Probe Timeout"
               value={diag.udpProbeTimeoutMs}
-              onChange={(v: number) => update({ udpProbeTimeoutMs: v })}
-              className="w-full md:w-48"
               min={500}
               max={10000}
               step={500}
+              unit="ms"
+              onChange={(v) => update({ udpProbeTimeoutMs: v })}
+              infoTooltip="Maximum time in milliseconds to wait for a UDP response before considering the port as not responding."
             />
           </div>
 
-          <ToggleRow
-            icon={<AlertTriangle className="w-4 h-4" />}
+          <Toggle
+            icon={<AlertTriangle size={16} />}
             label="Proxy/VPN Leakage Detection"
+            description="Check for DNS leaks and IP mismatches when a proxy/VPN is active"
             checked={diag.leakageDetectionEnabled}
             onChange={(v) => update({ leakageDetectionEnabled: v })}
-            tooltip="When a proxy or VPN is configured, check for DNS leaks and IP mismatches that could expose your real network identity."
+            infoTooltip="When a proxy or VPN is configured, check for DNS leaks and IP mismatches that could expose your real network identity."
           />
-        </div>
+        </Card>
       </div>
 
       {/* Protocol Diagnostics */}
@@ -356,32 +283,35 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           icon={<Search className="w-4 h-4 text-primary" />}
           title="Protocol Diagnostics"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Search className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Search size={16} />}
             label="Protocol-Specific Deep Diagnostics"
+            description="Detailed SSH / HTTP(S) / RDP handshake and version probes"
             checked={diag.protocolDiagEnabled}
             onChange={(v) => update({ protocolDiagEnabled: v })}
-            tooltip="Run detailed protocol-level tests for SSH, HTTP/HTTPS, and RDP connections including authentication probes, handshake analysis, and version detection."
+            infoTooltip="Run detailed protocol-level tests for SSH, HTTP/HTTPS, and RDP connections including authentication probes, handshake analysis, and version detection."
           />
 
           <div
-            className={`pl-7 space-y-2 ${!diag.protocolDiagEnabled ? "opacity-50 pointer-events-none" : ""}`}
+            className={
+              diag.protocolDiagEnabled
+                ? undefined
+                : "opacity-50 pointer-events-none"
+            }
           >
-            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              <Timer className="w-4 h-4" />
-              Protocol Diagnostic Timeout (s)
-              <InfoTooltip text="Maximum time in seconds for the entire protocol-specific diagnostic sequence to complete." />
-            </label>
-            <NumberInput
+            <SettingsNumberRow
+              icon={<Timer size={16} />}
+              label="Protocol Diagnostic Timeout"
               value={diag.protocolDiagTimeoutSecs}
-              onChange={(v: number) => update({ protocolDiagTimeoutSecs: v })}
-              className="w-full md:w-48"
               min={5}
               max={60}
+              unit="s"
+              onChange={(v) => update({ protocolDiagTimeoutSecs: v })}
+              infoTooltip="Maximum time in seconds for the entire protocol-specific diagnostic sequence to complete."
             />
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Behavior & Display */}
@@ -390,31 +320,34 @@ export const DiagnosticsSettings: React.FC<DiagnosticsSettingsProps> = ({
           icon={<Eye className="w-4 h-4 text-primary" />}
           title="Behavior & Display"
         />
-        <div className="sor-settings-card">
-          <ToggleRow
-            icon={<Play className="w-4 h-4" />}
+        <Card>
+          <Toggle
+            icon={<Play size={16} />}
             label="Auto-Run on Open"
+            description="Start all diagnostic checks automatically when the panel opens"
             checked={diag.autoRunOnOpen}
             onChange={(v) => update({ autoRunOnOpen: v })}
-            tooltip="Automatically start running all diagnostic checks when the diagnostics tab or panel is opened, without requiring a manual click."
+            infoTooltip="Automatically start running all diagnostic checks when the diagnostics tab or panel is opened, without requiring a manual click."
           />
 
-          <ToggleRow
-            icon={<Eye className="w-4 h-4" />}
+          <Toggle
+            icon={<Eye size={16} />}
             label="Show Detailed Results"
+            description="Display verbose output, raw values, and timing breakdowns"
             checked={diag.showDetailedResults}
             onChange={(v) => update({ showDetailedResults: v })}
-            tooltip="Display verbose diagnostic output including raw values, timing breakdowns, and technical details for each check."
+            infoTooltip="Display verbose diagnostic output including raw values, timing breakdowns, and technical details for each check."
           />
 
-          <ToggleRow
-            icon={<AlertTriangle className="w-4 h-4" />}
+          <Toggle
+            icon={<AlertTriangle size={16} />}
             label="Auto-Expand Failed Steps"
+            description="Expand the detail panel for steps that failed"
             checked={diag.expandFailedSteps}
             onChange={(v) => update({ expandFailedSteps: v })}
-            tooltip="Automatically expand the detail panel for diagnostic steps that failed, making it easier to spot problems at a glance."
+            infoTooltip="Automatically expand the detail panel for diagnostic steps that failed, making it easier to spot problems at a glance."
           />
-        </div>
+        </Card>
       </div>
     </div>
   );
