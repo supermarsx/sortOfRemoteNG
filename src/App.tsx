@@ -6,7 +6,7 @@ import React, {
   useRef,
 } from "react";
 import dynamic from "next/dynamic";
-import { Monitor, Zap, Plus } from "lucide-react";
+import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
@@ -1315,13 +1315,23 @@ const AppContent: React.FC = () => {
                 )}
                 {!appSettings.hideQuickStartButtons && (
                   <div className="flex space-x-4 relative z-10">
-                    <button
-                      onClick={handleNewConnection}
-                      className="sor-btn sor-btn-primary flex items-center space-x-2"
-                    >
-                      <Plus size={16} />
-                      <span>{t("connections.new")} Connection</span>
-                    </button>
+                    {databaseManager.getCurrentDatabase() ? (
+                      <button
+                        onClick={handleNewConnection}
+                        className="sor-btn sor-btn-primary flex items-center space-x-2"
+                      >
+                        <Plus size={16} />
+                        <span>{t("connections.new")} Connection</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowDatabasePanel(true)}
+                        className="sor-btn sor-btn-primary flex items-center space-x-2"
+                      >
+                        <Database size={16} />
+                        <span>{t("collections.select", "Select Database")}</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => setShowQuickConnect(true)}
                       className="sor-btn sor-btn-ghost flex items-center space-x-2"
