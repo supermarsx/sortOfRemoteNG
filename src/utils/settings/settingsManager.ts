@@ -44,6 +44,29 @@ async function emitSettingsSync(settings: GlobalSettings): Promise<void> {
 }
 
 /**
+ * IndexedDB key under which settings were historically stored. Still read
+ * once for migration into the app-data file, and used as the persistence
+ * target outside the desktop shell (browser / tests).
+ */
+const SETTINGS_STORAGE_KEY = 'mremote-settings';
+
+/**
+ * Resolve the Tauri `invoke` fn when running inside the desktop shell, or
+ * `null` in a plain browser / test environment. Mirrors the detection used
+ * by the storage layer (`utils/storage/storage.ts`).
+ */
+function tauriInvoke():
+  | (<T>(cmd: string, args?: Record<string, unknown>) => Promise<T>)
+  | null {
+  const inv = (
+    globalThis as { __TAURI__?: { core?: { invoke?: unknown } } }
+  ).__TAURI__?.core?.invoke;
+  return typeof inv === 'function'
+    ? (inv as <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>)
+    : null;
+}
+
+/**
  * Default global application settings. These values are used when no user
  * settings have been persisted. Any settings not provided by the user will
  * fall back to these defaults.
@@ -670,9 +693,97 @@ export class SettingsManager {
     }
   }
 
+  /**
+   * Narrow a raw `settings.json` object to just the keys the frontend
+   * owns (everything in DEFAULT_SETTINGS). Drops sibling keys managed by
+   * the backend — notably `updater` — so they never leak into the
+   * in-memory blob and get written back over the Rust-managed values.
+   */
+  private sliceKnownSettings(
+    raw: Record<string, unknown> | null | undefined,
+  ): Partial<GlobalSettings> | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (key in raw) out[key] = (raw as Record<string, unknown>)[key];
+    }
+    return out as Partial<GlobalSettings>;
+  }
+
+  /**
+   * Read persisted settings. In the desktop shell this reads
+   * `<app_data_dir>/settings.json` via the backend, migrating a legacy
+   * IndexedDB store into the file on first run. Outside Tauri (browser,
+   * tests) it falls back to IndexedDB.
+   */
+  private async readPersistedSettings(): Promise<Partial<GlobalSettings> | null> {
+    const invoke = tauriInvoke();
+    if (!invoke) {
+      return IndexedDbService.getItem<Partial<GlobalSettings>>(SETTINGS_STORAGE_KEY);
+    }
+    try {
+      const fileValue = await invoke<Record<string, unknown> | null>('read_app_settings');
+      const fromFile = this.sliceKnownSettings(fileValue);
+      if (fromFile && Object.keys(fromFile).length > 0) {
+        return fromFile;
+      }
+      // settings.json has no frontend keys yet — migrate the legacy
+      // IndexedDB store into the file once, then keep using the file.
+      // (The IndexedDB copy is left in place as a one-release backstop.)
+      const legacy = await IndexedDbService.getItem<Partial<GlobalSettings>>(
+        SETTINGS_STORAGE_KEY,
+      );
+      if (legacy && Object.keys(legacy).length > 0) {
+        try {
+          await invoke('write_app_settings', { patch: legacy });
+        } catch (e) {
+          console.error('Failed to migrate settings into settings.json:', e);
+        }
+        return legacy;
+      }
+      return null;
+    } catch (error) {
+      console.error('read_app_settings failed; falling back to IndexedDB:', error);
+      return IndexedDbService.getItem<Partial<GlobalSettings>>(SETTINGS_STORAGE_KEY);
+    }
+  }
+
+  /**
+   * Persist a settings change. In the desktop shell the patch is
+   * shallow-merged into `settings.json` by the backend (so partial saves
+   * never drop sibling keys); elsewhere the full in-memory blob is written
+   * to IndexedDB.
+   */
+  private async persistSettings(patch: Partial<GlobalSettings>): Promise<void> {
+    const invoke = tauriInvoke();
+    if (!invoke) {
+      await IndexedDbService.setItem(SETTINGS_STORAGE_KEY, this.settings);
+      return;
+    }
+    try {
+      await invoke('write_app_settings', { patch });
+    } catch (error) {
+      console.error('write_app_settings failed; falling back to IndexedDB:', error);
+      await IndexedDbService.setItem(SETTINGS_STORAGE_KEY, this.settings);
+    }
+  }
+
+  /**
+   * Reset persisted settings back to defaults. Clears the legacy
+   * IndexedDB copy and overwrites the frontend-owned keys in
+   * `settings.json` with DEFAULT_SETTINGS (leaving backend-managed keys
+   * like `updater` untouched). Callers typically reload the app after.
+   */
+  async resetStoredSettings(): Promise<void> {
+    await IndexedDbService.removeItem(SETTINGS_STORAGE_KEY);
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.loaded = true;
+    await this.persistSettings(DEFAULT_SETTINGS);
+  }
+
   private async doLoadSettings(): Promise<GlobalSettings> {
     try {
-      const stored = await IndexedDbService.getItem<Partial<GlobalSettings>>('mremote-settings');
+      const stored = await this.readPersistedSettings();
       if (stored) {
         const storedSettings = stored;
         // Validate colorScheme - migrate invalid values like "other" or "custom" to "blue"
@@ -758,7 +869,9 @@ export class SettingsManager {
       // for the load to complete first.
       await this.ensureLoaded();
       this.settings = { ...this.settings, ...settings };
-      await IndexedDbService.setItem('mremote-settings', this.settings);
+      // Write only the patch: the backend shallow-merges it into
+      // settings.json, so partial saves never drop sibling keys.
+      await this.persistSettings(settings);
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes
       if (!options?.silent) {
         this.logAction('info', 'Settings saved', undefined, 'User settings updated');
@@ -793,7 +906,7 @@ export class SettingsManager {
   async applySyncedSettings(settings: GlobalSettings): Promise<void> {
     const prev = this.settings;
     this.settings = settings;
-    await IndexedDbService.setItem('mremote-settings', this.settings);
+    await this.persistSettings(settings);
     // Only dispatch the DOM event if something visual might have changed
     // (theme, transparency, etc.) — skip if the object is identical.
     const visualChanged =

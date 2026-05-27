@@ -23,6 +23,9 @@ export function useRecoverySettings() {
       for (const key of keysToDelete) {
         await IndexedDbService.removeItem(key);
       }
+      // Settings now live in <app_data_dir>/settings.json, not IndexedDB —
+      // reset the file's frontend keys too so a wipe actually clears them.
+      await SettingsManager.getInstance().resetStoredSettings();
       const localStorageKeys = Object.keys(localStorage).filter(
         (key) => key.startsWith('mremote-') || key.startsWith('wol-'),
       );
@@ -48,7 +51,9 @@ export function useRecoverySettings() {
   const handleResetSettings = useCallback(async () => {
     setIsLoading(true);
     try {
-      await IndexedDbService.removeItem('mremote-settings');
+      // Resets both the legacy IndexedDB copy and the app-data
+      // settings.json (frontend keys → defaults).
+      await SettingsManager.getInstance().resetStoredSettings();
       await SettingsManager.getInstance().initialize();
       alert('Settings have been reset to defaults. The app will now reload.');
       window.location.reload();

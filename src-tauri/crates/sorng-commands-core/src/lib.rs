@@ -15,6 +15,8 @@ mod app_auth_commands;
 #[allow(dead_code)]
 #[path = "../../../src/app_shell_commands.rs"]
 mod app_shell_commands;
+#[path = "../../../src/app_settings_commands.rs"]
+mod app_settings_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
 #[cfg(feature = "ops")]
