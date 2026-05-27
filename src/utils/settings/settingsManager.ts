@@ -73,6 +73,9 @@ function tauriInvoke():
  */
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
+  autoDetectOsLanguage: false,
+  region: 'auto',
+  rtlLayout: false,
   theme: 'dark',
   colorScheme: 'blue',
   primaryAccentColor: '#3b82f6',

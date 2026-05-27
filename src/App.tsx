@@ -796,6 +796,10 @@ const AppContent: React.FC = () => {
       const detail = (event as CustomEvent<GlobalSettings>).detail;
       if (detail) {
         setAppSettings(detail);
+        // Keep the document text direction in sync with the RTL setting.
+        if (typeof document !== "undefined") {
+          document.documentElement.dir = detail.rtlLayout ? "rtl" : "ltr";
+        }
       }
     };
 

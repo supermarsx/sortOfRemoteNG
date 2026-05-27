@@ -2,6 +2,7 @@ import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import GeneralSettings from "../../src/components/SettingsDialog/sections/GeneralSettings";
+import LanguageSettings from "../../src/components/SettingsDialog/sections/LanguageSettings";
 import BackendSettings from "../../src/components/SettingsDialog/sections/BackendSettings";
 import RDPDefaultSettings from "../../src/components/SettingsDialog/sections/RdpDefaultSettings";
 
@@ -53,11 +54,6 @@ describe("Core settings section centralization", () => {
       />,
     );
 
-    const languageSelect = container.querySelector(
-      '[data-setting-key="language"] [role="combobox"]',
-    ) as HTMLElement;
-    expect(languageSelect.className).toContain("sor-settings-select");
-
     const autosaveToggle = container.querySelector(
       '[data-setting-key="autoSaveEnabled"] input[type="checkbox"]',
     ) as HTMLInputElement;
@@ -66,6 +62,31 @@ describe("Core settings section centralization", () => {
     fireEvent.click(autosaveToggle);
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ autoSaveEnabled: false }),
+    );
+  });
+
+  it("uses centralized controls in LanguageSettings", () => {
+    const updateSettings = vi.fn();
+    const { container } = render(
+      <LanguageSettings
+        settings={baseSettings}
+        updateSettings={updateSettings}
+      />,
+    );
+
+    const languageSelect = container.querySelector(
+      '[data-setting-key="language"] [role="combobox"]',
+    ) as HTMLElement;
+    expect(languageSelect.className).toContain("sor-settings-select");
+
+    const autoDetectToggle = container.querySelector(
+      '[data-setting-key="autoDetectOsLanguage"] input[type="checkbox"]',
+    ) as HTMLInputElement;
+    expect(autoDetectToggle.className).toContain("sor-settings-checkbox");
+
+    fireEvent.click(autoDetectToggle);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ autoDetectOsLanguage: true }),
     );
   });
 

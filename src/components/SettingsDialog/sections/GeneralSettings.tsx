@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
   Monitor,
-  Globe,
   Clock,
   Save,
   AlertTriangle,
@@ -18,7 +17,7 @@ import {
   SettingsSectionHeader as SectionHeader,
   SettingsToggleRow as Toggle,
 } from "../../ui/settings/SettingsPrimitives";
-import { NumberInput, Select } from '../../ui/forms';
+import { NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 import { InfoTooltip } from '../../ui/InfoTooltip';
 
@@ -28,7 +27,6 @@ interface GeneralSettingsProps {
 }
 
 const inputClass = "sor-settings-input w-full";
-const selectClass = "sor-settings-select w-full";
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   settings,
@@ -38,34 +36,36 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <SectionHeading icon={<Monitor className="w-5 h-5 text-primary" />} title="General" description="Language, autosave, connection timeouts, and general application preferences." />
+      <SectionHeading icon={<Monitor className="w-5 h-5 text-primary" />} title="General" description="Autosave, connection timeouts, and general application preferences." />
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<Globe className="w-4 h-4 text-primary" />}
-          title="Language & Timing"
+          icon={<Clock className="w-4 h-4 text-primary" />}
+          title="Timing"
         />
         <Card>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div data-setting-key="language" className="space-y-2">
-              <label className="flex items-center gap-2 sor-settings-row-label">
-                <Globe className="w-4 h-4" />
-                {t("settings.language")}
-                <InfoTooltip text="Choose the display language for the application interface. Changes take effect after restarting the app." />
-              </label>
-              <Select value={settings.language} onChange={(v: string) => updateSettings({ language: v })} options={[{ value: "en", label: "English" }, { value: "es", label: "Español (España)" }, { value: "fr", label: "Français (France)" }, { value: "de", label: "Deutsch (Deutschland)" }, { value: "pt-PT", label: "Português (Portugal)" }]} className="selectClass" />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 sor-settings-row-label">
-                <Clock className="w-4 h-4" />
-                Connection Timeout (seconds)
-                <InfoTooltip text="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks." />
-              </label>
-              <NumberInput value={settings.connectionTimeout} onChange={(v: number) => updateSettings({
-                    connectionTimeout: v,
-                  })} className="inputClass" min={5} max={300} />
-            </div>
+          <div
+            data-setting-key="connectionTimeout"
+            className="sor-settings-select-row"
+          >
+            <span className="sor-settings-row-label flex items-center gap-1">
+              <span className="text-[var(--color-textSecondary)] mr-1">
+                <Clock size={16} />
+              </span>
+              Connection Timeout (seconds)
+              <InfoTooltip text="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks." />
+            </span>
+            <NumberInput
+              value={settings.connectionTimeout}
+              onChange={(v: number) =>
+                updateSettings({ connectionTimeout: v })
+              }
+              variant="settings-compact"
+              className="text-right"
+              style={{ width: "5rem" }}
+              min={5}
+              max={300}
+            />
           </div>
         </Card>
       </div>
@@ -96,7 +96,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             </label>
             <NumberInput value={settings.autoSaveIntervalMinutes} onChange={(v: number) => updateSettings({
                   autoSaveIntervalMinutes: v,
-                })} className="inputClass" min={1} max={120} />
+                })} className={inputClass} min={1} max={120} />
           </div>
         </Card>
       </div>

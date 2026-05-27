@@ -7,7 +7,7 @@ import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ThemeManager } from "../../utils/settings/themeManager";
 import { SecureStorage } from "../../utils/storage/storage";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
-import i18n, { loadLanguage } from "../../i18n";
+import i18n, { loadLanguage, resolveSupportedLanguage } from "../../i18n";
 import { IndexedDbService } from "../../utils/storage/indexedDbService";
 import {
   isRealConnectionSession,
@@ -143,20 +143,32 @@ export const useAppLifecycle = ({
         }),
       );
 
-      // Language loading
+      // Text direction (RTL) — apply before/independent of language load.
+      if (typeof document !== "undefined") {
+        document.documentElement.dir = settings.rtlLayout ? "rtl" : "ltr";
+      }
+
+      // Language loading. When auto-detect is on the runtime language follows
+      // the OS/browser locale; the explicit `settings.language` pick is left
+      // untouched so turning auto-detect off restores it.
+      const effectiveLanguage = settings.autoDetectOsLanguage
+        ? resolveSupportedLanguage(
+            typeof navigator !== "undefined" ? navigator.language : "en",
+          )
+        : settings.language;
       if (
-        settings.language &&
-        settings.language !== i18n.language &&
+        effectiveLanguage &&
+        effectiveLanguage !== i18n.language &&
         typeof i18n.changeLanguage === "function"
       ) {
         parallelTasks.push(
           (async () => {
             try {
-              if (settings.language !== "en") {
-                await loadLanguage(settings.language);
+              if (effectiveLanguage !== "en") {
+                await loadLanguage(effectiveLanguage);
               }
-              await i18n.changeLanguage(settings.language);
-              console.log(`Language changed to: ${settings.language}`);
+              await i18n.changeLanguage(effectiveLanguage);
+              console.log(`Language changed to: ${effectiveLanguage}`);
             } catch (error) {
               console.warn("Failed to change language:", error);
             }

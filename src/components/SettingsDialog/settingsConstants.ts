@@ -11,6 +11,7 @@ import {
   Server,
   Code,
   MousePointerClick,
+  Languages,
   Archive,
   CloudCog,
   Fingerprint,
@@ -45,6 +46,7 @@ export interface SettingsTab {
 export const SETTINGS_TABS: SettingsTab[] = [
   // ── Core experience ──
   { id: "general", labelKey: "settings.general", icon: Monitor },
+  { id: "language", labelKey: "Language", icon: Languages },
   { id: "behavior", labelKey: "Behavior", icon: MousePointerClick },
   { id: "startup", labelKey: "settings.startup.title", fallback: "Startup & Tray", icon: Power },
   { id: "layout", labelKey: "Layout", icon: LayoutGrid },
@@ -93,13 +95,18 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
 export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   general: [
-    "language",
     "autoSaveEnabled",
     "autoSaveIntervalMinutes",
     "warnOnClose",
     "warnOnExit",
     "warnOnDetachClose",
     "quickConnectHistoryEnabled",
+  ],
+  language: [
+    "language",
+    "autoDetectOsLanguage",
+    "region",
+    "rtlLayout",
   ],
   behavior: [
     "singleClickConnect",

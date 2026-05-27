@@ -134,6 +134,14 @@ export const defaultExportSecuritySettings: ExportSecuritySettings = {
 export interface GlobalSettings {
   // General Settings
   language: string;
+  /** When true, the runtime language follows the OS/browser locale instead
+   *  of the explicit `language` pick (which is preserved). */
+  autoDetectOsLanguage?: boolean;
+  /** Regional/country code for locale-aware formatting (e.g. "US", "GB").
+   *  "auto" or empty follows the system region. */
+  region?: string;
+  /** Render the UI right-to-left (sets document dir = "rtl"). */
+  rtlLayout?: boolean;
   theme: Theme;
   colorScheme: ColorScheme;
   primaryAccentColor?: string;

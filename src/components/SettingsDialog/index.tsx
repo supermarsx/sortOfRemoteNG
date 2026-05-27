@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import GeneralSettings from "./sections/GeneralSettings";
+import LanguageSettings from "./sections/LanguageSettings";
 import ThemeSettings from "./sections/ThemeSettings";
 import LayoutSettings from "./sections/LayoutSettings";
 import SecuritySettings from "./sections/SecuritySettings";
@@ -169,6 +170,9 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
       <div className="p-6 max-w-3xl mx-auto">
         {mgr.activeTab === "general" && (
           <GeneralSettings settings={s} updateSettings={u} />
+        )}
+        {mgr.activeTab === "language" && (
+          <LanguageSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "behavior" && (
           <BehaviorSettings settings={s} updateSettings={u} />

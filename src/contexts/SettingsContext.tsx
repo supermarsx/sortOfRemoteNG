@@ -13,6 +13,9 @@ interface SettingsContextType {
 
 export const defaultSettings: GlobalSettings = {
   language: 'en',
+  autoDetectOsLanguage: false,
+  region: 'auto',
+  rtlLayout: false,
   theme: 'dark',
   colorScheme: 'blue',
   autoSaveEnabled: false,

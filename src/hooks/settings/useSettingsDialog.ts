@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { GlobalSettings, ProxyConfig } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { ThemeManager } from "../../utils/settings/themeManager";
-import { loadLanguage } from "../../i18n";
+import { loadLanguage, resolveSupportedLanguage } from "../../i18n";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useSettingsSearch } from "../../components/SettingsDialog/useSettingsSearch";
@@ -200,9 +200,17 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
       await flushDebouncedSave();
       await settingsManager.saveSettings(settings);
 
-      if (settings.language !== i18n.language) {
-        if (settings.language !== "en") await loadLanguage(settings.language);
-        await i18n.changeLanguage(settings.language);
+      const effectiveLanguage = settings.autoDetectOsLanguage
+        ? resolveSupportedLanguage(
+            typeof navigator !== "undefined" ? navigator.language : "en",
+          )
+        : settings.language;
+      if (effectiveLanguage !== i18n.language) {
+        if (effectiveLanguage !== "en") await loadLanguage(effectiveLanguage);
+        await i18n.changeLanguage(effectiveLanguage);
+      }
+      if (typeof document !== "undefined") {
+        document.documentElement.dir = settings.rtlLayout ? "rtl" : "ltr";
       }
 
       themeManager.applyTheme(
