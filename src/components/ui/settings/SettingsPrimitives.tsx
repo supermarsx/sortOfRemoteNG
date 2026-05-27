@@ -279,6 +279,7 @@ export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
 interface SettingsNumberRowProps extends BaseSettingProps {
   label: string;
   icon?: React.ReactNode;
+  description?: string;
   value: number;
   min?: number;
   max?: number;
@@ -291,6 +292,7 @@ interface SettingsNumberRowProps extends BaseSettingProps {
 export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
   label,
   icon,
+  description,
   value,
   min,
   max,
@@ -305,10 +307,17 @@ export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
     className={cx('sor-settings-select-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label flex items-center gap-1">
-      {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
-      {label}{unit && ` (${unit})`}{infoTooltip && <InfoTooltip text={infoTooltip} />}
-    </span>
+    <div className="min-w-0">
+      <span className="sor-settings-row-label flex items-center gap-1">
+        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+        {label}{unit && ` (${unit})`}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+      </span>
+      {description && (
+        <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+          {description}
+        </p>
+      )}
+    </div>
     <input
       type="number"
       value={value}
