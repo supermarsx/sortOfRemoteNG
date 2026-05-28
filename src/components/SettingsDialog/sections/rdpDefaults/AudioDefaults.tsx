@@ -1,12 +1,10 @@
-import { selectClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Volume2 } from "lucide-react";
-import { Select } from "../../../ui/forms";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { Volume2, Mic, Music } from "lucide-react";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
+  SettingsSelectRow,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
@@ -17,43 +15,54 @@ const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     />
 
     <Card>
-    <div>
-      <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Audio Playback <InfoTooltip text="Controls where remote session audio is played back -- locally, on the remote machine, or not at all." />
-      </label>
-      <Select value={rdp.audioPlaybackMode ?? "local"} onChange={(v: string) => update({
+      <SettingsSelectRow
+        settingKey="audioPlaybackMode"
+        icon={<Volume2 size={16} />}
+        label="Audio playback"
+        value={rdp.audioPlaybackMode ?? "local"}
+        options={[
+          { value: "local", label: "Play on this computer" },
+          { value: "remote", label: "Play on remote computer" },
+          { value: "disabled", label: "Do not play" },
+        ]}
+        onChange={(v) =>
+          update({
             audioPlaybackMode: v as "local" | "remote" | "disabled",
-          })} options={[
-            { value: "local", label: "Play on this computer" },
-            { value: "remote", label: "Play on remote computer" },
-            { value: "disabled", label: "Do not play" },
-          ]} className={selectClass} />
-    </div>
+          })
+        }
+        infoTooltip="Controls where remote session audio is played back — locally, on the remote machine, or not at all."
+      />
 
-    <div>
-      <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Audio Recording <InfoTooltip text="When enabled, audio input from your local microphone is redirected to the remote session." />
-      </label>
-      <Select value={rdp.audioRecordingMode ?? "disabled"} onChange={(v: string) => update({
-            audioRecordingMode: v as "enabled" | "disabled",
-          })} options={[
-            { value: "disabled", label: "Disabled" },
-            { value: "enabled", label: "Record from this computer" },
-          ]} className={selectClass} />
-    </div>
+      <SettingsSelectRow
+        settingKey="audioRecordingMode"
+        icon={<Mic size={16} />}
+        label="Audio recording"
+        value={rdp.audioRecordingMode ?? "disabled"}
+        options={[
+          { value: "disabled", label: "Disabled" },
+          { value: "enabled", label: "Record from this computer" },
+        ]}
+        onChange={(v) =>
+          update({ audioRecordingMode: v as "enabled" | "disabled" })
+        }
+        infoTooltip="When enabled, audio input from your local microphone is redirected to the remote session."
+      />
 
-    <div>
-      <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Audio Quality <InfoTooltip text="Sets the audio codec quality level. Dynamic mode auto-adjusts based on available bandwidth." />
-      </label>
-      <Select value={rdp.audioQuality ?? "dynamic"} onChange={(v: string) => update({
-            audioQuality: v as "dynamic" | "medium" | "high",
-          })} options={[
-            { value: "dynamic", label: "Dynamic (auto-adjust)" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High" },
-          ]} className={selectClass} />
-    </div>
+      <SettingsSelectRow
+        settingKey="audioQuality"
+        icon={<Music size={16} />}
+        label="Audio quality"
+        value={rdp.audioQuality ?? "dynamic"}
+        options={[
+          { value: "dynamic", label: "Dynamic (auto-adjust)" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+        ]}
+        onChange={(v) =>
+          update({ audioQuality: v as "dynamic" | "medium" | "high" })
+        }
+        infoTooltip="Sets the audio codec quality level. Dynamic mode auto-adjusts based on available bandwidth."
+      />
     </Card>
   </div>
 );

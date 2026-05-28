@@ -1,13 +1,20 @@
 import type { SectionProps } from "./selectClass";
-import { selectClass, RESOLUTION_PRESETS } from "./selectClass";
+import { RESOLUTION_PRESETS } from "./selectClass";
 import React from "react";
-import { Monitor, Minimize2 } from "lucide-react";
-import { NumberInput, Select } from "../../../ui/forms";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Monitor,
+  Minimize2,
+  Palette,
+  Maximize,
+  ArrowLeftRight,
+  ArrowUpDown,
+} from "lucide-react";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
+  SettingsSelectRow,
+  SettingsNumberRow,
 } from "../../../ui/settings/SettingsPrimitives";
 
 const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
@@ -19,6 +26,11 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const selectedValue = matchedPreset
     ? `${matchedPreset.w}x${matchedPreset.h}`
     : "custom";
+  const scalingValue = rdp.resizeToWindow
+    ? "resize"
+    : rdp.smartSizing !== false
+      ? "smart"
+      : "none";
 
   return (
     <div className="space-y-4">
@@ -28,60 +40,78 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
       />
 
       <Card>
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          Default Resolution <InfoTooltip text="The screen resolution used when opening a new RDP connection." />
-        </label>
-        <Select value={selectedValue} onChange={(v: string) => {
+        <SettingsSelectRow
+          settingKey="defaultResolution"
+          icon={<Maximize size={16} />}
+          label="Default resolution"
+          value={selectedValue}
+          options={[
+            ...RESOLUTION_PRESETS.map((p) => ({
+              value: `${p.w}x${p.h}`,
+              label: p.label,
+            })),
+            { value: "custom", label: "Custom…" },
+          ]}
+          onChange={(v) => {
             if (v === "custom") return;
             const [w, h] = v.split("x").map(Number);
             update({ defaultWidth: w, defaultHeight: h });
-          }} options={[...RESOLUTION_PRESETS.map((p) => ({ value: `${p.w}x${p.h}`, label: p.label })), { value: 'custom', label: 'Custom...' }]} className={selectClass} />
-      </div>
+          }}
+          infoTooltip="The screen resolution used when opening a new RDP connection."
+        />
 
-      {selectedValue === "custom" && (
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              Width <InfoTooltip text="Custom horizontal resolution in pixels for the remote desktop." />
-            </label>
-            <NumberInput value={currentW} onChange={(v: number) => update({
-                  defaultWidth: v,
-                })} className="inputClass" min={640} max={7680} />
-          </div>
-          <div>
-            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              Height <InfoTooltip text="Custom vertical resolution in pixels for the remote desktop." />
-            </label>
-            <NumberInput value={currentH} onChange={(v: number) => update({
-                  defaultHeight: v,
-                })} className="inputClass" min={480} max={4320} />
-          </div>
-        </div>
-      )}
+        {selectedValue === "custom" && (
+          <>
+            <SettingsNumberRow
+              icon={<ArrowLeftRight size={16} />}
+              label="Width"
+              value={currentW}
+              min={640}
+              max={7680}
+              unit="px"
+              onChange={(v) => update({ defaultWidth: v })}
+              infoTooltip="Custom horizontal resolution in pixels for the remote desktop."
+            />
+            <SettingsNumberRow
+              icon={<ArrowUpDown size={16} />}
+              label="Height"
+              value={currentH}
+              min={480}
+              max={4320}
+              unit="px"
+              onChange={(v) => update({ defaultHeight: v })}
+              infoTooltip="Custom vertical resolution in pixels for the remote desktop."
+            />
+          </>
+        )}
 
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          Default Color Depth <InfoTooltip text="The number of bits used per pixel for color rendering. Higher values produce better color fidelity." />
-        </label>
-        <Select value={rdp.defaultColorDepth ?? 32} onChange={(v: string) => update({
-              defaultColorDepth: parseInt(v) as 16 | 24 | 32,
-            })} options={[{ value: "16", label: "16-bit (High Color)" }, { value: "24", label: "24-bit (True Color)" }, { value: "32", label: "32-bit (True Color + Alpha)" }]} className="selectClass" />
-      </div>
-
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          Scaling Mode <InfoTooltip text="How the remote desktop fits the local window. Smart Sizing scales a fixed resolution. Resize to Window dynamically changes the remote resolution. These are mutually exclusive." />
-        </label>
-        <Select
-          value={
-            rdp.resizeToWindow
-              ? "resize"
-              : rdp.smartSizing !== false
-                ? "smart"
-                : "none"
+        <SettingsSelectRow
+          settingKey="defaultColorDepth"
+          icon={<Palette size={16} />}
+          label="Default color depth"
+          value={String(rdp.defaultColorDepth ?? 32)}
+          options={[
+            { value: "16", label: "16-bit (High Color)" },
+            { value: "24", label: "24-bit (True Color)" },
+            { value: "32", label: "32-bit (True Color + Alpha)" },
+          ]}
+          onChange={(v) =>
+            update({ defaultColorDepth: parseInt(v, 10) as 16 | 24 | 32 })
           }
-          onChange={(v: string) => {
+          infoTooltip="The number of bits used per pixel for color rendering. Higher values produce better color fidelity."
+        />
+
+        <SettingsSelectRow
+          settingKey="scalingMode"
+          icon={<Maximize size={16} />}
+          label="Scaling mode"
+          value={scalingValue}
+          options={[
+            { value: "smart", label: "Smart Sizing (scale to fit)" },
+            { value: "resize", label: "Resize to Window (dynamic resolution)" },
+            { value: "none", label: "None (scrollbars if needed)" },
+          ]}
+          onChange={(v) => {
             if (v === "resize") {
               update({ resizeToWindow: true, smartSizing: false });
             } else if (v === "smart") {
@@ -90,23 +120,17 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               update({ resizeToWindow: false, smartSizing: false });
             }
           }}
-          options={[
-            { value: "smart", label: "Smart Sizing (scale to fit)" },
-            { value: "resize", label: "Resize to Window (dynamic resolution)" },
-            { value: "none", label: "None (scrollbars if needed)" },
-          ]}
-          className={selectClass}
+          infoTooltip="How the remote desktop fits the local window. Smart Sizing scales a fixed resolution. Resize to Window dynamically changes the remote resolution. These are mutually exclusive."
         />
-      </div>
 
-      <Toggle
-        checked={rdp.lossyCompression ?? true}
-        onChange={(v) => update({ lossyCompression: v })}
-        icon={<Minimize2 size={16} />}
-        label="Lossy Compression"
-        description="Trade minor visual fidelity for lower bandwidth"
-        infoTooltip="Enables lossy image compression to reduce bandwidth usage at the cost of minor visual artifacts."
-      />
+        <Toggle
+          checked={rdp.lossyCompression ?? true}
+          onChange={(v) => update({ lossyCompression: v })}
+          icon={<Minimize2 size={16} />}
+          label="Lossy compression"
+          description="Trade minor visual fidelity for lower bandwidth."
+          infoTooltip="Enables lossy image compression to reduce bandwidth usage at the cost of minor visual artifacts."
+        />
       </Card>
     </div>
   );
