@@ -1,41 +1,119 @@
 import type { SectionProps, Rdp } from "./selectClass";
 import React from "react";
 import {
-  HardDrive, FolderOpen, Copy, Printer, Cable, CreditCard,
-  ShieldCheck, Video, Mic, Usb,
+  HardDrive,
+  FolderOpen,
+  Copy,
+  Printer,
+  Cable,
+  CreditCard,
+  ShieldCheck,
+  Video,
+  Mic,
+  Usb,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
+  SettingsSelectRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import { DriveMappingEditor } from "../../../connectionEditor/rdpOptions/DeviceRedirectionSection";
-import type { ClipboardDirection, RdpDriveRedirection, RdpPrinterOutputMode } from "../../../../types/connection/connection";
-import { selectClass } from "./selectClass";
+import type {
+  ClipboardDirection,
+  RdpPrinterOutputMode,
+} from "../../../../types/connection/connection";
 
-const CLIPBOARD_DIRECTION_OPTIONS: Array<{ value: ClipboardDirection; label: string }> = [
+const CLIPBOARD_DIRECTION_OPTIONS: Array<{
+  value: ClipboardDirection;
+  label: string;
+}> = [
   { value: "bidirectional", label: "Bidirectional" },
   { value: "client-to-server", label: "Local to remote only" },
   { value: "server-to-client", label: "Remote to local only" },
   { value: "disabled", label: "Disabled" },
 ];
 
-const PRINTER_OUTPUT_MODE_OPTIONS: Array<{ value: RdpPrinterOutputMode; label: string }> = [
+const PRINTER_OUTPUT_MODE_OPTIONS: Array<{
+  value: RdpPrinterOutputMode;
+  label: string;
+}> = [
   { value: "spool-file", label: "Save spool file locally" },
-  { value: "native-print", label: "Send to OS printer, keep spool fallback" },
+  { value: "native-print", label: "Send to OS printer (spool fallback)" },
 ];
 
-const devices: { key: keyof Rdp; label: string; description: string; defaultVal: boolean; icon: React.ReactNode }[] = [
-  { key: "clipboardRedirection", label: "Clipboard", description: "Share clipboard between local and remote for copy/paste", defaultVal: true, icon: <Copy size={16} /> },
-  { key: "printerRedirection", label: "Printers", description: "Redirect local printers to the remote session", defaultVal: false, icon: <Printer size={16} /> },
-  { key: "portRedirection", label: "Serial / COM Ports", description: "Redirect serial/COM ports for hardware devices", defaultVal: false, icon: <Cable size={16} /> },
-  { key: "smartCardRedirection", label: "Smart Cards", description: "Redirect smart card readers for authentication", defaultVal: false, icon: <CreditCard size={16} /> },
-  { key: "webAuthnRedirection", label: "WebAuthn / FIDO", description: "Redirect security keys for passwordless auth", defaultVal: false, icon: <ShieldCheck size={16} /> },
-  { key: "videoCaptureRedirection", label: "Video Capture", description: "Redirect local cameras to the remote session", defaultVal: false, icon: <Video size={16} /> },
-  { key: "audioInputRedirection", label: "Audio Input", description: "Redirect microphone to the remote session", defaultVal: false, icon: <Mic size={16} /> },
-  { key: "usbRedirection", label: "USB Devices", description: "Redirect USB devices for direct hardware access", defaultVal: false, icon: <Usb size={16} /> },
-  { key: "driveRedirection", label: "Drive Redirection", description: "Share local drives and folders as mapped network drives", defaultVal: false, icon: <HardDrive size={16} /> },
+const devices: {
+  key: keyof Rdp;
+  label: string;
+  description: string;
+  defaultVal: boolean;
+  icon: React.ReactNode;
+}[] = [
+  {
+    key: "clipboardRedirection",
+    label: "Clipboard",
+    description: "Share clipboard between local and remote for copy/paste.",
+    defaultVal: true,
+    icon: <Copy size={16} />,
+  },
+  {
+    key: "printerRedirection",
+    label: "Printers",
+    description: "Redirect local printers to the remote session.",
+    defaultVal: false,
+    icon: <Printer size={16} />,
+  },
+  {
+    key: "portRedirection",
+    label: "Serial / COM ports",
+    description: "Redirect serial/COM ports for hardware devices.",
+    defaultVal: false,
+    icon: <Cable size={16} />,
+  },
+  {
+    key: "smartCardRedirection",
+    label: "Smart cards",
+    description: "Redirect smart card readers for authentication.",
+    defaultVal: false,
+    icon: <CreditCard size={16} />,
+  },
+  {
+    key: "webAuthnRedirection",
+    label: "WebAuthn / FIDO",
+    description: "Redirect security keys for passwordless auth.",
+    defaultVal: false,
+    icon: <ShieldCheck size={16} />,
+  },
+  {
+    key: "videoCaptureRedirection",
+    label: "Video capture",
+    description: "Redirect local cameras to the remote session.",
+    defaultVal: false,
+    icon: <Video size={16} />,
+  },
+  {
+    key: "audioInputRedirection",
+    label: "Audio input",
+    description: "Redirect microphone to the remote session.",
+    defaultVal: false,
+    icon: <Mic size={16} />,
+  },
+  {
+    key: "usbRedirection",
+    label: "USB devices",
+    description: "Redirect USB devices for direct hardware access.",
+    defaultVal: false,
+    icon: <Usb size={16} />,
+  },
+  {
+    key: "driveRedirection",
+    label: "Drive redirection",
+    description: "Share local drives and folders as mapped network drives.",
+    defaultVal: false,
+    icon: <HardDrive size={16} />,
+  },
 ];
 
 const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
@@ -46,60 +124,56 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     />
 
     <Card>
-    <p className="text-xs text-[var(--color-textMuted)]">
-      Global device redirection settings inherited by all connections. Per-connection settings can override these.
-    </p>
+      <p className="text-xs text-[var(--color-textMuted)]">
+        Global device redirection settings inherited by all connections.
+        Per-connection settings can override these.
+      </p>
 
-    {devices.map((d) => (
-      <Toggle
-        key={d.key}
-        checked={(rdp[d.key] as boolean | undefined) ?? d.defaultVal}
-        onChange={(v: boolean) => update({ [d.key]: v } as any)}
-        icon={d.icon}
-        label={d.label}
-        description={d.description}
-        settingKey={`rdpDefaults.${d.key}`}
-      />
-    ))}
+      {devices.map((d) => (
+        <Toggle
+          key={d.key}
+          checked={(rdp[d.key] as boolean | undefined) ?? d.defaultVal}
+          onChange={(v: boolean) =>
+            update({ [d.key]: v } as Record<string, unknown>)
+          }
+          icon={d.icon}
+          label={d.label}
+          description={d.description}
+          settingKey={`rdpDefaults.${d.key}`}
+        />
+      ))}
 
-    <div className="mt-3 space-y-1">
-      <label className="text-xs font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
-        Clipboard Direction
-        <InfoTooltip text="Default clipboard flow policy for RDP sessions. Per-connection settings can override this." />
-      </label>
-      <select
-        className={selectClass}
+      <SettingsSelectRow
+        settingKey="rdpDefaults.clipboardDirection"
+        icon={<ArrowRightLeft size={16} />}
+        label="Clipboard direction"
         value={rdp.clipboardDirection ?? "bidirectional"}
-        onChange={(event) => update({ clipboardDirection: event.target.value as ClipboardDirection })}
-      >
-        {CLIPBOARD_DIRECTION_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </div>
+        options={CLIPBOARD_DIRECTION_OPTIONS}
+        onChange={(v) =>
+          update({ clipboardDirection: v as ClipboardDirection })
+        }
+        infoTooltip="Default clipboard flow policy for RDP sessions. Per-connection settings can override this."
+      />
 
-    <div className="mt-3 space-y-1">
-      <label className="text-xs font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
-        Printer Output Mode
-        <InfoTooltip text="Default delivery mode for redirected print jobs. Native print still keeps the local spool file as a fallback artifact." />
-      </label>
-      <select
-        className={selectClass}
+      <SettingsSelectRow
+        settingKey="rdpDefaults.printerOutputMode"
+        icon={<Printer size={16} />}
+        label="Printer output mode"
         value={rdp.printerOutputMode ?? "spool-file"}
-        onChange={(event) => update({ printerOutputMode: event.target.value as RdpPrinterOutputMode })}
-      >
-        {PRINTER_OUTPUT_MODE_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </div>
+        options={PRINTER_OUTPUT_MODE_OPTIONS}
+        onChange={(v) =>
+          update({ printerOutputMode: v as RdpPrinterOutputMode })
+        }
+        infoTooltip="Default delivery mode for redirected print jobs. Native print still keeps the local spool file as a fallback artifact."
+      />
 
-    <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
-      <h5 className="text-xs font-medium text-[var(--color-textSecondary)] mb-2 flex items-center gap-1.5">
-        <FolderOpen size={12} className="text-primary" />
-        Global Drive Mappings
+      {/* Drive mappings — keep the specialized editor, but lift the
+          mini-header to the in-card sub-group style. */}
+      <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]/40 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] font-medium">
+        <FolderOpen size={11} />
+        Global drive mappings
         <InfoTooltip text="Drive mappings inherited by all RDP connections. Individual connections can exclude specific mappings or add their own. Requires Drive Redirection to be enabled." />
-      </h5>
+      </div>
       <DriveMappingEditor
         drives={rdp.driveRedirections ?? []}
         onChange={(drives) => {
@@ -107,11 +181,10 @@ const DeviceRedirectionDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
           if (drives.length > 0 && !rdp.driveRedirection) {
             patch.driveRedirection = true;
           }
-          update(patch as any);
+          update(patch as Record<string, unknown>);
         }}
         selectClass="sor-form-input"
       />
-    </div>
     </Card>
   </div>
 );
