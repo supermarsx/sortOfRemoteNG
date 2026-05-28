@@ -5,12 +5,13 @@ import {
   Code,
   FileText,
   AlertCircle,
+  AlertTriangle,
   Bug,
   Info,
   RotateCcw,
   Cpu,
+  Power,
 } from "lucide-react";
-import { NumberInput } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
 import {
   Card,
@@ -141,9 +142,6 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
     });
   };
 
-  // Default NumberInput variant already applies `.sor-settings-input`.
-  const inputCls = "text-sm";
-
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -167,7 +165,7 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
         />
 
         <div
-          className={`space-y-4 pt-3 border-t border-[var(--color-border)] ${!mw.enabled ? "opacity-50 pointer-events-none" : ""}`}
+          className={`flex flex-col gap-2.5 pt-3 border-t border-[var(--color-border)] ${!mw.enabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           <SettingsNumberRow
             icon={<RotateCcw size={16} />}
@@ -181,112 +179,88 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="How often the watchdog checks memory usage. Lower values detect leaks faster but use slightly more CPU."
           />
 
-          <div>
-            <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
-              JS Heap Thresholds (Main Window)
-              <InfoTooltip text="Memory thresholds for the main application window's JavaScript heap. Warning logs to console, Critical shows an overlay, Kill tears down the page." />
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Warning (MB)</label>
-                <NumberInput
-                  value={mw.heapWarningMb}
-                  onChange={(v: number) => update({ heapWarningMb: v })}
-                  className={inputCls}
-                  min={64}
-                  max={8192}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Critical (MB)</label>
-                <NumberInput
-                  value={mw.heapCriticalMb}
-                  onChange={(v: number) => update({ heapCriticalMb: v })}
-                  className={inputCls}
-                  min={128}
-                  max={8192}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Kill (MB)</label>
-                <NumberInput
-                  value={mw.heapKillMb}
-                  onChange={(v: number) => update({ heapKillMb: v })}
-                  className={inputCls}
-                  min={256}
-                  max={16384}
-                />
-              </div>
-            </div>
-          </div>
+          <SettingsNumberRow
+            icon={<AlertTriangle size={16} />}
+            label="Main heap — Warning"
+            value={mw.heapWarningMb}
+            min={64}
+            max={8192}
+            unit="MB"
+            onChange={(v) => update({ heapWarningMb: v })}
+            infoTooltip="Main-window JS heap usage that triggers a warning log."
+          />
+          <SettingsNumberRow
+            icon={<AlertCircle size={16} />}
+            label="Main heap — Critical"
+            value={mw.heapCriticalMb}
+            min={128}
+            max={8192}
+            unit="MB"
+            onChange={(v) => update({ heapCriticalMb: v })}
+            infoTooltip="Main-window JS heap usage that surfaces an in-app overlay."
+          />
+          <SettingsNumberRow
+            icon={<Power size={16} />}
+            label="Main heap — Kill"
+            value={mw.heapKillMb}
+            min={256}
+            max={16384}
+            unit="MB"
+            onChange={(v) => update({ heapKillMb: v })}
+            infoTooltip="Main-window JS heap usage at which the page is torn down to protect the system."
+          />
 
-          <div>
-            <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
-              JS Heap Thresholds (Detached Windows)
-              <InfoTooltip text="Separate, typically lower thresholds for detached session windows since they should be lightweight." />
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Warning (MB)</label>
-                <NumberInput
-                  value={mw.detached.heapWarningMb}
-                  onChange={(v: number) => updateDetached({ heapWarningMb: v })}
-                  className={inputCls}
-                  min={64}
-                  max={8192}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Critical (MB)</label>
-                <NumberInput
-                  value={mw.detached.heapCriticalMb}
-                  onChange={(v: number) => updateDetached({ heapCriticalMb: v })}
-                  className={inputCls}
-                  min={128}
-                  max={8192}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Kill (MB)</label>
-                <NumberInput
-                  value={mw.detached.heapKillMb}
-                  onChange={(v: number) => updateDetached({ heapKillMb: v })}
-                  className={inputCls}
-                  min={256}
-                  max={16384}
-                />
-              </div>
-            </div>
-          </div>
+          <SettingsNumberRow
+            icon={<AlertTriangle size={16} />}
+            label="Detached heap — Warning"
+            value={mw.detached.heapWarningMb}
+            min={64}
+            max={8192}
+            unit="MB"
+            onChange={(v) => updateDetached({ heapWarningMb: v })}
+            infoTooltip="Detached-window JS heap warning threshold (usually lower than the main window)."
+          />
+          <SettingsNumberRow
+            icon={<AlertCircle size={16} />}
+            label="Detached heap — Critical"
+            value={mw.detached.heapCriticalMb}
+            min={128}
+            max={8192}
+            unit="MB"
+            onChange={(v) => updateDetached({ heapCriticalMb: v })}
+            infoTooltip="Detached-window JS heap critical threshold."
+          />
+          <SettingsNumberRow
+            icon={<Power size={16} />}
+            label="Detached heap — Kill"
+            value={mw.detached.heapKillMb}
+            min={256}
+            max={16384}
+            unit="MB"
+            onChange={(v) => updateDetached({ heapKillMb: v })}
+            infoTooltip="Detached-window JS heap usage at which the window is torn down."
+          />
 
-          <div>
-            <label className="block text-sm text-[var(--color-textSecondary)] mb-2 flex items-center gap-1">
-              System RAM Thresholds (%)
-              <InfoTooltip text="OS-level physical memory thresholds. When system RAM exceeds the kill percentage, the window is torn down to prevent the entire system from freezing. Requires a Tauri backend command." />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Warning (%)</label>
-                <NumberInput
-                  value={mw.systemWarningPct}
-                  onChange={(v: number) => update({ systemWarningPct: v })}
-                  className={inputCls}
-                  min={50}
-                  max={99}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textMuted)] mb-1">Kill (%)</label>
-                <NumberInput
-                  value={mw.systemKillPct}
-                  onChange={(v: number) => update({ systemKillPct: v })}
-                  className={inputCls}
-                  min={60}
-                  max={99}
-                />
-              </div>
-            </div>
-          </div>
+          <SettingsNumberRow
+            icon={<AlertTriangle size={16} />}
+            label="System RAM — Warning"
+            value={mw.systemWarningPct}
+            min={50}
+            max={99}
+            unit="%"
+            onChange={(v) => update({ systemWarningPct: v })}
+            infoTooltip="OS-level physical RAM usage that triggers a warning log."
+          />
+          <SettingsNumberRow
+            icon={<Power size={16} />}
+            label="System RAM — Kill"
+            value={mw.systemKillPct}
+            min={60}
+            max={99}
+            unit="%"
+            onChange={(v) => update({ systemKillPct: v })}
+            infoTooltip="OS-level physical RAM usage at which the window is torn down to prevent the system from freezing. Requires the Tauri backend command."
+          />
         </div>
       </Card>
     </div>
