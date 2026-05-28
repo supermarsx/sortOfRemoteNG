@@ -531,6 +531,14 @@ const PathsAndPermissions: React.FC<PathsAndPermissionsProps> = ({
       /* clipboard unavailable — ignore */
     }
   };
+  const handleOpenPath = async () => {
+    if (!appDataPath) return;
+    try {
+      await invoke("open_folder", { path: appDataPath });
+    } catch (error) {
+      console.error("Failed to open app-data folder:", error);
+    }
+  };
 
   const resolve = (rel: string): string => {
     if (!appDataPath) return rel;
@@ -566,15 +574,27 @@ const PathsAndPermissions: React.FC<PathsAndPermissionsProps> = ({
                   {appDataPath}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleCopyPath}
-                title={copied ? "Copied" : "Copy path"}
-                className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] transition-colors"
-              >
-                <Copy size={12} />
-                {copied ? "Copied" : "Copy"}
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenPath}
+                  title="Open in file manager"
+                  aria-label="Open app-data folder in file manager"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] transition-colors"
+                >
+                  <FolderOpen size={12} />
+                  Open
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyPath}
+                  title={copied ? "Copied" : "Copy path"}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-[var(--color-textSecondary)] transition-colors"
+                >
+                  <Copy size={12} />
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
             </div>
           )}
 
