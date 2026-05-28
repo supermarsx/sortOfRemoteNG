@@ -29,6 +29,7 @@ import {
   Toggle,
   SettingsSelectRow,
   SettingsSliderRow,
+  SettingsColorRow,
 } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import { LoadingElementSection } from "./theme/LoadingElementSection";
@@ -106,26 +107,13 @@ const AppearanceSection: React.FC<{
             : "opacity-50 pointer-events-none"
         }
       >
-        <div className="sor-settings-select-row">
-          <span className="sor-settings-row-label flex items-center gap-1">
-            <span className="text-[var(--color-textSecondary)] mr-1">
-              <Droplets size={16} />
-            </span>
-            Accent Color
-            <InfoTooltip text="The custom color used as the primary accent throughout the UI when Custom Accent is enabled." />
-          </span>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={settings.primaryAccentColor || "#3b82f6"}
-              onChange={(e) => mgr.handleAccentChange(e.target.value)}
-              className="w-10 h-8 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
-            />
-            <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded font-mono">
-              {settings.primaryAccentColor || "#3b82f6"}
-            </span>
-          </div>
-        </div>
+        <SettingsColorRow
+          icon={<Droplets size={16} />}
+          label="Accent Color"
+          value={settings.primaryAccentColor || "#3b82f6"}
+          onChange={(v) => mgr.handleAccentChange(v)}
+          infoTooltip="The custom color used as the primary accent throughout the UI when Custom Accent is enabled."
+        />
       </div>
     </Card>
   </div>
@@ -180,31 +168,18 @@ const GlowSection: React.FC<{
               : undefined
           }
         >
-          <div className="sor-settings-select-row">
-            <span className="sor-settings-row-label flex items-center gap-1">
-              <span className="text-[var(--color-textSecondary)] mr-1">
-                <Droplets size={16} />
-              </span>
-              Glow Color{" "}
-              {settings.backgroundGlowFollowsColorScheme && (
-                <span className="text-[var(--color-textMuted)]">(auto)</span>
-              )}
-              <InfoTooltip text="The color of the background glow effect. Disabled when 'Glow follows color scheme' is on." />
-            </span>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={settings.backgroundGlowColor || "#2563eb"}
-                onChange={(e) =>
-                  updateSettings({ backgroundGlowColor: e.target.value })
-                }
-                className="w-10 h-8 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
-              />
-              <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded font-mono">
-                {settings.backgroundGlowColor || "#2563eb"}
-              </span>
-            </div>
-          </div>
+          <SettingsColorRow
+            icon={<Droplets size={16} />}
+            label={
+              settings.backgroundGlowFollowsColorScheme
+                ? "Glow Color (auto)"
+                : "Glow Color"
+            }
+            value={settings.backgroundGlowColor || "#2563eb"}
+            fallbackValue="#2563eb"
+            onChange={(v) => updateSettings({ backgroundGlowColor: v })}
+            infoTooltip="The color of the background glow effect. Disabled when 'Glow follows color scheme' is on."
+          />
         </div>
 
         <SettingsSliderRow

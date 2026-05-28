@@ -338,6 +338,72 @@ export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
   </div>
 );
 
+interface SettingsColorRowProps extends BaseSettingProps {
+  label: string;
+  icon?: React.ReactNode;
+  description?: string;
+  /** The persisted color value (e.g. "#3b82f6"). May be empty when a
+   *  fallback like "follows accent" applies. */
+  value: string;
+  onChange: (value: string) => void;
+  /** Hex used by the underlying color input when `value` is empty or not a
+   *  valid hex. Defaults to `#3b82f6`. */
+  fallbackValue?: string;
+  /** What to show in the hex chip. Defaults to `value` (or "(default)"). */
+  chipLabel?: string;
+  infoTooltip?: string;
+  /** Optional element rendered between the picker and the hex chip
+   *  (e.g. a "Match loader" / clear button). */
+  trailing?: React.ReactNode;
+}
+
+export const SettingsColorRow: React.FC<SettingsColorRowProps> = ({
+  label,
+  icon,
+  description,
+  value,
+  onChange,
+  fallbackValue = '#3b82f6',
+  chipLabel,
+  settingKey,
+  className,
+  infoTooltip,
+  trailing,
+}) => {
+  const pickerValue = value && value.startsWith('#') ? value : fallbackValue;
+  const chip = chipLabel ?? value ?? '';
+  return (
+    <div
+      className={cx('sor-settings-select-row', className)}
+      {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+    >
+      <div className="min-w-0">
+        <span className="sor-settings-row-label flex items-center gap-1">
+          {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+          {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+        </span>
+        {description && (
+          <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+            {description}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={pickerValue}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-10 h-8 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
+        />
+        {trailing}
+        <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded font-mono">
+          {chip}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 /* ── Short aliases (used by behavior/ sub-files) ── */
 export {
   SettingsCard as Card,
@@ -347,4 +413,5 @@ export {
   SettingsSelectRow as SelectRow,
   SettingsTextRow as TextRow,
   SettingsNumberRow as NumberRow,
+  SettingsColorRow as ColorRow,
 };
