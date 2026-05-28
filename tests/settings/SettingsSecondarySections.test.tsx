@@ -161,7 +161,7 @@ describe("Secondary settings section centralization", () => {
       container.querySelector('input[type="checkbox"]')?.className,
     ).toContain("sor-settings-checkbox");
     expect(container.querySelector('input[type="range"]')?.className).toContain(
-      "sor-settings-range-full",
+      "sor-settings-range",
     );
   });
 

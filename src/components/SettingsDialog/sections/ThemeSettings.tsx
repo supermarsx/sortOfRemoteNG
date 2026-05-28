@@ -13,22 +13,22 @@ import {
   Accessibility,
   Layers,
   EyeOff,
+  Maximize2,
+  Timer,
+  Brush,
 } from "lucide-react";
 import {
   useThemeSettings,
   formatLabel,
 } from "../../../hooks/settings/useThemeSettings";
-import {
-  NumberInput,
-  Slider,
-  Select,
-  Textarea,
-} from "../../ui/forms";
+import { Textarea } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
+  SettingsSelectRow,
+  SettingsSliderRow,
 } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import { LoadingElementSection } from "./theme/LoadingElementSection";
@@ -53,23 +53,17 @@ const AppearanceSection: React.FC<{
       title={mgr.t("settings.theme.appearance", "Appearance")}
     />
     <Card>
-      <div className="space-y-2">
-        <label className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
-          {mgr.t("settings.theme")}
-          <InfoTooltip text="Select the base theme that controls the overall look and feel of the application" />
-        </label>
-        <Select
-          value={settings.theme}
-          onChange={(v: string) => updateSettings({ theme: v as Theme })}
-          options={[
-            ...mgr.themes.map((theme) => ({
-              value: theme,
-              label: formatLabel(theme),
-            })),
-          ]}
-          className="sor-settings-select w-full"
-        />
-      </div>
+      <SettingsSelectRow
+        icon={<Palette size={16} />}
+        label={mgr.t("settings.theme", "Theme")}
+        value={settings.theme}
+        options={mgr.themes.map((theme) => ({
+          value: theme,
+          label: formatLabel(theme),
+        }))}
+        onChange={(v) => updateSettings({ theme: v as Theme })}
+        infoTooltip="Select the base theme that controls the overall look and feel of the application."
+      />
       <div className="space-y-2">
         <label className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
           Color Scheme
@@ -177,70 +171,76 @@ const GlowSection: React.FC<{
         />
       </div>
       <div
-        className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}
+        className={`flex flex-col gap-2.5 ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}
       >
         <div
-          className={`space-y-1 ${settings.backgroundGlowFollowsColorScheme ? "opacity-50 pointer-events-none" : ""}`}
+          className={
+            settings.backgroundGlowFollowsColorScheme
+              ? "opacity-50 pointer-events-none"
+              : undefined
+          }
         >
-          <label className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
-            Color {settings.backgroundGlowFollowsColorScheme && "(auto)"}
-            <InfoTooltip text="The color of the background glow effect" />
-          </label>
-          <input
-            type="color"
-            value={settings.backgroundGlowColor || "#2563eb"}
-            onChange={(e) =>
-              updateSettings({ backgroundGlowColor: e.target.value })
-            }
-            className="w-full h-9 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
-          />
+          <div className="sor-settings-select-row">
+            <span className="sor-settings-row-label flex items-center gap-1">
+              <span className="text-[var(--color-textSecondary)] mr-1">
+                <Droplets size={16} />
+              </span>
+              Glow Color{" "}
+              {settings.backgroundGlowFollowsColorScheme && (
+                <span className="text-[var(--color-textMuted)]">(auto)</span>
+              )}
+              <InfoTooltip text="The color of the background glow effect. Disabled when 'Glow follows color scheme' is on." />
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={settings.backgroundGlowColor || "#2563eb"}
+                onChange={(e) =>
+                  updateSettings({ backgroundGlowColor: e.target.value })
+                }
+                className="w-10 h-8 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md cursor-pointer"
+              />
+              <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded font-mono">
+                {settings.backgroundGlowColor || "#2563eb"}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="space-y-1">
-          <label className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
-            Opacity
-            <InfoTooltip text="How visible the glow effect is (0 = invisible, 1 = fully opaque)" />
-          </label>
-          <NumberInput
-            value={settings.backgroundGlowOpacity}
-            onChange={(v: number) =>
-              updateSettings({ backgroundGlowOpacity: v })
-            }
-            className="w-full"
-            min={0}
-            max={1}
-            step={0.05}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
-            Radius (px)
-            <InfoTooltip text="The size of the glow circle in pixels" />
-          </label>
-          <NumberInput
-            value={settings.backgroundGlowRadius}
-            onChange={(v: number) =>
-              updateSettings({ backgroundGlowRadius: v })
-            }
-            className="w-full"
-            min={200}
-            max={1200}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
-            Blur (px)
-            <InfoTooltip text="How much the glow is blurred at the edges in pixels" />
-          </label>
-          <NumberInput
-            value={settings.backgroundGlowBlur}
-            onChange={(v: number) =>
-              updateSettings({ backgroundGlowBlur: v })
-            }
-            className="w-full"
-            min={40}
-            max={320}
-          />
-        </div>
+
+        <SettingsSliderRow
+          icon={<Eye size={16} />}
+          label="Glow Opacity"
+          value={settings.backgroundGlowOpacity}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={(v) => updateSettings({ backgroundGlowOpacity: v })}
+          infoTooltip="How visible the glow effect is (0 = invisible, 1 = fully opaque)."
+        />
+
+        <SettingsSliderRow
+          icon={<Maximize2 size={16} />}
+          label="Glow Radius"
+          value={settings.backgroundGlowRadius}
+          min={200}
+          max={1200}
+          step={10}
+          unit="px"
+          onChange={(v) => updateSettings({ backgroundGlowRadius: v })}
+          infoTooltip="The size of the glow circle in pixels."
+        />
+
+        <SettingsSliderRow
+          icon={<Brush size={16} />}
+          label="Glow Blur"
+          value={settings.backgroundGlowBlur}
+          min={40}
+          max={320}
+          step={4}
+          unit="px"
+          onChange={(v) => updateSettings({ backgroundGlowBlur: v })}
+          infoTooltip="How much the glow is blurred at the edges in pixels."
+        />
       </div>
       <p className="text-xs text-[var(--color-textMuted)]">
         The glow effect appears centered in the main content area for an
@@ -284,38 +284,25 @@ const TransparencySection: React.FC<{
       />
 
       <div
-        className={`space-y-2 ${!settings.windowTransparencyEnabled ? "opacity-50 pointer-events-none" : ""}`}
+        className={
+          settings.windowTransparencyEnabled
+            ? undefined
+            : "opacity-50 pointer-events-none"
+        }
       >
-        <label
-          data-setting-key="windowTransparencyOpacity"
-          className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1"
-        >
-          Opacity Level
-          <InfoTooltip text="Controls how transparent the window is (0 = fully transparent, 1 = fully opaque)" />
-        </label>
-        <div className="flex items-center gap-3">
-          <Slider
-            value={mgr.opacityValue}
-            onChange={(v: number) =>
-              updateSettings({ windowTransparencyOpacity: v })
-            }
-            min={0}
-            max={1}
-            variant="full"
-            className="flex-1"
-            step={0.01}
-          />
-          <NumberInput
-            value={mgr.opacityValue}
-            onChange={(v: number) =>
-              updateSettings({ windowTransparencyOpacity: v })
-            }
-            className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs"
-            min={0}
-            max={1}
-            step={0.01}
-          />
-        </div>
+        <SettingsSliderRow
+          settingKey="windowTransparencyOpacity"
+          icon={<Layers size={16} />}
+          label="Opacity Level"
+          value={mgr.opacityValue}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(v) =>
+            updateSettings({ windowTransparencyOpacity: v })
+          }
+          infoTooltip="Controls how transparent the window is (0 = fully transparent, 1 = fully opaque)."
+        />
       </div>
 
       <Toggle
@@ -398,28 +385,26 @@ const AnimationsSection: React.FC<{
       </div>
 
       <div
-        className={`space-y-2 ${!settings.animationsEnabled ? "opacity-50 pointer-events-none" : ""}`}
+        className={
+          settings.animationsEnabled
+            ? undefined
+            : "opacity-50 pointer-events-none"
+        }
       >
-        <label className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
-          {mgr.t("settings.theme.animationDuration", "Animation duration")}
-          <InfoTooltip text="Base duration for animations in milliseconds; lower values feel snappier" />
-        </label>
-        <div className="flex items-center space-x-4">
-          <Slider
-            value={settings.animationDuration || 200}
-            onChange={(v: number) =>
-              updateSettings({ animationDuration: v })
-            }
-            min={50}
-            max={500}
-            variant="full"
-            className="flex-1"
-            step={25}
-          />
-          <span className="text-[var(--color-textSecondary)] text-sm w-16 text-right font-mono">
-            {settings.animationDuration || 200}ms
-          </span>
-        </div>
+        <SettingsSliderRow
+          icon={<Timer size={16} />}
+          label={mgr.t(
+            "settings.theme.animationDuration",
+            "Animation duration",
+          )}
+          value={settings.animationDuration || 200}
+          min={50}
+          max={500}
+          step={25}
+          unit="ms"
+          onChange={(v) => updateSettings({ animationDuration: v })}
+          infoTooltip="Base duration for animations in milliseconds; lower values feel snappier."
+        />
       </div>
     </Card>
   </div>
