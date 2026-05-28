@@ -52,8 +52,10 @@
     "dialog:default",
     "fs:default",
     {
-      "identifier": "fs:allow-read",
+      "identifier": "fs:allow-read-file",
       "allow": [
+        { "path": "$APPDATA/com.sortofremote.ng" },
+        { "path": "$APPDATA/com.sortofremote.ng/**" },
         { "path": "$APPDATA/sortofremoteng" },
         { "path": "$APPDATA/sortofremoteng/**" },
         { "path": "$DOWNLOAD" },
@@ -61,12 +63,32 @@
       ]
     },
     {
-      "identifier": "fs:allow-write",
+      "identifier": "fs:allow-write-file",
       "allow": [
+        { "path": "$APPDATA/com.sortofremote.ng" },
+        { "path": "$APPDATA/com.sortofremote.ng/**" },
         { "path": "$APPDATA/sortofremoteng" },
         { "path": "$APPDATA/sortofremoteng/**" },
         { "path": "$DOWNLOAD" },
         { "path": "$DOWNLOAD/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        { "path": "$APPDATA/com.sortofremote.ng" },
+        { "path": "$APPDATA/com.sortofremote.ng/**" },
+        { "path": "$APPDATA/sortofremoteng" },
+        { "path": "$APPDATA/sortofremoteng/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "$APPDATA/com.sortofremote.ng" },
+        { "path": "$APPDATA/com.sortofremote.ng/**" },
+        { "path": "$APPDATA/sortofremoteng" },
+        { "path": "$APPDATA/sortofremoteng/**" }
       ]
     }
   ]
