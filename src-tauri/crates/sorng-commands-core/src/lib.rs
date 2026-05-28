@@ -17,6 +17,8 @@ mod app_auth_commands;
 mod app_shell_commands;
 #[path = "../../../src/app_settings_commands.rs"]
 mod app_settings_commands;
+#[path = "../../../src/cpu_commands.rs"]
+mod cpu_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
 #[cfg(feature = "ops")]
