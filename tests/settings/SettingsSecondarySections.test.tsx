@@ -118,14 +118,14 @@ describe("Secondary settings section centralization", () => {
     // Toggle primitive (label + description + sor-settings-toggle-icon
     // wrapper, no per-row hover-tint).
     const performanceTrackingRow = screen
-      .getByText("Enable Performance Tracking")
+      .getByText(/enable performance tracking/i)
       .closest("label");
     expect(
       performanceTrackingRow?.querySelector(".sor-settings-toggle-icon"),
     ).not.toBeNull();
 
     const actionLoggingRow = screen
-      .getByText("Enable Action Logging")
+      .getByText(/enable action logging/i)
       .closest("label");
     expect(
       actionLoggingRow?.querySelector(".sor-settings-toggle-icon"),
