@@ -416,39 +416,50 @@ export const UpdaterSettings: React.FC = () => {
             )}
           />
           <div
-            data-setting-key="updater.checkIntervalHours"
-            className={`space-y-2 ${!(updater.settings?.autoCheckEnabled ?? true) ? "opacity-50 pointer-events-none" : ""}`}
+            className={
+              (updater.settings?.autoCheckEnabled ?? true)
+                ? undefined
+                : "opacity-50 pointer-events-none"
+            }
           >
-            <label
-              className="flex items-center gap-2 sor-settings-row-label"
-              htmlFor="updater-check-interval"
+            <div
+              data-setting-key="updater.checkIntervalHours"
+              className="sor-settings-select-row"
             >
-              <Clock3 className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              {t("updater.checkIntervalHours", "Check interval (hours)")}
-              <InfoTooltip
-                text={t(
-                  "updater.checkIntervalTooltip",
-                  "How often the app checks for signed updates while automatic checks are enabled.",
-                )}
+              <div className="min-w-0">
+                <span className="sor-settings-row-label flex items-center gap-1">
+                  <span className="text-[var(--color-textSecondary)] mr-1">
+                    <Clock3 size={16} />
+                  </span>
+                  {t("updater.checkIntervalHours", "Check interval (hours)")}
+                  <InfoTooltip
+                    text={t(
+                      "updater.checkIntervalTooltip",
+                      "How often the app checks for signed updates while automatic checks are enabled.",
+                    )}
+                  />
+                </span>
+                <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
+                  {t(
+                    "updater.checkIntervalDescription",
+                    "Valid range: 1 to 720 hours.",
+                  )}
+                </p>
+              </div>
+              <NumberInput
+                id="updater-check-interval"
+                value={intervalDraft}
+                min={1}
+                max={720}
+                onChange={setIntervalDraft}
+                onBlur={handleIntervalBlur}
+                disabled={updater.savingSettings || !updater.settings}
+                variant="settings-compact"
+                className="text-right"
+                style={{ width: "5rem" }}
+                data-testid="updater-check-interval"
               />
-            </label>
-            <NumberInput
-              id="updater-check-interval"
-              value={intervalDraft}
-              min={1}
-              max={720}
-              onChange={setIntervalDraft}
-              onBlur={handleIntervalBlur}
-              disabled={updater.savingSettings || !updater.settings}
-              className="w-full"
-              data-testid="updater-check-interval"
-            />
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t(
-                "updater.checkIntervalDescription",
-                "Valid range: 1 to 720 hours.",
-              )}
-            </p>
+            </div>
           </div>
         </Card>
       </div>
@@ -481,40 +492,49 @@ export const UpdaterSettings: React.FC = () => {
             )}
           />
           <div
-            data-setting-key="updater.privateEndpointUrl"
-            className={`space-y-2 ${!endpointEnabledDraft ? "opacity-50 pointer-events-none" : ""}`}
+            className={
+              endpointEnabledDraft
+                ? undefined
+                : "opacity-50 pointer-events-none"
+            }
           >
-            <label
-              className="flex items-center gap-2 sor-settings-row-label"
-              htmlFor="updater-private-endpoint-url"
+            <div
+              data-setting-key="updater.privateEndpointUrl"
+              className="sor-settings-select-row"
             >
-              <Server className="w-4 h-4 text-[var(--color-textSecondary)]" />
-              {t("updater.privateEndpointUrl", "Private endpoint URL")}
-              <InfoTooltip
-                text={t(
-                  "updater.privateEndpointUrlTooltip",
-                  "HTTPS URL for a Tauri-compatible update manifest.",
-                )}
+              <span className="sor-settings-row-label flex items-center gap-1">
+                <span className="text-[var(--color-textSecondary)] mr-1">
+                  <Server size={16} />
+                </span>
+                {t("updater.privateEndpointUrl", "Private endpoint URL")}
+                <InfoTooltip
+                  text={t(
+                    "updater.privateEndpointUrlTooltip",
+                    "HTTPS URL for a Tauri-compatible update manifest.",
+                  )}
+                />
+              </span>
+              <TextInput
+                id="updater-private-endpoint-url"
+                inputMode="url"
+                value={endpointDraft}
+                onChange={setEndpointDraft}
+                onBlur={handleEndpointBlur}
+                variant="settings"
+                disabled={
+                  updater.savingSettings ||
+                  !updater.settings ||
+                  !endpointEnabledDraft
+                }
+                placeholder="https://updates.example.com/latest.json"
+                style={{ width: "24rem" }}
+                data-testid="updater-private-endpoint-input"
               />
-            </label>
-            <TextInput
-              id="updater-private-endpoint-url"
-              inputMode="url"
-              value={endpointDraft}
-              onChange={setEndpointDraft}
-              onBlur={handleEndpointBlur}
-              variant="settings"
-              disabled={
-                updater.savingSettings || !updater.settings || !endpointEnabledDraft
-              }
-              placeholder="https://updates.example.com/latest.json"
-              className="w-full"
-              data-testid="updater-private-endpoint-input"
-            />
+            </div>
             {(endpointLocalError ||
               updater.settings?.privateEndpointValidationError) && (
               <p
-                className="text-xs text-error"
+                className="text-xs text-error mt-1 ml-7"
                 role="alert"
                 data-testid="updater-private-endpoint-error"
               >
