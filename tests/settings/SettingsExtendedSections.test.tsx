@@ -352,13 +352,13 @@ describe("Extended settings section centralization", () => {
       expect(icon?.getAttribute("class")).toContain("text-primary");
     }
 
-    const sshKeyTypeButton = screen.getByRole("button", {
-      name: /ed25519/i,
-    });
-    expect(sshKeyTypeButton.className).toContain("bg-primary/20");
-    expect(sshKeyTypeButton.className).toContain("border-primary");
-    expect(sshKeyTypeButton.className).toContain("ring-primary/50");
-    expect(sshKeyTypeButton.className).not.toContain("success");
+    const sshKeyTypeRow = document.querySelector(
+      '[data-setting-key="sshKeyType"]',
+    );
+    expect(sshKeyTypeRow).not.toBeNull();
+    expect(
+      sshKeyTypeRow?.querySelector('[role="combobox"]')?.className,
+    ).toContain("sor-settings-select");
 
     const generateSshKeyButton = screen.getByRole("button", {
       name: /generate & save key file/i,
@@ -366,6 +366,8 @@ describe("Extended settings section centralization", () => {
     expect(generateSshKeyButton.className).toContain("bg-primary");
     expect(generateSshKeyButton.className).toContain("hover:bg-primary/90");
     expect(generateSshKeyButton.className).not.toContain("success");
+    // Generate button must no longer be full-width.
+    expect(generateSshKeyButton.className).not.toContain("w-full");
 
     const algorithmSelect = container.querySelector(
       '[data-setting-key="encryptionAlgorithm"] [role="combobox"]',

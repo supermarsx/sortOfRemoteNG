@@ -1,10 +1,12 @@
-import { Lock, Key, Loader2, FileKey, CheckCircle, Database } from "lucide-react";
+import { Lock, Key, Loader2, FileKey, CheckCircle, Database, AlertTriangle } from "lucide-react";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
+  SettingsSelectRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
@@ -12,68 +14,59 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
         icon={<Database className="w-4 h-4 text-primary" />}
         title={
           <span className="flex items-center gap-1">
-            Generate Collection Encryption Key File <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your connection collections instead of using a password" />
+            Generate Database Encryption Key File{" "}
+            <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your databases instead of using a password." />
           </span>
         }
       />
 
       <Card>
-        <p className="text-sm text-[var(--color-textSecondary)]">
-          Generate a secure encryption key file that can be used to encrypt your
-          connection collections. This key file can be used instead of a password
-          when creating or opening encrypted collections.
-          <span className="text-warning block mt-2">
-            ⚠️ Keep this file secure! Anyone with access to it can decrypt your
-            collections.
-          </span>
+        <p className="text-xs text-[var(--color-textMuted)]">
+          Generate a secure encryption key file that can be used to encrypt
+          your databases. This key file can be used instead of a password
+          when creating or opening encrypted databases.
         </p>
 
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-            <Key className="w-4 h-4" />
-            <span className="flex items-center gap-1">Key Strength <InfoTooltip text="Bit length of the generated key — 256-bit is sufficient for most uses, 512-bit provides extra margin for high-security environments" /></span>
-          </label>
-          <div className="flex space-x-3">
-            <button
-              onClick={() => mgr.setCollectionKeyLength(32)}
-              className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
-                mgr.collectionKeyLength === 32
-                  ? "bg-primary/30 border border-primary text-primary"
-                  : "bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
-              }`}
-            >
-              256-bit (Standard)
-            </button>
-            <button
-              onClick={() => mgr.setCollectionKeyLength(64)}
-              className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
-                mgr.collectionKeyLength === 64
-                  ? "bg-primary/30 border border-primary text-primary"
-                  : "bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
-              }`}
-            >
-              512-bit (High Security)
-            </button>
-          </div>
+        <div className="flex items-start gap-2 px-3 py-2 bg-warning/10 border border-warning/40 rounded-md text-xs text-warning">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>
+            Keep this file secure — anyone with access to it can decrypt your
+            databases.
+          </span>
         </div>
 
-        <button
-          onClick={mgr.generateCollectionKey}
-          disabled={mgr.isGeneratingCollectionKey}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
-        >
-          {mgr.isGeneratingCollectionKey ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Generating...</span>
-            </>
-          ) : (
-            <>
-              <FileKey className="w-4 h-4" />
-              <span>Generate & Save Collection Key File</span>
-            </>
-          )}
-        </button>
+        <SettingsSelectRow
+          settingKey="databaseKeyLength"
+          icon={<Key size={16} />}
+          label="Key Strength"
+          value={String(mgr.collectionKeyLength)}
+          options={[
+            { value: "32", label: "256-bit (Standard)" },
+            { value: "64", label: "512-bit (High Security)" },
+          ]}
+          onChange={(v) => mgr.setCollectionKeyLength(Number(v) as 32 | 64)}
+          infoTooltip="Bit length of the generated key — 256-bit is sufficient for most uses, 512-bit provides extra margin for high-security environments."
+        />
+
+        <div className="flex justify-end">
+          <button
+            onClick={mgr.generateCollectionKey}
+            disabled={mgr.isGeneratingCollectionKey}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors text-sm"
+          >
+            {mgr.isGeneratingCollectionKey ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating…</span>
+              </>
+            ) : (
+              <>
+                <FileKey className="w-4 h-4" />
+                <span>Generate &amp; Save Database Key File</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {mgr.collectionKeySuccess && (
           <div className="flex items-center gap-2 px-3 py-2 bg-primary/30 border border-primary/50 rounded-md text-primary text-sm">
