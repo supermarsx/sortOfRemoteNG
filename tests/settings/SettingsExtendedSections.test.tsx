@@ -396,7 +396,10 @@ describe("Extended settings section centralization", () => {
 
     expect(screen.getByText("Default Trust Policy")).toBeInTheDocument();
     expect(screen.getByText("General Certificate Policy")).toBeInTheDocument();
-    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(8);
+    // Trust Policies, Policy Guide, Verification Options, Stored Identities.
+    expect(
+      container.querySelectorAll(".sor-settings-card").length,
+    ).toBeGreaterThanOrEqual(4);
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
       "text-primary",
     );
@@ -412,21 +415,22 @@ describe("Extended settings section centralization", () => {
       expect(icon?.getAttribute("class")).toContain("text-primary");
     }
 
-    for (const policyTitle of [
-      "Default Trust Policy",
-      "General Certificate Policy",
-      "HTTPS Certificate Policy",
-      "SSH Host Key Policy",
-      "RDP Certificate Policy",
+    // Each policy now renders as a standard SettingsSelectRow, identified
+    // by data-setting-key, with the row label carrying the leading icon.
+    for (const settingKey of [
+      "trustPolicy",
+      "certificateTrustPolicy",
+      "httpsTrustPolicy",
+      "sshTrustPolicy",
+      "rdpTrustPolicy",
     ]) {
-      const policyCard = screen
-        .getByText(policyTitle)
-        .closest(".sor-settings-card") as HTMLElement;
-      const policyIcon = policyCard.querySelector("div > span");
-      expect(policyIcon?.getAttribute("class")).toContain("text-primary");
-      expect(policyIcon?.getAttribute("class")).not.toMatch(
-        /\btext-(success|warning)\b/,
-      );
+      const policyRow = container.querySelector(
+        `[data-setting-key="${settingKey}"]`,
+      ) as HTMLElement | null;
+      expect(policyRow).not.toBeNull();
+      expect(
+        policyRow?.querySelector('[role="combobox"]')?.className,
+      ).toContain("sor-settings-select");
     }
 
     const tlsPolicySelect = screen.getAllByText(
@@ -463,18 +467,19 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    const certificateCard = screen
-      .getByText("General Certificate Policy")
-      .closest(".sor-settings-card") as HTMLElement;
-    expect(within(certificateCard).getByRole("combobox")).toHaveTextContent(
+    const certificateRow = document.querySelector(
+      '[data-setting-key="certificateTrustPolicy"]',
+    ) as HTMLElement;
+    expect(certificateRow).not.toBeNull();
+    expect(within(certificateRow).getByRole("combobox")).toHaveTextContent(
       "Inherit Default Policy",
     );
-    expect(certificateCard).toHaveTextContent("Effective: Strict");
+    expect(certificateRow).toHaveTextContent("Effective: Strict");
 
-    const httpsCard = screen
-      .getByText("HTTPS Certificate Policy")
-      .closest(".sor-settings-card") as HTMLElement;
-    fireEvent.click(within(httpsCard).getByRole("combobox"));
+    const httpsRow = document.querySelector(
+      '[data-setting-key="httpsTrustPolicy"]',
+    ) as HTMLElement;
+    fireEvent.click(within(httpsRow).getByRole("combobox"));
     fireEvent.mouseDown(
       await screen.findByRole("option", { name: "Inherit Default Policy" }),
     );

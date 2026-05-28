@@ -19,7 +19,6 @@ import {
   formatFingerprint,
   resolveEffectiveTrustPolicy,
   updateTrustRecordNickname,
-  type InheritableTrustPolicy,
   type TrustPolicy,
   type TrustRecord,
 } from "../../../utils/auth/trustStore";
@@ -27,12 +26,13 @@ import {
   classifyTrustRecords,
   useTrustVerificationSettings,
 } from "../../../hooks/settings/useTrustVerificationSettings";
-import { NumberInput, Select } from "../../ui/forms";
+import { NumberInput } from "../../ui/forms";
 import SectionHeading from "../../ui/SectionHeading";
 import {
   Card,
   SettingsSectionHeader,
   Toggle,
+  SettingsSelectRow,
 } from "../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 
@@ -108,47 +108,6 @@ function effectivePolicyDescription(value: TrustPolicy): string {
     : `Effective: ${policyLabel(value)}.`;
 }
 
-interface PolicyCardProps {
-  title: string;
-  icon: React.ReactNode;
-  iconClassName: string;
-  value: TrustPolicy | InheritableTrustPolicy;
-  options: { value: string; label: string }[];
-  effectivePolicy: TrustPolicy;
-  onChange: (value: string) => void;
-  children?: React.ReactNode;
-}
-
-const PolicyCard: React.FC<PolicyCardProps> = ({
-  title,
-  icon,
-  iconClassName,
-  value,
-  options,
-  effectivePolicy,
-  onChange,
-  children,
-}) => (
-  <Card>
-    <div className="flex items-center gap-2">
-      <span className={iconClassName}>{icon}</span>
-      <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
-        {title}
-      </h4>
-    </div>
-    <Select
-      value={value}
-      onChange={onChange}
-      options={options}
-      className="sor-settings-select w-full text-sm"
-    />
-    <p className="text-xs text-[var(--color-textMuted)]">
-      {effectivePolicyDescription(effectivePolicy)}
-    </p>
-    {children}
-  </Card>
-);
-
 const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const rootPolicy = mgr.settings.trustPolicy ?? "tofu";
   const httpsPolicy = mgr.settings.httpsTrustPolicy ?? "inherit";
@@ -163,100 +122,95 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         title="Trust Policies"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <PolicyCard
-          title="Default Trust Policy"
+      <Card>
+        <SettingsSelectRow
+          settingKey="trustPolicy"
           icon={<ShieldCheck size={16} />}
-          iconClassName="text-primary"
+          label="Default Trust Policy"
+          description={effectivePolicyDescription(rootPolicy)}
           value={rootPolicy}
           options={CONCRETE_POLICY_OPTIONS}
-          effectivePolicy={rootPolicy}
-          onChange={(v: string) =>
+          onChange={(v) =>
             mgr.updateSettings({
               trustPolicy: v as GlobalSettings["trustPolicy"],
             })
           }
+          infoTooltip="The default policy used by every protocol unless overridden below. Concrete options only — this row cannot inherit from elsewhere."
         />
 
-        <PolicyCard
-          title="General Certificate Policy"
+        <SettingsSelectRow
+          settingKey="certificateTrustPolicy"
           icon={<ShieldAlert size={16} />}
-          iconClassName="text-primary"
+          label="General Certificate Policy"
+          description={effectivePolicyDescription(
+            resolveEffectiveTrustPolicy(
+              undefined,
+              certificatePolicy,
+              rootPolicy,
+            ),
+          )}
           value={certificatePolicy}
           options={INHERITABLE_POLICY_OPTIONS}
-          effectivePolicy={resolveEffectiveTrustPolicy(
-            undefined,
-            certificatePolicy,
-            rootPolicy,
-          )}
-          onChange={(v: string) =>
+          onChange={(v) =>
             mgr.updateSettings({
               certificateTrustPolicy:
                 v as GlobalSettings["certificateTrustPolicy"],
             })
           }
+          infoTooltip="Applies to certificates that aren't covered by a more specific policy below. Inherits from the default unless overridden."
         />
 
-        <PolicyCard
-          title="HTTPS Certificate Policy"
+        <SettingsSelectRow
+          settingKey="httpsTrustPolicy"
           icon={<Lock size={16} />}
-          iconClassName="text-primary"
+          label="HTTPS Certificate Policy"
+          description={effectivePolicyDescription(
+            resolveEffectiveTrustPolicy(undefined, httpsPolicy, rootPolicy),
+          )}
           value={httpsPolicy}
           options={INHERITABLE_POLICY_OPTIONS}
-          effectivePolicy={resolveEffectiveTrustPolicy(
-            undefined,
-            httpsPolicy,
-            rootPolicy,
-          )}
-          onChange={(v: string) =>
+          onChange={(v) =>
             mgr.updateSettings({
               httpsTrustPolicy: v as GlobalSettings["httpsTrustPolicy"],
             })
           }
+          infoTooltip="Policy for HTTPS server certificates seen by the embedded web browser and HTTP-based features."
         />
 
-        <PolicyCard
-          title="SSH Host Key Policy"
+        <SettingsSelectRow
+          settingKey="sshTrustPolicy"
           icon={<Fingerprint size={16} />}
-          iconClassName="text-primary"
+          label="SSH Host Key Policy"
+          description={effectivePolicyDescription(
+            resolveEffectiveTrustPolicy(undefined, sshPolicy, rootPolicy),
+          )}
           value={sshPolicy}
           options={INHERITABLE_POLICY_OPTIONS}
-          effectivePolicy={resolveEffectiveTrustPolicy(
-            undefined,
-            sshPolicy,
-            rootPolicy,
-          )}
-          onChange={(v: string) =>
+          onChange={(v) =>
             mgr.updateSettings({
               sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
             })
           }
+          infoTooltip="Policy for SSH server host keys. Most users keep this at Always Ask or TOFU so unrecognized hosts are flagged."
         />
 
-        <PolicyCard
-          title="RDP Certificate Policy"
+        <SettingsSelectRow
+          settingKey="rdpTrustPolicy"
           icon={<Monitor size={16} />}
-          iconClassName="text-primary"
+          label="RDP Certificate Policy"
+          description={`${effectivePolicyDescription(
+            resolveEffectiveTrustPolicy(undefined, rdpPolicy, rootPolicy),
+          )} — separate from HTTPS / legacy TLS identities; RDP servers are typically self-signed, so most users keep this at TOFU even when HTTPS is Strict.`}
           value={rdpPolicy}
           options={INHERITABLE_POLICY_OPTIONS}
-          effectivePolicy={resolveEffectiveTrustPolicy(
-            undefined,
-            rdpPolicy,
-            rootPolicy,
-          )}
-          onChange={(v: string) =>
+          onChange={(v) =>
             mgr.updateSettings({
               rdpTrustPolicy: v as GlobalSettings["rdpTrustPolicy"],
             })
           }
-        >
-          <p className="text-[10px] text-[var(--color-textMuted)] mt-2 italic">
-            Separate from HTTPS certificates and legacy TLS identities. RDP servers
-            are typically self-signed, so most users keep this at TOFU even when
-            HTTPS is set to Strict.
-          </p>
-        </PolicyCard>
-      </div>
+          infoTooltip="Policy for RDP server certificates. RDP servers are commonly self-signed; TOFU is the usual choice."
+        />
+      </Card>
     </div>
   );
 };
