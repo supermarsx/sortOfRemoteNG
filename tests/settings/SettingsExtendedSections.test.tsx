@@ -355,9 +355,9 @@ describe("Extended settings section centralization", () => {
     const sshKeyTypeButton = screen.getByRole("button", {
       name: /ed25519/i,
     });
-    expect(sshKeyTypeButton.className).toContain("bg-primary/30");
+    expect(sshKeyTypeButton.className).toContain("bg-primary/20");
     expect(sshKeyTypeButton.className).toContain("border-primary");
-    expect(sshKeyTypeButton.className).toContain("text-primary");
+    expect(sshKeyTypeButton.className).toContain("ring-primary/50");
     expect(sshKeyTypeButton.className).not.toContain("success");
 
     const generateSshKeyButton = screen.getByRole("button", {

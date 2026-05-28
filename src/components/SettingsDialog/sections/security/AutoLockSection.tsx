@@ -1,13 +1,14 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Lock, Timer, Clock } from "lucide-react";
-import { NumberInput } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
+  SettingsNumberRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function AutoLockSection({
   settings,
   updateSettings,
@@ -23,7 +24,8 @@ function AutoLockSection({
         icon={<Clock className="w-4 h-4 text-primary" />}
         title={
           <span className="flex items-center gap-1">
-            Auto Lock <InfoTooltip text="Automatically lock the application after a period of inactivity, requiring the master password to resume" />
+            Auto Lock{" "}
+            <InfoTooltip text="Automatically lock the application after a period of inactivity, requiring the master password to resume." />
           </span>
         }
       />
@@ -36,7 +38,11 @@ function AutoLockSection({
           </div>
         )}
 
-        <div className={!mgr.hasPassword ? "opacity-50 pointer-events-none" : undefined}>
+        <div
+          className={
+            mgr.hasPassword ? undefined : "opacity-50 pointer-events-none"
+          }
+        >
           <Toggle
             checked={settings.autoLock.enabled && mgr.hasPassword}
             onChange={(v) =>
@@ -47,35 +53,32 @@ function AutoLockSection({
             disabled={!mgr.hasPassword}
             icon={<Clock size={16} />}
             label="Enable auto lock after inactivity"
-            description="Lock the app when the idle timeout elapses"
-            infoTooltip="When enabled, the app locks itself after the configured idle timeout elapses"
+            description="Lock the app when the idle timeout elapses."
+            infoTooltip="When enabled, the app locks itself after the configured idle timeout elapses."
           />
         </div>
 
         <div
-          className={`space-y-2 ${!mgr.hasPassword || !settings.autoLock.enabled ? "opacity-50 pointer-events-none" : ""}`}
+          className={
+            !mgr.hasPassword || !settings.autoLock.enabled
+              ? "opacity-50 pointer-events-none"
+              : undefined
+          }
         >
-          <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-            <Timer className="w-4 h-4" />
-            <span className="flex items-center gap-1">
-              Auto lock timeout (minutes){" "}
-              <InfoTooltip text="Number of minutes of inactivity before the application automatically locks" />
-            </span>
-          </label>
-          <NumberInput
+          <SettingsNumberRow
+            settingKey="autoLock.timeoutMinutes"
+            icon={<Timer size={16} />}
+            label="Auto lock timeout"
             value={settings.autoLock.timeoutMinutes}
-            onChange={(v: number) =>
-              updateSettings({
-                autoLock: {
-                  ...settings.autoLock,
-                  timeoutMinutes: v,
-                },
-              })
-            }
-            className="w-full md:w-48"
             min={1}
             max={240}
-            disabled={!mgr.hasPassword}
+            unit="min"
+            onChange={(v) =>
+              updateSettings({
+                autoLock: { ...settings.autoLock, timeoutMinutes: v },
+              })
+            }
+            infoTooltip="Number of minutes of inactivity before the application automatically locks."
           />
         </div>
       </Card>

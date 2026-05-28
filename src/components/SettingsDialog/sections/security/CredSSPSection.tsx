@@ -1,6 +1,8 @@
+import React from "react";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import {
   ShieldAlert,
+  ShieldCheck,
   Zap,
   ArrowLeftRight,
   KeyRound,
@@ -9,14 +11,17 @@ import {
   Network,
   Globe,
   Users,
+  List,
 } from "lucide-react";
-import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
+  SettingsSelectRow,
+  SettingsTextRow,
 } from "../../../ui/settings/SettingsPrimitives";
+
 function CredSSPSection({
   settings,
   updateSettings,
@@ -24,13 +29,17 @@ function CredSSPSection({
   settings: GlobalSettings;
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }) {
+  const cred = settings.credsspDefaults;
+  const oracle = cred?.oracleRemediation ?? "mitigated";
+
   return (
     <div className="space-y-4">
       <SectionHeader
         icon={<ShieldAlert className="w-4 h-4 text-primary" />}
         title={
           <span className="flex items-center gap-1">
-            CredSSP Remediation Defaults <InfoTooltip text="Global defaults for RDP Credential Security Support Provider and Network Level Authentication behavior" />
+            CredSSP Remediation Defaults{" "}
+            <InfoTooltip text="Global defaults for RDP Credential Security Support Provider and Network Level Authentication behavior." />
           </span>
         }
       />
@@ -41,133 +50,169 @@ function CredSSPSection({
           connections can override these.
         </p>
 
-      {/* Oracle Remediation Policy */}
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          <span className="flex items-center gap-1">Encryption Oracle Remediation Policy <InfoTooltip text="Controls whether connections are allowed to unpatched servers vulnerable to CVE-2018-0886" /></span>
-        </label>
-        <Select value={settings.credsspDefaults?.oracleRemediation ?? "mitigated"} onChange={(v: string) => updateSettings({
+        <SettingsSelectRow
+          icon={<ShieldAlert size={16} />}
+          label="Encryption Oracle Remediation"
+          description={
+            oracle === "force-updated"
+              ? "Both client and server must be patched for CVE-2018-0886."
+              : oracle === "vulnerable"
+                ? "Warning: allows connections regardless of patch status — security risk."
+                : "Blocks connections to vulnerable servers but permits all others."
+          }
+          value={oracle}
+          options={[
+            { value: "force-updated", label: "Force Updated Clients" },
+            { value: "mitigated", label: "Mitigated (recommended)" },
+            { value: "vulnerable", label: "Vulnerable (allow all)" },
+          ]}
+          onChange={(v) =>
+            updateSettings({
               credsspDefaults: {
-                ...settings.credsspDefaults,
+                ...cred,
                 oracleRemediation: v as
                   | "force-updated"
                   | "mitigated"
                   | "vulnerable",
               },
-            })} options={[{ value: "force-updated", label: "Force Updated Clients" }, { value: "mitigated", label: "Mitigated (recommended)" }, { value: "vulnerable", label: "Vulnerable (allow all)" }]} className="w-full" />
-        <p className="text-xs text-[var(--color-textMuted)] mt-1">
-          {settings.credsspDefaults?.oracleRemediation === "force-updated"
-            ? "Both client and server must be patched for CVE-2018-0886."
-            : settings.credsspDefaults?.oracleRemediation === "vulnerable"
-              ? "Warning: Allows connections regardless of patch status. Security risk."
-              : "Blocks connections to vulnerable servers but permits all others."}
-        </p>
-      </div>
+            })
+          }
+          infoTooltip="Controls whether connections are allowed to unpatched servers vulnerable to CVE-2018-0886."
+        />
 
-      {/* NLA Mode */}
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          <span className="flex items-center gap-1">Default NLA Mode <InfoTooltip text="Network Level Authentication mode — Required rejects if NLA is unavailable, Preferred falls back to TLS, Disabled uses TLS only" /></span>
-        </label>
-        <Select value={settings.credsspDefaults?.nlaMode ?? "required"} onChange={(v: string) => updateSettings({
+        <SettingsSelectRow
+          icon={<Network size={16} />}
+          label="Default NLA mode"
+          value={cred?.nlaMode ?? "required"}
+          options={[
+            { value: "required", label: "Required (reject if NLA unavailable)" },
+            { value: "preferred", label: "Preferred (fallback to TLS)" },
+            { value: "disabled", label: "Disabled (TLS only)" },
+          ]}
+          onChange={(v) =>
+            updateSettings({
               credsspDefaults: {
-                ...settings.credsspDefaults,
-                nlaMode: v as
-                  | "required"
-                  | "preferred"
-                  | "disabled",
+                ...cred,
+                nlaMode: v as "required" | "preferred" | "disabled",
               },
-            })} options={[{ value: "required", label: "Required (reject if NLA unavailable)" }, { value: "preferred", label: "Preferred (fallback to TLS)" }, { value: "disabled", label: "Disabled (TLS only)" }]} className="w-full" />
-      </div>
+            })
+          }
+          infoTooltip="Network Level Authentication mode — Required rejects if NLA is unavailable, Preferred falls back to TLS, Disabled uses TLS only."
+        />
 
-      {/* Minimum TLS Version */}
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          <span className="flex items-center gap-1">Minimum TLS Version <InfoTooltip text="Lowest TLS protocol version the client will accept — TLS 1.2 or higher is recommended for security" /></span>
-        </label>
-        <Select value={settings.credsspDefaults?.tlsMinVersion ?? "1.2"} onChange={(v: string) => updateSettings({
+        <SettingsSelectRow
+          icon={<LockIcon size={16} />}
+          label="Minimum TLS version"
+          value={cred?.tlsMinVersion ?? "1.2"}
+          options={[
+            { value: "1.0", label: "TLS 1.0 (legacy, insecure)" },
+            { value: "1.1", label: "TLS 1.1 (deprecated)" },
+            { value: "1.2", label: "TLS 1.2 (recommended)" },
+            { value: "1.3", label: "TLS 1.3 (strictest)" },
+          ]}
+          onChange={(v) =>
+            updateSettings({
               credsspDefaults: {
-                ...settings.credsspDefaults,
+                ...cred,
                 tlsMinVersion: v as "1.0" | "1.1" | "1.2" | "1.3",
               },
-            })} options={[{ value: "1.0", label: "TLS 1.0 (legacy, insecure)" }, { value: "1.1", label: "TLS 1.1 (deprecated)" }, { value: "1.2", label: "TLS 1.2 (recommended)" }, { value: "1.3", label: "TLS 1.3 (strictest)" }]} className="w-full" />
-      </div>
+            })
+          }
+          infoTooltip="Lowest TLS protocol version the client will accept — TLS 1.2 or higher is recommended for security."
+        />
 
-      {/* CredSSP Version */}
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          <span className="flex items-center gap-1">CredSSP TSRequest Version <InfoTooltip text="CredSSP protocol version — higher versions add nonce binding and other mitigations against relay attacks" /></span>
-        </label>
-        <Select value={String(settings.credsspDefaults?.credsspVersion ?? 6)} onChange={(v: string) => updateSettings({
+        <SettingsSelectRow
+          icon={<KeyRound size={16} />}
+          label="CredSSP TSRequest version"
+          value={String(cred?.credsspVersion ?? 6)}
+          options={[
+            { value: "2", label: "Version 2 (legacy)" },
+            { value: "3", label: "Version 3 (with client nonce)" },
+            { value: "6", label: "Version 6 (latest, with nonce binding)" },
+          ]}
+          onChange={(v) =>
+            updateSettings({
               credsspDefaults: {
-                ...settings.credsspDefaults,
-                credsspVersion: parseInt(v) as 2 | 3 | 6,
+                ...cred,
+                credsspVersion: parseInt(v, 10) as 2 | 3 | 6,
               },
-            })} options={[{ value: "2", label: "Version 2 (legacy)" }, { value: "3", label: "Version 3 (with client nonce)" }, { value: "6", label: "Version 6 (latest, with nonce binding)" }]} className="w-full" />
-      </div>
+            })
+          }
+          infoTooltip="CredSSP protocol version — higher versions add nonce binding and other mitigations against relay attacks."
+        />
 
-      {/* Server Cert Validation */}
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          <span className="flex items-center gap-1">Server Certificate Validation <InfoTooltip text="How the client handles untrusted server certificates — Validate rejects them, Warn prompts you, Ignore accepts all" /></span>
-        </label>
-        <Select value={settings.credsspDefaults?.serverCertValidation ?? "validate"} onChange={(v: string) => updateSettings({
+        <SettingsSelectRow
+          icon={<ShieldCheck size={16} />}
+          label="Server certificate validation"
+          value={cred?.serverCertValidation ?? "validate"}
+          options={[
+            { value: "validate", label: "Validate (reject untrusted)" },
+            { value: "warn", label: "Warn (prompt on untrusted)" },
+            { value: "ignore", label: "Ignore (accept all certificates)" },
+          ]}
+          onChange={(v) =>
+            updateSettings({
               credsspDefaults: {
-                ...settings.credsspDefaults,
-                serverCertValidation: v as
-                  | "validate"
-                  | "warn"
-                  | "ignore",
+                ...cred,
+                serverCertValidation: v as "validate" | "warn" | "ignore",
               },
-            })} options={[{ value: "validate", label: "Validate (reject untrusted)" }, { value: "warn", label: "Warn (prompt on untrusted)" }, { value: "ignore", label: "Ignore (accept all certificates)" }]} className="w-full" />
-      </div>
+            })
+          }
+          infoTooltip="How the client handles untrusted server certificates — Validate rejects them, Warn prompts you, Ignore accepts all."
+        />
 
-      {/* Boolean toggles */}
-      <div className="space-y-3">
-        {[
-          {
-            key: "allowHybridEx" as const,
-            default: false,
-            label: "Allow HYBRID_EX protocol (Early User Auth Result)",
-            tooltip: "Enable the HYBRID_EX extension that returns authentication results before full connection setup completes",
-            icon: <Zap size={16} />,
-          },
-          {
-            key: "nlaFallbackToTls" as const,
-            default: true,
-            label: "Allow NLA fallback to TLS on failure",
-            tooltip: "Fall back to plain TLS authentication when Network Level Authentication negotiation fails",
-            icon: <ArrowLeftRight size={16} />,
-          },
-          {
-            key: "enforceServerPublicKeyValidation" as const,
-            default: true,
-            label: "Enforce server public key validation during CredSSP",
-            tooltip: "Verify the server's public key during the CredSSP handshake to prevent man-in-the-middle attacks",
-            icon: <KeyRound size={16} />,
-          },
-          {
-            key: "restrictedAdmin" as const,
-            default: false,
-            label: "Restricted Admin mode (no credential delegation)",
-            tooltip: "Connect without forwarding your credentials to the remote server — prevents credential theft on compromised hosts",
-            icon: <UserMinus size={16} />,
-          },
-          {
-            key: "remoteCredentialGuard" as const,
-            default: false,
-            label: "Remote Credential Guard (Kerberos delegation)",
-            tooltip: "Use Kerberos-based credential delegation that keeps credentials on the local machine and never exposes them to the remote host",
-            icon: <LockIcon size={16} />,
-          },
-        ].map(({ key, default: def, label, tooltip, icon }) => (
+        {/* Boolean toggles */}
+        {(
+          [
+            {
+              key: "allowHybridEx",
+              default: false,
+              label: "Allow HYBRID_EX protocol (Early User Auth Result)",
+              tooltip:
+                "Enable the HYBRID_EX extension that returns authentication results before full connection setup completes.",
+              icon: <Zap size={16} />,
+            },
+            {
+              key: "nlaFallbackToTls",
+              default: true,
+              label: "Allow NLA fallback to TLS on failure",
+              tooltip:
+                "Fall back to plain TLS authentication when Network Level Authentication negotiation fails.",
+              icon: <ArrowLeftRight size={16} />,
+            },
+            {
+              key: "enforceServerPublicKeyValidation",
+              default: true,
+              label: "Enforce server public key validation during CredSSP",
+              tooltip:
+                "Verify the server's public key during the CredSSP handshake to prevent man-in-the-middle attacks.",
+              icon: <KeyRound size={16} />,
+            },
+            {
+              key: "restrictedAdmin",
+              default: false,
+              label: "Restricted Admin mode (no credential delegation)",
+              tooltip:
+                "Connect without forwarding your credentials to the remote server — prevents credential theft on compromised hosts.",
+              icon: <UserMinus size={16} />,
+            },
+            {
+              key: "remoteCredentialGuard",
+              default: false,
+              label: "Remote Credential Guard (Kerberos delegation)",
+              tooltip:
+                "Use Kerberos-based credential delegation that keeps credentials on the local machine and never exposes them to the remote host.",
+              icon: <LockIcon size={16} />,
+            },
+          ] as const
+        ).map(({ key, default: def, label, tooltip, icon }) => (
           <Toggle
             key={key}
-            checked={settings.credsspDefaults?.[key] ?? def}
+            checked={cred?.[key] ?? def}
             onChange={(v) =>
               updateSettings({
                 credsspDefaults: {
-                  ...settings.credsspDefaults,
+                  ...cred,
                   [key]: v,
                 },
               })
@@ -177,83 +222,75 @@ function CredSSPSection({
             infoTooltip={tooltip}
           />
         ))}
-      </div>
 
-      {/* Authentication packages */}
-      <div className="space-y-2">
-        <label className="block text-sm text-[var(--color-textSecondary)]">
-          <span className="flex items-center gap-1">
-            Authentication Packages{" "}
-            <InfoTooltip text="Select which authentication protocols are available for CredSSP negotiation" />
-          </span>
-        </label>
-        <div className="space-y-2 pl-1">
-          {[
+        {/* Authentication packages — same Toggle style under a sub-header. */}
+        <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]/40 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] font-medium">
+          <KeyRound size={11} />
+          Authentication packages
+          <InfoTooltip text="Select which authentication protocols are available for CredSSP negotiation." />
+        </div>
+
+        {(
+          [
             {
-              key: "ntlmEnabled" as const,
+              key: "ntlmEnabled",
               default: true,
               label: "NTLM",
-              tooltip: "NT LAN Manager authentication — widely supported legacy protocol for Windows credential exchange",
+              tooltip:
+                "NT LAN Manager authentication — widely supported legacy protocol for Windows credential exchange.",
               icon: <Network size={16} />,
             },
             {
-              key: "kerberosEnabled" as const,
+              key: "kerberosEnabled",
               default: false,
               label: "Kerberos",
-              tooltip: "Kerberos ticket-based authentication — requires a domain controller and is more secure than NTLM",
+              tooltip:
+                "Kerberos ticket-based authentication — requires a domain controller and is more secure than NTLM.",
               icon: <Globe size={16} />,
             },
             {
-              key: "pku2uEnabled" as const,
+              key: "pku2uEnabled",
               default: false,
               label: "PKU2U",
-              tooltip: "Public Key User-to-User protocol — allows peer-to-peer authentication without a domain controller",
+              tooltip:
+                "Public Key User-to-User protocol — allows peer-to-peer authentication without a domain controller.",
               icon: <Users size={16} />,
             },
-          ].map(({ key, default: def, label, tooltip, icon }) => (
-            <Toggle
-              key={key}
-              checked={settings.credsspDefaults?.[key] ?? def}
-              onChange={(v) =>
-                updateSettings({
-                  credsspDefaults: {
-                    ...settings.credsspDefaults,
-                    [key]: v,
-                  },
-                })
-              }
-              icon={icon}
-              label={label}
-              infoTooltip={tooltip}
-            />
-          ))}
-        </div>
-      </div>
+          ] as const
+        ).map(({ key, default: def, label, tooltip, icon }) => (
+          <Toggle
+            key={key}
+            checked={cred?.[key] ?? def}
+            onChange={(v) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...cred,
+                  [key]: v,
+                },
+              })
+            }
+            icon={icon}
+            label={label}
+            infoTooltip={tooltip}
+          />
+        ))}
 
-      {/* SSPI Override */}
-      <div>
-        <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          <span className="flex items-center gap-1">SSPI Package List Override <InfoTooltip text="Advanced: manually specify the SSPI authentication package order — overrides the checkboxes above. Prefix a package with ! to exclude it." /></span>
-        </label>
-        <input
-          type="text"
-          value={settings.credsspDefaults?.sspiPackageList ?? ""}
-          onChange={(e) =>
+        <SettingsTextRow
+          icon={<List size={16} />}
+          label="SSPI package list override"
+          description="Advanced: overrides the auth-package toggles above. Prefix with ! to exclude."
+          value={cred?.sspiPackageList ?? ""}
+          onChange={(v) =>
             updateSettings({
               credsspDefaults: {
-                ...settings.credsspDefaults,
-                sspiPackageList: e.target.value,
+                ...cred,
+                sspiPackageList: v,
               },
             })
           }
-          className="sor-settings-input w-full text-sm"
           placeholder="e.g. !kerberos,!pku2u (leave empty for auto)"
+          infoTooltip="Advanced: manually specify the SSPI authentication package order — overrides the toggles above. Prefix a package with ! to exclude it."
         />
-        <p className="text-xs text-[var(--color-textMuted)] mt-1">
-          Advanced: Overrides the auth package checkboxes above. Prefix with !
-          to exclude.
-        </p>
-      </div>
       </Card>
     </div>
   );
