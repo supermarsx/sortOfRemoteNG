@@ -11,6 +11,9 @@ import {
   RotateCcw,
   Cpu,
   Power,
+  Monitor,
+  ExternalLink,
+  HardDrive,
 } from "lucide-react";
 import SectionHeading from "../../ui/SectionHeading";
 import {
@@ -124,6 +127,21 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
 
 /* ── Memory Watchdog subsection ──────────────────────── */
 
+/**
+ * Small in-card sub-group header. Adds a thin top border and a muted,
+ * uppercase label so a single card with many rows still reads as
+ * sensibly-grouped triples (e.g. Warning / Critical / Kill per scope).
+ */
+const SubGroupHeader: React.FC<{ icon: React.ReactNode; label: string }> = ({
+  icon,
+  label,
+}) => (
+  <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]/40 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] font-medium">
+    {icon}
+    {label}
+  </div>
+);
+
 const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
   settings,
   updateSettings,
@@ -179,6 +197,8 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="How often the watchdog checks memory usage. Lower values detect leaks faster but use slightly more CPU."
           />
 
+          <SubGroupHeader icon={<Monitor size={11} />} label="Main window heap" />
+
           <SettingsNumberRow
             icon={<AlertTriangle size={16} />}
             label="Main heap — Warning"
@@ -210,6 +230,11 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             infoTooltip="Main-window JS heap usage at which the page is torn down to protect the system."
           />
 
+          <SubGroupHeader
+            icon={<ExternalLink size={11} />}
+            label="Detached window heap"
+          />
+
           <SettingsNumberRow
             icon={<AlertTriangle size={16} />}
             label="Detached heap — Warning"
@@ -239,6 +264,11 @@ const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
             unit="MB"
             onChange={(v) => updateDetached({ heapKillMb: v })}
             infoTooltip="Detached-window JS heap usage at which the window is torn down."
+          />
+
+          <SubGroupHeader
+            icon={<HardDrive size={11} />}
+            label="System RAM"
           />
 
           <SettingsNumberRow
