@@ -20,6 +20,7 @@ import {
   SettingsCard as Card,
   SettingsSectionHeader as SectionHeader,
   SettingsToggleRow as Toggle,
+  SettingsNumberRow,
 } from "../../ui/settings/SettingsPrimitives";
 import { NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
@@ -29,8 +30,6 @@ interface GeneralSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
-
-const inputClass = "sor-settings-input w-full";
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   settings,
@@ -60,17 +59,23 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           />
 
           <div
-            data-setting-key="autoSaveIntervalMinutes"
-            className={`space-y-2 ${!settings.autoSaveEnabled ? "opacity-50 pointer-events-none" : ""}`}
+            className={
+              settings.autoSaveEnabled
+                ? undefined
+                : "opacity-50 pointer-events-none"
+            }
           >
-            <label className="flex items-center gap-2 sor-settings-row-label">
-              <Clock className="w-4 h-4" />
-              Autosave Interval (minutes)
-              <InfoTooltip text="How often the connection file is automatically saved. Lower values save more frequently but may cause brief pauses on large files." />
-            </label>
-            <NumberInput value={settings.autoSaveIntervalMinutes} onChange={(v: number) => updateSettings({
-                  autoSaveIntervalMinutes: v,
-                })} className={inputClass} min={1} max={120} />
+            <SettingsNumberRow
+              settingKey="autoSaveIntervalMinutes"
+              icon={<Clock className="w-4 h-4" />}
+              label="Autosave Interval"
+              value={settings.autoSaveIntervalMinutes}
+              onChange={(v) => updateSettings({ autoSaveIntervalMinutes: v })}
+              min={1}
+              max={120}
+              unit="min"
+              infoTooltip="How often the connection file is automatically saved. Lower values save more frequently but may cause brief pauses on large files."
+            />
           </div>
         </Card>
       </div>
