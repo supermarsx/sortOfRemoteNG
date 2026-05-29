@@ -506,6 +506,15 @@ export interface GlobalSettings {
     maxRequestsPerMinute: number;
     maxThreads: number;
     requestTimeout: number;
+    /**
+     * Kebab-case capability IDs (see `get_api_capabilities`) that are
+     * disabled — incoming requests targeting any of these capabilities
+     * return `403 capability_disabled`. Empty array (or undefined) means
+     * every capability is enabled, including capabilities shipped in
+     * future versions. Mandatory capabilities (`health`, `auth`) cannot
+     * be disabled and are silently ignored if present in this list.
+     */
+    disabledCapabilities?: string[];
   };
 
   // MCP Server / Model Context Protocol

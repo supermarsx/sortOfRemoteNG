@@ -19,6 +19,14 @@ mod app_shell_commands;
 mod app_settings_commands;
 #[path = "../../../src/cpu_commands.rs"]
 mod cpu_commands;
+// The enum + resolver are only consumed by the middleware in the main
+// app crate; from the core-commands crate's perspective only the static
+// metadata is read by `api_capability_commands::get_api_capabilities`.
+#[allow(dead_code)]
+#[path = "../../../src/api_capability.rs"]
+mod api_capability;
+#[path = "../../../src/api_capability_commands.rs"]
+mod api_capability_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
 #[cfg(feature = "ops")]

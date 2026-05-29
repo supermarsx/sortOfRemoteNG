@@ -25,6 +25,8 @@ pub fn is_command(command: &str) -> bool {
             | "read_app_settings"
             | "write_app_settings"
             | "get_cpu_aes_capabilities"
+            | "get_api_capabilities"
+            | "set_api_disabled_capabilities"
             | "trust_verify_identity"
             | "trust_store_identity"
             | "trust_store_identity_with_reason"
@@ -1141,6 +1143,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         app_settings_commands::read_app_settings,
         app_settings_commands::write_app_settings,
         cpu_commands::get_cpu_aes_capabilities,
+        api_capability_commands::get_api_capabilities,
+        api_capability_commands::set_api_disabled_capabilities,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
         trust_store_commands::trust_store_identity,

@@ -378,6 +378,39 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     );
     app.manage(api_service.clone());
 
+    // Bridge for the `set_api_disabled_capabilities` Tauri command —
+    // see api_capability_commands.rs.
+    {
+        let svc_for_setter = api_service.clone();
+        let setter = crate::api_capability_commands::DisabledCapsSetter(Arc::new(
+            move |ids: Vec<String>| {
+                svc_for_setter.set_disabled_capabilities(ids);
+            },
+        ));
+        app.manage(setter);
+    }
+
+    // Prime the disabled-capability set from the persisted settings so
+    // the gate is enforced from the very first request, not just after
+    // the user opens Settings → API.
+    if let Ok(Some(value)) = tauri::async_runtime::block_on(
+        crate::app_settings_commands::read_app_settings(app.app_handle().clone()),
+    ) {
+        if let Some(list) = value
+            .get("restApi")
+            .and_then(|r| r.get("disabledCapabilities"))
+            .and_then(|d| d.as_array())
+        {
+            let ids: Vec<String> = list
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            if !ids.is_empty() {
+                api_service.set_disabled_capabilities(ids);
+            }
+        }
+    }
+
     let api_service_clone = api_service.clone();
     let app_handle_for_api = app.app_handle().clone();
     println!("About to start REST API server...");

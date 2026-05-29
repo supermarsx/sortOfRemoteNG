@@ -41,16 +41,26 @@ export const ServerControlsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <span className="text-sm text-[var(--color-textSecondary)]">
             {mgr.t("settings.api.serverStatus", "Server status")}
           </span>
-          <div
-            className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${statusBadgeClass}`}
-          >
-            <div className={`w-2 h-2 rounded-full ${statusDotClass}`} />
-            {statusLabel}
-            {mgr.actualPort && mgr.serverStatus === "running" && (
-              <span className="text-[var(--color-textSecondary)]">
-                :{mgr.actualPort}
+          <div className="flex items-center gap-2">
+            {mgr.disabledCount > 0 && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning border border-warning/30"
+                title={`${mgr.disabledCount} of ${mgr.capabilities.filter((c) => !c.mandatory).length} non-mandatory capabilities are disabled. See the Capabilities section below.`}
+              >
+                {mgr.disabledCount} disabled
               </span>
             )}
+            <div
+              className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${statusBadgeClass}`}
+            >
+              <div className={`w-2 h-2 rounded-full ${statusDotClass}`} />
+              {statusLabel}
+              {mgr.actualPort && mgr.serverStatus === "running" && (
+                <span className="text-[var(--color-textSecondary)]">
+                  :{mgr.actualPort}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

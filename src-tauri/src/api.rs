@@ -2,16 +2,20 @@ use crate::aws::AwsConnectionConfig;
 use crate::cloudflare::CloudflareConnectionConfig;
 use crate::vercel::VercelConnectionConfig;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::StatusCode,
+    middleware::{from_fn_with_state, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 use tokio::sync::Mutex;
+
+use crate::api_capability::{capability_for_path, capability_id};
 
 use crate::{
     auth::AuthService,
@@ -44,6 +48,14 @@ pub struct ApiService {
     pub aws_service: Arc<Mutex<crate::aws::AwsService>>,
     pub vercel_service: Arc<Mutex<crate::vercel::VercelService>>,
     pub cloudflare_service: Arc<Mutex<crate::cloudflare::CloudflareService>>,
+    /// Set of capability IDs currently disabled. Read on every incoming
+    /// request by the `capability_gate` middleware. Written by the
+    /// `set_api_disabled_capabilities` Tauri command whenever the user
+    /// toggles a capability in Settings → API.
+    ///
+    /// Mandatory capabilities are silently filtered out by the setter
+    /// so they can never end up in the set.
+    pub disabled_capabilities: Arc<RwLock<HashSet<String>>>,
 }
 
 impl ApiService {
@@ -84,6 +96,29 @@ impl ApiService {
             aws_service,
             vercel_service,
             cloudflare_service,
+            disabled_capabilities: Arc::new(RwLock::new(HashSet::new())),
+        }
+    }
+
+    /// Replace the disabled-capability set wholesale. Called from the
+    /// `set_api_disabled_capabilities` Tauri command whenever the user
+    /// toggles a capability in Settings → API. Mandatory capabilities
+    /// (`health`, `auth`) are silently filtered out so they can never
+    /// be disabled — defense in depth in case the frontend or
+    /// `settings.json` were tampered with.
+    pub fn set_disabled_capabilities(&self, ids: impl IntoIterator<Item = String>) {
+        use crate::api_capability::ALL_CAPABILITIES;
+        let mandatory: HashSet<&'static str> = ALL_CAPABILITIES
+            .iter()
+            .filter(|c| c.mandatory)
+            .map(|c| c.id)
+            .collect();
+        let cleaned: HashSet<String> = ids
+            .into_iter()
+            .filter(|id| !mandatory.contains(id.as_str()))
+            .collect();
+        if let Ok(mut guard) = self.disabled_capabilities.write() {
+            *guard = cleaned;
         }
     }
 
@@ -104,6 +139,7 @@ impl ApiService {
     }
 
     pub fn create_router(self: Arc<Self>) -> Router {
+        let gate_state = self.clone();
         Router::new()
             .route("/health", get(health_check))
             // Authentication
@@ -393,8 +429,46 @@ impl ApiService {
                 "/cloudflare/analytics/:session_id/:zone_id",
                 get(get_cloudflare_analytics_api),
             )
+            // Capability gate: rejects requests for capabilities in the
+            // user's disabled-set with 403. Layered last so it wraps
+            // every route declared above.
+            .layer(from_fn_with_state(gate_state, capability_gate))
             .with_state(self)
     }
+}
+
+/// Axum middleware: look up the capability for the requested path and
+/// short-circuit with `403 Forbidden` + a structured JSON body if it
+/// is in the disabled set.
+///
+/// Paths that don't map to any capability (i.e. unknown routes) fall
+/// through — they'll hit axum's normal 404 handler.
+async fn capability_gate(
+    State(svc): State<Arc<ApiService>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let path = req.uri().path();
+    if let Some(cap) = capability_for_path(path) {
+        let id = capability_id(cap);
+        let disabled = svc
+            .disabled_capabilities
+            .read()
+            .map(|g| g.contains(id))
+            .unwrap_or(false);
+        if disabled {
+            let body = Json(serde_json::json!({
+                "error": "capability_disabled",
+                "capability": id,
+                "message": format!(
+                    "The {id} capability is currently disabled. \
+                     Re-enable it in Settings → API → Capabilities.",
+                ),
+            }));
+            return (StatusCode::FORBIDDEN, body).into_response();
+        }
+    }
+    next.run(req).await
 }
 
 async fn health_check() -> Json<serde_json::Value> {

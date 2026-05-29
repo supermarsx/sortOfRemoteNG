@@ -65,6 +65,9 @@ pub use domains::*;
 
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
+pub mod api_capability;
+pub mod api_capability_commands;
+pub mod app_settings_commands;
 
 #[cfg(test)]
 #[path = "tests/network_tests.rs"]

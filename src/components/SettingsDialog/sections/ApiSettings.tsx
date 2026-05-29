@@ -6,6 +6,7 @@ import { EnableSection } from "./apiSettings/EnableSection";
 import { ServerControlsSection } from "./apiSettings/ServerControlsSection";
 import { NetworkSection } from "./apiSettings/NetworkSection";
 import { AuthenticationSection } from "./apiSettings/AuthenticationSection";
+import { CapabilitiesSection } from "./apiSettings/CapabilitiesSection";
 import { SslSection } from "./apiSettings/SslSection";
 import { PerformanceSection } from "./apiSettings/PerformanceSection";
 import { RateLimitSection } from "./apiSettings/RateLimitSection";
@@ -29,6 +30,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
       <ServerControlsSection mgr={mgr} />
       <NetworkSection settings={settings} mgr={mgr} />
       <AuthenticationSection settings={settings} mgr={mgr} />
+      <CapabilitiesSection settings={settings} mgr={mgr} />
       <SslSection settings={settings} mgr={mgr} />
       <PerformanceSection settings={settings} mgr={mgr} />
       <RateLimitSection settings={settings} mgr={mgr} />
