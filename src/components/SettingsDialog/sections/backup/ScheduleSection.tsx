@@ -59,9 +59,9 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         />
 
         <div
-          className={
-            showTime ? undefined : "opacity-50 pointer-events-none"
-          }
+          className={`flex flex-col gap-2.5 ${
+            showTime ? "" : "opacity-50 pointer-events-none"
+          }`}
         >
           <div className="sor-settings-select-row">
             <span className="sor-settings-row-label flex items-center gap-1">
@@ -85,9 +85,9 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </div>
 
         <div
-          className={
-            showWeekly ? undefined : "opacity-50 pointer-events-none"
-          }
+          className={`flex flex-col gap-2.5 ${
+            showWeekly ? "" : "opacity-50 pointer-events-none"
+          }`}
         >
           <SettingsSelectRow
             icon={<Calendar size={16} />}
@@ -102,9 +102,9 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </div>
 
         <div
-          className={
-            showMonthly ? undefined : "opacity-50 pointer-events-none"
-          }
+          className={`flex flex-col gap-2.5 ${
+            showMonthly ? "" : "opacity-50 pointer-events-none"
+          }`}
         >
           <SettingsSelectRow
             icon={<CalendarDays size={16} />}

@@ -22,9 +22,8 @@ import {
   SettingsToggleRow as Toggle,
   SettingsNumberRow,
 } from "../../ui/settings/SettingsPrimitives";
-import { NumberInput } from '../../ui/forms';
+import { SettingsConnectionTimeoutRow } from "../../ui/settings/NetworkPrimitives";
 import SectionHeading from '../../ui/SectionHeading';
-import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface GeneralSettingsProps {
   settings: GlobalSettings;
@@ -149,29 +148,15 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           title="Connections"
         />
         <Card>
-          <div
-            data-setting-key="connectionTimeout"
-            className="sor-settings-select-row"
-          >
-            <span className="sor-settings-row-label flex items-center gap-1">
-              <span className="text-[var(--color-textSecondary)] mr-1">
-                <Clock size={16} />
-              </span>
-              Connection Timeout (seconds)
-              <InfoTooltip text="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks." />
-            </span>
-            <NumberInput
-              value={settings.connectionTimeout}
-              onChange={(v: number) =>
-                updateSettings({ connectionTimeout: v })
-              }
-              variant="settings-compact"
-              className="text-right"
-              style={{ width: "5rem" }}
-              min={5}
-              max={300}
-            />
-          </div>
+          <SettingsConnectionTimeoutRow
+            settingKey="connectionTimeout"
+            label="Connection timeout"
+            value={settings.connectionTimeout}
+            onChange={(v) => updateSettings({ connectionTimeout: v })}
+            min={5}
+            max={300}
+            infoTooltip="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks."
+          />
         </Card>
       </div>
 

@@ -1,6 +1,5 @@
 import type { Mgr } from "./types";
 import React from "react";
-import { PasswordInput } from "../../../ui/forms";
 import { Lock, Key, Shield, ShieldCheck } from "lucide-react";
 import {
   BackupEncryptionAlgorithms,
@@ -10,11 +9,11 @@ import {
   encryptionAlgorithmLabels,
   encryptionAlgorithmDescriptions,
 } from "../../../../hooks/settings/useBackupSettings";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   SettingsSelectRow,
+  SettingsPasswordRow,
   Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 
@@ -44,9 +43,9 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         />
 
         <div
-          className={
-            enabled ? undefined : "opacity-50 pointer-events-none"
-          }
+          className={`flex flex-col gap-2.5 ${
+            enabled ? "" : "opacity-50 pointer-events-none"
+          }`}
         >
           <SettingsSelectRow
             icon={<Shield size={16} />}
@@ -64,26 +63,15 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {encryptionAlgorithmDescriptions[mgr.backup.encryptionAlgorithm]}
           </p>
 
-          <div className="sor-settings-select-row">
-            <span className="sor-settings-row-label flex items-center gap-1">
-              <span className="text-[var(--color-textSecondary)] mr-1">
-                <Key size={16} />
-              </span>
-              Encryption Password
-              <InfoTooltip text="The password used to derive the encryption key. Keep this safe — backups cannot be restored without it." />
-            </span>
-            <div style={{ width: "18rem" }}>
-              <PasswordInput
-                value={mgr.backup.encryptionPassword || ""}
-                onChange={(e) =>
-                  mgr.updateBackup({ encryptionPassword: e.target.value })
-                }
-                placeholder="Enter encryption password..."
-                className="sor-settings-input"
-                disabled={!enabled}
-              />
-            </div>
-          </div>
+          <SettingsPasswordRow
+            icon={<Key size={16} />}
+            label="Encryption password"
+            value={mgr.backup.encryptionPassword || ""}
+            onChange={(v) => mgr.updateBackup({ encryptionPassword: v })}
+            placeholder="Enter encryption password…"
+            disabled={!enabled}
+            infoTooltip="The password used to derive the encryption key. Keep this safe — backups cannot be restored without it."
+          />
         </div>
       </Card>
     </div>

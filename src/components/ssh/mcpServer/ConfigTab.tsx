@@ -1,16 +1,11 @@
-import React, { useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import {
   Key,
-  Eye,
-  EyeOff,
   Shield,
   Globe,
   Clock,
   Loader2,
-  Copy,
-  Check,
-  Server,
   AlertTriangle,
   Cpu,
   FileText,
@@ -25,7 +20,6 @@ import {
   RotateCcw,
   Gauge,
   Timer,
-  Network,
   Share2,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
@@ -40,26 +34,25 @@ import {
   SettingsNumberRow,
   SettingsSelectRow,
 } from "../../ui/settings/SettingsPrimitives";
+import {
+  SettingsApiKeyField,
+  SettingsHostRow,
+  SettingsPortRow,
+  SettingsRemoteAccessRow,
+} from "../../ui/settings/NetworkPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 
 export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [copiedKey, setCopiedKey] = useState(false);
 
   const draft = mgr.config;
 
   const handleGenerateKey = async () => {
-    const key = await mgr.generateApiKey();
-    if (key) {
-      setShowApiKey(true);
-    }
+    await mgr.generateApiKey();
   };
 
   const handleCopyKey = () => {
     navigator.clipboard.writeText(draft.api_key);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
   };
 
   const update = <K extends keyof McpServerConfig>(
@@ -107,44 +100,28 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
     <div className="space-y-6" data-testid="mcp-config-tab">
       {/* Enable MCP Server */}
       <Card>
-        <label className="flex items-center justify-between cursor-pointer">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/20 rounded-lg">
-              <Power className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <span className="text-[var(--color-text)] font-medium">
-                {t("mcpServer.config.enabled", "Enable MCP Server")}{" "}
-                <InfoTooltip text="Allow AI assistants to connect to this application via the Model Context Protocol." />
-              </span>
-              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-                {t(
-                  "mcpServer.config.enabledDesc",
-                  "Allow AI assistants to connect to this application via MCP",
-                )}
-              </p>
-            </div>
-          </div>
-          <Checkbox
-            checked={draft.enabled}
-            onChange={(v: boolean) => update("enabled", v)}
-            className="sor-checkbox-lg"
-          />
-        </label>
-
-        <div className="pt-3 border-t border-[var(--color-border)]">
-          <Toggle
-            icon={<Clock size={16} />}
-            label={t("mcpServer.config.autoStart", "Auto-start on launch")}
-            description={t(
-              "mcpServer.config.autoStartDesc",
-              "Start the MCP server automatically when the app opens",
-            )}
-            checked={draft.auto_start}
-            onChange={(v) => update("auto_start", v)}
-            infoTooltip="Start the MCP server automatically when the application opens, without manual activation."
-          />
-        </div>
+        <Toggle
+          icon={<Power size={16} />}
+          label={t("mcpServer.config.enabled", "Enable MCP server")}
+          description={t(
+            "mcpServer.config.enabledDesc",
+            "Allow AI assistants to connect to this application via MCP",
+          )}
+          checked={draft.enabled}
+          onChange={(v) => update("enabled", v)}
+          infoTooltip="Allow AI assistants to connect to this application via the Model Context Protocol."
+        />
+        <Toggle
+          icon={<Clock size={16} />}
+          label={t("mcpServer.config.autoStart", "Start on application launch")}
+          description={t(
+            "mcpServer.config.autoStartDesc",
+            "Automatically start the MCP server when the application opens",
+          )}
+          checked={draft.auto_start}
+          onChange={(v) => update("auto_start", v)}
+          infoTooltip="Automatically start the MCP server when the application opens, without manual activation."
+        />
       </Card>
 
       {/* Server Controls */}
@@ -220,16 +197,14 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
           title={t("mcpServer.config.general", "General")}
         />
         <Card>
-          <SettingsTextRow
-            icon={<Network size={16} />}
+          <SettingsHostRow
             label={t("mcpServer.config.host", "Host")}
             value={draft.host}
             onChange={(v) => update("host", v)}
-            placeholder="127.0.0.1"
+            warnOnPublicBind
             infoTooltip="Network interface the MCP server binds to. Use 127.0.0.1 for localhost only or 0.0.0.0 to listen on all interfaces."
           />
-          <SettingsNumberRow
-            icon={<Server size={16} />}
+          <SettingsPortRow
             label={t("mcpServer.config.port", "Port")}
             value={draft.port}
             min={1024}
@@ -259,113 +234,39 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
             infoTooltip="Require an API key (Bearer token) for all incoming MCP requests. Strongly recommended when remote connections are allowed."
           />
 
-          <div
-            className={`pt-3 border-t border-[var(--color-border)] ${
-              !draft.require_auth ? "opacity-50 pointer-events-none" : ""
-            }`}
-          >
-            <div className="sor-settings-select-row">
-              <span className="sor-settings-row-label flex items-center gap-1">
-                <span className="text-[var(--color-textSecondary)] mr-1">
-                  <Key size={16} />
-                </span>
-                {t("mcpServer.config.apiKey", "API Key")}
-                <InfoTooltip text="Secret key clients must include as a Bearer token to authenticate MCP requests." />
-              </span>
-              <div className="flex items-center gap-2">
-                <div
-                  className="flex items-center gap-1 sor-settings-input min-w-0 px-2"
-                  style={{ width: "16rem" }}
-                >
-                  <input
-                    type={showApiKey ? "text" : "password"}
-                    value={draft.api_key}
-                    readOnly
-                    className="min-w-0 flex-1 bg-transparent border-0 p-0 text-sm font-mono text-[var(--color-text)] outline-none"
-                    data-testid="mcp-api-key-input"
-                    placeholder={t(
-                      "mcpServer.config.noApiKey",
-                      "No API key generated",
-                    )}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                    aria-label={
-                      showApiKey
-                        ? t("mcpServer.config.hideKey", "Hide key")
-                        : t("mcpServer.config.showKey", "Show key")
-                    }
-                  >
-                    {showApiKey ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                  {draft.api_key && (
-                    <button
-                      type="button"
-                      onClick={handleCopyKey}
-                      className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                      aria-label={t("mcpServer.config.copyKey", "Copy key")}
-                    >
-                      {copiedKey ? (
-                        <Check className="w-4 h-4 text-success" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </button>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleGenerateKey}
-                  disabled={mgr.isGeneratingKey}
-                  className="shrink-0 inline-flex items-center justify-center p-2 bg-primary border border-primary rounded-md text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                  data-testid="mcp-generate-key-btn"
-                  title={t("mcpServer.config.generateKey", "Generate New Key")}
-                  aria-label={t("mcpServer.config.generateKey", "Generate")}
-                >
-                  {mgr.isGeneratingKey ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-            <p className="text-xs text-[var(--color-textMuted)] mt-1 ml-7">
-              {t(
-                "mcpServer.config.apiKeyDescription",
-                "Include this key as a Bearer token in the Authorization header",
-              )}
-            </p>
-          </div>
+          <SettingsApiKeyField
+            label={t("mcpServer.config.apiKey", "API Key")}
+            value={draft.api_key}
+            onCopy={handleCopyKey}
+            onRegenerate={handleGenerateKey}
+            isRegenerating={mgr.isGeneratingKey}
+            placeholder={t(
+              "mcpServer.config.noApiKey",
+              "No API key generated",
+            )}
+            description={t(
+              "mcpServer.config.apiKeyDescription",
+              "Include this key as a Bearer token in the Authorization header",
+            )}
+            infoTooltip="Secret key clients must include as a Bearer token to authenticate MCP requests."
+            disabled={!draft.require_auth}
+          />
 
-          <Toggle
+          <SettingsRemoteAccessRow
             icon={<Globe size={16} />}
+            checked={draft.allow_remote}
+            onChange={(v) => update("allow_remote", v)}
             label={t("mcpServer.config.allowRemote", "Allow remote connections")}
             description={t(
               "mcpServer.config.allowRemoteDesc",
               "Allow connections from non-localhost addresses (security risk)",
             )}
-            checked={draft.allow_remote}
-            onChange={(v) => update("allow_remote", v)}
+            warningText={t(
+              "mcpServer.config.remoteWarning",
+              "Warning: This exposes the MCP server to your network. Ensure authentication is enabled.",
+            )}
             infoTooltip="Listen on non-localhost addresses. Exposes the API to other machines on your network — ensure authentication is enabled."
           />
-          {draft.allow_remote && (
-            <div className="flex items-start gap-2 p-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>
-                {t(
-                  "mcpServer.config.remoteWarning",
-                  "Warning: This exposes the MCP server to your network. Ensure authentication is enabled.",
-                )}
-              </span>
-            </div>
-          )}
 
           <Toggle
             icon={<AlertTriangle size={16} />}

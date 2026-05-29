@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cx } from '../lib/cx';
 import { Select } from '../forms/Select';
+import { PasswordInput } from '../forms/PasswordInput';
 import { InfoTooltip } from '../InfoTooltip';
 
 interface BaseSettingProps {
@@ -404,6 +405,76 @@ export const SettingsColorRow: React.FC<SettingsColorRowProps> = ({
   );
 };
 
+interface SettingsPasswordRowProps extends BaseSettingProps {
+  label: string;
+  icon?: React.ReactNode;
+  description?: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  infoTooltip?: string;
+  disabled?: boolean;
+  /** Width of the input container. Defaults to `18rem` to match the
+   *  Backup / Cloud Sync / Proxy call sites. */
+  inputWidth?: string;
+  /** Forwarded to the underlying PasswordInput. */
+  revealable?: boolean;
+  /** Forwarded to the underlying PasswordInput — marks the field as
+   *  containing a previously saved password so the global
+   *  `lockSavedPasswords` policy can apply. */
+  isSaved?: boolean;
+}
+
+/**
+ * Standard "label + masked input" row used by Backup Encryption,
+ * Cloud Sync Encryption, and Proxy authentication. The input itself is
+ * the shared `PasswordInput` so the global password-reveal policy
+ * (mode / autoHide / lockSavedPasswords) applies uniformly.
+ */
+export const SettingsPasswordRow: React.FC<SettingsPasswordRowProps> = ({
+  label,
+  icon,
+  description,
+  value,
+  onChange,
+  placeholder,
+  settingKey,
+  className,
+  infoTooltip,
+  disabled,
+  inputWidth = '18rem',
+  revealable,
+  isSaved,
+}) => (
+  <div
+    className={cx('sor-settings-select-row', className)}
+    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+  >
+    <div className="min-w-0">
+      <span className="sor-settings-row-label flex items-center gap-1">
+        {icon && <span className="text-[var(--color-textSecondary)] mr-1">{icon}</span>}
+        {label}{infoTooltip && <InfoTooltip text={infoTooltip} />}
+      </span>
+      {description && (
+        <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
+          {description}
+        </p>
+      )}
+    </div>
+    <div style={{ width: inputWidth }}>
+      <PasswordInput
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="sor-settings-input w-full"
+        disabled={disabled}
+        revealable={revealable}
+        isSaved={isSaved}
+      />
+    </div>
+  </div>
+);
+
 /* ── Short aliases (used by behavior/ sub-files) ── */
 export {
   SettingsCard as Card,
@@ -414,4 +485,5 @@ export {
   SettingsTextRow as TextRow,
   SettingsNumberRow as NumberRow,
   SettingsColorRow as ColorRow,
+  SettingsPasswordRow as PasswordRow,
 };

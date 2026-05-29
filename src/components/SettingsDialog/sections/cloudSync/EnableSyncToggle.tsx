@@ -1,26 +1,22 @@
 import { Cloud } from "lucide-react";
-import { Checkbox } from "../../../ui/forms";
+import {
+  Card,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
+
 function EnableSyncToggle({ mgr }: { mgr: Mgr }) {
   return (
-    <div className="sor-settings-card">
-      <label className="flex items-center justify-between cursor-pointer">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/20 rounded-lg">
-            <Cloud className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <span className="text-[var(--color-text)] font-medium">
-              Enable Cloud Sync
-            </span>
-            <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-              Synchronize your connections and settings across devices
-            </p>
-          </div>
-        </div>
-        <Checkbox checked={mgr.cloudSync.enabled} onChange={(v: boolean) => mgr.updateCloudSync({ enabled: v })} className="sor-checkbox-lg" />
-      </label>
-    </div>
+    <Card>
+      <Toggle
+        checked={mgr.cloudSync.enabled}
+        onChange={(v: boolean) => mgr.updateCloudSync({ enabled: v })}
+        icon={<Cloud size={16} />}
+        label="Enable cloud sync"
+        description="Synchronize your connections and settings across devices"
+        infoTooltip="When enabled, the configured cloud-sync targets are kept in sync on the configured frequency."
+      />
+    </Card>
   );
 }
 

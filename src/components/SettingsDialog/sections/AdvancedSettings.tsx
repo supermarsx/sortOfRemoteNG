@@ -22,6 +22,7 @@ import {
   Toggle,
   SettingsNumberRow,
 } from "../../ui/settings/SettingsPrimitives";
+import { SettingsSubGroupHeader as SubGroupHeader } from "../../ui/settings/NetworkPrimitives";
 import { InfoTooltip } from "../../ui/InfoTooltip";
 import {
   defaultMemoryWatchdogSettings,
@@ -126,21 +127,6 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
 };
 
 /* ── Memory Watchdog subsection ──────────────────────── */
-
-/**
- * Small in-card sub-group header. Adds a thin top border and a muted,
- * uppercase label so a single card with many rows still reads as
- * sensibly-grouped triples (e.g. Warning / Critical / Kill per scope).
- */
-const SubGroupHeader: React.FC<{ icon: React.ReactNode; label: string }> = ({
-  icon,
-  label,
-}) => (
-  <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]/40 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] font-medium">
-    {icon}
-    {label}
-  </div>
-);
 
 const MemoryWatchdogSection: React.FC<AdvancedSettingsProps> = ({
   settings,

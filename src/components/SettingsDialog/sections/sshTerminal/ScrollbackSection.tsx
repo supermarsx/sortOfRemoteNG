@@ -1,11 +1,23 @@
 import type { SectionProps } from "./types";
-import Toggle from "./Toggle";
 import React from "react";
-import { Monitor } from "lucide-react";
-import { TextInput, FormField } from "../../../ui/forms";
-import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
-import { NumberInput } from "../../../ui/forms";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
+import {
+  Monitor,
+  History,
+  ArrowDownToLine,
+  Keyboard,
+  Copy,
+  ClipboardPaste,
+  Type,
+  MousePointer2,
+} from "lucide-react";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsNumberRow,
+  SettingsTextRow,
+} from "../../../ui/settings/SettingsPrimitives";
+import { SettingsSubGroupHeader as SubGroupHeader } from "../../../ui/settings/NetworkPrimitives";
 
 const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <div className="space-y-4">
@@ -14,71 +26,79 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       title={t("settings.sshTerminal.scrollback", "Scrollback & Selection")}
     />
     <Card>
-    <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.scrollbackLines", "Scrollback Lines")} <InfoTooltip text="Maximum number of lines kept in the scrollback buffer. Higher values use more memory." /></span>}>
-      <NumberInput
+      <SettingsNumberRow
+        settingKey="scrollbackLines"
+        icon={<History size={16} />}
+        label={t("settings.sshTerminal.scrollbackLines", "Scrollback lines")}
         value={cfg.scrollbackLines}
-        onChange={(v) => up({ scrollbackLines: v })}
         min={100}
         max={100000}
         step={100}
+        onChange={(v) => up({ scrollbackLines: v })}
+        infoTooltip="Maximum number of lines kept in the scrollback buffer. Higher values use more memory."
       />
-    </FormField>
-    <Toggle
-      checked={cfg.scrollOnOutput}
-      onChange={(v) => up({ scrollOnOutput: v })}
-      label={<span className="flex items-center gap-1">{t("settings.sshTerminal.scrollOnOutput", "Scroll on output")} <InfoTooltip text="Automatically scroll the terminal to the bottom whenever new output is received from the remote host." /></span>}
-      description={t(
-        "settings.sshTerminal.scrollOnOutputDesc",
-        "Automatically scroll to bottom when new output appears",
-      )}
-    />
-    <Toggle
-      checked={cfg.scrollOnKeystroke}
-      onChange={(v) => up({ scrollOnKeystroke: v })}
-      label={<span className="flex items-center gap-1">{t(
-        "settings.sshTerminal.scrollOnKeystroke",
-        "Scroll on keystroke",
-      )} <InfoTooltip text="Automatically scroll the terminal to the bottom when you start typing." /></span>}
-      description={t(
-        "settings.sshTerminal.scrollOnKeystrokeDesc",
-        "Automatically scroll to bottom when typing",
-      )}
-    />
-    <div className="border-t border-[var(--color-border)] pt-4 mt-4">
+      <Toggle
+        checked={cfg.scrollOnOutput}
+        onChange={(v) => up({ scrollOnOutput: v })}
+        icon={<ArrowDownToLine size={16} />}
+        label={t("settings.sshTerminal.scrollOnOutput", "Scroll on output")}
+        description={t(
+          "settings.sshTerminal.scrollOnOutputDesc",
+          "Automatically scroll to bottom when new output appears",
+        )}
+        infoTooltip="Automatically scroll the terminal to the bottom whenever new output is received from the remote host."
+      />
+      <Toggle
+        checked={cfg.scrollOnKeystroke}
+        onChange={(v) => up({ scrollOnKeystroke: v })}
+        icon={<Keyboard size={16} />}
+        label={t(
+          "settings.sshTerminal.scrollOnKeystroke",
+          "Scroll on keystroke",
+        )}
+        description={t(
+          "settings.sshTerminal.scrollOnKeystrokeDesc",
+          "Automatically scroll to bottom when typing",
+        )}
+        infoTooltip="Automatically scroll the terminal to the bottom when you start typing."
+      />
+
+      <SubGroupHeader icon={<MousePointer2 size={11} />} label="Selection" />
+
       <Toggle
         checked={cfg.copyOnSelect}
         onChange={(v) => up({ copyOnSelect: v })}
-        label={<span className="flex items-center gap-1">{t("settings.sshTerminal.copyOnSelect", "Copy on select")} <InfoTooltip text="Automatically copy text to the clipboard as soon as you select it in the terminal." /></span>}
+        icon={<Copy size={16} />}
+        label={t("settings.sshTerminal.copyOnSelect", "Copy on select")}
         description={t(
           "settings.sshTerminal.copyOnSelectDesc",
           "Automatically copy selected text to clipboard",
         )}
+        infoTooltip="Automatically copy text to the clipboard as soon as you select it in the terminal."
       />
       <Toggle
         checked={cfg.pasteOnRightClick}
         onChange={(v) => up({ pasteOnRightClick: v })}
-        label={<span className="flex items-center gap-1">{t(
+        icon={<ClipboardPaste size={16} />}
+        label={t(
           "settings.sshTerminal.pasteOnRightClick",
           "Paste on right-click",
-        )} <InfoTooltip text="Paste clipboard content into the terminal when you right-click, instead of showing a context menu." /></span>}
+        )}
         description={t(
           "settings.sshTerminal.pasteOnRightClickDesc",
           "Paste clipboard content when right-clicking",
         )}
+        infoTooltip="Paste clipboard content into the terminal when you right-click, instead of showing a context menu."
       />
-      <div className="mt-3">
-        <FormField label={<span className="flex items-center gap-1">{t(
-            "settings.sshTerminal.wordSeparators",
-            "Word Separators (for double-click selection)",
-          )} <InfoTooltip text="Characters that define word boundaries when double-clicking to select text in the terminal." /></span>}>
-          <TextInput
-            value={cfg.wordSeparators}
-            onChange={(v) => up({ wordSeparators: v })}
-            placeholder={' !"#$%&\'()*+,-./:;<=>?@[\\]^`{|}~'}
-          />
-        </FormField>
-      </div>
-    </div>
+      <SettingsTextRow
+        settingKey="wordSeparators"
+        icon={<Type size={16} />}
+        label={t("settings.sshTerminal.wordSeparators", "Word separators")}
+        value={cfg.wordSeparators}
+        onChange={(v) => up({ wordSeparators: v })}
+        placeholder={' !"#$%&\'()*+,-./:;<=>?@[\\]^`{|}~'}
+        infoTooltip="Characters that define word boundaries when double-clicking to select text in the terminal."
+      />
     </Card>
   </div>
 );

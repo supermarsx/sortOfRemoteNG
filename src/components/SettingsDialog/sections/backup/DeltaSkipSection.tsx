@@ -41,9 +41,9 @@ const DeltaSkipSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         />
 
         <div
-          className={
-            enabled ? undefined : "opacity-50 pointer-events-none"
-          }
+          className={`flex flex-col gap-2.5 ${
+            enabled ? "" : "opacity-50 pointer-events-none"
+          }`}
         >
           <SettingsNumberRow
             icon={<Hash size={16} />}

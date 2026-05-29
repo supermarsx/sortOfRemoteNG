@@ -1,15 +1,17 @@
 import type { SectionProps } from "./selectClass";
 import React from "react";
 import { GlobalSettings } from "../../../../types/settings/settings";
-import { Network, Shuffle, Globe, Hash, KeyRound, Cable } from "lucide-react";
+import { Network, Shuffle, Globe, KeyRound, Cable } from "lucide-react";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
   SettingsSelectRow,
-  SettingsNumberRow,
-  SettingsTextRow,
 } from "../../../ui/settings/SettingsPrimitives";
+import {
+  SettingsHostRow,
+  SettingsPortRow,
+} from "../../../ui/settings/NetworkPrimitives";
 
 const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const gwOn = rdp.gatewayEnabled ?? false;
@@ -35,7 +37,7 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
             gwOn ? "" : "opacity-50 pointer-events-none"
           }`}
         >
-          <SettingsTextRow
+          <SettingsHostRow
             settingKey="gatewayHostname"
             icon={<Globe size={16} />}
             label="Default gateway hostname"
@@ -45,13 +47,10 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
             infoTooltip="The fully qualified domain name or IP address of the RD Gateway server."
           />
 
-          <SettingsNumberRow
+          <SettingsPortRow
             settingKey="gatewayPort"
-            icon={<Hash size={16} />}
             label="Default gateway port"
             value={rdp.gatewayPort ?? 443}
-            min={1}
-            max={65535}
             onChange={(v) => update({ gatewayPort: v })}
             infoTooltip="The TCP port used to connect to the RD Gateway server. Default is 443 (HTTPS)."
           />

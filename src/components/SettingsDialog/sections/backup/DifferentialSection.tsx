@@ -26,11 +26,11 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
 
       <div
-        className={
+        className={`flex flex-col gap-2.5 ${
           mgr.backup.differentialEnabled
-            ? undefined
+            ? ""
             : "opacity-50 pointer-events-none"
-        }
+        }`}
       >
         <SettingsNumberRow
           icon={<Hash size={16} />}

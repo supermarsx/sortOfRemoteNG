@@ -1,9 +1,8 @@
-import { PasswordInput } from "../../../ui/forms";
 import { Shield, Lock, Info, ShieldCheck } from "lucide-react";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
+  SettingsPasswordRow,
   Toggle,
 } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
@@ -29,32 +28,21 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
         />
 
         <div
-          className={
-            enabled ? undefined : "opacity-50 pointer-events-none"
-          }
+          className={`flex flex-col gap-2.5 ${
+            enabled ? "" : "opacity-50 pointer-events-none"
+          }`}
         >
-          <div className="sor-settings-select-row">
-            <span className="sor-settings-row-label flex items-center gap-1">
-              <span className="text-[var(--color-textSecondary)] mr-1">
-                <Lock size={16} />
-              </span>
-              Encryption Password
-              <InfoTooltip text="The password used to derive the encryption key. The same password is required on every device that participates in the sync." />
-            </span>
-            <div style={{ width: "18rem" }}>
-              <PasswordInput
-                value={mgr.cloudSync.syncEncryptionPassword || ""}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    syncEncryptionPassword: e.target.value,
-                  })
-                }
-                placeholder="Enter a strong password"
-                className="sor-settings-input"
-                disabled={!enabled}
-              />
-            </div>
-          </div>
+          <SettingsPasswordRow
+            icon={<Lock size={16} />}
+            label="Encryption password"
+            value={mgr.cloudSync.syncEncryptionPassword || ""}
+            onChange={(v) =>
+              mgr.updateCloudSync({ syncEncryptionPassword: v })
+            }
+            placeholder="Enter a strong password"
+            disabled={!enabled}
+            infoTooltip="The password used to derive the encryption key. The same password is required on every device that participates in the sync."
+          />
           <p className="text-xs text-[var(--color-textMuted)] flex items-start gap-1 mt-1">
             <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
             <span>

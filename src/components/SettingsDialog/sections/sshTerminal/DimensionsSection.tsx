@@ -1,10 +1,12 @@
 import type { SectionProps } from "./types";
-import Toggle from "./Toggle";
 import React from "react";
-import { Terminal, LayoutGrid } from "lucide-react";
-import { Card, SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
-import { NumberInput, FormField } from "../../../ui/forms";
-import { InfoTooltip } from "../../../ui/InfoTooltip";
+import { LayoutGrid, ArrowLeftRight, ArrowUpDown, Maximize2 } from "lucide-react";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsNumberRow,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <div className="space-y-4">
@@ -13,38 +15,47 @@ const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       title={t("settings.sshTerminal.dimensions", "Terminal Dimensions")}
     />
     <Card>
-    <Toggle
-      checked={cfg.useCustomDimensions}
-      onChange={(v) => up({ useCustomDimensions: v })}
-      label={<span className="flex items-center gap-1">{t(
-        "settings.sshTerminal.useCustomDimensions",
-        "Use custom dimensions",
-      )} <InfoTooltip text="Override automatic terminal size detection and specify exact column and row counts." /></span>}
-      description={t(
-        "settings.sshTerminal.useCustomDimensionsDesc",
-        "Override automatic terminal size detection",
-      )}
-    />
-    {cfg.useCustomDimensions && (
-      <div className="grid grid-cols-2 gap-4 mt-3 ml-10">
-        <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.columns", "Columns")} <InfoTooltip text="Number of character columns in the terminal. Standard is 80." /></span>}>
-          <NumberInput
-            value={cfg.columns}
-            onChange={(v) => up({ columns: v })}
-            min={40}
-            max={500}
-          />
-        </FormField>
-        <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.rows", "Rows")} <InfoTooltip text="Number of character rows in the terminal. Standard is 24." /></span>}>
-          <NumberInput
-            value={cfg.rows}
-            onChange={(v) => up({ rows: v })}
-            min={10}
-            max={200}
-          />
-        </FormField>
+      <Toggle
+        checked={cfg.useCustomDimensions}
+        onChange={(v) => up({ useCustomDimensions: v })}
+        icon={<Maximize2 size={16} />}
+        label={t(
+          "settings.sshTerminal.useCustomDimensions",
+          "Use custom dimensions",
+        )}
+        description={t(
+          "settings.sshTerminal.useCustomDimensionsDesc",
+          "Override automatic terminal size detection",
+        )}
+        infoTooltip="Override automatic terminal size detection and specify exact column and row counts."
+      />
+
+      <div
+        className={`flex flex-col gap-2.5 ${
+          cfg.useCustomDimensions ? "" : "opacity-50 pointer-events-none"
+        }`}
+      >
+        <SettingsNumberRow
+          settingKey="columns"
+          icon={<ArrowLeftRight size={16} />}
+          label={t("settings.sshTerminal.columns", "Columns")}
+          value={cfg.columns}
+          min={40}
+          max={500}
+          onChange={(v) => up({ columns: v })}
+          infoTooltip="Number of character columns in the terminal. Standard is 80."
+        />
+        <SettingsNumberRow
+          settingKey="rows"
+          icon={<ArrowUpDown size={16} />}
+          label={t("settings.sshTerminal.rows", "Rows")}
+          value={cfg.rows}
+          min={10}
+          max={200}
+          onChange={(v) => up({ rows: v })}
+          infoTooltip="Number of character rows in the terminal. Standard is 24."
+        />
       </div>
-    )}
     </Card>
   </div>
 );

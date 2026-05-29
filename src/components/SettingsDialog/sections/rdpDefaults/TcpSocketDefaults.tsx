@@ -1,13 +1,16 @@
 import type { SectionProps } from "./selectClass";
 import React from "react";
-import { Cable, Zap, Activity, Timer, Download, Upload } from "lucide-react";
+import { Cable, Zap, Download, Upload } from "lucide-react";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   Toggle,
-  SettingsSliderRow,
   SettingsSelectRow,
 } from "../../../ui/settings/SettingsPrimitives";
+import {
+  SettingsConnectionTimeoutRow,
+  SettingsTcpKeepAliveBlock,
+} from "../../../ui/settings/NetworkPrimitives";
 
 const BUFFER_OPTIONS = [
   { value: "65536", label: "64 KB" },
@@ -33,14 +36,13 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           Incorrect values may cause connectivity issues.
         </p>
 
-        <SettingsSliderRow
+        <SettingsConnectionTimeoutRow
           settingKey="tcpConnectTimeoutSecs"
-          icon={<Timer size={16} />}
           label="Connect timeout"
           value={rdp.tcpConnectTimeoutSecs ?? 10}
           min={1}
           max={60}
-          unit="s"
+          variant="slider"
           onChange={(v) => update({ tcpConnectTimeoutSecs: v })}
           infoTooltip="Maximum time in seconds to wait for a TCP connection to be established before timing out."
         />
@@ -54,33 +56,25 @@ const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           infoTooltip="Disables Nagle's algorithm to send packets immediately, reducing latency for interactive sessions."
         />
 
-        <Toggle
-          checked={keepAliveOn}
-          onChange={(v) => update({ tcpKeepAlive: v })}
-          icon={<Activity size={16} />}
+        <SettingsTcpKeepAliveBlock
+          enabled={keepAliveOn}
+          onEnabledChange={(v) => update({ tcpKeepAlive: v })}
           label="TCP keep-alive"
           description="Send periodic probes to detect stale connections before they're dropped."
           infoTooltip="Sends periodic keep-alive probes to detect and prevent stale connections from being dropped."
+          intervalSecs={{
+            settingKey: "tcpKeepAliveIntervalSecs",
+            value: rdp.tcpKeepAliveIntervalSecs ?? 60,
+            onChange: (v) => update({ tcpKeepAliveIntervalSecs: v }),
+            min: 5,
+            max: 300,
+            step: 5,
+            variant: "slider",
+            label: "Keep-alive interval",
+            infoTooltip:
+              "Time in seconds between TCP keep-alive probes sent to maintain the connection.",
+          }}
         />
-
-        <div
-          className={
-            keepAliveOn ? undefined : "opacity-50 pointer-events-none"
-          }
-        >
-          <SettingsSliderRow
-            settingKey="tcpKeepAliveIntervalSecs"
-            icon={<Timer size={16} />}
-            label="Keep-alive interval"
-            value={rdp.tcpKeepAliveIntervalSecs ?? 60}
-            min={5}
-            max={300}
-            step={5}
-            unit="s"
-            onChange={(v) => update({ tcpKeepAliveIntervalSecs: v })}
-            infoTooltip="Time in seconds between TCP keep-alive probes sent to maintain the connection."
-          />
-        </div>
 
         <SettingsSelectRow
           settingKey="tcpRecvBufferSize"

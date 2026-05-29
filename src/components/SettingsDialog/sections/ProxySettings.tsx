@@ -1,15 +1,28 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { PasswordInput } from '../../ui/forms';
 import { GlobalSettings, ProxyConfig } from "../../../types/settings/settings";
-import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
-import { Checkbox, NumberInput } from '../../ui/forms';
-import SectionHeading from '../../ui/SectionHeading';
+import {
+  Shield,
+  Globe,
+  Server,
+  User,
+  Lock,
+  Wifi,
+  Power,
+} from "lucide-react";
+import SectionHeading from "../../ui/SectionHeading";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
+  Toggle,
+  SettingsTextRow,
+  SettingsSelectRow,
+  SettingsPasswordRow,
 } from "../../ui/settings/SettingsPrimitives";
-import { InfoTooltip } from '../../ui/InfoTooltip';
+import {
+  SettingsPortRow,
+  SettingsSubGroupHeader as SubGroupHeader,
+} from "../../ui/settings/NetworkPrimitives";
 import ProxyPresetsSection from "./proxy/ProxyPresetsSection";
 
 interface ProxySettingsProps {
@@ -18,11 +31,11 @@ interface ProxySettingsProps {
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
 
-const PROXY_TYPES = [
-  { value: "http", label: "HTTP", description: "Standard HTTP proxy" },
-  { value: "https", label: "HTTPS", description: "Secure HTTP proxy" },
-  { value: "socks4", label: "SOCKS4", description: "SOCKS4 protocol" },
-  { value: "socks5", label: "SOCKS5", description: "SOCKS5 with auth" },
+const PROXY_TYPE_OPTIONS = [
+  { value: "http", label: "HTTP — standard HTTP proxy" },
+  { value: "https", label: "HTTPS — secure HTTP proxy" },
+  { value: "socks4", label: "SOCKS4 — SOCKS4 protocol" },
+  { value: "socks5", label: "SOCKS5 — SOCKS5 with auth" },
 ];
 
 export const ProxySettings: React.FC<ProxySettingsProps> = ({
@@ -30,7 +43,9 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
   updateProxy,
   updateSettings,
 }) => {
-  const { t } = useTranslation();
+  const { t: _t } = useTranslation();
+  const enabled = settings.globalProxy?.enabled ?? false;
+
   return (
     <div className="space-y-6">
       <SectionHeading
@@ -39,150 +54,89 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
         description="Configure a global proxy server for routing all connections."
       />
 
-      {/* Enable Global Proxy */}
-      <Card>
-        <label className="flex items-center justify-between cursor-pointer">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/20 rounded-lg">
-              <Shield className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <span className="text-[var(--color-text)] font-medium">
-                Enable Global Proxy <InfoTooltip text="Route all outgoing connections through a proxy server. Applies to SSH, RDP, and other protocol connections." />
-              </span>
-              <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-                Route all connections through a proxy server
-              </p>
-            </div>
-          </div>
-          <Checkbox
-            checked={settings.globalProxy?.enabled || false}
-            onChange={(v: boolean) => updateProxy({ enabled: v })}
-            className="sor-checkbox-lg"
-          />
-        </label>
-      </Card>
-
-      {/* Proxy Type */}
       <div className="space-y-4">
         <SectionHeader
           icon={<Globe className="w-4 h-4 text-primary" />}
-          title={
-            <span className="flex items-center gap-2">
-              Proxy Type
-              <InfoTooltip text="Select the proxy protocol. SOCKS5 supports authentication and UDP; HTTP/HTTPS proxies are more common in corporate environments." />
-            </span>
-          }
+          title="Global proxy"
         />
 
         <Card>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {PROXY_TYPES.map((type) => (
-              <button
-                key={type.value}
-                onClick={() => updateProxy({ type: type.value as any })}
-                className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
-                  settings.globalProxy?.type === type.value
-                    ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
-                    : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
-                }`}
-              >
-                <Shield
-                  className={`w-5 h-5 mb-1 ${settings.globalProxy?.type === type.value ? "text-primary" : ""}`}
-                />
-                <span className="text-sm font-medium">{type.label}</span>
-                <span className="text-xs text-[var(--color-textSecondary)] mt-1">
-                  {type.description}
-                </span>
-              </button>
-            ))}
+          <Toggle
+            checked={enabled}
+            onChange={(v) => updateProxy({ enabled: v })}
+            icon={<Power size={16} />}
+            label="Enable global proxy"
+            description="Route all connections through a proxy server"
+            infoTooltip="Route all outgoing connections through a proxy server. Applies to SSH, RDP, and other protocol connections."
+          />
+
+          <div
+            className={`flex flex-col gap-2.5 ${
+              enabled ? "" : "opacity-50 pointer-events-none"
+            }`}
+          >
+            <SettingsSelectRow
+              settingKey="proxyType"
+              icon={<Shield size={16} />}
+              label="Proxy type"
+              value={settings.globalProxy?.type ?? "http"}
+              onChange={(v) => updateProxy({ type: v as ProxyConfig["type"] })}
+              options={PROXY_TYPE_OPTIONS}
+              infoTooltip="Select the proxy protocol. SOCKS5 supports authentication and UDP; HTTP/HTTPS proxies are more common in corporate environments."
+            />
+
+            <SubGroupHeader
+              icon={<Server size={11} />}
+              label="Connection details"
+            />
+
+            <SettingsTextRow
+              settingKey="proxyHost"
+              icon={<Server size={16} />}
+              label="Proxy host"
+              value={settings.globalProxy?.host || ""}
+              onChange={(v) => updateProxy({ host: v })}
+              placeholder="proxy.example.com"
+              infoTooltip="Hostname or IP address of the proxy server to route connections through."
+            />
+            <SettingsPortRow
+              settingKey="proxyPort"
+              label="Proxy port"
+              value={settings.globalProxy?.port || 8080}
+              onChange={(v) => updateProxy({ port: v })}
+              infoTooltip="TCP port number on the proxy server. Common defaults: HTTP 8080, SOCKS5 1080."
+            />
+
+            <SubGroupHeader
+              icon={<Lock size={11} />}
+              label="Authentication (optional)"
+            />
+
+            <SettingsTextRow
+              settingKey="proxyUsername"
+              icon={<User size={16} />}
+              label="Username"
+              value={settings.globalProxy?.username || ""}
+              onChange={(v) => updateProxy({ username: v })}
+              placeholder="Optional"
+              infoTooltip="Username for proxy authentication. Leave blank if the proxy does not require credentials."
+            />
+
+            <SettingsPasswordRow
+              settingKey="proxyPassword"
+              icon={<Lock size={16} />}
+              label="Password"
+              value={settings.globalProxy?.password || ""}
+              onChange={(v) => updateProxy({ password: v })}
+              placeholder="Optional"
+              infoTooltip="Password for proxy authentication. Stored encrypted in the application settings."
+            />
+
+            <p className="text-xs text-[var(--color-textMuted)] mt-1">
+              Leave the username and password blank if your proxy server doesn't
+              require authentication.
+            </p>
           </div>
-        </Card>
-      </div>
-
-      {/* Connection Details */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Server className="w-4 h-4 text-primary" />}
-          title="Connection Details"
-        />
-
-        <Card>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Server className="w-4 h-4" />
-                Proxy Host
-                <InfoTooltip text="Hostname or IP address of the proxy server to route connections through." />
-              </label>
-              <input
-                type="text"
-                value={settings.globalProxy?.host || ""}
-                onChange={(e) => updateProxy({ host: e.target.value })}
-                className="sor-settings-input w-full"
-                placeholder="proxy.example.com"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Hash className="w-4 h-4" />
-                Proxy Port
-                <InfoTooltip text="TCP port number on the proxy server. Common defaults: HTTP 8080, SOCKS5 1080." />
-              </label>
-              <NumberInput
-                value={settings.globalProxy?.port || 8080}
-                onChange={(v: number) => updateProxy({ port: v })}
-                className="w-full"
-                min={1}
-                max={65535}
-              />
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Authentication */}
-      <div className="space-y-4">
-        <SectionHeader
-          icon={<Lock className="w-4 h-4 text-primary" />}
-          title="Authentication (Optional)"
-        />
-
-        <Card>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <User className="w-4 h-4" />
-                Username
-                <InfoTooltip text="Username for proxy authentication. Leave blank if the proxy does not require credentials." />
-              </label>
-              <input
-                type="text"
-                value={settings.globalProxy?.username || ""}
-                onChange={(e) => updateProxy({ username: e.target.value })}
-                className="sor-settings-input w-full"
-                placeholder="Optional"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                <Lock className="w-4 h-4" />
-                Password
-                <InfoTooltip text="Password for proxy authentication. Stored encrypted in the application settings." />
-              </label>
-              <PasswordInput
-                value={settings.globalProxy?.password || ""}
-                onChange={(e) => updateProxy({ password: e.target.value })}
-                className="sor-settings-input w-full"
-                placeholder="Optional"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-[var(--color-textMuted)] mt-3">
-            Leave blank if your proxy server doesn't require authentication.
-          </p>
         </Card>
       </div>
 

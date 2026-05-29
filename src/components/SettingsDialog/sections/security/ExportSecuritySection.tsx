@@ -38,19 +38,7 @@ import {
   SettingsSelectRow,
   SettingsNumberRow,
 } from "../../../ui/settings/SettingsPrimitives";
-
-/**
- * Small in-card sub-group header (matches Memory Watchdog / CredSSP).
- */
-const SubGroupHeader: React.FC<{ icon: React.ReactNode; label: string }> = ({
-  icon,
-  label,
-}) => (
-  <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]/40 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] font-medium">
-    {icon}
-    {label}
-  </div>
-);
+import { SettingsSubGroupHeader as SubGroupHeader } from "../../../ui/settings/NetworkPrimitives";
 
 function ExportSecuritySection({
   settings,

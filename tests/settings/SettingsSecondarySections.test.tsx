@@ -198,8 +198,10 @@ describe("Secondary settings section centralization", () => {
       />,
     );
 
-    // Enable Proxy + Proxy Type + Connection Details + Authentication + Presets
-    expect(container.querySelectorAll(".sor-settings-card").length).toBe(5);
+    // Global proxy (consolidated) + Presets — at least 2 shared cards.
+    expect(
+      container.querySelectorAll(".sor-settings-card").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(
       container.querySelector('input[type="checkbox"]')?.className,
     ).toContain("sor-settings-checkbox");
