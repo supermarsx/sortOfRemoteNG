@@ -218,11 +218,11 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           />
 
           <div
-            className={
+            className={`flex flex-col gap-2.5 ${
               cfg.tempFileCleanupEnabled
-                ? undefined
+                ? ""
                 : "opacity-50 pointer-events-none"
-            }
+            }`}
           >
             <SettingsNumberRow
               icon={<Timer size={16} />}

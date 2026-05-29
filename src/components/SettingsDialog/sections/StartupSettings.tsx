@@ -134,9 +134,9 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           />
 
           <div
-            className={
-              !settings.showTrayIcon ? "opacity-50 pointer-events-none" : undefined
-            }
+            className={`flex flex-col gap-2.5 ${
+              settings.showTrayIcon ? "" : "opacity-50 pointer-events-none"
+            }`}
           >
             <Toggle
               checked={settings.minimizeToTray}
@@ -150,13 +150,6 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
               settingKey="minimizeToTray"
               infoTooltip="When minimizing, hide the window and keep it accessible from the system tray icon"
             />
-          </div>
-
-          <div
-            className={
-              !settings.showTrayIcon ? "opacity-50 pointer-events-none" : undefined
-            }
-          >
             <Toggle
               checked={settings.closeToTray}
               onChange={(v) => updateSettings({ closeToTray: v })}

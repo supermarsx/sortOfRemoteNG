@@ -84,9 +84,9 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           />
 
           <div
-            className={
-              !keepaliveOn ? "opacity-50 pointer-events-none" : undefined
-            }
+            className={`flex flex-col gap-2.5 ${
+              keepaliveOn ? "" : "opacity-50 pointer-events-none"
+            }`}
           >
             <FieldRow
               settingKey="proxyKeepaliveIntervalSeconds"
@@ -115,13 +115,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 sec
               </span>
             </FieldRow>
-          </div>
 
-          <div
-            className={
-              !keepaliveOn ? "opacity-50 pointer-events-none" : undefined
-            }
-          >
             <Toggle
               settingKey="proxyAutoRestart"
               icon={<RefreshCw size={16} />}
