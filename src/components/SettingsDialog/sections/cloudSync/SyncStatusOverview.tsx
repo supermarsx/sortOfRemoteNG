@@ -1,11 +1,12 @@
 import { FolderSync, Check, X, AlertTriangle } from "lucide-react";
 import { providerIcons } from "../../../../hooks/settings/useCloudSyncSettings";
+import { Card } from "../../../ui/settings/SettingsPrimitives";
 import type { Mgr } from "./types";
 function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
   const enabledTargets = mgr.syncTargets.filter((t) => t.enabled);
   if (enabledTargets.length === 0) return null;
   return (
-    <div className="sor-settings-card">
+    <Card>
       <div className="flex items-center gap-2 mb-3">
         <FolderSync className="w-4 h-4 text-primary" />
         <span className="text-sm font-medium text-[var(--color-text)]">
@@ -44,7 +45,7 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }
 

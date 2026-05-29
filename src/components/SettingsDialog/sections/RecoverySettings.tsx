@@ -12,7 +12,10 @@ import {
 import { Modal } from "../../ui/overlays/Modal";
 import { useRecoverySettings } from "../../../hooks/settings/useRecoverySettings";
 import SectionHeading from "../../ui/SectionHeading";
-import { SettingsSectionHeader as SectionHeader } from "../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../ui/settings/SettingsPrimitives";
 
 type Mgr = ReturnType<typeof useRecoverySettings>;
 
@@ -118,7 +121,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           icon={<Database className="w-4 h-4 text-primary" />}
           title="Data Management"
         />
-        <div className="sor-settings-card">
+        <Card>
           <ActionRow
             icon={<FolderX className="w-4 h-4" />}
             tone="warning"
@@ -138,7 +141,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             buttonIcon={<Trash2 className="w-4 h-4" />}
             buttonLabel="Delete All"
           />
-        </div>
+        </Card>
       </div>
 
       {/* Reset Options */}
@@ -147,7 +150,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           icon={<RotateCcw className="w-4 h-4 text-primary" />}
           title="Reset Options"
         />
-        <div className="sor-settings-card">
+        <Card>
           <ActionRow
             icon={<RotateCcw className="w-4 h-4" />}
             tone="warning"
@@ -157,7 +160,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             buttonIcon={<RotateCcw className="w-4 h-4" />}
             buttonLabel="Reset"
           />
-        </div>
+        </Card>
       </div>
 
       {/* Restart Options */}
@@ -166,7 +169,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           icon={<RefreshCw className="w-4 h-4 text-primary" />}
           title="Restart Options"
         />
-        <div className="sor-settings-card">
+        <Card>
           <ActionRow
             icon={<RefreshCw className="w-4 h-4" />}
             tone="primary"
@@ -193,7 +196,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             }
             buttonLabel="Restart"
           />
-        </div>
+        </Card>
       </div>
 
       {renderConfirmDialog(mgr)}

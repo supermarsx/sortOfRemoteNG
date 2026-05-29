@@ -1,12 +1,13 @@
 import type { Mgr } from './types';
 import React from "react";
 import { Calendar, Info } from "lucide-react";
+import { Card } from "../../../ui/settings/SettingsPrimitives";
 
 const LastBackupInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.backup.lastBackupTime) return null;
 
   return (
-    <div className="sor-settings-card">
+    <Card>
       <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
         <Info className="w-4 h-4 text-primary" />
         <span>
@@ -27,7 +28,7 @@ const LastBackupInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </span>
         </div>
       )}
-    </div>
+    </Card>
   );
 };
 

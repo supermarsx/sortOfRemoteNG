@@ -8,6 +8,7 @@ import {
   ALL_LOADING_ELEMENT_TYPES,
   type LoadingElementType,
 } from '../../../../ui/display/loadingElement/types';
+import { Card } from '../../../../ui/settings/SettingsPrimitives';
 import type { UseLoadingElementSettings } from '../../../../../hooks/settings/useLoadingElementSettings';
 
 interface Props {
@@ -32,7 +33,7 @@ export const SplashPanel: React.FC<Props> = ({ mgr }) => {
     : le.splash.type;
 
   return (
-    <div className="sor-settings-card">
+    <Card>
       <h5 className="text-sm font-medium text-[var(--color-text)]">Splash screen</h5>
       <p className="text-xs text-[var(--color-textMuted)]">
         The progress bar is preserved.
@@ -92,7 +93,7 @@ export const SplashPanel: React.FC<Props> = ({ mgr }) => {
           )}
         </button>
       </div>
-    </div>
+    </Card>
   );
 };
 

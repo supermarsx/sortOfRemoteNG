@@ -22,7 +22,10 @@ import {
 } from "../../../../hooks/settings/useCloudSyncSettings";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 import ProviderConfig from "./ProviderConfig";
 
 const providerOptions = CloudSyncProviders.filter((p) => p !== "none").map(
@@ -172,7 +175,7 @@ const SyncTargetsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       }
     />
 
-    <div className="sor-settings-card">
+    <Card>
       {mgr.syncTargets.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 text-center">
           <p className="text-sm text-[var(--color-textSecondary)]">
@@ -232,7 +235,7 @@ const SyncTargetsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           expand a row to edit them.
         </span>
       </p>
-    </div>
+    </Card>
   </div>
 );
 

@@ -19,7 +19,10 @@ import {
 import { locationPresetLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import { SettingsSectionHeader as SectionHeader } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../../ui/settings/SettingsPrimitives";
 
 const presetOptions = BackupLocationPresets.map((preset) => ({
   value: preset,
@@ -213,7 +216,7 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       }
     />
 
-    <div className="sor-settings-card">
+    <Card>
       {mgr.destinations.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surfaceHover)]/20 p-4 text-center">
           <p className="text-sm text-[var(--color-textSecondary)]">
@@ -274,7 +277,7 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           folder and the client uploads from there.
         </span>
       </p>
-    </div>
+    </Card>
   </div>
 );
 

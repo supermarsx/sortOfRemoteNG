@@ -7,6 +7,7 @@ import {
   ALL_LOADING_ELEMENT_TYPES,
   type LoadingElementType,
 } from '../../../../ui/display/loadingElement/types';
+import { Card } from '../../../../ui/settings/SettingsPrimitives';
 import type { UseLoadingElementSettings } from '../../../../../hooks/settings/useLoadingElementSettings';
 
 interface Props {
@@ -66,7 +67,7 @@ export const TypeBrowserPanel: React.FC<Props> = ({ mgr }) => {
   };
 
   return (
-    <div className="sor-settings-card">
+    <Card>
       <div className="space-y-2">
         <label className="text-sm text-[var(--color-textSecondary)]">Loader type</label>
         <div className="flex items-center gap-2">
@@ -153,7 +154,7 @@ export const TypeBrowserPanel: React.FC<Props> = ({ mgr }) => {
           Reset to default
         </button>
       </div>
-    </div>
+    </Card>
   );
 };
 

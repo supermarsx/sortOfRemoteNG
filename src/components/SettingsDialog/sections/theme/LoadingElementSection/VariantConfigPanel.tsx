@@ -6,6 +6,7 @@ import type {
   ParamField,
   VariantConfigMap,
 } from '../../../../ui/display/loadingElement/types';
+import { Card } from '../../../../ui/settings/SettingsPrimitives';
 import type { UseLoadingElementSettings } from '../../../../../hooks/settings/useLoadingElementSettings';
 
 interface Props {
@@ -25,7 +26,7 @@ export const VariantConfigPanel: React.FC<Props> = ({ mgr }) => {
   };
 
   return (
-    <div className="sor-settings-card">
+    <Card>
       <h5 className="text-sm font-medium text-[var(--color-text)]">
         {currentDescriptor.label} parameters
       </h5>
@@ -37,7 +38,7 @@ export const VariantConfigPanel: React.FC<Props> = ({ mgr }) => {
           <p className="text-xs text-[var(--color-textMuted)]">This loader has no tunable parameters.</p>
         )}
       </div>
-    </div>
+    </Card>
   );
 };
 
