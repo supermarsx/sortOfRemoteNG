@@ -18,6 +18,7 @@ import { DEFAULT_MCP_CONFIG } from '../../types/mcp/mcpServer';
 import { SecureStorage } from '../storage/storage';
 import { IndexedDbService } from '../storage/indexedDbService';
 import { generateId } from '../core/id';
+import { getInvoke as tauriInvoke } from '../tauri/invoke';
 
 /** Unique label for this window — used to ignore our own sync events. */
 let _windowLabel: string | null = null;
@@ -49,22 +50,6 @@ async function emitSettingsSync(settings: GlobalSettings): Promise<void> {
  * target outside the desktop shell (browser / tests).
  */
 const SETTINGS_STORAGE_KEY = 'mremote-settings';
-
-/**
- * Resolve the Tauri `invoke` fn when running inside the desktop shell, or
- * `null` in a plain browser / test environment. Mirrors the detection used
- * by the storage layer (`utils/storage/storage.ts`).
- */
-function tauriInvoke():
-  | (<T>(cmd: string, args?: Record<string, unknown>) => Promise<T>)
-  | null {
-  const inv = (
-    globalThis as { __TAURI__?: { core?: { invoke?: unknown } } }
-  ).__TAURI__?.core?.invoke;
-  return typeof inv === 'function'
-    ? (inv as <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>)
-    : null;
-}
 
 /**
  * Default global application settings. These values are used when no user
@@ -725,7 +710,7 @@ export class SettingsManager {
    * tests) it falls back to IndexedDB.
    */
   private async readPersistedSettings(): Promise<Partial<GlobalSettings> | null> {
-    const invoke = tauriInvoke();
+    const invoke = await tauriInvoke();
     if (!invoke) {
       return IndexedDbService.getItem<Partial<GlobalSettings>>(SETTINGS_STORAGE_KEY);
     }
@@ -763,7 +748,7 @@ export class SettingsManager {
    * to IndexedDB.
    */
   private async persistSettings(patch: Partial<GlobalSettings>): Promise<void> {
-    const invoke = tauriInvoke();
+    const invoke = await tauriInvoke();
     if (!invoke) {
       await IndexedDbService.setItem(SETTINGS_STORAGE_KEY, this.settings);
       return;

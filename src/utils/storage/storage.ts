@@ -1,12 +1,11 @@
-const invoke = (globalThis as any).__TAURI__?.core?.invoke;
+import { Connection } from "../../types/connection/connection";
+import { IndexedDbService } from "./indexedDbService";
+import { PBKDF2_ITERATIONS } from "../../config";
+import { getInvoke } from "../tauri/invoke";
 
 const STORAGE_KEY = "mremote-connections";
 const STORAGE_META_KEY = "mremote-storage-meta";
 const OLD_STORAGE_META_KEY = "mremote-settings";
-
-import { Connection } from "../../types/connection/connection";
-import { IndexedDbService } from "./indexedDbService";
-import { PBKDF2_ITERATIONS } from "../../config";
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
@@ -49,7 +48,6 @@ export interface StorageData {
  */
 export class SecureStorage {
   private static password: string | null = null;
-  private static useTauri: boolean = typeof window !== 'undefined' && (window as any).__TAURI__;
   private static isUnlocked: boolean = false;
 
   /**
@@ -131,7 +129,8 @@ export class SecureStorage {
   }
 
   static async hasStoredData(): Promise<boolean> {
-    if (this.useTauri && invoke) {
+    const invoke = await getInvoke();
+    if (invoke) {
       return await invoke('has_stored_data');
     } else {
       return (await IndexedDbService.getItem(STORAGE_KEY)) !== null;
@@ -139,7 +138,8 @@ export class SecureStorage {
   }
 
   static async isStorageEncrypted(): Promise<boolean> {
-    if (this.useTauri && invoke) {
+    const invoke = await getInvoke();
+    if (invoke) {
       return await invoke('is_storage_encrypted');
     } else {
       await this.migrateMetaKey();
@@ -167,7 +167,8 @@ export class SecureStorage {
     data: StorageData,
     usePassword: boolean = false,
   ): Promise<void> {
-    if (this.useTauri && invoke) {
+    const invoke = await getInvoke();
+    if (invoke) {
       try {
         if (usePassword && this.password) {
           await invoke('set_storage_password', { password: this.password });
@@ -229,7 +230,8 @@ export class SecureStorage {
    * @sideEffect Reads from IndexedDB and may log errors to the console.
    */
   static async loadData(): Promise<StorageData | null> {
-    if (this.useTauri && invoke) {
+    const invoke = await getInvoke();
+    if (invoke) {
       try {
         const result = await invoke('load_data') as StorageData | null;
         return result;
@@ -282,7 +284,8 @@ export class SecureStorage {
   }
 
   static async clearStorage(): Promise<void> {
-    if (this.useTauri && invoke) {
+    const invoke = await getInvoke();
+    if (invoke) {
       try {
         await invoke('clear_storage');
         this.clearPassword();
@@ -308,7 +311,8 @@ export class SecureStorage {
    * Returns `false` when running in a browser (no Tauri).
    */
   static async isVaultAvailable(): Promise<boolean> {
-    if (!this.useTauri || !invoke) return false;
+    const invoke = await getInvoke();
+    if (!invoke) return false;
     try {
       return await invoke('vault_is_available') as boolean;
     } catch {
@@ -320,7 +324,8 @@ export class SecureStorage {
    * Get the vault backend name (e.g. "Windows Credential Manager + DPAPI").
    */
   static async getVaultBackendName(): Promise<string> {
-    if (!this.useTauri || !invoke) return 'none';
+    const invoke = await getInvoke();
+    if (!invoke) return 'none';
     try {
       return await invoke('vault_backend_name') as string;
     } catch {
@@ -332,7 +337,8 @@ export class SecureStorage {
    * Check if biometric authentication is available.
    */
   static async isBiometricAvailable(): Promise<boolean> {
-    if (!this.useTauri || !invoke) return false;
+    const invoke = await getInvoke();
+    if (!invoke) return false;
     try {
       return await invoke('biometric_is_available') as boolean;
     } catch {
@@ -344,7 +350,8 @@ export class SecureStorage {
    * Get detailed biometric status (hardware, enrollment, kinds).
    */
   static async getBiometricStatus(): Promise<Record<string, unknown> | null> {
-    if (!this.useTauri || !invoke) return null;
+    const invoke = await getInvoke();
+    if (!invoke) return null;
     try {
       return await invoke('biometric_check_availability') as Record<string, unknown>;
     } catch {
@@ -358,7 +365,8 @@ export class SecureStorage {
    * @returns `true` if verification succeeded.
    */
   static async biometricVerify(reason: string): Promise<boolean> {
-    if (!this.useTauri || !invoke) throw new Error('Biometrics not available');
+    const invoke = await getInvoke();
+    if (!invoke) throw new Error('Biometrics not available');
     return await invoke('biometric_verify', { reason }) as boolean;
   }
 
@@ -366,7 +374,8 @@ export class SecureStorage {
    * Check whether legacy storage needs migration to vault-backed storage.
    */
   static async needsVaultMigration(storagePath: string): Promise<boolean> {
-    if (!this.useTauri || !invoke) return false;
+    const invoke = await getInvoke();
+    if (!invoke) return false;
     try {
       return await invoke('vault_needs_migration', { storagePath }) as boolean;
     } catch {
@@ -382,7 +391,8 @@ export class SecureStorage {
     storagePath: string,
     oldPassword?: string,
   ): Promise<{ success: boolean; message: string; backupPath?: string }> {
-    if (!this.useTauri || !invoke) {
+    const invoke = await getInvoke();
+    if (!invoke) {
       throw new Error('Vault migration requires Tauri');
     }
     return await invoke('vault_migrate', {
@@ -398,7 +408,8 @@ export class SecureStorage {
     storagePath: string,
     data: StorageData,
   ): Promise<void> {
-    if (!this.useTauri || !invoke) {
+    const invoke = await getInvoke();
+    if (!invoke) {
       throw new Error('Vault storage requires Tauri');
     }
     const jsonData = JSON.stringify(data);
@@ -409,7 +420,8 @@ export class SecureStorage {
    * Load data from vault-backed encrypted storage (DEK from OS keychain).
    */
   static async loadDataVault(storagePath: string): Promise<StorageData | null> {
-    if (!this.useTauri || !invoke) return null;
+    const invoke = await getInvoke();
+    if (!invoke) return null;
     try {
       const json = await invoke('vault_load_storage', { storagePath }) as string;
       return JSON.parse(json) as StorageData;
@@ -427,7 +439,8 @@ export class SecureStorage {
     account: string,
     secret: string,
   ): Promise<void> {
-    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    const invoke = await getInvoke();
+    if (!invoke) throw new Error('Vault not available');
     await invoke('vault_store_secret', { service, account, secret });
   }
 
@@ -438,7 +451,8 @@ export class SecureStorage {
     service: string,
     account: string,
   ): Promise<string> {
-    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    const invoke = await getInvoke();
+    if (!invoke) throw new Error('Vault not available');
     return await invoke('vault_read_secret', { service, account }) as string;
   }
 
@@ -449,7 +463,8 @@ export class SecureStorage {
     service: string,
     account: string,
   ): Promise<void> {
-    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    const invoke = await getInvoke();
+    if (!invoke) throw new Error('Vault not available');
     await invoke('vault_delete_secret', { service, account });
   }
 
@@ -462,7 +477,8 @@ export class SecureStorage {
     secret: string,
     reason: string,
   ): Promise<void> {
-    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    const invoke = await getInvoke();
+    if (!invoke) throw new Error('Vault not available');
     await invoke('vault_biometric_store', { service, account, secret, reason });
   }
 
@@ -474,7 +490,8 @@ export class SecureStorage {
     account: string,
     reason: string,
   ): Promise<string> {
-    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    const invoke = await getInvoke();
+    if (!invoke) throw new Error('Vault not available');
     return await invoke('vault_biometric_read', { service, account, reason }) as string;
   }
 }
