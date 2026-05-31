@@ -78,15 +78,15 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 }
 
 // Default mock for `@tauri-apps/api/core`. `invoke` resolves with
-// `undefined`. Callers that go through the shared `getInvoke()` helper
-// (src/utils/tauri/invoke.ts) use the package's `isTauri()` to detect
-// the absence of a real shell and take their non-Tauri fallback path
-// (IndexedDB / in-memory) instead. The mock leaves `isTauri` unset on
-// purpose so that check returns `false`. Tests that exercise the
+// `undefined`; `isTauri()` returns `false` so callers that gate on it
+// (e.g. AuthService.useTauri, the shared `getInvoke()` helper in
+// src/utils/tauri/invoke.ts) correctly route through their non-Tauri
+// fallback path (IndexedDB / in-memory). Tests that exercise the
 // Tauri-side branch supply their own per-file
 // `vi.mock("@tauri-apps/api/core", …)` which overrides this default.
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
+  isTauri: vi.fn().mockReturnValue(false),
   transformCallback: vi.fn(),
   Channel: vi.fn().mockImplementation(() => ({
     id: 0,

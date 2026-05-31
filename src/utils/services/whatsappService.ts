@@ -20,10 +20,13 @@ import type {
   UnofficialConnectionState,
 } from "../../types/protocols/whatsapp";
 
-const invoke: (<T>(cmd: string, args?: Record<string, unknown>) => Promise<T>) | undefined =
-  (globalThis as any).__TAURI__?.core?.invoke;
+import { getInvoke } from "../tauri/invoke";
 
-function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function tauriInvoke<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  const invoke = await getInvoke();
   if (!invoke) throw new Error("Tauri runtime not available");
   return invoke<T>(cmd, args);
 }

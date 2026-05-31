@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -33,7 +33,12 @@ export class AuthService {
   constructor(storePath?: string) {
     this.storePath = storePath;
     this.secret = process.env.USER_STORE_SECRET;
-    this.useTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
+    // `isTauri()` checks `window.__TAURI_INTERNALS__`, which Tauri 2
+    // always injects (unlike `window.__TAURI__` which requires
+    // `withGlobalTauri: true`). Falls back to `false` outside a real
+    // shell so the file-system / in-memory branches still run in
+    // tests and plain-browser dev.
+    this.useTauri = typeof isTauri === 'function' ? isTauri() : false;
     if (!this.useTauri && storePath) {
       this.loadPromise = this.load();
     } else {

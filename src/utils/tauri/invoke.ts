@@ -25,33 +25,39 @@ export type TauriInvoke = <T = unknown>(
   args?: Record<string, unknown>,
 ) => Promise<T>;
 
-let cached: Promise<TauriInvoke | null> | null = null;
+/**
+ * Cached result of the ESM import branch. Not used for the legacy
+ * global lookup because (a) reading `globalThis.__TAURI__` is free and
+ * (b) tests rely on mutating that global between assertions to swap in
+ * a mock invoke.
+ */
+let esmInvokeCache: Promise<TauriInvoke | null> | null = null;
 
-export function getInvoke(): Promise<TauriInvoke | null> {
-  if (!cached) {
-    cached = resolveInvoke();
-  }
-  return cached;
-}
-
-async function resolveInvoke(): Promise<TauriInvoke | null> {
-  // 1) Legacy global path (Tauri 1.x, or Tauri 2 with withGlobalTauri:true).
+export async function getInvoke(): Promise<TauriInvoke | null> {
+  // 1) Legacy global path (Tauri 1.x, Tauri 2 with withGlobalTauri:true,
+  //    or test fixtures that stub the global). Cheap, never cached.
   const legacy = (
     globalThis as { __TAURI__?: { core?: { invoke?: unknown } } }
   ).__TAURI__?.core?.invoke;
   if (typeof legacy === 'function') {
     return legacy as TauriInvoke;
   }
-  // 2) ESM import — the Tauri 2 native path. The import resolves
-  //    everywhere the package is installed (production webview, jsdom
-  //    tests, plain `npm run dev` browser), so we additionally call
-  //    `isTauri()` to distinguish "real Tauri shell with a working IPC
-  //    channel" from "module loaded in a jsdom/browser context where
-  //    invoke would fail". Returning `null` for the latter lets
-  //    callers fall through to their non-Tauri persistence path
-  //    instead of attempting an IPC that will always fail.
+  // 2) ESM import — the Tauri 2 native path. Cached because the import
+  //    is expensive and the answer ("are we inside a Tauri shell?")
+  //    doesn't change across the app's lifetime.
+  if (!esmInvokeCache) {
+    esmInvokeCache = resolveInvokeViaEsm();
+  }
+  return esmInvokeCache;
+}
+
+async function resolveInvokeViaEsm(): Promise<TauriInvoke | null> {
   try {
     const mod = await import('@tauri-apps/api/core');
+    // `isTauri()` checks `window.__TAURI_INTERNALS__`, which the Tauri 2
+    // runtime always injects. Outside a real shell (jsdom tests, plain
+    // browser) it returns `false` so we return `null` instead of an
+    // invoke that would always fail.
     const inside = typeof mod.isTauri === 'function' ? mod.isTauri() : false;
     if (!inside) return null;
     return mod.invoke as unknown as TauriInvoke;
@@ -61,9 +67,9 @@ async function resolveInvoke(): Promise<TauriInvoke | null> {
 }
 
 /**
- * Reset the memo. Test-only escape hatch — production code should never
- * call this.
+ * Reset the ESM-branch memo. Test-only escape hatch — production code
+ * should never call this.
  */
 export function _resetInvokeCache(): void {
-  cached = null;
+  esmInvokeCache = null;
 }

@@ -16,7 +16,7 @@ import {
   type PasswordEncryptionOptions,
 } from "../crypto/webCryptoAes";
 
-const invoke = (globalThis as any).__TAURI__?.core?.invoke;
+import { getInvoke } from "../tauri/invoke";
 
 // ---------- Web Crypto helpers (replaces CryptoJS) ----------
 
@@ -106,6 +106,7 @@ async function decryptData(payload: string, password: string): Promise<string> {
 // encrypted collections (AES-256-CBC + MD5 EVP_BytesToKey + "Salted__" header).
 // Delegates to the Rust backend via Tauri invoke; no third-party JS crypto.
 async function legacyDecrypt(ciphertext: string, password: string): Promise<string | null> {
+  const invoke = await getInvoke();
   if (!invoke) return null;
   try {
     const plaintext = (await invoke("crypto_legacy_decrypt_cryptojs", {
@@ -620,6 +621,7 @@ export class DatabaseManager {
   ): Promise<void> {
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
+    const invoke = await getInvoke();
 
     if (invoke) {
       try {
@@ -680,6 +682,7 @@ export class DatabaseManager {
       );
     }
 
+    const invoke = await getInvoke();
     if (invoke) {
       try {
         stored = await invoke("load_database_data", {

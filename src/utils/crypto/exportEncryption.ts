@@ -73,10 +73,11 @@ const FORMAT_SCHEMES: Record<ExportFormat, ExportEncryptionScheme> = {
 export const schemeForFormat = (format: ExportFormat): ExportEncryptionScheme =>
   FORMAT_SCHEMES[format];
 
-const getInvoke = (): ((command: string, args?: any) => Promise<any>) | null => {
-  const inv = (globalThis as any).__TAURI__?.core?.invoke;
-  return typeof inv === 'function' ? inv : null;
-};
+import { getInvoke as resolveTauriInvoke } from "../tauri/invoke";
+
+const getInvoke = (): Promise<
+  ((command: string, args?: any) => Promise<any>) | null
+> => resolveTauriInvoke();
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
@@ -220,7 +221,7 @@ async function encryptAesGcm(input: EncryptExportInput): Promise<EncryptExportRe
 }
 
 async function encryptOoxml(input: EncryptExportInput): Promise<EncryptExportResult> {
-  const invoke = getInvoke();
+  const invoke = await getInvoke();
   if (invoke) {
     try {
       const base64 = await invoke('crypto_xlsx_encrypt', {
@@ -252,7 +253,7 @@ async function encryptOoxml(input: EncryptExportInput): Promise<EncryptExportRes
 }
 
 async function encryptMremoteng(input: EncryptExportInput): Promise<EncryptExportResult> {
-  const invoke = getInvoke();
+  const invoke = await getInvoke();
   const plaintext = input.payloadString ?? utf8Decode(input.payload);
   if (invoke) {
     try {
@@ -343,7 +344,7 @@ export async function decryptMremotengDocument(
   password: string,
   iterations?: number,
 ): Promise<string> {
-  const invoke = getInvoke();
+  const invoke = await getInvoke();
   if (!invoke) {
     throw new DecryptError(
       'unsupported',

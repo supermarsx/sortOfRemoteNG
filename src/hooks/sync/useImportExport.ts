@@ -5,6 +5,7 @@ import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
 import { DatabaseManager, type DatabaseExportSnapshot } from '../../utils/connection/databaseManager';
 import { SettingsManager } from '../../utils/settings/settingsManager';
+import { getInvoke } from '../../utils/tauri/invoke';
 import {
   ExportDatabaseOption,
   ExportInclusionConfig,
@@ -3136,7 +3137,7 @@ ${tableRows}
         }
         // Fallback: legacy CryptoJS-format ciphertext decrypted via Rust backend.
         if (!decrypted) {
-          const invoke = (globalThis as any).__TAURI__?.core?.invoke;
+          const invoke = await getInvoke();
           if (invoke) {
             try {
               decrypted = (await invoke(
