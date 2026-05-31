@@ -79,6 +79,7 @@ members = [
   "crates/sorng-biometrics",
   "crates/sorng-vault",
   "crates/sorng-vault-windows",
+  "crates/sorng-encryption",
   "crates/sorng-p2p",
   "crates/sorng-tailscale",
   "crates/sorng-zerotier",
@@ -315,6 +316,7 @@ sorng-commands-collab = { path = "crates/sorng-commands-collab", optional = true
 sorng-commands-core = { path = "crates/sorng-commands-core", default-features = false }
 sorng-commands-sessions = { path = "crates/sorng-commands-sessions", default-features = false }
 sorng-commands-access = { path = "crates/sorng-commands-access", default-features = false }
+sorng-encryption = { path = "crates/sorng-encryption" }
 
 serde_json = { workspace = true }
 serde = { workspace = true }

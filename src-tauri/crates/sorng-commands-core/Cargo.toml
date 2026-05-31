@@ -8,6 +8,7 @@ description = "Core command handlers — split from app crate to reduce coherenc
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-app-shell = { path = "../sorng-app-shell" }
 sorng-core = { path = "../sorng-core" }
+sorng-encryption = { path = "../sorng-encryption" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-probes = { path = "../sorng-probes" }
 tauri = { workspace = true }

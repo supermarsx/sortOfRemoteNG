@@ -219,6 +219,7 @@ dependencies = [
  "sorng-commands-tools",
  "sorng-commands-webservers",
  "sorng-core",
+ "sorng-encryption",
  "sorng-ftp",
  "sorng-kafka",
  "sorng-opkssh",
@@ -9675,6 +9676,7 @@ dependencies = [
  "sorng-app-domains",
  "sorng-app-shell",
  "sorng-core",
+ "sorng-encryption",
  "sorng-opkssh",
  "sorng-probes",
  "ssh2",
@@ -10148,6 +10150,25 @@ dependencies = [
  "tokio 1.52.1",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "sorng-encryption"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "base64 0.21.7",
+ "hkdf 0.12.4",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-vault",
+ "tauri",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio 1.52.1",
+ "zeroize",
 ]
 
 [[package]]

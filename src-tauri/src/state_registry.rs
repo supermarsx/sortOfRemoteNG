@@ -350,6 +350,14 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     security_data::register(app, &app_dir);
 
     access::register(app);
+
+    // Encryption-at-rest subsystem (Phase 0): managed state holds the
+    // in-memory master DEK. Locked at app start; either silently
+    // unlocked from the OS vault on first frontend read or explicitly
+    // via the unlock screen when password mode is configured. See
+    // crates/sorng-encryption/src/state.rs for the lifecycle.
+    app.manage(sorng_encryption::EncryptionState::new());
+
     #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
     platform::register(app);
     #[cfg(any(feature = "collab", feature = "platform"))]
