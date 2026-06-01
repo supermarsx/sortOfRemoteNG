@@ -325,7 +325,10 @@ pub fn write_export_bytes(path: &Path, data: &[u8]) -> RecordingResult<()> {
 //     either is already gone.
 // ═══════════════════════════════════════════════════════════════════════
 
-use sorng_encryption::artifacts::{macros as macros_codec, recording_meta as meta_codec};
+use sorng_encryption::artifacts::{
+    macros as macros_codec, recording_media as media_codec,
+    recording_meta as meta_codec,
+};
 use sorng_encryption::envelope::{MasterKeyStorage, SALT_LEN};
 use sorng_encryption::password_wrap::Argon2Params;
 use sorng_encryption::EncryptionState;
@@ -642,6 +645,242 @@ pub fn delete_macro_all_variants(root: &Path, macro_id: &str) -> RecordingResult
     Ok(())
 }
 
+// ══════════════════════════════════════════════════════════════════════
+//  Media blob dispatch (Phase 2b wiring — streaming AEAD)
+//
+//  Media files (.webm, .mp4, .gif, frame manifests) can run into tens of
+//  MiB and the player needs random access for scrub / seek. They use the
+//  chunked AEAD codec in `sorng-encryption::artifacts::recording_media`:
+//  fixed-size plaintext chunks (default 64 KiB), each independently
+//  AES-256-GCM-encrypted with a 12-byte nonce = (per-file random prefix
+//  || chunk index big-endian).
+//
+//  Filename layout under `<root>/recordings/`:
+//    <basename>          → plaintext v0 (existing behaviour, the
+//                          extension is intrinsic to the media type —
+//                          e.g. `<id>.webm`)
+//    <basename>.enc      → v2 chunked stream (any media type — the
+//                          `.enc` suffix marks the envelope, not the
+//                          contained format)
+//
+//  Read dispatch: prefer `.enc` when present; magic-byte sniff on the
+//  raw bytes (first 6 bytes = `SORNG\0`) for callers that have already
+//  loaded the file.
+// ══════════════════════════════════════════════════════════════════════
+
+const MEDIA_ENC_SUFFIX: &str = ".enc";
+
+fn media_enc_path(root: &Path, basename: &str) -> PathBuf {
+    recordings_dir(root).join(format!("{}{}", basename, MEDIA_ENC_SUFFIX))
+}
+
+fn media_plain_path(root: &Path, basename: &str) -> PathBuf {
+    recordings_dir(root).join(basename)
+}
+
+/// Magic-byte sniff for an in-memory media blob. Returns `true` iff the
+/// buffer starts with the v2 envelope magic — the streaming codec
+/// shares the same prefix as the whole-file envelope, so the kind byte
+/// at offset 7 disambiguates further (chunked-stream = 2, whole-file
+/// envelope = 0/1). For media paths we only need to know whether to
+/// route through the streaming codec at all.
+pub fn is_encrypted_media_blob(bytes: &[u8]) -> bool {
+    bytes.len() >= 8
+        && &bytes[..6] == sorng_encryption::envelope::MAGIC
+        // kind byte: media streaming codec emits `2`. Whole-file
+        // envelopes emit `0` (settings/recording_meta/macros) so we
+        // don't accidentally pick those up here.
+        && bytes[7] == 2
+}
+
+/// Save a media blob, picking the codec from the encryption state.
+/// When unlocked → `<basename>.enc` (streaming AEAD, random-access
+/// friendly). When locked → plain `<basename>` so an auto-lock mid-
+/// recording can't break the active capture, matching the policy for
+/// every other artifact in this module.
+pub async fn save_media_blob_dispatched(
+    root: &Path,
+    basename: &str,
+    bytes: &[u8],
+    enc: &EncryptionState,
+) -> RecordingResult<()> {
+    let dir = recordings_dir(root);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
+
+    if enc.is_unlocked().await {
+        let blob = media_codec::write_one_shot(
+            enc,
+            bytes,
+            MasterKeyStorage::Vault,
+            None, // default 64 KiB chunks
+        )
+        .await
+        .map_err(|e| RecordingError::StorageError(format!("encrypt media: {}", e)))?;
+        let enc_path = media_enc_path(root, basename);
+        std::fs::write(&enc_path, &blob).map_err(|e| {
+            RecordingError::StorageError(format!("write {}: {}", enc_path.display(), e))
+        })?;
+        let plain = media_plain_path(root, basename);
+        if plain.exists() {
+            let _ = std::fs::remove_file(&plain);
+        }
+        Ok(())
+    } else {
+        let plain = media_plain_path(root, basename);
+        std::fs::write(&plain, bytes).map_err(|e| {
+            RecordingError::StorageError(format!("write {}: {}", plain.display(), e))
+        })?;
+        Ok(())
+    }
+}
+
+/// Load the entire media blob, decrypting if the file is encrypted.
+/// For playback paths that load the whole recording into memory
+/// (typically GIFs and short clips); see
+/// [`read_media_chunk_dispatched`] for seek-friendly access.
+pub async fn load_media_blob_dispatched(
+    root: &Path,
+    basename: &str,
+    enc: &EncryptionState,
+) -> RecordingResult<Vec<u8>> {
+    let enc_path = media_enc_path(root, basename);
+    if enc_path.exists() {
+        if !enc.is_unlocked().await {
+            return Err(RecordingError::StorageError(
+                "media is encrypted; unlock first".into(),
+            ));
+        }
+        let bytes = std::fs::read(&enc_path).map_err(|e| {
+            RecordingError::StorageError(format!("read {}: {}", enc_path.display(), e))
+        })?;
+        return media_codec::read_all(enc, &bytes)
+            .await
+            .map_err(|e| RecordingError::StorageError(format!("decrypt media: {}", e)));
+    }
+    let plain = media_plain_path(root, basename);
+    std::fs::read(&plain)
+        .map_err(|e| RecordingError::StorageError(format!("read {}: {}", plain.display(), e)))
+}
+
+/// Random-access read for a single 64 KiB chunk. The video player
+/// computes `chunk_index = byte_offset / chunk_size` from its
+/// requested timestamp and asks for that one chunk; no decryption work
+/// is done on the chunks before or after. Falls back to "read whole
+/// plaintext file then return the slice" when the file isn't
+/// encrypted — keeps the contract symmetric so callers don't have to
+/// branch on the file format.
+pub async fn read_media_chunk_dispatched(
+    root: &Path,
+    basename: &str,
+    chunk_index: u32,
+    chunk_size_hint: usize,
+    enc: &EncryptionState,
+) -> RecordingResult<Vec<u8>> {
+    let enc_path = media_enc_path(root, basename);
+    if enc_path.exists() {
+        if !enc.is_unlocked().await {
+            return Err(RecordingError::StorageError(
+                "media is encrypted; unlock first".into(),
+            ));
+        }
+        let bytes = std::fs::read(&enc_path).map_err(|e| {
+            RecordingError::StorageError(format!("read {}: {}", enc_path.display(), e))
+        })?;
+        return media_codec::read_chunk(enc, &bytes, chunk_index)
+            .await
+            .map_err(|e| RecordingError::StorageError(format!("decrypt chunk: {}", e)));
+    }
+    let plain = media_plain_path(root, basename);
+    let all = std::fs::read(&plain)
+        .map_err(|e| RecordingError::StorageError(format!("read {}: {}", plain.display(), e)))?;
+    let start = (chunk_index as usize)
+        .checked_mul(chunk_size_hint)
+        .ok_or_else(|| RecordingError::StorageError("chunk index overflow".into()))?;
+    if start >= all.len() {
+        return Err(RecordingError::StorageError(format!(
+            "chunk {} past end of plain media",
+            chunk_index
+        )));
+    }
+    let end = (start + chunk_size_hint).min(all.len());
+    Ok(all[start..end].to_vec())
+}
+
+/// Delete both encrypted + plaintext variants of a media blob.
+pub fn delete_media_all_variants(root: &Path, basename: &str) -> RecordingResult<()> {
+    let plain = media_plain_path(root, basename);
+    let enc = media_enc_path(root, basename);
+    if plain.exists() {
+        std::fs::remove_file(&plain)
+            .map_err(|e| RecordingError::StorageError(format!("delete plain media: {}", e)))?;
+    }
+    if enc.exists() {
+        std::fs::remove_file(&enc)
+            .map_err(|e| RecordingError::StorageError(format!("delete enc media: {}", e)))?;
+    }
+    Ok(())
+}
+
+/// Export a media buffer to an arbitrary path (used by the
+/// `export-to-file` UI actions). When the encryption state is unlocked
+/// and `wrap_with_encryption` is `true`, the exported file uses the v2
+/// streaming codec — the consumer must round-trip back through
+/// `read_exported_media` to decrypt. When the caller wants a portable
+/// file (one that doesn't need this app's master key to decrypt), pass
+/// `wrap_with_encryption = false` and the bytes land as-is.
+pub async fn write_exported_media(
+    path: &Path,
+    bytes: &[u8],
+    enc: Option<&EncryptionState>,
+    wrap_with_encryption: bool,
+) -> RecordingResult<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| RecordingError::StorageError(format!("mkdir export: {}", e)))?;
+    }
+    let payload = if wrap_with_encryption {
+        let state = enc.ok_or_else(|| {
+            RecordingError::StorageError(
+                "wrap_with_encryption requested but no encryption state supplied".into(),
+            )
+        })?;
+        if !state.is_unlocked().await {
+            return Err(RecordingError::StorageError(
+                "cannot export encrypted media while locked".into(),
+            ));
+        }
+        media_codec::write_one_shot(state, bytes, MasterKeyStorage::Vault, None)
+            .await
+            .map_err(|e| RecordingError::StorageError(format!("encrypt export: {}", e)))?
+    } else {
+        bytes.to_vec()
+    };
+    std::fs::write(path, &payload)
+        .map_err(|e| RecordingError::StorageError(format!("write export: {}", e)))
+}
+
+/// Inverse of [`write_exported_media`] — auto-detects whether the file
+/// at `path` is encrypted (magic-byte sniff) and decrypts if so.
+pub async fn read_exported_media(
+    path: &Path,
+    enc: Option<&EncryptionState>,
+) -> RecordingResult<Vec<u8>> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| RecordingError::StorageError(format!("read {}: {}", path.display(), e)))?;
+    if is_encrypted_media_blob(&bytes) {
+        let state = enc.ok_or_else(|| {
+            RecordingError::StorageError(
+                "media file is encrypted but no encryption state supplied".into(),
+            )
+        })?;
+        return media_codec::read_all(state, &bytes)
+            .await
+            .map_err(|e| RecordingError::StorageError(format!("decrypt export: {}", e)));
+    }
+    Ok(bytes)
+}
+
 // ── Migration helpers ──────────────────────────────────────────────────
 
 /// One-shot migration of all `<id>.json` envelopes under `<root>`'s
@@ -929,5 +1168,197 @@ mod enc_dispatch_tests {
         let list = load_all_macros_dispatched(tmp.path(), &enc).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "m1");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Phase 2b — media blob dispatch (streaming AEAD)
+    // ────────────────────────────────────────────────────────────────
+
+    fn media_fixture(size: usize) -> Vec<u8> {
+        // Non-trivial deterministic content so a skipped-encrypt bug
+        // surfaces (all-zero buffers happen to look the same encrypted
+        // or not at high enough levels of failure).
+        (0..size).map(|i| ((i * 31 + 7) % 251) as u8).collect()
+    }
+
+    #[tokio::test]
+    async fn media_write_unlocked_produces_enc() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+        let bytes = media_fixture(150_000); // ~3 chunks under default 64 KiB
+        save_media_blob_dispatched(tmp.path(), "session.webm", &bytes, &enc)
+            .await
+            .unwrap();
+        assert!(media_enc_path(tmp.path(), "session.webm").exists());
+        assert!(!media_plain_path(tmp.path(), "session.webm").exists());
+    }
+
+    #[tokio::test]
+    async fn media_write_locked_falls_back_to_plaintext() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let locked = sorng_encryption::EncryptionState::new();
+        let bytes = media_fixture(2048);
+        save_media_blob_dispatched(tmp.path(), "session.gif", &bytes, &locked)
+            .await
+            .unwrap();
+        assert!(media_plain_path(tmp.path(), "session.gif").exists());
+        assert!(!media_enc_path(tmp.path(), "session.gif").exists());
+    }
+
+    #[tokio::test]
+    async fn media_round_trip_full_payload() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+        let bytes = media_fixture(500_000); // ~8 chunks
+        save_media_blob_dispatched(tmp.path(), "a.mp4", &bytes, &enc)
+            .await
+            .unwrap();
+        let recovered = load_media_blob_dispatched(tmp.path(), "a.mp4", &enc)
+            .await
+            .unwrap();
+        assert_eq!(recovered.len(), bytes.len());
+        // Sample three offsets so a failure message stays small.
+        assert_eq!(recovered[0], bytes[0]);
+        assert_eq!(recovered[123_456], bytes[123_456]);
+        assert_eq!(recovered[bytes.len() - 1], bytes[bytes.len() - 1]);
+    }
+
+    #[tokio::test]
+    async fn media_random_access_chunk() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+        // Use a smaller payload but still spanning multiple chunks of
+        // the default 64 KiB size.
+        let bytes = media_fixture(64 * 1024 * 3 + 100);
+        save_media_blob_dispatched(tmp.path(), "scrub.webm", &bytes, &enc)
+            .await
+            .unwrap();
+        // Read chunk index 2 — corresponds to bytes 131072..196608.
+        let chunk = read_media_chunk_dispatched(
+            tmp.path(),
+            "scrub.webm",
+            2,
+            64 * 1024,
+            &enc,
+        )
+        .await
+        .unwrap();
+        assert_eq!(chunk.len(), 64 * 1024);
+        let expected_start = 64 * 1024 * 2;
+        assert_eq!(chunk[0], bytes[expected_start]);
+        assert_eq!(chunk[100], bytes[expected_start + 100]);
+    }
+
+    #[tokio::test]
+    async fn media_locked_read_blocks_enc() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+        save_media_blob_dispatched(tmp.path(), "b.gif", &media_fixture(2000), &enc)
+            .await
+            .unwrap();
+        let locked = sorng_encryption::EncryptionState::new();
+        let err = load_media_blob_dispatched(tmp.path(), "b.gif", &locked)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, RecordingError::StorageError(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_media_removes_both_variants() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+        let bytes = media_fixture(2048);
+        // Pre-plant a plaintext that the encrypted save would normally sweep.
+        std::fs::write(media_plain_path(tmp.path(), "c.webm"), &bytes).unwrap();
+        save_media_blob_dispatched(tmp.path(), "c.webm", &bytes, &enc)
+            .await
+            .unwrap();
+        // Re-plant the plaintext to simulate a stale post-migration file.
+        std::fs::write(media_plain_path(tmp.path(), "c.webm"), &bytes).unwrap();
+        delete_media_all_variants(tmp.path(), "c.webm").unwrap();
+        assert!(!media_plain_path(tmp.path(), "c.webm").exists());
+        assert!(!media_enc_path(tmp.path(), "c.webm").exists());
+    }
+
+    #[tokio::test]
+    async fn export_roundtrip_through_disk() {
+        // The user-facing `export-to-file` actions land here. When
+        // `wrap_with_encryption=true`, the file is encrypted, and
+        // `read_exported_media` magic-byte-sniffs to recover.
+        let tmp = tempdir().unwrap();
+        let enc = unlocked().await;
+        let dest = tmp.path().join("export.mp4");
+        let bytes = media_fixture(70_000);
+        write_exported_media(&dest, &bytes, Some(&enc), true)
+            .await
+            .unwrap();
+        let on_disk = std::fs::read(&dest).unwrap();
+        assert!(is_encrypted_media_blob(&on_disk));
+        let recovered = read_exported_media(&dest, Some(&enc)).await.unwrap();
+        assert_eq!(recovered.len(), bytes.len());
+        assert_eq!(recovered[0], bytes[0]);
+    }
+
+    #[tokio::test]
+    async fn export_unwrapped_passthrough() {
+        // `wrap_with_encryption=false` produces a portable file the
+        // user can hand to another program without this app's key.
+        let tmp = tempdir().unwrap();
+        let dest = tmp.path().join("portable.webm");
+        let bytes = media_fixture(4096);
+        write_exported_media(&dest, &bytes, None, false).await.unwrap();
+        let on_disk = std::fs::read(&dest).unwrap();
+        assert_eq!(on_disk, bytes);
+        assert!(!is_encrypted_media_blob(&on_disk));
+        // `read_exported_media` returns it unchanged (no decryption).
+        let recovered = read_exported_media(&dest, None).await.unwrap();
+        assert_eq!(recovered, bytes);
+    }
+
+    #[tokio::test]
+    async fn export_wrap_requires_state() {
+        let tmp = tempdir().unwrap();
+        let dest = tmp.path().join("oops.webm");
+        let err = write_exported_media(&dest, b"x", None, true)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, RecordingError::StorageError(_)));
+    }
+
+    #[tokio::test]
+    async fn export_wrap_blocked_when_locked() {
+        let tmp = tempdir().unwrap();
+        let dest = tmp.path().join("oops.webm");
+        let locked = sorng_encryption::EncryptionState::new();
+        let err = write_exported_media(&dest, b"x", Some(&locked), true)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, RecordingError::StorageError(_)));
+    }
+
+    #[tokio::test]
+    async fn is_encrypted_media_blob_discriminates() {
+        // The whole-file envelope codec emits kind=0 / 1; the media
+        // codec emits kind=2. The sniff must only fire on kind=2.
+        let bytes_short = vec![0u8; 4];
+        assert!(!is_encrypted_media_blob(&bytes_short));
+
+        let mut bytes_envelope = vec![0u8; 32];
+        bytes_envelope[..6].copy_from_slice(sorng_encryption::envelope::MAGIC);
+        bytes_envelope[6] = 2; // version
+        bytes_envelope[7] = 0; // kind = envelope, NOT media
+        assert!(!is_encrypted_media_blob(&bytes_envelope));
+
+        let mut bytes_media = vec![0u8; 32];
+        bytes_media[..6].copy_from_slice(sorng_encryption::envelope::MAGIC);
+        bytes_media[6] = 2;
+        bytes_media[7] = 2; // kind = chunked-stream
+        assert!(is_encrypted_media_blob(&bytes_media));
     }
 }
