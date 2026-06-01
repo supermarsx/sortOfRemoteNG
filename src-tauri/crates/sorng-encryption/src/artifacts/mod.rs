@@ -7,6 +7,7 @@
 //! `dek.enc`, or the unlock UX.
 
 pub mod backups;
+pub mod connections;
 pub mod logs;
 pub mod macros;
 pub mod recording_meta;

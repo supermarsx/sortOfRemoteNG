@@ -145,3 +145,25 @@ pub async fn write_app_data(
     storage.write_app_data(&key, &value).await
 }
 
+/// Tauri command to migrate the legacy connections database to the
+/// v2 envelope under the master DEK.
+///
+/// `legacyPassword` is the database password used by the previous
+/// `SORNG_ENC:` format. Pass `null` when the existing file is plain
+/// JSON (no database password ever set). Returns a [`MigrationOutcome`]
+/// the UI can render directly.
+///
+/// On success the legacy file is renamed to `<store_path>.v0.bak`
+/// and stays on disk for the rest of the release cycle as a rollback
+/// safety net.
+#[tauri::command]
+pub async fn storage_migrate_to_master_dek(
+    legacy_password: Option<String>,
+    state: tauri::State<'_, SecureStorageState>,
+) -> Result<MigrationOutcome, String> {
+    let mut storage = state.lock().await;
+    storage
+        .migrate_to_master_dek(legacy_password.as_deref())
+        .await
+}
+

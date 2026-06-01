@@ -58,6 +58,7 @@ import {
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   useEncryption,
+  type ConnectionsMigrationOutcome,
   type RecordingMigrationReport,
 } from "../../../../hooks/settings/useEncryption";
 import {
@@ -116,6 +117,14 @@ const EncryptionAtRestSection: React.FC = () => {
   const [changeBusy, setChangeBusy] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeSuccess, setChangeSuccess] = useState(false);
+
+  // Phase 8 — connections database migration to the master DEK.
+  const [migrateConnBusy, setMigrateConnBusy] = useState(false);
+  const [migrateConnError, setMigrateConnError] = useState<string | null>(null);
+  const [migrateConnOutcome, setMigrateConnOutcome] =
+    useState<ConnectionsMigrationOutcome | null>(null);
+  const [migrateConnRanAt, setMigrateConnRanAt] = useState<string | null>(null);
+  const [migrateConnLegacyPw, setMigrateConnLegacyPw] = useState("");
 
   // Phase 6 — disable / rotate / portable export-import.
   const [disableBusy, setDisableBusy] = useState(false);
@@ -208,6 +217,23 @@ const EncryptionAtRestSection: React.FC = () => {
       setLockError(e instanceof Error ? e.message : String(e));
     } finally {
       setLockBusy(false);
+    }
+  };
+
+  const handleMigrateConnections = async () => {
+    setMigrateConnBusy(true);
+    setMigrateConnError(null);
+    try {
+      const outcome = await enc.migrateConnections(
+        migrateConnLegacyPw.length > 0 ? migrateConnLegacyPw : undefined,
+      );
+      setMigrateConnOutcome(outcome);
+      setMigrateConnRanAt(formatNow());
+      setMigrateConnLegacyPw("");
+    } catch (e) {
+      setMigrateConnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMigrateConnBusy(false);
     }
   };
 
@@ -720,6 +746,94 @@ const EncryptionAtRestSection: React.FC = () => {
                   <FileWarning className="w-3.5 h-3.5" />
                 )}
                 Migrate recordings + macros
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Connections database migration ──────────────────────── */}
+      {status?.unlocked && (
+        <div className="space-y-4">
+          <SectionHeader
+            icon={<Database className="w-4 h-4 text-primary" />}
+            title={
+              <span className="flex items-center gap-2">
+                Migrate connections database
+                <InfoTooltip text="Rewrites data.json from the legacy SORNG_ENC: envelope (or plain JSON) into the v2 envelope under the master DEK. After migration the master password drives everything — the old database password is no longer needed." />
+              </span>
+            }
+          />
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Rewrites the connections database from the legacy{" "}
+              <code>SORNG_ENC:</code> envelope (PBKDF2/600k, separate
+              database password) to the v2 envelope under{" "}
+              <code>sorng-v1::connections</code>. After migration the
+              master password unlocks everything; the database password
+              is dropped from memory.
+            </p>
+
+            <SettingsPasswordRow
+              icon={<Lock size={16} />}
+              label="Legacy database password"
+              value={migrateConnLegacyPw}
+              onChange={setMigrateConnLegacyPw}
+              placeholder="Leave empty if data.json was never password-protected"
+              infoTooltip="Required when the existing data.json starts with the SORNG_ENC: prefix. Plain JSON connections databases migrate without a password."
+            />
+
+            {migrateConnRanAt && migrateConnOutcome && (
+              <div className="mt-2 p-2 rounded bg-success/10 border border-success/30 text-xs">
+                <div className="flex items-center gap-1.5 text-success mb-1">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Connections migration ran at {migrateConnRanAt}</span>
+                </div>
+                <div className="text-[var(--color-textSecondary)] mt-1">
+                  {migrateConnOutcome === "noSourceFile" && (
+                    <span>
+                      No <code>data.json</code> on disk yet — subsequent
+                      saves will land in the v2 envelope automatically.
+                    </span>
+                  )}
+                  {migrateConnOutcome === "alreadyV2" && (
+                    <span>
+                      File is already in v2. No-op.
+                    </span>
+                  )}
+                  {typeof migrateConnOutcome === "object" &&
+                    "migrated" in migrateConnOutcome && (
+                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                        <span>Backup path</span>
+                        <span className="text-[var(--color-text)] font-mono truncate">
+                          {migrateConnOutcome.migrated.backupPath}
+                        </span>
+                      </div>
+                    )}
+                </div>
+              </div>
+            )}
+
+            {migrateConnError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{migrateConnError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleMigrateConnections}
+                disabled={migrateConnBusy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-warning text-[var(--color-text)] hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {migrateConnBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Database className="w-3.5 h-3.5" />
+                )}
+                Migrate connections
               </button>
             </div>
           </Card>

@@ -48,7 +48,7 @@ use tokio::sync::Mutex;
 ///
 /// This struct contains all application data that needs to be persisted,
 /// including connection configurations, user settings, and metadata.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StorageData {
     /// Array of connection configurations stored as JSON values
     pub connections: Vec<serde_json::Value>,
@@ -59,6 +59,23 @@ pub struct StorageData {
     /// Generic key-value store for arbitrary application data
     #[serde(default)]
     pub app_data: std::collections::HashMap<String, String>,
+}
+
+/// Outcome of `migrate_to_master_dek`. Modelled as an enum so the
+/// caller can render the right toast / UI affordance without parsing
+/// strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MigrationOutcome {
+    /// No `data.json` existed at the configured path. The migrator
+    /// did nothing; subsequent saves will land in v2 automatically.
+    NoSourceFile,
+    /// The file was already in the v2 envelope. No-op.
+    AlreadyV2,
+    /// Migration ran. `backup_path` points to the archived legacy
+    /// file (renamed, not deleted) so the user has a one-release
+    /// rollback window.
+    Migrated { backup_path: String },
 }
 
 /// Type alias for the secure storage service state wrapped in an Arc<Mutex<>> for thread-safe access.
@@ -72,8 +89,19 @@ pub type SecureStorageState = Arc<Mutex<SecureStorage>>;
 pub struct SecureStorage {
     /// File path where data is stored
     store_path: String,
-    /// Optional password for encryption (currently unused, planned for future)
+    /// Optional password for the legacy `SORNG_ENC:` envelope
+    /// (PBKDF2/600k AES-256-GCM, database-password-derived). Kept on
+    /// the struct so the v0 → v2 migrator can decrypt the existing
+    /// file before re-encrypting under the master DEK.
     password: Option<String>,
+    /// Phase 8 — encryption-at-rest handle. When `Some` and unlocked,
+    /// writes go through the v2 envelope codec
+    /// (`sorng-v1::connections` sub-key) and reads transparently
+    /// dispatch between v0 (`SORNG_ENC:` text prefix) and v2 (binary
+    /// `SORNG\0` magic). Installed via `set_encryption_state` after
+    /// `app.manage(EncryptionState)`.
+    encryption_state:
+        Option<Arc<sorng_encryption::EncryptionState>>,
 }
 
 impl SecureStorage {
@@ -95,7 +123,20 @@ impl SecureStorage {
         Arc::new(Mutex::new(SecureStorage {
             store_path,
             password: None,
+            encryption_state: None,
         }))
+    }
+
+    /// Inject the global `EncryptionState`. After this call, every
+    /// `save_data` that finds the state unlocked writes through the
+    /// v2 envelope, and `load_data` magic-byte sniffs between v0 / v2
+    /// / plaintext. Safe to call multiple times — the latest handle
+    /// replaces the previous one.
+    pub fn set_encryption_state(
+        &mut self,
+        state: Arc<sorng_encryption::EncryptionState>,
+    ) {
+        self.encryption_state = Some(state);
     }
 
     /// Sets the password for storage encryption.
@@ -224,6 +265,40 @@ impl SecureStorage {
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
 
+        // Encryption dispatch (Phase 8):
+        //   1. v2 envelope — when the master-key state is installed
+        //      and unlocked. Master DEK drives sub-key derivation; no
+        //      database password needed. Produced as binary.
+        //   2. Legacy SORNG_ENC: text envelope — when the database
+        //      password is still set (used during the v0 → v2
+        //      migration window or by users who haven't enabled
+        //      master-key encryption yet).
+        //   3. Plain JSON — when neither path applies.
+        let used_v2 = self.encryption_state.is_some()
+            && self
+                .encryption_state
+                .as_ref()
+                .unwrap()
+                .is_unlocked()
+                .await;
+
+        if used_v2 {
+            let state = self.encryption_state.as_ref().unwrap();
+            let value: serde_json::Value =
+                serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            let mode = sorng_encryption::envelope::MasterKeyStorage::Vault;
+            let blob = sorng_encryption::artifacts::connections::write(
+                state,
+                &value,
+                mode,
+                sorng_encryption::password_wrap::Argon2Params::OWASP,
+                [0u8; sorng_encryption::envelope::SALT_LEN],
+            )
+            .await
+            .map_err(|e| format!("v2 connections encrypt: {e}"))?;
+            return Self::atomic_write_bytes(&self.store_path, &blob);
+        }
+
         let content = if use_password {
             if let Some(password) = &self.password {
                 let encrypted = Self::encrypt_bytes(json.as_bytes(), password)?;
@@ -238,10 +313,25 @@ impl SecureStorage {
 
         // Atomic write: write to a temp file first, then rename.
         // This prevents data loss if the process crashes mid-write.
-        let tmp_path = format!("{}.tmp", &self.store_path);
-        fs::write(&tmp_path, &content).map_err(|e| format!("Failed to write temp file: {}", e))?;
-        fs::rename(&tmp_path, &self.store_path)
+        Self::atomic_write_bytes(&self.store_path, content.as_bytes())
+    }
+
+    /// Atomic-write helper shared by every encoding path.
+    fn atomic_write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
+        let tmp_path = format!("{}.tmp", path);
+        fs::write(&tmp_path, bytes).map_err(|e| format!("Failed to write temp file: {}", e))?;
+        fs::rename(&tmp_path, path)
             .map_err(|e| format!("Failed to rename temp file: {}", e))
+    }
+
+    /// Detect the v2 connections envelope by its binary magic prefix.
+    /// `SORNG_ENC:` text-prefixed files start with `S` too but the
+    /// second byte is `O` (0x4F) followed by `R`, then the literal
+    /// underscore — `SORNG_ENC:` is 10 ASCII bytes. The v2 envelope is
+    /// `SORNG\0` (6 bytes), so the discriminator is the 6th byte:
+    /// `\0` for v2 vs `_` for legacy.
+    fn is_v2_connections_blob(bytes: &[u8]) -> bool {
+        bytes.len() >= 6 && &bytes[..6] == sorng_encryption::envelope::MAGIC
     }
 
     /// Loads data from persistent storage.
@@ -266,8 +356,34 @@ impl SecureStorage {
         if !Path::new(&self.store_path).exists() {
             return Ok(None);
         }
-        let raw = fs::read_to_string(&self.store_path).map_err(|e| e.to_string())?;
+        // Read as bytes so the v2 binary envelope sniff works without
+        // a UTF-8 decode error. v0 (`SORNG_ENC:` text) and plain JSON
+        // are still valid UTF-8 and reconstruct losslessly via
+        // `String::from_utf8`.
+        let raw_bytes = fs::read(&self.store_path).map_err(|e| e.to_string())?;
 
+        // ── v2 envelope (Phase 8) ──────────────────────────────────
+        if Self::is_v2_connections_blob(&raw_bytes) {
+            let state = self.encryption_state.as_ref().ok_or_else(|| {
+                "data.enc requires master encryption state to be installed".to_string()
+            })?;
+            if !state.is_unlocked().await {
+                return Err(
+                    "Connections database is encrypted; unlock first via Settings → Security"
+                        .into(),
+                );
+            }
+            let value = sorng_encryption::artifacts::connections::read(state, &raw_bytes)
+                .await
+                .map_err(|e| format!("v2 connections decrypt: {e}"))?
+                .unwrap_or_else(|| serde_json::json!({}));
+            let storage_data: StorageData =
+                serde_json::from_value(value).map_err(|e| e.to_string())?;
+            return Ok(Some(storage_data));
+        }
+
+        // ── v0 (`SORNG_ENC:` text) or plain JSON ───────────────────
+        let raw = String::from_utf8(raw_bytes).map_err(|e| format!("UTF-8 decode: {}", e))?;
         if let Some(encoded) = raw.strip_prefix("SORNG_ENC:") {
             // Encrypted data
             let password = self
@@ -289,6 +405,98 @@ impl SecureStorage {
                 serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             Ok(Some(storage_data))
         }
+    }
+
+    /// One-shot migration of `data.json` from the legacy `SORNG_ENC:`
+    /// or plaintext format to the v2 envelope under the master DEK.
+    ///
+    /// Behaviour:
+    /// - When the file is already v2 → returns `Ok(MigrationOutcome::AlreadyV2)`.
+    /// - When the file is v0 (`SORNG_ENC:`) → caller must pass the
+    ///   database password used to write it. The migrator decrypts
+    ///   with PBKDF2, archives the original to `<path>.v0.bak`, then
+    ///   re-encrypts under the master DEK.
+    /// - When the file is plain JSON → archives to `<path>.v0.bak`
+    ///   and re-encrypts under the master DEK. No password needed.
+    ///
+    /// Requires the encryption state to be installed and unlocked.
+    /// The legacy database password is consumed once and then no
+    /// longer needed for subsequent reads — the master key drives
+    /// everything.
+    pub async fn migrate_to_master_dek(
+        &mut self,
+        legacy_password: Option<&str>,
+    ) -> Result<MigrationOutcome, String> {
+        // Pre-flight checks before touching disk.
+        let state = self
+            .encryption_state
+            .clone()
+            .ok_or_else(|| "encryption state not installed; cannot migrate".to_string())?;
+        if !state.is_unlocked().await {
+            return Err("master key is locked; unlock before migrating".into());
+        }
+        if !Path::new(&self.store_path).exists() {
+            return Ok(MigrationOutcome::NoSourceFile);
+        }
+        let raw_bytes = fs::read(&self.store_path).map_err(|e| e.to_string())?;
+        if Self::is_v2_connections_blob(&raw_bytes) {
+            return Ok(MigrationOutcome::AlreadyV2);
+        }
+        // Decrypt or parse depending on the legacy format.
+        let plaintext_json: String = if raw_bytes.starts_with(b"SORNG_ENC:") {
+            let password = legacy_password
+                .ok_or_else(|| {
+                    "legacy database password required to decrypt the existing data.json".to_string()
+                })?;
+            let raw = String::from_utf8(raw_bytes).map_err(|e| format!("UTF-8: {}", e))?;
+            let encoded = raw.strip_prefix("SORNG_ENC:").unwrap();
+            let combined = general_purpose::STANDARD
+                .decode(encoded.as_bytes())
+                .map_err(|e| format!("Base64 decode: {}", e))?;
+            let json_bytes = Self::decrypt_bytes(&combined, password)?;
+            String::from_utf8(json_bytes).map_err(|e| format!("UTF-8 decode: {}", e))?
+        } else {
+            // Plain JSON case — already plaintext.
+            String::from_utf8(raw_bytes).map_err(|e| format!("UTF-8 decode: {}", e))?
+        };
+
+        // Sanity-parse the recovered JSON to bail out with a clean
+        // error before we archive anything. The migrator must never
+        // delete the legacy file if it can't actually parse its
+        // contents — that would be silent data loss.
+        let value: serde_json::Value =
+            serde_json::from_str(&plaintext_json).map_err(|e| e.to_string())?;
+
+        // Encode the v2 envelope first, in memory. Only after the
+        // encrypt-and-encode succeeds do we touch the file system.
+        let mode = sorng_encryption::envelope::MasterKeyStorage::Vault;
+        let blob = sorng_encryption::artifacts::connections::write(
+            &state,
+            &value,
+            mode,
+            sorng_encryption::password_wrap::Argon2Params::OWASP,
+            [0u8; sorng_encryption::envelope::SALT_LEN],
+        )
+        .await
+        .map_err(|e| format!("v2 connections encrypt: {e}"))?;
+
+        // Atomic flip: archive the legacy file (rename, not copy, so
+        // the source path is free to be overwritten in the same
+        // transaction), then write the v2 blob to the canonical path.
+        let backup_path = format!("{}.v0.bak", &self.store_path);
+        fs::rename(&self.store_path, &backup_path)
+            .map_err(|e| format!("archive legacy data.json: {e}"))?;
+        if let Err(e) = Self::atomic_write_bytes(&self.store_path, &blob) {
+            // Best-effort rollback: restore the backup so the user
+            // doesn't end up with nothing on disk.
+            let _ = fs::rename(&backup_path, &self.store_path);
+            return Err(e);
+        }
+        // The legacy database password is no longer load-bearing.
+        // Clear it so an attacker who later reads service memory
+        // doesn't recover both wrapping keys.
+        self.password = None;
+        Ok(MigrationOutcome::Migrated { backup_path })
     }
 
     /// Clears all stored data by deleting the storage file.
@@ -359,5 +567,227 @@ impl SecureStorage {
             .unwrap_or(0);
         let use_password = self.password.is_some();
         self.save_data(data, use_password).await
+    }
+}
+
+#[cfg(test)]
+mod phase_8_migration_tests {
+    //! Phase 8 — `data.json` → v2 envelope migration test plan.
+    //!
+    //! Exercises every branch the migrator can hit, with an emphasis
+    //! on the credential-recovery cases the advisor flagged as load-
+    //! bearing: locked-state guard, wrong-password rejection without
+    //! data loss, partial-write rollback. These are the discriminating
+    //! tests, not the `cargo test` count.
+    use super::*;
+    use sorng_encryption::{EncryptionState, MasterDek};
+    use tempfile::tempdir;
+
+    async fn unlocked_state() -> Arc<EncryptionState> {
+        let s = EncryptionState::new();
+        s.install(MasterDek::from_bytes(&[7u8; 32]).unwrap()).await;
+        Arc::new(s)
+    }
+
+    fn sample_data() -> StorageData {
+        StorageData {
+            connections: vec![serde_json::json!({ "id": "c1", "host": "h.example" })],
+            settings: std::collections::HashMap::new(),
+            timestamp: 1_700_000_000,
+            app_data: std::collections::HashMap::new(),
+        }
+    }
+
+    fn build_storage(path: String) -> SecureStorage {
+        SecureStorage {
+            store_path: path,
+            password: None,
+            encryption_state: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn v2_envelope_used_when_state_unlocked() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        svc.set_encryption_state(unlocked_state().await);
+
+        svc.save_data(sample_data(), false).await.unwrap();
+        // The on-disk magic must be the binary v2 envelope, not the
+        // legacy `SORNG_ENC:` ASCII prefix.
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            &bytes[..6],
+            sorng_encryption::envelope::MAGIC,
+            "v2 envelope must win when state is unlocked"
+        );
+
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections.len(), 1);
+        assert_eq!(loaded.connections[0]["host"], "h.example");
+    }
+
+    #[tokio::test]
+    async fn legacy_path_when_no_state_installed() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        // Set the legacy database password — no master state installed.
+        svc.set_password(Some("hunter2".to_string())).await;
+
+        svc.save_data(sample_data(), true).await.unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.starts_with("SORNG_ENC:"), "legacy envelope kept");
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn migrate_legacy_to_v2_round_trips() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+
+        // Phase A: write the legacy file with the database password.
+        let mut svc = build_storage(path.clone());
+        svc.set_password(Some("hunter2".to_string())).await;
+        svc.save_data(sample_data(), true).await.unwrap();
+
+        // Phase B: install the master DEK and migrate. The legacy
+        // password must round-trip the decrypt-then-re-encrypt without
+        // dropping any field.
+        svc.set_encryption_state(unlocked_state().await);
+        let outcome = svc.migrate_to_master_dek(Some("hunter2")).await.unwrap();
+        let backup_path = match outcome {
+            MigrationOutcome::Migrated { backup_path } => backup_path,
+            other => panic!("expected Migrated, got {other:?}"),
+        };
+        assert!(std::path::Path::new(&backup_path).exists());
+        // The file at the canonical path is now a v2 envelope.
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..6], sorng_encryption::envelope::MAGIC);
+        // Loading still recovers the same data.
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections.len(), 1);
+        assert_eq!(loaded.connections[0]["id"], "c1");
+        assert_eq!(loaded.timestamp, 1_700_000_000);
+    }
+
+    #[tokio::test]
+    async fn migrate_plain_json_to_v2() {
+        // A user who never set a database password: file is plain
+        // JSON. Migration must accept `None` for the legacy password.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+
+        let mut svc = build_storage(path.clone());
+        svc.save_data(sample_data(), false).await.unwrap();
+        // Confirm we started as plain JSON.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("c1"));
+        assert!(!raw.starts_with("SORNG_ENC:"));
+
+        svc.set_encryption_state(unlocked_state().await);
+        let outcome = svc.migrate_to_master_dek(None).await.unwrap();
+        assert!(matches!(outcome, MigrationOutcome::Migrated { .. }));
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections[0]["id"], "c1");
+    }
+
+    #[tokio::test]
+    async fn migrate_wrong_password_does_not_destroy_legacy_file() {
+        // The safety-critical case the advisor highlighted: a wrong
+        // legacy password must not delete or rename the source file.
+        // The user must keep their data intact and be able to retry.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+
+        let mut svc = build_storage(path.clone());
+        svc.set_password(Some("correct".to_string())).await;
+        svc.save_data(sample_data(), true).await.unwrap();
+        let legacy_before = std::fs::read(&path).unwrap();
+
+        svc.set_encryption_state(unlocked_state().await);
+        let err = svc
+            .migrate_to_master_dek(Some("WRONG"))
+            .await
+            .unwrap_err();
+        assert!(err.contains("Decryption failed") || err.contains("wrong password"));
+        // File still on disk, byte-identical.
+        let legacy_after = std::fs::read(&path).unwrap();
+        assert_eq!(legacy_before, legacy_after);
+        // Backup not created.
+        assert!(!std::path::Path::new(&format!("{}.v0.bak", path)).exists());
+    }
+
+    #[tokio::test]
+    async fn migrate_already_v2_is_noop() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        svc.set_encryption_state(unlocked_state().await);
+        svc.save_data(sample_data(), false).await.unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let outcome = svc.migrate_to_master_dek(None).await.unwrap();
+        assert!(matches!(outcome, MigrationOutcome::AlreadyV2));
+        // File untouched.
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn migrate_missing_source_returns_no_source_file() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path);
+        svc.set_encryption_state(unlocked_state().await);
+        let outcome = svc.migrate_to_master_dek(None).await.unwrap();
+        assert!(matches!(outcome, MigrationOutcome::NoSourceFile));
+    }
+
+    #[tokio::test]
+    async fn migrate_requires_unlocked_state() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        svc.save_data(sample_data(), false).await.unwrap();
+        // Install but don't unlock.
+        let locked = Arc::new(EncryptionState::new());
+        svc.set_encryption_state(locked);
+        let err = svc.migrate_to_master_dek(None).await.unwrap_err();
+        assert!(err.contains("locked"));
+        // Source untouched.
+        assert!(std::fs::read_to_string(&path).unwrap().contains("c1"));
+    }
+
+    #[tokio::test]
+    async fn locked_read_of_v2_surfaces_error() {
+        // A v2 file on disk + a locked state must NOT silently fall
+        // through to plaintext — that's the silent-downgrade attack
+        // vector the settings dispatch already defends against.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        svc.set_encryption_state(unlocked_state().await);
+        svc.save_data(sample_data(), false).await.unwrap();
+
+        let locked = Arc::new(EncryptionState::new());
+        svc.set_encryption_state(locked);
+        let err = svc.load_data().await.unwrap_err();
+        assert!(err.contains("encrypted") || err.contains("unlock"));
+    }
+
+    #[tokio::test]
+    async fn migrate_clears_legacy_password_on_success() {
+        // Defence in depth: once the master DEK is doing all the
+        // wrapping, the database password is no longer needed and
+        // shouldn't linger in service memory.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path);
+        svc.set_password(Some("hunter2".to_string())).await;
+        svc.save_data(sample_data(), true).await.unwrap();
+        svc.set_encryption_state(unlocked_state().await);
+        svc.migrate_to_master_dek(Some("hunter2")).await.unwrap();
+        assert!(svc.password.is_none());
     }
 }

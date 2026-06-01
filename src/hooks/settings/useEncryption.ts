@@ -56,6 +56,14 @@ export interface RecordingMigrationReport {
   macrosSkipped: number;
 }
 
+/** Discriminated outcome of `storage_migrate_to_master_dek`. Mirrors
+ *  the Rust `MigrationOutcome` enum — serde emits the variant name as
+ *  camelCase and inlines the `backupPath` for the `migrated` arm. */
+export type ConnectionsMigrationOutcome =
+  | "noSourceFile"
+  | "alreadyV2"
+  | { migrated: { backupPath: string } };
+
 export interface RotateReport {
   artifactsRewritten: number;
   bytesRewritten: number;
@@ -84,6 +92,13 @@ export interface UseEncryption {
    *  recordings storage root to its `.json.enc` v2 form. Returns the
    *  per-artifact migrated/skipped counts. */
   migrateRecordings: () => Promise<RecordingMigrationReport>;
+  /** Migrate the connections database (`data.json`) from the legacy
+   *  `SORNG_ENC:` envelope (or plain JSON) to the v2 envelope under
+   *  the master DEK. `legacyPassword` is the previous database
+   *  password — pass `undefined` when the file was plain JSON. */
+  migrateConnections: (
+    legacyPassword?: string,
+  ) => Promise<ConnectionsMigrationOutcome>;
   /** Decrypt `settings.enc` back to plaintext `settings.json` and
    *  delete the encrypted file. Master key stays alive for other
    *  artifacts. */
@@ -288,6 +303,23 @@ export function useEncryption(): UseEncryption {
     [refresh],
   );
 
+  const migrateConnections = useCallback(
+    async (
+      legacyPassword?: string,
+    ): Promise<ConnectionsMigrationOutcome> => {
+      const inv = await invokeOrThrow();
+      const outcome = await inv<ConnectionsMigrationOutcome>(
+        "storage_migrate_to_master_dek",
+        // Tauri command parameter names are snake_case on the Rust
+        // side; the Tauri runtime maps them from camelCase here.
+        { legacyPassword: legacyPassword ?? null },
+      );
+      await refresh();
+      return outcome;
+    },
+    [refresh],
+  );
+
   const disableSettings = useCallback(
     async (): Promise<DisableSettingsReport> => {
       const inv = await invokeOrThrow();
@@ -364,6 +396,7 @@ export function useEncryption(): UseEncryption {
     changePassword,
     migrateSettings,
     migrateRecordings,
+    migrateConnections,
     disableSettings,
     rotateMasterKey,
     exportPortableDek,

@@ -22,6 +22,7 @@ pub fn is_command(command: &str) -> bool {
             | "set_storage_password"
             | "read_app_data"
             | "write_app_data"
+            | "storage_migrate_to_master_dek"
             | "read_app_settings"
             | "write_app_settings"
             | "get_cpu_aes_capabilities"
@@ -1153,6 +1154,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         storage_commands::set_storage_password,
         storage_commands::read_app_data,
         storage_commands::write_app_data,
+        storage_commands::storage_migrate_to_master_dek,
         app_settings_commands::read_app_settings,
         app_settings_commands::write_app_settings,
         cpu_commands::get_cpu_aes_capabilities,

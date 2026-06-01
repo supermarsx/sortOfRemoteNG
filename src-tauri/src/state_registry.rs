@@ -319,6 +319,19 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
 
     let storage_path = app_dir.join("storage.json");
     let secure_storage = SecureStorage::new(storage_path.to_string_lossy().to_string());
+    // Phase 8 — inject the master-key handle so subsequent saves use
+    // the v2 connections envelope (`sorng-v1::connections`) when
+    // unlocked. Falls through silently when no encryption state is
+    // installed (the pre-encryption boot path remains valid for
+    // tests).
+    if let Some(enc_handle) = app.try_state::<sorng_encryption::EncryptionState>() {
+        let enc_arc = std::sync::Arc::new(enc_handle.inner().clone());
+        let svc = secure_storage.clone();
+        tauri::async_runtime::block_on(async move {
+            let mut g = svc.lock().await;
+            g.set_encryption_state(enc_arc);
+        });
+    }
     app.manage(secure_storage);
 
     let trust_store_path = app_dir.join("trust_store.json");
