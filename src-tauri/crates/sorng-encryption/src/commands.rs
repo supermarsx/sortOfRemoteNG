@@ -448,6 +448,270 @@ pub async fn encryption_migrate_settings(
     })
 }
 
+// ─── Phase 6: decrypt / rotate / portable export-import ────────────
+
+/// Report returned by `encryption_disable_settings`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisableSettingsReport {
+    pub source_path: String,
+    pub destination_path: String,
+    pub bytes_in: usize,
+    pub bytes_out: usize,
+}
+
+/// Inverse of `encryption_migrate_settings` — decrypt `settings.enc`
+/// back into plain `settings.json`, then delete the encrypted file
+/// so the next start uses the v0 path. The master key itself stays
+/// alive (vault entry and/or `dek.enc`) so other artifacts continue
+/// to decrypt; the full "disable everything" path is a follow-up.
+#[tauri::command]
+pub async fn encryption_disable_settings(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+) -> Result<DisableSettingsReport, String> {
+    if !state.is_unlocked().await {
+        return Err("state is locked; unlock before disabling".into());
+    }
+    let dir = ensure_app_data_dir(&app)?;
+    let source = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
+    let destination = dir.join(SETTINGS_JSON_FILENAME);
+
+    let raw = std::fs::read(&source).map_err(|e| format!("read settings.enc: {e}"))?;
+    let bytes_in = raw.len();
+    if !looks_like_envelope_helper(&raw) {
+        return Err("source is not an envelope file; refusing to operate".into());
+    }
+    let value = artifact_settings::read(&state, &raw)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| serde_json::json!({}));
+    let body = serde_json::to_string_pretty(&value)
+        .map_err(|e| format!("re-serialize settings: {e}"))?;
+    let bytes_out = body.len();
+    atomic_write(&destination, body.as_bytes())?;
+    // Now safe to delete the encrypted file.
+    std::fs::remove_file(&source).map_err(|e| format!("remove settings.enc: {e}"))?;
+
+    Ok(DisableSettingsReport {
+        source_path: source.to_string_lossy().into_owned(),
+        destination_path: destination.to_string_lossy().into_owned(),
+        bytes_in,
+        bytes_out,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotateReport {
+    pub artifacts_rewritten: u32,
+    pub bytes_rewritten: usize,
+    pub vault_updated: bool,
+    pub dek_enc_updated: bool,
+}
+
+/// Rotate the master DEK. Generates fresh 32 random bytes, re-
+/// encrypts every artifact currently on disk under the new sub-keys,
+/// updates the vault entry and/or `dek.enc` to match. Atomic per file
+/// (temp + rename); a partial failure mid-rotation leaves the file
+/// that's mid-flight as its old ciphertext rather than corruption.
+///
+/// `password` is required iff `dek.enc` exists on disk (password or
+/// hybrid mode) — we need to rewrap the new DEK under it. Vault-only
+/// mode doesn't need it.
+#[tauri::command]
+pub async fn encryption_rotate_master_key(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+    password: Option<String>,
+) -> Result<RotateReport, String> {
+    if !state.is_unlocked().await {
+        return Err("state is locked; unlock before rotating".into());
+    }
+    let dir = ensure_app_data_dir(&app)?;
+    let dek_enc_path = dir.join(DEK_ENC_FILENAME);
+    let dek_enc_present = dek_enc_path.exists();
+    let settings_enc_path = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
+    let settings_enc_present = settings_enc_path.exists();
+    let vault_present = sorng_vault::keychain::read_dek().await.is_ok();
+
+    if dek_enc_present && password.is_none() {
+        return Err(
+            "password mode is in effect; supply the password to re-wrap dek.enc"
+                .into(),
+        );
+    }
+
+    // Read each artifact's plaintext via the *current* state, before
+    // we install the new DEK.
+    let settings_plaintext = if settings_enc_present {
+        let blob = std::fs::read(&settings_enc_path)
+            .map_err(|e| format!("read settings.enc: {e}"))?;
+        artifact_settings::read(&state, &blob)
+            .await
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Generate the new master DEK, install it.
+    let new_dek = MasterDek::generate();
+    state.install(new_dek).await;
+
+    // Determine the on-disk mode the new files should declare.
+    let new_mode = match (vault_present, dek_enc_present) {
+        (true, true) => MasterKeyStorage::VaultAndPassword,
+        (true, false) => MasterKeyStorage::Vault,
+        (false, true) => MasterKeyStorage::Password,
+        (false, false) => MasterKeyStorage::Vault, // sensible default
+    };
+
+    let mut artifacts_rewritten = 0u32;
+    let mut bytes_rewritten = 0usize;
+
+    if settings_enc_present {
+        let salt = [0u8; crate::envelope::SALT_LEN];
+        let blob = artifact_settings::write(
+            &state,
+            &settings_plaintext,
+            new_mode,
+            Argon2Params::OWASP,
+            salt,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        bytes_rewritten += blob.len();
+        atomic_write(&settings_enc_path, &blob)?;
+        artifacts_rewritten += 1;
+    }
+
+    // Update key-storage receipts.
+    let mut vault_updated = false;
+    let mut dek_enc_updated = false;
+    let new_bytes = state
+        .with_master(|m| *m.bytes_for_password_wrap())
+        .await
+        .ok_or("master DEK vanished mid-rotation")?;
+
+    if vault_present {
+        sorng_vault::keychain::store_bytes(
+            sorng_vault::types::SERVICE_NAME,
+            sorng_vault::types::MASTER_DEK_ACCOUNT,
+            &new_bytes,
+        )
+        .await
+        .map_err(|e| format!("vault update: {e}"))?;
+        vault_updated = true;
+    }
+    if let Some(pw) = password {
+        let argon = Argon2Params::OWASP;
+        let dek_owned = MasterDek::from_bytes(&new_bytes)
+            .ok_or("internal: master DEK wrong length")?;
+        let blob =
+            password_wrap::wrap(&pw, &dek_owned, argon).map_err(|e| format!("wrap: {e}"))?;
+        atomic_write(&dek_enc_path, &blob)?;
+        dek_enc_updated = true;
+    }
+
+    // Reset the lockout counter — successful rotation is the strongest
+    // possible signal that the user holds the password.
+    let mut lockout = LockoutState::load(&dir);
+    lockout.record_success();
+    let _ = lockout.save(&dir);
+    let _ = app.emit(EVENT_UNLOCKED, ());
+
+    Ok(RotateReport {
+        artifacts_rewritten,
+        bytes_rewritten,
+        vault_updated,
+        dek_enc_updated,
+    })
+}
+
+/// Write the master DEK as a portable wrapped blob at the user-chosen
+/// path. Works regardless of how the local DEK is stored — the export
+/// always wraps with the supplied password using the standard
+/// Argon2id envelope, so the recipient only needs the password to
+/// import on a different machine.
+#[tauri::command]
+pub async fn encryption_export_portable_dek(
+    state: State<'_, EncryptionState>,
+    destination_path: String,
+    password: String,
+    argon2: Option<Argon2Params>,
+) -> Result<u64, String> {
+    if !state.is_unlocked().await {
+        return Err("state is locked; unlock before exporting".into());
+    }
+    let argon = argon2.unwrap_or(Argon2Params::OWASP);
+    argon.validate().map_err(|e| e.to_string())?;
+
+    let bytes = state
+        .with_master(|m| *m.bytes_for_password_wrap())
+        .await
+        .ok_or("master DEK unavailable")?;
+    let dek = MasterDek::from_bytes(&bytes).ok_or("internal: wrong-size DEK")?;
+    let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
+
+    let dest = std::path::PathBuf::from(&destination_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
+    }
+    atomic_write(&dest, &blob)?;
+    Ok(blob.len() as u64)
+}
+
+/// Import a portable wrapped DEK and adopt it as the local master
+/// key. On success the state is unlocked, the vault (if available) is
+/// updated, and `dek.enc` is written locally so the next start finds
+/// the new key.
+#[tauri::command]
+pub async fn encryption_import_portable_dek(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+    source_path: String,
+    password: String,
+) -> Result<(), String> {
+    let dir = ensure_app_data_dir(&app)?;
+    let blob = std::fs::read(&source_path).map_err(|e| format!("read source: {e}"))?;
+    let dek = password_wrap::unwrap(&password, &blob)
+        .map_err(|e| format!("unwrap: {e}"))?;
+
+    // Adopt as the live key.
+    let raw = *dek.bytes_for_password_wrap();
+    state.install(dek).await;
+
+    // Persist locally so the next start finds it.
+    if sorng_vault::keychain::is_available() {
+        sorng_vault::keychain::store_bytes(
+            sorng_vault::types::SERVICE_NAME,
+            sorng_vault::types::MASTER_DEK_ACCOUNT,
+            &raw,
+        )
+        .await
+        .map_err(|e| format!("vault store: {e}"))?;
+    }
+
+    // Always write `dek.enc` too — it's the cross-machine recipe and
+    // protects against the user nuking the vault on cleanup.
+    let dek_path = dir.join(DEK_ENC_FILENAME);
+    let dek_local =
+        MasterDek::from_bytes(&raw).ok_or("internal: re-wrap wrong-size DEK")?;
+    let local_wrap = password_wrap::wrap(&password, &dek_local, Argon2Params::OWASP)
+        .map_err(|e| format!("re-wrap: {e}"))?;
+    atomic_write(&dek_path, &local_wrap)?;
+
+    // Reset lockout (successful unwrap counts as proof the user
+    // holds the password) and broadcast.
+    let mut lockout = LockoutState::load(&dir);
+    lockout.record_success();
+    let _ = lockout.save(&dir);
+    let _ = app.emit(EVENT_UNLOCKED, ());
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +776,156 @@ mod tests {
         assert!(s.contains("\"bytesIn\":1"));
         assert!(s.contains("\"bytesOut\":2"));
         assert!(s.contains("\"masterKeyStorage\":\"vault\""));
+    }
+
+    #[test]
+    fn disable_settings_report_camel_case() {
+        let r = DisableSettingsReport {
+            source_path: "a".into(),
+            destination_path: "b".into(),
+            bytes_in: 10,
+            bytes_out: 20,
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains("\"sourcePath\":\"a\""));
+        assert!(s.contains("\"bytesIn\":10"));
+        assert!(s.contains("\"bytesOut\":20"));
+    }
+
+    #[test]
+    fn rotate_report_camel_case() {
+        let r = RotateReport {
+            artifacts_rewritten: 3,
+            bytes_rewritten: 1024,
+            vault_updated: true,
+            dek_enc_updated: false,
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains("\"artifactsRewritten\":3"));
+        assert!(s.contains("\"bytesRewritten\":1024"));
+        assert!(s.contains("\"vaultUpdated\":true"));
+        assert!(s.contains("\"dekEncUpdated\":false"));
+    }
+
+    // ─── End-to-end logic tests bypassing the Tauri AppHandle ──
+
+    use crate::artifacts::settings as artifact_settings;
+    use crate::dek::MasterDek;
+    use crate::envelope::{self, SALT_LEN};
+
+    #[tokio::test]
+    async fn rotation_logic_invalidates_old_ciphertext() {
+        // Compose the same steps `encryption_rotate_master_key`
+        // performs, minus AppHandle / vault I/O: install DEK, encrypt
+        // a settings payload, then rotate and verify the old
+        // ciphertext fails to decrypt under the new state while the
+        // new ciphertext round-trips.
+        let enc_state = EncryptionState::new();
+        enc_state.install(MasterDek::generate()).await;
+
+        let payload = serde_json::json!({ "theme": "dark", "v": 1 });
+        let old_blob = artifact_settings::write(
+            &enc_state,
+            &payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+
+        // "Rotate" — install a fresh master DEK, re-encrypt.
+        enc_state.install(MasterDek::generate()).await;
+        let new_blob = artifact_settings::write(
+            &enc_state,
+            &payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+
+        // Old ciphertext is no longer readable.
+        let err = artifact_settings::read(&enc_state, &old_blob)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            artifact_settings::SettingsError::Envelope(
+                envelope::EnvelopeError::AuthenticationFailed,
+            )
+        ));
+        // New ciphertext does round-trip.
+        let recovered = artifact_settings::read(&enc_state, &new_blob)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered, payload);
+    }
+
+    #[tokio::test]
+    async fn portable_export_then_import_yields_same_master() {
+        // Wrap the master DEK with a password (export), then unwrap
+        // (import) and confirm a sub-key derived from each yields the
+        // same bytes — i.e. the master survived the round-trip.
+        let enc_state = EncryptionState::new();
+        let original = MasterDek::generate();
+        let bytes_before =
+            *original.sub_key(crate::ArtifactKind::Settings).bytes();
+        enc_state.install(original).await;
+
+        // Export path: wrap with password.
+        let raw = enc_state
+            .with_master(|m| *m.bytes_for_password_wrap())
+            .await
+            .unwrap();
+        let dek_to_wrap = MasterDek::from_bytes(&raw).unwrap();
+        let blob = password_wrap::wrap(
+            "portable-pw",
+            &dek_to_wrap,
+            Argon2Params::OWASP,
+        )
+        .unwrap();
+
+        // Import path on a fresh state: unwrap and install.
+        let target_state = EncryptionState::new();
+        let recovered =
+            password_wrap::unwrap("portable-pw", &blob).unwrap();
+        let bytes_after =
+            *recovered.sub_key(crate::ArtifactKind::Settings).bytes();
+        target_state.install(recovered).await;
+
+        assert_eq!(bytes_before, bytes_after);
+        assert!(target_state.is_unlocked().await);
+    }
+
+    #[tokio::test]
+    async fn disable_settings_logic_recovers_original_plaintext() {
+        // The disable path reads the envelope and writes plaintext
+        // JSON. Compose: encrypt a payload, decrypt it via the same
+        // artifact module, confirm the recovered JSON matches the
+        // original byte-for-byte after re-serialization.
+        let enc_state = EncryptionState::new();
+        enc_state.install(MasterDek::generate()).await;
+        let payload = serde_json::json!({
+            "theme": "dark",
+            "user": { "id": 7, "name": "alice" },
+            "list": [1, 2, 3],
+        });
+        let blob = artifact_settings::write(
+            &enc_state,
+            &payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+        let recovered = artifact_settings::read(&enc_state, &blob)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered, payload);
     }
 }

@@ -63,6 +63,10 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_change_password",
     "encryption_migrate_settings",
     "encryption_lockout_state",
+    "encryption_disable_settings",
+    "encryption_rotate_master_key",
+    "encryption_export_portable_dek",
+    "encryption_import_portable_dek",
 ];
 
 /// Returns `true` if the given Tauri command name belongs to this crate.

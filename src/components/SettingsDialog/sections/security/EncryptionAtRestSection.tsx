@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Check,
   Database,
+  Download,
   FileWarning,
   KeyRound,
   Loader2,
@@ -41,13 +42,16 @@ import {
   RefreshCw,
   Shield,
   ShieldCheck,
+  Trash2,
   Unlock,
+  Upload,
 } from "lucide-react";
 import {
   Card,
   SettingsSectionHeader as SectionHeader,
   SettingsPasswordRow,
   SettingsNumberRow,
+  SettingsTextRow,
   Toggle as SettingsToggleRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
@@ -93,6 +97,33 @@ const EncryptionAtRestSection: React.FC = () => {
   const [changeBusy, setChangeBusy] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeSuccess, setChangeSuccess] = useState(false);
+
+  // Phase 6 — disable / rotate / portable export-import.
+  const [disableBusy, setDisableBusy] = useState(false);
+  const [disableError, setDisableError] = useState<string | null>(null);
+  const [disableSuccess, setDisableSuccess] = useState<string | null>(null);
+
+  const [rotateBusy, setRotateBusy] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+  const [rotateSummary, setRotateSummary] = useState<string | null>(null);
+  const [rotatePassword, setRotatePassword] = useState("");
+
+  const [portableExportBusy, setPortableExportBusy] = useState(false);
+  const [portableExportError, setPortableExportError] = useState<string | null>(
+    null,
+  );
+  const [portableExportSuccess, setPortableExportSuccess] = useState<
+    string | null
+  >(null);
+  const [portableExportPath, setPortableExportPath] = useState("");
+  const [portableExportPassword, setPortableExportPassword] = useState("");
+
+  const [portableImportBusy, setPortableImportBusy] = useState(false);
+  const [portableImportError, setPortableImportError] = useState<string | null>(
+    null,
+  );
+  const [portableImportPath, setPortableImportPath] = useState("");
+  const [portableImportPassword, setPortableImportPassword] = useState("");
 
   const status = enc.status;
   const isUnavailable = !enc.loading && status === null;
@@ -161,6 +192,82 @@ const EncryptionAtRestSection: React.FC = () => {
       setChangeError(e instanceof Error ? e.message : String(e));
     } finally {
       setChangeBusy(false);
+    }
+  };
+
+  const handleDisableSettings = async () => {
+    setDisableBusy(true);
+    setDisableError(null);
+    setDisableSuccess(null);
+    try {
+      const report = await enc.disableSettings();
+      setDisableSuccess(
+        `Decrypted ${report.bytesIn.toLocaleString()} bytes back to ${report.destinationPath}`,
+      );
+    } catch (e) {
+      setDisableError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDisableBusy(false);
+    }
+  };
+
+  const handleRotateMasterKey = async () => {
+    setRotateBusy(true);
+    setRotateError(null);
+    setRotateSummary(null);
+    try {
+      const report = await enc.rotateMasterKey(
+        passwordModeActive ? rotatePassword : undefined,
+      );
+      const bits = [
+        `${report.artifactsRewritten} artifact${
+          report.artifactsRewritten === 1 ? "" : "s"
+        } rewritten`,
+        report.vaultUpdated && "vault entry updated",
+        report.dekEncUpdated && "dek.enc updated",
+      ]
+        .filter(Boolean)
+        .join(", ");
+      setRotateSummary(bits);
+      setRotatePassword("");
+    } catch (e) {
+      setRotateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRotateBusy(false);
+    }
+  };
+
+  const handleExportPortable = async () => {
+    setPortableExportBusy(true);
+    setPortableExportError(null);
+    setPortableExportSuccess(null);
+    try {
+      const bytes = await enc.exportPortableDek(
+        portableExportPath,
+        portableExportPassword,
+      );
+      setPortableExportSuccess(
+        `Wrote ${bytes.toLocaleString()} bytes to ${portableExportPath}`,
+      );
+      setPortableExportPassword("");
+    } catch (e) {
+      setPortableExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPortableExportBusy(false);
+    }
+  };
+
+  const handleImportPortable = async () => {
+    setPortableImportBusy(true);
+    setPortableImportError(null);
+    try {
+      await enc.importPortableDek(portableImportPath, portableImportPassword);
+      setPortableImportPath("");
+      setPortableImportPassword("");
+    } catch (e) {
+      setPortableImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPortableImportBusy(false);
     }
   };
 
@@ -521,6 +628,241 @@ const EncryptionAtRestSection: React.FC = () => {
                   <KeyRound className="w-3.5 h-3.5" />
                 )}
                 Change password
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Rotate master key ─────────────────────────────────────── */}
+      {status?.unlocked && (
+        <div className="space-y-4">
+          <SectionHeader
+            icon={<RefreshCw className="w-4 h-4 text-primary" />}
+            title="Rotate master key"
+          />
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Generates a fresh 32-byte master DEK, re-encrypts every
+              artifact on disk under freshly-derived sub-keys, then
+              swaps the vault entry and/or <code>dek.enc</code> to
+              match. Use after a suspected password or vault leak. The
+              old ciphertext is rendered unreadable on success — keep
+              a recent backup if you're nervous.
+            </p>
+            {passwordModeActive && (
+              <SettingsPasswordRow
+                icon={<KeyRound size={16} />}
+                label="Current password"
+                value={rotatePassword}
+                onChange={setRotatePassword}
+                placeholder="Required so dek.enc can be re-wrapped"
+                infoTooltip="The same password you use to unlock at app start. Rotation re-wraps dek.enc under this password using the new DEK."
+              />
+            )}
+            {rotateError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{rotateError}</span>
+              </div>
+            )}
+            {rotateSummary && (
+              <div className="flex items-center gap-1.5 p-2 rounded bg-success/10 border border-success/30 text-success text-xs">
+                <Check className="w-3.5 h-3.5" />
+                {rotateSummary}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleRotateMasterKey}
+                disabled={
+                  rotateBusy ||
+                  (passwordModeActive && rotatePassword.length === 0)
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {rotateBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5" />
+                )}
+                Rotate master key
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Portable key export ──────────────────────────────────── */}
+      {status?.unlocked && (
+        <div className="space-y-4">
+          <SectionHeader
+            icon={<Download className="w-4 h-4 text-primary" />}
+            title="Export portable master key"
+          />
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Writes a password-wrapped copy of the master DEK to the
+              path you choose. Use this to migrate to a new machine
+              where the OS vault is different, or as a one-shot backup
+              you can store offline. Choose a strong, distinct
+              password — the file is portable, so anyone with both the
+              file and the password can decrypt your data.
+            </p>
+            <SettingsTextRow
+              icon={<Download size={16} />}
+              label="Destination path"
+              value={portableExportPath}
+              onChange={setPortableExportPath}
+              placeholder="/secure/backup/sornG-master.dek"
+              infoTooltip="Absolute path on disk. The file is overwritten if it exists. Place it on removable media for offline backup."
+            />
+            <SettingsPasswordRow
+              icon={<KeyRound size={16} />}
+              label="Export password"
+              value={portableExportPassword}
+              onChange={setPortableExportPassword}
+              placeholder="Used to wrap the DEK at export time"
+              infoTooltip="Argon2id-derives a 256-bit key that wraps the master DEK. The recipient (or future you) needs this password to import."
+            />
+            {portableExportError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{portableExportError}</span>
+              </div>
+            )}
+            {portableExportSuccess && (
+              <div className="flex items-center gap-1.5 p-2 rounded bg-success/10 border border-success/30 text-success text-xs">
+                <Check className="w-3.5 h-3.5" />
+                {portableExportSuccess}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleExportPortable}
+                disabled={
+                  portableExportBusy ||
+                  portableExportPath.length === 0 ||
+                  portableExportPassword.length < 8
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {portableExportBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                Export key
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Portable key import ──────────────────────────────────── */}
+      {!status?.unlocked && (
+        <div className="space-y-4">
+          <SectionHeader
+            icon={<Upload className="w-4 h-4 text-primary" />}
+            title="Import portable master key"
+          />
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Recover access on a new machine by pointing this at a
+              <code>.dek</code> file you exported earlier. The key gets
+              installed into the OS vault (if available) and saved as
+              <code>dek.enc</code> so the next start finds it
+              automatically.
+            </p>
+            <SettingsTextRow
+              icon={<Upload size={16} />}
+              label="Source path"
+              value={portableImportPath}
+              onChange={setPortableImportPath}
+              placeholder="/secure/backup/sornG-master.dek"
+              infoTooltip="Path to the .dek file produced by 'Export portable master key' on another machine."
+            />
+            <SettingsPasswordRow
+              icon={<KeyRound size={16} />}
+              label="Import password"
+              value={portableImportPassword}
+              onChange={setPortableImportPassword}
+              placeholder="The password used at export time"
+            />
+            {portableImportError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{portableImportError}</span>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleImportPortable}
+                disabled={
+                  portableImportBusy ||
+                  portableImportPath.length === 0 ||
+                  portableImportPassword.length === 0
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {portableImportBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                Import key
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Disable settings encryption ──────────────────────────── */}
+      {status?.settingsEncryptedOnDisk && status.unlocked && (
+        <div className="space-y-4">
+          <SectionHeader
+            icon={<Trash2 className="w-4 h-4 text-error" />}
+            title="Disable settings encryption"
+          />
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Decrypts <code>settings.enc</code> back to plaintext
+              <code>settings.json</code> and deletes the encrypted
+              file. The master key stays alive so other artifacts
+              (recordings, backups, …) keep their encryption — this is
+              a per-artifact opt-out, not a full disable. To remove
+              encryption from the entire app, run this on every
+              artifact and then delete <code>dek.enc</code> + the
+              vault entry manually.
+            </p>
+            {disableError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{disableError}</span>
+              </div>
+            )}
+            {disableSuccess && (
+              <div className="flex items-center gap-1.5 p-2 rounded bg-success/10 border border-success/30 text-success text-xs">
+                <Check className="w-3.5 h-3.5" />
+                {disableSuccess}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleDisableSettings}
+                disabled={disableBusy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-error text-[var(--color-text)] hover:bg-error/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {disableBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                Disable & decrypt settings
               </button>
             </div>
           </Card>

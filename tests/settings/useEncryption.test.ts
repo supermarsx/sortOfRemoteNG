@@ -320,4 +320,95 @@ describe("useEncryption", () => {
     });
     expect(lockoutCalls).toBeGreaterThan(before);
   });
+
+  it("disableSettings forwards and refreshes status", async () => {
+    const report = {
+      sourcePath: "/x/settings.enc",
+      destinationPath: "/x/settings.json",
+      bytesIn: 200,
+      bytesOut: 120,
+    };
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_disable_settings") return report;
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let got: any;
+    await act(async () => {
+      got = await result.current.disableSettings();
+    });
+    expect(got).toEqual(report);
+  });
+
+  it("rotateMasterKey forwards the password (null when omitted)", async () => {
+    let received: any = null;
+    invokeImpl = makeInvoke(async (cmd, args) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_rotate_master_key") {
+        received = args;
+        return {
+          artifactsRewritten: 1,
+          bytesRewritten: 80,
+          vaultUpdated: true,
+          dekEncUpdated: false,
+        };
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.rotateMasterKey();
+    });
+    expect(received).toEqual({ password: null });
+  });
+
+  it("exportPortableDek sends camelCase args", async () => {
+    let received: any = null;
+    invokeImpl = makeInvoke(async (cmd, args) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_export_portable_dek") {
+        received = args;
+        return 96;
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let size: number | undefined;
+    await act(async () => {
+      size = await result.current.exportPortableDek(
+        "/dest/key.dek",
+        "p",
+      );
+    });
+    expect(received).toEqual({
+      destinationPath: "/dest/key.dek",
+      password: "p",
+      argon2: null,
+    });
+    expect(size).toBe(96);
+  });
+
+  it("importPortableDek refreshes status + lockout afterwards", async () => {
+    let lockoutCalls = 0;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_lockout_state") {
+        lockoutCalls += 1;
+        return zeroLockout;
+      }
+      if (cmd === "encryption_import_portable_dek") return undefined;
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = lockoutCalls;
+    await act(async () => {
+      await result.current.importPortableDek("/src/key.dek", "p");
+    });
+    expect(lockoutCalls).toBeGreaterThan(before);
+  });
 });

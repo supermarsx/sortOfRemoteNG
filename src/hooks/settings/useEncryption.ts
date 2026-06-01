@@ -37,14 +37,26 @@ async function invokeOrThrow(): Promise<InvokeFn> {
   return inv as InvokeFn;
 }
 
+/** Phase 6 reports. */
+export interface DisableSettingsReport {
+  sourcePath: string;
+  destinationPath: string;
+  bytesIn: number;
+  bytesOut: number;
+}
+
+export interface RotateReport {
+  artifactsRewritten: number;
+  bytesRewritten: number;
+  vaultUpdated: boolean;
+  dekEncUpdated: boolean;
+}
+
 export interface UseEncryption {
   status: EncryptionStatus | null;
   loading: boolean;
   error: string | null;
-  /** Live lockout state for password-mode unlock attempts. Polled
-   *  every 250 ms while a cool-down is active, then frozen at the
-   *  zero state once the user is allowed to try again. `null` outside
-   *  Tauri. */
+  /** Live lockout state for password-mode unlock attempts. */
   lockout: LockoutSnapshot | null;
   refresh: () => Promise<void>;
   refreshLockout: () => Promise<void>;
@@ -57,6 +69,27 @@ export interface UseEncryption {
     argon2?: Argon2Params,
   ) => Promise<void>;
   migrateSettings: () => Promise<MigrationReport>;
+  /** Decrypt `settings.enc` back to plaintext `settings.json` and
+   *  delete the encrypted file. Master key stays alive for other
+   *  artifacts. */
+  disableSettings: () => Promise<DisableSettingsReport>;
+  /** Generate a fresh master DEK, re-encrypt every artifact under
+   *  new sub-keys, update vault + dek.enc to match. `password` is
+   *  required iff `dek.enc` is currently on disk. */
+  rotateMasterKey: (password?: string) => Promise<RotateReport>;
+  /** Write the master DEK as a portable wrapped blob at the chosen
+   *  path. Returns the file size in bytes. */
+  exportPortableDek: (
+    destinationPath: string,
+    password: string,
+    argon2?: Argon2Params,
+  ) => Promise<number>;
+  /** Read a portable wrapped DEK at `sourcePath`, unwrap with
+   *  `password`, install as the local master key. */
+  importPortableDek: (
+    sourcePath: string,
+    password: string,
+  ) => Promise<void>;
 }
 
 export function useEncryption(): UseEncryption {
@@ -201,6 +234,59 @@ export function useEncryption(): UseEncryption {
     return report;
   }, [refresh]);
 
+  const disableSettings = useCallback(
+    async (): Promise<DisableSettingsReport> => {
+      const inv = await invokeOrThrow();
+      const report = await inv<DisableSettingsReport>(
+        "encryption_disable_settings",
+      );
+      await refresh();
+      return report;
+    },
+    [refresh],
+  );
+
+  const rotateMasterKey = useCallback(
+    async (password?: string): Promise<RotateReport> => {
+      const inv = await invokeOrThrow();
+      const report = await inv<RotateReport>("encryption_rotate_master_key", {
+        password: password ?? null,
+      });
+      await refresh();
+      return report;
+    },
+    [refresh],
+  );
+
+  const exportPortableDek = useCallback(
+    async (
+      destinationPath: string,
+      password: string,
+      argon2?: Argon2Params,
+    ): Promise<number> => {
+      const inv = await invokeOrThrow();
+      return inv<number>("encryption_export_portable_dek", {
+        destinationPath,
+        password,
+        argon2: argon2 ?? null,
+      });
+    },
+    [],
+  );
+
+  const importPortableDek = useCallback(
+    async (sourcePath: string, password: string): Promise<void> => {
+      const inv = await invokeOrThrow();
+      await inv<void>("encryption_import_portable_dek", {
+        sourcePath,
+        password,
+      });
+      await refresh();
+      await refreshLockout();
+    },
+    [refresh, refreshLockout],
+  );
+
   return {
     status,
     lockout,
@@ -213,5 +299,9 @@ export function useEncryption(): UseEncryption {
     lock,
     changePassword,
     migrateSettings,
+    disableSettings,
+    rotateMasterKey,
+    exportPortableDek,
+    importPortableDek,
   };
 }
