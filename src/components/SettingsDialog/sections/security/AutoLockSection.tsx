@@ -1,5 +1,5 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
-import { Lock, Timer, Clock } from "lucide-react";
+import { Lock, Timer, Clock, Minimize2, EyeOff, Focus } from "lucide-react";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
 import {
   Card,
@@ -79,6 +79,51 @@ function AutoLockSection({
               })
             }
             infoTooltip="Number of minutes of inactivity before the application automatically locks."
+          />
+
+          <Toggle
+            checked={!!settings.autoLock.lockOnMinimize}
+            onChange={(v) =>
+              updateSettings({
+                autoLock: { ...settings.autoLock, lockOnMinimize: v },
+              })
+            }
+            disabled={!mgr.hasPassword || !settings.autoLock.enabled}
+            icon={<Minimize2 size={16} />}
+            label="Lock when window is minimised"
+            description="Lock immediately when the application window is minimised, regardless of the idle timer."
+            infoTooltip="Useful on shared desktops — the screen-pinning password is required to bring the app back."
+          />
+
+          <Toggle
+            checked={!!settings.autoLock.lockOnBlur}
+            onChange={(v) =>
+              updateSettings({
+                autoLock: { ...settings.autoLock, lockOnBlur: v },
+              })
+            }
+            disabled={!mgr.hasPassword || !settings.autoLock.enabled}
+            icon={<Focus size={16} />}
+            label="Lock when window loses focus"
+            description="Lock after 250 ms if you alt-tab to another application; cancelled if focus returns first."
+            infoTooltip="The 250 ms debounce avoids accidental locks from tooltips, popups, or transient focus changes."
+          />
+
+          <Toggle
+            checked={!!settings.autoLock.lockOnVisibilityHidden}
+            onChange={(v) =>
+              updateSettings({
+                autoLock: {
+                  ...settings.autoLock,
+                  lockOnVisibilityHidden: v,
+                },
+              })
+            }
+            disabled={!mgr.hasPassword || !settings.autoLock.enabled}
+            icon={<EyeOff size={16} />}
+            label="Lock when document becomes hidden"
+            description="Browser-side fallback that catches any platform-specific way the window can go hidden (background tab, mission-control sweep)."
+            infoTooltip="Independent of the window manager — `document.hidden` flips whenever the OS or browser decides the window is no longer visible to the user."
           />
         </div>
       </Card>

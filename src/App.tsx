@@ -26,6 +26,7 @@ import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { UnlockScreen } from "./components/encryption/UnlockScreen";
+import { AutoLockController } from "./components/encryption/AutoLockController";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
 import { SessionViewer } from "./components/session/SessionViewer";
@@ -1426,6 +1427,14 @@ const App: React.FC = () => (
             `shouldShowUnlockScreen` for the exact predicate.
           */}
           <UnlockScreen />
+          {/*
+            Auto-lock policy enforcer. Watches `settings.autoLock` and
+            attaches idle / blur / minimise / visibility-hidden
+            listeners that call `encryption_lock` when the user's
+            configured signal fires. Renders nothing; lives at the
+            root so the listeners survive every nested re-render.
+          */}
+          <AutoLockController />
         </ErrorBoundary>
       </ConnectionProvider>
     </SettingsProvider>

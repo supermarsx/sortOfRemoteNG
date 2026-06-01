@@ -1331,4 +1331,14 @@ export interface AutoLockConfig {
   lockOnIdle: boolean;
   lockOnSuspend: boolean;
   requirePassword: boolean;
+  /** Lock immediately when the application window is minimised. */
+  lockOnMinimize?: boolean;
+  /** Lock immediately when the application window loses OS focus
+   *  (e.g. user switches to another desktop / screen-share). When
+   *  combined with `lockOnMinimize`, the first matching event wins. */
+  lockOnBlur?: boolean;
+  /** Lock when the browser's `visibilitychange` fires `hidden` —
+   *  the cross-platform fallback when Tauri window events aren't
+   *  available (web build, jsdom tests). */
+  lockOnVisibilityHidden?: boolean;
 }

@@ -257,6 +257,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     lockOnIdle: true,
     lockOnSuspend: true,
     requirePassword: true,
+    lockOnMinimize: false,
+    lockOnBlur: false,
+    lockOnVisibilityHidden: false,
   },
 
   maxConcurrentConnections: 10,
