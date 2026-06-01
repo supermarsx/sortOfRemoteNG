@@ -90,6 +90,12 @@ const EncryptionAtRestSection: React.FC = () => {
   const [setupPassword, setSetupPassword] = useState("");
   const [setupArgon2, setSetupArgon2] = useState<Argon2Params>(ARGON2_OWASP);
 
+  // Manual "Lock now" trigger — Phase 4 add-on. Surfaces the same
+  // `encryption_lock` command the auto-lock listener uses, with an
+  // explicit button + Ctrl/⌘-L keyboard binding.
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
+
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
   const [migrateReport, setMigrateReport] = useState<MigrationReport | null>(
@@ -189,6 +195,19 @@ const EncryptionAtRestSection: React.FC = () => {
       setMigrateError(e instanceof Error ? e.message : String(e));
     } finally {
       setMigrateBusy(false);
+    }
+  };
+
+  const handleLockNow = async () => {
+    if (lockBusy) return;
+    setLockBusy(true);
+    setLockError(null);
+    try {
+      await enc.lock();
+    } catch (e) {
+      setLockError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLockBusy(false);
     }
   };
 
@@ -408,6 +427,57 @@ const EncryptionAtRestSection: React.FC = () => {
           ) : null}
         </Card>
       </div>
+
+      {/* ── Lock now (manual trigger, visible only when unlocked) ─── */}
+      {status?.unlocked && (
+        <div className="space-y-4">
+          <SectionHeader
+            icon={<Lock className="w-4 h-4 text-primary" />}
+            title={
+              <span className="flex items-center gap-2">
+                Lock now
+                <InfoTooltip text="Drops the master key from memory immediately. The unlock screen appears next time an encrypted artifact is read." />
+              </span>
+            }
+          />
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Drops the master key from memory and returns to the unlock
+              screen. Keyboard shortcut:{" "}
+              <kbd className="px-1.5 py-0.5 rounded bg-[var(--color-input)] border border-[var(--color-border)] font-mono text-[10px]">
+                Ctrl+L
+              </kbd>{" "}
+              (
+              <kbd className="px-1.5 py-0.5 rounded bg-[var(--color-input)] border border-[var(--color-border)] font-mono text-[10px]">
+                ⌘L
+              </kbd>{" "}
+              on macOS).
+            </p>
+            {lockError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{lockError}</span>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleLockNow}
+                disabled={lockBusy}
+                data-testid="encryption-lock-now"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-warning text-[var(--color-text)] hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {lockBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Lock className="w-3.5 h-3.5" />
+                )}
+                Lock now
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* ── First-run setup wizard ───────────────────────────────── */}
       {needsSetup && (
