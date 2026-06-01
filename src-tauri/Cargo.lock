@@ -9684,6 +9684,7 @@ dependencies = [
  "ssh2",
  "tauri",
  "tauri-plugin-autostart",
+ "tempfile",
  "tokio 1.52.1",
  "tokio-rustls 0.26.4",
  "tracing",

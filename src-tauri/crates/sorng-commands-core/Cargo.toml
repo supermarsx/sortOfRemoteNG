@@ -61,3 +61,12 @@ vpn-softether = ["sorng-app-domains/vpn-softether"]
 # so normal builds keep the commands wired.
 protocol-serial = []
 protocol-serial-dynamic = []
+
+[dev-dependencies]
+# Required by the test module in the path-included
+# `app_settings_commands.rs` shim (round-trip tests against the
+# dispatched reader/writer). The shim is `mod`-included rather than
+# imported, so test-only deps of the source file have to be declared
+# here as well, not just in `app`.
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

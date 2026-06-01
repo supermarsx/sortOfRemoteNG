@@ -30,10 +30,20 @@ pub struct MacConnectionSummary {
 }
 
 /// Which MAC framework is active on the host.
+///
+/// Per-variant `rename` overrides cover the cases where serde's
+/// snake_case conversion produces ugly internal-cap names —
+/// `SELinux` → `s_e_linux` and `AppArmor` → `app_armor`. Pinning the
+/// wire format keeps the JSON readable for the frontend and matches
+/// what every external tooling expects (the literal name of each MAC
+/// framework). `Tomoyo`/`Smack`/`None` round-trip cleanly under
+/// snake_case so they keep the default.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MacSystemType {
+    #[serde(rename = "selinux")]
     SELinux,
+    #[serde(rename = "apparmor")]
     AppArmor,
     Tomoyo,
     Smack,

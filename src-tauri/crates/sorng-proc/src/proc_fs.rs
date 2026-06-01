@@ -119,10 +119,36 @@ fn parse_proc_limits(pid: u32, output: &str) -> Result<ProcessLimits, ProcError>
         if line.is_empty() || line.starts_with("Limit") {
             continue;
         }
-        // The limit name can contain spaces, so we parse from the right.
-        // Each numeric/unlimited field is right-aligned in fixed columns.
-        // Strategy: split by two-or-more spaces to get tokens.
-        let parts: Vec<&str> = line.splitn(4, "  ").filter(|s| !s.is_empty()).collect();
+        // The limit name itself can contain spaces ("Max open files"),
+        // so we can't just `split_whitespace` from the left. Instead
+        // collapse every run of two-or-more spaces into a single
+        // delimiter, which is the column separator used by
+        // `/proc/<pid>/limits`. The previous `splitn(4, "  ")` failed
+        // because it counted *each* two-space pair as a separate
+        // split, collapsing the trailing columns into one fragment.
+        let parts: Vec<&str> = {
+            let mut out: Vec<&str> = Vec::new();
+            let mut prev_end = 0usize;
+            let bytes = line.as_bytes();
+            let mut i = 0usize;
+            while i < bytes.len() {
+                if bytes[i] == b' ' && i + 1 < bytes.len() && bytes[i + 1] == b' ' {
+                    if prev_end < i {
+                        out.push(&line[prev_end..i]);
+                    }
+                    while i < bytes.len() && bytes[i] == b' ' {
+                        i += 1;
+                    }
+                    prev_end = i;
+                } else {
+                    i += 1;
+                }
+            }
+            if prev_end < line.len() {
+                out.push(&line[prev_end..]);
+            }
+            out
+        };
         if parts.len() < 3 {
             continue;
         }

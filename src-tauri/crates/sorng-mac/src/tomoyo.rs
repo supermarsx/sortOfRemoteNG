@@ -6,20 +6,40 @@ use crate::error::MacResult;
 use crate::types::*;
 
 /// Parse TOMOYO status from /sys/kernel/security/tomoyo/stat.
+///
+/// The kernel stat file emits one line per metric in the form
+/// `"<metric>: <integer>"`, e.g. `"learning domains: 2"`. We pull the
+/// integer off the first line whose lowercased text contains the
+/// target keyword — counting lines (the previous behaviour) lost the
+/// actual count whenever a domain-tally line appeared once but with
+/// a value > 1.
 pub fn parse_tomoyo_status(output: &str) -> TomoyoStatus {
-    fn count_mode(lines: &[&str], mode: &str) -> u32 {
-        lines
-            .iter()
-            .filter(|l| l.to_lowercase().contains(mode))
-            .count() as u32
+    fn extract_count(lines: &[&str], mode: &str) -> u32 {
+        for line in lines {
+            if !line.to_lowercase().contains(mode) {
+                continue;
+            }
+            // Take the last whitespace-delimited token that parses as
+            // u32 — robust against either `"learning: 2"` or
+            // `"learning domains: 2"` shapes.
+            if let Some(n) = line
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|t| !t.is_empty())
+                .last()
+                .and_then(|t| t.parse::<u32>().ok())
+            {
+                return n;
+            }
+        }
+        0
     }
     let lines: Vec<&str> = output.lines().collect();
     let enabled = !output.trim().is_empty();
     TomoyoStatus {
         enabled,
-        learning_domains: count_mode(&lines, "learning"),
-        enforcing_domains: count_mode(&lines, "enforcing"),
-        permissive_domains: count_mode(&lines, "permissive"),
+        learning_domains: extract_count(&lines, "learning"),
+        enforcing_domains: extract_count(&lines, "enforcing"),
+        permissive_domains: extract_count(&lines, "permissive"),
     }
 }
 

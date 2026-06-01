@@ -309,7 +309,22 @@ impl BackupManager {
     }
 
     fn parse_backup_status(output: &str) -> BackupStatus {
-        let running = output.contains("currently running") || output.contains("in progress");
+        // The wbadmin "no backup running" line ("No backup is currently
+        // running.") contains the literal substring "currently
+        // running", so a substring check picks it up as a false
+        // positive. Inspect each line and reject those that start with
+        // a clear negation ("No backup is", "No active") before
+        // flagging the status as running.
+        let running = output.lines().any(|line| {
+            let l = line.trim();
+            let lower = l.to_lowercase();
+            let has_signal =
+                lower.contains("currently running") || lower.contains("in progress");
+            let is_negation = lower.starts_with("no backup")
+                || lower.starts_with("no active")
+                || lower.starts_with("no operation");
+            has_signal && !is_negation
+        });
         let last_success = Self::extract_line_value(output, "Last successful");
         let last_failure = Self::extract_line_value(output, "Last failed");
         let next_scheduled = Self::extract_line_value(output, "Next scheduled");
@@ -337,7 +352,13 @@ impl BackupManager {
 
         for line in output.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("Version identifier:") || trimmed.starts_with("Backup time:") {
+            // `wbadmin get versions` separates each backup with a
+            // `Version identifier:` header — that's the only line that
+            // starts a new `BackupVersion`. Including `Backup time:` in
+            // the new-version trigger duplicated every entry (the
+            // header opened version N, then `Backup time:` closed it
+            // and opened version N+1 from the same backup block).
+            if trimmed.starts_with("Version identifier:") {
                 if let Some(v) = current.take() {
                     versions.push(v);
                 }

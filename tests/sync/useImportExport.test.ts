@@ -16,6 +16,11 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+/** Deterministic ISO timestamp used by every `Connection` fixture in
+ *  this file. Centralised so a date change doesn't drift across rows
+ *  and so we can grep all fixture rows at once. */
+const FIXTURE_NOW = "2026-01-01T00:00:00.000Z";
+
 const mockToast = {
   success: vi.fn(),
   error: vi.fn(),
@@ -2135,6 +2140,8 @@ describe("useImportExport", () => {
         username: "jump",
         isGroup: false,
         tags: [],
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
       {
         id: "target-1",
@@ -2162,6 +2169,8 @@ describe("useImportExport", () => {
             },
           ],
         },
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
     ] as Connection[]);
     const { result } = renderImportExport();
@@ -2766,6 +2775,8 @@ describe("useImportExport", () => {
         port: 22,
         isGroup: false,
         tags: [],
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
     ];
     mockGetExportableDatabases.mockResolvedValue(databases);
@@ -2847,6 +2858,8 @@ describe("useImportExport", () => {
         port: 0,
         isGroup: true,
         tags: [],
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
       {
         id: "conn-prod",
@@ -2857,6 +2870,8 @@ describe("useImportExport", () => {
         parentId: "folder-prod",
         isGroup: false,
         tags: [],
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
       {
         id: "conn-outside",
@@ -2866,6 +2881,8 @@ describe("useImportExport", () => {
         port: 22,
         isGroup: false,
         tags: [],
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
     ];
     mockGetExportableDatabases.mockResolvedValue(databases);
@@ -2950,6 +2967,8 @@ describe("useImportExport", () => {
         security: {
           openvpn: { enabled: true, configId: "vpn-old" },
         },
+        createdAt: FIXTURE_NOW,
+        updatedAt: FIXTURE_NOW,
       },
     ];
     const proxyProfile = {

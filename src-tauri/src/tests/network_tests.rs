@@ -109,7 +109,16 @@ async fn test_ping_host_detailed_via_service() {
     }
 }
 
-/// Test ping with invalid host via NetworkService
+/// Test ping with a host guaranteed to fail at the network layer via
+/// `NetworkService`.
+///
+/// Uses an address inside the IETF documentation block (TEST-NET-1,
+/// `192.0.2.0/24`, RFC 5737) rather than a bogus hostname — bogus
+/// hostnames are unreliable in CI because corporate / ISP DNS
+/// resolvers often respond with a wildcard captive-portal IP that
+/// happens to answer ICMP, turning the test into a flaky-by-network
+/// box. TEST-NET-1 addresses are unallocated by design and must not
+/// be reachable from anywhere.
 #[tokio::test]
 async fn test_ping_invalid_via_service() {
     let service = NetworkService::new();
@@ -117,13 +126,14 @@ async fn test_ping_invalid_via_service() {
     let result = service
         .lock()
         .await
-        .ping_host("invalid.host.that.does.not.exist.xyz".to_string())
+        .ping_host("192.0.2.1".to_string())
         .await;
 
-    // Should handle gracefully - either return error or success=false
+    // Either an error or a clean `success=false` is acceptable; the
+    // contract is "doesn't panic and doesn't return success=true".
     match result {
-        Ok(success) => assert!(!success), // Invalid host should fail
-        Err(_) => assert!(true),          // Expected for invalid hosts
+        Ok(success) => assert!(!success, "TEST-NET-1 address must not be reachable"),
+        Err(_) => {}
     }
 }
 

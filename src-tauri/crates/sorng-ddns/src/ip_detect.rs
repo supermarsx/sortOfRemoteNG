@@ -18,9 +18,18 @@ fn is_valid_ipv4(s: &str) -> bool {
 }
 
 /// Validate that a string looks like a valid IPv6 address.
+///
+/// Rejects zone identifiers (`%scope`) — the DDNS surface treats them
+/// as not-ideal because most DDNS providers strip them, and a record
+/// that round-trips differently on the wire than what the user typed
+/// is a footgun. Strings carrying `%` should be normalised to the
+/// bare address before reaching this validator.
 fn is_valid_ipv6(s: &str) -> bool {
-    // Basic IPv6 validation: contains colons and no spaces
-    s.contains(':') && !s.contains(' ') && s.len() >= 2 && s.len() <= 45
+    s.contains(':')
+        && !s.contains(' ')
+        && !s.contains('%')
+        && s.len() >= 2
+        && s.len() <= 45
 }
 
 /// Detect the public IP address using a list of services (with fallback).

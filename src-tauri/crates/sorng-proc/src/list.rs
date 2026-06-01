@@ -162,10 +162,33 @@ fn parse_ps_aux(output: &str) -> Vec<ProcessInfo> {
             continue;
         }
         // ps aux columns: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND...
-        let fields: Vec<&str> = line.splitn(11, char::is_whitespace).collect();
-        if fields.len() < 11 {
+        // `splitn(11, char::is_whitespace)` treats consecutive spaces
+        // as separate empty splits, which breaks the typical
+        // space-padded `ps aux` output. Pull the first 10 columns via
+        // `split_whitespace()` and keep the rest of the line as the
+        // command so multi-word commands stay intact.
+        let mut iter = line.split_whitespace();
+        let mut fields: Vec<&str> = Vec::with_capacity(11);
+        for _ in 0..10 {
+            match iter.next() {
+                Some(f) => fields.push(f),
+                None => break,
+            }
+        }
+        if fields.len() < 10 {
             continue;
         }
+        // Re-construct the command from the remainder of the original
+        // line — preserves embedded whitespace inside argv values.
+        let command_start = fields.iter().fold(0usize, |acc, f| {
+            // Skip past the next occurrence of `f` after `acc`.
+            line[acc..]
+                .find(f)
+                .map(|i| acc + i + f.len())
+                .unwrap_or(acc)
+        });
+        let command = line[command_start..].trim_start();
+        fields.push(command);
         let stat_str = fields[7].trim();
         let state = stat_str
             .chars()
