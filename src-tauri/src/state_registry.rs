@@ -352,11 +352,27 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     access::register(app);
 
     // Encryption-at-rest subsystem (Phase 0): managed state holds the
-    // in-memory master DEK. Locked at app start; either silently
-    // unlocked from the OS vault on first frontend read or explicitly
-    // via the unlock screen when password mode is configured. See
-    // crates/sorng-encryption/src/state.rs for the lifecycle.
-    app.manage(sorng_encryption::EncryptionState::new());
+    // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
+    //
+    // Boot-time silent vault unlock — if the OS vault holds a master
+    // DEK, install it now so subsequent reads (notably the settings
+    // file below) observe an unlocked state. Password / hybrid modes
+    // can't be silently unlocked here because they need user input;
+    // those go through the UnlockScreen at app render time.
+    let enc_state = sorng_encryption::EncryptionState::new();
+    if sorng_vault::keychain::is_available() {
+        if let Ok(bytes) = tauri::async_runtime::block_on(
+            sorng_vault::keychain::read_dek(),
+        ) {
+            if let Some(dek) = sorng_encryption::MasterDek::from_bytes(&bytes) {
+                tauri::async_runtime::block_on(enc_state.install(dek));
+                println!(
+                    "Encryption-at-rest: silent vault unlock succeeded at boot."
+                );
+            }
+        }
+    }
+    app.manage(enc_state);
 
     #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
     platform::register(app);
@@ -400,21 +416,34 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
 
     // Prime the disabled-capability set from the persisted settings so
     // the gate is enforced from the very first request, not just after
-    // the user opens Settings → API.
-    if let Ok(Some(value)) = tauri::async_runtime::block_on(
-        crate::app_settings_commands::read_app_settings(app.app_handle().clone()),
-    ) {
-        if let Some(list) = value
-            .get("restApi")
-            .and_then(|r| r.get("disabledCapabilities"))
-            .and_then(|d| d.as_array())
-        {
-            let ids: Vec<String> = list
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
-            if !ids.is_empty() {
-                api_service.set_disabled_capabilities(ids);
+    // the user opens Settings → API. Uses the v0/v2-dispatching reader
+    // — the silent vault unlock above means the encrypted form is
+    // readable here for vault-mode installs. Password / hybrid mode
+    // installs surface "locked" and simply skip the priming step; the
+    // capabilities load anyway as soon as the user unlocks.
+    if let Some(enc_state_handle) =
+        app.app_handle().try_state::<sorng_encryption::EncryptionState>()
+    {
+        if let Ok(dir) = app.app_handle().path().app_data_dir() {
+            if let Ok(Some(value)) = tauri::async_runtime::block_on(
+                crate::app_settings_commands::read_app_settings_inner(
+                    &dir,
+                    &enc_state_handle,
+                ),
+            ) {
+                if let Some(list) = value
+                    .get("restApi")
+                    .and_then(|r| r.get("disabledCapabilities"))
+                    .and_then(|d| d.as_array())
+                {
+                    let ids: Vec<String> = list
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                    if !ids.is_empty() {
+                        api_service.set_disabled_capabilities(ids);
+                    }
+                }
             }
         }
     }
