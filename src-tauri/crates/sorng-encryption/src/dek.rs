@@ -138,10 +138,19 @@ impl MasterDek {
     /// Borrow the raw bytes for vault storage. Kept `pub(crate)` so
     /// only this crate's `state` module can wrap-and-write to the vault;
     /// downstream artifact writers must go through [`Self::sub_key`].
-    /// Currently only consumed by tests; Phase 1's password-wrap path
+    /// Currently only consumed by tests; Phase 6's portable export
     /// will lift the `#[cfg(test)]`.
     #[cfg(test)]
     pub(crate) fn raw(&self) -> &[u8; KEY_LEN] {
+        &self.bytes
+    }
+
+    /// Borrow the raw bytes specifically for password-wrap. Tightly
+    /// scoped via name so grep finds exactly two call sites: the
+    /// wrapper in [`crate::password_wrap::wrap`] and this definition.
+    /// The borrow lives as long as the returned slice; callers must
+    /// not stash it.
+    pub(crate) fn bytes_for_password_wrap(&self) -> &[u8; KEY_LEN] {
         &self.bytes
     }
 

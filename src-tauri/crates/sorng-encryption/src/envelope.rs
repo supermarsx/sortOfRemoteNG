@@ -200,6 +200,13 @@ impl EnvelopeHeader {
     }
 }
 
+/// Free-function alias for [`EnvelopeHeader::looks_like_envelope`].
+/// Avoids forcing every reader to import the impl-block helper through
+/// `EnvelopeHeader::`.
+pub fn looks_like_envelope_helper(buf: &[u8]) -> bool {
+    EnvelopeHeader::looks_like_envelope(buf)
+}
+
 /// Failures during envelope codec operations. Distinct from KDF /
 /// vault errors so callers can react differently (e.g. "downgrade" is
 /// recoverable, "auth tag" is not).

@@ -5,12 +5,13 @@ edition = "2021"
 description = "Application-wide encryption-at-rest orchestration: master DEK, per-artifact sub-keys, file envelope codec, unlock state"
 
 [dependencies]
-# Crypto primitives — KDF + AEAD live in sorng-vault; we only add HKDF here.
+# Crypto primitives.
 aes-gcm = { workspace = true }
 hkdf = "0.12"
 sha2 = { workspace = true }
 rand = { workspace = true }
 zeroize = "1.7"
+argon2 = "0.5"
 
 # Serialization
 serde = { workspace = true }

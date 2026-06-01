@@ -39,13 +39,16 @@
 //! See [`ArtifactKind`] for the closed set of labels — adding a new
 //! artifact means extending the enum and bumping nothing else.
 
+pub mod artifacts;
+pub mod commands;
 pub mod dek;
 pub mod envelope;
+pub mod password_wrap;
 pub mod state;
-pub mod commands;
 
 pub use dek::{ArtifactKind, MasterDek, SubKey};
 pub use envelope::{EnvelopeError, EnvelopeHeader, MasterKeyStorage};
+pub use password_wrap::{Argon2Params, WrapError};
 pub use state::EncryptionState;
 
 /// Tauri command names this crate exposes. Used by the invoke handler in
@@ -55,6 +58,8 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_setup",
     "encryption_unlock",
     "encryption_lock",
+    "encryption_change_password",
+    "encryption_migrate_settings",
 ];
 
 /// Returns `true` if the given Tauri command name belongs to this crate.
