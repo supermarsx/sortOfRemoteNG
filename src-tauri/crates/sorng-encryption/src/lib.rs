@@ -40,6 +40,7 @@
 //! artifact means extending the enum and bumping nothing else.
 
 pub mod artifacts;
+pub mod audit;
 pub mod commands;
 pub mod dek;
 pub mod envelope;
@@ -67,6 +68,8 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_rotate_master_key",
     "encryption_export_portable_dek",
     "encryption_import_portable_dek",
+    "encryption_audit_read",
+    "encryption_audit_clear",
 ];
 
 /// Returns `true` if the given Tauri command name belongs to this crate.

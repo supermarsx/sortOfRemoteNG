@@ -38,6 +38,8 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_rotate_master_key"
             | "encryption_export_portable_dek"
             | "encryption_import_portable_dek"
+            | "encryption_audit_read"
+            | "encryption_audit_clear"
             | "trust_verify_identity"
             | "trust_store_identity"
             | "trust_store_identity_with_reason"
@@ -1167,6 +1169,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         sorng_encryption::commands::encryption_rotate_master_key,
         sorng_encryption::commands::encryption_export_portable_dek,
         sorng_encryption::commands::encryption_import_portable_dek,
+        sorng_encryption::commands::encryption_audit_read,
+        sorng_encryption::commands::encryption_audit_clear,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
         trust_store_commands::trust_store_identity,

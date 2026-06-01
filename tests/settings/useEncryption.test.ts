@@ -62,15 +62,17 @@ const migrationReport: MigrationReport = {
 };
 
 function makeInvoke(impl: (cmd: string, args?: any) => Promise<any>) {
-  // Wrap the user impl so every test gets a default zero-lockout
-  // response without having to handle the new Phase 5 command
-  // explicitly. The user impl still wins if it returns its own value
-  // for `encryption_lockout_state`.
+  // Wrap the user impl so every test gets defaults for the
+  // newer "always-fetched" commands (lockout state from Phase 5,
+  // audit-log read from Phase 7) without having to handle them
+  // explicitly. The user impl still wins if it returns its own
+  // value for either.
   return vi.fn(async (cmd: string, args?: any) => {
     try {
       return await impl(cmd, args);
     } catch (e) {
       if (cmd === "encryption_lockout_state") return zeroLockout;
+      if (cmd === "encryption_audit_read") return [];
       throw e;
     }
   });
@@ -410,5 +412,60 @@ describe("useEncryption", () => {
       await result.current.importPortableDek("/src/key.dek", "p");
     });
     expect(lockoutCalls).toBeGreaterThan(before);
+  });
+
+  it("fetches the audit log on mount", async () => {
+    const entries = [
+      { ts: "2026-06-01T10:00:00Z", event: "unlock-success", method: "vault" },
+      {
+        ts: "2026-06-01T10:01:00Z",
+        event: "unlock-failure",
+        failedAttempts: 1,
+      },
+    ];
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_audit_read") return entries;
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => {
+      expect(result.current.audit.length).toBe(2);
+    });
+    expect(result.current.audit[0].event).toBe("unlock-success");
+    expect(result.current.audit[1].event).toBe("unlock-failure");
+  });
+
+  it("clearAudit invokes the command and refreshes", async () => {
+    let cleared = false;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_audit_clear") {
+        cleared = true;
+        return undefined;
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.clearAudit();
+    });
+    expect(cleared).toBe(true);
+  });
+
+  it("audit hook tolerates audit_read errors without throwing", async () => {
+    // Bypass the makeInvoke wrapper that swallows audit_read
+    // failures with a default empty array — here we want the rejection
+    // to actually reach the hook so its own catch path is exercised.
+    invokeImpl = vi.fn(async (cmd: string) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_lockout_state") return zeroLockout;
+      if (cmd === "encryption_audit_read") throw new Error("disk gone");
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.audit).toEqual([]);
   });
 });

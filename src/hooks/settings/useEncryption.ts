@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getInvoke } from "../../utils/tauri/invoke";
 import type {
   Argon2Params,
+  AuditEntry,
   EncryptionStatus,
   LockoutSnapshot,
   MigrationReport,
@@ -90,11 +91,20 @@ export interface UseEncryption {
     sourcePath: string,
     password: string,
   ) => Promise<void>;
+  /** Latest audit entries (newest last). Fetched on mount and after
+   *  every mutating action. Empty array outside Tauri. */
+  audit: AuditEntry[];
+  /** Force a re-fetch of the audit log. */
+  refreshAudit: () => Promise<void>;
+  /** Truncate the audit log. The Rust side stamps a "log-cleared"
+   *  entry immediately after so the gap is visible. */
+  clearAudit: () => Promise<void>;
 }
 
 export function useEncryption(): UseEncryption {
   const [status, setStatus] = useState<EncryptionStatus | null>(null);
   const [lockout, setLockout] = useState<LockoutSnapshot | null>(null);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,10 +146,28 @@ export function useEncryption(): UseEncryption {
     }
   }, []);
 
+  const refreshAudit = useCallback(async () => {
+    try {
+      const inv = await getInvoke();
+      if (!inv) {
+        setAudit([]);
+        return;
+      }
+      const next = await (inv as InvokeFn)<AuditEntry[]>("encryption_audit_read", {
+        limit: 100,
+      });
+      setAudit(next);
+    } catch {
+      // Audit-log errors are non-fatal; surface as empty.
+      setAudit([]);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
     void refreshLockout();
-  }, [refresh, refreshLockout]);
+    void refreshAudit();
+  }, [refresh, refreshLockout, refreshAudit]);
 
   // Subscribe to cross-window unlock/lock broadcasts so secondary
   // windows refresh status without polling. The dynamic import keeps
@@ -283,17 +311,27 @@ export function useEncryption(): UseEncryption {
       });
       await refresh();
       await refreshLockout();
+      await refreshAudit();
     },
-    [refresh, refreshLockout],
+    [refresh, refreshLockout, refreshAudit],
   );
+
+  const clearAudit = useCallback(async (): Promise<void> => {
+    const inv = await invokeOrThrow();
+    await inv<void>("encryption_audit_clear");
+    await refreshAudit();
+  }, [refreshAudit]);
 
   return {
     status,
     lockout,
+    audit,
     loading,
     error,
     refresh,
     refreshLockout,
+    refreshAudit,
+    clearAudit,
     setup,
     unlock,
     lock,

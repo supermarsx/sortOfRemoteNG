@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::artifacts::settings as artifact_settings;
+use crate::audit::{self, AuditEntry, AuditEvent};
 use crate::dek::{ArtifactKind, MasterDek};
 use crate::envelope::{looks_like_envelope_helper, MasterKeyStorage};
 use crate::lockout::LockoutState;
@@ -223,6 +224,13 @@ pub async fn encryption_setup(
                 .map_err(|e| format!("ensure_dek: {e}"))?;
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
             state.install(dek).await;
+            if let Ok(dir) = app.path().app_data_dir() {
+                let _ = audit::record(
+                    &dir,
+                    AuditEvent::SetupCompleted,
+                    serde_json::json!({ "method": "vault", "vaultAvailable": true }),
+                );
+            }
             Ok(UnlockResult::UnlockedFromVault)
         }
         SetupMethod::Password { password, argon2 } => {
@@ -234,6 +242,13 @@ pub async fn encryption_setup(
             let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
             atomic_write(&dek_path, &blob)?;
             state.install(dek).await;
+            if let Ok(dir) = app.path().app_data_dir() {
+                let _ = audit::record(
+                    &dir,
+                    AuditEvent::SetupCompleted,
+                    serde_json::json!({ "method": "password", "vaultAvailable": false }),
+                );
+            }
             Ok(UnlockResult::UnlockedFromPassword)
         }
         SetupMethod::VaultAndPassword { password, argon2 } => {
@@ -253,6 +268,16 @@ pub async fn encryption_setup(
             let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
             atomic_write(&dek_path, &blob)?;
             state.install(dek).await;
+            if let Ok(dir) = app.path().app_data_dir() {
+                let _ = audit::record(
+                    &dir,
+                    AuditEvent::SetupCompleted,
+                    serde_json::json!({
+                        "method": "vault-and-password",
+                        "vaultAvailable": true,
+                    }),
+                );
+            }
             Ok(UnlockResult::UnlockedFromVault)
         }
     }
@@ -296,6 +321,11 @@ pub async fn encryption_unlock(
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
             state.install(dek).await;
             let _ = app.emit(EVENT_UNLOCKED, ());
+            let _ = audit::record(
+                &dir,
+                AuditEvent::UnlockSuccess,
+                serde_json::json!({ "method": "vault" }),
+            );
             // Vault unlock is silent and has no failed-attempt history
             // to reset; password-mode lockouts live in their own file
             // and are untouched here.
@@ -318,11 +348,25 @@ pub async fn encryption_unlock(
                     lockout.record_success();
                     let _ = lockout.save(&dir);
                     let _ = app.emit(EVENT_UNLOCKED, ());
+                    let _ = audit::record(
+                        &dir,
+                        AuditEvent::UnlockSuccess,
+                        serde_json::json!({ "method": "password" }),
+                    );
                     Ok(UnlockResult::UnlockedFromPassword)
                 }
                 Err(password_wrap::WrapError::AuthenticationFailed) => {
                     lockout.record_failure();
                     let _ = lockout.save(&dir);
+                    let _ = audit::record(
+                        &dir,
+                        AuditEvent::UnlockFailure,
+                        serde_json::json!({
+                            "reason": "wrong-password",
+                            "failedAttempts": lockout.failed_attempts,
+                            "remainingCooldownMs": lockout.remaining_cooldown_ms(),
+                        }),
+                    );
                     Ok(UnlockResult::WrongPassword)
                 }
                 Err(e) => Err(e.to_string()),
@@ -339,6 +383,9 @@ pub async fn encryption_lock(
 ) -> Result<(), String> {
     state.lock().await;
     let _ = app.emit(EVENT_LOCKED, ());
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = audit::record(&dir, AuditEvent::Locked, serde_json::json!({}));
+    }
     Ok(())
 }
 
@@ -376,6 +423,13 @@ pub async fn encryption_change_password(
     let new_blob =
         password_wrap::wrap(&new_password, &dek, argon).map_err(|e| format!("wrap: {e}"))?;
     atomic_write(&dek_path, &new_blob)?;
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = audit::record(
+            &dir,
+            AuditEvent::PasswordChanged,
+            serde_json::json!({}),
+        );
+    }
     // If the live state was previously locked, leave it locked — the
     // caller decides whether to unlock automatically. If already
     // unlocked, the in-memory DEK is unchanged so nothing else needs
@@ -438,6 +492,20 @@ pub async fn encryption_migrate_settings(
     // want a missing original.
     std::fs::rename(&source, &backup).map_err(|e| format!("archive backup: {e}"))?;
 
+    let _ = audit::record(
+        &dir,
+        AuditEvent::SettingsMigrated,
+        serde_json::json!({
+            "bytesIn": bytes_in,
+            "bytesOut": bytes_out,
+            "mode": match mode {
+                MasterKeyStorage::Vault => "vault",
+                MasterKeyStorage::Password => "password",
+                MasterKeyStorage::VaultAndPassword => "vault-and-password",
+            },
+        }),
+    );
+
     Ok(MigrationReport {
         source_path: source.to_string_lossy().into_owned(),
         destination_path: destination.to_string_lossy().into_owned(),
@@ -492,6 +560,12 @@ pub async fn encryption_disable_settings(
     atomic_write(&destination, body.as_bytes())?;
     // Now safe to delete the encrypted file.
     std::fs::remove_file(&source).map_err(|e| format!("remove settings.enc: {e}"))?;
+
+    let _ = audit::record(
+        &dir,
+        AuditEvent::SettingsDecrypted,
+        serde_json::json!({ "bytesIn": bytes_in, "bytesOut": bytes_out }),
+    );
 
     Ok(DisableSettingsReport {
         source_path: source.to_string_lossy().into_owned(),
@@ -621,6 +695,17 @@ pub async fn encryption_rotate_master_key(
     let _ = lockout.save(&dir);
     let _ = app.emit(EVENT_UNLOCKED, ());
 
+    let _ = audit::record(
+        &dir,
+        AuditEvent::KeyRotated,
+        serde_json::json!({
+            "artifactsRewritten": artifacts_rewritten,
+            "bytesRewritten": bytes_rewritten,
+            "vaultUpdated": vault_updated,
+            "dekEncUpdated": dek_enc_updated,
+        }),
+    );
+
     Ok(RotateReport {
         artifacts_rewritten,
         bytes_rewritten,
@@ -636,6 +721,7 @@ pub async fn encryption_rotate_master_key(
 /// import on a different machine.
 #[tauri::command]
 pub async fn encryption_export_portable_dek(
+    app: AppHandle,
     state: State<'_, EncryptionState>,
     destination_path: String,
     password: String,
@@ -659,7 +745,18 @@ pub async fn encryption_export_portable_dek(
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
     }
     atomic_write(&dest, &blob)?;
-    Ok(blob.len() as u64)
+    let bytes = blob.len() as u64;
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = audit::record(
+            &dir,
+            AuditEvent::PortableExported,
+            serde_json::json!({
+                "destinationPath": destination_path,
+                "bytes": bytes,
+            }),
+        );
+    }
+    Ok(bytes)
 }
 
 /// Import a portable wrapped DEK and adopt it as the local master
@@ -708,7 +805,42 @@ pub async fn encryption_import_portable_dek(
     lockout.record_success();
     let _ = lockout.save(&dir);
     let _ = app.emit(EVENT_UNLOCKED, ());
+    let _ = audit::record(
+        &dir,
+        AuditEvent::PortableImported,
+        serde_json::json!({ "sourcePath": source_path }),
+    );
 
+    Ok(())
+}
+
+// ─── Phase 7: audit log read / clear commands ──────────────────────
+
+/// Return the most recent `limit` audit entries (default 100). The
+/// Settings → Security panel calls this on render to show recent
+/// activity.
+#[tauri::command]
+pub async fn encryption_audit_read(
+    app: AppHandle,
+    limit: Option<u32>,
+) -> Result<Vec<AuditEntry>, String> {
+    let dir = ensure_app_data_dir(&app)?;
+    let lim = limit.unwrap_or(100) as usize;
+    audit::read_tail(&dir, lim).map_err(|e| e.to_string())
+}
+
+/// Truncate the audit log. Stamps a `log-cleared` entry immediately
+/// afterwards so the gap is itself a recorded event.
+#[tauri::command]
+pub async fn encryption_audit_clear(app: AppHandle) -> Result<(), String> {
+    let dir = ensure_app_data_dir(&app)?;
+    audit::clear(&dir).map_err(|e| e.to_string())?;
+    // Re-record the clear so it's visible in `tail -f` immediately.
+    let _ = audit::record(
+        &dir,
+        AuditEvent::Locked,
+        serde_json::json!({ "note": "audit-log-cleared" }),
+    );
     Ok(())
 }
 

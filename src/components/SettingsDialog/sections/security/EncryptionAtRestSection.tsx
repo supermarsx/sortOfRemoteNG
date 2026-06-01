@@ -33,6 +33,7 @@ import React, { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Check,
+  ClipboardList,
   Database,
   Download,
   FileWarning,
@@ -58,6 +59,7 @@ import { InfoTooltip } from "../../../ui/InfoTooltip";
 import { useEncryption } from "../../../../hooks/settings/useEncryption";
 import {
   ARGON2_OWASP,
+  AUDIT_EVENT_LABELS,
   ARTIFACT_LABELS,
   describeStorage,
   type Argon2Params,
@@ -927,6 +929,82 @@ const EncryptionAtRestSection: React.FC = () => {
               </tbody>
             </table>
           </div>
+        </Card>
+      </div>
+
+      {/* ── Audit log ────────────────────────────────────────────── */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<ClipboardList className="w-4 h-4 text-primary" />}
+          title={
+            <span className="flex items-center gap-2">
+              Audit log
+              <InfoTooltip text="Append-only log of every state-changing encryption operation. Plain-text JSON-lines; lives at <app_data_dir>/logs/encryption-audit.log so it's readable when everything else on disk is encrypted." />
+            </span>
+          }
+        />
+        <Card>
+          {enc.audit.length === 0 ? (
+            <p className="text-xs text-[var(--color-textMuted)] italic">
+              No audit entries yet. Each successful or failed operation
+              records one line.
+            </p>
+          ) : (
+            <div className="text-xs">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-[var(--color-textSecondary)] border-b border-[var(--color-border)]/40">
+                    <th className="py-1.5 pr-3 font-normal">Timestamp</th>
+                    <th className="py-1.5 pr-3 font-normal">Event</th>
+                    <th className="py-1.5 font-normal">Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enc.audit
+                    .slice()
+                    .reverse()
+                    .slice(0, 25)
+                    .map((entry, i) => {
+                      const { ts, event, ...rest } = entry;
+                      const label = AUDIT_EVENT_LABELS[event] ?? event;
+                      const detail = Object.keys(rest).length
+                        ? JSON.stringify(rest)
+                        : "";
+                      return (
+                        <tr
+                          key={`${ts}-${i}`}
+                          className="border-b border-[var(--color-border)]/20 last:border-0"
+                        >
+                          <td className="py-1.5 pr-3 font-mono text-[10px] text-[var(--color-textMuted)] whitespace-nowrap">
+                            {ts}
+                          </td>
+                          <td className="py-1.5 pr-3 text-[var(--color-text)]">
+                            {label}
+                          </td>
+                          <td className="py-1.5 font-mono text-[10px] text-[var(--color-textSecondary)] truncate">
+                            {detail}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+              <div className="flex items-center justify-between mt-2 text-[10px] text-[var(--color-textMuted)]">
+                <span>
+                  Showing newest {Math.min(enc.audit.length, 25)} of{" "}
+                  {enc.audit.length} entries
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void enc.clearAudit()}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[var(--color-textSecondary)] hover:text-error"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear log
+                </button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </>

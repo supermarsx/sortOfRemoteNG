@@ -77,6 +77,29 @@ export interface LockoutSnapshot {
   remainingCooldownMs: number;
 }
 
+/** One audit-log entry. Mirrors the Rust `AuditEntry` struct:
+ *  timestamp + kebab-case event tag + free-form metadata flattened
+ *  at the root. */
+export interface AuditEntry {
+  ts: string;
+  event: string;
+  [key: string]: unknown;
+}
+
+/** Human-readable label for each audit event tag. */
+export const AUDIT_EVENT_LABELS: Record<string, string> = {
+  "setup-completed": "Setup completed",
+  "unlock-success": "Unlock succeeded",
+  "unlock-failure": "Unlock failed",
+  locked: "Locked",
+  "key-rotated": "Master key rotated",
+  "password-changed": "Password changed",
+  "settings-migrated": "Settings encrypted",
+  "settings-decrypted": "Settings decrypted",
+  "portable-exported": "Portable key exported",
+  "portable-imported": "Portable key imported",
+};
+
 /** Tauri event names broadcast by the encryption subsystem. */
 export const ENCRYPTION_EVENT_UNLOCKED = "encryption:unlocked";
 export const ENCRYPTION_EVENT_LOCKED = "encryption:locked";
