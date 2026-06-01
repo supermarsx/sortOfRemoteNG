@@ -32,8 +32,12 @@ import type {
 import { describeStorage } from "../../types/encryption/encryption";
 
 interface UnlockScreenProps {
-  /** Called once the state is unlocked. Caller hides the overlay. */
-  onUnlocked: () => void;
+  /** Called once the state is unlocked. Optional — the overlay
+   *  hides itself based on `shouldShowUnlockScreen(status)` so the
+   *  caller doesn't actually need to render-gate anything. Use this
+   *  hook when the caller wants to run a side-effect (toast, audit
+   *  log, focus restore) on unlock. */
+  onUnlocked?: () => void;
   /** Optional label override, e.g. translated strings supplied by the
    *  caller. Falls back to English defaults. */
   labels?: Partial<Labels>;
@@ -130,7 +134,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   useEffect(() => {
     if (!status) return;
     if (status.unlocked) {
-      onUnlocked();
+      onUnlocked?.();
       return;
     }
     if (
@@ -145,7 +149,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   // Auto-dismiss the instant the state flips to unlocked, regardless of
   // which window or method triggered it.
   useEffect(() => {
-    if (status?.unlocked) onUnlocked();
+    if (status?.unlocked) onUnlocked?.();
   }, [status?.unlocked, onUnlocked]);
 
   const handleSubmit = async () => {

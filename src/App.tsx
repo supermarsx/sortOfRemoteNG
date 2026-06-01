@@ -25,6 +25,7 @@ import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
+import { UnlockScreen } from "./components/encryption/UnlockScreen";
 import { Sidebar } from "./components/connection/Sidebar";
 import { SessionTabs } from "./components/session/SessionTabs";
 import { SessionViewer } from "./components/session/SessionViewer";
@@ -1416,6 +1417,15 @@ const App: React.FC = () => (
       <ConnectionProvider>
         <ErrorBoundary>
           <AppContent />
+          {/*
+            Encryption-at-rest unlock overlay. Self-hides when no master
+            key exists on disk yet (the vast majority of users today) or
+            when the state is already unlocked. Renders above the main
+            app via `fixed inset-0 z-[200]` so users can't interact with
+            anything underneath while it's open. See
+            `shouldShowUnlockScreen` for the exact predicate.
+          */}
+          <UnlockScreen />
         </ErrorBoundary>
       </ConnectionProvider>
     </SettingsProvider>
