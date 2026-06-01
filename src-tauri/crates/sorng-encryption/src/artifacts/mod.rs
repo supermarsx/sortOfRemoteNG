@@ -6,6 +6,9 @@
 //! sub-key and otherwise stay pure — they don't touch the vault,
 //! `dek.enc`, or the unlock UX.
 
+pub mod backups;
+pub mod logs;
+pub mod macros;
 pub mod recording_meta;
 pub mod recording_media;
 pub mod settings;

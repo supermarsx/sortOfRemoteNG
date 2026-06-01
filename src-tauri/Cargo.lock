@@ -10161,6 +10161,7 @@ dependencies = [
  "base64 0.21.7",
  "hkdf 0.12.4",
  "rand 0.8.6",
+ "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",

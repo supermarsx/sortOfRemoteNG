@@ -19,6 +19,9 @@ serde_json = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 
+# Log redaction
+regex = { workspace = true }
+
 # Async
 tokio = { workspace = true }
 
