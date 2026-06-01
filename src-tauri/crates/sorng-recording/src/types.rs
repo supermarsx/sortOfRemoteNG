@@ -404,8 +404,71 @@ pub struct SavedRecordingEnvelope {
     pub connection_name: Option<String>,
     pub host: Option<String>,
     /// JSON-serialised inner recording (compressed or not).
+    ///
+    /// Empty string when [`media_blob_basename`] is set — the actual
+    /// media bytes live in a sidecar file under the recordings root
+    /// and are loaded lazily via
+    /// [`crate::storage::load_media_blob_dispatched`]. Inline `data`
+    /// remains the path for text-encoded recordings (asciicast,
+    /// script, JSON, HAR, CSV, raw terminal) where there's no random-
+    /// access seek requirement and the v2 envelope codec handles the
+    /// whole blob fine.
     pub data: String,
+    /// When `Some(name)`, the recording's media bytes live in a
+    /// sidecar file at `<recordings_root>/<name>` (or
+    /// `<recordings_root>/<name>.enc` when the encryption state is
+    /// unlocked at write-time). The metadata envelope `data` field
+    /// stays empty in that case.
+    ///
+    /// Set automatically by `save_to_library` for any format that's
+    /// binary-shaped (`FrameSequence`, `Raw`, `Custom` plus the
+    /// video formats); the legacy text-encoded formats stay inline.
+    /// `None` on every pre-Phase-2c envelope, which keeps the read
+    /// path backward-compatible — existing libraries continue to
+    /// load without migration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_blob_basename: Option<String>,
 }
+
+impl SavedRecordingEnvelope {
+    /// Whether this envelope's payload lives in a media sidecar
+    /// rather than the inline `data` field. Used by the service to
+    /// decide between v2 recording-meta and the chunked-stream codec.
+    pub fn has_media_sidecar(&self) -> bool {
+        self.media_blob_basename
+            .as_deref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+    }
+}
+
+/// Heuristic used by `save_to_library` + library scans to decide
+/// whether a given `(format, size_bytes)` pair should land in a media
+/// sidecar instead of inline in the metadata envelope.
+///
+/// Returns `true` when the format is binary-shaped (frame sequences,
+/// raw / custom video) **or** the payload is over the [`MEDIA_SIDECAR_THRESHOLD_BYTES`]
+/// budget. Text-encoded formats (asciicast, script, JSON, HAR, CSV)
+/// stay inline regardless of size — the v2 recording-meta codec
+/// handles big JSON blobs fine and inlining keeps the file count down.
+pub fn should_use_media_sidecar(format: &ExportFormat, size_bytes: u64) -> bool {
+    if size_bytes > MEDIA_SIDECAR_THRESHOLD_BYTES {
+        return true;
+    }
+    matches!(
+        format,
+        ExportFormat::FrameSequence | ExportFormat::Raw | ExportFormat::Custom(_),
+    )
+}
+
+/// Above this plaintext size, the chunked-stream codec wins on every
+/// dimension: it keeps the metadata JSON small enough to scan-load
+/// the whole library, and gives the playback path random-access seek
+/// without decrypting the entire payload. 4 MiB is a conservative
+/// threshold — most asciicast / HAR exports clear it by an order of
+/// magnitude, and the few that don't survive the inline path with no
+/// noticeable cost.
+pub const MEDIA_SIDECAR_THRESHOLD_BYTES: u64 = 4 * 1024 * 1024;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Configuration types

@@ -1020,6 +1020,7 @@ mod enc_dispatch_tests {
             connection_name: Some("test".to_string()),
             host: Some("example.com".to_string()),
             data: "fake-data".to_string(),
+            media_blob_basename: None,
         }
     }
 

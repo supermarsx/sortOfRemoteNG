@@ -59,20 +59,134 @@ impl RecordingService {
     }
 
     /// Persist an envelope through the dispatched codec when an
-    /// encryption state is installed; otherwise fall back to the legacy
-    /// plaintext path. Centralised so individual call-sites stay short.
+    /// encryption state is installed; otherwise fall back to the
+    /// legacy plaintext path.
+    ///
+    /// Phase 2c — when the envelope's `format` + `size_bytes` cross
+    /// the [`should_use_media_sidecar`] threshold, the payload is
+    /// written to a sidecar file via
+    /// [`storage::save_media_blob_dispatched`] before the metadata
+    /// envelope is persisted. The envelope itself is rewritten with
+    /// `data` cleared and `media_blob_basename = Some(<id>.media)`
+    /// so the load path can lazy-restore the bytes.
+    /// Returns the envelope as it now exists on disk after persist —
+    /// in particular, with `media_blob_basename` populated and `data`
+    /// cleared if the payload was peeled into a sidecar. Callers
+    /// (`save_to_library` + the `encode_compress_save_*` chain) use
+    /// this to keep the in-memory library cache consistent with disk.
     async fn persist_envelope(
         &self,
         root: PathBuf,
         envelope: SavedRecordingEnvelope,
-    ) -> RecordingResult<()> {
-        if let Some(enc) = self.enc_handle().await {
-            storage::save_envelope_dispatched(&root, &envelope, &enc).await
-        } else {
-            tokio::task::spawn_blocking(move || storage::save_envelope(&root, &envelope))
-                .await
-                .map_err(|e| RecordingError::Internal(e.to_string()))?
+    ) -> RecordingResult<SavedRecordingEnvelope> {
+        let mut env = envelope;
+
+        // Decide whether to peel the payload into a sidecar. Skip the
+        // check entirely when the envelope already has one — that path
+        // is taken by `update_library_tags` / `rename_in_library`,
+        // which re-save metadata only; we mustn't double-write a
+        // sidecar for the same blob on every metadata edit.
+        if !env.has_media_sidecar()
+            && !env.data.is_empty()
+            && crate::types::should_use_media_sidecar(&env.format, env.size_bytes)
+        {
+            let basename = format!("{}.media", env.id);
+            let bytes = std::mem::take(&mut env.data).into_bytes();
+            if let Some(enc) = self.enc_handle().await {
+                storage::save_media_blob_dispatched(&root, &basename, &bytes, &enc).await?;
+            } else {
+                // No master state — store the sidecar as plaintext so
+                // the layout stays consistent (the loader will not
+                // expect inline `data`).
+                let dir = root.join("recordings");
+                std::fs::create_dir_all(&dir).map_err(|e| {
+                    RecordingError::StorageError(format!("mkdir media: {}", e))
+                })?;
+                std::fs::write(dir.join(&basename), &bytes).map_err(|e| {
+                    RecordingError::StorageError(format!("write media: {}", e))
+                })?;
+            }
+            env.media_blob_basename = Some(basename);
         }
+
+        if let Some(enc) = self.enc_handle().await {
+            storage::save_envelope_dispatched(&root, &env, &enc).await?;
+        } else {
+            let to_save = env.clone();
+            tokio::task::spawn_blocking(move || storage::save_envelope(&root, &to_save))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        }
+        Ok(env)
+    }
+
+    /// Lazy-load the media payload of an envelope that was persisted
+    /// with a sidecar. Pre-2c envelopes (`media_blob_basename.is_none()`)
+    /// already carry their bytes inline, so the caller can short-
+    /// circuit on `envelope.data` directly — this method only does
+    /// work for the sidecar case.
+    ///
+    /// Returns the raw payload bytes; the caller decodes / decompresses
+    /// per the envelope's `compression` + `format` fields.
+    pub async fn read_envelope_media(
+        &self,
+        envelope: &SavedRecordingEnvelope,
+    ) -> RecordingResult<Vec<u8>> {
+        if !envelope.has_media_sidecar() {
+            // Backward-compat path: inline payload, return it directly.
+            return Ok(envelope.data.clone().into_bytes());
+        }
+        let root = self.storage_root.lock().await.clone();
+        let basename = envelope.media_blob_basename.as_deref().unwrap();
+        if let Some(enc) = self.enc_handle().await {
+            storage::load_media_blob_dispatched(&root, basename, &enc).await
+        } else {
+            let path = root.join("recordings").join(basename);
+            std::fs::read(&path).map_err(|e| {
+                RecordingError::StorageError(format!("read media {}: {}", path.display(), e))
+            })
+        }
+    }
+
+    /// Random-access chunk read for a sidecar payload — surfaces the
+    /// chunked-stream codec to the playback path. Falls back to a
+    /// sliced inline read for legacy envelopes so callers don't
+    /// branch on the format.
+    pub async fn read_envelope_media_chunk(
+        &self,
+        envelope: &SavedRecordingEnvelope,
+        chunk_index: u32,
+        chunk_size_hint: usize,
+    ) -> RecordingResult<Vec<u8>> {
+        if !envelope.has_media_sidecar() {
+            let bytes = envelope.data.as_bytes();
+            let start = (chunk_index as usize)
+                .checked_mul(chunk_size_hint)
+                .ok_or_else(|| RecordingError::StorageError("chunk overflow".into()))?;
+            if start >= bytes.len() {
+                return Err(RecordingError::StorageError(format!(
+                    "chunk {} past end of inline payload",
+                    chunk_index
+                )));
+            }
+            let end = (start + chunk_size_hint).min(bytes.len());
+            return Ok(bytes[start..end].to_vec());
+        }
+        let root = self.storage_root.lock().await.clone();
+        let basename = envelope.media_blob_basename.as_deref().unwrap();
+        let enc = self.enc_handle().await.ok_or_else(|| {
+            RecordingError::StorageError(
+                "encryption state not installed; cannot read media chunk".into(),
+            )
+        })?;
+        storage::read_media_chunk_dispatched(
+            &root,
+            basename,
+            chunk_index,
+            chunk_size_hint,
+            &enc,
+        )
+        .await
     }
 
     async fn persist_macro(
@@ -655,11 +769,16 @@ impl RecordingService {
 
     pub async fn save_to_library(&self, envelope: SavedRecordingEnvelope) -> RecordingResult<()> {
         let root = self.storage_root.lock().await.clone();
-        {
-            let mut eng = self.engine.lock().await;
-            eng.save_to_library(envelope.clone());
-        }
-        self.persist_envelope(root, envelope).await
+        // Persist first so we have the post-peel envelope shape (with
+        // `data` cleared and `media_blob_basename` populated when the
+        // sidecar codec ran). Caching the pre-peel envelope in the
+        // engine would leave the in-memory library diverging from
+        // disk — every subsequent `get_from_library` would hand the
+        // UI inline bytes the next process restart can't reproduce.
+        let persisted = self.persist_envelope(root, envelope).await?;
+        let mut eng = self.engine.lock().await;
+        eng.save_to_library(persisted);
+        Ok(())
     }
 
     pub async fn get_from_library(&self, id: &str) -> Option<SavedRecordingEnvelope> {
@@ -688,9 +807,13 @@ impl RecordingService {
             eng.rename_in_library(id, name)?;
         }
         // Re-save updated envelope to disk through the dispatched path.
+        // Metadata-only edit: the envelope already carries
+        // `media_blob_basename` from the original save, and `data` is
+        // empty, so `persist_envelope` short-circuits the sidecar
+        // peel and only rewrites the metadata file.
         let envelope = self.engine.lock().await.get_from_library(id);
         if let Some(env) = envelope {
-            self.persist_envelope(root, env).await?;
+            let _ = self.persist_envelope(root, env).await?;
         }
         Ok(())
     }
@@ -703,22 +826,45 @@ impl RecordingService {
         }
         let envelope = self.engine.lock().await.get_from_library(id);
         if let Some(env) = envelope {
-            self.persist_envelope(root, env).await?;
+            let _ = self.persist_envelope(root, env).await?;
         }
         Ok(())
     }
 
     pub async fn delete_from_library(&self, id: &str) -> RecordingResult<()> {
         let root = self.storage_root.lock().await.clone();
+        // Capture the media sidecar name (if any) before the engine
+        // drops the in-memory entry — we need it to delete the
+        // payload file alongside the metadata.
+        let sidecar = {
+            let eng = self.engine.lock().await;
+            eng.get_from_library(id)
+                .and_then(|env| env.media_blob_basename.clone())
+        };
         {
             let mut eng = self.engine.lock().await;
             eng.delete_from_library(id)?;
         }
-        // Delete both variants for safety during the migration window.
+        // Delete both metadata variants for safety during the
+        // v0/v2 migration window.
         let id_owned = id.to_string();
-        tokio::task::spawn_blocking(move || storage::delete_envelope_all_variants(&root, &id_owned))
+        let root_for_meta = root.clone();
+        tokio::task::spawn_blocking(move || {
+            storage::delete_envelope_all_variants(&root_for_meta, &id_owned)
+        })
+        .await
+        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        // Then the media sidecar — same both-variants policy so a
+        // post-migration stale plaintext is also swept.
+        if let Some(basename) = sidecar {
+            let root_for_media = root.clone();
+            tokio::task::spawn_blocking(move || {
+                storage::delete_media_all_variants(&root_for_media, &basename)
+            })
             .await
-            .map_err(|e| RecordingError::Internal(e.to_string()))?
+            .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        }
+        Ok(())
     }
 
     pub async fn clear_library(&self) -> RecordingResult<usize> {
@@ -873,6 +1019,11 @@ impl RecordingService {
             connection_name: None,
             host: Some(recording.metadata.host.clone()),
             data,
+            // Phase 2c — `persist_envelope` decides whether to peel
+            // the payload into a sidecar; constructors always start
+            // with the inline form so the routing logic stays in one
+            // place.
+            media_blob_basename: None,
         };
 
         self.save_to_library(envelope).await?;
@@ -925,6 +1076,11 @@ impl RecordingService {
             connection_name: None,
             host: Some(recording.metadata.host.clone()),
             data,
+            // Phase 2c — `persist_envelope` decides whether to peel
+            // the payload into a sidecar; constructors always start
+            // with the inline form so the routing logic stays in one
+            // place.
+            media_blob_basename: None,
         };
 
         self.save_to_library(envelope).await?;
@@ -976,6 +1132,11 @@ impl RecordingService {
             connection_name: Some(recording.metadata.connection_name.clone()),
             host: Some(recording.metadata.host.clone()),
             data,
+            // Phase 2c — `persist_envelope` decides whether to peel
+            // the payload into a sidecar; constructors always start
+            // with the inline form so the routing logic stays in one
+            // place.
+            media_blob_basename: None,
         };
 
         self.save_to_library(envelope).await?;
@@ -989,4 +1150,249 @@ pub type RecordingServiceState = std::sync::Arc<tokio::sync::Mutex<RecordingServ
 /// Create a new service state ready for `app.manage()`.
 pub fn new_service_state(app_data_dir: &str) -> RecordingServiceState {
     std::sync::Arc::new(tokio::sync::Mutex::new(RecordingService::new(app_data_dir)))
+}
+
+#[cfg(test)]
+mod phase_2c_split_tests {
+    //! Phase 2c — media sidecar split-out, exercised via the live
+    //! `RecordingService`. Covers the discriminating cases:
+    //!   - large binary formats peel into a sidecar
+    //!   - text formats stay inline regardless of size
+    //!   - metadata-only edits (rename / retag) don't double-write
+    //!   - delete sweeps both metadata and sidecar
+    //!   - `read_envelope_media` round-trips both inline and sidecar
+    //!     envelopes through the same caller-facing API
+    //!   - legacy envelopes (no sidecar field on disk) keep loading
+    //!     after the schema change
+    use super::*;
+    use sorng_encryption::{EncryptionState, MasterDek};
+    use tempfile::tempdir;
+
+    fn fixture_envelope(
+        id: &str,
+        format: ExportFormat,
+        size: u64,
+        payload: String,
+    ) -> SavedRecordingEnvelope {
+        SavedRecordingEnvelope {
+            id: id.to_string(),
+            name: format!("rec-{}", id),
+            description: None,
+            protocol: RecordingProtocol::Ssh,
+            saved_at: chrono::Utc::now(),
+            duration_ms: 0,
+            size_bytes: size,
+            compression: CompressionAlgorithm::None,
+            format,
+            tags: vec![],
+            connection_id: None,
+            connection_name: Some("t".to_string()),
+            host: Some("h".to_string()),
+            data: payload,
+            media_blob_basename: None,
+        }
+    }
+
+    async fn fresh_service(root: &std::path::Path, unlocked: bool) -> RecordingService {
+        let svc = RecordingService::new(root.to_string_lossy().as_ref());
+        if unlocked {
+            let state = EncryptionState::new();
+            state
+                .install(MasterDek::from_bytes(&[5u8; 32]).unwrap())
+                .await;
+            svc.set_encryption_state(std::sync::Arc::new(state)).await;
+        }
+        svc
+    }
+
+    #[tokio::test]
+    async fn large_binary_format_peels_into_sidecar() {
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        // FrameSequence is binary-shaped: triggers the sidecar even
+        // below the size threshold (sidecar predicate ORs format +
+        // size).
+        let env = fixture_envelope(
+            "f1",
+            ExportFormat::FrameSequence,
+            2048,
+            "binary-blob-bytes".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        let stored = svc.get_from_library("f1").await.unwrap();
+        assert!(stored.has_media_sidecar());
+        assert!(stored.data.is_empty(), "inline data must be cleared");
+        assert_eq!(stored.media_blob_basename.as_deref(), Some("f1.media"));
+    }
+
+    #[tokio::test]
+    async fn text_format_under_threshold_stays_inline() {
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        // Asciicast is text-shaped + small: stays inline so a single
+        // metadata read still recovers the recording without a second
+        // file open.
+        let env = fixture_envelope(
+            "t1",
+            ExportFormat::Asciicast,
+            500,
+            "asciicast-body".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        let stored = svc.get_from_library("t1").await.unwrap();
+        assert!(!stored.has_media_sidecar());
+        assert_eq!(stored.data, "asciicast-body");
+    }
+
+    #[tokio::test]
+    async fn text_format_over_threshold_promotes_to_sidecar() {
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        // Asciicast that's larger than the threshold still pages out:
+        // the chunked-stream codec wins on seek and on metadata scan
+        // bloat regardless of the textual nature.
+        let big = "x".repeat((crate::types::MEDIA_SIDECAR_THRESHOLD_BYTES + 1) as usize);
+        let env = fixture_envelope(
+            "big",
+            ExportFormat::Asciicast,
+            big.len() as u64,
+            big,
+        );
+        svc.save_to_library(env).await.unwrap();
+        let stored = svc.get_from_library("big").await.unwrap();
+        assert!(stored.has_media_sidecar());
+        assert!(stored.data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn metadata_only_edits_do_not_double_write_sidecar() {
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let env = fixture_envelope(
+            "m1",
+            ExportFormat::FrameSequence,
+            1024,
+            "original".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        // Rename → metadata re-save without touching the payload.
+        // The sidecar file must keep its original byte count; the
+        // persistor must not interpret an empty `data` as "write a
+        // new empty media blob".
+        svc.rename_in_library("m1", "renamed".to_string())
+            .await
+            .unwrap();
+        let after = svc.get_from_library("m1").await.unwrap();
+        assert_eq!(after.name, "renamed");
+        assert!(after.has_media_sidecar());
+        // Payload still round-trips intact.
+        let bytes = svc.read_envelope_media(&after).await.unwrap();
+        assert_eq!(bytes, b"original");
+    }
+
+    #[tokio::test]
+    async fn delete_sweeps_both_metadata_and_sidecar() {
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let env = fixture_envelope(
+            "d1",
+            ExportFormat::FrameSequence,
+            1024,
+            "payload".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        // Confirm the sidecar file is actually on disk before delete.
+        let sidecar_enc = tmp.path().join("recording/recordings/d1.media.enc");
+        assert!(sidecar_enc.exists(), "sidecar must exist pre-delete");
+        svc.delete_from_library("d1").await.unwrap();
+        assert!(!sidecar_enc.exists(), "sidecar must be swept on delete");
+    }
+
+    #[tokio::test]
+    async fn read_envelope_media_handles_inline_and_sidecar() {
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+
+        let inline = fixture_envelope(
+            "i1",
+            ExportFormat::Asciicast,
+            10,
+            "inline-body".to_string(),
+        );
+        svc.save_to_library(inline).await.unwrap();
+        let i = svc.get_from_library("i1").await.unwrap();
+        let i_bytes = svc.read_envelope_media(&i).await.unwrap();
+        assert_eq!(i_bytes, b"inline-body");
+
+        let sidecar = fixture_envelope(
+            "s1",
+            ExportFormat::FrameSequence,
+            1024,
+            "sidecar-body".to_string(),
+        );
+        svc.save_to_library(sidecar).await.unwrap();
+        let s = svc.get_from_library("s1").await.unwrap();
+        let s_bytes = svc.read_envelope_media(&s).await.unwrap();
+        assert_eq!(s_bytes, b"sidecar-body");
+    }
+
+    #[tokio::test]
+    async fn locked_state_writes_plaintext_sidecar() {
+        let tmp = tempdir().unwrap();
+        // Encryption state installed but never unlocked → media falls
+        // back to plain `<basename>` per Phase 2b policy, mirroring
+        // the metadata side.
+        let svc = RecordingService::new(tmp.path().to_string_lossy().as_ref());
+        svc.set_encryption_state(std::sync::Arc::new(EncryptionState::new()))
+            .await;
+        let env = fixture_envelope(
+            "L1",
+            ExportFormat::FrameSequence,
+            1024,
+            "locked-payload".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        let plain = tmp.path().join("recording/recordings/L1.media");
+        let enc = tmp.path().join("recording/recordings/L1.media.enc");
+        assert!(plain.exists());
+        assert!(!enc.exists());
+    }
+
+    #[tokio::test]
+    async fn legacy_envelope_without_sidecar_field_still_loads() {
+        // Forward-compat: an envelope persisted before this commit
+        // has no `media_blob_basename` on disk. `serde(default,
+        // skip_serializing_if)` means it deserialises as `None` and
+        // the load path treats it as inline-data.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), false).await;
+        // Hand-write a legacy envelope JSON shape.
+        let recordings_dir = tmp.path().join("recording/recordings");
+        std::fs::create_dir_all(&recordings_dir).unwrap();
+        let legacy = serde_json::json!({
+            "id": "legacy",
+            "name": "rec-legacy",
+            "description": null,
+            "protocol": "ssh",
+            "saved_at": chrono::Utc::now(),
+            "duration_ms": 0,
+            "size_bytes": 9,
+            "compression": "none",
+            "format": "asciicast",
+            "tags": [],
+            "connection_id": null,
+            "connection_name": "t",
+            "host": "h",
+            "data": "asciicast"
+        });
+        std::fs::write(
+            recordings_dir.join("legacy.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
+        svc.init().await.unwrap();
+        let loaded = svc.get_from_library("legacy").await.unwrap();
+        assert!(!loaded.has_media_sidecar());
+        assert_eq!(loaded.data, "asciicast");
+    }
 }
