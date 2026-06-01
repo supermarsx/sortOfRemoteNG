@@ -28,7 +28,7 @@ pub const KEY_LEN: usize = 32;
 /// future revision of the labelling scheme. Validated by
 /// `every_artifact_label_carries_the_prefix`.
 #[cfg(test)]
-const HKDF_INFO_PREFIX: &str = "sornG-v1::";
+const HKDF_INFO_PREFIX: &str = "sorng-v1::";
 
 /// The closed set of artifacts that can derive a sub-key from the master.
 ///
@@ -62,13 +62,13 @@ impl ArtifactKind {
     /// changing the returned string requires a migration.
     pub fn label(self) -> &'static str {
         match self {
-            ArtifactKind::Connections => "sornG-v1::connections",
-            ArtifactKind::Settings => "sornG-v1::settings",
-            ArtifactKind::RecordingsMeta => "sornG-v1::recordings-meta",
-            ArtifactKind::RecordingsMedia => "sornG-v1::recordings-media",
-            ArtifactKind::Backups => "sornG-v1::backups",
-            ArtifactKind::Logs => "sornG-v1::logs",
-            ArtifactKind::Macros => "sornG-v1::macros",
+            ArtifactKind::Connections => "sorng-v1::connections",
+            ArtifactKind::Settings => "sorng-v1::settings",
+            ArtifactKind::RecordingsMeta => "sorng-v1::recordings-meta",
+            ArtifactKind::RecordingsMedia => "sorng-v1::recordings-media",
+            ArtifactKind::Backups => "sorng-v1::backups",
+            ArtifactKind::Logs => "sorng-v1::logs",
+            ArtifactKind::Macros => "sorng-v1::macros",
         }
     }
 

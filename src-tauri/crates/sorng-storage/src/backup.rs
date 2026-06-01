@@ -368,7 +368,7 @@ pub struct BackupService {
     data_path: String,
     /// Phase 3a encryption-at-rest handle. When `Some` and unlocked,
     /// `perform_backup` writes through the v2 envelope codec
-    /// (`sornG-v1::backups` sub-key) instead of the legacy
+    /// (`sorng-v1::backups` sub-key) instead of the legacy
     /// PBKDF2/600k SORNG1 path. Reads always magic-byte sniff so
     /// existing SORNG1 backups remain restorable for one release.
     encryption_state:
@@ -1106,7 +1106,7 @@ impl BackupService {
         let file_data =
             fs::read(&path).map_err(|e| format!("Failed to read backup file: {}", e))?;
 
-        // Magic-byte dispatch on read. v2 envelope (sornG-v1) wins,
+        // Magic-byte dispatch on read. v2 envelope (sorng-v1) wins,
         // legacy SORNG1 stays supported, otherwise treat as plaintext.
         let decrypted_data = if self.is_v2_backup(&file_data) {
             self.decrypt_backup_v2(&file_data).await?

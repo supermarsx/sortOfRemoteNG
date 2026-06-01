@@ -29,7 +29,7 @@ const baseStatus: EncryptionStatus = {
   vaultAvailable: false,
   vaultHasMasterDek: false,
   vaultBackend: "not detected",
-  artifactLabels: ["sornG-v1::settings"],
+  artifactLabels: ["sorng-v1::settings"],
   passwordWrapPresent: true,
   settingsEncryptedOnDisk: true,
   settingsPlaintextPresent: false,

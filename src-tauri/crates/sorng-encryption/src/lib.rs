@@ -7,7 +7,7 @@
 //!
 //! - the **master DEK** in memory (`MasterDek`, [`Zeroizing`]-wrapped 32 bytes),
 //! - the **HKDF-SHA256 sub-key derivation** for each artifact, with a stable
-//!   `"sornG-v1::<artifact>"` label,
+//!   `"sorng-v1::<artifact>"` label,
 //! - the **file envelope codec** — a 64-byte unencrypted preamble followed by
 //!   an AES-256-GCM ciphertext + tag. The preamble carries the magic /
 //!   version / master-key-storage mode / Argon2id parameters / DEK-envelope
@@ -30,7 +30,7 @@
 //!  OS vault entry              ┌─ MasterDek (32 random bytes, Zeroizing)
 //!   master-dek (vault mode)   ─┤
 //!   wrapped-dek (pw / hybrid) ─┘   │
-//!                                  │ HKDF-SHA256(ikm=master, info="sornG-v1::<artifact>")
+//!                                  │ HKDF-SHA256(ikm=master, info="sorng-v1::<artifact>")
 //!                                  ▼
 //!                              SubKey (32 bytes) — used to AES-256-GCM
 //!                                                  each artifact's file.

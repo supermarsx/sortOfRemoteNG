@@ -798,7 +798,7 @@ const EncryptionAtRestSection: React.FC = () => {
               label="Destination path"
               value={portableExportPath}
               onChange={setPortableExportPath}
-              placeholder="/secure/backup/sornG-master.dek"
+              placeholder="/secure/backup/sorng-master.dek"
               infoTooltip="Absolute path on disk. The file is overwritten if it exists. Place it on removable media for offline backup."
             />
             <SettingsPasswordRow
@@ -864,7 +864,7 @@ const EncryptionAtRestSection: React.FC = () => {
               label="Source path"
               value={portableImportPath}
               onChange={setPortableImportPath}
-              placeholder="/secure/backup/sornG-master.dek"
+              placeholder="/secure/backup/sorng-master.dek"
               infoTooltip="Path to the .dek file produced by 'Export portable master key' on another machine."
             />
             <SettingsPasswordRow
@@ -978,7 +978,7 @@ const EncryptionAtRestSection: React.FC = () => {
               </thead>
               <tbody>
                 {(status?.artifactLabels ?? []).map((label) => {
-                  const isSettings = label === "sornG-v1::settings";
+                  const isSettings = label === "sorng-v1::settings";
                   const isLive =
                     isSettings && status?.settingsEncryptedOnDisk;
                   return (

@@ -108,13 +108,13 @@ export const ENCRYPTION_EVENT_LOCKED = "encryption:locked";
  *  Rust `ArtifactKind::all()` slice so the UI can map labels to
  *  Settings hand-side decisions. */
 export const ARTIFACT_LABELS: Record<string, string> = {
-  "sornG-v1::connections": "Connections database",
-  "sornG-v1::settings": "Settings",
-  "sornG-v1::recordings-meta": "Recording metadata",
-  "sornG-v1::recordings-media": "Recording media files",
-  "sornG-v1::backups": "Backups",
-  "sornG-v1::logs": "Logs",
-  "sornG-v1::macros": "Macros library",
+  "sorng-v1::connections": "Connections database",
+  "sorng-v1::settings": "Settings",
+  "sorng-v1::recordings-meta": "Recording metadata",
+  "sorng-v1::recordings-media": "Recording media files",
+  "sorng-v1::backups": "Backups",
+  "sorng-v1::logs": "Logs",
+  "sorng-v1::macros": "Macros library",
 };
 
 /** Concise human description of a `MasterKeyStorage` value. */
