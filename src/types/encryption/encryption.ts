@@ -69,6 +69,18 @@ export interface MigrationReport {
   masterKeyStorage: MasterKeyStorage;
 }
 
+/** Snapshot of the password-unlock cool-down counters. Returned by
+ *  `encryption_lockout_state`. */
+export interface LockoutSnapshot {
+  failedAttempts: number;
+  lastFailureUnixMs: number;
+  remainingCooldownMs: number;
+}
+
+/** Tauri event names broadcast by the encryption subsystem. */
+export const ENCRYPTION_EVENT_UNLOCKED = "encryption:unlocked";
+export const ENCRYPTION_EVENT_LOCKED = "encryption:locked";
+
 /** Human-readable label for each artifact kind. Order matches the
  *  Rust `ArtifactKind::all()` slice so the UI can map labels to
  *  Settings hand-side decisions. */

@@ -38,6 +38,12 @@ const sampleStatus: EncryptionStatus = {
   settingsPlaintextPresent: false,
 };
 
+const zeroLockout = {
+  failedAttempts: 0,
+  lastFailureUnixMs: 0,
+  remainingCooldownMs: 0,
+};
+
 const setupStatus: EncryptionStatus = {
   ...sampleStatus,
   vaultHasMasterDek: true,
@@ -56,7 +62,18 @@ const migrationReport: MigrationReport = {
 };
 
 function makeInvoke(impl: (cmd: string, args?: any) => Promise<any>) {
-  return vi.fn((cmd: string, args?: any) => impl(cmd, args));
+  // Wrap the user impl so every test gets a default zero-lockout
+  // response without having to handle the new Phase 5 command
+  // explicitly. The user impl still wins if it returns its own value
+  // for `encryption_lockout_state`.
+  return vi.fn(async (cmd: string, args?: any) => {
+    try {
+      return await impl(cmd, args);
+    } catch (e) {
+      if (cmd === "encryption_lockout_state") return zeroLockout;
+      throw e;
+    }
+  });
 }
 
 let invokeImpl = vi.fn();
@@ -249,5 +266,58 @@ describe("useEncryption", () => {
     });
     expect(report).toEqual(migrationReport);
     expect(result.current.status).toEqual(setupStatus);
+  });
+
+  it("fetches lockout on mount and exposes the zero state", async () => {
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => {
+      expect(result.current.lockout).not.toBeNull();
+    });
+    expect(result.current.lockout).toEqual(zeroLockout);
+  });
+
+  it("forwards a non-zero lockout snapshot through to consumers", async () => {
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_lockout_state") {
+        return {
+          failedAttempts: 2,
+          lastFailureUnixMs: 1_000_000,
+          remainingCooldownMs: 12_345,
+        };
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => {
+      expect(result.current.lockout?.failedAttempts).toBe(2);
+    });
+    expect(result.current.lockout?.remainingCooldownMs).toBe(12_345);
+  });
+
+  it("unlock refreshes the lockout state too", async () => {
+    let lockoutCalls = 0;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_lockout_state") {
+        lockoutCalls += 1;
+        return zeroLockout;
+      }
+      if (cmd === "encryption_unlock") return "wrong-password";
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    const before = lockoutCalls;
+    await act(async () => {
+      await result.current.unlock("nope");
+    });
+    expect(lockoutCalls).toBeGreaterThan(before);
   });
 });

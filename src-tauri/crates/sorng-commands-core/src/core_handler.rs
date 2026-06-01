@@ -33,6 +33,7 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_lock"
             | "encryption_change_password"
             | "encryption_migrate_settings"
+            | "encryption_lockout_state"
             | "trust_verify_identity"
             | "trust_store_identity"
             | "trust_store_identity_with_reason"
@@ -1157,6 +1158,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         sorng_encryption::commands::encryption_lock,
         sorng_encryption::commands::encryption_change_password,
         sorng_encryption::commands::encryption_migrate_settings,
+        sorng_encryption::commands::encryption_lockout_state,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
         trust_store_commands::trust_store_identity,

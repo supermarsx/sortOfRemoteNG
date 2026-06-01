@@ -43,11 +43,13 @@ pub mod artifacts;
 pub mod commands;
 pub mod dek;
 pub mod envelope;
+pub mod lockout;
 pub mod password_wrap;
 pub mod state;
 
 pub use dek::{ArtifactKind, MasterDek, SubKey};
 pub use envelope::{EnvelopeError, EnvelopeHeader, MasterKeyStorage};
+pub use lockout::{LockoutState, LOCKOUT_FILENAME};
 pub use password_wrap::{Argon2Params, WrapError};
 pub use state::EncryptionState;
 
@@ -60,6 +62,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "encryption_lock",
     "encryption_change_password",
     "encryption_migrate_settings",
+    "encryption_lockout_state",
 ];
 
 /// Returns `true` if the given Tauri command name belongs to this crate.

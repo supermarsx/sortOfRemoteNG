@@ -19,9 +19,14 @@ import { getInvoke } from "../../utils/tauri/invoke";
 import type {
   Argon2Params,
   EncryptionStatus,
+  LockoutSnapshot,
   MigrationReport,
   SetupMethod,
   UnlockResult,
+} from "../../types/encryption/encryption";
+import {
+  ENCRYPTION_EVENT_LOCKED,
+  ENCRYPTION_EVENT_UNLOCKED,
 } from "../../types/encryption/encryption";
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -36,7 +41,13 @@ export interface UseEncryption {
   status: EncryptionStatus | null;
   loading: boolean;
   error: string | null;
+  /** Live lockout state for password-mode unlock attempts. Polled
+   *  every 250 ms while a cool-down is active, then frozen at the
+   *  zero state once the user is allowed to try again. `null` outside
+   *  Tauri. */
+  lockout: LockoutSnapshot | null;
   refresh: () => Promise<void>;
+  refreshLockout: () => Promise<void>;
   setup: (method: SetupMethod) => Promise<UnlockResult>;
   unlock: (password?: string) => Promise<UnlockResult>;
   lock: () => Promise<void>;
@@ -50,6 +61,7 @@ export interface UseEncryption {
 
 export function useEncryption(): UseEncryption {
   const [status, setStatus] = useState<EncryptionStatus | null>(null);
+  const [lockout, setLockout] = useState<LockoutSnapshot | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,9 +87,66 @@ export function useEncryption(): UseEncryption {
     }
   }, []);
 
+  const refreshLockout = useCallback(async () => {
+    try {
+      const inv = await getInvoke();
+      if (!inv) {
+        setLockout(null);
+        return;
+      }
+      const next =
+        await (inv as InvokeFn)<LockoutSnapshot>("encryption_lockout_state");
+      setLockout(next);
+    } catch {
+      // Lockout file errors are non-fatal; surface as "no cooldown".
+      setLockout(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshLockout();
+  }, [refresh, refreshLockout]);
+
+  // Subscribe to cross-window unlock/lock broadcasts so secondary
+  // windows refresh status without polling. The dynamic import keeps
+  // jsdom tests free of `@tauri-apps/api/event` requirements.
+  useEffect(() => {
+    let unlistenUnlocked: (() => void) | undefined;
+    let unlistenLocked: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import("@tauri-apps/api/event");
+        if (cancelled) return;
+        unlistenUnlocked = await mod.listen(ENCRYPTION_EVENT_UNLOCKED, () => {
+          void refresh();
+          void refreshLockout();
+        });
+        unlistenLocked = await mod.listen(ENCRYPTION_EVENT_LOCKED, () => {
+          void refresh();
+        });
+      } catch {
+        // Outside Tauri — broadcast unavailable; that's fine.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlistenUnlocked?.();
+      unlistenLocked?.();
+    };
+  }, [refresh, refreshLockout]);
+
+  // Live-update the cool-down every 250 ms while one is active. Stops
+  // ticking when remainingCooldownMs hits zero so the hook isn't a
+  // background CPU sink.
+  useEffect(() => {
+    if (!lockout || lockout.remainingCooldownMs === 0) return;
+    const handle = window.setInterval(() => {
+      void refreshLockout();
+    }, 250);
+    return () => window.clearInterval(handle);
+  }, [lockout, refreshLockout]);
 
   const setup = useCallback(
     async (method: SetupMethod): Promise<UnlockResult> => {
@@ -96,9 +165,10 @@ export function useEncryption(): UseEncryption {
         password: password ?? null,
       });
       await refresh();
+      await refreshLockout();
       return result;
     },
-    [refresh],
+    [refresh, refreshLockout],
   );
 
   const lock = useCallback(async (): Promise<void> => {
@@ -133,9 +203,11 @@ export function useEncryption(): UseEncryption {
 
   return {
     status,
+    lockout,
     loading,
     error,
     refresh,
+    refreshLockout,
     setup,
     unlock,
     lock,

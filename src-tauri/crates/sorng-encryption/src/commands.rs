@@ -19,13 +19,21 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::artifacts::settings as artifact_settings;
 use crate::dek::{ArtifactKind, MasterDek};
 use crate::envelope::{looks_like_envelope_helper, MasterKeyStorage};
+use crate::lockout::LockoutState;
 use crate::password_wrap::{self, Argon2Params};
 use crate::state::{decide_setup, EncryptionState, SetupOutcome};
+
+/// Tauri event broadcast on every successful unlock so secondary
+/// windows can dismiss their own unlock screens and refresh status.
+pub const EVENT_UNLOCKED: &str = "encryption:unlocked";
+/// Tauri event broadcast on `encryption_lock` so secondary windows can
+/// trigger their own auto-lock UI in lockstep.
+pub const EVENT_LOCKED: &str = "encryption:locked";
 
 // ─── DTOs ──────────────────────────────────────────────────────────
 
@@ -81,6 +89,28 @@ pub enum UnlockResult {
     VaultUnavailable,
     /// The password failed to unwrap the local `dek.enc` blob.
     WrongPassword,
+}
+
+/// Live snapshot of the password-attempt cool-down state. Returned by
+/// `encryption_lockout_state`; consumed by the unlock screen to render
+/// its "try again in N seconds" countdown and to gate the password
+/// input.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockoutSnapshot {
+    pub failed_attempts: u32,
+    pub last_failure_unix_ms: u64,
+    pub remaining_cooldown_ms: u64,
+}
+
+impl From<&LockoutState> for LockoutSnapshot {
+    fn from(s: &LockoutState) -> Self {
+        Self {
+            failed_attempts: s.failed_attempts,
+            last_failure_unix_ms: s.last_failure_unix_ms,
+            remaining_cooldown_ms: s.remaining_cooldown_ms(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -239,6 +269,7 @@ pub async fn encryption_unlock(
     }
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
     let dek_enc_present = dek_path.exists();
+    let dir = ensure_app_data_dir(&app)?;
 
     let vault_available = sorng_vault::keychain::is_available();
     let has_dek = if vault_available {
@@ -264,18 +295,34 @@ pub async fn encryption_unlock(
                 .map_err(|e| format!("read_dek: {e}"))?;
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
             state.install(dek).await;
+            let _ = app.emit(EVENT_UNLOCKED, ());
+            // Vault unlock is silent and has no failed-attempt history
+            // to reset; password-mode lockouts live in their own file
+            // and are untouched here.
             Ok(UnlockResult::UnlockedFromVault)
         }
         (SetupOutcome::FreshlyInitialized, _) => Ok(UnlockResult::NeedsSetup),
         (SetupOutcome::PasswordRequired, None) => Ok(UnlockResult::PasswordRequired),
         (SetupOutcome::PasswordRequired, Some(pw)) => {
+            // Honour the lockout schedule before doing any KDF work —
+            // a brute-force attacker shouldn't be able to keep the CPU
+            // busy with Argon2id while waiting out the cool-down.
+            let mut lockout = LockoutState::load(&dir);
+            if lockout.remaining_cooldown_ms() > 0 {
+                return Ok(UnlockResult::WrongPassword);
+            }
             let blob = std::fs::read(&dek_path).map_err(|e| format!("read dek.enc: {e}"))?;
             match password_wrap::unwrap(pw, &blob) {
                 Ok(dek) => {
                     state.install(dek).await;
+                    lockout.record_success();
+                    let _ = lockout.save(&dir);
+                    let _ = app.emit(EVENT_UNLOCKED, ());
                     Ok(UnlockResult::UnlockedFromPassword)
                 }
                 Err(password_wrap::WrapError::AuthenticationFailed) => {
+                    lockout.record_failure();
+                    let _ = lockout.save(&dir);
                     Ok(UnlockResult::WrongPassword)
                 }
                 Err(e) => Err(e.to_string()),
@@ -286,9 +333,23 @@ pub async fn encryption_unlock(
 }
 
 #[tauri::command]
-pub async fn encryption_lock(state: State<'_, EncryptionState>) -> Result<(), String> {
+pub async fn encryption_lock(
+    app: AppHandle,
+    state: State<'_, EncryptionState>,
+) -> Result<(), String> {
     state.lock().await;
+    let _ = app.emit(EVENT_LOCKED, ());
     Ok(())
+}
+
+/// Current lockout state for the password-unlock path. Cheap to call —
+/// the unlock screen polls this every ~250 ms while a cool-down is
+/// active so the countdown stays live without busy-waiting.
+#[tauri::command]
+pub async fn encryption_lockout_state(app: AppHandle) -> Result<LockoutSnapshot, String> {
+    let dir = ensure_app_data_dir(&app)?;
+    let state = LockoutState::load(&dir);
+    Ok(LockoutSnapshot::from(&state))
 }
 
 /// Change the password that wraps the master DEK. Re-writes only
