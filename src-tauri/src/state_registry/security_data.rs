@@ -99,6 +99,19 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
 
     let backup_path = app_dir.join("backups");
     let backup_service = backup::BackupService::new(backup_path.to_string_lossy().to_string());
+    // Phase 3a — inject the encryption state so the backup pipeline
+    // writes v2 envelopes whenever the master key is unlocked.
+    // `EncryptionState` was installed by the main bootstrap before
+    // this function runs; falling through silently is fine for the
+    // unit-test boot path that pre-dates encryption-at-rest.
+    if let Some(enc_handle) = app.try_state::<sorng_encryption::EncryptionState>() {
+        let enc_arc = std::sync::Arc::new(enc_handle.inner().clone());
+        let svc = backup_service.clone();
+        tauri::async_runtime::block_on(async move {
+            let mut g = svc.lock().await;
+            g.set_encryption_state(enc_arc);
+        });
+    }
     app.manage(backup_service.clone());
 
     let bw_service = BitwardenService::new_state();

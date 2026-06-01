@@ -366,6 +366,13 @@ pub struct BackupService {
     status: BackupStatus,
     #[allow(dead_code)]
     data_path: String,
+    /// Phase 3a encryption-at-rest handle. When `Some` and unlocked,
+    /// `perform_backup` writes through the v2 envelope codec
+    /// (`sornG-v1::backups` sub-key) instead of the legacy
+    /// PBKDF2/600k SORNG1 path. Reads always magic-byte sniff so
+    /// existing SORNG1 backups remain restorable for one release.
+    encryption_state:
+        Option<Arc<sorng_encryption::EncryptionState>>,
 }
 
 /// Type alias for thread-safe backup state
@@ -390,7 +397,21 @@ impl BackupService {
                 last_target_results: Vec::new(),
             },
             data_path,
+            encryption_state: None,
         }))
+    }
+
+    /// Install the global `EncryptionState` so subsequent backups use
+    /// the v2 envelope codec while unlocked. Calling this after
+    /// construction is intentional — the encryption state is
+    /// `app.manage`-d before this service is created (see
+    /// `state_registry::security_data`), and we don't want to make the
+    /// backup module aware of Tauri.
+    pub fn set_encryption_state(
+        &mut self,
+        state: Arc<sorng_encryption::EncryptionState>,
+    ) {
+        self.encryption_state = Some(state);
     }
 
     /// Update backup configuration
@@ -590,7 +611,25 @@ impl BackupService {
             json_data.as_bytes().to_vec()
         };
 
-        let encrypted_data = if self.config.encrypt_backups {
+        // Encryption dispatch order:
+        //  1. v2 envelope — preferred whenever the master-key state is
+        //     installed and unlocked. No password handling needed; the
+        //     master key handles key derivation per-rotation.
+        //  2. Legacy SORNG1 (PBKDF2/600k) — kept for users who set a
+        //     backup-only password before adopting master-key
+        //     encryption. Will be retired one release after migration
+        //     UX stabilises.
+        //  3. Plaintext — when neither path applies.
+        let used_v2 = self.encryption_state.is_some()
+            && self
+                .encryption_state
+                .as_ref()
+                .unwrap()
+                .is_unlocked()
+                .await;
+        let encrypted_data = if used_v2 {
+            self.encrypt_backup_v2(&final_data).await?
+        } else if self.config.encrypt_backups {
             if let Some(password) = self.config.encryption_password.as_ref() {
                 self.encrypt_backup_data(&final_data, password)?
             } else {
@@ -728,8 +767,13 @@ impl BackupService {
                         backup_type: backup_type.to_string(),
                         version: env!("CARGO_PKG_VERSION").to_string(),
                         checksum: checksum.clone(),
-                        encrypted: self.config.encrypt_backups
-                            && self.config.encryption_password.is_some(),
+                        // `encrypted` reflects whatever path actually
+                        // produced the bytes — v2 envelope counts as
+                        // encrypted even when the legacy
+                        // `encrypt_backups` switch is off.
+                        encrypted: used_v2
+                            || (self.config.encrypt_backups
+                                && self.config.encryption_password.is_some()),
                         compressed: self.config.compress_backups,
                         size_bytes,
                         connections_count,
@@ -1062,8 +1106,11 @@ impl BackupService {
         let file_data =
             fs::read(&path).map_err(|e| format!("Failed to read backup file: {}", e))?;
 
-        // Decrypt if needed
-        let decrypted_data = if self.is_encrypted_backup(&file_data) {
+        // Magic-byte dispatch on read. v2 envelope (sornG-v1) wins,
+        // legacy SORNG1 stays supported, otherwise treat as plaintext.
+        let decrypted_data = if self.is_v2_backup(&file_data) {
+            self.decrypt_backup_v2(&file_data).await?
+        } else if self.is_encrypted_backup(&file_data) {
             let password =
                 self.config.encryption_password.as_ref().ok_or_else(|| {
                     "Backup is encrypted but no password is configured".to_string()
@@ -1157,6 +1204,43 @@ impl BackupService {
 
     fn is_encrypted_backup(&self, data: &[u8]) -> bool {
         data.len() >= 6 && &data[..6] == b"SORNG1"
+    }
+
+    /// Magic-byte sniff: `SORNG\0` → v2 envelope (per-master-key DEK),
+    /// otherwise fall through to legacy PBKDF2 / plaintext detection.
+    fn is_v2_backup(&self, data: &[u8]) -> bool {
+        data.len() >= 6 && &data[..6] == sorng_encryption::envelope::MAGIC
+    }
+
+    /// Encrypt under the v2 envelope. Caller already has the
+    /// (plaintext-or-gzipped) payload; this is symmetric with
+    /// `decrypt_backup_v2`.
+    async fn encrypt_backup_v2(&self, plaintext: &[u8]) -> Result<Vec<u8>, String> {
+        let state = self
+            .encryption_state
+            .as_ref()
+            .ok_or_else(|| "v2 backup requested but encryption state not installed".to_string())?;
+        sorng_encryption::artifacts::backups::write(
+            state,
+            plaintext,
+            sorng_encryption::envelope::MasterKeyStorage::Vault,
+            sorng_encryption::password_wrap::Argon2Params::OWASP,
+            [0u8; sorng_encryption::envelope::SALT_LEN],
+        )
+        .await
+        .map_err(|e| format!("v2 backup encrypt: {e}"))
+    }
+
+    /// Inverse of `encrypt_backup_v2`. Returns the raw (still possibly
+    /// gzipped) plaintext.
+    async fn decrypt_backup_v2(&self, blob: &[u8]) -> Result<Vec<u8>, String> {
+        let state = self
+            .encryption_state
+            .as_ref()
+            .ok_or_else(|| "v2 backup found but encryption state not installed".to_string())?;
+        sorng_encryption::artifacts::backups::read(state, blob)
+            .await
+            .map_err(|e| format!("v2 backup decrypt: {e}"))
     }
 
     fn derive_key(&self, password: &str) -> [u8; 32] {
@@ -2248,6 +2332,162 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Phase 3a — v2 envelope dispatch
+    // ────────────────────────────────────────────────────────────────
+
+    async fn unlocked_enc_state() -> std::sync::Arc<sorng_encryption::EncryptionState> {
+        let s = sorng_encryption::EncryptionState::new();
+        s.install(
+            sorng_encryption::MasterDek::from_bytes(&[9u8; 32]).unwrap(),
+        )
+        .await;
+        std::sync::Arc::new(s)
+    }
+
+    #[tokio::test]
+    async fn v2_envelope_used_when_state_unlocked() {
+        let tmp = fresh_temp_dir("v2_write");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        let cfg = build_test_config(&tmp);
+        svc.update_config(cfg);
+        svc.set_encryption_state(unlocked_enc_state().await);
+
+        let data = serde_json::json!({ "connections": [{ "id": "c1" }] });
+        let meta = svc.perform_backup("manual", &data).await.unwrap();
+        // Locate the on-disk blob (no compression / no legacy crypto)
+        // and verify the magic prefix is the v2 envelope, not SORNG1.
+        let entry = std::fs::read_dir(&tmp).unwrap().find_map(|e| {
+            let e = e.ok()?;
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
+        }).expect("backup file written");
+        let bytes = std::fs::read(&entry).unwrap();
+        assert_eq!(
+            &bytes[..6],
+            sorng_encryption::envelope::MAGIC,
+            "v2 envelope must win when state is unlocked"
+        );
+        assert!(meta.primary_metadata.unwrap().encrypted, "metadata flags as encrypted");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn legacy_path_when_no_state_installed() {
+        let tmp = fresh_temp_dir("v2_legacy");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        // Opt into legacy SORNG1 with a backup password.
+        let mut cfg = build_test_config(&tmp);
+        cfg.encrypt_backups = true;
+        cfg.encryption_password = Some("hunter2".to_string());
+        svc.update_config(cfg);
+        // Deliberately do NOT install the encryption state.
+
+        let data = serde_json::json!({ "connections": [] });
+        let _ = svc.perform_backup("manual", &data).await.unwrap();
+        let entry = std::fs::read_dir(&tmp).unwrap().find_map(|e| {
+            let e = e.ok()?;
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
+        }).unwrap();
+        let bytes = std::fs::read(&entry).unwrap();
+        assert_eq!(&bytes[..6], b"SORNG1", "legacy envelope kept when state absent");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn v2_round_trip_via_restore() {
+        let tmp = fresh_temp_dir("v2_restore");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        let cfg = build_test_config(&tmp);
+        svc.update_config(cfg);
+        svc.set_encryption_state(unlocked_enc_state().await);
+
+        let payload = serde_json::json!({
+            "connections": [{ "id": "c1", "host": "example.com" }],
+            "settings": { "theme": "dark" }
+        });
+        let result = svc.perform_backup("manual", &payload).await.unwrap();
+        let id = result.primary_metadata.unwrap().id;
+        let restored = svc
+            .restore_backup_from_target(&id, None)
+            .await
+            .unwrap();
+        assert_eq!(restored, payload, "v2 round-trip preserves the payload");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn restore_dispatches_on_magic_bytes() {
+        // Hand-craft both blob shapes in the same dir and confirm the
+        // dispatch picks the right path for each.
+        let tmp = fresh_temp_dir("v2_sniff");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        let cfg = build_test_config(&tmp);
+        svc.update_config(cfg);
+        let enc = unlocked_enc_state().await;
+        svc.set_encryption_state(enc.clone());
+
+        // 1. is_v2_backup distinguishes correctly.
+        let v2_bytes = svc
+            .encrypt_backup_v2(b"{\"k\":\"v\"}")
+            .await
+            .unwrap();
+        assert!(svc.is_v2_backup(&v2_bytes));
+        assert!(!svc.is_encrypted_backup(&v2_bytes));
+
+        let legacy = svc
+            .encrypt_backup_data(b"{\"k\":\"v\"}", "pw")
+            .unwrap();
+        assert!(!svc.is_v2_backup(&legacy));
+        assert!(svc.is_encrypted_backup(&legacy));
+
+        let plain = b"{\"k\":\"v\"}".to_vec();
+        assert!(!svc.is_v2_backup(&plain));
+        assert!(!svc.is_encrypted_backup(&plain));
+
+        // 2. Round-trip the v2 blob directly through the decrypt helper.
+        let plaintext = svc.decrypt_backup_v2(&v2_bytes).await.unwrap();
+        assert_eq!(plaintext, b"{\"k\":\"v\"}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn locked_state_falls_back_to_legacy_or_plaintext() {
+        // EncryptionState installed but never unlocked → v2 path is
+        // skipped without erroring; fall through to legacy / plaintext
+        // exactly like a no-encryption build.
+        let tmp = fresh_temp_dir("v2_locked");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        let cfg = build_test_config(&tmp);
+        svc.update_config(cfg);
+        let locked = std::sync::Arc::new(sorng_encryption::EncryptionState::new());
+        svc.set_encryption_state(locked);
+
+        let data = serde_json::json!({ "connections": [] });
+        let _ = svc.perform_backup("manual", &data).await.unwrap();
+        let entry = std::fs::read_dir(&tmp).unwrap().find_map(|e| {
+            let e = e.ok()?;
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
+        }).unwrap();
+        let bytes = std::fs::read(&entry).unwrap();
+        // No password configured and locked state → plaintext on disk.
+        assert_ne!(&bytes[..6.min(bytes.len())], sorng_encryption::envelope::MAGIC);
+        assert_ne!(&bytes[..6.min(bytes.len())], b"SORNG1");
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
 

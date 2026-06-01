@@ -20,3 +20,10 @@ hmac = { workspace = true }
 log = { workspace = true }
 dirs = { workspace = true }
 uuid = { workspace = true }
+# Phase 3a — v2 envelope codec for backups, for the new sornG-v1::backups
+# sub-key path. The legacy SORNG1 (PBKDF2/600k) format remains supported
+# on read for one release so users can restore old backups.
+sorng-encryption = { path = "../sorng-encryption" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
