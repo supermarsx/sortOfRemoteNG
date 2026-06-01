@@ -7,6 +7,7 @@ import AutoLockSection from "./security/AutoLockSection";
 import CollectionKeyGenSection from "./security/CollectionKeyGenSection";
 import CredSSPSection from "./security/CredSSPSection";
 import EncryptionAlgorithmSection from "./security/EncryptionAlgorithmSection";
+import EncryptionAtRestSection from "./security/EncryptionAtRestSection";
 import ExportSecuritySection from "./security/ExportSecuritySection";
 import KeyDerivationSection from "./security/KeyDerivationSection";
 import PasswordRevealSection from "./security/PasswordRevealSection";
@@ -27,6 +28,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
     <div className="space-y-6">
       <SectionHeading icon={<Shield className="w-5 h-5 text-primary" />} title="Security" description="Encryption algorithms, key derivation, master password, and credential storage settings." />
 
+      <EncryptionAtRestSection />
       <EncryptionAlgorithmSection settings={settings} updateSettings={updateSettings} mgr={mgr} t={t} />
       <KeyDerivationSection settings={settings} updateSettings={updateSettings} handleBenchmark={handleBenchmark} isBenchmarking={isBenchmarking} t={t} />
       <ExportSecuritySection settings={settings} updateSettings={updateSettings} />
