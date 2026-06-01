@@ -18,6 +18,7 @@ use crate::error::{RecordingError, RecordingResult};
 use crate::storage;
 use crate::types::*;
 use sorng_encryption::EncryptionState;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// High-level service.  Wraps engine state + storage root.
 #[derive(Clone)]
@@ -32,6 +33,29 @@ pub struct RecordingService {
     /// state, so the service can be constructed independently of the
     /// Tauri app boot order.
     encryption_state: Arc<Mutex<Option<Arc<EncryptionState>>>>,
+    /// Cooperative cancel flag for an in-flight migration. Flipped
+    /// by `cancel_migration`, polled by the reporter passed to the
+    /// `*_with_progress` helpers. Survives independent service
+    /// clones because it's behind an `Arc`.
+    migration_cancel: Arc<AtomicBool>,
+}
+
+/// Tauri event name emitted as the recording migration walks each
+/// file. Payload shape is documented on
+/// [`RecordingMigrationProgressEvent`].
+pub const REC_MIGRATE_EVENT: &str = "recording-migrate-progress";
+
+/// Payload carried on every `recording-migrate-progress` event. The
+/// frontend renders a progress bar from `(index, total)` per stage
+/// and a small list of recently-processed names.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingMigrationProgressEvent {
+    pub stage: String,
+    pub index: usize,
+    pub total: usize,
+    pub name: String,
+    pub skipped: bool,
 }
 
 impl RecordingService {
@@ -43,7 +67,30 @@ impl RecordingService {
             engine: Arc::new(Mutex::new(RecordingEngine::new())),
             storage_root: Arc::new(Mutex::new(root)),
             encryption_state: Arc::new(Mutex::new(None)),
+            migration_cancel: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Flip the cooperative cancel flag for an in-flight migration.
+    /// The migrator polls this before each file and stops as soon as
+    /// the current file is fully committed (or skipped) — partial
+    /// envelopes are never left on disk. Idempotent.
+    pub fn cancel_migration(&self) {
+        self.migration_cancel.store(true, Ordering::Release);
+    }
+
+    /// Reset the cancel flag — the migrator calls this on entry so a
+    /// previously-cancelled run doesn't carry over.
+    fn reset_migration_cancel(&self) {
+        self.migration_cancel.store(false, Ordering::Release);
+    }
+
+    /// Hand the cancel flag to a Tauri-aware reporter so the command
+    /// handler doesn't need access to the private field. Returns the
+    /// same `Arc` the service holds — both ends see flips on either
+    /// side.
+    pub fn migration_cancel_flag(&self) -> Arc<AtomicBool> {
+        self.migration_cancel.clone()
     }
 
     /// Inject the global `EncryptionState` so subsequent saves/loads
@@ -230,6 +277,17 @@ impl RecordingService {
     pub async fn migrate_to_encrypted(
         &self,
     ) -> RecordingResult<(usize, usize, usize, usize)> {
+        self.migrate_to_encrypted_with_progress(&storage::NoopProgress).await
+    }
+
+    /// Progress-aware variant of [`migrate_to_encrypted`]. Resets the
+    /// cooperative cancel flag on entry and propagates partial counts
+    /// when the reporter requests a cancel mid-walk.
+    pub async fn migrate_to_encrypted_with_progress(
+        &self,
+        progress: &dyn storage::MigrationProgress,
+    ) -> RecordingResult<(usize, usize, usize, usize)> {
+        self.reset_migration_cancel();
         let enc = self
             .enc_handle()
             .await
@@ -237,8 +295,11 @@ impl RecordingService {
                 "encryption state not installed; cannot migrate".into(),
             ))?;
         let root = self.storage_root.lock().await.clone();
-        let (em, es) = storage::migrate_all_envelopes_to_encrypted(&root, &enc).await?;
-        let (mm, ms) = storage::migrate_all_macros_to_encrypted(&root, &enc).await?;
+        let (em, es) =
+            storage::migrate_all_envelopes_to_encrypted_with_progress(&root, &enc, progress)
+                .await?;
+        let (mm, ms) =
+            storage::migrate_all_macros_to_encrypted_with_progress(&root, &enc, progress).await?;
         // Refresh in-memory caches from disk so the UI reflects the
         // post-migration filenames immediately (no restart required).
         let envelopes = storage::load_all_envelopes_dispatched(&root, &enc).await?;

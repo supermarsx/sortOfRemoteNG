@@ -56,6 +56,30 @@ export interface RecordingMigrationReport {
   macrosSkipped: number;
 }
 
+/** Tauri event name emitted by `rec_migrate_to_encrypted` as it walks
+ *  each artifact. Match the Rust-side `REC_MIGRATE_EVENT` constant. */
+export const REC_MIGRATE_EVENT = "recording-migrate-progress";
+
+/** Payload shape for every event on [`REC_MIGRATE_EVENT`]. Mirrors
+ *  `sorng_recording::service::RecordingMigrationProgressEvent`. */
+export interface RecordingMigrationProgressEvent {
+  /** `"envelopes"` or `"macros"`. The stage tag lets the UI render
+   *  two progress bars / a stage label. */
+  stage: "envelopes" | "macros" | string;
+  /** 1-based index of the file just processed. The opening event
+   *  for each stage has `index === 0`. */
+  index: number;
+  /** Total file count for the active stage. Equal across every
+   *  event for that stage. */
+  total: number;
+  /** Basename of the file just processed. Empty on the opening
+   *  `index === 0` event. */
+  name: string;
+  /** `true` when the file was skipped (unreadable / unparseable),
+   *  `false` when it was migrated. */
+  skipped: boolean;
+}
+
 /** Discriminated outcome of `storage_migrate_to_master_dek`. Mirrors
  *  the Rust `MigrationOutcome` enum — serde emits the variant name as
  *  camelCase and inlines the `backupPath` for the `migrated` arm. */
@@ -90,8 +114,18 @@ export interface UseEncryption {
   migrateSettings: () => Promise<MigrationReport>;
   /** Convert every plaintext recording envelope + macro under the
    *  recordings storage root to its `.json.enc` v2 form. Returns the
-   *  per-artifact migrated/skipped counts. */
-  migrateRecordings: () => Promise<RecordingMigrationReport>;
+   *  per-artifact migrated/skipped counts.
+   *
+   *  `onProgress` (optional) is invoked for every progress event the
+   *  backend emits on `recording-migrate-progress`. The first event
+   *  per stage has `index === 0` and reports the file `total`; each
+   *  subsequent event marks one file processed. */
+  migrateRecordings: (
+    onProgress?: (event: RecordingMigrationProgressEvent) => void,
+  ) => Promise<RecordingMigrationReport>;
+  /** Flip the cooperative cancel flag on the in-flight recording
+   *  migration. Safe to call when no migration is running. */
+  cancelRecordingsMigration: () => Promise<void>;
   /** Migrate the connections database (`data.json`) from the legacy
    *  `SORNG_ENC:` envelope (or plain JSON) to the v2 envelope under
    *  the master DEK. `legacyPassword` is the previous database
@@ -292,16 +326,44 @@ export function useEncryption(): UseEncryption {
   }, [refresh]);
 
   const migrateRecordings = useCallback(
-    async (): Promise<RecordingMigrationReport> => {
+    async (
+      onProgress?: (event: RecordingMigrationProgressEvent) => void,
+    ): Promise<RecordingMigrationReport> => {
       const inv = await invokeOrThrow();
-      const report = await inv<RecordingMigrationReport>(
-        "rec_migrate_to_encrypted",
-      );
-      await refresh();
-      return report;
+      // Subscribe to the progress event before invoking the command —
+      // otherwise the first few `total` / `step` events may fire
+      // before the listener is attached and the UI would show 0% for
+      // a moment that the migrator has actually moved past.
+      let unlisten: (() => void) | null = null;
+      if (onProgress) {
+        try {
+          const { listen } = await import("@tauri-apps/api/event");
+          const handle = await listen<RecordingMigrationProgressEvent>(
+            REC_MIGRATE_EVENT,
+            (e) => onProgress(e.payload),
+          );
+          unlisten = handle;
+        } catch {
+          // Event API unavailable (web / jsdom) — degrade silently.
+        }
+      }
+      try {
+        const report = await inv<RecordingMigrationReport>(
+          "rec_migrate_to_encrypted",
+        );
+        await refresh();
+        return report;
+      } finally {
+        if (unlisten) unlisten();
+      }
     },
     [refresh],
   );
+
+  const cancelRecordingsMigration = useCallback(async (): Promise<void> => {
+    const inv = await invokeOrThrow();
+    await inv<void>("rec_cancel_migration");
+  }, []);
 
   const migrateConnections = useCallback(
     async (
@@ -396,6 +458,7 @@ export function useEncryption(): UseEncryption {
     changePassword,
     migrateSettings,
     migrateRecordings,
+    cancelRecordingsMigration,
     migrateConnections,
     disableSettings,
     rotateMasterKey,

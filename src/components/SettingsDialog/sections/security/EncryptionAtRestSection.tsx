@@ -112,6 +112,16 @@ const EncryptionAtRestSection: React.FC = () => {
     useState<RecordingMigrationReport | null>(null);
   const [migrateRecRanAt, setMigrateRecRanAt] = useState<string | null>(null);
 
+  // Live progress for the in-flight recording migration. Drives the
+  // progress bar + "Migrating <stage>: <index>/<total>" label below
+  // the button. Reset when the next migration starts.
+  const [migrateRecProgress, setMigrateRecProgress] = useState<{
+    stage: string;
+    index: number;
+    total: number;
+  } | null>(null);
+  const [migrateRecCancelling, setMigrateRecCancelling] = useState(false);
+
   const [changeOldPw, setChangeOldPw] = useState("");
   const [changeNewPw, setChangeNewPw] = useState("");
   const [changeBusy, setChangeBusy] = useState(false);
@@ -240,14 +250,39 @@ const EncryptionAtRestSection: React.FC = () => {
   const handleMigrateRecordings = async () => {
     setMigrateRecBusy(true);
     setMigrateRecError(null);
+    setMigrateRecProgress(null);
+    setMigrateRecCancelling(false);
     try {
-      const report = await enc.migrateRecordings();
+      const report = await enc.migrateRecordings((event) => {
+        // The opening event of each stage carries `index === 0` and
+        // sets the stage label + total. Subsequent events update the
+        // index — React batches the state writes so a 10k-file
+        // migration doesn't cause a re-render per file.
+        setMigrateRecProgress({
+          stage: event.stage,
+          index: event.index,
+          total: event.total,
+        });
+      });
       setMigrateRecReport(report);
       setMigrateRecRanAt(formatNow());
     } catch (e) {
       setMigrateRecError(e instanceof Error ? e.message : String(e));
     } finally {
       setMigrateRecBusy(false);
+      setMigrateRecProgress(null);
+      setMigrateRecCancelling(false);
+    }
+  };
+
+  const handleCancelRecordingsMigration = async () => {
+    setMigrateRecCancelling(true);
+    try {
+      await enc.cancelRecordingsMigration();
+    } catch (e) {
+      // Cancellation errors are non-fatal — the migration either
+      // completes anyway or surfaces the error in its own catch.
+      console.warn("cancel migration failed", e);
     }
   };
 
@@ -733,7 +768,59 @@ const EncryptionAtRestSection: React.FC = () => {
               </div>
             )}
 
-            <div className="flex justify-end">
+            {/* Live progress bar — visible only while a migration is
+                actively walking the storage root. The numerator stays
+                at 0 for the opening event of each stage (which carries
+                the total but no per-file step yet). */}
+            {migrateRecBusy && migrateRecProgress && (
+              <div
+                className="mt-2 space-y-1"
+                data-testid="rec-migration-progress"
+              >
+                <div className="flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
+                  <span>
+                    Migrating {migrateRecProgress.stage}…{" "}
+                    <span className="text-[var(--color-text)] font-mono">
+                      {migrateRecProgress.index}/{migrateRecProgress.total}
+                    </span>
+                  </span>
+                  {migrateRecCancelling && (
+                    <span className="text-warning text-xs">
+                      Cancelling…
+                    </span>
+                  )}
+                </div>
+                <div className="h-1.5 rounded-full bg-[var(--color-input)] overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-200"
+                    style={{
+                      width: `${
+                        migrateRecProgress.total > 0
+                          ? Math.round(
+                              (migrateRecProgress.index /
+                                migrateRecProgress.total) *
+                                100,
+                            )
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              {migrateRecBusy && (
+                <button
+                  type="button"
+                  onClick={handleCancelRecordingsMigration}
+                  disabled={migrateRecCancelling}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-border)] disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                  data-testid="rec-migration-cancel"
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleMigrateRecordings}

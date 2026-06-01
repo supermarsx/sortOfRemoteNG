@@ -939,11 +939,21 @@ pub async fn rec_storage_size(
 /// the expected struct — they remain on disk untouched.
 #[tauri::command]
 pub async fn rec_migrate_to_encrypted(
+    app: tauri::AppHandle,
     state: tauri::State<'_, RecordingServiceState>,
 ) -> Result<RecordingMigrationReport, String> {
     let svc = state.lock().await;
+    // Wire a Tauri-aware reporter so the frontend gets a live
+    // progress stream. The cancel flag lives on the `RecordingService`
+    // (`migration_cancel: Arc<AtomicBool>`) and is flipped by
+    // `rec_cancel_migration`; the reporter polls it here.
+    let cancel = svc.migration_cancel_flag();
+    let reporter = TauriMigrationReporter {
+        app: app.clone(),
+        cancel,
+    };
     let (em, es, mm, ms) = svc
-        .migrate_to_encrypted()
+        .migrate_to_encrypted_with_progress(&reporter)
         .await
         .map_err(|e| e.to_string())?;
     Ok(RecordingMigrationReport {
@@ -952,6 +962,61 @@ pub async fn rec_migrate_to_encrypted(
         macros_migrated: mm as u32,
         macros_skipped: ms as u32,
     })
+}
+
+/// Flip the cooperative cancel flag on the recording service so any
+/// in-flight `rec_migrate_to_encrypted` walk stops after the file
+/// that's currently being processed. Idempotent and safe to call
+/// when no migration is running.
+#[tauri::command]
+pub async fn rec_cancel_migration(
+    state: tauri::State<'_, RecordingServiceState>,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.cancel_migration();
+    Ok(())
+}
+
+/// Bridge between the service-level `MigrationProgress` trait and
+/// the Tauri event stream. The frontend listens on
+/// [`crate::service::REC_MIGRATE_EVENT`] and renders a progress bar
+/// from each `(stage, index, total)` tuple.
+struct TauriMigrationReporter {
+    app: tauri::AppHandle,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl crate::storage::MigrationProgress for TauriMigrationReporter {
+    fn total(&self, stage: crate::storage::MigrationStage, count: usize) {
+        let payload = crate::service::RecordingMigrationProgressEvent {
+            stage: stage.as_str().to_string(),
+            index: 0,
+            total: count,
+            name: String::new(),
+            skipped: false,
+        };
+        let _ = tauri::Emitter::emit(&self.app, crate::service::REC_MIGRATE_EVENT, &payload);
+    }
+    fn step(
+        &self,
+        stage: crate::storage::MigrationStage,
+        index: usize,
+        total: usize,
+        name: &str,
+        skipped: bool,
+    ) {
+        let payload = crate::service::RecordingMigrationProgressEvent {
+            stage: stage.as_str().to_string(),
+            index,
+            total,
+            name: name.to_string(),
+            skipped,
+        };
+        let _ = tauri::Emitter::emit(&self.app, crate::service::REC_MIGRATE_EVENT, &payload);
+    }
+    fn should_cancel(&self) -> bool {
+        self.cancel.load(std::sync::atomic::Ordering::Acquire)
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

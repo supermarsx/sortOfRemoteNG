@@ -883,13 +883,84 @@ pub async fn read_exported_media(
 
 // ── Migration helpers ──────────────────────────────────────────────────
 
+/// Stage tag for [`MigrationProgress::step`] — lets a Tauri event
+/// stream distinguish the envelopes pass from the macros pass without
+/// the reporter having to look at the basename.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationStage {
+    Envelopes,
+    Macros,
+}
+
+impl MigrationStage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MigrationStage::Envelopes => "envelopes",
+            MigrationStage::Macros => "macros",
+        }
+    }
+}
+
+/// Reporter trait the migrators invoke as they walk the source dir.
+/// A `NoopProgress` implementation is provided so the simple
+/// `migrate_all_*_to_encrypted` entry points stay unchanged.
+///
+/// Cancellation semantics: `should_cancel` is polled before each
+/// per-file unit of work. A `true` return aborts the loop after the
+/// current file is committed (or skipped) — the migrator never
+/// leaves a half-written sidecar or a missing archive on disk, so
+/// cancellation produces a consistent partial state the user can
+/// resume from by re-running the command.
+pub trait MigrationProgress: Send + Sync {
+    /// Called once with the total file count for the active stage.
+    fn total(&self, _stage: MigrationStage, _count: usize) {}
+    /// Called after each file is processed; `index` is 1-based,
+    /// `total` mirrors the value handed to [`Self::total`]. `name` is
+    /// the basename of the file just processed.
+    fn step(
+        &self,
+        _stage: MigrationStage,
+        _index: usize,
+        _total: usize,
+        _name: &str,
+        _skipped: bool,
+    ) {
+    }
+    /// Polled before each unit of work. Return `true` to abort.
+    fn should_cancel(&self) -> bool {
+        false
+    }
+}
+
+/// No-op reporter — every default trait method applies.
+pub struct NoopProgress;
+impl MigrationProgress for NoopProgress {}
+
 /// One-shot migration of all `<id>.json` envelopes under `<root>`'s
 /// recordings dir to `<id>.json.enc`. Each source file is archived to
 /// `<id>.json.v0.bak` before being deleted, mirroring the settings-
 /// migration safety net. Returns `(migrated, skipped)` counts.
+///
+/// Thin wrapper around
+/// [`migrate_all_envelopes_to_encrypted_with_progress`] using
+/// [`NoopProgress`] so callers that don't care about progress
+/// reporting stay one-line.
 pub async fn migrate_all_envelopes_to_encrypted(
     root: &Path,
     enc: &EncryptionState,
+) -> RecordingResult<(usize, usize)> {
+    migrate_all_envelopes_to_encrypted_with_progress(root, enc, &NoopProgress).await
+}
+
+/// Progress-aware variant of
+/// [`migrate_all_envelopes_to_encrypted`]. The reporter is called
+/// `total` once with the file count, then `step` per file. A `true`
+/// return from `should_cancel` aborts the loop after the current
+/// file is committed.
+pub async fn migrate_all_envelopes_to_encrypted_with_progress(
+    root: &Path,
+    enc: &EncryptionState,
+    progress: &dyn MigrationProgress,
 ) -> RecordingResult<(usize, usize)> {
     if !enc.is_unlocked().await {
         return Err(RecordingError::StorageError(
@@ -898,13 +969,17 @@ pub async fn migrate_all_envelopes_to_encrypted(
     }
     let dir = recordings_dir(root);
     if !dir.exists() {
+        progress.total(MigrationStage::Envelopes, 0);
         return Ok((0, 0));
     }
-    let mut migrated = 0usize;
-    let mut skipped = 0usize;
-    let entries = std::fs::read_dir(&dir)
-        .map_err(|e| RecordingError::StorageError(format!("readdir: {}", e)))?;
-    for entry in entries {
+    // Two-pass: collect the candidate paths first so the reporter
+    // gets a stable total count (and so we can short-circuit on an
+    // early cancel without holding the readdir iterator open across
+    // an `.await`).
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&dir)
+        .map_err(|e| RecordingError::StorageError(format!("readdir: {}", e)))?
+    {
         let entry =
             entry.map_err(|e| RecordingError::StorageError(format!("readdir entry: {}", e)))?;
         let path = entry.path();
@@ -915,10 +990,27 @@ pub async fn migrate_all_envelopes_to_encrypted(
         if !name.ends_with(".json") || name.ends_with(ENC_SUFFIX) {
             continue;
         }
+        candidates.push(path);
+    }
+    let total = candidates.len();
+    progress.total(MigrationStage::Envelopes, total);
+
+    let mut migrated = 0usize;
+    let mut skipped = 0usize;
+    for (i, path) in candidates.into_iter().enumerate() {
+        if progress.should_cancel() {
+            break;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
         let json = match std::fs::read_to_string(&path) {
             Ok(j) => j,
             Err(_) => {
                 skipped += 1;
+                progress.step(MigrationStage::Envelopes, i + 1, total, &name, true);
                 continue;
             }
         };
@@ -926,6 +1018,7 @@ pub async fn migrate_all_envelopes_to_encrypted(
             Ok(env) => env,
             Err(_) => {
                 skipped += 1;
+                progress.step(MigrationStage::Envelopes, i + 1, total, &name, true);
                 continue;
             }
         };
@@ -936,6 +1029,7 @@ pub async fn migrate_all_envelopes_to_encrypted(
         let _ = std::fs::rename(&path, &bak);
         save_envelope_dispatched(root, &envelope, enc).await?;
         migrated += 1;
+        progress.step(MigrationStage::Envelopes, i + 1, total, &name, false);
     }
     Ok((migrated, skipped))
 }
@@ -945,6 +1039,16 @@ pub async fn migrate_all_macros_to_encrypted(
     root: &Path,
     enc: &EncryptionState,
 ) -> RecordingResult<(usize, usize)> {
+    migrate_all_macros_to_encrypted_with_progress(root, enc, &NoopProgress).await
+}
+
+/// Progress-aware variant of [`migrate_all_macros_to_encrypted`]. See
+/// the envelope-side documentation for the cancellation contract.
+pub async fn migrate_all_macros_to_encrypted_with_progress(
+    root: &Path,
+    enc: &EncryptionState,
+    progress: &dyn MigrationProgress,
+) -> RecordingResult<(usize, usize)> {
     if !enc.is_unlocked().await {
         return Err(RecordingError::StorageError(
             "cannot migrate while encryption is locked".into(),
@@ -952,13 +1056,13 @@ pub async fn migrate_all_macros_to_encrypted(
     }
     let dir = macros_dir(root);
     if !dir.exists() {
+        progress.total(MigrationStage::Macros, 0);
         return Ok((0, 0));
     }
-    let mut migrated = 0usize;
-    let mut skipped = 0usize;
-    let entries = std::fs::read_dir(&dir)
-        .map_err(|e| RecordingError::StorageError(format!("readdir: {}", e)))?;
-    for entry in entries {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(&dir)
+        .map_err(|e| RecordingError::StorageError(format!("readdir: {}", e)))?
+    {
         let entry =
             entry.map_err(|e| RecordingError::StorageError(format!("readdir entry: {}", e)))?;
         let path = entry.path();
@@ -969,10 +1073,27 @@ pub async fn migrate_all_macros_to_encrypted(
         if !name.ends_with(".json") || name.ends_with(ENC_SUFFIX) {
             continue;
         }
+        candidates.push(path);
+    }
+    let total = candidates.len();
+    progress.total(MigrationStage::Macros, total);
+
+    let mut migrated = 0usize;
+    let mut skipped = 0usize;
+    for (i, path) in candidates.into_iter().enumerate() {
+        if progress.should_cancel() {
+            break;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
         let json = match std::fs::read_to_string(&path) {
             Ok(j) => j,
             Err(_) => {
                 skipped += 1;
+                progress.step(MigrationStage::Macros, i + 1, total, &name, true);
                 continue;
             }
         };
@@ -980,6 +1101,7 @@ pub async fn migrate_all_macros_to_encrypted(
             Ok(m) => m,
             Err(_) => {
                 skipped += 1;
+                progress.step(MigrationStage::Macros, i + 1, total, &name, true);
                 continue;
             }
         };
@@ -987,6 +1109,7 @@ pub async fn migrate_all_macros_to_encrypted(
         let _ = std::fs::rename(&path, &bak);
         save_macro_dispatched(root, &m, enc).await?;
         migrated += 1;
+        progress.step(MigrationStage::Macros, i + 1, total, &name, false);
     }
     Ok((migrated, skipped))
 }
@@ -1169,6 +1292,172 @@ mod enc_dispatch_tests {
         let list = load_all_macros_dispatched(tmp.path(), &enc).await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "m1");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Migration progress + cancellation
+    // ────────────────────────────────────────────────────────────────
+
+    /// Recording reporter for unit tests. Captures every event so the
+    /// assertion order is independent of which stage ran first, and
+    /// flips its cancel flag after a configurable number of `step`
+    /// calls so the cancel path can be exercised deterministically.
+    struct RecordingReporter {
+        events: std::sync::Mutex<Vec<(MigrationStage, usize, usize, String, bool)>>,
+        totals: std::sync::Mutex<Vec<(MigrationStage, usize)>>,
+        cancel_after: std::sync::atomic::AtomicUsize,
+        steps_seen: std::sync::atomic::AtomicUsize,
+    }
+    impl RecordingReporter {
+        fn new(cancel_after: usize) -> Self {
+            Self {
+                events: std::sync::Mutex::new(Vec::new()),
+                totals: std::sync::Mutex::new(Vec::new()),
+                cancel_after: std::sync::atomic::AtomicUsize::new(cancel_after),
+                steps_seen: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+    impl MigrationProgress for RecordingReporter {
+        fn total(&self, stage: MigrationStage, count: usize) {
+            self.totals.lock().unwrap().push((stage, count));
+        }
+        fn step(
+            &self,
+            stage: MigrationStage,
+            index: usize,
+            total: usize,
+            name: &str,
+            skipped: bool,
+        ) {
+            self.events
+                .lock()
+                .unwrap()
+                .push((stage, index, total, name.to_string(), skipped));
+            self.steps_seen
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
+        fn should_cancel(&self) -> bool {
+            let threshold = self.cancel_after.load(std::sync::atomic::Ordering::Acquire);
+            if threshold == usize::MAX {
+                return false;
+            }
+            self.steps_seen.load(std::sync::atomic::Ordering::Acquire) >= threshold
+        }
+    }
+
+    #[tokio::test]
+    async fn migrate_progress_reports_total_and_each_step() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        for id in ["a", "b", "c", "d"] {
+            save_envelope(tmp.path(), &fixture_envelope(id)).unwrap();
+        }
+        let enc = unlocked().await;
+        let reporter = RecordingReporter::new(usize::MAX);
+        let (migrated, skipped) = migrate_all_envelopes_to_encrypted_with_progress(
+            tmp.path(),
+            &enc,
+            &reporter,
+        )
+        .await
+        .unwrap();
+        assert_eq!(migrated, 4);
+        assert_eq!(skipped, 0);
+        let totals = reporter.totals.lock().unwrap();
+        assert_eq!(*totals, vec![(MigrationStage::Envelopes, 4)]);
+        let events = reporter.events.lock().unwrap();
+        assert_eq!(events.len(), 4, "one step per file");
+        // Index must be monotonic and stop at `total`.
+        for (i, e) in events.iter().enumerate() {
+            assert_eq!(e.0, MigrationStage::Envelopes);
+            assert_eq!(e.1, i + 1);
+            assert_eq!(e.2, 4);
+            assert!(!e.4);
+        }
+    }
+
+    #[tokio::test]
+    async fn migrate_progress_skips_unparseable_files() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        save_envelope(tmp.path(), &fixture_envelope("good")).unwrap();
+        // Plant a garbage .json file the migrator must report as skipped.
+        std::fs::write(
+            recordings_dir(tmp.path()).join("bad.json"),
+            b"this is not json",
+        )
+        .unwrap();
+        let enc = unlocked().await;
+        let reporter = RecordingReporter::new(usize::MAX);
+        let (migrated, skipped) = migrate_all_envelopes_to_encrypted_with_progress(
+            tmp.path(),
+            &enc,
+            &reporter,
+        )
+        .await
+        .unwrap();
+        assert_eq!(migrated, 1);
+        assert_eq!(skipped, 1);
+        let events = reporter.events.lock().unwrap();
+        let bad = events.iter().find(|e| e.3 == "bad.json").unwrap();
+        assert!(bad.4, "bad.json must be flagged as skipped");
+    }
+
+    #[tokio::test]
+    async fn migrate_progress_honours_cancel() {
+        // 5 envelopes, cancel after 2. The migrator must complete the
+        // second file (no half-written sidecar) and skip 3-5.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        for id in ["a", "b", "c", "d", "e"] {
+            save_envelope(tmp.path(), &fixture_envelope(id)).unwrap();
+        }
+        let enc = unlocked().await;
+        let reporter = RecordingReporter::new(2);
+        let (migrated, skipped) = migrate_all_envelopes_to_encrypted_with_progress(
+            tmp.path(),
+            &enc,
+            &reporter,
+        )
+        .await
+        .unwrap();
+        // The first two files must be fully committed.
+        assert_eq!(migrated, 2);
+        assert_eq!(skipped, 0);
+        // And no sidecar is half-written for the cancelled files —
+        // a quick existence check on the .v0.bak archive of the
+        // *uncommitted* ids proves the loop never started them.
+        let remaining_plaintext = std::fs::read_dir(recordings_dir(tmp.path()))
+            .unwrap()
+            .filter_map(|e| {
+                e.ok()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+            })
+            .filter(|n| n.ends_with(".json") && !n.ends_with(ENC_SUFFIX))
+            .count();
+        // Three uncancelled .json files remain on disk untouched.
+        assert_eq!(remaining_plaintext, 3);
+    }
+
+    #[tokio::test]
+    async fn migrate_progress_empty_dir_emits_zero_total() {
+        // Edge case: the source dir is missing entirely. The reporter
+        // must still see a `total(_, 0)` event so the UI can render
+        // "nothing to migrate" instead of spinning forever.
+        let tmp = tempdir().unwrap();
+        let enc = unlocked().await;
+        let reporter = RecordingReporter::new(usize::MAX);
+        let (m, s) = migrate_all_envelopes_to_encrypted_with_progress(
+            tmp.path(),
+            &enc,
+            &reporter,
+        )
+        .await
+        .unwrap();
+        assert_eq!((m, s), (0, 0));
+        let totals = reporter.totals.lock().unwrap();
+        assert_eq!(*totals, vec![(MigrationStage::Envelopes, 0)]);
     }
 
     // ────────────────────────────────────────────────────────────────
