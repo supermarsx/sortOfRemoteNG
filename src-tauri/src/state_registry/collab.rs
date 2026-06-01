@@ -26,6 +26,18 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
 
     let rec_app_dir = app_dir.to_string_lossy().to_string();
     let rec_state: RecordingServiceState = recording::service::new_service_state(&rec_app_dir);
+    // Inject the encryption handle so subsequent envelope + macro
+    // persistence uses the dispatched codec while unlocked. The
+    // `EncryptionState` was installed in the main bootstrap (see
+    // `state_registry.rs`) before this function runs.
+    if let Some(enc_handle) = app.try_state::<sorng_encryption::EncryptionState>() {
+        let enc_arc = std::sync::Arc::new(enc_handle.inner().clone());
+        let rec_clone = rec_state.clone();
+        tauri::async_runtime::block_on(async move {
+            let svc = rec_clone.lock().await;
+            svc.set_encryption_state(enc_arc).await;
+        });
+    }
     app.manage(rec_state);
 
     let llm_state: LlmServiceState = llm::service::create_llm_state();

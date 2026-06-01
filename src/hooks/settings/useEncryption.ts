@@ -46,6 +46,16 @@ export interface DisableSettingsReport {
   bytesOut: number;
 }
 
+/** Per-artifact migration counts returned by
+ *  `rec_migrate_to_encrypted`. Mirrors the Rust
+ *  `RecordingMigrationReport` struct in `sorng-recording`. */
+export interface RecordingMigrationReport {
+  envelopesMigrated: number;
+  envelopesSkipped: number;
+  macrosMigrated: number;
+  macrosSkipped: number;
+}
+
 export interface RotateReport {
   artifactsRewritten: number;
   bytesRewritten: number;
@@ -70,6 +80,10 @@ export interface UseEncryption {
     argon2?: Argon2Params,
   ) => Promise<void>;
   migrateSettings: () => Promise<MigrationReport>;
+  /** Convert every plaintext recording envelope + macro under the
+   *  recordings storage root to its `.json.enc` v2 form. Returns the
+   *  per-artifact migrated/skipped counts. */
+  migrateRecordings: () => Promise<RecordingMigrationReport>;
   /** Decrypt `settings.enc` back to plaintext `settings.json` and
    *  delete the encrypted file. Master key stays alive for other
    *  artifacts. */
@@ -262,6 +276,18 @@ export function useEncryption(): UseEncryption {
     return report;
   }, [refresh]);
 
+  const migrateRecordings = useCallback(
+    async (): Promise<RecordingMigrationReport> => {
+      const inv = await invokeOrThrow();
+      const report = await inv<RecordingMigrationReport>(
+        "rec_migrate_to_encrypted",
+      );
+      await refresh();
+      return report;
+    },
+    [refresh],
+  );
+
   const disableSettings = useCallback(
     async (): Promise<DisableSettingsReport> => {
       const inv = await invokeOrThrow();
@@ -337,6 +363,7 @@ export function useEncryption(): UseEncryption {
     lock,
     changePassword,
     migrateSettings,
+    migrateRecordings,
     disableSettings,
     rotateMasterKey,
     exportPortableDek,

@@ -17,12 +17,21 @@ use crate::engine::{RecordingEngine, RecordingEngineState};
 use crate::error::{RecordingError, RecordingResult};
 use crate::storage;
 use crate::types::*;
+use sorng_encryption::EncryptionState;
 
 /// High-level service.  Wraps engine state + storage root.
 #[derive(Clone)]
 pub struct RecordingService {
     pub engine: RecordingEngineState,
     pub storage_root: Arc<Mutex<PathBuf>>,
+    /// Optional encryption-at-rest handle. When `Some` and unlocked,
+    /// all envelope + macro persistence goes through the dispatched
+    /// codecs (`<id>.json.enc`). When `None` or locked, the legacy
+    /// plaintext path is used. Installed via `with_encryption_state`
+    /// after `app.manage(EncryptionState)` has populated the global
+    /// state, so the service can be constructed independently of the
+    /// Tauri app boot order.
+    encryption_state: Arc<Mutex<Option<Arc<EncryptionState>>>>,
 }
 
 impl RecordingService {
@@ -33,7 +42,99 @@ impl RecordingService {
         Self {
             engine: Arc::new(Mutex::new(RecordingEngine::new())),
             storage_root: Arc::new(Mutex::new(root)),
+            encryption_state: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Inject the global `EncryptionState` so subsequent saves/loads
+    /// dispatch to the encrypted codec while unlocked. Safe to call
+    /// multiple times; later calls replace the handle.
+    pub async fn set_encryption_state(&self, state: Arc<EncryptionState>) {
+        *self.encryption_state.lock().await = Some(state);
+    }
+
+    /// Borrow the installed encryption state, if any.
+    async fn enc_handle(&self) -> Option<Arc<EncryptionState>> {
+        self.encryption_state.lock().await.clone()
+    }
+
+    /// Persist an envelope through the dispatched codec when an
+    /// encryption state is installed; otherwise fall back to the legacy
+    /// plaintext path. Centralised so individual call-sites stay short.
+    async fn persist_envelope(
+        &self,
+        root: PathBuf,
+        envelope: SavedRecordingEnvelope,
+    ) -> RecordingResult<()> {
+        if let Some(enc) = self.enc_handle().await {
+            storage::save_envelope_dispatched(&root, &envelope, &enc).await
+        } else {
+            tokio::task::spawn_blocking(move || storage::save_envelope(&root, &envelope))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))?
+        }
+    }
+
+    async fn persist_macro(
+        &self,
+        root: PathBuf,
+        m: MacroRecording,
+    ) -> RecordingResult<()> {
+        if let Some(enc) = self.enc_handle().await {
+            storage::save_macro_dispatched(&root, &m, &enc).await
+        } else {
+            tokio::task::spawn_blocking(move || storage::save_macro(&root, &m))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))?
+        }
+    }
+
+    async fn list_envelopes_dispatched(&self, root: PathBuf) -> RecordingResult<Vec<SavedRecordingEnvelope>> {
+        if let Some(enc) = self.enc_handle().await {
+            storage::load_all_envelopes_dispatched(&root, &enc).await
+        } else {
+            tokio::task::spawn_blocking(move || storage::load_all_envelopes(&root))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))?
+        }
+    }
+
+    async fn list_macros_dispatched(&self, root: PathBuf) -> RecordingResult<Vec<MacroRecording>> {
+        if let Some(enc) = self.enc_handle().await {
+            storage::load_all_macros_dispatched(&root, &enc).await
+        } else {
+            tokio::task::spawn_blocking(move || storage::load_all_macros(&root))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))?
+        }
+    }
+
+    /// One-shot migration of any plaintext recordings + macros on disk
+    /// into their encrypted variants. Requires an installed and
+    /// unlocked encryption state. Returns `(envelopes_migrated,
+    /// envelopes_skipped, macros_migrated, macros_skipped)`.
+    pub async fn migrate_to_encrypted(
+        &self,
+    ) -> RecordingResult<(usize, usize, usize, usize)> {
+        let enc = self
+            .enc_handle()
+            .await
+            .ok_or_else(|| RecordingError::StorageError(
+                "encryption state not installed; cannot migrate".into(),
+            ))?;
+        let root = self.storage_root.lock().await.clone();
+        let (em, es) = storage::migrate_all_envelopes_to_encrypted(&root, &enc).await?;
+        let (mm, ms) = storage::migrate_all_macros_to_encrypted(&root, &enc).await?;
+        // Refresh in-memory caches from disk so the UI reflects the
+        // post-migration filenames immediately (no restart required).
+        let envelopes = storage::load_all_envelopes_dispatched(&root, &enc).await?;
+        let macros = storage::load_all_macros_dispatched(&root, &enc).await?;
+        {
+            let mut eng = self.engine.lock().await;
+            eng.library = envelopes;
+            eng.macro_library = macros;
+        }
+        Ok((em, es, mm, ms))
     }
 
     /// Initialise from disk: load config, library, macros.
@@ -46,19 +147,13 @@ impl RecordingService {
         .await
         .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
-        let envelopes = tokio::task::spawn_blocking({
-            let r = root.clone();
-            move || storage::load_all_envelopes(&r)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
-
-        let macros = tokio::task::spawn_blocking({
-            let r = root.clone();
-            move || storage::load_all_macros(&r)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        // Dispatch through the encryption-aware listers so that, once
+        // the user has migrated, the library + macros loaded at startup
+        // already reflect `.json.enc` entries. When no encryption state
+        // has been installed yet (boot-order race with state_registry)
+        // these fall back to the legacy plaintext path.
+        let envelopes = self.list_envelopes_dispatched(root.clone()).await?;
+        let macros = self.list_macros_dispatched(root.clone()).await?;
 
         {
             let mut eng = self.engine.lock().await;
@@ -414,12 +509,10 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             macro_rec = eng.stop_macro_recording(session_id, name, description, category, tags)?;
         }
-        // Persist to disk
+        // Persist to disk — dispatched so a freshly stopped macro lands
+        // in the encrypted file when the user is unlocked.
         let root = self.storage_root.lock().await.clone();
-        let m = macro_rec.clone();
-        tokio::task::spawn_blocking(move || storage::save_macro(&root, &m))
-            .await
-            .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        self.persist_macro(root, macro_rec.clone()).await?;
         Ok(macro_rec)
     }
 
@@ -445,9 +538,7 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             eng.update_macro(updated.clone())?;
         }
-        tokio::task::spawn_blocking(move || storage::save_macro(&root, &updated))
-            .await
-            .map_err(|e| RecordingError::Internal(e.to_string()))?
+        self.persist_macro(root, updated).await
     }
 
     pub async fn delete_macro(&self, macro_id: &str) -> RecordingResult<()> {
@@ -456,8 +547,10 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             eng.delete_macro(macro_id)?;
         }
+        // Delete both v0 plaintext and v2 encrypted variants — during
+        // migration both may exist briefly for the same id.
         let id = macro_id.to_string();
-        tokio::task::spawn_blocking(move || storage::delete_macro_file(&root, &id))
+        tokio::task::spawn_blocking(move || storage::delete_macro_all_variants(&root, &id))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }
@@ -468,9 +561,7 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             eng.import_macro(macro_rec.clone());
         }
-        tokio::task::spawn_blocking(move || storage::save_macro(&root, &macro_rec))
-            .await
-            .map_err(|e| RecordingError::Internal(e.to_string()))?
+        self.persist_macro(root, macro_rec).await
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -568,9 +659,7 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             eng.save_to_library(envelope.clone());
         }
-        tokio::task::spawn_blocking(move || storage::save_envelope(&root, &envelope))
-            .await
-            .map_err(|e| RecordingError::Internal(e.to_string()))?
+        self.persist_envelope(root, envelope).await
     }
 
     pub async fn get_from_library(&self, id: &str) -> Option<SavedRecordingEnvelope> {
@@ -598,12 +687,10 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             eng.rename_in_library(id, name)?;
         }
-        // Re-save updated envelope to disk
+        // Re-save updated envelope to disk through the dispatched path.
         let envelope = self.engine.lock().await.get_from_library(id);
         if let Some(env) = envelope {
-            tokio::task::spawn_blocking(move || storage::save_envelope(&root, &env))
-                .await
-                .map_err(|e| RecordingError::Internal(e.to_string()))??;
+            self.persist_envelope(root, env).await?;
         }
         Ok(())
     }
@@ -616,9 +703,7 @@ impl RecordingService {
         }
         let envelope = self.engine.lock().await.get_from_library(id);
         if let Some(env) = envelope {
-            tokio::task::spawn_blocking(move || storage::save_envelope(&root, &env))
-                .await
-                .map_err(|e| RecordingError::Internal(e.to_string()))??;
+            self.persist_envelope(root, env).await?;
         }
         Ok(())
     }
@@ -629,8 +714,9 @@ impl RecordingService {
             let mut eng = self.engine.lock().await;
             eng.delete_from_library(id)?;
         }
+        // Delete both variants for safety during the migration window.
         let id_owned = id.to_string();
-        tokio::task::spawn_blocking(move || storage::delete_envelope(&root, &id_owned))
+        tokio::task::spawn_blocking(move || storage::delete_envelope_all_variants(&root, &id_owned))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }

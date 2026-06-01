@@ -56,7 +56,10 @@ import {
   Toggle as SettingsToggleRow,
 } from "../../../ui/settings/SettingsPrimitives";
 import { InfoTooltip } from "../../../ui/InfoTooltip";
-import { useEncryption } from "../../../../hooks/settings/useEncryption";
+import {
+  useEncryption,
+  type RecordingMigrationReport,
+} from "../../../../hooks/settings/useEncryption";
 import {
   ARGON2_OWASP,
   AUDIT_EVENT_LABELS,
@@ -93,6 +96,14 @@ const EncryptionAtRestSection: React.FC = () => {
     null,
   );
   const [migrateRanAt, setMigrateRanAt] = useState<string | null>(null);
+
+  // Phase 2a — recording metadata + macros migration (separate Tauri
+  // command that walks the recordings storage root, not settings).
+  const [migrateRecBusy, setMigrateRecBusy] = useState(false);
+  const [migrateRecError, setMigrateRecError] = useState<string | null>(null);
+  const [migrateRecReport, setMigrateRecReport] =
+    useState<RecordingMigrationReport | null>(null);
+  const [migrateRecRanAt, setMigrateRecRanAt] = useState<string | null>(null);
 
   const [changeOldPw, setChangeOldPw] = useState("");
   const [changeNewPw, setChangeNewPw] = useState("");
@@ -178,6 +189,20 @@ const EncryptionAtRestSection: React.FC = () => {
       setMigrateError(e instanceof Error ? e.message : String(e));
     } finally {
       setMigrateBusy(false);
+    }
+  };
+
+  const handleMigrateRecordings = async () => {
+    setMigrateRecBusy(true);
+    setMigrateRecError(null);
+    try {
+      const report = await enc.migrateRecordings();
+      setMigrateRecReport(report);
+      setMigrateRecRanAt(formatNow());
+    } catch (e) {
+      setMigrateRecError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMigrateRecBusy(false);
     }
   };
 
@@ -569,6 +594,62 @@ const EncryptionAtRestSection: React.FC = () => {
                   <FileWarning className="w-3.5 h-3.5" />
                 )}
                 Migrate now
+              </button>
+            </div>
+          </Card>
+
+          {/* ── Recordings + macros migration ─────────────────────── */}
+          <Card>
+            <p className="text-xs text-[var(--color-textMuted)]">
+              Convert every plaintext{" "}
+              <code>&lt;id&gt;.json</code> recording envelope and macro
+              file under the recordings storage root to its{" "}
+              <code>&lt;id&gt;.json.enc</code> v2 form. Originals are
+              archived as <code>.json.v0.bak</code>; new captures will
+              land encrypted automatically once you migrate.
+            </p>
+
+            {migrateRecRanAt && migrateRecReport && (
+              <div className="mt-2 p-2 rounded bg-success/10 border border-success/30 text-xs">
+                <div className="flex items-center gap-1.5 text-success mb-1">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Recordings migrated at {migrateRecRanAt}</span>
+                </div>
+                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[var(--color-textSecondary)] mt-1">
+                  <span>Envelopes</span>
+                  <span className="text-[var(--color-text)] font-mono">
+                    {migrateRecReport.envelopesMigrated} migrated /{" "}
+                    {migrateRecReport.envelopesSkipped} skipped
+                  </span>
+                  <span>Macros</span>
+                  <span className="text-[var(--color-text)] font-mono">
+                    {migrateRecReport.macrosMigrated} migrated /{" "}
+                    {migrateRecReport.macrosSkipped} skipped
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {migrateRecError && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{migrateRecError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleMigrateRecordings}
+                disabled={migrateRecBusy || !status?.unlocked}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-warning text-[var(--color-text)] hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+              >
+                {migrateRecBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileWarning className="w-3.5 h-3.5" />
+                )}
+                Migrate recordings + macros
               </button>
             </div>
           </Card>

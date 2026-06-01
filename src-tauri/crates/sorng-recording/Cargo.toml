@@ -15,3 +15,11 @@ base64 = { workspace = true }
 sha2 = { workspace = true }
 # Vendor dylib (zstd + flate2)
 sorng-compression-vendor = { path = "../sorng-compression-vendor" }
+# Encryption-at-rest (Phase 2a) — dispatched envelope read/write for
+# recording metadata + macros. We only need `EncryptionState` and the
+# two artifact codecs, so the dep is intentionally narrow (no tauri
+# features needed by this crate).
+sorng-encryption = { path = "../sorng-encryption" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

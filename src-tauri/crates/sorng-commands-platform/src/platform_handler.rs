@@ -76,6 +76,7 @@ pub fn is_command(command: &str) -> bool {
             | "rec_clear_jobs"
             | "rec_run_cleanup"
             | "rec_storage_size"
+            | "rec_migrate_to_encrypted"
             | "llm_add_provider"
             | "llm_remove_provider"
             | "llm_update_provider"
@@ -696,6 +697,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // Cleanup & storage
         recording_commands::rec_run_cleanup,
         recording_commands::rec_storage_size,
+        recording_commands::rec_migrate_to_encrypted,
         // LLM backend commands
         llm_commands::llm_add_provider,
         llm_commands::llm_remove_provider,

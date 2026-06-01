@@ -923,3 +923,42 @@ pub async fn rec_storage_size(
     let svc = state.lock().await;
     svc.storage_size().await.map_err(|e| e.to_string())
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Encryption-at-rest migration (Phase 2a wiring)
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Convert every existing plaintext `<id>.json` recording envelope and
+/// macro file under the storage root to its `<id>.json.enc` v2 form.
+/// Requires an unlocked encryption state. The originals are archived
+/// as `<id>.json.v0.bak` before deletion so a user can roll back from
+/// disk within the rollback window.
+///
+/// Returns a four-tuple: envelope migrated/skipped + macro migrated/
+/// skipped. The skipped count includes files we could not parse as
+/// the expected struct — they remain on disk untouched.
+#[tauri::command]
+pub async fn rec_migrate_to_encrypted(
+    state: tauri::State<'_, RecordingServiceState>,
+) -> Result<RecordingMigrationReport, String> {
+    let svc = state.lock().await;
+    let (em, es, mm, ms) = svc
+        .migrate_to_encrypted()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(RecordingMigrationReport {
+        envelopes_migrated: em as u32,
+        envelopes_skipped: es as u32,
+        macros_migrated: mm as u32,
+        macros_skipped: ms as u32,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingMigrationReport {
+    pub envelopes_migrated: u32,
+    pub envelopes_skipped: u32,
+    pub macros_migrated: u32,
+    pub macros_skipped: u32,
+}

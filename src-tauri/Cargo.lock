@@ -11554,6 +11554,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-compression-vendor",
+ "sorng-encryption",
+ "tempfile",
  "tokio 1.52.1",
  "uuid",
 ]
