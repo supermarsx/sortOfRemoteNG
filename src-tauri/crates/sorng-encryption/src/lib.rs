@@ -45,6 +45,7 @@ pub mod commands;
 pub mod dek;
 pub mod envelope;
 pub mod lockout;
+pub mod log_sink;
 pub mod password_wrap;
 pub mod state;
 
