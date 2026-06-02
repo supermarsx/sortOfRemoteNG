@@ -149,6 +149,13 @@ pub fn record(
     std::fs::create_dir_all(&dir).map_err(|e| AuditError::Mkdir(e.to_string()))?;
     let path = dir.join(AUDIT_LOG_FILENAME);
 
+    // Pre-append retention check: if the active log has grown past
+    // the rotation budget, rename it to `<name>.0.bak` (overwriting
+    // any prior backup) and start a fresh active log. The single-
+    // backup policy keeps disk usage bounded at ≤ 2×budget while
+    // preserving enough history for forensic review.
+    let _ = rotate_if_oversize(&path, MAX_LOG_BYTES);
+
     let entry = AuditEntry {
         ts: now_iso_8601(),
         event: event.tag().to_string(),
@@ -172,6 +179,33 @@ pub fn record(
         .map_err(|e| AuditError::Write(e.to_string()))?;
     f.flush().map_err(|e| AuditError::Write(e.to_string()))?;
     Ok(())
+}
+
+/// Soft retention cap for the active audit log. Crossing this size
+/// triggers a rotation to `<name>.0.bak`. At one line per event and
+/// ~200 bytes per line, 5 MiB ≈ 26k events — months of activity for
+/// the kind of user who reviews the audit log.
+pub const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+
+/// Helper exposed so unit tests can rotate at an arbitrary threshold
+/// without rewriting the active log.
+pub fn rotate_if_oversize(path: &Path, max_bytes: u64) -> Result<bool, AuditError> {
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        // Nothing to rotate when the file doesn't exist yet.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(AuditError::Read(e.to_string())),
+    };
+    if meta.len() <= max_bytes {
+        return Ok(false);
+    }
+    let bak = path.with_extension("log.0.bak");
+    // Overwrite any prior backup — single-backup retention.
+    if bak.exists() {
+        let _ = std::fs::remove_file(&bak);
+    }
+    std::fs::rename(path, &bak).map_err(|e| AuditError::Write(e.to_string()))?;
+    Ok(true)
 }
 
 /// Read the most recent `limit` entries (newest last). Returns an
@@ -422,5 +456,66 @@ mod tests {
         for (i, e) in entries.iter().enumerate() {
             assert_eq!(e.metadata["i"], i as i64);
         }
+    }
+
+    #[test]
+    fn rotate_if_oversize_renames_active_to_backup() {
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().join(LOGS_SUBDIR);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let path = log_dir.join(AUDIT_LOG_FILENAME);
+        // Write 1500 bytes; threshold 1000 → must rotate.
+        std::fs::write(&path, vec![b'x'; 1500]).unwrap();
+        assert!(rotate_if_oversize(&path, 1000).unwrap());
+        assert!(!path.exists(), "active log should be moved aside");
+        let bak = path.with_extension("log.0.bak");
+        assert!(bak.exists());
+        assert_eq!(std::fs::metadata(&bak).unwrap().len(), 1500);
+    }
+
+    #[test]
+    fn rotate_if_oversize_noop_below_threshold() {
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().join(LOGS_SUBDIR);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let path = log_dir.join(AUDIT_LOG_FILENAME);
+        std::fs::write(&path, b"small").unwrap();
+        assert!(!rotate_if_oversize(&path, 1000).unwrap());
+        assert!(path.exists());
+        assert!(!path.with_extension("log.0.bak").exists());
+    }
+
+    #[test]
+    fn rotate_if_oversize_overwrites_prior_backup() {
+        // Single-backup retention: a second rotation replaces the
+        // previous `.0.bak`, never accumulating multiple backups.
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().join(LOGS_SUBDIR);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let path = log_dir.join(AUDIT_LOG_FILENAME);
+        std::fs::write(&path, vec![b'a'; 1500]).unwrap();
+        rotate_if_oversize(&path, 1000).unwrap();
+        std::fs::write(&path, vec![b'b'; 1500]).unwrap();
+        rotate_if_oversize(&path, 1000).unwrap();
+        let bak = path.with_extension("log.0.bak");
+        let body = std::fs::read(&bak).unwrap();
+        assert_eq!(body[0], b'b', "backup should hold the most-recent rotation");
+    }
+
+    #[test]
+    fn record_rotates_when_active_log_exceeds_budget() {
+        // End-to-end test of the auto-rotation path through `record`.
+        // We synthesise an oversize active log first, then write a
+        // single new event; the new event must land in a fresh active
+        // file while the bulky history is preserved in `.0.bak`.
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().join(LOGS_SUBDIR);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let path = log_dir.join(AUDIT_LOG_FILENAME);
+        std::fs::write(&path, vec![b'x'; (MAX_LOG_BYTES + 1) as usize]).unwrap();
+        record(dir.path(), AuditEvent::UnlockSuccess, json!({})).unwrap();
+        // Active log is small (just the new event) — the old bulk is in .bak.
+        assert!(std::fs::metadata(&path).unwrap().len() < 1024);
+        assert!(path.with_extension("log.0.bak").exists());
     }
 }
