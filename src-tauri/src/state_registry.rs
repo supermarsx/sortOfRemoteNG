@@ -298,14 +298,12 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     let launch_args = sorng_app_shell::commands::parse_launch_args(std::env::args());
     app.manage(launch_args);
 
-    if cfg!(debug_assertions) {
-        app.handle().plugin(
-            tauri_plugin_log::Builder::default()
-                .level(log::LevelFilter::Info)
-                .build(),
-        )?;
-    }
-
+    // Commit H — replace `tauri_plugin_log`'s plaintext file writer
+    // with the encrypted log adapter. The plugin dependency stays in
+    // Cargo.toml so other crates that reference its types still build;
+    // we just don't register it. The adapter install happens further
+    // down once `EncryptionState` exists (it needs the shared handle
+    // to buffer-until-unlock at boot).
     cpu_features::log_all_features();
 
     let app_dir = app.path().app_data_dir()?;
@@ -385,7 +383,27 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
             }
         }
     }
+    // Snapshot the (cheaply cloneable Arc-backed) handle BEFORE
+    // `app.manage` consumes it — the logger drainer task owns its
+    // own clone so it survives independent of Tauri state lookups.
+    let enc_state_for_logger = enc_state.clone();
     app.manage(enc_state);
+
+    // Install the encrypted log adapter once the encryption state
+    // exists. Gated on `debug_assertions` to preserve the prior
+    // tauri_plugin_log behaviour (no global logger in release until
+    // the rollout flips the gate). The state may be locked here —
+    // the sink buffers lines until unlock, so no records are lost.
+    if cfg!(debug_assertions) {
+        let logs_dir = app_dir.join("logs");
+        if let Err(e) = sorng_encryption::log_adapter::EncryptedLogAdapter::install(
+            std::sync::Arc::new(enc_state_for_logger),
+            logs_dir,
+            log::LevelFilter::Info,
+        ) {
+            eprintln!("Failed to install encrypted log adapter: {}", e);
+        }
+    }
 
     #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
     platform::register(app);

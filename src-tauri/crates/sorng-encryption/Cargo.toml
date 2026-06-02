@@ -25,6 +25,10 @@ regex = { workspace = true }
 # Async
 tokio = { workspace = true }
 
+# Global logger facade — adapter in log_adapter.rs implements log::Log.
+# `std` is needed for `set_boxed_logger` (atomic Box install).
+log = { workspace = true, features = ["std"] }
+
 # Vault for master DEK storage + password-wrap envelope
 sorng-vault = { path = "../sorng-vault" }
 
