@@ -80,10 +80,10 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
   useEffect(() => {
     if (!shouldArmAutoLock(config, unlocked)) return;
 
-    const triggerLock = () => {
+    const triggerLock = (reason: "idle" | "blur" | "minimize" | "visibility-hidden") => {
       // Reading the latest callback through a ref keeps the listener
       // wiring stable across hook renders.
-      void lockRef.current().catch(() => {
+      void lockRef.current(reason).catch(() => {
         // Lock errors are non-fatal — the next event will retry.
       });
     };
@@ -97,7 +97,7 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
 
       const reset = () => {
         if (handle) clearTimeout(handle);
-        handle = setTimeout(triggerLock, timeoutMs);
+        handle = setTimeout(() => triggerLock("idle"), timeoutMs);
       };
       reset();
       ACTIVITY_EVENTS.forEach((evt) => {
@@ -116,7 +116,7 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
       let blurTimer: ReturnType<typeof setTimeout> | null = null;
       const onBlur = () => {
         if (blurTimer) clearTimeout(blurTimer);
-        blurTimer = setTimeout(triggerLock, BLUR_DEBOUNCE_MS);
+        blurTimer = setTimeout(() => triggerLock("blur"), BLUR_DEBOUNCE_MS);
       };
       const onFocus = () => {
         if (blurTimer) clearTimeout(blurTimer);
@@ -133,7 +133,7 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
     // ── Document visibility (cross-platform fallback) ─────────────
     if (config?.lockOnVisibilityHidden) {
       const onVisibility = () => {
-        if (document.hidden) triggerLock();
+        if (document.hidden) triggerLock("visibility-hidden");
       };
       document.addEventListener("visibilitychange", onVisibility);
       cleanups.push(() => {
@@ -164,9 +164,9 @@ export function useAutoLock(config: AutoLockConfig | undefined): void {
               );
               const w = getCurrentWindow();
               const isMin = await w.isMinimized();
-              if (isMin) triggerLock();
+              if (isMin) triggerLock("minimize");
             } catch {
-              if (document.hidden) triggerLock();
+              if (document.hidden) triggerLock("minimize");
             }
           });
           cleanups.push(() => {

@@ -376,15 +376,32 @@ pub async fn encryption_unlock(
     }
 }
 
+/// `reason` is a free-form tag the caller supplies so the audit log
+/// can distinguish *why* a lock fired. The frontend uses:
+///   - `"manual"`    — Settings → Security "Lock now" button
+///   - `"shortcut"`  — Ctrl/⌘-L global keyboard binding
+///   - `"idle"`      — auto-lock idle-timeout
+///   - `"blur"`      — auto-lock window blur (debounced)
+///   - `"minimize"`  — auto-lock window minimised
+///   - `"visibility-hidden"` — DOM `visibilitychange → hidden`
+/// `None` records as `"unspecified"` so older callers still produce
+/// a clean audit entry.
 #[tauri::command]
 pub async fn encryption_lock(
     app: AppHandle,
     state: State<'_, EncryptionState>,
+    reason: Option<String>,
 ) -> Result<(), String> {
     state.lock().await;
     let _ = app.emit(EVENT_LOCKED, ());
     if let Ok(dir) = app.path().app_data_dir() {
-        let _ = audit::record(&dir, AuditEvent::Locked, serde_json::json!({}));
+        let _ = audit::record(
+            &dir,
+            AuditEvent::Locked,
+            serde_json::json!({
+                "reason": reason.unwrap_or_else(|| "unspecified".to_string()),
+            }),
+        );
     }
     Ok(())
 }

@@ -80,6 +80,17 @@ export interface RecordingMigrationProgressEvent {
   skipped: boolean;
 }
 
+/** Tags the lock command accepts as a reason for the audit log. The
+ *  Rust side accepts any string but the frontend should stick to
+ *  this closed set so the audit-log viewer can render labels. */
+export type LockReason =
+  | "manual"
+  | "shortcut"
+  | "idle"
+  | "blur"
+  | "minimize"
+  | "visibility-hidden";
+
 export interface RotateReport {
   artifactsRewritten: number;
   bytesRewritten: number;
@@ -119,7 +130,11 @@ export interface UseEncryption {
   refreshLockout: () => Promise<void>;
   setup: (method: SetupMethod) => Promise<UnlockResult>;
   unlock: (password?: string) => Promise<UnlockResult>;
-  lock: () => Promise<void>;
+  /** Drop the master key from memory. `reason` is a free-form tag
+   *  (`"manual"`, `"shortcut"`, `"idle"`, `"blur"`, `"minimize"`,
+   *  `"visibility-hidden"`) recorded in the audit log so a future
+   *  user can tell why each lock fired. Defaults to `"unspecified"`. */
+  lock: (reason?: LockReason) => Promise<void>;
   changePassword: (
     oldPassword: string,
     newPassword: string,
@@ -309,11 +324,14 @@ export function useEncryption(): UseEncryption {
     [refresh, refreshLockout],
   );
 
-  const lock = useCallback(async (): Promise<void> => {
-    const inv = await invokeOrThrow();
-    await inv<void>("encryption_lock");
-    await refresh();
-  }, [refresh]);
+  const lock = useCallback(
+    async (reason?: LockReason): Promise<void> => {
+      const inv = await invokeOrThrow();
+      await inv<void>("encryption_lock", { reason: reason ?? null });
+      await refresh();
+    },
+    [refresh],
+  );
 
   const changePassword = useCallback(
     async (

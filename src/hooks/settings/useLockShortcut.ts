@@ -103,7 +103,7 @@ export function useLockShortcut(): void {
       }
       e.preventDefault();
       e.stopPropagation();
-      void lockRef.current().catch(() => {
+      void lockRef.current("shortcut").catch(() => {
         // Errors are surfaced via the encryption hook's `error`
         // state; the shortcut itself stays silent so a transient
         // backend failure doesn't spam the keystroke handling path.

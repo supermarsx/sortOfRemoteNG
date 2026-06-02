@@ -213,7 +213,7 @@ const EncryptionAtRestSection: React.FC = () => {
     setLockBusy(true);
     setLockError(null);
     try {
-      await enc.lock();
+      await enc.lock("manual");
     } catch (e) {
       setLockError(e instanceof Error ? e.message : String(e));
     } finally {
