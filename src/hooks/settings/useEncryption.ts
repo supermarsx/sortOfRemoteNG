@@ -80,32 +80,6 @@ export interface RecordingMigrationProgressEvent {
   skipped: boolean;
 }
 
-/** Per-file failure record carried by [`BackupMigrationReport`].
- *  Mirrors the Rust `BackupMigrationFailure` struct. */
-export interface BackupMigrationFailure {
-  filePath: string;
-  reason: string;
-}
-
-/** Per-run report returned by `backup_migrate_to_master_dek`.
- *  Mirrors the Rust `BackupMigrationReport` struct. */
-export interface BackupMigrationReport {
-  total: number;
-  migrated: number;
-  alreadyV2: number;
-  bytesIn: number;
-  bytesOut: number;
-  failed: BackupMigrationFailure[];
-}
-
-/** Discriminated outcome of `storage_migrate_to_master_dek`. Mirrors
- *  the Rust `MigrationOutcome` enum — serde emits the variant name as
- *  camelCase and inlines the `backupPath` for the `migrated` arm. */
-export type ConnectionsMigrationOutcome =
-  | "noSourceFile"
-  | "alreadyV2"
-  | { migrated: { backupPath: string } };
-
 export interface RotateReport {
   artifactsRewritten: number;
   bytesRewritten: number;
@@ -144,20 +118,6 @@ export interface UseEncryption {
   /** Flip the cooperative cancel flag on the in-flight recording
    *  migration. Safe to call when no migration is running. */
   cancelRecordingsMigration: () => Promise<void>;
-  /** Migrate the connections database (`data.json`) from the legacy
-   *  `SORNG_ENC:` envelope (or plain JSON) to the v2 envelope under
-   *  the master DEK. `legacyPassword` is the previous database
-   *  password — pass `undefined` when the file was plain JSON. */
-  migrateConnections: (
-    legacyPassword?: string,
-  ) => Promise<ConnectionsMigrationOutcome>;
-  /** Migrate every backup file under each enabled destination from
-   *  the legacy `SORNG1` envelope (or plaintext) to the v2 envelope
-   *  under the master DEK. `legacyPassword` is the previous backup
-   *  password — pass `undefined` when no SORNG1 files exist. */
-  migrateBackups: (
-    legacyPassword?: string,
-  ) => Promise<BackupMigrationReport>;
   /** Decrypt `settings.enc` back to plaintext `settings.json` and
    *  delete the encrypted file. Master key stays alive for other
    *  artifacts. */
@@ -390,38 +350,6 @@ export function useEncryption(): UseEncryption {
     await inv<void>("rec_cancel_migration");
   }, []);
 
-  const migrateConnections = useCallback(
-    async (
-      legacyPassword?: string,
-    ): Promise<ConnectionsMigrationOutcome> => {
-      const inv = await invokeOrThrow();
-      const outcome = await inv<ConnectionsMigrationOutcome>(
-        "storage_migrate_to_master_dek",
-        // Tauri command parameter names are snake_case on the Rust
-        // side; the Tauri runtime maps them from camelCase here.
-        { legacyPassword: legacyPassword ?? null },
-      );
-      await refresh();
-      return outcome;
-    },
-    [refresh],
-  );
-
-  const migrateBackups = useCallback(
-    async (
-      legacyPassword?: string,
-    ): Promise<BackupMigrationReport> => {
-      const inv = await invokeOrThrow();
-      const report = await inv<BackupMigrationReport>(
-        "backup_migrate_to_master_dek",
-        { legacyPassword: legacyPassword ?? null },
-      );
-      await refresh();
-      return report;
-    },
-    [refresh],
-  );
-
   const disableSettings = useCallback(
     async (): Promise<DisableSettingsReport> => {
       const inv = await invokeOrThrow();
@@ -499,8 +427,6 @@ export function useEncryption(): UseEncryption {
     migrateSettings,
     migrateRecordings,
     cancelRecordingsMigration,
-    migrateConnections,
-    migrateBackups,
     disableSettings,
     rotateMasterKey,
     exportPortableDek,

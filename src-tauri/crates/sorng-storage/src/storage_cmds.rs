@@ -85,23 +85,16 @@ pub async fn clear_storage(state: tauri::State<'_, SecureStorageState>) -> Resul
     storage.clear_storage().await
 }
 
-/// Tauri command to set the storage password.
-///
-/// # Arguments
-///
-/// * `state` - The secure storage service state
-/// * `password` - Optional password for encryption
-///
-/// # Returns
-///
-/// `Ok(())` always (password stored for future encryption)
+/// Backwards-compatible no-op. The legacy database password was
+/// retired in commit Z; the master DEK is the single source of
+/// connections-at-rest crypto. Kept as a registered command so older
+/// frontends that still call `set_storage_password` on startup don't
+/// fail; the supplied value is discarded.
 #[tauri::command]
 pub async fn set_storage_password(
-    state: tauri::State<'_, SecureStorageState>,
-    password: Option<String>,
+    _state: tauri::State<'_, SecureStorageState>,
+    _password: Option<String>,
 ) -> Result<(), String> {
-    let mut storage = state.lock().await;
-    storage.set_password(password).await;
     Ok(())
 }
 
@@ -143,27 +136,5 @@ pub async fn write_app_data(
 ) -> Result<(), String> {
     let storage = state.lock().await;
     storage.write_app_data(&key, &value).await
-}
-
-/// Tauri command to migrate the legacy connections database to the
-/// v2 envelope under the master DEK.
-///
-/// `legacyPassword` is the database password used by the previous
-/// `SORNG_ENC:` format. Pass `null` when the existing file is plain
-/// JSON (no database password ever set). Returns a [`MigrationOutcome`]
-/// the UI can render directly.
-///
-/// On success the legacy file is renamed to `<store_path>.v0.bak`
-/// and stays on disk for the rest of the release cycle as a rollback
-/// safety net.
-#[tauri::command]
-pub async fn storage_migrate_to_master_dek(
-    legacy_password: Option<String>,
-    state: tauri::State<'_, SecureStorageState>,
-) -> Result<MigrationOutcome, String> {
-    let mut storage = state.lock().await;
-    storage
-        .migrate_to_master_dek(legacy_password.as_deref())
-        .await
 }
 

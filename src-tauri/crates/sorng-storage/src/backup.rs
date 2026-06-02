@@ -12,7 +12,9 @@
 //! - Encryption (AES-256-GCM)
 //! - Backup verification and integrity checking
 
+#[cfg(test)]
 use aes_gcm::aead::{Aead, KeyInit};
+#[cfg(test)]
 use aes_gcm::{Aes256Gcm, Nonce};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -160,9 +162,6 @@ pub struct BackupConfig {
     pub max_backups_to_keep: u32,
     pub format: BackupFormat,
     pub include_passwords: bool,
-    pub encrypt_backups: bool,
-    pub encryption_algorithm: String,
-    pub encryption_password: Option<String>,
     pub include_settings: bool,
     pub include_ssh_keys: bool,
     pub backup_on_close: bool,
@@ -208,9 +207,6 @@ impl Default for BackupConfig {
             max_backups_to_keep: 30,
             format: BackupFormat::Json,
             include_passwords: false,
-            encrypt_backups: true,
-            encryption_algorithm: "AES-256-GCM".to_string(),
-            encryption_password: None,
             include_settings: true,
             include_ssh_keys: false,
             backup_on_close: false,
@@ -304,42 +300,6 @@ pub struct BackupStatus {
     /// "last run" panel in the backup settings dialog.
     #[serde(default)]
     pub last_target_results: Vec<TargetResult>,
-}
-
-/// Per-file failure record carried by [`BackupMigrationReport`]. The
-/// UI renders one row per failure so the user can address each one
-/// (e.g. wrong password on a specific destination, missing source).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupMigrationFailure {
-    pub file_path: String,
-    pub reason: String,
-}
-
-/// Aggregate report returned by
-/// [`BackupService::migrate_to_master_dek`]. Counts are independent
-/// — a file can only fall into one of `migrated`, `already_v2`, or
-/// `failed`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupMigrationReport {
-    /// Total candidate files scanned (post-filter, pre-classify).
-    pub total: u32,
-    /// Files freshly re-encrypted under the master DEK.
-    pub migrated: u32,
-    /// Files that were already in the v2 envelope at scan time —
-    /// idempotent no-op.
-    pub already_v2: u32,
-    /// Sum of plaintext sizes read (decrypted from SORNG1 / read from
-    /// plaintext). Useful for the UI to show "migrated X MiB".
-    pub bytes_in: u64,
-    /// Sum of v2-envelope sizes written. The delta from `bytes_in`
-    /// is the envelope overhead — should be ~64 bytes per file.
-    pub bytes_out: u64,
-    /// Per-file failures with the path and reason. Empty on a clean
-    /// run; non-empty does not stop the loop from processing other
-    /// files at other destinations.
-    pub failed: Vec<BackupMigrationFailure>,
 }
 
 /// List of available backups
@@ -648,20 +608,10 @@ impl BackupService {
             json_data.as_bytes().to_vec()
         };
 
-        // Encryption dispatch (legacy SORNG1 write path removed —
-        // see commit 57cf5505 for the migrator that converts existing
-        // SORNG1 files to v2, and the legacy read path is retained
-        // below until the next commit purges it):
-        //  1. v2 envelope — whenever the master-key state is
-        //     installed and unlocked. Master DEK drives sub-key
-        //     derivation; the legacy backup password is dead weight.
-        //  2. Plaintext — when no encryption state is installed (the
-        //     pre-encryption boot path for tests).
-        //
-        // `BackupConfig.encrypt_backups` + `.encryption_password`
-        // remain on the type for backward-compat deserialise but no
-        // longer influence write dispatch; the master key is the
-        // single source of truth.
+        // Encryption dispatch — master DEK or plaintext, no more
+        // legacy SORNG1 paths. The migrator that converted SORNG1
+        // files to v2 lived briefly between commits 57cf5505 and Z;
+        // it's been removed now that the dev tree is fully migrated.
         let used_v2 = self.encryption_state.is_some()
             && self
                 .encryption_state
@@ -803,13 +753,10 @@ impl BackupService {
                         backup_type: backup_type.to_string(),
                         version: env!("CARGO_PKG_VERSION").to_string(),
                         checksum: checksum.clone(),
-                        // `encrypted` reflects whatever path actually
-                        // produced the bytes — v2 envelope counts as
-                        // encrypted even when the legacy
-                        // `encrypt_backups` switch is off.
-                        encrypted: used_v2
-                            || (self.config.encrypt_backups
-                                && self.config.encryption_password.is_some()),
+                        // `encrypted` mirrors the only crypto path
+                        // that still exists: the v2 envelope under
+                        // the master DEK.
+                        encrypted: used_v2,
                         compressed: self.config.compress_backups,
                         size_bytes,
                         connections_count,
@@ -1142,16 +1089,12 @@ impl BackupService {
         let file_data =
             fs::read(&path).map_err(|e| format!("Failed to read backup file: {}", e))?;
 
-        // Magic-byte dispatch on read. v2 envelope (sorng-v1) wins,
-        // legacy SORNG1 stays supported, otherwise treat as plaintext.
+        // Magic-byte dispatch on read. v2 envelope is the only
+        // supported crypto envelope; everything else is treated as
+        // plaintext. The legacy SORNG1 path was retired in commit Z
+        // alongside the migrator that converted existing files.
         let decrypted_data = if self.is_v2_backup(&file_data) {
             self.decrypt_backup_v2(&file_data).await?
-        } else if self.is_encrypted_backup(&file_data) {
-            let password =
-                self.config.encryption_password.as_ref().ok_or_else(|| {
-                    "Backup is encrypted but no password is configured".to_string()
-                })?;
-            self.decrypt_backup_data(&file_data, password)?
         } else {
             file_data
         };
@@ -1206,49 +1149,9 @@ impl BackupService {
         Ok(())
     }
 
-    /// SORNG1 envelope writer. No production caller remains after
-    /// this commit — kept only so the legacy-decrypt tests can produce
-    /// fixtures the same way the old write path did. Full purge in
-    /// commit Z.
-    #[cfg(test)]
-    fn encrypt_backup_data(&self, plaintext: &[u8], password: &str) -> Result<Vec<u8>, String> {
-        let key = self.derive_key(password);
-        let cipher = Aes256Gcm::new_from_slice(&key)
-            .map_err(|e| format!("Failed to create cipher: {}", e))?;
-        let mut nonce_bytes = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext)
-            .map_err(|e| format!("Failed to encrypt backup: {}", e))?;
-        let mut out = Vec::with_capacity(6 + nonce_bytes.len() + ciphertext.len());
-        out.extend_from_slice(b"SORNG1");
-        out.extend_from_slice(&nonce_bytes);
-        out.extend_from_slice(&ciphertext);
-        Ok(out)
-    }
-
-    fn decrypt_backup_data(&self, data: &[u8], password: &str) -> Result<Vec<u8>, String> {
-        if data.len() < 6 + 12 || &data[..6] != b"SORNG1" {
-            return Err("Backup encryption header missing or invalid".to_string());
-        }
-        let nonce_bytes = &data[6..18];
-        let ciphertext = &data[18..];
-        let key = self.derive_key(password);
-        let cipher = Aes256Gcm::new_from_slice(&key)
-            .map_err(|e| format!("Failed to create cipher: {}", e))?;
-        let nonce = Nonce::from_slice(nonce_bytes);
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| format!("Failed to decrypt backup: {}", e))
-    }
-
-    fn is_encrypted_backup(&self, data: &[u8]) -> bool {
-        data.len() >= 6 && &data[..6] == b"SORNG1"
-    }
-
     /// Magic-byte sniff: `SORNG\0` → v2 envelope (per-master-key DEK),
-    /// otherwise fall through to legacy PBKDF2 / plaintext detection.
+    /// otherwise plaintext. Returned by the dispatcher to decide
+    /// whether to route through `decrypt_backup_v2`.
     fn is_v2_backup(&self, data: &[u8]) -> bool {
         data.len() >= 6 && &data[..6] == sorng_encryption::envelope::MAGIC
     }
@@ -1284,185 +1187,6 @@ impl BackupService {
             .map_err(|e| format!("v2 backup decrypt: {e}"))
     }
 
-    fn derive_key(&self, password: &str) -> [u8; 32] {
-        // Use PBKDF2-HMAC-SHA256 with 600k iterations (OWASP 2023) instead of
-        // a single SHA-256 pass. Salt is deterministic so existing backups
-        // encrypted with the same password can still be decrypted.
-        let mut salt_hasher = Sha256::new();
-        salt_hasher.update(b"sorng-backup-kdf-salt:");
-        salt_hasher.update(password.as_bytes());
-        let salt = salt_hasher.finalize();
-
-        let mut key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 600_000, &mut key);
-        key
-    }
-
-    /// One-shot migration of every backup file under each configured
-    /// destination from the legacy `SORNG1` envelope (or plaintext) to
-    /// the v2 envelope under the master DEK
-    /// (`sorng-v1::backups`). The migrator is the prerequisite for
-    /// dropping the legacy `SORNG1` read path — once a user runs this
-    /// successfully across every destination, the legacy reader can
-    /// be removed safely.
-    ///
-    /// Per-file behaviour:
-    /// - File starts with `SORNG\0` → already v2, reported as
-    ///   `AlreadyV2`. No-op.
-    /// - File starts with `SORNG1` → caller must pass the legacy
-    ///   backup password. Decrypt with PBKDF2/600k, re-encrypt under
-    ///   the master DEK, archive original as `<file>.v0.bak`.
-    /// - Anything else → treat as plaintext. Re-encrypt and archive.
-    ///
-    /// Safety invariants (test-covered):
-    /// - Wrong password produces an error WITHOUT renaming or
-    ///   deleting the source file. Resumable.
-    /// - Encryption state must be installed and unlocked; locked
-    ///   migration is refused before any disk write.
-    /// - Sidecar metadata files (`*.meta.json`) are never touched.
-    /// - The first successful file's `bytes_in/bytes_out` proves
-    ///   round-trip; subsequent failures don't roll the success back.
-    pub async fn migrate_to_master_dek(
-        &mut self,
-        legacy_password: Option<&str>,
-    ) -> Result<BackupMigrationReport, String> {
-        let state = self
-            .encryption_state
-            .clone()
-            .ok_or_else(|| "encryption state not installed; cannot migrate".to_string())?;
-        if !state.is_unlocked().await {
-            return Err("master key is locked; unlock before migrating".into());
-        }
-
-        let targets = self.config.effective_destinations();
-        let mut report = BackupMigrationReport::default();
-
-        for target in &targets {
-            if !target.enabled {
-                continue;
-            }
-            let dir = match resolve_target_dir(target, &self.config.destination_path) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            if !dir.exists() {
-                continue;
-            }
-            let entries = match fs::read_dir(&dir) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let name = match path.file_name().and_then(|n| n.to_str()) {
-                    Some(n) => n.to_string(),
-                    None => continue,
-                };
-                // Sidecar metadata + already-archived legacy files
-                // are skipped silently — they're not encrypted blobs.
-                if !name.starts_with("backup_") || name.ends_with(".v0.bak") {
-                    continue;
-                }
-                if name.contains(".meta.") {
-                    continue;
-                }
-                report.total += 1;
-
-                let bytes = match fs::read(&path) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        report.failed.push(BackupMigrationFailure {
-                            file_path: path.display().to_string(),
-                            reason: format!("read: {e}"),
-                        });
-                        continue;
-                    }
-                };
-
-                // Idempotency: already v2 → no-op.
-                if self.is_v2_backup(&bytes) {
-                    report.already_v2 += 1;
-                    continue;
-                }
-
-                // Recover plaintext per the source format.
-                let plaintext: Vec<u8> = if self.is_encrypted_backup(&bytes) {
-                    let pw = match legacy_password {
-                        Some(p) => p,
-                        None => {
-                            report.failed.push(BackupMigrationFailure {
-                                file_path: path.display().to_string(),
-                                reason:
-                                    "SORNG1 backup found but no legacy password supplied"
-                                        .into(),
-                            });
-                            continue;
-                        }
-                    };
-                    match self.decrypt_backup_data(&bytes, pw) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            report.failed.push(BackupMigrationFailure {
-                                file_path: path.display().to_string(),
-                                reason: e,
-                            });
-                            continue;
-                        }
-                    }
-                } else {
-                    // Plaintext backup (encrypt_backups was false at
-                    // write time). Bytes are already what we need.
-                    bytes.clone()
-                };
-
-                // Re-encrypt under the master DEK before touching the
-                // disk so a v2 encode failure doesn't lose the source.
-                let blob = match self.encrypt_backup_v2(&plaintext).await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        report.failed.push(BackupMigrationFailure {
-                            file_path: path.display().to_string(),
-                            reason: e,
-                        });
-                        continue;
-                    }
-                };
-
-                // Atomic flip: archive the original first so the
-                // canonical path is free for the v2 blob. On write
-                // failure, restore the backup so the user retains
-                // recoverable data at this destination.
-                let backup_path = path.with_extension(format!(
-                    "{}.v0.bak",
-                    path.extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("bin")
-                ));
-                if let Err(e) = fs::rename(&path, &backup_path) {
-                    report.failed.push(BackupMigrationFailure {
-                        file_path: path.display().to_string(),
-                        reason: format!("archive: {e}"),
-                    });
-                    continue;
-                }
-                if let Err(e) = fs::write(&path, &blob) {
-                    // Best-effort rollback so the destination is still
-                    // restorable from disk.
-                    let _ = fs::rename(&backup_path, &path);
-                    report.failed.push(BackupMigrationFailure {
-                        file_path: path.display().to_string(),
-                        reason: format!("write v2: {e}"),
-                    });
-                    continue;
-                }
-                report.migrated += 1;
-                report.bytes_in += bytes.len() as u64;
-                report.bytes_out += blob.len() as u64;
-            }
-        }
-
-        Ok(report)
-    }
 }
 
 // ── Multi-target / delta-skip helpers ────────────────────────────────
@@ -1636,9 +1360,6 @@ mod tests {
         assert_eq!(cfg.max_backups_to_keep, 30);
         assert_eq!(cfg.format, BackupFormat::Json);
         assert!(!cfg.include_passwords);
-        assert!(cfg.encrypt_backups);
-        assert_eq!(cfg.encryption_algorithm, "AES-256-GCM");
-        assert!(cfg.encryption_password.is_none());
         assert!(cfg.include_settings);
         assert!(!cfg.include_ssh_keys);
         assert!(!cfg.backup_on_close);
@@ -1735,7 +1456,7 @@ mod tests {
         assert!(json.contains("scheduledTime"));
         assert!(json.contains("maxBackupsToKeep"));
         assert!(json.contains("includePasswords"));
-        assert!(json.contains("encryptBackups"));
+        assert!(json.contains("includeSettings"));
         assert!(!json.contains("scheduled_time"));
     }
 
@@ -2007,64 +1728,10 @@ mod tests {
         assert!(status.next_scheduled_time.is_none());
     }
 
-    // ── Encryption round-trip ───────────────────────────────────────────
-
-    #[tokio::test]
-    async fn encrypt_decrypt_roundtrip() {
-        let state = BackupService::new("/tmp/test".to_string());
-        let svc = state.lock().await;
-        let plaintext = b"Hello, World!";
-        let password = "secret123";
-        let encrypted = svc.encrypt_backup_data(plaintext, password).unwrap();
-        assert_ne!(encrypted, plaintext);
-        assert!(svc.is_encrypted_backup(&encrypted));
-        let decrypted = svc.decrypt_backup_data(&encrypted, password).unwrap();
-        assert_eq!(decrypted, plaintext);
-    }
-
-    #[tokio::test]
-    async fn is_encrypted_backup_false_for_plain_data() {
-        let state = BackupService::new("/tmp/test".to_string());
-        let svc = state.lock().await;
-        assert!(!svc.is_encrypted_backup(b"plain text data"));
-        assert!(!svc.is_encrypted_backup(b"SORNG")); // Too short prefix
-        assert!(!svc.is_encrypted_backup(b"")); // Empty
-    }
-
-    #[tokio::test]
-    async fn decrypt_rejects_invalid_header() {
-        let state = BackupService::new("/tmp/test".to_string());
-        let svc = state.lock().await;
-        let result = svc.decrypt_backup_data(b"INVALID_HEADER", "password");
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn decrypt_wrong_password_fails() {
-        let state = BackupService::new("/tmp/test".to_string());
-        let svc = state.lock().await;
-        let encrypted = svc.encrypt_backup_data(b"secret data", "correct").unwrap();
-        let result = svc.decrypt_backup_data(&encrypted, "wrong");
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn derive_key_deterministic() {
-        let state = BackupService::new("/tmp/test".to_string());
-        let svc = state.lock().await;
-        let k1 = svc.derive_key("password");
-        let k2 = svc.derive_key("password");
-        assert_eq!(k1, k2);
-    }
-
-    #[tokio::test]
-    async fn derive_key_different_passwords() {
-        let state = BackupService::new("/tmp/test".to_string());
-        let svc = state.lock().await;
-        let k1 = svc.derive_key("password1");
-        let k2 = svc.derive_key("password2");
-        assert_ne!(k1, k2);
-    }
+    // Legacy SORNG1 crypto helper tests (encrypt_decrypt_roundtrip,
+    // is_encrypted_backup_false_for_plain_data, decrypt_rejects_…,
+    // decrypt_wrong_password_fails, derive_key_*) were dropped along
+    // with the legacy crypto functions in commit Z.
 
     // ── Full backup round-trip with temp dir ────────────────────────────
 
@@ -2079,7 +1746,6 @@ mod tests {
 
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
-        cfg.encrypt_backups = false;
         cfg.compress_backups = false;
         svc.update_config(cfg);
 
@@ -2115,7 +1781,6 @@ mod tests {
 
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
-        cfg.encrypt_backups = false;
         cfg.compress_backups = true;
         svc.update_config(cfg);
 
@@ -2130,7 +1795,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_backup_encrypted_and_compressed() {
+    async fn run_backup_encrypted_v2_and_compressed() {
+        // Replaces the old SORNG1+compress round-trip — same shape,
+        // routed through the master DEK + v2 envelope.
         let tmp = std::env::temp_dir().join("sorng_backup_test_enc");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
@@ -2140,10 +1807,9 @@ mod tests {
 
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
-        cfg.encrypt_backups = true;
-        cfg.encryption_password = Some("test_password".to_string());
         cfg.compress_backups = true;
         svc.update_config(cfg);
+        svc.set_encryption_state(unlocked_enc_state().await);
 
         let data = serde_json::json!({"connections": [{"name": "secure"}]});
         let meta = svc.run_backup("full", &data).await.unwrap();
@@ -2175,7 +1841,6 @@ mod tests {
     fn build_test_config(tmp: &std::path::Path) -> BackupConfig {
         let mut cfg = BackupConfig::default();
         cfg.destination_path = tmp.to_string_lossy().to_string();
-        cfg.encrypt_backups = false;
         cfg.compress_backups = false;
         cfg.max_backups_to_keep = 0;
         cfg
@@ -2585,17 +2250,13 @@ mod tests {
 
     #[tokio::test]
     async fn plaintext_path_when_no_state_installed() {
-        // After commit Y, the legacy SORNG1 write path is gone; with
-        // no encryption state installed, backups land as plain bytes.
-        // The `encrypt_backups: true` + password config is preserved
-        // for backward-compat deserialisation but no longer
-        // influences write dispatch.
+        // After commit Z the only encryption path is the v2 envelope.
+        // With no encryption state installed, backups land as plain
+        // bytes.
         let tmp = fresh_temp_dir("v2_legacy");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
         let mut cfg = build_test_config(&tmp);
-        cfg.encrypt_backups = true;
-        cfg.encryption_password = Some("hunter2".to_string());
         svc.update_config(cfg);
 
         let data = serde_json::json!({ "connections": [] });
@@ -2606,11 +2267,8 @@ mod tests {
             (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
         }).unwrap();
         let bytes = std::fs::read(&entry).unwrap();
-        assert_ne!(
-            &bytes[..6],
-            b"SORNG1",
-            "legacy SORNG1 write path was removed in commit Y"
-        );
+        // Neither legacy nor v2 magic on disk — plain bytes.
+        assert_ne!(&bytes[..6], b"SORNG1");
         assert_ne!(&bytes[..6], sorng_encryption::envelope::MAGIC);
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -2641,36 +2299,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restore_dispatches_on_magic_bytes() {
-        // Hand-craft both blob shapes in the same dir and confirm the
-        // dispatch picks the right path for each.
+    async fn restore_dispatches_on_v2_magic() {
+        // After commit Z the dispatcher only recognises the v2
+        // envelope; everything else is plaintext. This test exercises
+        // both paths via the public encrypt/decrypt helpers.
         let tmp = fresh_temp_dir("v2_sniff");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        let cfg = build_test_config(&tmp);
-        svc.update_config(cfg);
+        svc.update_config(build_test_config(&tmp));
         let enc = unlocked_enc_state().await;
         svc.set_encryption_state(enc.clone());
 
-        // 1. is_v2_backup distinguishes correctly.
-        let v2_bytes = svc
-            .encrypt_backup_v2(b"{\"k\":\"v\"}")
-            .await
-            .unwrap();
+        let v2_bytes = svc.encrypt_backup_v2(b"{\"k\":\"v\"}").await.unwrap();
         assert!(svc.is_v2_backup(&v2_bytes));
-        assert!(!svc.is_encrypted_backup(&v2_bytes));
-
-        let legacy = svc
-            .encrypt_backup_data(b"{\"k\":\"v\"}", "pw")
-            .unwrap();
-        assert!(!svc.is_v2_backup(&legacy));
-        assert!(svc.is_encrypted_backup(&legacy));
 
         let plain = b"{\"k\":\"v\"}".to_vec();
         assert!(!svc.is_v2_backup(&plain));
-        assert!(!svc.is_encrypted_backup(&plain));
 
-        // 2. Round-trip the v2 blob directly through the decrypt helper.
+        // Round-trip the v2 blob directly through the decrypt helper.
         let plaintext = svc.decrypt_backup_v2(&v2_bytes).await.unwrap();
         assert_eq!(plaintext, b"{\"k\":\"v\"}");
 
@@ -2705,356 +2351,5 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // SORNG1 → v2 backup migrator (`migrate_to_master_dek`)
-    //
-    // The advisor flagged backup migration as the prerequisite for
-    // dropping the legacy SORNG1 read path. These tests prove the
-    // wrong-password / locked-state / mixed-format / idempotency
-    // properties the migrator must hold for that drop to be safe.
-    // ────────────────────────────────────────────────────────────────
-
-    /// Plant a hand-crafted SORNG1-format backup at the chosen
-    /// destination, using the test-only `encrypt_backup_data` helper.
-    /// Required after commit Y removed the legacy SORNG1 write path
-    /// from `perform_backup` — migrator tests can no longer rely on
-    /// the service to produce a SORNG1 fixture for them.
-    fn plant_sorng1_fixture(
-        svc: &BackupService,
-        dir: &std::path::Path,
-        payload: &serde_json::Value,
-        password: &str,
-        id_suffix: &str,
-    ) -> std::path::PathBuf {
-        let json = serde_json::to_string_pretty(payload).unwrap();
-        let blob = svc
-            .encrypt_backup_data(json.as_bytes(), password)
-            .unwrap();
-        let path = dir.join(format!("backup_manual_{}_legacy.json", id_suffix));
-        std::fs::write(&path, &blob).unwrap();
-        // Sidecar metadata mirroring what `perform_backup` would have
-        // written, so `list_backups`/`restore` can locate the file by
-        // its `id` field — required by the migrator round-trip
-        // restore assertion.
-        let meta = BackupMetadata {
-            id: id_suffix.to_string(),
-            created_at: 0,
-            backup_type: "manual".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            checksum: String::new(),
-            encrypted: true,
-            compressed: false,
-            size_bytes: blob.len() as u64,
-            connections_count: 0,
-            parent_backup_id: None,
-            payload_hash: None,
-            target_id: None,
-        };
-        let meta_path = dir.join(format!(
-            "backup_manual_{}_legacy.json.meta.json",
-            id_suffix
-        ));
-        std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-        path
-    }
-
-    fn count_files_with_prefix(dir: &std::path::Path, prefix: &[u8]) -> usize {
-        let mut n = 0;
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.starts_with("backup_") || name.contains(".meta.") {
-                continue;
-            }
-            let bytes = std::fs::read(entry.path()).unwrap();
-            if bytes.starts_with(prefix) {
-                n += 1;
-            }
-        }
-        n
-    }
-
-    #[tokio::test]
-    async fn migrate_sorng1_to_v2_round_trips() {
-        // Plant a SORNG1 fixture directly (the legacy write path was
-        // removed in commit Y, so `perform_backup` no longer produces
-        // SORNG1 files even with `encrypt_backups: true`), then run
-        // the migrator. The on-disk file must end up as v2 and the
-        // original archived as `.v0.bak`.
-        let tmp = fresh_temp_dir("migrate_sorng1");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
-
-        let data = serde_json::json!({ "connections": [{ "id": "c1" }] });
-        plant_sorng1_fixture(&svc, &tmp, &data, "hunter2", "abc123");
-        assert_eq!(count_files_with_prefix(&tmp, b"SORNG1"), 1);
-        assert_eq!(count_files_with_prefix(&tmp, sorng_encryption::envelope::MAGIC), 0);
-
-        // Install master DEK and migrate.
-        svc.set_encryption_state(unlocked_enc_state().await);
-        let report = svc
-            .migrate_to_master_dek(Some("hunter2"))
-            .await
-            .unwrap();
-        assert_eq!(report.total, 1);
-        assert_eq!(report.migrated, 1);
-        assert_eq!(report.already_v2, 0);
-        assert!(report.failed.is_empty());
-
-        // On-disk: one v2 file + one .v0.bak archive.
-        assert_eq!(count_files_with_prefix(&tmp, sorng_encryption::envelope::MAGIC), 1);
-        let archive_count = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().ends_with(".v0.bak"))
-            .count();
-        assert_eq!(archive_count, 1);
-
-        // Round-trip the v2 file through restore.
-        let restored = svc
-            .restore_backup_from_target("abc123", None)
-            .await
-            .unwrap();
-        assert_eq!(restored, data);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[tokio::test]
-    async fn migrate_wrong_password_does_not_destroy_legacy_files() {
-        // Safety-critical case: a wrong legacy password must not
-        // rename or delete the source file. The user keeps their data
-        // intact and can retry with the correct password.
-        let tmp = fresh_temp_dir("migrate_wrong_pw");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
-
-        let data = serde_json::json!({ "connections": [] });
-        plant_sorng1_fixture(&svc, &tmp, &data, "correct", "wp1");
-        let pre_bytes: Vec<Vec<u8>> = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| {
-                let n = e.file_name().to_string_lossy().into_owned();
-                n.starts_with("backup_") && !n.contains(".meta.")
-            })
-            .map(|e| std::fs::read(e.path()).unwrap())
-            .collect();
-
-        svc.set_encryption_state(unlocked_enc_state().await);
-        let report = svc.migrate_to_master_dek(Some("WRONG")).await.unwrap();
-        // Reported as failed, not migrated.
-        assert_eq!(report.total, 1);
-        assert_eq!(report.migrated, 0);
-        assert_eq!(report.failed.len(), 1);
-
-        // Source byte-identical, no .v0.bak created.
-        let post_bytes: Vec<Vec<u8>> = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| {
-                let n = e.file_name().to_string_lossy().into_owned();
-                n.starts_with("backup_") && !n.contains(".meta.")
-            })
-            .map(|e| std::fs::read(e.path()).unwrap())
-            .collect();
-        assert_eq!(pre_bytes, post_bytes);
-        let archive_count = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().ends_with(".v0.bak"))
-            .count();
-        assert_eq!(archive_count, 0);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[tokio::test]
-    async fn migrate_already_v2_files_are_noop() {
-        // A directory that already holds only v2 backups must report
-        // `already_v2 == total` and leave the files byte-identical.
-        let tmp = fresh_temp_dir("migrate_idempotent");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
-        svc.set_encryption_state(unlocked_enc_state().await);
-        let _ = svc.perform_backup("manual", &serde_json::json!({})).await.unwrap();
-        let snapshot: Vec<Vec<u8>> = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .map(|e| std::fs::read(e.path()).unwrap())
-            .collect();
-
-        let report = svc.migrate_to_master_dek(None).await.unwrap();
-        assert_eq!(report.migrated, 0);
-        assert_eq!(report.already_v2, 1);
-        assert!(report.failed.is_empty());
-
-        let after: Vec<Vec<u8>> = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .map(|e| std::fs::read(e.path()).unwrap())
-            .collect();
-        assert_eq!(snapshot, after);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[tokio::test]
-    async fn migrate_plaintext_backups_to_v2() {
-        // A user who wrote backups with `encrypt_backups = false`
-        // ends up with plain JSON / gzipped files. The migrator
-        // accepts them with no legacy password and wraps them under
-        // the v2 envelope.
-        let tmp = fresh_temp_dir("migrate_plain");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp)); // encrypt off, compress off
-        let _ = svc
-            .perform_backup("manual", &serde_json::json!({ "connections": [] }))
-            .await
-            .unwrap();
-        assert_eq!(count_files_with_prefix(&tmp, sorng_encryption::envelope::MAGIC), 0);
-
-        svc.set_encryption_state(unlocked_enc_state().await);
-        let report = svc.migrate_to_master_dek(None).await.unwrap();
-        assert_eq!(report.migrated, 1);
-        assert!(report.bytes_in > 0);
-        assert!(report.bytes_out >= report.bytes_in, "envelope adds overhead");
-        assert_eq!(count_files_with_prefix(&tmp, sorng_encryption::envelope::MAGIC), 1);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[tokio::test]
-    async fn migrate_mixed_directory_reports_per_file_outcomes() {
-        // Mix of SORNG1 + plaintext + already-v2 in the same target
-        // directory. The migrator processes each per its kind without
-        // bailing on the first non-trivial case.
-        let tmp = fresh_temp_dir("migrate_mixed");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-
-        // 1. Write a plaintext backup (no password, no state).
-        let mut cfg = build_test_config(&tmp);
-        svc.update_config(cfg.clone());
-        let _ = svc
-            .perform_backup("manual", &serde_json::json!({ "id": 1 }))
-            .await
-            .unwrap();
-
-        // 2. Write a SORNG1 backup with a password.
-        cfg.encrypt_backups = true;
-        cfg.encryption_password = Some("legacypw".to_string());
-        svc.update_config(cfg.clone());
-        let _ = svc
-            .perform_backup("manual", &serde_json::json!({ "id": 2 }))
-            .await
-            .unwrap();
-
-        // 3. Install master DEK and write a v2 backup.
-        svc.set_encryption_state(unlocked_enc_state().await);
-        let _ = svc
-            .perform_backup("manual", &serde_json::json!({ "id": 3 }))
-            .await
-            .unwrap();
-
-        // Pre-migration: 1 plain, 1 SORNG1, 1 v2.
-        let total = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| {
-                let n = e.file_name().to_string_lossy().into_owned();
-                n.starts_with("backup_") && !n.contains(".meta.")
-            })
-            .count();
-        assert_eq!(total, 3);
-
-        let report = svc
-            .migrate_to_master_dek(Some("legacypw"))
-            .await
-            .unwrap();
-        assert_eq!(report.total, 3);
-        // 2 freshly migrated (plain + SORNG1), 1 already v2.
-        assert_eq!(report.migrated, 2);
-        assert_eq!(report.already_v2, 1);
-        assert!(report.failed.is_empty());
-
-        // Post-migration: 3 v2 + 2 .v0.bak archives.
-        assert_eq!(count_files_with_prefix(&tmp, sorng_encryption::envelope::MAGIC), 3);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[tokio::test]
-    async fn migrate_requires_unlocked_state() {
-        // Locked state must reject the migration before touching any
-        // file — symmetric with the connections-side guarantee.
-        let tmp = fresh_temp_dir("migrate_locked");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
-        let _ = svc
-            .perform_backup("manual", &serde_json::json!({}))
-            .await
-            .unwrap();
-        let pre_bytes: Vec<Vec<u8>> = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .map(|e| std::fs::read(e.path()).unwrap())
-            .collect();
-
-        let locked = std::sync::Arc::new(sorng_encryption::EncryptionState::new());
-        svc.set_encryption_state(locked);
-        let err = svc.migrate_to_master_dek(None).await.unwrap_err();
-        assert!(err.contains("locked"));
-
-        let post_bytes: Vec<Vec<u8>> = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .map(|e| std::fs::read(e.path()).unwrap())
-            .collect();
-        assert_eq!(pre_bytes, post_bytes);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[tokio::test]
-    async fn migrate_skips_meta_sidecars() {
-        // The per-target `.meta.json` sidecars are not encrypted
-        // blobs — they must not be picked up by the migrator's scan.
-        let tmp = fresh_temp_dir("migrate_meta");
-        let state = BackupService::new(tmp.to_string_lossy().to_string());
-        let mut svc = state.lock().await;
-        svc.update_config(build_test_config(&tmp));
-        let _ = svc
-            .perform_backup("manual", &serde_json::json!({}))
-            .await
-            .unwrap();
-
-        // Confirm the sidecar exists before migration.
-        let sidecar_count = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains(".meta."))
-            .count();
-        assert_eq!(sidecar_count, 1);
-
-        svc.set_encryption_state(unlocked_enc_state().await);
-        let report = svc.migrate_to_master_dek(None).await.unwrap();
-        // Only the data file counted; sidecar was not in `total`.
-        assert_eq!(report.total, 1);
-
-        // Sidecar still on disk untouched.
-        let post_sidecar = std::fs::read_dir(&tmp)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains(".meta."))
-            .count();
-        assert_eq!(post_sidecar, 1);
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
 }
 
