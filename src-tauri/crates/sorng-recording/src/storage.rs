@@ -807,6 +807,159 @@ pub async fn read_media_chunk_dispatched(
     Ok(all[start..end].to_vec())
 }
 
+// ── Master-key rotation support ────────────────────────────────────────
+//
+// The orchestrator in `app/src/encryption_rotation_commands.rs` walks
+// every encrypted file under the recordings root. These helpers list
+// the file paths and re-encrypt each one in place under a freshly
+// rotated DEK. They take two `EncryptionState` references — `from`
+// to decrypt the existing ciphertext, `to` to produce the new — so
+// the orchestrator can keep both keys live for the brief rotation
+// window without temporarily swapping the live service state.
+
+/// List every `*.json.enc` envelope under the recordings dir.
+pub fn list_encrypted_envelope_paths(root: &Path) -> Vec<PathBuf> {
+    let dir = recordings_dir(root);
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(ENC_SUFFIX) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// List every `*.json.enc` macro envelope under the macros dir.
+pub fn list_encrypted_macro_paths(root: &Path) -> Vec<PathBuf> {
+    let dir = macros_dir(root);
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(ENC_SUFFIX) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// List every media sidecar (`<id>.media.enc`) under the recordings
+/// dir. The orchestrator re-encrypts each in place via
+/// `rewrite_media_with`.
+pub fn list_encrypted_media_paths(root: &Path) -> Vec<PathBuf> {
+    let dir = recordings_dir(root);
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Match the suffix used by `media_enc_path` —
+                // `<basename>.enc` where basename typically carries
+                // `.media`. Skip the metadata envelope (`.json.enc`).
+                if name.ends_with(MEDIA_ENC_SUFFIX) && !name.ends_with(ENC_SUFFIX) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Re-encrypt a recording metadata envelope in place under a new
+/// master DEK. Returns the new on-disk byte count.
+pub async fn rewrite_envelope_with(
+    path: &Path,
+    from: &EncryptionState,
+    to: &EncryptionState,
+) -> RecordingResult<u64> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        RecordingError::StorageError(format!("read {}: {}", path.display(), e))
+    })?;
+    let value = meta_codec::read(from, &bytes)
+        .await
+        .map_err(|e| RecordingError::StorageError(format!("decrypt: {}", e)))?
+        .unwrap_or_else(|| serde_json::json!({}));
+    let blob = meta_codec::write(
+        to,
+        &value,
+        MasterKeyStorage::Vault,
+        Argon2Params::OWASP,
+        [0u8; SALT_LEN],
+    )
+    .await
+    .map_err(|e| RecordingError::StorageError(format!("encrypt: {}", e)))?;
+    atomic_write_path(path, &blob)?;
+    Ok(blob.len() as u64)
+}
+
+/// Same as [`rewrite_envelope_with`] but for the macros directory.
+pub async fn rewrite_macro_with(
+    path: &Path,
+    from: &EncryptionState,
+    to: &EncryptionState,
+) -> RecordingResult<u64> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        RecordingError::StorageError(format!("read {}: {}", path.display(), e))
+    })?;
+    let value = macros_codec::read(from, &bytes)
+        .await
+        .map_err(|e| RecordingError::StorageError(format!("decrypt: {}", e)))?
+        .unwrap_or_else(|| serde_json::json!({}));
+    let blob = macros_codec::write(
+        to,
+        &value,
+        MasterKeyStorage::Vault,
+        Argon2Params::OWASP,
+        [0u8; SALT_LEN],
+    )
+    .await
+    .map_err(|e| RecordingError::StorageError(format!("encrypt: {}", e)))?;
+    atomic_write_path(path, &blob)?;
+    Ok(blob.len() as u64)
+}
+
+/// Re-encrypt a media sidecar (chunked-stream codec) under a new
+/// master DEK. Read uses `read_all` to fully decrypt every chunk
+/// under the old key, then `write_one_shot` re-emits the file under
+/// the new key with a freshly randomised nonce prefix.
+pub async fn rewrite_media_with(
+    path: &Path,
+    from: &EncryptionState,
+    to: &EncryptionState,
+) -> RecordingResult<u64> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        RecordingError::StorageError(format!("read {}: {}", path.display(), e))
+    })?;
+    let plaintext = media_codec::read_all(from, &bytes)
+        .await
+        .map_err(|e| RecordingError::StorageError(format!("decrypt media: {}", e)))?;
+    let blob = media_codec::write_one_shot(to, &plaintext, MasterKeyStorage::Vault, None)
+        .await
+        .map_err(|e| RecordingError::StorageError(format!("encrypt media: {}", e)))?;
+    atomic_write_path(path, &blob)?;
+    Ok(blob.len() as u64)
+}
+
+fn atomic_write_path(path: &Path, bytes: &[u8]) -> RecordingResult<()> {
+    let tmp = path.with_extension(format!(
+        "{}.rotating",
+        path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
+    ));
+    std::fs::write(&tmp, bytes)
+        .map_err(|e| RecordingError::StorageError(format!("write tmp: {}", e)))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| RecordingError::StorageError(format!("rename: {}", e)))?;
+    Ok(())
+}
+
 /// Delete both encrypted + plaintext variants of a media blob.
 pub fn delete_media_all_variants(root: &Path, basename: &str) -> RecordingResult<()> {
     let plain = media_plain_path(root, basename);
@@ -1279,6 +1432,111 @@ mod enc_dispatch_tests {
         // Round-trip a single one through the dispatched read.
         let loaded = load_envelope_dispatched(tmp.path(), "b", &enc).await.unwrap();
         assert_eq!(loaded.id, "b");
+    }
+
+    #[tokio::test]
+    async fn rewrite_envelope_with_re_encrypts_under_new_key() {
+        // Phase A: snapshot + swap test for the recording-meta path.
+        // Write an envelope under DEK A, install DEK B in a fresh
+        // state, call `rewrite_envelope_with(A, B)` and confirm the
+        // file is now readable only under B.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked().await;
+        let env = fixture_envelope("rot1");
+        save_envelope_dispatched(tmp.path(), &env, &state_a)
+            .await
+            .unwrap();
+        let enc_path = envelope_enc_path(tmp.path(), "rot1");
+
+        // Build state B with a DIFFERENT master key.
+        let state_b = sorng_encryption::EncryptionState::new();
+        state_b
+            .install(sorng_encryption::MasterDek::from_bytes(&[9u8; 32]).unwrap())
+            .await;
+
+        // Pre-condition: state_b cannot decrypt the envelope yet.
+        let pre = load_envelope_dispatched(tmp.path(), "rot1", &state_b).await;
+        assert!(pre.is_err(), "wrong key must fail GCM auth");
+
+        // Re-key the file in place.
+        rewrite_envelope_with(&enc_path, &state_a, &state_b)
+            .await
+            .unwrap();
+
+        // Post-condition: state_b can read; state_a now cannot.
+        let post = load_envelope_dispatched(tmp.path(), "rot1", &state_b)
+            .await
+            .unwrap();
+        assert_eq!(post.id, "rot1");
+        let pre_now = load_envelope_dispatched(tmp.path(), "rot1", &state_a).await;
+        assert!(pre_now.is_err(), "old key must no longer decrypt");
+    }
+
+    #[tokio::test]
+    async fn rewrite_media_with_re_encrypts_chunked_stream() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked().await;
+        let bytes = media_fixture(150_000);
+        save_media_blob_dispatched(tmp.path(), "session.webm", &bytes, &state_a)
+            .await
+            .unwrap();
+        let media_path = media_enc_path(tmp.path(), "session.webm");
+
+        let state_b = sorng_encryption::EncryptionState::new();
+        state_b
+            .install(sorng_encryption::MasterDek::from_bytes(&[11u8; 32]).unwrap())
+            .await;
+        let pre = load_media_blob_dispatched(tmp.path(), "session.webm", &state_b).await;
+        assert!(pre.is_err());
+
+        rewrite_media_with(&media_path, &state_a, &state_b).await.unwrap();
+
+        let post = load_media_blob_dispatched(tmp.path(), "session.webm", &state_b)
+            .await
+            .unwrap();
+        assert_eq!(post.len(), bytes.len());
+        assert_eq!(post[0], bytes[0]);
+        assert_eq!(post[bytes.len() - 1], bytes[bytes.len() - 1]);
+    }
+
+    #[tokio::test]
+    async fn rewrite_macro_with_re_encrypts_macro_envelope() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked().await;
+        let m = fixture_macro("rotm");
+        save_macro_dispatched(tmp.path(), &m, &state_a).await.unwrap();
+        let macro_path = macro_enc_path(tmp.path(), "rotm");
+
+        let state_b = sorng_encryption::EncryptionState::new();
+        state_b
+            .install(sorng_encryption::MasterDek::from_bytes(&[13u8; 32]).unwrap())
+            .await;
+        rewrite_macro_with(&macro_path, &state_a, &state_b).await.unwrap();
+
+        let list = load_all_macros_dispatched(tmp.path(), &state_b).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "rotm");
+    }
+
+    #[tokio::test]
+    async fn list_encrypted_paths_find_files() {
+        // Compile-only check that the listing helpers can be called.
+        // Behavioural coverage of file inclusion is implicit through
+        // the rewrite_*_with tests above.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked().await;
+        save_envelope_dispatched(tmp.path(), &fixture_envelope("e1"), &state_a)
+            .await
+            .unwrap();
+        save_media_blob_dispatched(tmp.path(), "m1.webm", b"x", &state_a).await.unwrap();
+        save_macro_dispatched(tmp.path(), &fixture_macro("mac1"), &state_a).await.unwrap();
+        assert_eq!(list_encrypted_envelope_paths(tmp.path()).len(), 1);
+        assert_eq!(list_encrypted_media_paths(tmp.path()).len(), 1);
+        assert_eq!(list_encrypted_macro_paths(tmp.path()).len(), 1);
     }
 
     #[tokio::test]

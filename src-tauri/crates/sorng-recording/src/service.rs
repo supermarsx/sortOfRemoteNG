@@ -93,6 +93,14 @@ impl RecordingService {
         self.migration_cancel.clone()
     }
 
+    /// Storage root the service is configured against. Exposed so
+    /// the master-key rotation orchestrator (in the `app` crate)
+    /// can enumerate every encrypted artifact under the recordings
+    /// tree without re-implementing the path-resolution rules.
+    pub async fn storage_root_snapshot(&self) -> PathBuf {
+        self.storage_root.lock().await.clone()
+    }
+
     /// Inject the global `EncryptionState` so subsequent saves/loads
     /// dispatch to the encrypted codec while unlocked. Safe to call
     /// multiple times; later calls replace the handle.

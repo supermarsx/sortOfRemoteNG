@@ -1149,6 +1149,85 @@ impl BackupService {
         Ok(())
     }
 
+    /// List every v2-envelope backup file across every enabled
+    /// destination. Used by the master-key rotation orchestrator to
+    /// snapshot every file's plaintext before swapping the DEK. The
+    /// returned vec carries the absolute path of each file; the
+    /// caller reads + re-encrypts via
+    /// [`encrypt_backup_v2`]/[`decrypt_backup_v2`].
+    pub async fn list_v2_files(&self) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for target in self.config.effective_destinations() {
+            if !target.enabled {
+                continue;
+            }
+            let dir = match resolve_target_dir(&target, &self.config.destination_path) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if !dir.exists() {
+                continue;
+            }
+            let entries = match fs::read_dir(&dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = match path.file_name().and_then(|n| n.to_str()) {
+                    Some(n) => n.to_string(),
+                    None => continue,
+                };
+                if !name.starts_with("backup_") || name.contains(".meta.") {
+                    continue;
+                }
+                // Quick magic-byte sniff so we don't load whole
+                // files into memory just to check the first 6 bytes.
+                let mut buf = [0u8; 6];
+                if let Ok(mut f) = std::fs::File::open(&path) {
+                    use std::io::Read;
+                    if f.read(&mut buf).is_ok() && self.is_v2_backup(&buf) {
+                        out.push(path);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Re-encrypt a backup file in place: decrypt with `from`, re-
+    /// encrypt under `to`, atomically swap. Used only by the rotation
+    /// orchestrator — production write/read still flow through
+    /// `perform_backup` / `restore_backup_from_target`.
+    pub async fn rewrite_backup_with(
+        path: &std::path::Path,
+        from: &sorng_encryption::EncryptionState,
+        to: &sorng_encryption::EncryptionState,
+    ) -> Result<u64, String> {
+        let bytes = fs::read(path).map_err(|e| format!("read: {e}"))?;
+        let plaintext = sorng_encryption::artifacts::backups::read(from, &bytes)
+            .await
+            .map_err(|e| format!("decrypt: {e}"))?;
+        let blob = sorng_encryption::artifacts::backups::write(
+            to,
+            &plaintext,
+            sorng_encryption::envelope::MasterKeyStorage::Vault,
+            sorng_encryption::password_wrap::Argon2Params::OWASP,
+            [0u8; sorng_encryption::envelope::SALT_LEN],
+        )
+        .await
+        .map_err(|e| format!("encrypt: {e}"))?;
+        let tmp = path.with_extension(format!(
+            "{}.rotating",
+            path.extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("bin")
+        ));
+        fs::write(&tmp, &blob).map_err(|e| format!("write tmp: {e}"))?;
+        fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))?;
+        Ok(blob.len() as u64)
+    }
+
     /// Magic-byte sniff: `SORNG\0` → v2 envelope (per-master-key DEK),
     /// otherwise plaintext. Returned by the dispatcher to decide
     /// whether to route through `decrypt_backup_v2`.
@@ -2294,6 +2373,92 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(restored, payload, "v2 round-trip preserves the payload");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn rewrite_backup_with_re_keys_in_place() {
+        // Phase A: confirm a v2 backup file can be re-encrypted under
+        // a brand-new master DEK and that the original key can no
+        // longer decrypt it afterwards.
+        let tmp = fresh_temp_dir("rotate_v2");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+        let enc_a = unlocked_enc_state().await;
+        svc.set_encryption_state(enc_a.clone());
+
+        let payload = serde_json::json!({ "connections": [{ "id": "c1" }] });
+        let result = svc.perform_backup("manual", &payload).await.unwrap();
+        let backup_path = std::fs::read_dir(&tmp)
+            .unwrap()
+            .flatten()
+            .find_map(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                (n.starts_with("backup_") && !n.contains(".meta.")).then_some(e.path())
+            })
+            .unwrap();
+
+        // Stand up state B with a different DEK.
+        let enc_b = sorng_encryption::EncryptionState::new();
+        enc_b
+            .install(sorng_encryption::MasterDek::from_bytes(&[42u8; 32]).unwrap())
+            .await;
+
+        let n = BackupService::rewrite_backup_with(&backup_path, &enc_a, &enc_b)
+            .await
+            .unwrap();
+        assert!(n > 0);
+
+        // state B now decrypts; state A no longer does.
+        let bytes = std::fs::read(&backup_path).unwrap();
+        assert!(sorng_encryption::artifacts::backups::read(&enc_b, &bytes)
+            .await
+            .is_ok());
+        assert!(sorng_encryption::artifacts::backups::read(&enc_a, &bytes)
+            .await
+            .is_err());
+
+        // Sanity-check the file still reachable via restore once the
+        // service is wired with the new state.
+        svc.set_encryption_state(std::sync::Arc::new(
+            sorng_encryption::EncryptionState::new(),
+        ));
+        // (Recreate enc_b with its key inside the service slot.)
+        svc.set_encryption_state(std::sync::Arc::new({
+            let s = sorng_encryption::EncryptionState::new();
+            s.install(sorng_encryption::MasterDek::from_bytes(&[42u8; 32]).unwrap())
+                .await;
+            s
+        }));
+        let restored = svc
+            .restore_backup_from_target(&result.primary_metadata.unwrap().id, None)
+            .await
+            .unwrap();
+        assert_eq!(restored, payload);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn list_v2_files_includes_only_v2_backups() {
+        let tmp = fresh_temp_dir("list_v2");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+        let enc = unlocked_enc_state().await;
+        svc.set_encryption_state(enc);
+
+        // 1 v2 backup, plus a stray plain-JSON file that must NOT
+        // be listed.
+        let _ = svc
+            .perform_backup("manual", &serde_json::json!({ "k": "v" }))
+            .await
+            .unwrap();
+        std::fs::write(tmp.join("backup_not_a_v2.json"), b"{\"foo\":1}").unwrap();
+        let files = svc.list_v2_files().await;
+        assert_eq!(files.len(), 1);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

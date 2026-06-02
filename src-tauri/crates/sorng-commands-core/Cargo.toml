@@ -10,6 +10,11 @@ sorng-app-shell = { path = "../sorng-app-shell" }
 sorng-core = { path = "../sorng-core" }
 sorng-encryption = { path = "../sorng-encryption" }
 sorng-vault = { path = "../sorng-vault" }
+# Pulled in for the path-included `encryption_rotation_commands.rs`
+# orchestrator, which acquires service states across crates to walk
+# every artifact during master-key rotation.
+sorng-storage = { path = "../sorng-storage" }
+sorng-recording = { path = "../sorng-recording" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-probes = { path = "../sorng-probes" }
 tauri = { workspace = true }

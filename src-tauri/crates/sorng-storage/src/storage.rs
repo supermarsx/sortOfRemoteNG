@@ -117,6 +117,14 @@ impl SecureStorage {
         self.encryption_state = Some(state);
     }
 
+    /// On-disk path of the connections file. Exposed so the master-
+    /// key rotation orchestrator (in the `app` crate) can re-encrypt
+    /// it under a freshly rotated DEK without needing to know how
+    /// the storage path was resolved at startup.
+    pub fn store_path(&self) -> &str {
+        &self.store_path
+    }
+
     /// Checks if there is any stored data available.
     ///
     /// Determines whether a storage file exists at the configured path.

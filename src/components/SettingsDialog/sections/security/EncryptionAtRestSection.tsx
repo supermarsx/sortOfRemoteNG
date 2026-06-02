@@ -297,18 +297,34 @@ const EncryptionAtRestSection: React.FC = () => {
     setRotateError(null);
     setRotateSummary(null);
     try {
-      const report = await enc.rotateMasterKey(
+      // Phase A — use the full-artifact rotation (settings +
+      // connections + backups + recordings + media + macros). The
+      // settings-only `rotateMasterKey` lives behind the same hook
+      // for advanced callers but is no longer the UI default.
+      const report = await enc.rotateMasterKeyFull(
         passwordModeActive ? rotatePassword : undefined,
       );
+      const counts = [
+        report.settingsRewritten && "settings",
+        report.connectionsRewritten && "connections",
+        report.backupsRewritten > 0 && `${report.backupsRewritten} backup(s)`,
+        report.recordingEnvelopesRewritten > 0 &&
+          `${report.recordingEnvelopesRewritten} recording metadata`,
+        report.mediaSidecarsRewritten > 0 &&
+          `${report.mediaSidecarsRewritten} media sidecar(s)`,
+        report.macrosRewritten > 0 && `${report.macrosRewritten} macro(s)`,
+      ].filter(Boolean) as string[];
       const bits = [
-        `${report.artifactsRewritten} artifact${
-          report.artifactsRewritten === 1 ? "" : "s"
-        } rewritten`,
+        counts.length > 0
+          ? `Rewrote ${counts.join(", ")}`
+          : "No v2 artifacts on disk to rewrite",
         report.vaultUpdated && "vault entry updated",
         report.dekEncUpdated && "dek.enc updated",
+        report.failures.length > 0 &&
+          `${report.failures.length} file(s) failed`,
       ]
         .filter(Boolean)
-        .join(", ");
+        .join("; ");
       setRotateSummary(bits);
       setRotatePassword("");
     } catch (e) {

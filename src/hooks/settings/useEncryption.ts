@@ -87,6 +87,28 @@ export interface RotateReport {
   dekEncUpdated: boolean;
 }
 
+/** Full-artifact rotation report. Mirrors the Rust
+ *  `FullRotateReport` returned by
+ *  `encryption_rotate_master_key_full`. */
+export interface FullRotateReport {
+  settingsRewritten: boolean;
+  connectionsRewritten: boolean;
+  backupsRewritten: number;
+  recordingEnvelopesRewritten: number;
+  mediaSidecarsRewritten: number;
+  macrosRewritten: number;
+  bytesRewritten: number;
+  vaultUpdated: boolean;
+  dekEncUpdated: boolean;
+  failures: FullRotateFailure[];
+}
+
+export interface FullRotateFailure {
+  artifact: string;
+  path: string;
+  reason: string;
+}
+
 export interface UseEncryption {
   status: EncryptionStatus | null;
   loading: boolean;
@@ -122,10 +144,17 @@ export interface UseEncryption {
    *  delete the encrypted file. Master key stays alive for other
    *  artifacts. */
   disableSettings: () => Promise<DisableSettingsReport>;
-  /** Generate a fresh master DEK, re-encrypt every artifact under
-   *  new sub-keys, update vault + dek.enc to match. `password` is
-   *  required iff `dek.enc` is currently on disk. */
+  /** Legacy rotation — only rotates `settings.enc` + key-storage
+   *  receipts. Prefer [`rotateMasterKeyFull`] for any user-facing
+   *  "Rotate" button; this entry point is retained for callers that
+   *  genuinely want the settings-only behaviour. */
   rotateMasterKey: (password?: string) => Promise<RotateReport>;
+  /** Generate a fresh master DEK, re-encrypt every persisted
+   *  artifact under new sub-keys (settings, connections database,
+   *  every v2 backup file, recording metadata, recording-media
+   *  sidecars, macros), then update vault + dek.enc. `password` is
+   *  required iff `dek.enc` is currently on disk. */
+  rotateMasterKeyFull: (password?: string) => Promise<FullRotateReport>;
   /** Write the master DEK as a portable wrapped blob at the chosen
    *  path. Returns the file size in bytes. */
   exportPortableDek: (
@@ -374,6 +403,19 @@ export function useEncryption(): UseEncryption {
     [refresh],
   );
 
+  const rotateMasterKeyFull = useCallback(
+    async (password?: string): Promise<FullRotateReport> => {
+      const inv = await invokeOrThrow();
+      const report = await inv<FullRotateReport>(
+        "encryption_rotate_master_key_full",
+        { password: password ?? null },
+      );
+      await refresh();
+      return report;
+    },
+    [refresh],
+  );
+
   const exportPortableDek = useCallback(
     async (
       destinationPath: string,
@@ -429,6 +471,7 @@ export function useEncryption(): UseEncryption {
     cancelRecordingsMigration,
     disableSettings,
     rotateMasterKey,
+    rotateMasterKeyFull,
     exportPortableDek,
     importPortableDek,
   };

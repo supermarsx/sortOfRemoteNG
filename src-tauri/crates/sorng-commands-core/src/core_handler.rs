@@ -35,6 +35,7 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_lockout_state"
             | "encryption_disable_settings"
             | "encryption_rotate_master_key"
+            | "encryption_rotate_master_key_full"
             | "encryption_export_portable_dek"
             | "encryption_import_portable_dek"
             | "encryption_audit_read"
@@ -1165,6 +1166,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         sorng_encryption::commands::encryption_lockout_state,
         sorng_encryption::commands::encryption_disable_settings,
         sorng_encryption::commands::encryption_rotate_master_key,
+        encryption_rotation_commands::encryption_rotate_master_key_full,
         sorng_encryption::commands::encryption_export_portable_dek,
         sorng_encryption::commands::encryption_import_portable_dek,
         sorng_encryption::commands::encryption_audit_read,

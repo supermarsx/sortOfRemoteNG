@@ -9680,6 +9680,8 @@ dependencies = [
  "sorng-encryption",
  "sorng-opkssh",
  "sorng-probes",
+ "sorng-recording",
+ "sorng-storage",
  "sorng-vault",
  "ssh2",
  "tauri",

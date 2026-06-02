@@ -86,6 +86,40 @@ impl EncryptionState {
         let guard = self.inner.read().await;
         guard.as_ref().map(f)
     }
+
+    /// Build a brand-new `EncryptionState` that holds a separate copy
+    /// of the current master DEK. The returned state is independent
+    /// of `self`: a later [`install`] on either does not affect the
+    /// other. Used by the master-key rotation orchestrator to keep
+    /// the *old* DEK alive for decryption while the live state is
+    /// swapped to the *new* DEK for encryption.
+    ///
+    /// Returns `None` when the state is locked. The cloned DEK lives
+    /// in a fresh `Zeroizing` buffer; both keys are zeroed when their
+    /// respective states drop.
+    pub async fn snapshot(&self) -> Option<Self> {
+        let guard = self.inner.read().await;
+        let dek = guard.as_ref()?;
+        let copy = MasterDek::from_bytes(dek.bytes_for_password_wrap())?;
+        let cloned = Self::new();
+        cloned.install(copy).await;
+        Some(cloned)
+    }
+
+    /// Hand the raw 32-byte master DEK to a caller that needs to wrap
+    /// it for vault storage or password export. Exposed `pub` (rather
+    /// than `pub(crate)` like [`with_master`]) so the master-key
+    /// rotation orchestrator in the `app` crate can re-wrap the new
+    /// DEK into vault + `dek.enc` without round-tripping through this
+    /// crate's command surface.
+    ///
+    /// Returns `None` when the state is locked. The returned bytes
+    /// are a copy; the original DEK in the state is unchanged. The
+    /// caller is responsible for zeroising the returned buffer.
+    pub async fn master_bytes_raw(&self) -> Option<[u8; crate::dek::KEY_LEN]> {
+        let guard = self.inner.read().await;
+        guard.as_ref().map(|dek| *dek.bytes_for_password_wrap())
+    }
 }
 
 /// What happened when the caller asked the state to load itself from
@@ -163,6 +197,62 @@ mod tests {
         s.lock().await;
         assert!(!s.is_unlocked().await);
         assert!(s.sub_key(ArtifactKind::Settings).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn snapshot_preserves_old_dek_across_install() {
+        // Phase A safety net: the rotation orchestrator builds an
+        // `old_state` via `snapshot()` and then swaps the live state
+        // to a new DEK. After the swap, `old_state` must still derive
+        // the *original* sub-key so the orchestrator can decrypt
+        // existing ciphertexts.
+        let live = EncryptionState::new();
+        let original = MasterDek::generate();
+        live.install(original).await;
+        let original_sub = live
+            .sub_key(ArtifactKind::Settings)
+            .await
+            .unwrap()
+            .bytes()
+            .to_vec();
+        let snap = live.snapshot().await.expect("unlocked");
+        // Swap the live state to a brand-new DEK.
+        live.install(MasterDek::generate()).await;
+        let new_sub = live
+            .sub_key(ArtifactKind::Settings)
+            .await
+            .unwrap()
+            .bytes()
+            .to_vec();
+        assert_ne!(new_sub, original_sub, "live state must hold new DEK");
+        // Snapshot still derives the original sub-key.
+        let snap_sub = snap
+            .sub_key(ArtifactKind::Settings)
+            .await
+            .unwrap()
+            .bytes()
+            .to_vec();
+        assert_eq!(snap_sub, original_sub, "snapshot retained old DEK");
+    }
+
+    #[tokio::test]
+    async fn snapshot_on_locked_state_returns_none() {
+        let s = EncryptionState::new();
+        assert!(s.snapshot().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn master_bytes_raw_round_trips_through_from_bytes() {
+        let s = EncryptionState::new();
+        s.install(MasterDek::generate()).await;
+        let bytes = s.master_bytes_raw().await.unwrap();
+        let reconstructed = MasterDek::from_bytes(&bytes).unwrap();
+        // Both should derive the same sub-key.
+        let s2 = EncryptionState::new();
+        s2.install(reconstructed).await;
+        let a = s.sub_key(ArtifactKind::Settings).await.unwrap();
+        let b = s2.sub_key(ArtifactKind::Settings).await.unwrap();
+        assert_eq!(a.bytes(), b.bytes());
     }
 
     #[tokio::test]
