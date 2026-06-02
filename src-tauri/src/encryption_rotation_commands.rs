@@ -98,6 +98,14 @@ pub struct FullRotateFailure {
 /// command stays registered for callers that genuinely only want the
 /// settings half rotated, but the production "Rotate master key"
 /// button uses this one.
+///
+/// Implementation note: this Tauri command is intentionally a thin
+/// shell around [`rotate_master_key_full_inner`]. The shell owns the
+/// pieces only the Tauri runtime can supply — the `AppHandle` (for
+/// `app_data_dir` resolution + the cross-window `EVENT_UNLOCKED`
+/// broadcast) and the OS-vault probe — so the inner helper stays
+/// callable from integration tests that don't stand up a Tauri runtime
+/// (see `src-tauri/tests/encryption_rotation_e2e.rs`).
 #[tauri::command]
 pub async fn encryption_rotate_master_key_full(
     app: AppHandle,
@@ -107,19 +115,73 @@ pub async fn encryption_rotate_master_key_full(
     recording_state: State<'_, RecordingServiceState>,
     password: Option<String>,
 ) -> Result<FullRotateReport, String> {
-    if !enc_state.is_unlocked().await {
-        return Err("state is locked; unlock before rotating".into());
-    }
-
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("app_data_dir: {e}"))?;
-    let dek_enc_path = dir.join(DEK_ENC_FILENAME);
-    let dek_enc_present = dek_enc_path.exists();
-    let settings_enc_path = dir.join(SETTINGS_ENC_FILENAME);
-    let settings_enc_present = settings_enc_path.exists();
+    // Probing the OS vault is a Tauri-runtime concern (it touches the
+    // real keychain via `sorng_vault::keychain::read_dek`), so the
+    // shell answers this for the helper. The integration test passes
+    // `vault_present: false` directly so the rewrite path never tries
+    // to write to the host keychain.
     let vault_present = sorng_vault::keychain::read_dek().await.is_ok();
+
+    let report = rotate_master_key_full_inner(
+        &dir,
+        enc_state.inner(),
+        storage_state.inner(),
+        backup_state.inner(),
+        recording_state.inner(),
+        password,
+        vault_present,
+    )
+    .await?;
+
+    // The cross-window broadcast is the one piece the helper can't
+    // perform — it has no `AppHandle`. Emit it here so every Tauri
+    // window's encryption-status sidebar refreshes after rotation.
+    let _ = app.emit(EVENT_UNLOCKED, ());
+
+    Ok(report)
+}
+
+/// Tauri-agnostic body of the master-key rotation orchestrator.
+///
+/// Takes plain references instead of `tauri::State` so integration
+/// tests can drive it without the Tauri runtime. Behavioural surface:
+///
+/// - Step 1 snapshots the current DEK (DEK A) so the rewrite loop can
+///   still decrypt under the old key after step 2 swaps the live state.
+/// - Step 2 generates DEK B and installs it into `enc_state`.
+/// - Step 3 walks every artifact (settings, connections, backups,
+///   recording metadata, media sidecars, macros), decrypting with the
+///   frozen DEK A and re-encrypting with DEK B in place.
+/// - Step 4 updates the key-storage receipts: vault entry when
+///   `vault_present`, and `dek.enc` when `password` is `Some`.
+/// - Step 5 resets the lockout counter and appends to the audit log.
+///
+/// The `vault_present` flag is passed in (rather than re-probed) so
+/// tests can deterministically skip the OS-keychain write. The Tauri
+/// command wrapper above probes it via `sorng_vault::keychain::read_dek`
+/// and forwards the result.
+#[allow(clippy::too_many_arguments)]
+pub async fn rotate_master_key_full_inner(
+    app_data_dir: &std::path::Path,
+    enc_state: &EncryptionState,
+    storage_state: &SecureStorageState,
+    backup_state: &BackupServiceState,
+    recording_state: &RecordingServiceState,
+    password: Option<String>,
+    vault_present: bool,
+) -> Result<FullRotateReport, String> {
+    if !enc_state.is_unlocked().await {
+        return Err("state is locked; unlock before rotating".into());
+    }
+
+    let dek_enc_path = app_data_dir.join(DEK_ENC_FILENAME);
+    let dek_enc_present = dek_enc_path.exists();
+    let settings_enc_path = app_data_dir.join(SETTINGS_ENC_FILENAME);
+    let settings_enc_present = settings_enc_path.exists();
 
     if dek_enc_present && password.is_none() {
         return Err(
@@ -149,7 +211,7 @@ pub async fn encryption_rotate_master_key_full(
 
     // ── Step 3a: settings.enc ──────────────────────────────────────
     if settings_enc_present {
-        match rewrite_settings(&settings_enc_path, &old_state, &enc_state, new_mode, salt).await
+        match rewrite_settings(&settings_enc_path, &old_state, enc_state, new_mode, salt).await
         {
             Ok(n) => {
                 report.settings_rewritten = true;
@@ -173,7 +235,7 @@ pub async fn encryption_rotate_master_key_full(
         // files stay plaintext.
         let head = std::fs::read(&store_path).unwrap_or_default();
         if head.len() >= 6 && &head[..6] == sorng_encryption::envelope::MAGIC {
-            match rewrite_connections(&store_path, &old_state, &enc_state).await {
+            match rewrite_connections(&store_path, &old_state, enc_state).await {
                 Ok(n) => {
                     report.connections_rewritten = true;
                     report.bytes_rewritten += n;
@@ -194,7 +256,7 @@ pub async fn encryption_rotate_master_key_full(
     };
     for path in backup_paths {
         match sorng_storage::backup::BackupService::rewrite_backup_with(
-            &path, &old_state, &enc_state,
+            &path, &old_state, enc_state,
         )
         .await
         {
@@ -216,7 +278,7 @@ pub async fn encryption_rotate_master_key_full(
         svc.storage_root_snapshot().await
     };
     for path in rec_storage::list_encrypted_envelope_paths(&rec_root) {
-        match rec_storage::rewrite_envelope_with(&path, &old_state, &enc_state).await {
+        match rec_storage::rewrite_envelope_with(&path, &old_state, enc_state).await {
             Ok(n) => {
                 report.recording_envelopes_rewritten += 1;
                 report.bytes_rewritten += n;
@@ -229,7 +291,7 @@ pub async fn encryption_rotate_master_key_full(
         }
     }
     for path in rec_storage::list_encrypted_media_paths(&rec_root) {
-        match rec_storage::rewrite_media_with(&path, &old_state, &enc_state).await {
+        match rec_storage::rewrite_media_with(&path, &old_state, enc_state).await {
             Ok(n) => {
                 report.media_sidecars_rewritten += 1;
                 report.bytes_rewritten += n;
@@ -242,7 +304,7 @@ pub async fn encryption_rotate_master_key_full(
         }
     }
     for path in rec_storage::list_encrypted_macro_paths(&rec_root) {
-        match rec_storage::rewrite_macro_with(&path, &old_state, &enc_state).await {
+        match rec_storage::rewrite_macro_with(&path, &old_state, enc_state).await {
             Ok(n) => {
                 report.macros_rewritten += 1;
                 report.bytes_rewritten += n;
@@ -280,13 +342,13 @@ pub async fn encryption_rotate_master_key_full(
         report.dek_enc_updated = true;
     }
 
-    // Lockout reset + audit + cross-window broadcast.
-    let mut lockout = sorng_encryption::lockout::LockoutState::load(&dir);
+    // Lockout reset + audit. The cross-window broadcast lives in the
+    // Tauri wrapper (this helper has no AppHandle).
+    let mut lockout = sorng_encryption::lockout::LockoutState::load(app_data_dir);
     lockout.record_success();
-    let _ = lockout.save(&dir);
-    let _ = app.emit(EVENT_UNLOCKED, ());
+    let _ = lockout.save(app_data_dir);
     let _ = audit::record(
-        &dir,
+        app_data_dir,
         AuditEvent::KeyRotated,
         serde_json::json!({
             "settingsRewritten": report.settings_rewritten,

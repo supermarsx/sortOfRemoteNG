@@ -68,6 +68,12 @@ pub mod api;
 pub mod api_capability;
 pub mod api_capability_commands;
 pub mod app_settings_commands;
+// Master-key rotation orchestrator. Path-included from
+// `sorng-commands-core` for the Tauri command registration; also
+// surfaced through `app_lib` so the e2e integration test at
+// `src-tauri/tests/encryption_rotation_e2e.rs` can call the
+// Tauri-agnostic `rotate_master_key_full_inner` helper directly.
+pub mod encryption_rotation_commands;
 
 #[cfg(test)]
 #[path = "tests/network_tests.rs"]
