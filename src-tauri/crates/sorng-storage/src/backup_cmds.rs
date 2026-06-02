@@ -88,3 +88,23 @@ pub async fn backup_delete(
     service.delete_backup(&backup_id).await
 }
 
+/// Walk every enabled backup destination and convert each `backup_*`
+/// file from the legacy `SORNG1` envelope (or plaintext) to the v2
+/// envelope under the master DEK. `legacyPassword` is the previous
+/// backup password — pass `null` when no legacy SORNG1 files exist.
+/// Originals are archived as `<file>.v0.bak` for the rollback window.
+///
+/// Returns a per-run report with migrated / already-v2 / failure
+/// counts so the Settings panel can render exactly what happened
+/// without parsing log lines.
+#[tauri::command]
+pub async fn backup_migrate_to_master_dek(
+    legacy_password: Option<String>,
+    state: tauri::State<'_, BackupServiceState>,
+) -> Result<BackupMigrationReport, String> {
+    let mut service = state.lock().await;
+    service
+        .migrate_to_master_dek(legacy_password.as_deref())
+        .await
+}
+
