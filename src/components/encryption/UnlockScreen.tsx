@@ -116,6 +116,16 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   const [lastResult, setLastResult] = useState<UnlockResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Portable .dek import — vault-eviction recovery path. Visible only
+  // when the password wrap is absent AND the vault is reachable but
+  // unreadable (the OS keychain entry was wiped). The user pastes the
+  // file path of an exported `.dek` and supplies its export password.
+  const [importExpanded, setImportExpanded] = useState(false);
+  const [importPath, setImportPath] = useState("");
+  const [importPassword, setImportPassword] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
   const status = enc.status;
   const lockout = enc.lockout;
   const remainingMs = lockout?.remainingCooldownMs ?? 0;
@@ -151,6 +161,24 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   useEffect(() => {
     if (status?.unlocked) onUnlocked?.();
   }, [status?.unlocked, onUnlocked]);
+
+  const handleImportDek = async () => {
+    if (importBusy || importPath.length === 0 || importPassword.length === 0) return;
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      await enc.importPortableDek(importPath, importPassword);
+      // On success the encryption state is now unlocked; the parent
+      // effect will pick that up on the next status refresh and
+      // dismiss the overlay automatically.
+      setImportPath("");
+      setImportPassword("");
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportBusy(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (submitting || cooldownActive || password.length === 0) return;
@@ -306,6 +334,82 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
                 ? labels.needsSetup
                 : labels.vaultUnavailable}
             </span>
+          </div>
+        )}
+
+        {/* ── Portable .dek import expander ─────────────────────────
+              Vault-eviction recovery path. The OS keychain entry can
+              vanish (macOS keychain reset, Linux session logout that
+              drops libsecret) and would otherwise strand the user.
+              Shown whenever a master key exists on disk somewhere
+              other than the vault — pure-vault users have nothing to
+              import, while password / hybrid users can swap in a
+              fresh `.dek` from removable media.
+        */}
+        {(status?.passwordWrapPresent || !status?.vaultAvailable) && (
+          <div className="mt-3 pt-3 border-t border-[var(--color-border)]/40">
+            <button
+              type="button"
+              onClick={() => setImportExpanded((v) => !v)}
+              className="text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] flex items-center gap-1"
+              data-testid="unlock-import-toggle"
+            >
+              <ShieldCheck className="w-3 h-3" />
+              {importExpanded ? "Hide" : "Recover from portable .dek"}
+            </button>
+            {importExpanded && (
+              <div className="mt-2 space-y-2 text-xs">
+                <p className="text-[var(--color-textMuted)]">
+                  If your OS keychain was wiped or you're recovering on
+                  a new machine, paste the absolute path of an exported{" "}
+                  <code>.dek</code> file and the export password used
+                  when it was created.
+                </p>
+                <input
+                  type="text"
+                  value={importPath}
+                  onChange={(e) => setImportPath(e.target.value)}
+                  placeholder="/secure/backup/sorng-master.dek"
+                  disabled={importBusy}
+                  className="w-full px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 font-mono"
+                />
+                <input
+                  type="password"
+                  value={importPassword}
+                  onChange={(e) => setImportPassword(e.target.value)}
+                  placeholder="Export password"
+                  disabled={importBusy}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleImportDek();
+                  }}
+                  className="w-full px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                />
+                {importError && (
+                  <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-[10px]">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                    <span>{importError}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleImportDek}
+                  disabled={
+                    importBusy ||
+                    importPath.length === 0 ||
+                    importPassword.length === 0
+                  }
+                  data-testid="unlock-import-submit"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                >
+                  {importBusy ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Unlock className="w-3.5 h-3.5" />
+                  )}
+                  Import + unlock
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
