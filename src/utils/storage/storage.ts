@@ -170,11 +170,10 @@ export class SecureStorage {
     const invoke = await getInvoke();
     if (invoke) {
       try {
-        if (usePassword && this.password) {
-          await invoke('set_storage_password', { password: this.password });
-        } else {
-          await invoke('set_storage_password', { password: null });
-        }
+        // `set_storage_password` was retired with the legacy SORNG_ENC:
+        // envelope; the master DEK is the single source of connections-
+        // at-rest crypto now. `usePassword` is preserved on the wire
+        // for backward-compat but no longer influences anything.
         await invoke('save_data', { data, usePassword });
       } catch (err) {
         console.error("Failed to save data via Tauri:", err);

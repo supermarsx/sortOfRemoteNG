@@ -85,19 +85,6 @@ pub async fn clear_storage(state: tauri::State<'_, SecureStorageState>) -> Resul
     storage.clear_storage().await
 }
 
-/// Backwards-compatible no-op. The legacy database password was
-/// retired in commit Z; the master DEK is the single source of
-/// connections-at-rest crypto. Kept as a registered command so older
-/// frontends that still call `set_storage_password` on startup don't
-/// fail; the supplied value is discarded.
-#[tauri::command]
-pub async fn set_storage_password(
-    _state: tauri::State<'_, SecureStorageState>,
-    _password: Option<String>,
-) -> Result<(), String> {
-    Ok(())
-}
-
 /// Tauri command to read a value by key from app data storage.
 ///
 /// # Arguments

@@ -19,7 +19,6 @@ pub fn is_command(command: &str) -> bool {
             | "save_data"
             | "load_data"
             | "clear_storage"
-            | "set_storage_password"
             | "read_app_data"
             | "write_app_data"
             | "read_app_settings"
@@ -1150,7 +1149,6 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         storage_commands::save_data,
         storage_commands::load_data,
         storage_commands::clear_storage,
-        storage_commands::set_storage_password,
         storage_commands::read_app_data,
         storage_commands::write_app_data,
         app_settings_commands::read_app_settings,
