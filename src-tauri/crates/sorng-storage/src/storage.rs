@@ -35,8 +35,6 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::{engine::general_purpose, Engine as _};
-use rand::rngs::OsRng;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::fs;
@@ -197,23 +195,25 @@ impl SecureStorage {
         key
     }
 
-    /// Encrypt data with AES-256-GCM.
+    /// Legacy SORNG_ENC: envelope writer. No production caller remains
+    /// after commit Y removed the legacy write branch from
+    /// `save_data` — kept only so the migrator tests can plant the
+    /// fixtures the old write path used to produce. Full purge along
+    /// with the migrator happens in commit Z.
+    #[cfg(test)]
     fn encrypt_bytes(data: &[u8], password: &str) -> Result<Vec<u8>, String> {
-        // Generate random salt (32 bytes) and nonce (12 bytes)
+        use rand::rngs::OsRng;
+        use rand::RngCore;
         let mut salt = [0u8; 32];
         let mut nonce_bytes = [0u8; 12];
         OsRng.fill_bytes(&mut salt);
         OsRng.fill_bytes(&mut nonce_bytes);
-
         let key = Self::derive_encryption_key(password, &salt);
         let cipher = Aes256Gcm::new(&key.into());
         let nonce = Nonce::from_slice(&nonce_bytes);
-
         let ciphertext = cipher
             .encrypt(nonce, data)
             .map_err(|e| format!("Encryption failed: {:?}", e))?;
-
-        // Format: salt (32) || nonce (12) || ciphertext
         let mut combined = Vec::with_capacity(32 + 12 + ciphertext.len());
         combined.extend_from_slice(&salt);
         combined.extend_from_slice(&nonce_bytes);
@@ -265,15 +265,18 @@ impl SecureStorage {
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
 
-        // Encryption dispatch (Phase 8):
+        // Encryption dispatch (legacy SORNG_ENC: write path removed):
         //   1. v2 envelope — when the master-key state is installed
         //      and unlocked. Master DEK drives sub-key derivation; no
         //      database password needed. Produced as binary.
-        //   2. Legacy SORNG_ENC: text envelope — when the database
-        //      password is still set (used during the v0 → v2
-        //      migration window or by users who haven't enabled
-        //      master-key encryption yet).
-        //   3. Plain JSON — when neither path applies.
+        //   2. Plain JSON — otherwise. The legacy SORNG_ENC: text
+        //      envelope is no longer written; the read + migrator
+        //      paths below remain until the next commit purges them.
+        //
+        // `use_password` is retained on the API for backward-compat
+        // but no longer influences write dispatch. The master key is
+        // the single source of truth.
+        let _ = use_password;
         let used_v2 = self.encryption_state.is_some()
             && self
                 .encryption_state
@@ -299,17 +302,7 @@ impl SecureStorage {
             return Self::atomic_write_bytes(&self.store_path, &blob);
         }
 
-        let content = if use_password {
-            if let Some(password) = &self.password {
-                let encrypted = Self::encrypt_bytes(json.as_bytes(), password)?;
-                let encoded = general_purpose::STANDARD.encode(&encrypted);
-                format!("SORNG_ENC:{}", encoded)
-            } else {
-                json
-            }
-        } else {
-            json
-        };
+        let content = json;
 
         // Atomic write: write to a temp file first, then rename.
         // This prevents data loss if the process crashes mid-write.
@@ -628,19 +621,53 @@ mod phase_8_migration_tests {
         assert_eq!(loaded.connections[0]["host"], "h.example");
     }
 
+    /// Plant a `SORNG_ENC:`-format fixture at the configured path
+    /// using the test-only `encrypt_bytes` helper. Required after
+    /// commit Y removed the legacy write path from `save_data`.
+    fn plant_sorng_enc_fixture(path: &str, payload: &StorageData, password: &str) {
+        let json = serde_json::to_string_pretty(payload).unwrap();
+        let encrypted = SecureStorage::encrypt_bytes(json.as_bytes(), password).unwrap();
+        let encoded = general_purpose::STANDARD.encode(&encrypted);
+        std::fs::write(path, format!("SORNG_ENC:{}", encoded)).unwrap();
+    }
+
     #[tokio::test]
-    async fn legacy_path_when_no_state_installed() {
+    async fn plaintext_path_when_no_state_installed() {
+        // Commit Y removed the legacy SORNG_ENC: write path from
+        // `save_data`. With no encryption state installed, even with a
+        // legacy database password configured, new writes are plain
+        // JSON. The migrator path still handles existing SORNG_ENC:
+        // files on disk (covered by `migrate_legacy_to_v2_round_trips`).
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
         let mut svc = build_storage(path.clone());
-        // Set the legacy database password — no master state installed.
         svc.set_password(Some("hunter2".to_string())).await;
 
         svc.save_data(sample_data(), true).await.unwrap();
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.starts_with("SORNG_ENC:"), "legacy envelope kept");
+        assert!(
+            !raw.starts_with("SORNG_ENC:"),
+            "legacy SORNG_ENC: write path was removed in commit Y"
+        );
         let loaded = svc.load_data().await.unwrap().unwrap();
         assert_eq!(loaded.connections.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn legacy_sorng_enc_files_still_readable_via_migrator() {
+        // The legacy *read* + decrypt path is retained for the
+        // migrator. A SORNG_ENC: file planted by the test helper must
+        // still load cleanly when the legacy database password is
+        // configured.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        plant_sorng_enc_fixture(&path, &sample_data(), "hunter2");
+
+        let mut svc = build_storage(path.clone());
+        svc.set_password(Some("hunter2".to_string())).await;
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections.len(), 1);
+        assert_eq!(loaded.connections[0]["id"], "c1");
     }
 
     #[tokio::test]
@@ -648,10 +675,11 @@ mod phase_8_migration_tests {
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
 
-        // Phase A: write the legacy file with the database password.
+        // Phase A: plant a legacy SORNG_ENC: fixture directly (the
+        // production write path no longer produces them after commit Y).
+        plant_sorng_enc_fixture(&path, &sample_data(), "hunter2");
         let mut svc = build_storage(path.clone());
         svc.set_password(Some("hunter2".to_string())).await;
-        svc.save_data(sample_data(), true).await.unwrap();
 
         // Phase B: install the master DEK and migrate. The legacy
         // password must round-trip the decrypt-then-re-encrypt without
@@ -702,9 +730,9 @@ mod phase_8_migration_tests {
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
 
+        plant_sorng_enc_fixture(&path, &sample_data(), "correct");
         let mut svc = build_storage(path.clone());
         svc.set_password(Some("correct".to_string())).await;
-        svc.save_data(sample_data(), true).await.unwrap();
         let legacy_before = std::fs::read(&path).unwrap();
 
         svc.set_encryption_state(unlocked_state().await);
