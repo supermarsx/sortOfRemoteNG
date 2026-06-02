@@ -85,6 +85,26 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
 }));
 
+// Shared in-memory pubsub the hook's cross-window event subscriber
+// plugs into. Tests in the bottom describe block use the `emit`
+// helper to fire events; outer tests don't care and just let the
+// subscribers register without ever firing.
+const eventSubscribers: Map<string, Set<(e: { payload: unknown }) => void>> =
+  new Map();
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: async (
+    name: string,
+    cb: (e: { payload: unknown }) => void,
+  ) => {
+    const set = eventSubscribers.get(name) ?? new Set();
+    set.add(cb);
+    eventSubscribers.set(name, set);
+    return () => {
+      set.delete(cb);
+    };
+  },
+}));
+
 beforeEach(() => {
   invokeImpl = vi.fn();
 });
@@ -467,5 +487,127 @@ describe("useEncryption", () => {
     const { result } = renderHook(() => useEncryption());
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.audit).toEqual([]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Cross-window broadcast (Commit F)
+//
+// `useEncryption` subscribes to `encryption:unlocked` and
+// `encryption:locked` Tauri events on mount and calls `refresh()`
+// when either fires. The cross-window contract is: when window A
+// fires an unlock, window B's hook receives the event and refreshes
+// its status, which causes window B's UnlockScreen to dismiss.
+//
+// We mock the Tauri event API so the two hook instances share a
+// pubsub bus rendered in jsdom.
+// ──────────────────────────────────────────────────────────────────
+describe("useEncryption cross-window broadcast", () => {
+  beforeEach(() => {
+    eventSubscribers.clear();
+  });
+
+  const subscribers = eventSubscribers;
+
+  /** Fire an event to every listener subscribed to `name`. */
+  function emit(name: string, payload: unknown = null) {
+    const set = subscribers.get(name);
+    if (!set) return;
+    set.forEach((cb) => cb({ payload }));
+  }
+
+  /** Block until at least `count` listeners are attached to `name`.
+   *  The hook subscribes asynchronously (dynamic import of
+   *  `@tauri-apps/api/event`), so an immediate emit after `renderHook`
+   *  would race the listener registration. */
+  async function waitForSubscribers(name: string, count: number) {
+    await waitFor(
+      () => {
+        expect(subscribers.get(name)?.size ?? 0).toBeGreaterThanOrEqual(
+          count,
+        );
+      },
+      { timeout: 3000, interval: 25 },
+    );
+  }
+
+  it("unlock event refreshes status in another hook instance", async () => {
+    // Two `renderHook` calls simulate two browser windows. Initially
+    // both see a locked status; window A receives an unlock event;
+    // both should reflect the new unlocked status because the second
+    // refresh sees the updated server-side response.
+    let unlockedNow = false;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") {
+        return { ...sampleStatus, unlocked: unlockedNow };
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+
+    // Sequentially render + await each hook's settling so the async
+    // listener registration in `useEncryption`'s mount effect has a
+    // chance to finish before the next hook starts. Rendering both
+    // synchronously is unreliable: the second hook's renders can
+    // interleave with the first's async listen and cancel it before
+    // it actually subscribes.
+    const a = renderHook(() => useEncryption());
+    await waitFor(() => expect(a.result.current.loading).toBe(false));
+    await waitForSubscribers("encryption:unlocked", 1);
+    const b = renderHook(() => useEncryption());
+    await waitFor(() => expect(b.result.current.loading).toBe(false));
+    await waitForSubscribers("encryption:unlocked", 2);
+    expect(a.result.current.status?.unlocked).toBe(false);
+    expect(b.result.current.status?.unlocked).toBe(false);
+
+    // Flip the server-side response so the next refresh sees unlocked,
+    // then fire the cross-window event.
+    unlockedNow = true;
+    emit("encryption:unlocked");
+
+    await waitFor(() => {
+      expect(a.result.current.status?.unlocked).toBe(true);
+      expect(b.result.current.status?.unlocked).toBe(true);
+    });
+  });
+
+  it("lock event propagates to every subscribed hook instance", async () => {
+    let serverUnlocked = true;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") {
+        return { ...sampleStatus, unlocked: serverUnlocked };
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+
+    const a = renderHook(() => useEncryption());
+    await waitFor(() => expect(a.result.current.status?.unlocked).toBe(true));
+    await waitForSubscribers("encryption:locked", 1);
+    const b = renderHook(() => useEncryption());
+    await waitFor(() => expect(b.result.current.status?.unlocked).toBe(true));
+    await waitForSubscribers("encryption:locked", 2);
+
+    serverUnlocked = false;
+    emit("encryption:locked");
+
+    await waitFor(() => {
+      expect(a.result.current.status?.unlocked).toBe(false);
+      expect(b.result.current.status?.unlocked).toBe(false);
+    });
+  });
+
+  it("unsubscribed listeners do not block emits", async () => {
+    // Defence-in-depth: unmounting a hook should remove its listener
+    // so a later emit doesn't try to call into a dead component tree.
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      throw new Error(`unexpected ${cmd}`);
+    });
+    const a = renderHook(() => useEncryption());
+    await waitFor(() => expect(a.result.current.loading).toBe(false));
+
+    a.unmount();
+    // No throw expected.
+    emit("encryption:unlocked");
+    emit("encryption:locked");
   });
 });
