@@ -1890,6 +1890,206 @@ mod enc_dispatch_tests {
         assert!(matches!(err, RecordingError::StorageError(_)));
     }
 
+    // ────────────────────────────────────────────────────────────────
+    // Layer B — filesystem error paths, leftover-file recovery, and
+    //          vault eviction simulations (recording-meta + media).
+    // ────────────────────────────────────────────────────────────────
+
+    async fn unlocked_with_bytes(bytes: [u8; 32]) -> EncryptionState {
+        let s = EncryptionState::new();
+        s.install(MasterDek::from_bytes(&bytes).unwrap()).await;
+        s
+    }
+
+    #[tokio::test]
+    async fn missing_parent_dir_creates_or_errors_cleanly_recording() {
+        // save_envelope_dispatched calls fs::create_dir_all(&dir) where
+        // dir = <root>/recordings. As long as <root>'s parent exists,
+        // the writer auto-creates the chain — verify behaviour with a
+        // multi-level non-existent root.
+        // Observed implementation behaviour: AUTO-MKDIR (recursive).
+        let tmp = tempdir().unwrap();
+        let nested_root = tmp.path().join("nonexistent/deep/path");
+        assert!(!nested_root.exists());
+
+        let enc = unlocked().await;
+        let env = fixture_envelope("autocreate");
+        let result = save_envelope_dispatched(&nested_root, &env, &enc).await;
+        assert!(
+            result.is_ok(),
+            "writer should auto-mkdir, got: {result:?}"
+        );
+        // The recordings subdir now exists with the .enc file inside.
+        assert!(nested_root.join("recordings").exists());
+        assert!(envelope_enc_path(&nested_root, "autocreate").exists());
+    }
+
+    #[tokio::test]
+    async fn garbage_canonical_file_surfaces_parse_error_on_load_recording() {
+        // Plant 500 deterministic non-JSON bytes as <id>.json under
+        // recordings/. Per contract, the listing silently SKIPS
+        // malformed entries (warn-logged) rather than failing the
+        // whole load. Verify empty list + no panic.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let garbage: Vec<u8> = (0..500u32).map(|i| ((i * 251 + 17) % 256) as u8).collect();
+        std::fs::write(
+            recordings_dir(tmp.path()).join("garbage.json"),
+            &garbage,
+        )
+        .unwrap();
+
+        let enc = unlocked().await;
+        let list = load_all_envelopes_dispatched(tmp.path(), &enc).await.unwrap();
+        assert_eq!(
+            list.len(),
+            0,
+            "garbage .json must be silently skipped, not error"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_against_missing_file_returns_none_recording() {
+        // No recordings dir → empty list, per documented contract.
+        let tmp = tempdir().unwrap();
+        let enc = unlocked().await;
+        let list = load_all_envelopes_dispatched(tmp.path(), &enc).await.unwrap();
+        assert!(list.is_empty());
+
+        // load_envelope_dispatched against a missing id surfaces an
+        // error (no Ok(None) shape in this API).
+        let result = load_envelope_dispatched(tmp.path(), "missing", &enc).await;
+        assert!(result.is_err(), "missing id must surface as Err");
+    }
+
+    #[tokio::test]
+    async fn leftover_tmp_file_does_not_block_next_write_recording() {
+        // save_envelope_dispatched uses std::fs::write directly (no
+        // .tmp slot on the normal write path; .rotating only exists
+        // for the rotation orchestrator's atomic_write_path helper).
+        // Plant a stale `<id>.json.enc.tmp` + `<id>.json.enc.rotating`
+        // alongside and verify a normal write still succeeds.
+        //
+        // Observed implementation behaviour: normal recording writes
+        // are NOT atomic-with-temp; the leftovers are simply untouched.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+        let id = "leftover";
+        let stale_tmp = recordings_dir(tmp.path()).join(format!("{}.json.enc.tmp", id));
+        let stale_rotating = recordings_dir(tmp.path())
+            .join(format!("{}.json.enc.rotating", id));
+        std::fs::write(&stale_tmp, b"prior-crash artefact").unwrap();
+        std::fs::write(&stale_rotating, b"prior-rotation artefact").unwrap();
+
+        let env = fixture_envelope(id);
+        save_envelope_dispatched(tmp.path(), &env, &enc).await.unwrap();
+
+        // The canonical .enc file holds the new content.
+        assert!(envelope_enc_path(tmp.path(), id).exists());
+        // The round-trip read confirms it's the freshly written one.
+        let loaded = load_envelope_dispatched(tmp.path(), id, &enc).await.unwrap();
+        assert_eq!(loaded.id, id);
+    }
+
+    #[tokio::test]
+    async fn wrong_master_dek_after_eviction_fails_cleanly_recording_meta() {
+        // Save an envelope under state_a's DEK, evict state_a, install
+        // state_b with DIFFERENT bytes. Listing must silently SKIP the
+        // un-decryptable file (warn-logged), per the documented contract.
+        // A direct `load_envelope_dispatched` must Err clean.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked_with_bytes([1u8; 32]).await;
+        let env = fixture_envelope("evict-meta");
+        save_envelope_dispatched(tmp.path(), &env, &state_a).await.unwrap();
+
+        let state_b = unlocked_with_bytes([2u8; 32]).await;
+        // load_envelope_dispatched surfaces the decrypt error.
+        let result = load_envelope_dispatched(tmp.path(), "evict-meta", &state_b).await;
+        assert!(result.is_err(), "wrong-key load must error, got: {result:?}");
+        let err = result.unwrap_err();
+        let msg = format!("{}", err).to_lowercase();
+        assert!(
+            msg.contains("decrypt")
+                || msg.contains("auth")
+                || msg.contains("unlock")
+                || msg.contains("invalid"),
+            "expected a clean decrypt error, got: {err}"
+        );
+
+        // The listing silently skips and returns an empty list.
+        let list = load_all_envelopes_dispatched(tmp.path(), &state_b).await.unwrap();
+        assert_eq!(
+            list.len(),
+            0,
+            "list must silently skip un-decryptable .enc files"
+        );
+    }
+
+    #[tokio::test]
+    async fn right_master_dek_after_eviction_decodes_cleanly_recording_meta() {
+        // state_b uses the SAME bytes — both direct load and listing
+        // succeed and the envelope round-trips.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked_with_bytes([4u8; 32]).await;
+        let env = fixture_envelope("evict-meta-ok");
+        save_envelope_dispatched(tmp.path(), &env, &state_a).await.unwrap();
+
+        let state_b = unlocked_with_bytes([4u8; 32]).await;
+        let loaded = load_envelope_dispatched(tmp.path(), "evict-meta-ok", &state_b)
+            .await
+            .unwrap();
+        assert_eq!(loaded.id, "evict-meta-ok");
+        let list = load_all_envelopes_dispatched(tmp.path(), &state_b).await.unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn wrong_master_dek_after_eviction_fails_cleanly_recording_media() {
+        // Same scenario for the media blob path.
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked_with_bytes([6u8; 32]).await;
+        let bytes = media_fixture(8_000);
+        save_media_blob_dispatched(tmp.path(), "evict.webm", &bytes, &state_a)
+            .await
+            .unwrap();
+
+        let state_b = unlocked_with_bytes([7u8; 32]).await;
+        let result = load_media_blob_dispatched(tmp.path(), "evict.webm", &state_b).await;
+        assert!(result.is_err(), "wrong-key media load must error");
+        let err = result.unwrap_err();
+        let msg = format!("{}", err).to_lowercase();
+        assert!(
+            msg.contains("decrypt")
+                || msg.contains("auth")
+                || msg.contains("unlock")
+                || msg.contains("invalid"),
+            "expected a clean decrypt error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn right_master_dek_after_eviction_decodes_cleanly_recording_media() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let state_a = unlocked_with_bytes([8u8; 32]).await;
+        let bytes = media_fixture(8_000);
+        save_media_blob_dispatched(tmp.path(), "evict-ok.webm", &bytes, &state_a)
+            .await
+            .unwrap();
+
+        let state_b = unlocked_with_bytes([8u8; 32]).await;
+        let recovered = load_media_blob_dispatched(tmp.path(), "evict-ok.webm", &state_b)
+            .await
+            .unwrap();
+        assert_eq!(recovered.len(), bytes.len());
+        assert_eq!(recovered[0], bytes[0]);
+        assert_eq!(recovered[bytes.len() - 1], bytes[bytes.len() - 1]);
+    }
+
     #[tokio::test]
     async fn is_encrypted_media_blob_discriminates() {
         // The whole-file envelope codec emits kind=0 / 1; the media

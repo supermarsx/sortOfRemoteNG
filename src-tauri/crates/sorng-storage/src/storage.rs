@@ -517,4 +517,153 @@ mod connections_dispatch_tests {
             "legacy SORNG_ENC: file must surface as a parse error, got: {err}"
         );
     }
+
+    // ────────────────────────────────────────────────────────────────
+    // Layer B — filesystem error paths, atomic-write recovery, and
+    //          vault eviction simulations.
+    // ────────────────────────────────────────────────────────────────
+
+    fn unlocked_state_with_bytes(bytes: [u8; 32]) -> impl std::future::Future<Output = Arc<EncryptionState>> {
+        async move {
+            let s = EncryptionState::new();
+            s.install(MasterDek::from_bytes(&bytes).unwrap()).await;
+            Arc::new(s)
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_parent_dir_creates_or_errors_cleanly() {
+        // `atomic_write_bytes` does NOT auto-mkdir (see storage.rs:273).
+        // Pointing at a non-existent multi-level parent surfaces a clean
+        // OS-level error instead of a panic. Document: this layer does
+        // NOT pre-create the parent.
+        let tmp = tempdir().unwrap();
+        let nested = tmp.path().join("nonexistent/deep/path/data.json");
+        let path = nested.to_string_lossy().to_string();
+        let svc = build_storage(path.clone());
+        let result = svc.save_data(sample_data(), false).await;
+        assert!(result.is_err(), "missing parent must error, not auto-mkdir");
+        let err = result.unwrap_err();
+        // Should mention the temp file write failure (no panic).
+        assert!(
+            err.to_lowercase().contains("failed to write")
+                || err.to_lowercase().contains("temp")
+                || err.to_lowercase().contains("system cannot")
+                || err.to_lowercase().contains("no such"),
+            "expected a clean fs error, got: {err}"
+        );
+        // The parent was NOT created — confirming non-mkdir behaviour.
+        assert!(!nested.parent().unwrap().exists());
+    }
+
+    #[tokio::test]
+    async fn garbage_canonical_file_surfaces_parse_error_on_load() {
+        // 500 random bytes at the canonical path. After commit Z this
+        // is dispatched as plaintext (vanishingly unlikely to start
+        // with `SORNG\0`) and must produce a clean Err — either a
+        // UTF-8 decode failure or a JSON parse failure.
+        use rand::rngs::OsRng;
+        use rand::RngCore;
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut garbage = vec![0u8; 500];
+        OsRng.fill_bytes(&mut garbage);
+        std::fs::write(&path, &garbage).unwrap();
+
+        let svc = build_storage(path);
+        let err = svc.load_data().await.unwrap_err();
+        let lower = err.to_lowercase();
+        assert!(
+            lower.contains("utf")
+                || lower.contains("expected")
+                || lower.contains("invalid")
+                || lower.contains("decrypt"),
+            "expected a clean parse/decrypt error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_against_missing_file_returns_none() {
+        // No file at the path → load_data must return Ok(None), per
+        // the documented contract.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let svc = build_storage(path);
+        let loaded = svc.load_data().await.unwrap();
+        assert!(loaded.is_none(), "missing file must yield Ok(None)");
+    }
+
+    #[tokio::test]
+    async fn leftover_tmp_file_does_not_block_next_write() {
+        // Pre-plant `data.json.tmp` (the atomic write's temp slot). A
+        // normal write must succeed AND the leftover must no longer be
+        // present (it gets overwritten then renamed away). The canonical
+        // file holds the new content.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let tmp_path = format!("{}.tmp", path);
+        // Pre-plant: simulate a previously-killed writer.
+        std::fs::write(&tmp_path, b"leftover garbage from prior crash").unwrap();
+
+        let svc = build_storage(path.clone());
+        svc.save_data(sample_data(), false).await.unwrap();
+
+        // The leftover is gone (atomic write renamed the temp away).
+        assert!(
+            !std::path::Path::new(&tmp_path).exists(),
+            "leftover .tmp must not survive a successful write"
+        );
+        // The canonical file holds the new content.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("c1"), "canonical file must hold the new write");
+    }
+
+    #[tokio::test]
+    async fn wrong_master_dek_after_eviction_fails_cleanly() {
+        // Simulate: data written under state_a's DEK, vault evicts,
+        // user imports the WRONG portable .dek into state_b. The load
+        // must error clean (GCM auth tag mismatch), not panic and not
+        // silently return empty.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        let state_a = unlocked_state_with_bytes([1u8; 32]).await;
+        svc.set_encryption_state(state_a);
+        svc.save_data(sample_data(), false).await.unwrap();
+
+        // Drop state_a (out of scope on next assignment), install
+        // state_b with DIFFERENT key bytes.
+        let state_b = unlocked_state_with_bytes([2u8; 32]).await;
+        svc.set_encryption_state(state_b);
+
+        let err = svc.load_data().await.unwrap_err();
+        let lower = err.to_lowercase();
+        assert!(
+            lower.contains("decrypt")
+                || lower.contains("auth")
+                || lower.contains("unlock")
+                || lower.contains("invalid"),
+            "wrong-key load must surface a clean error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn right_master_dek_after_eviction_decodes_cleanly() {
+        // Same as above but the imported portable .dek matches —
+        // load succeeds and the data round-trips.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        let state_a = unlocked_state_with_bytes([3u8; 32]).await;
+        svc.set_encryption_state(state_a);
+        svc.save_data(sample_data(), false).await.unwrap();
+
+        // Install a state_b with the SAME bytes (correct import).
+        let state_b = unlocked_state_with_bytes([3u8; 32]).await;
+        svc.set_encryption_state(state_b);
+
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections.len(), 1);
+        assert_eq!(loaded.connections[0]["host"], "h.example");
+    }
 }

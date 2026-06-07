@@ -2488,6 +2488,200 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // ────────────────────────────────────────────────────────────────
+    // Layer B — filesystem error paths, leftover-file recovery, and
+    //          vault eviction simulations.
+    // ────────────────────────────────────────────────────────────────
+
+    async fn unlocked_enc_state_with_bytes(bytes: [u8; 32]) -> std::sync::Arc<sorng_encryption::EncryptionState> {
+        let s = sorng_encryption::EncryptionState::new();
+        s.install(sorng_encryption::MasterDek::from_bytes(&bytes).unwrap())
+            .await;
+        std::sync::Arc::new(s)
+    }
+
+    #[tokio::test]
+    async fn missing_parent_dir_creates_or_errors_cleanly_backup() {
+        // perform_backup calls fs::create_dir_all(&target_dir) before
+        // writing — verify the auto-mkdir works for a missing multi-
+        // level destination. Behaviour observed: AUTO-MKDIR.
+        let parent = std::env::temp_dir().join("sorng_backup_layer_b_mkdir");
+        let _ = std::fs::remove_dir_all(&parent);
+        let nested = parent.join("nonexistent/deep/path");
+        // Parent does NOT exist.
+        assert!(!nested.exists());
+
+        let state = BackupService::new(nested.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        let mut cfg = build_test_config(&nested);
+        cfg.destination_path = nested.to_string_lossy().to_string();
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": [{"id": "c1"}]});
+        let result = svc.run_backup("full", &data).await;
+        assert!(result.is_ok(), "backup must auto-mkdir the destination, got: {result:?}");
+        assert!(nested.exists(), "auto-mkdir should have created the parent chain");
+
+        let _ = std::fs::remove_dir_all(&parent);
+    }
+
+    #[tokio::test]
+    async fn garbage_canonical_file_surfaces_parse_error_on_load_backup() {
+        // Plant a backup file at the destination whose contents are
+        // 500 random bytes. The restore must error cleanly (not panic):
+        // magic-byte sniff fails → treated as plaintext → JSON/UTF-8
+        // failure, or could surface as a decompression error if the
+        // .gz extension routes through GzDecoder.
+        use rand::rngs::OsRng;
+        let tmp = fresh_temp_dir("layer_b_garbage");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+
+        let mut garbage = vec![0u8; 500];
+        OsRng.fill_bytes(&mut garbage);
+        // The id "garbage-id" lets restore_backup_from_target find this
+        // file (it does a substring match on the filename).
+        let backup_filename = "backup_full_garbage-id_0.json";
+        std::fs::write(tmp.join(backup_filename), &garbage).unwrap();
+
+        let result = svc.restore_backup_from_target("garbage-id", None).await;
+        assert!(result.is_err(), "garbage backup must error, not panic");
+        let err = result.unwrap_err();
+        let lower = err.to_lowercase();
+        assert!(
+            lower.contains("parse")
+                || lower.contains("utf")
+                || lower.contains("decrypt")
+                || lower.contains("decompress")
+                || lower.contains("invalid")
+                || lower.contains("expected"),
+            "expected a clean parse/decrypt/decompress error, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn load_against_missing_file_returns_none_backup() {
+        // No backup files anywhere → list_backups returns an empty Vec,
+        // per the documented contract. (Backup has no Ok(None) shape —
+        // the "empty list" is the equivalent.)
+        let tmp = fresh_temp_dir("layer_b_missing");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+        let list = svc.list_backups().await.unwrap();
+        assert!(list.is_empty(), "missing backup dir must yield empty list");
+
+        // restore_backup against a non-existent id must error cleanly.
+        let err = svc.restore_backup("nonexistent-id").await.unwrap_err();
+        assert!(err.to_lowercase().contains("not found"), "got: {err}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn leftover_tmp_file_does_not_block_next_write_backup() {
+        // perform_backup uses fs::File::create + write_all directly
+        // (no .tmp shadow on the normal write path; only the rotation
+        // helper uses `.rotating`). Verify that planting a stale
+        // `<backup_filename>.tmp` alongside does NOT block the next
+        // normal write — the writer ignores it entirely.
+        //
+        // Observed implementation behaviour: normal backup writes are
+        // NOT atomic-with-temp; only the rotation helper uses .rotating.
+        // This test asserts the leftover is harmless (left untouched).
+        let tmp = fresh_temp_dir("layer_b_leftover");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+
+        // Plant a stray .tmp / .rotating from a previously-killed
+        // process. Both are alongside what a real write would produce.
+        let stale_tmp = tmp.join("backup_full_zombie_0.json.tmp");
+        let stale_rotating = tmp.join("backup_full_zombie_0.json.rotating");
+        std::fs::write(&stale_tmp, b"prior-crash artefact").unwrap();
+        std::fs::write(&stale_rotating, b"another prior artefact").unwrap();
+
+        let data = serde_json::json!({"connections": [{"id": "c1"}]});
+        let meta = svc.run_backup("full", &data).await.unwrap();
+        assert_eq!(meta.backup_type, "full");
+
+        // The new backup landed alongside without colliding.
+        let backups: Vec<_> = std::fs::read_dir(&tmp)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("backup_") && !n.contains(".meta.") && !n.ends_with(".tmp") && !n.ends_with(".rotating")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1, "expected exactly one new backup file");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn wrong_master_dek_after_eviction_fails_cleanly_backup() {
+        // Write a v2 encrypted backup under state_a, then install
+        // state_b with a DIFFERENT DEK. Restore must surface a clean
+        // decrypt error (not a panic, not silent empty data).
+        let tmp = fresh_temp_dir("layer_b_evict_wrong");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+        let state_a = unlocked_enc_state_with_bytes([1u8; 32]).await;
+        svc.set_encryption_state(state_a);
+
+        let data = serde_json::json!({"connections": [{"id": "c1"}]});
+        let meta = svc.run_backup("full", &data).await.unwrap();
+        let backup_id = meta.id.clone();
+
+        // Swap in a state with the WRONG DEK (simulating an evicted
+        // vault + user importing the wrong portable .dek).
+        let state_b = unlocked_enc_state_with_bytes([2u8; 32]).await;
+        svc.set_encryption_state(state_b);
+
+        let result = svc.restore_backup_from_target(&backup_id, None).await;
+        assert!(result.is_err(), "wrong DEK must surface an error");
+        let err = result.unwrap_err();
+        let lower = err.to_lowercase();
+        assert!(
+            lower.contains("decrypt")
+                || lower.contains("auth")
+                || lower.contains("unlock")
+                || lower.contains("invalid"),
+            "wrong-key restore must produce a clean error, got: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn right_master_dek_after_eviction_decodes_cleanly_backup() {
+        // Same as above, but the imported state_b carries the SAME
+        // bytes as the evicted state_a — restore succeeds.
+        let tmp = fresh_temp_dir("layer_b_evict_right");
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+        svc.update_config(build_test_config(&tmp));
+        let state_a = unlocked_enc_state_with_bytes([5u8; 32]).await;
+        svc.set_encryption_state(state_a);
+
+        let data = serde_json::json!({"connections": [{"id": "c1", "host": "h.example"}]});
+        let meta = svc.run_backup("full", &data).await.unwrap();
+        let backup_id = meta.id.clone();
+
+        let state_b = unlocked_enc_state_with_bytes([5u8; 32]).await;
+        svc.set_encryption_state(state_b);
+
+        let restored = svc.restore_backup_from_target(&backup_id, None).await.unwrap();
+        assert_eq!(restored["connections"][0]["host"], "h.example");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[tokio::test]
     async fn locked_state_falls_back_to_legacy_or_plaintext() {
         // EncryptionState installed but never unlocked → v2 path is
