@@ -518,4 +518,149 @@ mod tests {
         assert!(std::fs::metadata(&path).unwrap().len() < 1024);
         assert!(path.with_extension("log.0.bak").exists());
     }
+
+    #[test]
+    fn rotation_preserves_history_in_backup_then_overwrites_on_second_rotation() {
+        // Single-backup retention contract end-to-end:
+        //   1. First rotation moves the active log to `.0.bak`.
+        //   2. A second rotation OVERWRITES that backup with the new
+        //      generation — older history is dropped on purpose so disk
+        //      usage stays bounded at ≤ 2 × budget.
+        // The existing `rotate_if_oversize_overwrites_prior_backup`
+        // test asserts the same contract at the helper level; this
+        // extension proves it composes correctly with a recognisable
+        // payload that we can byte-match against the backup.
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().join(LOGS_SUBDIR);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let path = log_dir.join(AUDIT_LOG_FILENAME);
+        let bak = path.with_extension("log.0.bak");
+
+        // First generation — fingerprint with the byte 'A'.
+        let first = vec![b'A'; 1500];
+        std::fs::write(&path, &first).unwrap();
+        assert!(rotate_if_oversize(&path, 1000).unwrap());
+        assert!(bak.exists(), "first rotation must create the backup");
+        let bak_after_first = std::fs::read(&bak).unwrap();
+        assert_eq!(
+            bak_after_first[0], b'A',
+            "backup should hold the original (first) generation"
+        );
+        assert_eq!(bak_after_first.len(), first.len());
+
+        // Second generation — fingerprint with the byte 'B'. After the
+        // second rotation the backup must hold the SECOND batch; the
+        // first batch is gone.
+        let second = vec![b'B'; 1500];
+        std::fs::write(&path, &second).unwrap();
+        assert!(rotate_if_oversize(&path, 1000).unwrap());
+        let bak_after_second = std::fs::read(&bak).unwrap();
+        assert_eq!(
+            bak_after_second[0], b'B',
+            "second rotation must overwrite the backup with the newer generation"
+        );
+        assert_eq!(bak_after_second.len(), second.len());
+    }
+
+    #[test]
+    fn read_tail_only_sees_active_log_not_backup() {
+        // The `.0.bak` file exists for forensic recovery — it is NOT
+        // part of the readable history surface. `read_tail` reads only
+        // the active log; the backup is invisible to the Settings panel
+        // and any other in-app reader. This test plants 10 entries in
+        // `.0.bak` and 3 in the active log, then asserts the reader
+        // returns only the active 3.
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().join(LOGS_SUBDIR);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let path = log_dir.join(AUDIT_LOG_FILENAME);
+        let bak = path.with_extension("log.0.bak");
+
+        // Plant 10 entries directly in the backup — `read_tail` must
+        // not see any of these. Each line is a valid JSON entry so the
+        // backup is properly-shaped, just out of scope.
+        let mut bak_body = String::new();
+        for i in 0..10 {
+            bak_body.push_str(&format!(
+                "{{\"ts\":\"2026-06-01T00:00:00Z\",\"event\":\"unlock-success\",\"n\":{i}}}\n"
+            ));
+        }
+        std::fs::write(&bak, bak_body).unwrap();
+
+        // 3 fresh entries through the regular `record` path so they
+        // land in the active log.
+        for i in 0..3 {
+            record(
+                dir.path(),
+                AuditEvent::UnlockSuccess,
+                json!({ "active": i }),
+            )
+            .unwrap();
+        }
+
+        let entries = read_tail(dir.path(), 100).unwrap();
+        assert_eq!(
+            entries.len(),
+            3,
+            "read_tail must surface only the active log, not the backup"
+        );
+        for (i, e) in entries.iter().enumerate() {
+            // Confirm we got the active-log entries, not the planted
+            // backup ones (which carry `n`, not `active`).
+            assert_eq!(e.metadata["active"], i as i64);
+            assert!(e.metadata.get("n").is_none());
+        }
+    }
+
+    #[test]
+    fn audit_record_during_concurrent_writes_does_not_garble_lines() {
+        // True thread-safety check. The existing
+        // `lines_appended_concurrently_do_not_garble` test only proves
+        // back-to-back sequential writes parse — this one spawns 8 OS
+        // threads, each calling `record` 50 times in parallel, and
+        // verifies that every line is recoverable as a valid JSON entry
+        // with no torn-write garbling. With the append-mode write +
+        // sub-PIPE_BUF line length cap the platform-level atomicity
+        // guarantee should hold; this test catches regressions that
+        // would otherwise only manifest under multi-window load.
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        const WORKERS: usize = 8;
+        const PER_WORKER: usize = 50;
+
+        let handles: Vec<_> = (0..WORKERS)
+            .map(|worker| {
+                let d = dir_path.clone();
+                std::thread::spawn(move || {
+                    for i in 0..PER_WORKER {
+                        record(
+                            &d,
+                            AuditEvent::UnlockSuccess,
+                            json!({ "worker": worker, "i": i }),
+                        )
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let entries = read_tail(&dir_path, 10_000).unwrap();
+        assert_eq!(
+            entries.len(),
+            WORKERS * PER_WORKER,
+            "every concurrent record() must produce exactly one parseable line",
+        );
+        // Every entry parses as a full AuditEntry with a recognisable
+        // shape — `read_tail` already filters out unparseable lines via
+        // `filter_map`, so the length check above + this metadata sanity
+        // pass together prove nothing got torn.
+        for e in &entries {
+            assert_eq!(e.event, "unlock-success");
+            assert!(e.metadata.get("worker").is_some());
+            assert!(e.metadata.get("i").is_some());
+        }
+    }
 }

@@ -248,4 +248,78 @@ mod tests {
         assert!(body.contains("\"failedAttempts\""), "body = {body}");
         assert!(body.contains("\"lastFailureUnixMs\""), "body = {body}");
     }
+
+    #[test]
+    fn cooldown_persists_across_load_reload() {
+        // Failure history must survive a process restart — otherwise a
+        // user could side-step the cool-down by killing the app. We
+        // drive the counter into the 5-minute bucket (3 failures) so
+        // the assertion has a wide tolerance against test-machine
+        // wall-clock drift, then drop the state value and re-load from
+        // disk.
+        let dir = tempdir().unwrap();
+        let mut s = LockoutState::load(dir.path());
+        assert_eq!(s, LockoutState::default(), "fresh dir starts at zero");
+        s.record_failure();
+        s.record_failure();
+        s.record_failure(); // 3 failures → 5-minute schedule
+        s.save(dir.path()).unwrap();
+        drop(s);
+
+        let reloaded = LockoutState::load(dir.path());
+        assert_eq!(reloaded.failed_attempts, 3);
+        let remaining = reloaded.remaining_cooldown_ms();
+        assert!(
+            remaining > 0,
+            "cool-down should still be active after reload, got {remaining} ms",
+        );
+    }
+
+    #[test]
+    fn stale_failure_window_drains_on_load() {
+        // The lockout module does NOT scrub `failed_attempts` on load —
+        // that field is the persistent receipt. What *does* drain is the
+        // computed `remaining_cooldown_ms`: once the wall-clock elapsed
+        // since `last_failure_unix_ms` exceeds the schedule for the
+        // current attempt count, the cooldown computes to zero via
+        // `saturating_sub`. We exercise the worst-case schedule (4+
+        // failures → 30 minutes, capped) and set a timestamp 24 hours in
+        // the past so the elapsed time is well beyond every bucket.
+        let dir = tempdir().unwrap();
+        let stale = LockoutState {
+            failed_attempts: 4,
+            last_failure_unix_ms: now_unix_ms().saturating_sub(24 * 60 * 60 * 1000),
+        };
+        stale.save(dir.path()).unwrap();
+        let loaded = LockoutState::load(dir.path());
+        // The counter persists (so a fresh failure jumps straight to
+        // the next bucket — intentional), but the cooldown is fully
+        // drained.
+        assert_eq!(loaded.failed_attempts, 4);
+        assert_eq!(loaded.remaining_cooldown_ms(), 0);
+    }
+
+    #[test]
+    fn record_success_resets_persisted_state() {
+        // Successful unlock must clear *both* the counter and any
+        // residual cooldown so the next attempt starts from a clean
+        // slate. We run a real save → load → success → save → load loop
+        // to prove the reset survives the disk round-trip.
+        let dir = tempdir().unwrap();
+        let mut s = LockoutState::default();
+        s.record_failure();
+        s.record_failure();
+        s.record_failure(); // real cooldown active
+        s.save(dir.path()).unwrap();
+
+        let mut loaded = LockoutState::load(dir.path());
+        assert!(loaded.remaining_cooldown_ms() > 0);
+        loaded.record_success();
+        loaded.save(dir.path()).unwrap();
+
+        let after = LockoutState::load(dir.path());
+        assert_eq!(after.failed_attempts, 0);
+        assert_eq!(after.remaining_cooldown_ms(), 0);
+        assert_eq!(after, LockoutState::default());
+    }
 }
