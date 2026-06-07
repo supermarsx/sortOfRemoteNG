@@ -318,4 +318,71 @@ mod tests {
         install_dek(&state).await.unwrap();
         assert!(state.is_unlocked().await);
     }
+
+    #[tokio::test]
+    async fn survives_process_restart_via_master_bytes() {
+        // Persistence contract: production keeps the master across
+        // restarts by re-loading the same 32 bytes from the OS vault
+        // (or unwrapping `dek.enc`). Simulate that loop in-memory —
+        // the only thing carried across the simulated "restart" is the
+        // raw master bytes, and the rebuilt state must decode blobs the
+        // original state wrote.
+        let state_a = EncryptionState::new();
+        state_a.install(MasterDek::generate()).await;
+
+        let payload = json!({ "theme": "dark", "telemetry": { "enabled": false } });
+        let blob = write(
+            &state_a,
+            &payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+
+        // Snapshot the master and drop state_a — beyond this point
+        // nothing else from the original process survives.
+        let saved_bytes = state_a.master_bytes_raw().await.unwrap();
+        std::mem::drop(state_a);
+
+        let state_b = EncryptionState::new();
+        state_b
+            .install(MasterDek::from_bytes(&saved_bytes).unwrap())
+            .await;
+
+        let decoded = read(&state_b, &blob).await.unwrap().unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    #[tokio::test]
+    async fn truncated_input_is_clean_error() {
+        // A short buffer must surface as a typed error, never a panic
+        // or out-of-bounds index. The exact variant doesn't matter —
+        // what matters is that the decoder probes the length before
+        // slicing.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let buf = [0xAAu8; 32]; // half of a preamble
+        assert!(read(&state, &buf).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn valid_magic_garbage_body_fails_gcm_auth() {
+        // A valid preamble bound to a random body should land in the
+        // AEAD auth-fail path, not anywhere else. Confirms the AAD
+        // binding catches body forgeries even when the header itself
+        // parses cleanly.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let header = EnvelopeHeader::new_vault([0u8; NONCE_LEN]);
+        let mut blob = header.encode().to_vec();
+        // 256 bytes of body — must be > 16 so it's at least one GCM
+        // tag's worth of data for the codec to chew on.
+        blob.extend((0..256).map(|i| (i as u8).wrapping_mul(31)));
+        assert!(matches!(
+            read(&state, &blob).await,
+            Err(SettingsError::Envelope(EnvelopeError::AuthenticationFailed))
+        ));
+    }
 }

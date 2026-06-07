@@ -189,6 +189,165 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn survives_process_restart_via_master_bytes() {
+        // Same persistence invariant as `settings`: a rebuilt state
+        // initialised from only the raw master bytes must decode
+        // blobs the original state wrote. This is what guarantees
+        // `data.enc` survives an app restart.
+        let state_a = EncryptionState::new();
+        state_a.install(MasterDek::generate()).await;
+
+        let payload = json!({
+            "connections": [{ "id": "c1", "host": "example.com" }],
+            "settings": { "theme": "dark" },
+        });
+        let blob = write(
+            &state_a,
+            &payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+
+        let saved_bytes = state_a.master_bytes_raw().await.unwrap();
+        std::mem::drop(state_a);
+
+        let state_b = EncryptionState::new();
+        state_b
+            .install(MasterDek::from_bytes(&saved_bytes).unwrap())
+            .await;
+
+        let decoded = read(&state_b, &blob).await.unwrap().unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    #[tokio::test]
+    async fn truncated_input_is_clean_error() {
+        // Short buffer must be a typed error, not a panic.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let buf = [0u8; 32];
+        assert!(read(&state, &buf).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn valid_magic_garbage_body_fails_gcm_auth() {
+        // Preamble decodes, but the body is random — GCM auth must
+        // reject it. Confirms the AAD-binds-preamble-to-body contract.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let header = EnvelopeHeader::new_vault([0u8; NONCE_LEN]);
+        let mut blob = header.encode().to_vec();
+        blob.extend((0..256).map(|i| (i as u8).wrapping_mul(17)));
+        assert!(matches!(
+            read(&state, &blob).await,
+            Err(ConnectionsError::Envelope(EnvelopeError::AuthenticationFailed))
+        ));
+    }
+
+    #[tokio::test]
+    async fn cross_codec_rejection_matrix() {
+        // Every pair (producer, consumer) where producer != consumer
+        // must fail at read time. The HKDF labels in `dek.rs` exist
+        // to enforce exactly this property: a file written under one
+        // sub-key cannot be decrypted under any other, even when both
+        // sub-keys derive from the same master DEK. This test is the
+        // exhaustive cartesian-product proof.
+        //
+        // Two failure shapes appear in the matrix:
+        //  - whole-file-codec ↔ whole-file-codec: preamble parses
+        //    successfully (same envelope format), then GCM auth fails
+        //    on the body because the sub-key differs.
+        //  - whole-file-codec ↔ media: the preambles have different
+        //    `kind` discriminants (envelope = 0, chunked-stream = 2)
+        //    *and* different lengths (64 vs 32). Decoding may bail on
+        //    header parse OR on body auth depending on direction. We
+        //    don't pin the variant — only that the read returns Err.
+        use crate::artifacts::{
+            backups as b, connections as c, logs as l, macros as m,
+            recording_media as rmedia, recording_meta as rm, settings as s,
+        };
+
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+
+        let obj = json!({ "k": "v" });
+        let bytes: &[u8] = b"opaque-bytes-payload";
+
+        // Produce one blob per codec with the same logical payload
+        // shape (JSON object for object codecs, raw bytes for byte
+        // codecs). All under Vault mode for simplicity.
+        let blob_s = s::write(&state, &obj, MasterKeyStorage::Vault, Argon2Params::OWASP, [0; SALT_LEN]).await.unwrap();
+        let blob_c = c::write(&state, &obj, MasterKeyStorage::Vault, Argon2Params::OWASP, [0; SALT_LEN]).await.unwrap();
+        let blob_b = b::write(&state, bytes, MasterKeyStorage::Vault, Argon2Params::OWASP, [0; SALT_LEN]).await.unwrap();
+        let blob_m = m::write(&state, &obj, MasterKeyStorage::Vault, Argon2Params::OWASP, [0; SALT_LEN]).await.unwrap();
+        let blob_rm = rm::write(&state, &obj, MasterKeyStorage::Vault, Argon2Params::OWASP, [0; SALT_LEN]).await.unwrap();
+        let blob_l = l::write(&state, bytes, MasterKeyStorage::Vault, Argon2Params::OWASP, [0; SALT_LEN]).await.unwrap();
+        let blob_media = rmedia::write_one_shot(&state, bytes, MasterKeyStorage::Vault, Some(64)).await.unwrap();
+
+        // Whole-file ↔ whole-file off-diagonal: every consumer rejects
+        // every producer that isn't itself.
+        assert!(s::read(&state, &blob_c).await.is_err());
+        assert!(s::read(&state, &blob_b).await.is_err());
+        assert!(s::read(&state, &blob_m).await.is_err());
+        assert!(s::read(&state, &blob_rm).await.is_err());
+        assert!(s::read(&state, &blob_l).await.is_err());
+
+        assert!(c::read(&state, &blob_s).await.is_err());
+        assert!(c::read(&state, &blob_b).await.is_err());
+        assert!(c::read(&state, &blob_m).await.is_err());
+        assert!(c::read(&state, &blob_rm).await.is_err());
+        assert!(c::read(&state, &blob_l).await.is_err());
+
+        assert!(b::read(&state, &blob_s).await.is_err());
+        assert!(b::read(&state, &blob_c).await.is_err());
+        assert!(b::read(&state, &blob_m).await.is_err());
+        assert!(b::read(&state, &blob_rm).await.is_err());
+        assert!(b::read(&state, &blob_l).await.is_err());
+
+        assert!(m::read(&state, &blob_s).await.is_err());
+        assert!(m::read(&state, &blob_c).await.is_err());
+        assert!(m::read(&state, &blob_b).await.is_err());
+        assert!(m::read(&state, &blob_rm).await.is_err());
+        assert!(m::read(&state, &blob_l).await.is_err());
+
+        assert!(rm::read(&state, &blob_s).await.is_err());
+        assert!(rm::read(&state, &blob_c).await.is_err());
+        assert!(rm::read(&state, &blob_b).await.is_err());
+        assert!(rm::read(&state, &blob_m).await.is_err());
+        assert!(rm::read(&state, &blob_l).await.is_err());
+
+        assert!(l::read(&state, &blob_s).await.is_err());
+        assert!(l::read(&state, &blob_c).await.is_err());
+        assert!(l::read(&state, &blob_b).await.is_err());
+        assert!(l::read(&state, &blob_m).await.is_err());
+        assert!(l::read(&state, &blob_rm).await.is_err());
+
+        // Whole-file → media: a 64-byte envelope preamble fed to the
+        // media decoder reads `kind` byte 7 = envelope-kind (not
+        // chunked-stream); media must reject it.
+        assert!(rmedia::read_all(&state, &blob_s).await.is_err());
+        assert!(rmedia::read_all(&state, &blob_c).await.is_err());
+        assert!(rmedia::read_all(&state, &blob_b).await.is_err());
+        assert!(rmedia::read_all(&state, &blob_m).await.is_err());
+        assert!(rmedia::read_all(&state, &blob_rm).await.is_err());
+        assert!(rmedia::read_all(&state, &blob_l).await.is_err());
+
+        // Media → whole-file: media's 32-byte header has `kind = 2`
+        // at byte 7 which envelope reads as `MasterKeyStorage =
+        // VaultAndPassword`. Preamble parse may succeed, then GCM
+        // auth fails on the body — either way the read returns Err.
+        assert!(s::read(&state, &blob_media).await.is_err());
+        assert!(c::read(&state, &blob_media).await.is_err());
+        assert!(b::read(&state, &blob_media).await.is_err());
+        assert!(m::read(&state, &blob_media).await.is_err());
+        assert!(rm::read(&state, &blob_media).await.is_err());
+        assert!(l::read(&state, &blob_media).await.is_err());
+    }
+
+    #[tokio::test]
     async fn empty_envelope_round_trips_to_none() {
         let state = EncryptionState::new();
         state.install(MasterDek::generate()).await;

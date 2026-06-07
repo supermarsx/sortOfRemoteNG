@@ -585,6 +585,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn survives_process_restart_via_master_bytes() {
+        // Recordings can be many minutes long — the encrypted media
+        // file written before a restart must decode after one, given
+        // only the persisted master bytes. This is the path a "resume
+        // playback after reboot" flow exercises.
+        let state_a = EncryptionState::new();
+        state_a.install(MasterDek::generate()).await;
+        let data = pt(5 * 1024); // multiple chunks at the default size
+        let blob = write_one_shot(&state_a, &data, MasterKeyStorage::Vault, Some(1024))
+            .await
+            .unwrap();
+
+        let saved_bytes = state_a.master_bytes_raw().await.unwrap();
+        std::mem::drop(state_a);
+
+        let state_b = EncryptionState::new();
+        state_b
+            .install(MasterDek::from_bytes(&saved_bytes).unwrap())
+            .await;
+
+        let recovered = read_all(&state_b, &blob).await.unwrap();
+        assert_eq!(recovered, data);
+    }
+
+    #[tokio::test]
+    async fn truncated_input_is_clean_error() {
+        // Media's header is 32 bytes (not 64), so to actually exercise
+        // the truncation branch — rather than the missing-magic branch
+        // — we feed 16 bytes. The codec must surface a typed error
+        // instead of panicking on the bounds check.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let buf = [0u8; 16];
+        assert!(read_all(&state, &buf).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn valid_magic_garbage_body_fails_gcm_auth() {
+        // A well-formed media header followed by random body bytes
+        // must trip the AEAD auth-fail path, indexed at chunk 0 — the
+        // very first chunk decryption sees the forged ciphertext.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let header = MediaHeader::new(MasterKeyStorage::Vault, DEFAULT_CHUNK_SIZE);
+        let mut blob = header.encode().to_vec();
+        // 256 bytes of garbage — enough to look like one short chunk
+        // (240 bytes ct + 16-byte tag) under the default stride.
+        blob.extend((0..256).map(|i| (i as u8).wrapping_mul(41)));
+        assert!(matches!(
+            read_all(&state, &blob).await,
+            Err(MediaError::AuthenticationFailed { chunk: 0 })
+        ));
+    }
+
+    #[tokio::test]
     async fn realistic_64kib_chunks_round_trip() {
         // The default chunk size. 1 MiB payload ⇒ 16 full chunks.
         let state = EncryptionState::new();

@@ -291,6 +291,60 @@ trailing line
         assert_eq!(out, input);
     }
 
+    #[tokio::test]
+    async fn survives_process_restart_via_master_bytes() {
+        // Rotated log files outlive the app process by definition.
+        // The encrypted form must round-trip across a "restart"
+        // boundary using only the raw master bytes.
+        let state_a = EncryptionState::new();
+        state_a.install(MasterDek::generate()).await;
+        let lines: &[u8] =
+            b"2026-06-01 12:34:56 INFO connected\n2026-06-01 12:34:57 INFO opened tab\n";
+        let blob = write(
+            &state_a,
+            lines,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+
+        let saved_bytes = state_a.master_bytes_raw().await.unwrap();
+        std::mem::drop(state_a);
+
+        let state_b = EncryptionState::new();
+        state_b
+            .install(MasterDek::from_bytes(&saved_bytes).unwrap())
+            .await;
+
+        let recovered = read(&state_b, &blob).await.unwrap();
+        assert_eq!(recovered, lines);
+    }
+
+    #[tokio::test]
+    async fn truncated_input_is_clean_error() {
+        // Short buffer must surface as a typed error.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let buf = [0u8; 32];
+        assert!(read(&state, &buf).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn valid_magic_garbage_body_fails_gcm_auth() {
+        // Valid preamble + random body — GCM auth must fail.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let header = EnvelopeHeader::new_vault([0u8; NONCE_LEN]);
+        let mut blob = header.encode().to_vec();
+        blob.extend((0..256).map(|i| (i as u8).wrapping_mul(37)));
+        assert!(matches!(
+            read(&state, &blob).await,
+            Err(LogError::Envelope(EnvelopeError::AuthenticationFailed))
+        ));
+    }
+
     #[test]
     fn redaction_then_encryption_composes() {
         // The expected pipeline: redact in memory, encrypt the

@@ -163,4 +163,62 @@ mod tests {
         .unwrap_err();
         assert!(matches!(err, MacroError::Locked));
     }
+
+    #[tokio::test]
+    async fn survives_process_restart_via_master_bytes() {
+        // A user's recorded macro library must survive an app reboot.
+        // Verify by carrying only the raw master bytes across a
+        // simulated "restart" boundary.
+        let state_a = EncryptionState::new();
+        state_a.install(MasterDek::generate()).await;
+        let payload = json!({
+            "macros": [
+                { "id": "login-prod", "steps": [{ "kind": "input", "value": "admin" }] }
+            ]
+        });
+        let blob = write(
+            &state_a,
+            &payload,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .unwrap();
+
+        let saved_bytes = state_a.master_bytes_raw().await.unwrap();
+        std::mem::drop(state_a);
+
+        let state_b = EncryptionState::new();
+        state_b
+            .install(MasterDek::from_bytes(&saved_bytes).unwrap())
+            .await;
+
+        let decoded = read(&state_b, &blob).await.unwrap().unwrap();
+        assert_eq!(decoded, payload);
+    }
+
+    #[tokio::test]
+    async fn truncated_input_is_clean_error() {
+        // Short buffer must surface as a typed error.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let buf = [0u8; 32];
+        assert!(read(&state, &buf).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn valid_magic_garbage_body_fails_gcm_auth() {
+        // Valid preamble + random body → AAD binding forces GCM auth
+        // failure.
+        let state = EncryptionState::new();
+        state.install(MasterDek::generate()).await;
+        let header = EnvelopeHeader::new_vault([0u8; NONCE_LEN]);
+        let mut blob = header.encode().to_vec();
+        blob.extend((0..256).map(|i| (i as u8).wrapping_mul(29)));
+        assert!(matches!(
+            read(&state, &blob).await,
+            Err(MacroError::Envelope(EnvelopeError::AuthenticationFailed))
+        ));
+    }
 }
