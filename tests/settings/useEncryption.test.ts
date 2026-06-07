@@ -488,6 +488,136 @@ describe("useEncryption", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.audit).toEqual([]);
   });
+
+  // ───────────────────────────────────────────────────────────────
+  // Lock-reason metadata (Phase 7 audit-log requirement)
+  //
+  // Every auto-lock trigger (manual button, shortcut, idle, blur,
+  // minimize, visibility-hidden) must surface its reason to the Rust
+  // side so the audit log can distinguish them. The hook is a thin
+  // passthrough — we lock the call shape here so a future refactor
+  // can't silently drop the metadata.
+  // ───────────────────────────────────────────────────────────────
+  const lockReasons = [
+    "manual",
+    "shortcut",
+    "idle",
+    "blur",
+    "minimize",
+    "visibility-hidden",
+  ] as const;
+
+  for (const reason of lockReasons) {
+    it(`lock forwards the "${reason}" reason verbatim`, async () => {
+      let received: any = null;
+      invokeImpl = makeInvoke(async (cmd, args) => {
+        if (cmd === "encryption_status") return sampleStatus;
+        if (cmd === "encryption_lock") {
+          received = args;
+          return undefined;
+        }
+        throw new Error(cmd);
+      });
+      const { result } = renderHook(() => useEncryption());
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      await act(async () => {
+        await result.current.lock(reason);
+      });
+      expect(received).toEqual({ reason });
+    });
+  }
+
+  it("lock with no reason passes { reason: null }", async () => {
+    // The Rust side accepts a `None` reason and tags the audit entry
+    // as "unspecified". The frontend should send explicit null rather
+    // than omit the key so the wire shape is stable.
+    let received: any = null;
+    invokeImpl = makeInvoke(async (cmd, args) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_lock") {
+        received = args;
+        return undefined;
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.lock();
+    });
+    expect(received).toEqual({ reason: null });
+  });
+
+  it("rotateMasterKeyFull invokes the full-rotation command, not the legacy one", async () => {
+    // The UI's "Rotate master key" button must call the full-artifact
+    // command so settings + connections + backups + recordings + media
+    // + macros all get rewritten under fresh sub-keys. The legacy
+    // `encryption_rotate_master_key` (settings-only) stays exposed on
+    // the hook for advanced callers but should NOT be the default
+    // path. This test pins both halves: the right command fires AND
+    // the legacy command stays silent.
+    const fullReport = {
+      settingsRewritten: true,
+      connectionsRewritten: true,
+      backupsRewritten: 2,
+      recordingEnvelopesRewritten: 3,
+      mediaSidecarsRewritten: 1,
+      macrosRewritten: 0,
+      bytesRewritten: 4096,
+      vaultUpdated: true,
+      dekEncUpdated: false,
+      failures: [],
+    };
+    let received: any = null;
+    let legacyCalled = false;
+    invokeImpl = makeInvoke(async (cmd, args) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "encryption_rotate_master_key_full") {
+        received = args;
+        return fullReport;
+      }
+      if (cmd === "encryption_rotate_master_key") {
+        legacyCalled = true;
+        return undefined;
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let report: any;
+    await act(async () => {
+      report = await result.current.rotateMasterKeyFull("password");
+    });
+    expect(received).toEqual({ password: "password" });
+    expect(report).toEqual(fullReport);
+    expect(legacyCalled).toBe(false);
+  });
+
+  it("cancelRecordingsMigration invokes rec_cancel_migration", async () => {
+    // The cancel flag is cooperatively read by the in-flight migration
+    // walker on the Rust side. The hook is a passthrough — we just
+    // verify the command name is correct so a typo doesn't silently
+    // turn the Cancel button into a no-op.
+    let cancelCalled = false;
+    invokeImpl = makeInvoke(async (cmd) => {
+      if (cmd === "encryption_status") return sampleStatus;
+      if (cmd === "rec_cancel_migration") {
+        cancelCalled = true;
+        return undefined;
+      }
+      throw new Error(cmd);
+    });
+    const { result } = renderHook(() => useEncryption());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.cancelRecordingsMigration();
+    });
+    expect(cancelCalled).toBe(true);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────

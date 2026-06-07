@@ -57,6 +57,7 @@ interface HookOverride {
   lock?: ReturnType<typeof vi.fn>;
   changePassword?: ReturnType<typeof vi.fn>;
   migrateSettings?: ReturnType<typeof vi.fn>;
+  importPortableDek?: ReturnType<typeof vi.fn>;
   loading?: boolean;
   error?: string | null;
 }
@@ -73,6 +74,7 @@ vi.mock("../../src/hooks/settings/useEncryption", () => ({
     lock: vi.fn(),
     changePassword: vi.fn(),
     migrateSettings: vi.fn(),
+    importPortableDek: vi.fn().mockResolvedValue(undefined),
     ...hookOverride,
   }),
 }));
@@ -256,5 +258,169 @@ describe("UnlockScreen", () => {
     fireEvent.change(input, { target: { value: "guess" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(unlock).toHaveBeenCalledWith("guess"));
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Extended coverage (Test Layer D)
+  // ─────────────────────────────────────────────────────────────
+
+  it("renders the password prompt + dialog testid in password mode", () => {
+    // Smoke test for the dialog wrapper itself — the testid is what
+    // the parent (App.tsx) and downstream auto-lock listeners key on
+    // to know the overlay is mounted.
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+    };
+    render(<UnlockScreen onUnlocked={() => {}} />);
+    expect(screen.getByTestId("encryption-unlock-screen")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Master password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Unlock/ })).toBeTruthy();
+  });
+
+  it("shows the silent vault-unlocking spinner while the unlock call is pending", () => {
+    // Pure vault mode: no password wrap, only the vault holds the DEK.
+    // The mount effect fires a silent unlock; while it's still pending
+    // we render the "Unlocking from your OS vault…" branch instead of
+    // the password prompt. Use a Promise that never resolves so the
+    // spinner stays visible for the assertion.
+    const unlock = vi.fn(() => new Promise<UnlockResult>(() => {}));
+    hookOverride = {
+      status: {
+        ...baseStatus,
+        passwordWrapPresent: false,
+        vaultAvailable: true,
+        vaultHasMasterDek: true,
+        masterKeyStorage: "vault",
+      },
+      lockout: zeroLockout,
+      unlock,
+    };
+    render(<UnlockScreen onUnlocked={() => {}} />);
+    // DEFAULT_LABELS.vaultUnlocking
+    expect(screen.getByText(/Unlocking from your OS vault/i)).toBeTruthy();
+  });
+
+  it("renders the portable-dek import toggle when a password wrap is present", () => {
+    // The recovery panel is the vault-eviction escape hatch — gated on
+    // (passwordWrapPresent || !vaultAvailable). With a wrap on disk,
+    // the toggle must be discoverable so users locked out of an
+    // unreadable vault can still import a fresh .dek.
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+    };
+    render(<UnlockScreen onUnlocked={() => {}} />);
+    const toggle = screen.getByTestId("unlock-import-toggle");
+    expect(toggle).toBeTruthy();
+
+    fireEvent.click(toggle);
+
+    // After expanding, the path + password inputs render and submit
+    // stays disabled until both are filled (prevents accidental empty
+    // submits).
+    expect(
+      screen.getByPlaceholderText("/secure/backup/sorng-master.dek"),
+    ).toBeTruthy();
+    expect(screen.getByPlaceholderText("Export password")).toBeTruthy();
+    const submit = screen.getByTestId(
+      "unlock-import-submit",
+    ) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+  });
+
+  it("import-dek submits with the typed path and password", async () => {
+    // Lock the call shape: handleImportDek invokes the hook with
+    // positional (path, password) — if a refactor accidentally swaps
+    // them or drops one, the import would attempt to unwrap with the
+    // wrong material and the user would see a misleading
+    // wrong-password banner.
+    const importPortableDek = vi.fn().mockResolvedValue(undefined);
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+      importPortableDek,
+    };
+    render(<UnlockScreen onUnlocked={() => {}} />);
+    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
+
+    fireEvent.change(
+      screen.getByPlaceholderText("/secure/backup/sorng-master.dek"),
+      { target: { value: "/secure/key.dek" } },
+    );
+    fireEvent.change(screen.getByPlaceholderText("Export password"), {
+      target: { value: "hunter2" },
+    });
+
+    const submit = screen.getByTestId("unlock-import-submit") as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(importPortableDek).toHaveBeenCalledWith(
+        "/secure/key.dek",
+        "hunter2",
+      );
+    });
+  });
+
+  it("import-dek failure surfaces the error and preserves the typed fields", async () => {
+    // After a wrong-password rejection the user should not have to
+    // retype the path or password — re-entering an absolute path is
+    // tedious on the unlock screen (no autocomplete) and the field is
+    // not a secret-handling regression because we don't auto-mask.
+    const importPortableDek = vi
+      .fn()
+      .mockRejectedValue(new Error("wrong export password"));
+    hookOverride = {
+      status: baseStatus,
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+      importPortableDek,
+    };
+    render(<UnlockScreen onUnlocked={() => {}} />);
+    fireEvent.click(screen.getByTestId("unlock-import-toggle"));
+
+    const pathInput = screen.getByPlaceholderText(
+      "/secure/backup/sorng-master.dek",
+    ) as HTMLInputElement;
+    const pwInput = screen.getByPlaceholderText(
+      "Export password",
+    ) as HTMLInputElement;
+    fireEvent.change(pathInput, { target: { value: "/some/path.dek" } });
+    fireEvent.change(pwInput, { target: { value: "nope" } });
+
+    fireEvent.click(screen.getByTestId("unlock-import-submit"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/wrong export password/i)).toBeTruthy();
+    });
+    // Fields should still hold what the user typed.
+    expect(pathInput.value).toBe("/some/path.dek");
+    expect(pwInput.value).toBe("nope");
+  });
+
+  it("renders nothing when no master key on disk (needs-setup branch)", () => {
+    // `shouldShowUnlockScreen` returns false when neither
+    // passwordWrapPresent nor vaultHasMasterDek is true — the right
+    // next step is the setup wizard in Settings → Security, not a
+    // prompt the user can't possibly satisfy.
+    hookOverride = {
+      status: {
+        ...baseStatus,
+        passwordWrapPresent: false,
+        vaultHasMasterDek: false,
+        vaultAvailable: true,
+        unlocked: false,
+      },
+      lockout: zeroLockout,
+      unlock: vi.fn(),
+    };
+    const { container } = render(<UnlockScreen onUnlocked={() => {}} />);
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId("encryption-unlock-screen")).toBeNull();
   });
 });
