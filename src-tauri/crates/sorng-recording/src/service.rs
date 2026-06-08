@@ -1465,3 +1465,345 @@ mod phase_2c_split_tests {
         assert_eq!(loaded.data, "asciicast");
     }
 }
+
+#[cfg(test)]
+mod phase_2c_engine_e2e_tests {
+    //! Phase 2c — end-to-end through the public `encode_compress_save_*`
+    //! entry points. The sibling `phase_2c_split_tests` module covers
+    //! the split-out via hand-built envelopes; these tests pin the
+    //! engine pipeline (encode → compress → save → load) so a future
+    //! refactor of the entry-point constructors can't silently regress
+    //! the routing decision.
+    use super::*;
+    use sorng_encryption::{EncryptionState, MasterDek};
+    use tempfile::tempdir;
+
+    /// Match the helper from `phase_2c_split_tests` — duplicated so
+    /// the modules don't grow a cross-module dependency.
+    async fn fresh_service(root: &std::path::Path, unlocked: bool) -> RecordingService {
+        let svc = RecordingService::new(root.to_string_lossy().as_ref());
+        if unlocked {
+            let state = EncryptionState::new();
+            state
+                .install(MasterDek::from_bytes(&[5u8; 32]).unwrap())
+                .await;
+            svc.set_encryption_state(std::sync::Arc::new(state)).await;
+        }
+        svc
+    }
+
+    /// Build a synthetic RDP recording with `frame_count` frames; each
+    /// carries a small base64 payload so the encoded manifest stays
+    /// modest. The split routing for FrameSequence is driven by the
+    /// format discriminant, not the size — a handful of frames is
+    /// enough to exercise the engine path.
+    fn rdp_fixture(id: &str, frame_count: u64) -> RdpRecording {
+        let now = chrono::Utc::now();
+        let frames: Vec<RdpFrame> = (0..frame_count)
+            .map(|i| RdpFrame {
+                timestamp_ms: i * 33,
+                width: 320,
+                height: 240,
+                data_b64: "AAAA".repeat(64),
+                frame_index: i,
+            })
+            .collect();
+        RdpRecording {
+            metadata: RdpRecordingMetadata {
+                recording_id: id.to_string(),
+                session_id: format!("sess-{}", id),
+                start_time: now,
+                end_time: Some(now),
+                host: "host.example".to_string(),
+                connection_name: "conn".to_string(),
+                width: 320,
+                height: 240,
+                fps: 30,
+                duration_ms: frame_count * 33,
+                frame_count,
+                format: VideoFormat::PngSequence,
+                size_bytes: 0,
+                tags: vec![],
+            },
+            frames,
+        }
+    }
+
+    /// Build a TerminalRecording with one entry of `size` bytes of `x`.
+    /// Used both for the "stays inline" case (small size) and the
+    /// "promotes via threshold" case (size large enough that the
+    /// base64-encoded asciicast output exceeds the 4 MiB threshold).
+    fn terminal_fixture(id: &str, payload_size: usize) -> TerminalRecording {
+        let now = chrono::Utc::now();
+        TerminalRecording {
+            metadata: TerminalRecordingMetadata {
+                recording_id: id.to_string(),
+                session_id: format!("sess-{}", id),
+                protocol: RecordingProtocol::Ssh,
+                start_time: now,
+                end_time: Some(now),
+                host: "host.example".to_string(),
+                username: "user".to_string(),
+                cols: 80,
+                rows: 24,
+                duration_ms: 1000,
+                entry_count: 1,
+                record_input: false,
+                tags: vec![],
+            },
+            entries: vec![TerminalRecordingEntry {
+                timestamp_ms: 100,
+                data: "x".repeat(payload_size),
+                entry_type: TerminalEntryType::Output,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn engine_screen_recording_with_frame_sequence_format_peels_into_sidecar() {
+        // Exercises: RecordingService::encode_compress_save_screen
+        // FrameSequence is binary-shaped — `should_use_media_sidecar`
+        // returns true regardless of compressed size — so any non-empty
+        // screen recording encoded via the FrameSequence path must
+        // emerge from the engine with a sidecar attached.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let rec = rdp_fixture("eng-fs", 8);
+
+        let id = svc
+            .encode_compress_save_screen(
+                rec,
+                "screen-rec".to_string(),
+                None,
+                ExportFormat::FrameSequence,
+                CompressionAlgorithm::None,
+                None,
+                vec!["e2e".to_string()],
+            )
+            .await
+            .unwrap();
+
+        let env = svc.get_from_library(&id).await.unwrap();
+        // Sidecar marker present, inline data cleared — invariants the
+        // load path relies on to short-circuit to `read_envelope_media`.
+        assert!(
+            env.has_media_sidecar(),
+            "FrameSequence engine save must peel into sidecar"
+        );
+        assert!(env.data.is_empty(), "inline data must be cleared");
+        assert_eq!(env.media_blob_basename.as_deref(), Some(&*format!("{}.media", id)));
+
+        // Disk shape: metadata + sidecar both encrypted on the unlocked
+        // path. Pin both names so a future codec rename surfaces here.
+        let meta = tmp
+            .path()
+            .join(format!("recording/recordings/{}.json.enc", id));
+        let media = tmp
+            .path()
+            .join(format!("recording/recordings/{}.media.enc", id));
+        assert!(meta.exists(), "metadata file missing at {}", meta.display());
+        assert!(media.exists(), "sidecar file missing at {}", media.display());
+
+        // Round-trip the bytes through the lazy-load helper; the
+        // returned payload must be exactly the encoder+compressor
+        // output the engine handed to the storage layer.
+        let expected_encoded = encoders::encode_frame_sequence_manifest(&rdp_fixture("eng-fs", 8))
+            .unwrap();
+        let expected_b64 =
+            compression::compress_to_b64(&expected_encoded, &CompressionAlgorithm::None).unwrap();
+        let got = svc.read_envelope_media(&env).await.unwrap();
+        assert_eq!(got, expected_b64.into_bytes(), "sidecar round-trip mismatch");
+    }
+
+    #[tokio::test]
+    async fn engine_large_text_recording_promotes_to_sidecar_via_threshold() {
+        // Exercises: RecordingService::encode_compress_save_terminal
+        // Asciicast is text-shaped, so the only way it peels is when
+        // `size_bytes > MEDIA_SIDECAR_THRESHOLD_BYTES`. We feed one
+        // entry of 4 MiB `x` with `CompressionAlgorithm::None`; the
+        // asciicast line is ~4 MiB + JSON quoting, base64 expands by
+        // 4/3 → final compressed-base64 size comfortably > 4 MiB.
+        // (`None` is critical — gzip would crush 4 MiB of repeating
+        // 'x' to a few KB and the threshold branch would never fire.)
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        // 4 MiB raw → ~5.59 MiB after base64; comfortably over threshold.
+        let rec = terminal_fixture("eng-big", 4 * 1024 * 1024);
+
+        let id = svc
+            .encode_compress_save_terminal(
+                rec,
+                "big-asciicast".to_string(),
+                None,
+                ExportFormat::Asciicast,
+                CompressionAlgorithm::None,
+                None,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let env = svc.get_from_library(&id).await.unwrap();
+        // The whole point of this test: asciicast (text-shaped) only
+        // peels via the size branch, so this asserts the engine
+        // pipeline propagates `size_bytes` through to the predicate.
+        assert!(
+            env.size_bytes > crate::types::MEDIA_SIDECAR_THRESHOLD_BYTES,
+            "fixture must exceed the 4 MiB threshold; got {}",
+            env.size_bytes
+        );
+        assert!(
+            env.has_media_sidecar(),
+            "asciicast over threshold must promote to sidecar"
+        );
+        assert!(env.data.is_empty(), "inline data must be cleared after peel");
+        assert_eq!(env.media_blob_basename.as_deref(), Some(&*format!("{}.media", id)));
+
+        let media = tmp
+            .path()
+            .join(format!("recording/recordings/{}.media.enc", id));
+        assert!(media.exists(), "sidecar must land on disk at {}", media.display());
+    }
+
+    #[tokio::test]
+    async fn engine_short_text_recording_stays_inline() {
+        // Exercises: RecordingService::encode_compress_save_terminal
+        // Negative case: a tiny asciicast recording must not be split.
+        // This pins that the engine doesn't gratuitously peel small
+        // text payloads — every short SSH session would otherwise
+        // double its file count on disk.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let rec = terminal_fixture("eng-small", 32);
+
+        let id = svc
+            .encode_compress_save_terminal(
+                rec,
+                "small-asciicast".to_string(),
+                None,
+                ExportFormat::Asciicast,
+                CompressionAlgorithm::None,
+                None,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let env = svc.get_from_library(&id).await.unwrap();
+        assert!(
+            !env.has_media_sidecar(),
+            "small asciicast must stay inline"
+        );
+        assert!(env.media_blob_basename.is_none());
+        assert!(
+            !env.data.is_empty(),
+            "inline data must survive when no sidecar is written"
+        );
+
+        // Disk confirms: no .media.enc sibling was created.
+        let media = tmp
+            .path()
+            .join(format!("recording/recordings/{}.media.enc", id));
+        assert!(
+            !media.exists(),
+            "no sidecar file expected for inline recording at {}",
+            media.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn engine_round_trip_through_save_then_read_envelope_media() {
+        // Exercises: RecordingService::encode_compress_save_screen
+        //          + RecordingService::read_envelope_media
+        // The contract: whatever the encoder+compressor produced and
+        // the persistor peeled into a sidecar must come back byte-for-
+        // byte from `read_envelope_media`. This is the load-path
+        // mirror of the persist-path assertion in test 1, but kept
+        // separate to read as a single "save then read" story.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        // Build the recording once, clone before the move so we can
+        // re-derive the expected encoder output without recomputing
+        // the synthetic frames.
+        let rec = rdp_fixture("eng-rt", 4);
+        let rec_clone = rec.clone();
+
+        let id = svc
+            .encode_compress_save_screen(
+                rec,
+                "round-trip".to_string(),
+                None,
+                ExportFormat::FrameSequence,
+                CompressionAlgorithm::Gzip,
+                None,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let env = svc.get_from_library(&id).await.unwrap();
+        assert!(env.has_media_sidecar(), "round-trip needs a sidecar to exercise");
+
+        let bytes = svc.read_envelope_media(&env).await.unwrap();
+
+        // Re-derive what the engine should have stored: encode the
+        // same fixture, compress with the same algo, base64 — those
+        // are the bytes the persistor peeled into the sidecar.
+        let expected_encoded = encoders::encode_frame_sequence_manifest(&rec_clone).unwrap();
+        let expected_b64 =
+            compression::compress_to_b64(&expected_encoded, &CompressionAlgorithm::Gzip).unwrap();
+        assert_eq!(
+            bytes,
+            expected_b64.into_bytes(),
+            "read_envelope_media must round-trip the engine's encoded+compressed bytes"
+        );
+    }
+
+    #[tokio::test]
+    async fn engine_delete_sweeps_metadata_and_media_files() {
+        // Exercises: RecordingService::encode_compress_save_screen
+        //          + RecordingService::delete_from_library
+        // End-to-end delete: after a sidecar-producing engine save,
+        // both `<id>.json.enc` AND `<id>.media.enc` must be swept.
+        // The unit-test sibling (`delete_sweeps_both_metadata_and_sidecar`)
+        // already pins this against `persist_envelope` directly; this
+        // version drives the real entry point so the
+        // `media_blob_basename` capture inside `delete_from_library`
+        // (around lines 908-912 of service.rs) is exercised on a
+        // basename the engine produced, not one a test wrote by hand.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let rec = rdp_fixture("eng-del", 4);
+
+        let id = svc
+            .encode_compress_save_screen(
+                rec,
+                "to-delete".to_string(),
+                None,
+                ExportFormat::FrameSequence,
+                CompressionAlgorithm::None,
+                None,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let meta = tmp
+            .path()
+            .join(format!("recording/recordings/{}.json.enc", id));
+        let media = tmp
+            .path()
+            .join(format!("recording/recordings/{}.media.enc", id));
+        assert!(meta.exists(), "metadata must exist pre-delete");
+        assert!(media.exists(), "sidecar must exist pre-delete");
+
+        svc.delete_from_library(&id).await.unwrap();
+
+        assert!(!meta.exists(), "metadata must be swept post-delete");
+        assert!(!media.exists(), "sidecar must be swept post-delete");
+        assert!(
+            svc.get_from_library(&id).await.is_none(),
+            "in-memory cache must drop the entry too"
+        );
+    }
+}
