@@ -358,4 +358,350 @@ mod tests {
         let text = String::from_utf8(plain).unwrap();
         assert!(text.contains("[REDACTED:overflow-dropped]"));
     }
+
+    // ─── Gap 4: sustained-pressure overflow coverage ───────────────────
+    //
+    // The tests below exercise the buffer cap at the production default
+    // (4 MiB) rather than the tiny override used by
+    // `overflow_drops_oldest_half_with_sentinel`. They prove three
+    // sub-properties of the overflow contract that the small-cap test
+    // can't really stress:
+    //   * the cap still holds at the *real* default size,
+    //   * it stays held across many successive overflow events
+    //     (long-running locked-state scenario), and
+    //   * locked-then-unlocked drain preserves the newest content even
+    //     after overflow has shed older lines.
+    //
+    // Each line embeds an 8-digit zero-padded sequence number so we can
+    // unambiguously assert which lines survived in the decrypted file:
+    // a substring search for `"line 00000000"` can never collide with
+    // the sentinel or with padding bytes.
+
+    #[tokio::test]
+    async fn overflow_at_real_default_cap_drops_oldest_preserves_newest() {
+        let tmp = tempdir().unwrap();
+        let state = unlocked(13).await;
+        // No `with_max_buffer_bytes` override — we want the real cap.
+        let sink = EncryptedLogSink::new(state.clone(), tmp.path().to_path_buf(), false);
+
+        // Line layout: "line <8-digit seq> " + 48 'x' padding + implicit
+        // newline added by `submit` = 5 + 8 + 1 + 48 + 1 = 63 bytes.
+        // We deliberately pick a width that's nowhere near a power of
+        // two so a half-cut never lands on a tidy boundary.
+        let line_bytes = 63usize;
+        // Submit enough lines to overshoot the cap by ~25%, exercising
+        // *one* overflow event at the real default size.
+        let line_count = DEFAULT_MAX_BUFFER_BYTES * 5 / 4 / line_bytes;
+        for i in 0..line_count {
+            sink.submit(&format!("line {:08} {}", i, "x".repeat(48)));
+        }
+
+        // The buffer must have been clamped. Slack covers the
+        // 28-byte sentinel plus a few bytes of mid-line-boundary
+        // alignment drift.
+        let buffered = sink.buffered_bytes();
+        assert!(
+            buffered <= DEFAULT_MAX_BUFFER_BYTES + 256,
+            "buffered={} exceeded cap+slack ({})",
+            buffered,
+            DEFAULT_MAX_BUFFER_BYTES + 256
+        );
+
+        // Drain through a real flush so we can verify what *survived*
+        // the overflow on disk, not just the in-memory residue.
+        sink.flush().await.unwrap();
+        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let bytes = std::fs::read(&path).unwrap();
+        let s = EncryptionState::new();
+        s.install(MasterDek::from_bytes(&[13u8; 32]).unwrap()).await;
+        let (_h, plain) = crate::envelope::read_envelope(
+            &s.sub_key(crate::ArtifactKind::Logs).await.unwrap(),
+            &bytes,
+        )
+        .unwrap();
+        let text = String::from_utf8(plain).unwrap();
+
+        // Single overflow → exactly one sentinel in the surviving
+        // payload. (Multiple sentinels would imply the cap was crossed
+        // more than once, which our 25% overshoot deliberately avoids.)
+        assert_eq!(
+            text.matches("[REDACTED:overflow-dropped]").count(),
+            1,
+            "expected exactly one sentinel for a single overflow event"
+        );
+
+        // The most recent lines must be present. We test the very last
+        // line (last `submit` call) and a line a few thousand back from
+        // it — both should survive because they fall in the newest
+        // half of the buffer.
+        let last_seq = line_count - 1;
+        let last_marker = format!("line {:08} ", last_seq);
+        assert!(
+            text.contains(&last_marker),
+            "newest line {:08} missing from drained plaintext",
+            last_seq
+        );
+        let near_end = format!("line {:08} ", last_seq - 1000);
+        assert!(
+            text.contains(&near_end),
+            "expected line {:08} (near end) to survive overflow",
+            last_seq - 1000
+        );
+
+        // And the oldest line — sequence 0 — must be gone, since the
+        // overflow path drops the oldest half.
+        assert!(
+            !text.contains("line 00000000 "),
+            "oldest line 00000000 should have been dropped by overflow"
+        );
+
+        // Newest line must also be the *last* line in the file — the
+        // drain preserves submission order, only chopping from the
+        // front. This catches accidental reordering or double-drain
+        // regressions.
+        let last_line = text.lines().last().expect("plaintext has at least one line");
+        assert!(
+            last_line.starts_with(&last_marker),
+            "expected last line to start with {:?}, got {:?}",
+            last_marker,
+            last_line
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_overflows_keep_buffer_bounded() {
+        // Simulates "user locked the vault and walked away" — log lines
+        // keep arriving for hours, flush is never called, and we must
+        // not OOM the process no matter how many times the cap is
+        // crossed. Locked state is what defers `flush()` and lets the
+        // buffer accumulate in the first place.
+        let tmp = tempdir().unwrap();
+        let state = Arc::new(EncryptionState::new()); // locked
+        let sink = EncryptedLogSink::new(state.clone(), tmp.path().to_path_buf(), false);
+
+        // Line width identical to test 1 so the cycle math is easy.
+        let line_bytes = 63usize;
+        // First batch fills 0 → just-over-cap (one overflow).
+        // Subsequent batches refill ~half-cap → just-over-cap (one
+        // overflow each). We oversize each batch by ~10% so a single
+        // overflow per cycle is guaranteed even with sentinel slack.
+        let first_batch = (DEFAULT_MAX_BUFFER_BYTES + DEFAULT_MAX_BUFFER_BYTES / 10) / line_bytes;
+        let refill_batch =
+            (DEFAULT_MAX_BUFFER_BYTES / 2 + DEFAULT_MAX_BUFFER_BYTES / 10) / line_bytes;
+
+        let mut seq = 0usize;
+        // Batch 0: cold-fill from empty.
+        for _ in 0..first_batch {
+            sink.submit(&format!("line {:08} {}", seq, "x".repeat(48)));
+            seq += 1;
+        }
+        assert!(
+            sink.buffered_bytes() <= DEFAULT_MAX_BUFFER_BYTES + 256,
+            "cap violated after batch 0: {}",
+            sink.buffered_bytes()
+        );
+
+        // Three refill cycles — total of four overflow events. Four is
+        // enough to demonstrate the invariant; more is just expensive.
+        for cycle in 1..=3 {
+            for _ in 0..refill_batch {
+                sink.submit(&format!("line {:08} {}", seq, "x".repeat(48)));
+                seq += 1;
+            }
+            assert!(
+                sink.buffered_bytes() <= DEFAULT_MAX_BUFFER_BYTES + 256,
+                "cap violated after batch {}: {}",
+                cycle,
+                sink.buffered_bytes()
+            );
+        }
+
+        // Unlock and flush so we can introspect what actually survived
+        // in the buffer at the end. We deliberately do *not* expose a
+        // `pub` peek API — the flush+decrypt route mirrors what the
+        // operator would do during incident review.
+        state.install(MasterDek::from_bytes(&[17u8; 32]).unwrap()).await;
+        sink.flush().await.unwrap();
+        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let bytes = std::fs::read(&path).unwrap();
+        let (_h, plain) = crate::envelope::read_envelope(
+            &state.sub_key(crate::ArtifactKind::Logs).await.unwrap(),
+            &bytes,
+        )
+        .unwrap();
+        let text = String::from_utf8(plain).unwrap();
+
+        // FINDING: across N overflow cycles we observe at most ONE
+        // sentinel in the surviving buffer, not N. The drop algorithm
+        // halves the buffer from byte 0, and the sentinel inserted by
+        // overflow K sits at byte 0 of the post-drop buffer — which is
+        // squarely in the oldest half at overflow K+1, so it gets
+        // discarded along with the rest of the old data.
+        //
+        // This means a decrypted envelope cannot tell a reviewer
+        // whether 1 or 1000 overflow events occurred during the locked
+        // window — only that at least one did. See report item (f).
+        let sentinel_count = text.matches("[REDACTED:overflow-dropped]").count();
+        assert_eq!(
+            sentinel_count, 1,
+            "expected the surviving buffer to coalesce to exactly one sentinel (found {})",
+            sentinel_count
+        );
+
+        // The newest line must still be there — that's the whole point
+        // of the "newer wins" policy.
+        let last_marker = format!("line {:08} ", seq - 1);
+        assert!(
+            text.contains(&last_marker),
+            "newest line {} missing from drained plaintext",
+            seq - 1
+        );
+
+        // And the very first line must be gone — it was dropped by the
+        // first overflow and never recovered.
+        assert!(
+            !text.contains("line 00000000 "),
+            "oldest line should have been dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn post_unlock_drain_preserves_newest_content() {
+        // Pins the "locked → ingest under overflow → unlock → flush"
+        // path: even when the locked window triggered drops, the
+        // unlock+flush must still surface the *newest* content (the
+        // window we actually care about for the active session) and
+        // emit a single envelope file.
+        let tmp = tempdir().unwrap();
+        let state = Arc::new(EncryptionState::new()); // locked
+        let sink = EncryptedLogSink::new(state.clone(), tmp.path().to_path_buf(), false);
+
+        // Use a wider line (95 bytes total) so 50k lines comfortably
+        // overshoot the 4 MiB cap (50_000 * 95 ≈ 4.75 MiB, guaranteed
+        // overflow with margin).
+        let line_count = 50_000usize;
+        for i in 0..line_count {
+            sink.submit(&format!("line {:08} {}", i, "x".repeat(80)));
+        }
+
+        // Unlock then flush — the same sequence a user would hit when
+        // re-entering their passphrase.
+        state.install(MasterDek::from_bytes(&[23u8; 32]).unwrap()).await;
+        let n = sink.flush().await.unwrap();
+        assert!(n > 0, "post-unlock flush must drain something");
+
+        // Exactly one envelope file should exist at today's date —
+        // confirms we didn't accidentally double-write or rotate.
+        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let bytes = std::fs::read(&path).unwrap();
+        let (_h, plain) = crate::envelope::read_envelope(
+            &state.sub_key(crate::ArtifactKind::Logs).await.unwrap(),
+            &bytes,
+        )
+        .unwrap();
+        let text = String::from_utf8(plain).unwrap();
+
+        // Sentinel must be present (overflow did happen during the
+        // locked window), the freshest line must survive, and the
+        // first line must be gone.
+        assert!(
+            text.contains("[REDACTED:overflow-dropped]"),
+            "expected overflow sentinel after 4.75 MiB of locked ingest"
+        );
+        assert!(
+            !text.contains("line 00000000 "),
+            "first line should have been dropped by overflow"
+        );
+        let last = line_count - 1;
+        assert!(
+            text.contains(&format!("line {:08} ", last)),
+            "line {:08} (last submitted) should survive",
+            last
+        );
+    }
+
+    #[test]
+    fn sustained_pressure_does_not_panic_or_grow_unbounded() {
+        // Concurrency stress: four producer threads slam `submit` while
+        // the encryption state is locked, so every line piles into the
+        // buffer and overflow is hit many, many times. We're proving
+        // structural invariants — no `Mutex` poisoning, the cap holds,
+        // and a subsequent unlock+flush still produces a non-empty
+        // envelope — not exact ordering, which is nondeterministic
+        // under contention.
+        //
+        // This is `#[test]` not `#[tokio::test]` because `submit` is
+        // sync and we want a vanilla `std::thread` pool; we build a
+        // tiny Tokio runtime by hand for the final flush.
+        let tmp = tempdir().unwrap();
+        let state = Arc::new(EncryptionState::new()); // locked
+        let sink = EncryptedLogSink::new(state.clone(), tmp.path().to_path_buf(), false);
+
+        let threads = 4usize;
+        let per_thread = 250_000usize;
+        let handles: Vec<_> = (0..threads)
+            .map(|tid| {
+                // Clone is cheap — only the `Arc`s are duplicated.
+                let sink = sink.clone();
+                std::thread::spawn(move || {
+                    for i in 0..per_thread {
+                        // Encode thread id + sequence so two threads
+                        // never produce the same line content. Width
+                        // is roughly 64 bytes for parity with the
+                        // other gap-4 tests.
+                        sink.submit(&format!(
+                            "line t{:02} {:08} {}",
+                            tid,
+                            i,
+                            "x".repeat(44)
+                        ));
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            // `join` will surface a panic from a worker thread, which
+            // is exactly the signal we want for "did anything blow up".
+            h.join().expect("producer thread panicked");
+        }
+
+        // Cap held across ~64 MiB of concurrent ingest. The 1 KiB
+        // slack covers the sentinel string plus the brief race window
+        // where multiple threads can each push past `max_buffer_bytes`
+        // before any one of them takes the overflow branch.
+        let buffered = sink.buffered_bytes();
+        assert!(
+            buffered <= DEFAULT_MAX_BUFFER_BYTES + 1024,
+            "buffer grew unbounded under contention: {} bytes",
+            buffered
+        );
+
+        // Build a small runtime to drive the async unlock+flush. A
+        // fresh runtime avoids dragging in `#[tokio::test]`'s
+        // multi-threaded scheduler just for two awaits.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            state.install(MasterDek::from_bytes(&[29u8; 32]).unwrap()).await;
+            let n = sink.flush().await.unwrap();
+            assert!(n > 0, "flush after concurrent ingest must be non-empty");
+        });
+
+        let path = tmp.path().join(format!("encrypted-{}.log.enc", today_utc_date()));
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!bytes.is_empty(), "envelope file must be non-empty");
+        // Quick sanity: the file decrypts cleanly. We don't pin which
+        // sequence numbers survived — under contention the dropped
+        // ranges are nondeterministic.
+        let (_h, plain) = rt.block_on(async {
+            crate::envelope::read_envelope(
+                &state.sub_key(crate::ArtifactKind::Logs).await.unwrap(),
+                &bytes,
+            )
+            .unwrap()
+        });
+        assert!(!plain.is_empty(), "decrypted plaintext must be non-empty");
+    }
 }
