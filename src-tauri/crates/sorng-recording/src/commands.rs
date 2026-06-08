@@ -979,40 +979,40 @@ pub async fn rec_cancel_migration(
 
 /// Bridge between the service-level `MigrationProgress` trait and
 /// the Tauri event stream. The frontend listens on
-/// [`crate::service::REC_MIGRATE_EVENT`] and renders a progress bar
+/// [`super::service::REC_MIGRATE_EVENT`] and renders a progress bar
 /// from each `(stage, index, total)` tuple.
 struct TauriMigrationReporter {
     app: tauri::AppHandle,
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-impl crate::storage::MigrationProgress for TauriMigrationReporter {
-    fn total(&self, stage: crate::storage::MigrationStage, count: usize) {
-        let payload = crate::service::RecordingMigrationProgressEvent {
+impl super::storage::MigrationProgress for TauriMigrationReporter {
+    fn total(&self, stage: super::storage::MigrationStage, count: usize) {
+        let payload = super::service::RecordingMigrationProgressEvent {
             stage: stage.as_str().to_string(),
             index: 0,
             total: count,
             name: String::new(),
             skipped: false,
         };
-        let _ = tauri::Emitter::emit(&self.app, crate::service::REC_MIGRATE_EVENT, &payload);
+        let _ = tauri::Emitter::emit(&self.app, super::service::REC_MIGRATE_EVENT, &payload);
     }
     fn step(
         &self,
-        stage: crate::storage::MigrationStage,
+        stage: super::storage::MigrationStage,
         index: usize,
         total: usize,
         name: &str,
         skipped: bool,
     ) {
-        let payload = crate::service::RecordingMigrationProgressEvent {
+        let payload = super::service::RecordingMigrationProgressEvent {
             stage: stage.as_str().to_string(),
             index,
             total,
             name: name.to_string(),
             skipped,
         };
-        let _ = tauri::Emitter::emit(&self.app, crate::service::REC_MIGRATE_EVENT, &payload);
+        let _ = tauri::Emitter::emit(&self.app, super::service::REC_MIGRATE_EVENT, &payload);
     }
     fn should_cancel(&self) -> bool {
         self.cancel.load(std::sync::atomic::Ordering::Acquire)
