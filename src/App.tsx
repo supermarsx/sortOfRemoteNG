@@ -1333,7 +1333,19 @@ const AppContent: React.FC = () => {
                       </button>
                     ) : (
                       <button
-                        onClick={() => setShowDatabasePanel(true)}
+                        onClick={() => {
+                          // Match the AppToolbar wrapper at line ~1215:
+                          // open the database tool tab AND set the
+                          // legacy modal flag so every consumer agrees
+                          // the panel is visible. Calling the raw
+                          // `setShowDatabasePanel(true)` here only
+                          // flipped the legacy flag and never opened
+                          // the tool tab — the visible no-op the user
+                          // reported.
+                          setDatabasePanelInitialTab('collections');
+                          toolShowSetters.current.database(true);
+                          setShowDatabasePanel(true);
+                        }}
                         className="sor-btn sor-btn-primary flex items-center space-x-2"
                       >
                         <Database size={16} />
