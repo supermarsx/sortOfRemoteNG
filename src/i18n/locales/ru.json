@@ -276,7 +276,13 @@
     "save": "Сохранить",
     "dontSave": "Не сохранять",
     "reconnect": "Переподключиться",
-    "close": "Закрыть"
+    "close": "Закрыть",
+    "confirmDeleteFolderCascade": "Папка \"{{name}}\" содержит {{count}} элемент(ов). Что с ними сделать?",
+    "deleteFolderTitle": "Удалить папку",
+    "deleteFolderAndChildren": "Удалить папку + {{count}} элемент(ов)",
+    "keepAndReparent": "Оставить, переместить в {{target}}",
+    "cancel": "Отмена",
+    "rootFolder": "корень"
   },
   "status": {
     "online": "Онлайн",

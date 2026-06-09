@@ -276,7 +276,13 @@
     "save": "Speichern",
     "dontSave": "Nicht speichern",
     "reconnect": "Neu verbinden",
-    "close": "Schliessen"
+    "close": "Schliessen",
+    "confirmDeleteFolderCascade": "Der Ordner \"{{name}}\" enthält {{count}} Element(e). Was soll damit geschehen?",
+    "deleteFolderTitle": "Ordner löschen",
+    "deleteFolderAndChildren": "Ordner + {{count}} Element(e) löschen",
+    "keepAndReparent": "Behalten, nach {{target}} verschieben",
+    "cancel": "Abbrechen",
+    "rootFolder": "Stamm"
   },
   "status": {
     "online": "Online",

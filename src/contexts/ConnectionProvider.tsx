@@ -8,6 +8,10 @@ import {
   ConnectionContext
 } from "./ConnectionContextTypes";
 import { Connection } from "../types/connection/connection";
+import {
+  diffConnection,
+  formatConnectionDiff,
+} from "../utils/connection/diffConnection";
 
 const initialState: ConnectionState = {
   connections: [],
@@ -242,11 +246,20 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         case "UPDATE_CONNECTION": {
           const conn = action.payload;
+          // P9: diff the previous snapshot against the incoming one
+          // and log the field-level deltas (with secrets masked) so
+          // the audit trail shows what actually changed, not just
+          // that something did.
+          const prev = state.connections.find((c) => c.id === conn.id);
+          const deltas = diffConnection(prev, conn);
+          const detail = deltas.length === 0
+            ? `Name: "${conn.name}" — no field changes (save with no edits)`
+            : `Name: "${conn.name}" — ${formatConnectionDiff(deltas)}`;
           settingsManager.logAction(
             'info',
-            'Connection edited',
+            conn.isGroup ? 'Folder edited' : 'Connection edited',
             conn.id,
-            `Name: "${conn.name}" updated`
+            detail,
           );
           break;
         }

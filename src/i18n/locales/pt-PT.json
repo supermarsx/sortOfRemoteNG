@@ -276,7 +276,13 @@
     "save": "Guardar",
     "dontSave": "Não guardar",
     "reconnect": "Voltar a ligar",
-    "close": "Fechar"
+    "close": "Fechar",
+    "confirmDeleteFolderCascade": "A pasta \"{{name}}\" contém {{count}} item(ns). O que deseja fazer?",
+    "deleteFolderTitle": "Eliminar pasta",
+    "deleteFolderAndChildren": "Eliminar pasta + {{count}} item(ns)",
+    "keepAndReparent": "Manter e mover para {{target}}",
+    "cancel": "Cancelar",
+    "rootFolder": "a raiz"
   },
   "status": {
     "online": "Ligado",

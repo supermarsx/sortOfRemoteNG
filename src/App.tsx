@@ -104,8 +104,20 @@ const AppContent: React.FC = () => {
   const [dialogState, setDialogState] = useState<{
     isOpen: boolean;
     message: string;
+    title?: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'default' | 'danger' | 'warning';
     onConfirm: () => void;
     onCancel?: () => void;
+    // P9: optional middle button — used by the folder-delete dialog
+    // to offer "Keep connections, reparent to <folder>" as an
+    // alternative to the cascade delete.
+    secondaryAction?: {
+      label: string;
+      onClick: () => void;
+      variant?: 'default' | 'warning';
+    };
   }>({
     isOpen: false,
     message: "",
@@ -631,11 +643,117 @@ const AppContent: React.FC = () => {
 
   const handleDeleteConnection = (connection: Connection) => {
     const settings = settingsManager.getSettings();
-    // Pick the right copy / log term depending on what the user
-    // actually deleted — pre-fix the popup always said "connection"
-    // even for folder rows.
     const isFolder = connection.isGroup === true;
     const noun = isFolder ? "Folder" : "Connection";
+
+    // P9: count descendants recursively for folder delete. Subfolders
+    // count toward the total too — the cascade flattens the whole
+    // subtree.
+    const collectDescendantIds = (rootId: string): string[] => {
+      const out: string[] = [];
+      const stack: string[] = [rootId];
+      while (stack.length > 0) {
+        const id = stack.pop()!;
+        for (const c of state.connections) {
+          if (c.parentId === id) {
+            out.push(c.id);
+            stack.push(c.id);
+          }
+        }
+      }
+      return out;
+    };
+
+    const performDelete = (ids: string[], summaryNoun: string) => {
+      for (const id of ids) {
+        dispatch({ type: "DELETE_CONNECTION", payload: id });
+        statusChecker.stopChecking(id);
+      }
+      settingsManager.logAction(
+        "info",
+        `${summaryNoun} deleted`,
+        connection.id,
+        ids.length === 1
+          ? `${summaryNoun} "${connection.name}" deleted`
+          : `${summaryNoun} "${connection.name}" + ${ids.length - 1} item(s) deleted`,
+        undefined,
+        connection.name,
+      );
+    };
+
+    // ── Folder with descendants — the 3-button cascade dialog. ──
+    if (isFolder) {
+      const descendants = collectDescendantIds(connection.id);
+      if (descendants.length > 0) {
+        const parentName = connection.parentId
+          ? state.connections.find((c) => c.id === connection.parentId)?.name
+          : null;
+        const reparentTarget = parentName ?? (t("dialogs.rootFolder", "the root") as string);
+
+        const cascadeMessage = t(
+          "dialogs.confirmDeleteFolderCascade",
+          'The folder "{{name}}" contains {{count}} item(s). What should happen to them?',
+          { name: connection.name, count: descendants.length },
+        ) as string;
+
+        showConfirm(
+          cascadeMessage,
+          // Primary (danger) — cascade delete folder + everything inside.
+          () => {
+            performDelete([connection.id, ...descendants], noun);
+          },
+          // Cancel — no-op.
+          undefined,
+          {
+            title: t("dialogs.deleteFolderTitle", "Delete folder") as string,
+            confirmText: t(
+              "dialogs.deleteFolderAndChildren",
+              "Delete folder + {{count}} item(s)",
+              { count: descendants.length },
+            ) as string,
+            cancelText: t("dialogs.cancel", "Cancel") as string,
+            variant: "danger",
+            // Secondary — reparent children to the folder's parent
+            // (or root) then delete just the folder.
+            secondaryAction: {
+              label: t(
+                "dialogs.keepAndReparent",
+                "Keep items, move to {{target}}",
+                { target: reparentTarget },
+              ) as string,
+              variant: "default",
+              onClick: () => {
+                // Reparent every IMMEDIATE child of the folder to the
+                // folder's own parentId (or undefined → root). Deeper
+                // descendants keep their parentId untouched — only the
+                // direct children need re-homing because the only link
+                // that's about to disappear is the folder itself.
+                const directChildren = state.connections.filter(
+                  (c) => c.parentId === connection.id,
+                );
+                for (const child of directChildren) {
+                  dispatch({
+                    type: "UPDATE_CONNECTION",
+                    payload: { ...child, parentId: connection.parentId },
+                  });
+                }
+                performDelete([connection.id], noun);
+                settingsManager.logAction(
+                  "info",
+                  "Folder reparented",
+                  connection.id,
+                  `Moved ${directChildren.length} child item(s) from "${connection.name}" to ${reparentTarget}, then deleted the folder`,
+                  undefined,
+                  connection.name,
+                );
+              },
+            },
+          },
+        );
+        return;
+      }
+    }
+
     const confirmMessage =
       connection.warnOnClose || settings.warnOnClose
         ? t(
@@ -646,28 +764,10 @@ const AppContent: React.FC = () => {
         : null;
 
     if (!confirmMessage) {
-      dispatch({ type: "DELETE_CONNECTION", payload: connection.id });
-      statusChecker.stopChecking(connection.id);
-      settingsManager.logAction(
-        "info",
-        `${noun} deleted`,
-        connection.id,
-        `${noun} "${connection.name}" deleted`,
-        undefined,
-        connection.name,
-      );
+      performDelete([connection.id], noun);
     } else {
       showConfirm(confirmMessage, () => {
-        dispatch({ type: "DELETE_CONNECTION", payload: connection.id });
-        statusChecker.stopChecking(connection.id);
-        settingsManager.logAction(
-          "info",
-          `${noun} deleted`,
-          connection.id,
-          `${noun} "${connection.name}" deleted`,
-          undefined,
-          connection.name,
-        );
+        performDelete([connection.id], noun);
       });
     }
   };
@@ -797,12 +897,28 @@ const AppContent: React.FC = () => {
     message: string,
     onConfirm: () => void,
     onCancel?: () => void,
+    opts?: {
+      title?: string;
+      confirmText?: string;
+      cancelText?: string;
+      variant?: 'default' | 'danger' | 'warning';
+      secondaryAction?: {
+        label: string;
+        onClick: () => void;
+        variant?: 'default' | 'warning';
+      };
+    },
   ) => {
     setDialogState({
       isOpen: true,
       message,
       onConfirm,
       onCancel,
+      title: opts?.title,
+      confirmText: opts?.confirmText,
+      cancelText: opts?.cancelText,
+      variant: opts?.variant,
+      secondaryAction: opts?.secondaryAction,
     });
   };
 

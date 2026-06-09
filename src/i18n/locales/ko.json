@@ -276,7 +276,13 @@
     "save": "저장",
     "dontSave": "저장 안 함",
     "reconnect": "재연결",
-    "close": "닫기"
+    "close": "닫기",
+    "confirmDeleteFolderCascade": "폴더 \"{{name}}\"에 {{count}}개의 항목이 있습니다. 어떻게 하시겠습니까?",
+    "deleteFolderTitle": "폴더 삭제",
+    "deleteFolderAndChildren": "폴더 + {{count}}개 항목 삭제",
+    "keepAndReparent": "유지하고 {{target}}(으)로 이동",
+    "cancel": "취소",
+    "rootFolder": "루트"
   },
   "status": {
     "online": "온라인",

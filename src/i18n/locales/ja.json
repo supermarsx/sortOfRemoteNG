@@ -276,7 +276,13 @@
     "save": "保存",
     "dontSave": "保存しない",
     "reconnect": "再接続",
-    "close": "閉じる"
+    "close": "閉じる",
+    "confirmDeleteFolderCascade": "フォルダ「{{name}}」には{{count}}個のアイテムがあります。どうしますか？",
+    "deleteFolderTitle": "フォルダを削除",
+    "deleteFolderAndChildren": "フォルダと{{count}}個のアイテムを削除",
+    "keepAndReparent": "残して{{target}}に移動",
+    "cancel": "キャンセル",
+    "rootFolder": "ルート"
   },
   "status": {
     "online": "オンライン",

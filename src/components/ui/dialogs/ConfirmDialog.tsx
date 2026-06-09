@@ -10,6 +10,18 @@ export interface ConfirmDialogProps {
   variant?: 'default' | 'danger' | 'warning';
   onConfirm: () => void;
   onCancel?: () => void;
+  /**
+   * Optional middle button — renders between Cancel and Confirm. Used
+   * by the folder-delete dialog (P9) to offer "Keep connections,
+   * reparent to <folder>" as an alternative to a cascade delete.
+   * `variant` defaults to `default`; the primary danger/warning
+   * affordance stays on `onConfirm`.
+   */
+  secondaryAction?: {
+    label: string;
+    onClick: () => void;
+    variant?: 'default' | 'warning';
+  };
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -21,6 +33,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   variant = 'default',
   onConfirm,
   onCancel,
+  secondaryAction,
 }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -61,6 +74,19 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               data-testid="confirm-no"
             >
               {cancelText}
+            </button>
+          )}
+          {secondaryAction && (
+            <button
+              onClick={secondaryAction.onClick}
+              data-testid="confirm-secondary"
+              className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
+                secondaryAction.variant === 'warning'
+                  ? 'bg-warning hover:bg-warning/90'
+                  : 'bg-[var(--color-border)] hover:bg-[var(--color-borderHover)]'
+              }`}
+            >
+              {secondaryAction.label}
             </button>
           )}
           <button

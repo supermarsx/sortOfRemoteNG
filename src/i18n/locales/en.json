@@ -296,7 +296,13 @@
     "save": "Save",
     "dontSave": "Don't Save",
     "reconnect": "Reconnect",
-    "close": "Close"
+    "close": "Close",
+    "confirmDeleteFolderCascade": "The folder \"{{name}}\" contains {{count}} item(s). What should happen to them?",
+    "deleteFolderTitle": "Delete folder",
+    "deleteFolderAndChildren": "Delete folder + {{count}} item(s)",
+    "keepAndReparent": "Keep items, move to {{target}}",
+    "cancel": "Cancel",
+    "rootFolder": "the root"
   },
   "status": {
     "online": "Online",

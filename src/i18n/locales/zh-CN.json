@@ -276,7 +276,13 @@
     "save": "保存",
     "dontSave": "不保存",
     "reconnect": "重新连接",
-    "close": "关闭"
+    "close": "关闭",
+    "confirmDeleteFolderCascade": "文件夹 \"{{name}}\" 包含 {{count}} 个项目。您想如何处理？",
+    "deleteFolderTitle": "删除文件夹",
+    "deleteFolderAndChildren": "删除文件夹及 {{count}} 个项目",
+    "keepAndReparent": "保留并移至 {{target}}",
+    "cancel": "取消",
+    "rootFolder": "根目录"
   },
   "status": {
     "online": "在线",

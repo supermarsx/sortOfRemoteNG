@@ -276,7 +276,13 @@
     "save": "Guardar",
     "dontSave": "No guardar",
     "reconnect": "Reconectar",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "confirmDeleteFolderCascade": "La carpeta \"{{name}}\" contiene {{count}} elemento(s). ¿Qué desea hacer con ellos?",
+    "deleteFolderTitle": "Eliminar carpeta",
+    "deleteFolderAndChildren": "Eliminar carpeta + {{count}} elemento(s)",
+    "keepAndReparent": "Conservar y mover a {{target}}",
+    "cancel": "Cancelar",
+    "rootFolder": "la raíz"
   },
   "status": {
     "online": "En línea",

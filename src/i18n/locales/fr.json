@@ -276,7 +276,13 @@
     "save": "Enregistrer",
     "dontSave": "Ne pas enregistrer",
     "reconnect": "Reconnecter",
-    "close": "Fermer"
+    "close": "Fermer",
+    "confirmDeleteFolderCascade": "Le dossier \"{{name}}\" contient {{count}} élément(s). Que voulez-vous en faire ?",
+    "deleteFolderTitle": "Supprimer le dossier",
+    "deleteFolderAndChildren": "Supprimer le dossier + {{count}} élément(s)",
+    "keepAndReparent": "Conserver et déplacer vers {{target}}",
+    "cancel": "Annuler",
+    "rootFolder": "la racine"
   },
   "status": {
     "online": "En ligne",

@@ -55,8 +55,17 @@ interface AppDialogsProps {
   dialogState: {
     isOpen: boolean;
     message: string;
+    title?: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'default' | 'danger' | 'warning';
     onConfirm: () => void;
     onCancel?: () => void;
+    secondaryAction?: {
+      label: string;
+      onClick: () => void;
+      variant?: 'default' | 'warning';
+    };
   };
   closeConfirmDialog: () => void;
   confirmDialog: React.ReactNode;
@@ -157,6 +166,10 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
       <ConfirmDialog
         isOpen={dialogState.isOpen}
         message={dialogState.message}
+        title={dialogState.title}
+        confirmText={dialogState.confirmText}
+        cancelText={dialogState.cancelText}
+        variant={dialogState.variant}
         onConfirm={() => {
           dialogState.onConfirm();
           closeConfirmDialog();
@@ -168,6 +181,18 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
                 closeConfirmDialog();
               }
             : closeConfirmDialog
+        }
+        secondaryAction={
+          dialogState.secondaryAction
+            ? {
+                label: dialogState.secondaryAction.label,
+                onClick: () => {
+                  dialogState.secondaryAction!.onClick();
+                  closeConfirmDialog();
+                },
+                variant: dialogState.secondaryAction.variant,
+              }
+            : undefined
         }
       />
 

@@ -276,7 +276,13 @@
     "save": "Salva",
     "dontSave": "Non salvare",
     "reconnect": "Riconnetti",
-    "close": "Chiudi"
+    "close": "Chiudi",
+    "confirmDeleteFolderCascade": "La cartella \"{{name}}\" contiene {{count}} elemento/i. Cosa vuoi fare?",
+    "deleteFolderTitle": "Elimina cartella",
+    "deleteFolderAndChildren": "Elimina cartella + {{count}} elemento/i",
+    "keepAndReparent": "Conserva e sposta in {{target}}",
+    "cancel": "Annulla",
+    "rootFolder": "la radice"
   },
   "status": {
     "online": "Online",
