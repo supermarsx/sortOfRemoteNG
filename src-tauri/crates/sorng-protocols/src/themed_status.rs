@@ -497,7 +497,10 @@ pub fn render_status_page(
   details.raw {{
     width: 100%;
     text-align: left;
-    background: rgba(0, 0, 0, 0.25);
+    /* Theme-derived inset: same trick as the auth form's input fill
+       — 6% of the text colour blended with transparent looks correct
+       on both dark and light themes. */
+    background: color-mix(in srgb, var(--proxy-text) 6%, transparent);
     border: 1px solid var(--proxy-border);
     border-radius: 0.5rem;
     margin: 0 0 1rem;
@@ -679,6 +682,23 @@ mod tests {
         let html = render_status_page(404, "https://x", b"", &t);
         assert!(html.contains("--proxy-bg: #abcdef"));
         assert!(html.contains("--proxy-text: #123456"));
+    }
+
+    #[test]
+    fn render_details_block_uses_theme_derived_fill_not_hardcoded_black() {
+        // Regression guard: the upstream-body <details> box used to
+        // hardcode `rgba(0, 0, 0, 0.25)` — invisible on dark themes,
+        // ugly on light. Must use `color-mix(... var(--proxy-text))`
+        // so the inset matches whichever theme is live.
+        let html = render_status_page(500, "https://x", b"some body", &theme());
+        assert!(
+            !html.contains("background: rgba(0, 0, 0,"),
+            "themed status page leaked a hardcoded black details bg"
+        );
+        assert!(
+            html.contains("color-mix(in srgb, var(--proxy-text)"),
+            "themed status page must derive details fill from live text token"
+        );
     }
 
     #[test]

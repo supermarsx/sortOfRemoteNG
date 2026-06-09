@@ -177,7 +177,13 @@ pub fn render_challenge_page(
   }}
   input[type="text"], input[type="password"] {{
     width: 100%;
-    background: rgba(0, 0, 0, 0.25);
+    /* Theme-derived input fill: 6% of the text colour, blended with
+       transparent. Produces a subtle inset that's darker on dark
+       themes (text is near-white → 6% white over the card) and
+       lighter on light themes (text is near-black → 6% black over
+       the card). Pre-fix this was hardcoded rgba(0, 0, 0, 0.25)
+       which looked wrong on every light theme. */
+    background: color-mix(in srgb, var(--proxy-text) 6%, transparent);
     border: 1px solid var(--proxy-border);
     border-radius: 0.5rem;
     color: var(--proxy-text);
@@ -185,7 +191,10 @@ pub fn render_challenge_page(
     font-size: 0.875rem;
     font-family: inherit;
     margin: 0 0 1rem;
-    transition: border-color 0.12s ease;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }}
+  input[type="text"]:hover, input[type="password"]:hover {{
+    background: color-mix(in srgb, var(--proxy-text) 9%, transparent);
   }}
   input[type="text"]:focus, input[type="password"]:focus {{
     outline: none;
@@ -425,6 +434,27 @@ mod tests {
         t.primary = "#ff00ff".into();
         let html = render_challenge_page("u", "/", "n", "", None, &t);
         assert!(html.contains("--proxy-primary: #ff00ff"));
+    }
+
+    #[test]
+    fn render_form_inputs_use_theme_derived_fill_not_hardcoded_black() {
+        // Regression guard: the form's input background must NOT be
+        // `rgba(0, 0, 0, ...)` — that fill is invisible on dark
+        // themes and a dirty smudge on light themes. It must use
+        // `color-mix(in srgb, var(--proxy-text) ...)` so the inset
+        // contrasts correctly with whichever theme is live.
+        let html = render_challenge_page("u", "/", "n", "", None, &theme());
+        assert!(
+            !html.contains("background: rgba(0, 0, 0,"),
+            "themed auth form leaked a hardcoded black background — \
+             that's the P7-theming regression that ships dark-looking \
+             inputs onto light themes"
+        );
+        assert!(
+            html.contains("color-mix(in srgb, var(--proxy-text)"),
+            "themed auth form must derive input fill from the live \
+             text token via color-mix so it works on every theme"
+        );
     }
 
     #[test]
