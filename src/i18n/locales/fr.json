@@ -268,6 +268,7 @@
     "confirmCloseDetached": "Fermer la fenêtre détachée et déconnecter la session ?",
     "confirmExit": "Êtes-vous sûr de vouloir quitter ? Toutes les connexions seront fermées.",
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer cette connexion ?",
+    "confirmDeleteFolder": "Êtes-vous sûr de vouloir supprimer ce dossier ?",
     "unsavedChanges": "Vous avez des modifications non enregistrées. Voulez-vous enregistrer avant de fermer ?",
     "connectionLost": "Connexion perdue. Voulez-vous vous reconnecter ?",
     "yes": "Oui",

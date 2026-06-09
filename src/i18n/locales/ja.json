@@ -268,6 +268,7 @@
     "confirmCloseDetached": "デタッチされたウィンドウを閉じてセッションを切断しますか？",
     "confirmExit": "終了してもよろしいですか？すべての接続が閉じられます。",
     "confirmDelete": "この接続を削除してもよろしいですか？",
+    "confirmDeleteFolder": "このフォルダを削除してもよろしいですか？",
     "unsavedChanges": "保存されていない変更があります。閉じる前に保存しますか？",
     "connectionLost": "接続が失われました。再接続しますか？",
     "yes": "はい",

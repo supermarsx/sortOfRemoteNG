@@ -631,9 +631,18 @@ const AppContent: React.FC = () => {
 
   const handleDeleteConnection = (connection: Connection) => {
     const settings = settingsManager.getSettings();
+    // Pick the right copy / log term depending on what the user
+    // actually deleted — pre-fix the popup always said "connection"
+    // even for folder rows.
+    const isFolder = connection.isGroup === true;
+    const noun = isFolder ? "Folder" : "Connection";
     const confirmMessage =
       connection.warnOnClose || settings.warnOnClose
-        ? t("dialogs.confirmDelete")
+        ? t(
+            isFolder
+              ? "dialogs.confirmDeleteFolder"
+              : "dialogs.confirmDelete",
+          )
         : null;
 
     if (!confirmMessage) {
@@ -641,9 +650,9 @@ const AppContent: React.FC = () => {
       statusChecker.stopChecking(connection.id);
       settingsManager.logAction(
         "info",
-        "Connection deleted",
+        `${noun} deleted`,
         connection.id,
-        `Connection "${connection.name}" deleted`,
+        `${noun} "${connection.name}" deleted`,
         undefined,
         connection.name,
       );
@@ -653,9 +662,9 @@ const AppContent: React.FC = () => {
         statusChecker.stopChecking(connection.id);
         settingsManager.logAction(
           "info",
-          "Connection deleted",
+          `${noun} deleted`,
           connection.id,
-          `Connection "${connection.name}" deleted`,
+          `${noun} "${connection.name}" deleted`,
           undefined,
           connection.name,
         );

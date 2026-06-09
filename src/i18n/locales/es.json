@@ -268,6 +268,7 @@
     "confirmCloseDetached": "¿Cerrar ventana separada y desconectar la sesión?",
     "confirmExit": "¿Está seguro de que desea salir? Se cerrarán todas las conexiones.",
     "confirmDelete": "¿Está seguro de que desea eliminar esta conexión?",
+    "confirmDeleteFolder": "¿Está seguro de que desea eliminar esta carpeta?",
     "unsavedChanges": "Tiene cambios sin guardar. ¿Desea guardar antes de cerrar?",
     "connectionLost": "Conexión perdida. ¿Desea reconectar?",
     "yes": "Sí",

@@ -268,6 +268,7 @@
     "confirmCloseDetached": "Fechar janela separada e desligar a sessão?",
     "confirmExit": "Tem a certeza de que pretende sair? Todas as ligações serão fechadas.",
     "confirmDelete": "Tem a certeza de que pretende eliminar esta ligação?",
+    "confirmDeleteFolder": "Tem a certeza de que pretende eliminar esta pasta?",
     "unsavedChanges": "Tem alterações não guardadas. Pretende guardar antes de fechar?",
     "connectionLost": "Ligação perdida. Pretende voltar a ligar?",
     "yes": "Sim",
