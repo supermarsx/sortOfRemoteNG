@@ -19,6 +19,8 @@ mod app_shell_commands;
 mod app_settings_commands;
 #[path = "../../../src/encryption_rotation_commands.rs"]
 mod encryption_rotation_commands;
+#[path = "../../../src/database_files.rs"]
+mod database_files;
 #[path = "../../../src/cpu_commands.rs"]
 mod cpu_commands;
 // The enum + resolver are only consumed by the middleware in the main

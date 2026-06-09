@@ -23,6 +23,11 @@ pub fn is_command(command: &str) -> bool {
             | "write_app_data"
             | "read_app_settings"
             | "write_app_settings"
+            | "databases_list"
+            | "databases_save_index"
+            | "load_database_data"
+            | "save_database_data"
+            | "delete_database_data"
             | "get_cpu_aes_capabilities"
             | "get_api_capabilities"
             | "set_api_disabled_capabilities"
@@ -1154,6 +1159,11 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         storage_commands::write_app_data,
         app_settings_commands::read_app_settings,
         app_settings_commands::write_app_settings,
+        database_files::databases_list,
+        database_files::databases_save_index,
+        database_files::load_database_data,
+        database_files::save_database_data,
+        database_files::delete_database_data,
         cpu_commands::get_cpu_aes_capabilities,
         api_capability_commands::get_api_capabilities,
         api_capability_commands::set_api_disabled_capabilities,
