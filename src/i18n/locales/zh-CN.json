@@ -39,15 +39,17 @@
       "connections": "连接"
     },
     "actions": {
-      "import": "导入",
-      "export": "导出",
+      "clone": "克隆",
+      "close": "关闭",
+      "delete": "删除",
       "duplicate": "复制",
       "edit": "编辑",
-      "delete": "删除",
+      "export": "导出",
+      "import": "导入",
+      "lock": "锁定",
       "moreActions": "更多操作",
       "open": "打开",
-      "unlock": "解锁",
-      "clone": "克隆"
+      "unlock": "解锁"
     },
     "connections": {
       "title": "连接导入 / 导出",

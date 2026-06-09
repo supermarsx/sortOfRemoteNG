@@ -265,6 +265,18 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
     ? t("databaseCenter.actions.unlock")
     : t("databaseCenter.actions.open");
 
+  // Symmetric inverses of open / unlock. The close button only shows
+  // when there is something to close: the row is the currently-open
+  // database (closes + locks) or it's an encrypted row whose
+  // password is cached (locks only). Otherwise rendering it would be
+  // a no-op the user can't usefully click.
+  const isCurrent = mgr.isCurrentDatabase(collection.id);
+  const isUnlocked = mgr.isDatabaseUnlocked(collection.id);
+  const canClose = isCurrent || (collection.isEncrypted && isUnlocked);
+  const closeLabel = isCurrent
+    ? (t("databaseCenter.actions.close", "Close") as string)
+    : (t("databaseCenter.actions.lock", "Lock") as string);
+
   return (
     <div
       className={`rounded-lg border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary group ${
@@ -328,6 +340,19 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
               <FolderOpen size={13} />
             )}
           </button>
+          {canClose && (
+            <button
+              type="button"
+              onClick={() => void mgr.handleCloseCollection(collection)}
+              className="sor-icon-btn-sm"
+              title={closeLabel}
+              aria-label={closeLabel}
+              data-testid={isCurrent ? "database-close" : "database-lock"}
+            >
+              {/* Current row → folder closes; unlocked-not-current → padlock. */}
+              {isCurrent ? <X size={13} /> : <Lock size={13} />}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => mgr.handleEditCollection(collection)}

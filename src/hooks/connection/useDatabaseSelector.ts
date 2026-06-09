@@ -63,6 +63,14 @@ export function useDatabaseSelector(
     collectionId: string,
     password?: string,
   ) => Promise<void> | void,
+  /**
+   * Called when the user closes the currently-open database via the
+   * row's close button. Lets the host clear connection state, drop
+   * the auto-open-last-collection pointer, and re-show the picker.
+   * No-op when omitted (used in tests / inline contexts that don't
+   * need to react).
+   */
+  onDatabaseClose?: () => Promise<void> | void,
 ) {
   const databaseManager = DatabaseManager.getInstance();
   const { saveData } = useConnections();
@@ -427,6 +435,46 @@ export function useDatabaseSelector(
     }
   };
 
+  /**
+   * Inverse of `handleSelectCollection`. Used by the per-row close
+   * button when the row is the currently-open database (closes +
+   * locks) or when it's an encrypted-but-unlocked side row (locks
+   * only). Triggers `onDatabaseClose` so the host can clear its
+   * connection panel / auto-open setting.
+   */
+  const handleCloseCollection = useCallback(
+    async (collection: ConnectionDatabase) => {
+      closeCollectionMenu();
+      setError("");
+
+      const currentId = databaseManager.getCurrentDatabase()?.id;
+      const isCurrent = currentId === collection.id;
+
+      if (isCurrent) {
+        // Flush any pending edits BEFORE detaching the manager —
+        // ConnectionProvider's debouncer runs on a 500ms timer and
+        // would throw "No collection selected" if it fires after
+        // closeCurrentDatabase nulls the manager. saveData() is
+        // a no-op when nothing changed, so this is safe to call
+        // unconditionally.
+        try {
+          await saveData();
+        } catch (error) {
+          console.error("Failed to flush pending edits before close:", error);
+        }
+        databaseManager.closeCurrentDatabase();
+        await Promise.resolve(onDatabaseClose?.());
+      } else if (collection.isEncrypted) {
+        databaseManager.lockDatabase(collection.id);
+      }
+
+      // Refresh so any `isCurrent`/`isUnlocked` consumers in the row
+      // re-render against the new state.
+      await loadDatabases();
+    },
+    [closeCollectionMenu, databaseManager, loadDatabases, onDatabaseClose, saveData],
+  );
+
   const handlePasswordSubmit = async () => {
     if (!selectedCollection) return;
 
@@ -734,9 +782,22 @@ export function useDatabaseSelector(
     setEditingChain(null);
   };
 
+  // The row UI needs to know whether a given collection is the
+  // currently-open one and (for encrypted rows) whether its password
+  // is cached, so it can decide whether to render a close/lock button.
+  // The manager is a singleton — these read straight from it on each
+  // render. Re-renders triggered by `collections` (after open/close)
+  // pick up the new value naturally.
+  const isCurrentDatabase = (id: string) =>
+    databaseManager.getCurrentDatabase()?.id === id;
+  const isDatabaseUnlocked = (id: string) =>
+    databaseManager.isDatabaseUnlocked(id);
+
   return {
     // Collections
     collections,
+    isCurrentDatabase,
+    isDatabaseUnlocked,
     showCreateForm,
     setShowCreateForm,
     showImportForm,
@@ -757,6 +818,7 @@ export function useDatabaseSelector(
     handleEditCollection,
     handleUpdateCollection,
     handleSelectCollection,
+    handleCloseCollection,
     handleCloneCollection,
     handlePasswordSubmit,
     collectionMenu,

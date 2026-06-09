@@ -39,15 +39,17 @@
       "connections": "연결"
     },
     "actions": {
-      "import": "가져오기",
-      "export": "내보내기",
+      "clone": "복제",
+      "close": "닫기",
+      "delete": "삭제",
       "duplicate": "복제",
       "edit": "편집",
-      "delete": "삭제",
+      "export": "내보내기",
+      "import": "가져오기",
+      "lock": "잠금",
       "moreActions": "추가 작업",
       "open": "열기",
-      "unlock": "잠금 해제",
-      "clone": "복제"
+      "unlock": "잠금 해제"
     },
     "connections": {
       "title": "연결 가져오기 / 내보내기",

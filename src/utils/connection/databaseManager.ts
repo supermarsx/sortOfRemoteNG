@@ -436,6 +436,56 @@ export class DatabaseManager {
     this.rememberUnlockedDatabase(collection, password);
   }
 
+  /**
+   * Inverse of `selectDatabase`: deselects the currently open database
+   * and forgets its cached password so a subsequent open will prompt
+   * again. No-op when nothing is open.
+   *
+   * Returns the id of the database that was closed, or `null` if there
+   * was nothing to close — callers use that to decide whether to clear
+   * downstream UI state (connections panel, auto-open-last setting).
+   */
+  closeCurrentDatabase(): string | null {
+    const closing = this.currentDatabase;
+    if (!closing) return null;
+    this.currentDatabase = null;
+    this.currentPassword = null;
+    // "Close" means "lock too" — the unlock cache exists so the user
+    // doesn't get re-prompted while flipping between databases; an
+    // explicit close is the user saying they want it locked.
+    this.forgetUnlockedDatabase(closing.id);
+    SettingsManager.getInstance().logAction(
+      "info",
+      "Database closed",
+      undefined,
+      `Closed database "${closing.name}"`,
+    );
+    return closing.id;
+  }
+
+  /**
+   * Inverse of `unlockDatabase`: forgets the cached password for an
+   * encrypted database so the next open / export / clone re-prompts.
+   * If the locked database happens to be the current one, also closes
+   * it (you can't keep a database active while it has no password).
+   *
+   * Non-encrypted databases short-circuit — there is nothing to lock.
+   */
+  lockDatabase(id: string): void {
+    if (this.currentDatabase?.id === id) {
+      this.closeCurrentDatabase();
+      return;
+    }
+    if (!this.unlockedDatabasePasswords.has(id)) return;
+    this.forgetUnlockedDatabase(id);
+    SettingsManager.getInstance().logAction(
+      "info",
+      "Database locked",
+      undefined,
+      `Locked database ${id}`,
+    );
+  }
+
   isDatabaseUnlocked(databaseId: string): boolean {
     if (this.unlockedDatabasePasswords.has(databaseId)) {
       return true;

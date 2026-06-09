@@ -154,13 +154,15 @@ interface ToolTabViewerProps {
     databaseId: string,
     password?: string,
   ) => Promise<void> | void;
+  /** Close the currently-open database (and lock its cached password). */
+  onDatabaseClose?: () => Promise<void> | void;
 }
 
 /**
  * Renders the appropriate tool component inside a session tab.
  * Used by SessionViewer when the session protocol starts with "tool:".
  */
-export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect, onEditConnection, onDatabaseSelect }) => {
+export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect, onEditConnection, onDatabaseSelect, onDatabaseClose }) => {
   const { state } = useConnections();
   const { settings } = useSettings();
   const toolKey = getToolKeyFromProtocol(session.protocol);
@@ -207,7 +209,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, 
       {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
       {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
       {toolKey === 'database' && (
-        <DatabasePanel onClose={onClose} onDatabaseSelect={onDatabaseSelect} />
+        <DatabasePanel onClose={onClose} onDatabaseSelect={onDatabaseSelect} onDatabaseClose={onDatabaseClose} />
       )}
       {toolKey === 'bulkEditor' && (
         <BulkConnectionEditor isOpen onClose={onClose} onEditConnection={onEditConnection} />

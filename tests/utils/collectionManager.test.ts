@@ -266,6 +266,55 @@ describe("DatabaseManager", () => {
     ).rejects.toThrow();
   });
 
+  it("closeCurrentDatabase clears current + cached password and returns the id", async () => {
+    const secure = await manager.createDatabase("S", "desc", true, "pw");
+    await manager.selectDatabase(secure.id, "pw");
+
+    expect(manager.getCurrentDatabase()?.id).toBe(secure.id);
+    expect(manager.isDatabaseUnlocked(secure.id)).toBe(true);
+
+    const closed = manager.closeCurrentDatabase();
+    expect(closed).toBe(secure.id);
+    expect(manager.getCurrentDatabase()).toBeNull();
+    // Close-then-lock posture: cached password is forgotten too.
+    expect(manager.isDatabaseUnlocked(secure.id)).toBe(false);
+    // Idempotent: a second close is a no-op.
+    expect(manager.closeCurrentDatabase()).toBeNull();
+  });
+
+  it("lockDatabase forgets a cached unlock without disturbing the current selection", async () => {
+    const current = await manager.createDatabase("Current");
+    const other = await manager.createDatabase("Other", "desc", true, "pw");
+    await manager.selectDatabase(current.id);
+    await manager.unlockDatabase(other.id, "pw");
+
+    expect(manager.isDatabaseUnlocked(other.id)).toBe(true);
+    expect(manager.getCurrentDatabase()?.id).toBe(current.id);
+
+    manager.lockDatabase(other.id);
+
+    expect(manager.isDatabaseUnlocked(other.id)).toBe(false);
+    // The unrelated current database must be left alone.
+    expect(manager.getCurrentDatabase()?.id).toBe(current.id);
+  });
+
+  it("lockDatabase on the current database delegates to close", async () => {
+    const secure = await manager.createDatabase("S", "desc", true, "pw");
+    await manager.selectDatabase(secure.id, "pw");
+
+    manager.lockDatabase(secure.id);
+
+    expect(manager.getCurrentDatabase()).toBeNull();
+    expect(manager.isDatabaseUnlocked(secure.id)).toBe(false);
+  });
+
+  it("lockDatabase is a no-op on a non-unlocked database", async () => {
+    const secure = await manager.createDatabase("S", "desc", true, "pw");
+    // Never unlocked → nothing to forget; should not throw.
+    expect(() => manager.lockDatabase(secure.id)).not.toThrow();
+    expect(manager.isDatabaseUnlocked(secure.id)).toBe(false);
+  });
+
   it("throws CorruptedDataError when decrypted data is invalid", async () => {
     const password = "secret";
     // Encrypt invalid JSON via the same WebCrypto helper the manager uses.

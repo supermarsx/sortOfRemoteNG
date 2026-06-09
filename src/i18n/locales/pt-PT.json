@@ -39,15 +39,17 @@
       "connections": "Ligações"
     },
     "actions": {
-      "import": "Importar",
-      "export": "Exportar",
+      "clone": "Clonar",
+      "close": "Fechar",
+      "delete": "Eliminar",
       "duplicate": "Duplicar",
       "edit": "Editar",
-      "delete": "Eliminar",
+      "export": "Exportar",
+      "import": "Importar",
+      "lock": "Bloquear",
       "moreActions": "Mais ações",
       "open": "Abrir",
-      "unlock": "Desbloquear",
-      "clone": "Clonar"
+      "unlock": "Desbloquear"
     },
     "connections": {
       "title": "Importação / exportação de ligações",

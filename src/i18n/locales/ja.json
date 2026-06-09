@@ -39,15 +39,17 @@
       "connections": "接続"
     },
     "actions": {
-      "import": "インポート",
-      "export": "エクスポート",
+      "clone": "クローン",
+      "close": "閉じる",
+      "delete": "削除",
       "duplicate": "複製",
       "edit": "編集",
-      "delete": "削除",
+      "export": "エクスポート",
+      "import": "インポート",
+      "lock": "ロック",
       "moreActions": "その他の操作",
       "open": "開く",
-      "unlock": "ロック解除",
-      "clone": "クローン"
+      "unlock": "ロック解除"
     },
     "connections": {
       "title": "接続のインポート / エクスポート",

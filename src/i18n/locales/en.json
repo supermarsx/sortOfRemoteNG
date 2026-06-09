@@ -59,15 +59,17 @@
       "connections": "Connections"
     },
     "actions": {
-      "import": "Import",
-      "export": "Export",
+      "clone": "Clone",
+      "close": "Close",
+      "delete": "Delete",
       "duplicate": "Duplicate",
       "edit": "Edit",
-      "delete": "Delete",
+      "export": "Export",
+      "import": "Import",
+      "lock": "Lock",
       "moreActions": "More actions",
       "open": "Open",
-      "unlock": "Unlock",
-      "clone": "Clone"
+      "unlock": "Unlock"
     },
     "connections": {
       "title": "Import / Export",

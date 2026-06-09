@@ -578,6 +578,32 @@ const AppContent: React.FC = () => {
     ],
   );
 
+  /**
+   * Inverse of `handleDatabaseSelect`. Wired into the per-row close
+   * button: when the user closes the currently-open database, also
+   * clear the connection panel, drop the auto-open-last pointer (so
+   * the next boot starts on the picker rather than silently
+   * reopening), and surface the empty-library state.
+   */
+  const handleDatabaseClose = useCallback(async (): Promise<void> => {
+    // Manager already closed it (per useDatabaseSelector.handleCloseCollection)
+    // by the time we get called — our job here is to bring the UI
+    // back in line with "no database open".
+    dispatch({ type: "SET_CONNECTIONS", payload: [] });
+    dispatch({ type: "SET_TAB_GROUPS", payload: [] });
+    try {
+      const current = settingsManager.getSettings();
+      if (current.autoOpenLastCollection && current.lastOpenedCollectionId) {
+        await settingsManager.saveSettings(
+          { ...current, lastOpenedCollectionId: undefined },
+          { silent: true },
+        );
+      }
+    } catch (error) {
+      console.error("Failed to clear lastOpenedCollectionId:", error);
+    }
+  }, [dispatch, settingsManager]);
+
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
     const session = createToolSession('connectionEditor', { name: 'New Connection' });
@@ -1300,7 +1326,7 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleDatabaseSelect} />}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleDatabaseSelect} onDatabaseClose={handleDatabaseClose} />}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
             ) : (
@@ -1403,6 +1429,7 @@ const AppContent: React.FC = () => {
         handleQuickConnectWithHistory={handleQuickConnectWithHistory}
         clearQuickConnectHistory={clearQuickConnectHistory}
         handleDatabaseSelect={handleDatabaseSelect}
+        handleDatabaseClose={handleDatabaseClose}
         handleConnect={handleConnect}
         settingsManager={settingsManager}
         databaseManager={databaseManager}

@@ -14,6 +14,12 @@ interface DatabasePanelProps {
     databaseId: string,
     password?: string,
   ) => Promise<void> | void;
+  /**
+   * Called when the user closes the currently-open database from the
+   * row toolbar. Lets the App clear connection state, drop the
+   * auto-open-last pointer, and surface the empty-library view.
+   */
+  onDatabaseClose?: () => Promise<void> | void;
 }
 
 /**
@@ -26,10 +32,12 @@ interface DatabasePanelProps {
 export const DatabasePanel: React.FC<DatabasePanelProps> = ({
   onClose,
   onDatabaseSelect,
+  onDatabaseClose,
 }) => {
   const mgr = useDatabaseSelector(
     true,
     onDatabaseSelect ?? (() => Promise.resolve()),
+    onDatabaseClose,
   );
 
   return (

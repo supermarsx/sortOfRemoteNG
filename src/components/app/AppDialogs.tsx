@@ -65,6 +65,14 @@ interface AppDialogsProps {
   handleQuickConnectWithHistory: (...args: any[]) => void;
   clearQuickConnectHistory: () => void;
   handleDatabaseSelect: (id: string) => Promise<void>;
+  /**
+   * Inverse of `handleDatabaseSelect` — closes the currently-open
+   * database and clears the connection panel + auto-open pointer.
+   * Threaded through here for symmetry; the picker that consumes it
+   * lives in the ToolPanel tab, not in this dialog tree, but keeping
+   * both in sync at the App boundary keeps the API tidy.
+   */
+  handleDatabaseClose?: () => Promise<void>;
   handleConnect?: (connection: Connection) => void;
   settingsManager: SettingsManager;
   databaseManager: DatabaseManager;

@@ -39,15 +39,17 @@
       "connections": "Verbindungen"
     },
     "actions": {
-      "import": "Importieren",
-      "export": "Exportieren",
+      "clone": "Klonen",
+      "close": "Schließen",
+      "delete": "Loeschen",
       "duplicate": "Duplizieren",
       "edit": "Bearbeiten",
-      "delete": "Loeschen",
+      "export": "Exportieren",
+      "import": "Importieren",
+      "lock": "Sperren",
       "moreActions": "Weitere Aktionen",
       "open": "Oeffnen",
-      "unlock": "Entsperren",
-      "clone": "Klonen"
+      "unlock": "Entsperren"
     },
     "connections": {
       "title": "Verbindungsimport / -export",
