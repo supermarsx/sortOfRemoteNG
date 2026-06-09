@@ -72,8 +72,12 @@ describe("InternalProxyManager", () => {
     fireEvent.click(screen.getByText("Request Log"));
     const logUrl = await screen.findByText("https://example.com/api/status");
     expect(logUrl).toBeInTheDocument();
-    const logTable = logUrl.closest("table");
-    expect(logTable?.parentElement?.className).toContain("sor-surface-card");
+    // P6b: log entries are now expandable rows (not a flat table).
+    // The collapsed row is a <button> with aria-expanded; the parent
+    // is a bordered div, not a <table>.
+    const rowButton = logUrl.closest('button[aria-expanded]');
+    expect(rowButton).not.toBeNull();
+    expect(rowButton?.getAttribute("aria-expanded")).toBe("false");
 
     fireEvent.click(screen.getByText("Statistics"));
     expect(
@@ -258,6 +262,37 @@ describe("InternalProxyManager", () => {
     // identical (the proxy will offer a themed challenge or surface
     // the same "Auth required" badge).
     expect(await screen.findByTestId("session-status-auth")).toBeInTheDocument();
+  });
+
+  it("expands a request-log row and copies the URL on click (P6b)", async () => {
+    // Provide a writeText mock so navigator.clipboard.writeText() doesn't
+    // throw in jsdom. Captures the most recent value.
+    const writeMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: writeMock },
+      writable: true,
+      configurable: true,
+    });
+
+    render(<InternalProxyManager isOpen onClose={() => {}} />);
+    await screen.findByText("Sessions");
+    fireEvent.click(screen.getByText("Request Log"));
+
+    // Collapsed row is a button with aria-expanded="false". Click it
+    // and verify the expand pane appears with the URL detail field +
+    // a copy button.
+    const row = (await screen.findByText("https://example.com/api/status"))
+      .closest('button[aria-expanded]');
+    expect(row).not.toBeNull();
+    expect(row?.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(row!);
+    expect(row?.getAttribute("aria-expanded")).toBe("true");
+
+    // The expanded URL detail's copy button.
+    const copyBtn = await screen.findByTestId("log-copy-url");
+    expect(copyBtn).toBeInTheDocument();
+    fireEvent.click(copyBtn);
+    expect(writeMock).toHaveBeenCalledWith("https://example.com/api/status");
   });
 
   it("info panel describes universal mediation and themed errors (P4 copy fix)", async () => {

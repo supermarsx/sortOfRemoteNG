@@ -98,6 +98,25 @@ export function useWebBrowser(session: ConnectionSession) {
   const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
+  /**
+   * P6c: set to `true` once `fetchAndVerifyCert` has resolved trust
+   * for this tab — either because the cert was already in the trust
+   * store, the user accepted the themed TrustWarningDialog, or the
+   * trust policy auto-trusted (always-trust / tofu). When true, the
+   * proxy reqwest client is built with `verify_ssl: false` so it
+   * doesn't re-reject the cert and undo the user's accept.
+   *
+   * Pre-P6c: the trust accept landed in localStorage but `verify_ssl`
+   * was still derived solely from `connection.httpVerifySsl` (default
+   * `true`). The proxy then failed TLS handshake and showed the P2
+   * "Secure connection failed" themed page — from the user's POV the
+   * trust prompt accomplished nothing.
+   *
+   * Scope: per-tab (i.e. per useWebBrowser instance). The proxy is
+   * started once at first navigation and bound to the connection's
+   * target URL, so a single trust decision covers the entire session.
+   */
+  const tlsTrustAcceptedRef = useRef(false);
   const LOAD_TIMEOUT_MS = 30_000;
 
   const sslVerifyDisabled =
@@ -177,7 +196,12 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.trustPolicy,
       connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
     );
-    if (policy === "always-trust") return true;
+    if (policy === "always-trust") {
+      // P6c: explicit "always-trust" — propagate to the proxy so it
+      // doesn't TLS-reject what the user said to trust.
+      tlsTrustAcceptedRef.current = true;
+      return true;
+    }
 
     // Capture the navigation generation BEFORE the async gap so we can
     // detect whether a newer navigation has superseded us after the
@@ -259,9 +283,16 @@ export function useWebBrowser(session: ConnectionSession) {
       setCertIdentity(identity);
       const connId = connection?.id;
       const result = verifyIdentity(session.hostname, port, "https", identity, connId);
-      if (result.status === "trusted") return true;
+      if (result.status === "trusted") {
+        // P6c: the cert was previously accepted (this session or a
+        // prior one). Tell the proxy not to second-guess us.
+        tlsTrustAcceptedRef.current = true;
+        return true;
+      }
       if (result.status === "first-use" && policy === "tofu") {
         trustIdentity(session.hostname, port, "https", identity, false, connId);
+        // P6c: TOFU auto-trusted on first contact — same as above.
+        tlsTrustAcceptedRef.current = true;
         return true;
       }
       if (
@@ -293,6 +324,13 @@ export function useWebBrowser(session: ConnectionSession) {
       const port = connection?.port || 443;
       trustIdentity(session.hostname, port, "https", certIdentity, true, connection?.id);
     }
+    // P6c: persist the user's accept so the next `navigateToUrl`
+    // call passes `verify_ssl: false` to the proxy. Pre-P6c this was
+    // the missing wire — the dialog accept landed in localStorage but
+    // the proxy's reqwest client kept TLS verification on and
+    // rejected the cert, ending with a themed "Secure connection
+    // failed" page in the iframe and no recovery path.
+    tlsTrustAcceptedRef.current = true;
     setTrustPrompt(null);
     trustResolveRef.current?.(true);
     trustResolveRef.current = null;
@@ -385,9 +423,21 @@ export function useWebBrowser(session: ConnectionSession) {
                 username: resolvedCreds?.username ?? "",
                 password: resolvedCreds?.password ?? "",
                 local_port: 0,
+                // P6c: the trust decision made by `fetchAndVerifyCert`
+                // (auto-trusted via policy, accepted via dialog, or
+                // looked up from a prior accept) wins. If the user
+                // trusted this cert we MUST disable verification in
+                // the proxy's reqwest client — otherwise it'd
+                // reject the cert again and serve a "Secure
+                // connection failed" themed page that the user
+                // can't recover from. The `httpVerifySsl` setting
+                // is still honoured as the gating policy: if the
+                // user explicitly turned verification off on the
+                // connection record (rare), we respect that too.
                 verify_ssl:
-                  (connection as unknown as Record<string, unknown>)
-                    ?.httpVerifySsl ?? true,
+                  !tlsTrustAcceptedRef.current &&
+                  ((connection as unknown as Record<string, unknown>)
+                    ?.httpVerifySsl ?? true) !== false,
                 connection_id: connection?.id ?? "",
               },
             },

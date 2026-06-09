@@ -1,10 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   RefreshCw,
   Trash2,
   Activity,
   AlertCircle,
   CheckCircle2,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   Clock,
   Globe,
   ArrowUpDown,
@@ -212,7 +216,7 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               </div>
               <button
                 onClick={() => mgr.handleStopSession(s.session_id)}
-                className="ml-3 p-1.5 hover:bg-error/30 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
+                className="ml-auto flex-shrink-0 p-1.5 hover:bg-error/30 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
                 title="Stop session"
               >
                 <StopCircle size={14} />
@@ -228,11 +232,158 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
+/**
+ * One request-log row that collapses to a single line (time, method,
+ * URL, status) and expands on click to show the full URL, the full
+ * error (if any), the session ID, and the timestamp — each with its
+ * own copy-to-clipboard icon button that swaps to a green checkmark
+ * for 1.5s after a successful copy. Layout mirrors `DiagRow` in
+ * `ConnectionDiagnostics.tsx` so the visual language stays consistent
+ * across the app's expandable-row surfaces.
+ */
+const LogRow: React.FC<{
+  entry: {
+    session_id: string;
+    method: string;
+    url: string;
+    status: number;
+    error?: string | null;
+    timestamp: string;
+  };
+}> = ({ entry }) => {
+  const [expanded, setExpanded] = useState(false);
+  // Track which field was most recently copied so the matching
+  // button shows the green checkmark. One state value covers all
+  // buttons in this row since only one copy can flash at a time.
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = (label: string, value: string) => {
+    navigator.clipboard.writeText(value).catch(() => {});
+    setCopied(label);
+    window.setTimeout(() => setCopied(null), 1500);
+  };
+  return (
+    <div className="border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[var(--color-surfaceHover)]/60 transition-colors"
+        aria-expanded={expanded}
+      >
+        <span className="text-[10px] text-[var(--color-textMuted)] font-mono whitespace-nowrap w-14 flex-shrink-0">
+          {formatTime(entry.timestamp)}
+        </span>
+        <span className={`text-[10px] font-mono font-semibold w-12 flex-shrink-0 ${getMethodColor(entry.method)}`}>
+          {entry.method}
+        </span>
+        <span className="flex-1 text-xs text-[var(--color-textSecondary)] truncate min-w-0">
+          {entry.url}
+        </span>
+        <span className={`text-[10px] font-mono font-semibold w-10 text-right flex-shrink-0 ${getStatusColor(entry.status)}`}>
+          {entry.status}
+        </span>
+        {expanded ? (
+          <ChevronUp size={12} className="text-[var(--color-textMuted)] flex-shrink-0" />
+        ) : (
+          <ChevronDown size={12} className="text-[var(--color-textMuted)] flex-shrink-0" />
+        )}
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 border-t border-[var(--color-border)] space-y-2 text-xs">
+          <LogDetailField
+            label="URL"
+            value={entry.url}
+            mono
+            wrap
+            isCopied={copied === "url"}
+            onCopy={() => copy("url", entry.url)}
+          />
+          {entry.error && (
+            <LogDetailField
+              label="Error"
+              value={entry.error}
+              tone="error"
+              mono
+              wrap
+              isCopied={copied === "error"}
+              onCopy={() => copy("error", entry.error!)}
+            />
+          )}
+          <LogDetailField
+            label="Session ID"
+            value={entry.session_id}
+            mono
+            isCopied={copied === "session"}
+            onCopy={() => copy("session", entry.session_id)}
+          />
+          <LogDetailField
+            label="Timestamp"
+            value={entry.timestamp}
+            mono
+            isCopied={copied === "timestamp"}
+            onCopy={() => copy("timestamp", entry.timestamp)}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * One labelled detail field inside an expanded LogRow — value
+ * shown in monospace with an inline Copy button that flips to a
+ * green Check for 1.5s after a copy. `tone="error"` paints the
+ * value box red for the error field.
+ */
+const LogDetailField: React.FC<{
+  label: string;
+  value: string;
+  mono?: boolean;
+  wrap?: boolean;
+  tone?: "error";
+  isCopied: boolean;
+  onCopy: () => void;
+}> = ({ label, value, mono, wrap, tone, isCopied, onCopy }) => (
+  <div className="flex items-start gap-2 pt-2">
+    <div className="flex-1 min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)] mb-0.5">
+        {label}
+      </div>
+      <div
+        className={[
+          "text-[11px]",
+          mono ? "font-mono" : "",
+          wrap ? "break-all" : "truncate",
+          tone === "error"
+            ? "text-error bg-error/10 border border-error/20 rounded px-2 py-1"
+            : "text-[var(--color-textSecondary)]",
+        ].join(" ")}
+      >
+        {value}
+      </div>
+    </div>
+    <button
+      type="button"
+      onClick={onCopy}
+      className="sor-icon-btn-sm flex-shrink-0 mt-3.5"
+      title={`Copy ${label.toLowerCase()}`}
+      aria-label={`Copy ${label.toLowerCase()}`}
+      data-testid={`log-copy-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      {isCopied ? (
+        <Check size={12} className="text-success" />
+      ) : (
+        <Copy size={12} />
+      )}
+    </button>
+  </div>
+);
+
 const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3">
     <div className="flex items-center justify-between">
       <p className="text-sm text-[var(--color-textSecondary)]">
         Last {mgr.requestLog.length} proxied requests (newest first).
+        Click a row to see full details and copy individual fields.
       </p>
       {mgr.requestLog.length > 0 && (
         <button
@@ -254,52 +405,10 @@ const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </p>
       </div>
     ) : (
-      <div className="sor-surface-card overflow-hidden">
-        <table className="sor-data-table w-full text-xs">
-          <thead>
-            <tr className="border-b border-[var(--color-border)] text-[var(--color-textSecondary)]">
-              <th className="text-left px-3 py-2 w-16">Time</th>
-              <th className="text-left px-3 py-2 w-16">Method</th>
-              <th className="text-left px-3 py-2">URL</th>
-              <th className="text-left px-3 py-2 w-16">Status</th>
-              <th className="text-left px-3 py-2 w-32">Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...mgr.requestLog].reverse().map((entry, i) => (
-              <tr
-                key={i}
-                className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surfaceHover)]/50"
-              >
-                <td className="px-3 py-1.5 text-[var(--color-textMuted)] font-mono whitespace-nowrap">
-                  {formatTime(entry.timestamp)}
-                </td>
-                <td
-                  className={`px-3 py-1.5 font-mono font-medium ${getMethodColor(entry.method)}`}
-                >
-                  {entry.method}
-                </td>
-                <td
-                  className="px-3 py-1.5 text-[var(--color-textSecondary)] truncate max-w-sm"
-                  title={entry.url}
-                >
-                  {entry.url}
-                </td>
-                <td
-                  className={`px-3 py-1.5 font-mono font-medium ${getStatusColor(entry.status)}`}
-                >
-                  {entry.status}
-                </td>
-                <td
-                  className="px-3 py-1.5 text-error truncate max-w-[8rem]"
-                  title={entry.error || ""}
-                >
-                  {entry.error || "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-1.5">
+        {[...mgr.requestLog].reverse().map((entry, i) => (
+          <LogRow key={i} entry={entry} />
+        ))}
       </div>
     )}
   </div>
