@@ -342,63 +342,79 @@ export function useWebBrowser(session: ConnectionSession) {
         );
       }, LOAD_TIMEOUT_MS);
       try {
-        if (hasAuth && resolvedCreds) {
-          debugLog("WebBrowser", "Starting auth proxy for", { url });
-          const urlObj = new URL(url);
-          const targetOrigin = urlObj.origin + "/";
-          const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
-          if (proxySessionIdRef.current && proxyUrlRef.current) {
-            const proxyBase = proxyUrlRef.current.replace(/\/+$/, "");
-            if (iframeRef.current) {
-              iframeRef.current.src = proxyBase + pagePath;
-            }
-          } else {
-            await stopProxy();
-            if (gen !== navGenRef.current) return;
-            const response = await invoke<ProxyMediatorResponse>(
-              "start_basic_auth_proxy",
-              {
-                config: {
-                  target_url: targetOrigin,
-                  username: resolvedCreds.username,
-                  password: resolvedCreds.password,
-                  local_port: 0,
-                  verify_ssl:
-                    (connection as unknown as Record<string, unknown>)
-                      ?.httpVerifySsl ?? true,
-                  connection_id: connection?.id ?? "",
-                },
-              },
-            );
-            if (gen !== navGenRef.current) {
-              invoke("stop_basic_auth_proxy", {
-                sessionId: response.session_id,
-              }).catch(() => {});
-              return;
-            }
-            proxySessionIdRef.current = response.session_id;
-            proxyUrlRef.current = response.proxy_url;
-            if (
-              settings.webRecording?.autoRecordWebSessions &&
-              response.session_id
-            ) {
-              try {
-                await webRecorder.startRecording(
-                  response.session_id,
-                  settings.webRecording?.recordHeaders ?? true,
-                );
-              } catch (err) {
-                console.error("Auto-record failed:", err);
-              }
-            }
-            if (iframeRef.current) {
-              const proxyBase = response.proxy_url.replace(/\/+$/, "");
-              iframeRef.current.src = proxyBase + pagePath;
-            }
+        // ── Universal proxy mediation (P1) ──
+        // Every http/https tab now routes through `start_basic_auth_proxy`
+        // regardless of whether Basic Auth is configured. Reasons:
+        //   • Refused / DNS / TLS / 5xx failures get themed error pages
+        //     served by the proxy backend (P2), not browser-native
+        //     "This page can't be displayed" chrome.
+        //   • Upstream 401 challenges are intercepted by the proxy and
+        //     surfaced via a themed inline form (P3), suppressing the
+        //     browser-native Basic Auth popup that iframes otherwise
+        //     show by default.
+        //   • Every session — including failed ones — registers in
+        //     InternalProxyManager (`http_cmds.rs:190` inserts before
+        //     the first upstream call), so the manager actually shows
+        //     what's open. Pre-P1 no-auth tabs bypassed the proxy
+        //     entirely and were invisible.
+        // The backend `username`/`password` fields accept empty strings;
+        // `http.rs:652` only injects the Basic-Auth header when at least
+        // one of them is non-empty, so no-auth connections still work
+        // exactly as before — just through a one-hop loopback mediator.
+        debugLog("WebBrowser", "Routing through proxy", { url, hasAuth });
+        const urlObj = new URL(url);
+        const targetOrigin = urlObj.origin + "/";
+        const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
+        if (proxySessionIdRef.current && proxyUrlRef.current) {
+          const proxyBase = proxyUrlRef.current.replace(/\/+$/, "");
+          if (iframeRef.current) {
+            iframeRef.current.src = proxyBase + pagePath;
           }
         } else {
+          await stopProxy();
+          if (gen !== navGenRef.current) return;
+          const response = await invoke<ProxyMediatorResponse>(
+            "start_basic_auth_proxy",
+            {
+              config: {
+                target_url: targetOrigin,
+                // Empty strings when no auth — the backend treats
+                // (empty, empty) as "no credentials" and skips the
+                // basic_auth() call on every upstream request.
+                username: resolvedCreds?.username ?? "",
+                password: resolvedCreds?.password ?? "",
+                local_port: 0,
+                verify_ssl:
+                  (connection as unknown as Record<string, unknown>)
+                    ?.httpVerifySsl ?? true,
+                connection_id: connection?.id ?? "",
+              },
+            },
+          );
+          if (gen !== navGenRef.current) {
+            invoke("stop_basic_auth_proxy", {
+              sessionId: response.session_id,
+            }).catch(() => {});
+            return;
+          }
+          proxySessionIdRef.current = response.session_id;
+          proxyUrlRef.current = response.proxy_url;
+          if (
+            settings.webRecording?.autoRecordWebSessions &&
+            response.session_id
+          ) {
+            try {
+              await webRecorder.startRecording(
+                response.session_id,
+                settings.webRecording?.recordHeaders ?? true,
+              );
+            } catch (err) {
+              console.error("Auto-record failed:", err);
+            }
+          }
           if (iframeRef.current) {
-            iframeRef.current.src = url;
+            const proxyBase = response.proxy_url.replace(/\/+$/, "");
+            iframeRef.current.src = proxyBase + pagePath;
           }
         }
         setCurrentUrl(url);
@@ -454,9 +470,9 @@ export function useWebBrowser(session: ConnectionSession) {
     };
   }, []);
 
-  // Proxy keepalive polling
+  // Proxy keepalive polling. P1: every tab now has a proxy session, so
+  // health monitoring applies universally — drop the pre-P1 hasAuth gate.
   useEffect(() => {
-    if (!hasAuth) return;
     if (!settings.proxyKeepaliveEnabled) return;
     const intervalMs = (settings.proxyKeepaliveIntervalSeconds ?? 10) * 1000;
     const id = setInterval(async () => {
@@ -513,13 +529,12 @@ export function useWebBrowser(session: ConnectionSession) {
     }, intervalMs);
     return () => clearInterval(id);
   }, [
-    hasAuth,
     currentUrl,
     settings.proxyKeepaliveEnabled,
     settings.proxyKeepaliveIntervalSeconds,
     settings.proxyAutoRestart,
     settings.proxyMaxAutoRestarts,
-  ]);  
+  ]);
 
   // Manual proxy restart
   const handleRestartProxy = useCallback(async () => {
