@@ -395,6 +395,12 @@ pub struct BasicAuthProxyConfig {
     /// Connection ID that owns this proxy session (for per-connection isolation)
     #[serde(default)]
     pub connection_id: String,
+    /// P7: snapshot of the frontend's live `:root --color-*` CSS
+    /// variables. Forwarded into themed pages so they match the
+    /// user's current theme. Optional: when absent, the proxy falls
+    /// back to the dark-theme defaults in `theme_tokens::Default`.
+    #[serde(default)]
+    pub theme_tokens: Option<crate::theme_tokens::ThemeTokens>,
 }
 
 /// Response from starting the proxy mediator
@@ -554,6 +560,11 @@ pub struct AxumProxyState {
     pub username: Arc<std::sync::RwLock<String>>,
     pub password: Arc<std::sync::RwLock<String>>,
     pub pending_nonce: Arc<std::sync::RwLock<Option<String>>>,
+    /// P7: live snapshot of the frontend's `:root --color-*` tokens.
+    /// `RwLock` so a new `update_proxy_theme(session_id, tokens)` IPC
+    /// (planned follow-up) can push live updates when the user
+    /// changes themes mid-session without restarting the proxy.
+    pub theme: Arc<std::sync::RwLock<crate::theme_tokens::ThemeTokens>>,
     pub target_origin: String,
     pub client: reqwest::Client,
     pub request_count: Arc<AtomicU64>,
@@ -791,12 +802,21 @@ pub async fn axum_proxy_handler(
                 } else {
                     None
                 };
+                // P7: pull live theme tokens out of the RwLock so the
+                // served form matches whatever theme the user has
+                // active right now.
+                let theme = state
+                    .theme
+                    .read()
+                    .map(|g| g.clone())
+                    .unwrap_or_default();
                 return crate::themed_auth::themed_challenge_response(
                     &full_url,
                     &path_and_query,
                     &nonce,
                     &existing_user,
                     error_hint,
+                    &theme,
                 );
             }
 
@@ -881,10 +901,17 @@ pub async fn axum_proxy_handler(
                             });
                         }
                     }
+                    // P7: snapshot theme tokens for this render.
+                    let theme = state
+                        .theme
+                        .read()
+                        .map(|g| g.clone())
+                        .unwrap_or_default();
                     return crate::themed_status::themed_status_response(
                         status_u16,
                         &full_url,
                         &raw_bytes,
+                        &theme,
                     );
                 }
                 // Non-HTML 4xx/5xx — pass through as-is so JSON/XML
@@ -1061,7 +1088,13 @@ pub async fn axum_proxy_handler(
                 }
             }
 
-            crate::themed_errors::themed_error_response(kind, &full_url, &err_msg)
+            // P7: snapshot theme tokens for this render.
+            let theme = state
+                .theme
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default();
+            crate::themed_errors::themed_error_response(kind, &full_url, &err_msg, &theme)
         }
     }
 }

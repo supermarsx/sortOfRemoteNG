@@ -338,13 +338,17 @@ pub fn presentation_for(code: u16) -> StatusPresentation {
     }
 }
 
-/// Map a [`StatusTone`] to its (rgb-triplet, hex) accent colour.
-fn tone_accent(tone: StatusTone) -> (&'static str, &'static str) {
+/// Map a [`StatusTone`] to its (rgb-triplet, hex) accent colour,
+/// pulled from the snapshotted theme so the page matches the user's
+/// current theme selection (P7).
+fn tone_accent<'a>(
+    tone: StatusTone,
+    theme: &'a crate::theme_tokens::ThemeTokens,
+) -> (&'a str, &'a str) {
     match tone {
-        StatusTone::Error => ("239, 68, 68", "#ef4444"),
-        StatusTone::Warn => ("245, 158, 11", "#f59e0b"),
-        // Info → sky-blue (--color-info default from themeManager.ts)
-        StatusTone::Info => ("6, 182, 212", "#06b6d4"),
+        StatusTone::Error => theme.error_pair(),
+        StatusTone::Warn => theme.warning_pair(),
+        StatusTone::Info => theme.info_pair(),
     }
 }
 
@@ -380,12 +384,20 @@ fn snippet_for(upstream_body: &[u8]) -> Option<String> {
 /// `code` is the upstream status. `target` is the upstream URL we
 /// were trying to reach. `upstream_body` is the raw body the upstream
 /// returned — included in a collapsed `<details>` block so the user
-/// can still see the underlying diagnostic if they want.
-pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> String {
+/// can still see the underlying diagnostic if they want. `theme`
+/// carries the frontend's snapshotted CSS variables so the page
+/// matches the user's current theme selection (P7).
+pub fn render_status_page(
+    code: u16,
+    target: &str,
+    upstream_body: &[u8],
+    theme: &crate::theme_tokens::ThemeTokens,
+) -> String {
     let pres = presentation_for(code);
-    let (accent_rgb, accent_hex) = tone_accent(pres.tone);
+    let (accent_rgb, accent_hex) = tone_accent(pres.tone, theme);
     let safe_target = escape_html(target);
     let safe_snippet = snippet_for(upstream_body).map(|s| escape_html(&s));
+    let theme_css = theme.css_block();
 
     let details_block = if let Some(snippet) = safe_snippet {
         format!(
@@ -407,21 +419,16 @@ pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> Stri
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{code} {title} — sortOfRemoteNG</title>
 <style>
+{theme_css}
   :root {{
-    --bg: #111827;
-    --surface: #1f2937;
-    --text: #f9fafb;
-    --text-2: #d1d5db;
-    --muted: #9ca3af;
-    --border: #374151;
     --accent: {accent_hex};
     --accent-rgb: {accent_rgb};
   }}
   * {{ box-sizing: border-box; }}
   html, body {{ height: 100%; margin: 0; padding: 0; }}
   body {{
-    background: var(--bg);
-    color: var(--text);
+    background: var(--proxy-bg);
+    color: var(--proxy-text);
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                  "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
     font-size: 14px;
@@ -472,18 +479,18 @@ pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> Stri
     font-size: 1.125rem;
     font-weight: 600;
     margin: 0 0 0.5rem;
-    color: var(--text);
+    color: var(--proxy-text);
   }}
   .target {{
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8125rem;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     margin: 0 0 1rem;
     word-break: break-all;
   }}
   .hint {{
     font-size: 0.875rem;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     margin: 0 0 1.25rem;
     max-width: 32rem;
   }}
@@ -491,7 +498,7 @@ pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> Stri
     width: 100%;
     text-align: left;
     background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border);
+    border: 1px solid var(--proxy-border);
     border-radius: 0.5rem;
     margin: 0 0 1rem;
   }}
@@ -499,18 +506,18 @@ pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> Stri
     cursor: pointer;
     padding: 0.5rem 0.75rem;
     font-size: 0.75rem;
-    color: var(--muted);
+    color: var(--proxy-muted);
     user-select: none;
   }}
   details.raw[open] summary {{
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--proxy-border);
   }}
   details.raw pre {{
     margin: 0;
     padding: 0.75rem 1rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.6875rem;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
@@ -519,19 +526,8 @@ pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> Stri
   }}
   .footer {{
     font-size: 0.75rem;
-    color: var(--muted);
+    color: var(--proxy-muted);
     margin: 0;
-  }}
-  @media (prefers-color-scheme: light) {{
-    :root {{
-      --bg: #fdfdfd;
-      --surface: #f7f8fb;
-      --text: #0b0f19;
-      --text-2: #4b5563;
-      --muted: #6b7280;
-      --border: #d1d5db;
-    }}
-    details.raw {{ background: #f7f8fb; }}
   }}
 </style>
 </head>
@@ -568,9 +564,15 @@ pub fn render_status_page(code: u16, target: &str, upstream_body: &[u8]) -> Stri
 /// see the upstream code), the body is replaced with the themed
 /// HTML, and `Content-Encoding` is explicitly NOT set — the upstream
 /// may have gzipped its error page, but reqwest already decoded it
-/// for us and we're sending plain HTML now.
-pub fn themed_status_response(code: u16, target: &str, upstream_body: &[u8]) -> Response<Body> {
-    let body = render_status_page(code, target, upstream_body);
+/// for us and we're sending plain HTML now. `theme` carries the
+/// frontend's snapshotted CSS variables for P7 themed pages.
+pub fn themed_status_response(
+    code: u16,
+    target: &str,
+    upstream_body: &[u8],
+    theme: &crate::theme_tokens::ThemeTokens,
+) -> Response<Body> {
+    let body = render_status_page(code, target, upstream_body, theme);
     // Forward the upstream code if it's a valid HTTP status; fall
     // back to 502 if somehow we got something out of range.
     let status = StatusCode::from_u16(code).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -588,6 +590,10 @@ pub fn themed_status_response(code: u16, target: &str, upstream_body: &[u8]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn theme() -> crate::theme_tokens::ThemeTokens {
+        crate::theme_tokens::ThemeTokens::dark_default()
+    }
 
     #[test]
     fn well_known_codes_have_distinct_titles() {
@@ -621,7 +627,7 @@ mod tests {
 
     #[test]
     fn render_includes_code_pill_and_title() {
-        let html = render_status_page(404, "https://example.test/oops", b"");
+        let html = render_status_page(404, "https://example.test/oops", b"", &theme());
         assert!(html.contains("HTTP 404"));
         assert!(html.contains("Not found"));
         assert!(html.contains("https://example.test/oops"));
@@ -629,29 +635,50 @@ mod tests {
 
     #[test]
     fn render_includes_upstream_body_in_details_when_present() {
-        let html = render_status_page(500, "https://x", b"Internal explosion: stack trace here");
+        let html = render_status_page(
+            500,
+            "https://x",
+            b"Internal explosion: stack trace here",
+            &theme(),
+        );
         assert!(html.contains("Show upstream response body"));
         assert!(html.contains("Internal explosion: stack trace here"));
     }
 
     #[test]
     fn render_omits_details_block_when_body_empty() {
-        let html = render_status_page(500, "https://x", b"");
+        let html = render_status_page(500, "https://x", b"", &theme());
         assert!(!html.contains("Show upstream response body"));
     }
 
     #[test]
     fn render_escapes_upstream_body() {
-        let html = render_status_page(500, "https://x", b"<script>alert(1)</script>");
+        let html = render_status_page(
+            500,
+            "https://x",
+            b"<script>alert(1)</script>",
+            &theme(),
+        );
         assert!(!html.contains("<script>alert(1)</script>"));
         assert!(html.contains("&lt;script&gt;"));
     }
 
     #[test]
     fn render_escapes_target() {
-        let html = render_status_page(404, "https://x.test/?q=<x>", b"");
+        let html = render_status_page(404, "https://x.test/?q=<x>", b"", &theme());
         assert!(!html.contains("?q=<x>"));
         assert!(html.contains("?q=&lt;x&gt;"));
+    }
+
+    #[test]
+    fn render_includes_theme_css_tokens() {
+        // P7: theme tokens reach the served page.
+        let mut t = theme();
+        t.background = "#abcdef".into();
+        t.text = "#123456".into();
+        let html = render_status_page(404, "https://x", b"", &t);
+        assert!(html.contains("--proxy-bg: #abcdef"));
+        assert!(html.contains("--proxy-text: #123456"));
     }
 
     #[test]
@@ -673,9 +700,10 @@ mod tests {
 
     #[test]
     fn tone_accent_distinct_per_tone() {
-        let e = tone_accent(StatusTone::Error);
-        let w = tone_accent(StatusTone::Warn);
-        let i = tone_accent(StatusTone::Info);
+        let t = theme();
+        let e = tone_accent(StatusTone::Error, &t);
+        let w = tone_accent(StatusTone::Warn, &t);
+        let i = tone_accent(StatusTone::Info, &t);
         assert_ne!(e.1, w.1);
         assert_ne!(w.1, i.1);
         assert_ne!(e.1, i.1);
@@ -683,7 +711,7 @@ mod tests {
 
     #[test]
     fn response_forwards_upstream_status_code() {
-        let resp = themed_status_response(429, "https://x", b"");
+        let resp = themed_status_response(429, "https://x", b"", &theme());
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         let ct = resp
             .headers()
@@ -698,7 +726,7 @@ mod tests {
     #[test]
     fn response_handles_unusual_status_code() {
         // 477 isn't standard but is a valid u16 status code.
-        let resp = themed_status_response(477, "https://x", b"");
+        let resp = themed_status_response(477, "https://x", b"", &theme());
         assert_eq!(resp.status().as_u16(), 477);
     }
 

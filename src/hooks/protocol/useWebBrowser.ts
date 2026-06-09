@@ -344,6 +344,44 @@ export function useWebBrowser(session: ConnectionSession) {
     setIsLoading(false);
   }, []);
 
+  /**
+   * P7: snapshot the live `:root --color-*` CSS variables so the
+   * proxy backend can interpolate them into themed pages. Reads
+   * directly off the document root (where `themeManager.ts` writes
+   * the variables on every theme change) so the served pages match
+   * the user's currently-selected theme + color-scheme combination
+   * — not the dark-theme defaults the proxy used to hardcode.
+   *
+   * Field names are camelCase to match the Rust `ThemeTokens` serde
+   * shape (`#[serde(rename_all = "camelCase")]`). Values are read as
+   * literal CSS strings (`#3b82f6`, `59, 130, 246`) and forwarded
+   * verbatim; the page CSS is the only consumer and CSS itself
+   * validates them at render time.
+   */
+  const readThemeTokens = useCallback((): Record<string, string> => {
+    if (typeof window === "undefined" || !window.document) return {};
+    const style = window.getComputedStyle(document.documentElement);
+    const v = (name: string) => style.getPropertyValue(name).trim();
+    return {
+      background: v("--color-background"),
+      surface: v("--color-surface"),
+      text: v("--color-text"),
+      textSecondary: v("--color-textSecondary"),
+      textMuted: v("--color-textMuted"),
+      border: v("--color-border"),
+      primary: v("--color-primary"),
+      primaryRgb: v("--color-primary-rgb"),
+      error: v("--color-error"),
+      errorRgb: v("--color-error-rgb"),
+      warning: v("--color-warning"),
+      warningRgb: v("--color-warning-rgb"),
+      success: v("--color-success"),
+      successRgb: v("--color-success-rgb"),
+      info: v("--color-info"),
+      infoRgb: v("--color-info-rgb"),
+    };
+  }, []);
+
   // ── Proxy lifecycle ────────────────────────────────────────
   const stopProxy = useCallback(async (sessionId?: string) => {
     const id = sessionId ?? proxySessionIdRef.current;
@@ -439,6 +477,12 @@ export function useWebBrowser(session: ConnectionSession) {
                   ((connection as unknown as Record<string, unknown>)
                     ?.httpVerifySsl ?? true) !== false,
                 connection_id: connection?.id ?? "",
+                // P7: ship the live theme snapshot so themed pages
+                // served by the proxy (errors, status, auth challenge)
+                // match the user's selected theme. If they change
+                // themes mid-session they can refresh the tab to
+                // pick up the new palette.
+                theme_tokens: readThemeTokens(),
               },
             },
           );

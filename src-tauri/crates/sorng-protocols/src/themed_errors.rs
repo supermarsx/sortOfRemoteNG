@@ -224,22 +224,27 @@ fn escape_html(s: &str) -> String {
 /// `target` is the upstream URL we tried to reach (shown as a
 /// subtitle so the user knows which request failed). `detail` is the
 /// raw error message — exposed in a monospace block so power users
-/// have something to grep, but never the primary message.
-pub fn render_error_page(kind: ProxyErrorKind, target: &str, detail: &str) -> String {
+/// have something to grep, but never the primary message. `theme`
+/// is the snapshot of the frontend's live `:root --color-*` values
+/// (P7) — interpolated into the page CSS so served errors match the
+/// user's current theme selection.
+pub fn render_error_page(
+    kind: ProxyErrorKind,
+    target: &str,
+    detail: &str,
+    theme: &crate::theme_tokens::ThemeTokens,
+) -> String {
     let title = kind.title();
     let hint = kind.hint();
     let icon_inner = kind.icon_svg_inner();
-    let accent = if kind.is_warning() {
-        // warning yellow — #f59e0b
-        ("245, 158, 11", "#f59e0b")
+    let (accent_rgb, accent_hex) = if kind.is_warning() {
+        theme.warning_pair()
     } else {
-        // error red — #ef4444
-        ("239, 68, 68", "#ef4444")
+        theme.error_pair()
     };
-    let accent_rgb = accent.0;
-    let accent_hex = accent.1;
     let safe_target = escape_html(target);
     let safe_detail = escape_html(detail);
+    let theme_css = theme.css_block();
 
     // Whole page kept under 4 KB so it fits in a single TCP packet on
     // most networks and renders instantly even on a degraded link.
@@ -251,21 +256,16 @@ pub fn render_error_page(kind: ProxyErrorKind, target: &str, detail: &str) -> St
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title} — sortOfRemoteNG</title>
 <style>
+{theme_css}
   :root {{
-    --bg: #111827;
-    --surface: #1f2937;
-    --text: #f9fafb;
-    --text-2: #d1d5db;
-    --muted: #9ca3af;
-    --border: #374151;
     --accent: {accent_hex};
     --accent-rgb: {accent_rgb};
   }}
   * {{ box-sizing: border-box; }}
   html, body {{ height: 100%; margin: 0; padding: 0; }}
   body {{
-    background: var(--bg);
-    color: var(--text);
+    background: var(--proxy-bg);
+    color: var(--proxy-text);
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                  "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
     font-size: 14px;
@@ -303,25 +303,25 @@ pub fn render_error_page(kind: ProxyErrorKind, target: &str, detail: &str) -> St
     font-size: 1.125rem;
     font-weight: 600;
     margin: 0 0 0.5rem;
-    color: var(--text);
+    color: var(--proxy-text);
   }}
   .target {{
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
                  "Liberation Mono", "Courier New", monospace;
     font-size: 0.8125rem;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     margin: 0 0 1rem;
     word-break: break-all;
   }}
   .hint {{
     font-size: 0.875rem;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     margin: 0 0 1.25rem;
   }}
   .detail {{
     background: rgba(var(--accent-rgb), 0.08);
     border: 1px solid rgba(var(--accent-rgb), 0.18);
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -336,21 +336,8 @@ pub fn render_error_page(kind: ProxyErrorKind, target: &str, detail: &str) -> St
   }}
   .footer {{
     font-size: 0.75rem;
-    color: var(--muted);
+    color: var(--proxy-muted);
     margin: 0;
-  }}
-  @media (prefers-color-scheme: light) {{
-    /* Light-theme fallback. Mirrors `themeManager.ts` light values
-       so the page is legible even before the iframe applies any
-       runtime theming (it doesn't — this is a static HTML body). */
-    :root {{
-      --bg: #fdfdfd;
-      --surface: #f7f8fb;
-      --text: #0b0f19;
-      --text-2: #4b5563;
-      --muted: #6b7280;
-      --border: #d1d5db;
-    }}
   }}
 </style>
 </head>
@@ -377,18 +364,22 @@ pub fn render_error_page(kind: ProxyErrorKind, target: &str, detail: &str) -> St
         accent_rgb = accent_rgb,
         safe_target = safe_target,
         safe_detail = safe_detail,
+        theme_css = theme_css,
     )
 }
 
 /// Convenience: build the full axum `Response` (status + headers +
 /// HTML body) for a themed error. Used from `axum_proxy_handler` so
-/// the call site stays a one-liner.
+/// the call site stays a one-liner. `theme` carries the frontend's
+/// snapshotted CSS variables so the page matches the user's current
+/// theme selection (P7).
 pub fn themed_error_response(
     kind: ProxyErrorKind,
     target: &str,
     detail: &str,
+    theme: &crate::theme_tokens::ThemeTokens,
 ) -> Response<Body> {
-    let body = render_error_page(kind, target, detail);
+    let body = render_error_page(kind, target, detail, theme);
     Response::builder()
         .status(kind.status())
         .header("Content-Type", "text/html; charset=utf-8")
@@ -419,12 +410,17 @@ mod tests {
         // this message would route to ConnectionRefused.
     }
 
+    fn theme() -> crate::theme_tokens::ThemeTokens {
+        crate::theme_tokens::ThemeTokens::dark_default()
+    }
+
     #[test]
     fn render_includes_title_target_and_detail() {
         let html = render_error_page(
             ProxyErrorKind::ConnectionRefused,
             "https://example.test/foo",
             "tcp connect error: refused",
+            &theme(),
         );
         assert!(html.contains("Connection refused"));
         assert!(html.contains("https://example.test/foo"));
@@ -439,6 +435,7 @@ mod tests {
             ProxyErrorKind::Other,
             "https://x.test/<script>alert(1)</script>",
             "<img src=x onerror=alert(1)>",
+            &theme(),
         );
         // Raw tags must not appear unescaped in the output.
         assert!(!html.contains("<script>alert(1)</script>"));
@@ -450,17 +447,46 @@ mod tests {
 
     #[test]
     fn render_uses_warning_accent_for_timeout() {
-        let html = render_error_page(ProxyErrorKind::Timeout, "https://x", "took too long");
+        let html = render_error_page(
+            ProxyErrorKind::Timeout,
+            "https://x",
+            "took too long",
+            &theme(),
+        );
         // Warning yellow hex
         assert!(html.contains("#f59e0b"));
-        assert!(!html.contains("#ef4444"));
+        // The error red still appears as a token value but NOT as the
+        // active accent — the accent line must be the warning hex.
+        assert!(html.contains("--accent: #f59e0b"));
     }
 
     #[test]
     fn render_uses_error_accent_for_refused() {
-        let html = render_error_page(ProxyErrorKind::ConnectionRefused, "https://x", "nope");
+        let html = render_error_page(
+            ProxyErrorKind::ConnectionRefused,
+            "https://x",
+            "nope",
+            &theme(),
+        );
         assert!(html.contains("#ef4444"));
-        assert!(!html.contains("#f59e0b"));
+        assert!(html.contains("--accent: #ef4444"));
+    }
+
+    #[test]
+    fn render_includes_theme_css_block() {
+        // P7: the snapshotted theme tokens must be present in the
+        // page CSS so the rendered page matches the user's theme.
+        let mut t = theme();
+        t.background = "#abcdef".into();
+        t.text = "#123456".into();
+        let html = render_error_page(
+            ProxyErrorKind::Other,
+            "https://x",
+            "msg",
+            &t,
+        );
+        assert!(html.contains("--proxy-bg: #abcdef"));
+        assert!(html.contains("--proxy-text: #123456"));
     }
 
     #[test]
@@ -502,6 +528,7 @@ mod tests {
             ProxyErrorKind::DnsFailure,
             "https://nope.test",
             "couldn't resolve",
+            &theme(),
         );
         let ct = resp
             .headers()

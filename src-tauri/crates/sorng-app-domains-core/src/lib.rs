@@ -48,6 +48,14 @@ pub use sorng_protocols::db;
 pub use sorng_protocols::http;
 pub use sorng_protocols::raw_socket;
 pub use sorng_protocols::rlogin;
+// P7: re-export the theme + themed-page modules so the path-included
+// `http_cmds.rs` shim in sorng-commands-core can reference
+// `crate::theme_tokens::ThemeTokens` (resolves through the
+// sorng-app-domains re-export chain).
+pub use sorng_protocols::theme_tokens;
+pub use sorng_protocols::themed_auth;
+pub use sorng_protocols::themed_errors;
+pub use sorng_protocols::themed_status;
 pub use sorng_serial::serial;
 pub use sorng_smb::smb;
 pub use sorng_telnet::telnet;

@@ -81,11 +81,13 @@ pub fn render_challenge_page(
     nonce: &str,
     existing_username: &str,
     error_hint: Option<&str>,
+    theme: &crate::theme_tokens::ThemeTokens,
 ) -> String {
     let safe_target = escape_html(target);
     let safe_return = escape_html(return_to);
     let safe_nonce = escape_html(nonce);
     let safe_user = escape_html(existing_username);
+    let theme_css = theme.css_block();
     let error_block = match error_hint {
         Some(msg) if !msg.is_empty() => format!(
             r#"<p class="error" role="alert">{}</p>"#,
@@ -102,23 +104,12 @@ pub fn render_challenge_page(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — sortOfRemoteNG</title>
 <style>
-  :root {{
-    --bg: #111827;
-    --surface: #1f2937;
-    --text: #f9fafb;
-    --text-2: #d1d5db;
-    --muted: #9ca3af;
-    --border: #374151;
-    --primary: #3b82f6;
-    --primary-rgb: 59, 130, 246;
-    --error: #ef4444;
-    --error-rgb: 239, 68, 68;
-  }}
+{theme_css}
   * {{ box-sizing: border-box; }}
   html, body {{ height: 100%; margin: 0; padding: 0; }}
   body {{
-    background: var(--bg);
-    color: var(--text);
+    background: var(--proxy-bg);
+    color: var(--proxy-text);
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                  "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
     font-size: 14px;
@@ -129,8 +120,8 @@ pub fn render_challenge_page(
     padding: 2rem;
   }}
   .card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--proxy-surface);
+    border: 1px solid var(--proxy-border);
     border-radius: 0.75rem;
     padding: 1.75rem;
     max-width: 24rem;
@@ -145,33 +136,33 @@ pub fn render_challenge_page(
     align-items: center;
     justify-content: center;
     margin: 0 auto 1rem;
-    background: rgba(var(--primary-rgb), 0.14);
-    border: 1px solid rgba(var(--primary-rgb), 0.22);
+    background: rgba(var(--proxy-primary-rgb), 0.14);
+    border: 1px solid rgba(var(--proxy-primary-rgb), 0.22);
   }}
   .icon svg {{
     width: 24px;
     height: 24px;
-    color: var(--primary);
+    color: var(--proxy-primary);
   }}
   h1 {{
     font-size: 1.125rem;
     font-weight: 600;
     text-align: center;
     margin: 0 0 0.375rem;
-    color: var(--text);
+    color: var(--proxy-text);
   }}
   .target {{
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.75rem;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     text-align: center;
     margin: 0 0 1.25rem;
     word-break: break-all;
   }}
   .error {{
-    background: rgba(var(--error-rgb), 0.08);
-    border: 1px solid rgba(var(--error-rgb), 0.22);
-    color: var(--error);
+    background: rgba(var(--proxy-error-rgb), 0.08);
+    border: 1px solid rgba(var(--proxy-error-rgb), 0.22);
+    color: var(--proxy-error);
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     font-size: 0.8125rem;
@@ -181,15 +172,15 @@ pub fn render_challenge_page(
     display: block;
     font-size: 0.75rem;
     font-weight: 500;
-    color: var(--text-2);
+    color: var(--proxy-text-2);
     margin: 0 0 0.375rem;
   }}
   input[type="text"], input[type="password"] {{
     width: 100%;
     background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--border);
+    border: 1px solid var(--proxy-border);
     border-radius: 0.5rem;
-    color: var(--text);
+    color: var(--proxy-text);
     padding: 0.5rem 0.75rem;
     font-size: 0.875rem;
     font-family: inherit;
@@ -198,12 +189,12 @@ pub fn render_challenge_page(
   }}
   input[type="text"]:focus, input[type="password"]:focus {{
     outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.20);
+    border-color: var(--proxy-primary);
+    box-shadow: 0 0 0 3px rgba(var(--proxy-primary-rgb), 0.20);
   }}
   button {{
     width: 100%;
-    background: var(--primary);
+    background: var(--proxy-primary);
     color: #fff;
     border: 0;
     border-radius: 0.5rem;
@@ -212,32 +203,22 @@ pub fn render_challenge_page(
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: background-color 0.12s ease;
+    transition: filter 0.12s ease;
   }}
-  button:hover {{ background: #2f76ed; }}
+  button:hover {{ filter: brightness(1.08); }}
   button:focus {{
     outline: none;
-    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.25);
+    box-shadow: 0 0 0 3px rgba(var(--proxy-primary-rgb), 0.25);
   }}
   .footer {{
     font-size: 0.6875rem;
-    color: var(--muted);
+    color: var(--proxy-muted);
     text-align: center;
     margin: 1rem 0 0;
   }}
-  @media (prefers-color-scheme: light) {{
-    :root {{
-      --bg: #fdfdfd;
-      --surface: #ffffff;
-      --text: #0b0f19;
-      --text-2: #4b5563;
-      --muted: #6b7280;
-      --border: #d1d5db;
-    }}
-    input[type="text"], input[type="password"] {{
-      background: #f7f8fb;
-    }}
-  }}
+  /* P7: prefers-color-scheme fallback removed — live theme tokens
+     come from the parent app at proxy startup so the page always
+     matches whichever theme the user has selected in-app. */
 </style>
 </head>
 <body>
@@ -277,15 +258,25 @@ pub fn render_challenge_page(
 
 /// Build the full axum Response for the challenge page. Strips the
 /// `WWW-Authenticate` header by virtue of not including it — this is
-/// what suppresses the browser-native Basic Auth dialog.
+/// what suppresses the browser-native Basic Auth dialog. `theme`
+/// carries the frontend's snapshotted CSS variables so the form
+/// matches the user's current theme selection (P7).
 pub fn themed_challenge_response(
     target: &str,
     return_to: &str,
     nonce: &str,
     existing_username: &str,
     error_hint: Option<&str>,
+    theme: &crate::theme_tokens::ThemeTokens,
 ) -> Response<Body> {
-    let body = render_challenge_page(target, return_to, nonce, existing_username, error_hint);
+    let body = render_challenge_page(
+        target,
+        return_to,
+        nonce,
+        existing_username,
+        error_hint,
+        theme,
+    );
     Response::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header("Content-Type", "text/html; charset=utf-8")
@@ -315,6 +306,10 @@ pub fn fresh_nonce() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn theme() -> crate::theme_tokens::ThemeTokens {
+        crate::theme_tokens::ThemeTokens::dark_default()
+    }
 
     #[test]
     fn pass_through_non_401() {
@@ -385,6 +380,7 @@ mod tests {
             "abcdef",
             "alice",
             None,
+            &theme(),
         );
         assert!(html.contains("https://example.test/secret"));
         assert!(html.contains(r#"name="return_to" value="/secret""#));
@@ -402,6 +398,7 @@ mod tests {
             "n",
             "<img onerror=alert(1)>",
             Some("<script>alert('x')</script>"),
+            &theme(),
         );
         assert!(!html.contains("<script>alert"));
         assert!(!html.contains("<img onerror"));
@@ -411,20 +408,28 @@ mod tests {
 
     #[test]
     fn render_form_includes_error_block_when_provided() {
-        let html = render_challenge_page("u", "/", "n", "", Some("bad password"));
+        let html = render_challenge_page("u", "/", "n", "", Some("bad password"), &theme());
         assert!(html.contains("bad password"));
         assert!(html.contains(r#"class="error""#));
     }
 
     #[test]
     fn render_form_omits_error_block_when_none() {
-        let html = render_challenge_page("u", "/", "n", "", None);
+        let html = render_challenge_page("u", "/", "n", "", None, &theme());
         assert!(!html.contains(r#"class="error""#));
     }
 
     #[test]
+    fn render_form_includes_theme_css_block() {
+        let mut t = theme();
+        t.primary = "#ff00ff".into();
+        let html = render_challenge_page("u", "/", "n", "", None, &t);
+        assert!(html.contains("--proxy-primary: #ff00ff"));
+    }
+
+    #[test]
     fn themed_response_is_401_without_www_authenticate() {
-        let resp = themed_challenge_response("u", "/", "n", "", None);
+        let resp = themed_challenge_response("u", "/", "n", "", None, &theme());
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
         // Critical: NO WWW-Authenticate header. That's what
         // suppresses the browser-native dialog.
@@ -434,7 +439,7 @@ mod tests {
 
     #[test]
     fn themed_response_is_html() {
-        let resp = themed_challenge_response("u", "/", "n", "", None);
+        let resp = themed_challenge_response("u", "/", "n", "", None, &theme());
         let ct = resp
             .headers()
             .get("Content-Type")

@@ -158,6 +158,13 @@ pub async fn start_basic_auth_proxy(
     // RwLock so the themed-auth POST handler can update them at
     // runtime; the AppHandle is threaded in so that handler can
     // emit `proxy-credentials-applied` for the React-side toast.
+    // P7: theme tokens are RwLocked too so a follow-up
+    // `update_proxy_theme` IPC can refresh them mid-session when
+    // the user changes themes.
+    let theme_tokens = config
+        .theme_tokens
+        .clone()
+        .unwrap_or_else(crate::theme_tokens::ThemeTokens::dark_default);
     let proxy_state = Arc::new(AxumProxyState {
         session_id: session_id.clone(),
         connection_id: connection_id.clone(),
@@ -165,6 +172,7 @@ pub async fn start_basic_auth_proxy(
         username: Arc::new(std::sync::RwLock::new(config.username.clone())),
         password: Arc::new(std::sync::RwLock::new(config.password.clone())),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
+        theme: Arc::new(std::sync::RwLock::new(theme_tokens)),
         target_origin: target_origin.clone(),
         client,
         request_count: request_count.clone(),
@@ -462,6 +470,13 @@ pub async fn restart_proxy_session(
         username: Arc::new(std::sync::RwLock::new(username.clone())),
         password: Arc::new(std::sync::RwLock::new(password.clone())),
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
+        // P7: a restart reuses whichever theme was active at the
+        // start of the original session — the frontend will push
+        // a new snapshot via the planned update_proxy_theme IPC
+        // if needed.
+        theme: Arc::new(std::sync::RwLock::new(
+            crate::theme_tokens::ThemeTokens::dark_default(),
+        )),
         target_origin: target_origin.clone(),
         client,
         request_count: request_count.clone(),
