@@ -198,6 +198,12 @@ pub fn categorize_reqwest_error(e: &reqwest::Error) -> ProxyErrorKind {
 
 /// Minimal HTML-escape for the user-supplied strings that get
 /// interpolated into the page (target URL, raw error message).
+/// Exposed crate-internally so the sibling `themed_auth` module can
+/// reuse it for the challenge form's hidden fields.
+pub(crate) fn escape_html_public(s: &str) -> String {
+    escape_html(s)
+}
+
 fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

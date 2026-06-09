@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { debugLog } from "../../utils/core/debugLogger";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ConnectionSession, HttpBookmarkItem } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
@@ -469,6 +470,40 @@ export function useWebBrowser(session: ConnectionSession) {
       }
     };
   }, []);
+
+  // P3: listen for `proxy-credentials-applied`. The Rust-side
+  // themed-auth POST handler emits this after the user submits the
+  // inline login form and the credentials land in the live session.
+  // Filtered to this tab's session_id so multiple open tabs don't
+  // cross-talk. P4 will replace the toast with a "Save these
+  // credentials to the connection?" offer; for now the toast just
+  // confirms the round-trip worked.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    listen<{
+      session_id: string;
+      connection_id: string;
+      username: string;
+    }>("proxy-credentials-applied", (event) => {
+      const payload = event.payload;
+      if (!payload || payload.session_id !== proxySessionIdRef.current) return;
+      toast.success(
+        `Signed in as ${payload.username || "(empty user)"} — session credentials updated.`,
+      );
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((err) => {
+        debugLog("WebBrowser", "Failed to subscribe to proxy auth event", { err });
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [toast]);
 
   // Proxy keepalive polling. P1: every tab now has a proxy session, so
   // health monitoring applies universally — drop the pre-P1 hasAuth gate.

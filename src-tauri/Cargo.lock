@@ -11449,6 +11449,7 @@ dependencies = [
  "sqlx",
  "ssh2",
  "suppaftp",
+ "tauri",
  "tokio 1.52.1",
  "tokio-rustls 0.26.4",
  "uuid",

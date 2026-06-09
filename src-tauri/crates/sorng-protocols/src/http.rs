@@ -535,18 +535,32 @@ pub fn active_web_recordings() -> &'static std::sync::Mutex<HashMap<String, WebR
 // -----------------------------------------------------------------------
 
 /// State shared between the axum server and the session manager.
+///
+/// P3: `username` and `password` are now wrapped in `Arc<RwLock<...>>`
+/// so the themed-auth POST handler can update them at runtime when
+/// the user submits credentials via the inline login form. The
+/// per-challenge `pending_nonce` lives in the same lock so the POST
+/// can verify the submission matches a challenge we actually served.
+///
+/// `app` is the Tauri `AppHandle`, threaded in so the auth handler
+/// can emit `proxy-credentials-applied` to the frontend (which the
+/// React side listens for, then offers a "save these credentials?"
+/// toast).
 #[derive(Clone)]
 pub struct AxumProxyState {
     pub session_id: String,
+    pub connection_id: String,
     pub target_url: String,
-    pub username: String,
-    pub password: String,
+    pub username: Arc<std::sync::RwLock<String>>,
+    pub password: Arc<std::sync::RwLock<String>>,
+    pub pending_nonce: Arc<std::sync::RwLock<Option<String>>>,
     pub target_origin: String,
     pub client: reqwest::Client,
     pub request_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
     pub last_error: Arc<std::sync::Mutex<Option<String>>>,
     pub global_sessions: ProxySessionManagerState,
+    pub app: tauri::AppHandle,
 }
 
 /// Axum fallback handler — proxies every request to the target server.
@@ -649,8 +663,18 @@ pub async fn axum_proxy_handler(
         body: &[u8],
     ) -> Result<reqwest::Response, reqwest::Error> {
         let mut upstream = state.client.request(method.clone(), url);
-        if !state.username.is_empty() || !state.password.is_empty() {
-            upstream = upstream.basic_auth(&state.username, Some(&state.password));
+        // P3: credentials live behind a RwLock so the themed-auth
+        // POST handler can update them. Read briefly into owned
+        // strings — the lock guard must not be held across the
+        // .send().await below or we'd serialise all upstream
+        // requests for this session through the lock.
+        let (user, pass): (String, String) = {
+            let u = state.username.read().map(|g| g.clone()).unwrap_or_default();
+            let p = state.password.read().map(|g| g.clone()).unwrap_or_default();
+            (u, p)
+        };
+        if !user.is_empty() || !pass.is_empty() {
+            upstream = upstream.basic_auth(&user, Some(&pass));
         }
         for (k, v) in headers {
             upstream = upstream.header(k.as_str(), v.as_str());
@@ -720,6 +744,60 @@ pub async fn axum_proxy_handler(
                     },
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 });
+            }
+
+            // P3: intercept a Basic-Auth 401 challenge from the
+            // upstream and swap it for a themed inline login form.
+            // The browser-native auth popup only fires when the
+            // iframe receives a 401 *with* the WWW-Authenticate
+            // header; by returning our own page without that header
+            // we suppress the popup entirely. Verbosely collect the
+            // WWW-Authenticate values so the discriminator works on
+            // both single and multi-scheme servers.
+            let www_auth_values: Vec<String> = resp
+                .headers()
+                .get_all("www-authenticate")
+                .iter()
+                .filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
+                .collect();
+            if matches!(
+                crate::themed_auth::intercept_basic_auth_challenge(
+                    status_u16,
+                    &www_auth_values,
+                ),
+                crate::themed_auth::ChallengeDecision::Challenge,
+            ) {
+                let nonce = crate::themed_auth::fresh_nonce();
+                // Stash the nonce so the POST handler can verify
+                // that the submission came from a challenge we
+                // actually served.
+                if let Ok(mut n) = state.pending_nonce.write() {
+                    *n = Some(nonce.clone());
+                }
+                let existing_user = state
+                    .username
+                    .read()
+                    .map(|g| g.clone())
+                    .unwrap_or_default();
+                // `path_and_query` is the path the user was trying
+                // to reach on the proxy; the POST handler will
+                // 303-redirect back to it after the credentials
+                // land in the session.
+                let error_hint = if !existing_user.is_empty() {
+                    // A saved username exists but the server still
+                    // refused, so the saved password is probably
+                    // wrong — surface that distinct case to the user.
+                    Some("The saved password was rejected by the server. Try again.")
+                } else {
+                    None
+                };
+                return crate::themed_auth::themed_challenge_response(
+                    &full_url,
+                    &path_and_query,
+                    &nonce,
+                    &existing_user,
+                    error_hint,
+                );
             }
 
             let resp_hdrs = resp.headers().clone();
@@ -914,6 +992,122 @@ pub async fn axum_proxy_handler(
             crate::themed_errors::themed_error_response(kind, &full_url, &err_msg)
         }
     }
+}
+
+/// Form payload submitted by the themed inline auth challenge (P3).
+/// Field names mirror the `<input name="...">` tags in
+/// `themed_auth::render_challenge_page`.
+#[derive(Debug, Deserialize)]
+pub struct ThemedAuthForm {
+    pub username: String,
+    pub password: String,
+    pub nonce: String,
+    /// Path on the proxy the user was trying to reach when the
+    /// challenge fired. We 303-redirect here after the credentials
+    /// land so the iframe re-fetches the real content.
+    pub return_to: String,
+}
+
+/// `POST /__sortofremoteng_auth` handler — receives credentials from
+/// the themed challenge form, validates the per-challenge nonce,
+/// updates the live session credentials, emits a frontend event so
+/// the React side can offer to persist them, and 303-redirects the
+/// iframe back to the originally requested path.
+///
+/// A failed nonce check returns 400 so a hostile sibling tab on
+/// 127.0.0.1 can't spoof credential updates. The nonce is consumed
+/// after a successful update — re-submissions must re-fetch a fresh
+/// challenge page first.
+pub async fn themed_auth_post_handler(
+    axum::extract::State(state): axum::extract::State<Arc<AxumProxyState>>,
+    axum::extract::Form(form): axum::extract::Form<ThemedAuthForm>,
+) -> axum::response::Response {
+    use axum::body::Body;
+    use axum::http::{Response, StatusCode};
+
+    // Nonce check. Consume on success so the same nonce can't fire
+    // twice — a fresh challenge is needed each time.
+    let nonce_matches = {
+        let mut slot = match state.pending_nonce.write() {
+            Ok(g) => g,
+            Err(_) => {
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("pending_nonce lock poisoned"))
+                    .expect("valid HTTP response");
+            }
+        };
+        match slot.as_ref() {
+            Some(stored) if stored == &form.nonce => {
+                *slot = None; // consume
+                true
+            }
+            _ => false,
+        }
+    };
+    if !nonce_matches {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(Body::from("Invalid or expired auth challenge nonce."))
+            .expect("valid HTTP response");
+    }
+
+    // Defensive: refuse a `return_to` that isn't a same-origin path.
+    // Anything starting with a scheme or `//` could be an open
+    // redirect; force it to start with a single `/`.
+    let safe_return = if form.return_to.starts_with('/')
+        && !form.return_to.starts_with("//")
+    {
+        form.return_to.clone()
+    } else {
+        "/".to_string()
+    };
+
+    // Apply credentials to the live axum state.
+    if let Ok(mut g) = state.username.write() {
+        *g = form.username.clone();
+    }
+    if let Ok(mut g) = state.password.write() {
+        *g = form.password.clone();
+    }
+
+    // Mirror into the persistent ProxySessionEntry so a later
+    // `restart_proxy_session` carries them forward — and so the
+    // manager UI sees the updated username (passwords aren't
+    // surfaced there).
+    if let Ok(mut mgr) = state.global_sessions.lock() {
+        if let Some(entry) = mgr.sessions.get_mut(&state.session_id) {
+            entry.username = form.username.clone();
+            entry.password = form.password.clone();
+        }
+    }
+
+    // Emit a Tauri event so React can offer to save the creds into
+    // the underlying connection record. Payload deliberately omits
+    // the password — passwords belong in the backend session, not
+    // JS strings. Frontend matches on session_id / connection_id
+    // and surfaces a toast bound to the connection.
+    use tauri::Emitter;
+    let _ = state.app.emit(
+        "proxy-credentials-applied",
+        serde_json::json!({
+            "session_id": state.session_id,
+            "connection_id": state.connection_id,
+            "username": form.username,
+        }),
+    );
+
+    // 303 See Other forces the browser to GET the redirect target
+    // — even though this was a POST — which is what we want so the
+    // iframe re-fetches the original content through the now-
+    // authenticated proxy.
+    Response::builder()
+        .status(StatusCode::SEE_OTHER)
+        .header("Location", safe_return)
+        .header("Cache-Control", "no-store")
+        .body(Body::empty())
+        .expect("valid HTTP response")
 }
 
 // -----------------------------------------------------------------------

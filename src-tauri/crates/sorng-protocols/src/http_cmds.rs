@@ -82,6 +82,7 @@ pub async fn http_post(
 /// headers injected. The returned `proxy_url` should be loaded in the iframe.
 #[tauri::command]
 pub async fn start_basic_auth_proxy(
+    app: tauri::AppHandle,
     config: BasicAuthProxyConfig,
     _service: tauri::State<'_, HttpServiceState>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
@@ -153,21 +154,35 @@ pub async fn start_basic_auth_proxy(
     let error_count = Arc::new(AtomicU64::new(0));
     let last_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
 
-    // Shared state for the axum handler.
+    // Shared state for the axum handler. P3 wraps credentials in
+    // RwLock so the themed-auth POST handler can update them at
+    // runtime; the AppHandle is threaded in so that handler can
+    // emit `proxy-credentials-applied` for the React-side toast.
     let proxy_state = Arc::new(AxumProxyState {
         session_id: session_id.clone(),
+        connection_id: connection_id.clone(),
         target_url: target_url.clone(),
-        username: config.username.clone(),
-        password: config.password.clone(),
+        username: Arc::new(std::sync::RwLock::new(config.username.clone())),
+        password: Arc::new(std::sync::RwLock::new(config.password.clone())),
+        pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         target_origin: target_origin.clone(),
         client,
         request_count: request_count.clone(),
         error_count: error_count.clone(),
         last_error: last_error.clone(),
         global_sessions: (*sessions).clone(),
+        app: app.clone(),
     });
 
-    let app = axum::Router::new()
+    // P3: register the auth POST endpoint before the fallback so it
+    // takes precedence. Form submissions from the themed challenge
+    // hit `/__sortofremoteng_auth`; everything else falls through to
+    // the upstream proxy handler.
+    let router = axum::Router::new()
+        .route(
+            "/__sortofremoteng_auth",
+            axum::routing::post(crate::http::themed_auth_post_handler),
+        )
         .fallback(axum_proxy_handler)
         .with_state(proxy_state);
 
@@ -176,7 +191,7 @@ pub async fn start_basic_auth_proxy(
 
     // Spawn the server.
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service())
+        axum::serve(listener, router.into_make_service())
             .with_graceful_shutdown(async {
                 shutdown_rx.await.ok();
             })
@@ -380,6 +395,7 @@ pub async fn check_proxy_health(
 /// different local port).  Returns the new proxy URL.
 #[tauri::command]
 pub async fn restart_proxy_session(
+    app: tauri::AppHandle,
     session_id: String,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
@@ -441,25 +457,32 @@ pub async fn restart_proxy_session(
 
     let proxy_state = Arc::new(AxumProxyState {
         session_id: new_session_id.clone(),
+        connection_id: connection_id.clone(),
         target_url: target_url.clone(),
-        username: username.clone(),
-        password: password.clone(),
+        username: Arc::new(std::sync::RwLock::new(username.clone())),
+        password: Arc::new(std::sync::RwLock::new(password.clone())),
+        pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         target_origin: target_origin.clone(),
         client,
         request_count: request_count.clone(),
         error_count: error_count.clone(),
         last_error: last_error.clone(),
         global_sessions: (*sessions).clone(),
+        app: app.clone(),
     });
 
-    let app = axum::Router::new()
+    let router = axum::Router::new()
+        .route(
+            "/__sortofremoteng_auth",
+            axum::routing::post(crate::http::themed_auth_post_handler),
+        )
         .fallback(axum_proxy_handler)
         .with_state(proxy_state);
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service())
+        axum::serve(listener, router.into_make_service())
             .with_graceful_shutdown(async {
                 shutdown_rx.await.ok();
             })

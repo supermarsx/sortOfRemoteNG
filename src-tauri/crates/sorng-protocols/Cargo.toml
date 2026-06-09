@@ -35,3 +35,7 @@ futures-util = "0.3"
 axum = "0.7"
 flate2 = "1.0"
 hex = { workspace = true }
+# P3: AppHandle + Emitter for the themed-auth POST handler in
+# `http.rs` — emits `proxy-credentials-applied` so the frontend can
+# offer to persist creds the user typed into the inline login form.
+tauri = { workspace = true }
