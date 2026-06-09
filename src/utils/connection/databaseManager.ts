@@ -18,6 +18,37 @@ import {
 
 import { getInvoke } from "../tauri/invoke";
 
+/**
+ * Envelope returned by the P1 file-storage commands
+ * (`databases_list`, `load_database_data`). `source !== "current"`
+ * means the value came from the `.bak` / `.v0.bak` recovery ladder —
+ * the user's last save was reconstructed from an older generation.
+ */
+interface LoadResultEnvelope<T = unknown> {
+  value: T;
+  source: "current" | "backup" | "v0-migration";
+}
+
+/**
+ * Surface a recovery via the action log so the user sees that their
+ * data was reconstructed from `.bak`. Console-only when the settings
+ * manager isn't initialised yet (early boot).
+ */
+function logRecovery(artifact: string, source: string) {
+  const detail = `recovered from ${source === "backup" ? "previous-save backup" : "pre-migration backup"}`;
+  console.warn(`Database recovery: ${artifact} ${detail}`);
+  try {
+    SettingsManager.getInstance().logAction(
+      "warn",
+      "Database recovered from backup",
+      undefined,
+      `${artifact}: ${detail}`,
+    );
+  } catch {
+    // SettingsManager may not be initialised yet during boot.
+  }
+}
+
 // ---------- Web Crypto helpers (replaces CryptoJS) ----------
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
@@ -64,21 +95,11 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-async function encryptData(plaintext: string, password: string): Promise<string> {
-  const crypto = getCrypto();
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(password, salt);
-  const enc = new TextEncoder();
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: asBufferSource(iv) },
-    key,
-    asBufferSource(enc.encode(plaintext)),
-  );
-  // Format: base64(salt) + "." + base64(iv) + "." + base64(ciphertext)
-  return `${toBase64(salt)}.${toBase64(iv)}.${toBase64(ciphertext)}`;
-}
-
+// Reader-only: `salt.iv.ciphertext` was the previous write format
+// produced by this module before P3 unified all new writes onto the
+// WebCrypto JSON envelope (`encryptExportWithPassword`). Existing
+// IndexedDB rows in that format must still load cleanly until P5
+// retires the IDB consumer surface.
 async function decryptData(payload: string, password: string): Promise<string> {
   const parts = payload.split(".");
   if (parts.length !== 3) {
@@ -281,11 +302,32 @@ export class DatabaseManager {
 
   async getAllDatabases(): Promise<ConnectionDatabase[]> {
     try {
+      const invoke = await getInvoke();
+      if (invoke) {
+        // Primary path (Tauri runtime): the P1 file-storage backend.
+        const envelope = await invoke<LoadResultEnvelope<ConnectionDatabase[]> | null>(
+          "databases_list",
+        );
+        if (envelope == null) return [];
+        if (envelope.source !== "current") {
+          logRecovery("databases index", envelope.source);
+        }
+        const list = Array.isArray(envelope.value) ? envelope.value : [];
+        return list.map((c: any) => ({
+          ...c,
+          createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date(c.createdAt).toISOString(),
+          updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date(c.updatedAt).toISOString(),
+          lastAccessed: typeof c.lastAccessed === 'string' ? c.lastAccessed : new Date(c.lastAccessed).toISOString(),
+        }));
+      }
+
+      // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
+      // No file storage available; fall back to the IndexedDB rows
+      // existing tests rely on. Production never reaches this code.
       let collections = await IndexedDbService.getItem<ConnectionDatabase[]>(
         this.databasesKey,
       );
       if (!collections) {
-        // One-shot migration from the legacy "mremote-collections" key.
         const legacy = await IndexedDbService.getItem<ConnectionDatabase[]>(
           this.legacyDatabasesKey,
         );
@@ -516,8 +558,16 @@ export class DatabaseManager {
     const filteredCollections = collections.filter((c) => c.id !== id);
     await this.saveDatabases(filteredCollections);
 
-    // Remove collection data
-    await IndexedDbService.removeItem(`mremote-collection-${id}`);
+    // Remove collection data. The Tauri command unlinks both the
+    // canonical file and its `.bak`; the IDB branch is the
+    // browser-fallback we drop in P5.
+    const invoke = await getInvoke();
+    if (invoke) {
+      await invoke("delete_database_data", { databaseId: id });
+    } else {
+      await IndexedDbService.removeItem(`mremote-database-${id}`);
+      await IndexedDbService.removeItem(`mremote-collection-${id}`);
+    }
 
     // Log collection deletion
     SettingsManager.getInstance().logAction(
@@ -610,6 +660,13 @@ export class DatabaseManager {
   private async saveDatabases(
     collections: ConnectionDatabase[],
   ): Promise<void> {
+    const invoke = await getInvoke();
+    if (invoke) {
+      // Primary path: persist the index via the P1 safe writer.
+      await invoke("databases_save_index", { list: collections });
+      return;
+    }
+    // Browser / pre-Tauri fallback (P5 will retire this branch).
     await IndexedDbService.setItem(this.databasesKey, collections);
   }
 
@@ -619,47 +676,28 @@ export class DatabaseManager {
     data: StorageData,
     password?: string,
   ): Promise<void> {
+    // Encrypt up front when a password is set — the IPC layer (and
+    // the IndexedDB fallback below) are bytes-in / bytes-out and
+    // know nothing about per-DB passwords. The payload becomes
+    // a WebCrypto envelope string instead of the raw object.
+    const payload: unknown = password
+      ? await encryptExportWithPassword(JSON.stringify(data), password)
+      : data;
+
+    const invoke = await getInvoke();
+    if (invoke) {
+      // Primary path: persist via the P1 safe writer.
+      await invoke("save_database_data", {
+        databaseId: collectionId,
+        data: payload,
+      });
+      return;
+    }
+
+    // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
     const key = `mremote-database-${collectionId}`;
     const legacyKey = `mremote-collection-${collectionId}`;
-    const invoke = await getInvoke();
-
-    if (invoke) {
-      try {
-        await invoke("save_database_data", {
-          databaseId: collectionId,
-          data,
-          password,
-        });
-        return;
-      } catch (error) {
-        // Fall back to the legacy command name if the new one isn't
-        // registered on the Rust side yet.
-        try {
-          await invoke("save_collection_data", {
-            collectionId,
-            data,
-            password,
-          });
-          return;
-        } catch (legacyError) {
-          console.error(
-            "Failed to save database via IPC:",
-            error,
-            legacyError,
-          );
-        }
-      }
-    }
-
-    if (password) {
-      const encrypted = await encryptData(JSON.stringify(data), password);
-      await IndexedDbService.setItem(key, encrypted);
-    } else {
-      await IndexedDbService.setItem(key, data);
-    }
-
-    // Drop the legacy IndexedDB row once the new one is written so a
-    // future read doesn't pick up stale data.
+    await IndexedDbService.setItem(key, payload);
     try {
       await IndexedDbService.removeItem(legacyKey);
     } catch {
@@ -684,37 +722,36 @@ export class DatabaseManager {
 
     const invoke = await getInvoke();
     if (invoke) {
-      try {
-        stored = await invoke("load_database_data", {
-          databaseId: collectionId,
-        });
-      } catch (error) {
-        try {
-          stored = await invoke("load_collection_data", { collectionId });
-        } catch (legacyError) {
-          console.error(
-            "Failed to load database via IPC:",
-            error,
-            legacyError,
-          );
+      // Primary path: read via the P1 safe reader. The envelope tells
+      // us whether the value came off `.bak`/`.v0.bak` — surface that
+      // through the action log so the user knows the recovery ladder
+      // fired, then unwrap into the same `stored` shape the legacy
+      // path produces.
+      const envelope = await invoke<LoadResultEnvelope<unknown> | null>(
+        "load_database_data",
+        { databaseId: collectionId },
+      );
+      if (envelope) {
+        if (envelope.source !== "current") {
+          logRecovery(`database ${collectionId}`, envelope.source);
         }
+        stored = envelope.value;
       }
-    }
-
-    if (!stored) {
+    } else {
+      // ── Browser / pre-Tauri fallback (P5 will retire this branch). ──
       stored = await IndexedDbService.getItem<any>(key);
-    }
 
-    if (!stored) {
-      // One-shot migration: read from the old key and rewrite to the new
-      // one so subsequent loads avoid the fallback path.
-      stored = await IndexedDbService.getItem<any>(legacyKey);
-      if (stored) {
-        try {
-          await IndexedDbService.setItem(key, stored);
-          await IndexedDbService.removeItem(legacyKey);
-        } catch {
-          // best-effort; falling through to use `stored` as-is
+      if (!stored) {
+        // One-shot migration: read from the old key and rewrite to the
+        // new one so subsequent loads avoid the fallback path.
+        stored = await IndexedDbService.getItem<any>(legacyKey);
+        if (stored) {
+          try {
+            await IndexedDbService.setItem(key, stored);
+            await IndexedDbService.removeItem(legacyKey);
+          } catch {
+            // best-effort; falling through to use `stored` as-is
+          }
         }
       }
     }
