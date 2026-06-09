@@ -852,7 +852,13 @@ pub async fn axum_proxy_handler(
             })
         }
         Err(e) => {
+            // P2: themed HTML error page in place of the plain-text
+            // 502. Categorize the reqwest error, then render a page
+            // whose layout, palette, and iconography match the app's
+            // own error views (GenericErrorView / FeatureErrorBoundary).
+            let kind = crate::themed_errors::categorize_reqwest_error(&e);
             let err_msg = format!("Upstream request failed: {}", e);
+            let themed_status = kind.status().as_u16();
 
             state.request_count.fetch_add(1, Ordering::Relaxed);
             state.error_count.fetch_add(1, Ordering::Relaxed);
@@ -868,7 +874,11 @@ pub async fn axum_proxy_handler(
                     session_id: state.session_id.clone(),
                     method: method_str.clone(),
                     url: full_url.clone(),
-                    status: 502,
+                    // Log the *themed* status so the manager UI matches
+                    // what the iframe actually received. The kind is
+                    // recoverable from this status (4xx vs 5xx) plus
+                    // last_error for richer hints.
+                    status: themed_status,
                     error: Some(err_msg.clone()),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 });
@@ -891,7 +901,7 @@ pub async fn axum_proxy_handler(
                             HashMap::new()
                         },
                         request_body_size: body_bytes.len() as u64,
-                        status: 502,
+                        status: themed_status,
                         response_headers: HashMap::new(),
                         response_body_size: 0,
                         content_type: None,
@@ -901,11 +911,7 @@ pub async fn axum_proxy_handler(
                 }
             }
 
-            Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .header("Content-Type", "text/plain")
-                .body(Body::from(err_msg))
-                .expect("valid HTTP response")
+            crate::themed_errors::themed_error_response(kind, &full_url, &err_msg)
         }
     }
 }

@@ -7,3 +7,4 @@ pub mod db;
 pub mod http;
 pub mod raw_socket;
 pub mod rlogin;
+pub mod themed_errors;
