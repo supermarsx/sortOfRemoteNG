@@ -300,9 +300,43 @@ pub fn safe_write(canonical: &Path, payload: &[u8]) -> Result<(), FileStoreError
     Ok(())
 }
 
+/// Lower-level read: walks the same recovery ladder as `safe_read`
+/// but returns the verified payload BYTES + source instead of parsing
+/// them as JSON. Used by the P4 encrypted path — an envelope blob is
+/// not valid JSON, so the JSON-parsing step in `safe_read` would
+/// false-reject a valid encrypted file.
+pub fn safe_read_raw(canonical: &Path) -> Result<Option<(Vec<u8>, LoadSource)>, FileStoreError> {
+    let candidates = [
+        (canonical.to_path_buf(), LoadSource::Current),
+        (sibling(canonical, "bak"), LoadSource::Backup),
+        (canonical.with_extension("json.v0.bak"), LoadSource::V0Migration),
+    ];
+    for (path, source) in &candidates {
+        if !path.exists() {
+            continue;
+        }
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let payload = match parse_and_verify(&bytes) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        return Ok(Some((payload.to_vec(), *source)));
+    }
+    Ok(None)
+}
+
 /// Read with the failure-safe ladder. Returns `Ok(None)` only when
 /// every candidate (`.json`, `.bak`, `.v0.bak`) is missing or
 /// corrupt — that's the "first-run / wiped" path.
+///
+/// Kept exported (instead of inlining into the tests it now serves)
+/// so the test-side legacy-plaintext fixtures match production's old
+/// shape exactly. `#[allow(dead_code)]` because the path-include into
+/// `sorng-commands-core` makes the dead-code lint miss the tests.
+#[allow(dead_code)]
 pub fn safe_read(canonical: &Path) -> Result<Option<LoadResult>, FileStoreError> {
     let candidates = [
         (canonical.to_path_buf(), LoadSource::Current),
@@ -341,57 +375,216 @@ fn sibling(canonical: &Path, suffix: &str) -> PathBuf {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// P4 — master-DEK encryption-at-rest
+// ──────────────────────────────────────────────────────────────────
+// `safe_write` / `safe_read` above are byte-level and know nothing
+// about encryption. P4 inserts an envelope layer between them and the
+// Tauri command surface:
+//
+//   on-disk = SDBF preamble (32 B) || SHA-256 checksum-protected ||
+//             ────────────────────────────────────────────────────
+//             SORNG v2 envelope (64 B) || AES-256-GCM ciphertext
+//
+// The inner envelope's sub-key is derived from the master DEK via
+// HKDF-SHA256 with a per-artifact label, so the index file and a
+// per-DB payload are not interchangeable even though both use the
+// same outer codec. A locked state (no master DEK loaded) refuses
+// every write loudly — the user signed off on this "eager-encrypt
+// with explicit downgrade refusal" policy in P4 design.
+//
+// On read, a payload that starts with the SORNG envelope magic is
+// decrypted; a payload that doesn't is treated as legacy plaintext-P1
+// from before P4 (tolerant-read migration). The next save promotes
+// it to an envelope automatically.
+// ══════════════════════════════════════════════════════════════════
+
+use sorng_encryption::envelope::{
+    self as enc_envelope, EnvelopeError, EnvelopeHeader,
+    MAGIC as SORNG_ENVELOPE_MAGIC, NONCE_LEN,
+};
+use sorng_encryption::{ArtifactKind, EncryptionState};
+
+/// Returns true when the given payload bytes start with the SORNG
+/// envelope magic — i.e. they've been P4-encrypted. False matches
+/// the legacy plaintext-P1 shape (raw JSON bytes).
+fn is_envelope_blob(bytes: &[u8]) -> bool {
+    bytes.len() >= SORNG_ENVELOPE_MAGIC.len()
+        && &bytes[..SORNG_ENVELOPE_MAGIC.len()] == SORNG_ENVELOPE_MAGIC
+}
+
+/// Encrypt the given JSON payload bytes into a SORNG v2 envelope keyed
+/// off `state`'s sub-key for `artifact`. Returns the envelope-wrapped
+/// bytes ready to feed to `safe_write` (which adds the outer SDBF
+/// preamble + checksum).
+///
+/// Refuses to encrypt when the state is locked — there's no fallback to
+/// plaintext, by approved policy.
+async fn encrypt_payload(
+    state: &EncryptionState,
+    artifact: ArtifactKind,
+    plain_bytes: &[u8],
+) -> Result<Vec<u8>, String> {
+    let sub_key = state
+        .sub_key(artifact)
+        .await
+        .ok_or_else(|| "encryption is locked; unlock first via Settings → Security".to_string())?;
+
+    let mut nonce = [0u8; NONCE_LEN];
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+    OsRng.fill_bytes(&mut nonce);
+
+    // Vault-mode header keeps the Argon2 fields zero and skips the
+    // password-wrap dance. The mode is only consulted by the unlock
+    // screen at boot — since the master DEK is already loaded at
+    // every save point we hit, the value here matches whatever the
+    // settings.enc file already records, kept simple.
+    let header = EnvelopeHeader::new_vault(nonce);
+    enc_envelope::write_envelope(&sub_key, &header, plain_bytes)
+        .map_err(|e: EnvelopeError| format!("envelope encrypt: {e}"))
+}
+
+/// Decrypt a SORNG v2 envelope under the artifact's sub-key.
+/// Returns the decrypted JSON bytes (caller decides what to parse them
+/// into). Bubbles up `EnvelopeError` so the read path can decide
+/// between "locked" (translate to error) and "not an envelope" (treat
+/// as legacy plaintext).
+async fn decrypt_payload(
+    state: &EncryptionState,
+    artifact: ArtifactKind,
+    envelope_bytes: &[u8],
+) -> Result<Vec<u8>, String> {
+    let sub_key = state
+        .sub_key(artifact)
+        .await
+        .ok_or_else(|| "encryption is locked; unlock first via Settings → Security".to_string())?;
+    let (_header, plaintext) = enc_envelope::read_envelope(&sub_key, envelope_bytes)
+        .map_err(|e| format!("envelope decrypt: {e}"))?;
+    Ok(plaintext)
+}
+
+/// High-level encrypted save: serialize → encrypt → safe_write.
+/// Used by every P4-aware Tauri command. The two suppressed
+/// parameters (`_mode`, `_argon2`) keep the signature aligned with
+/// the artifact-specific writers in `sorng-encryption` for the day
+/// we move to those — we use the lower-level envelope here only
+/// because the index payload is an array, which the artifact
+/// writers refuse.
+async fn encrypted_save(
+    state: &EncryptionState,
+    artifact: ArtifactKind,
+    canonical: &Path,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    let plain = serde_json::to_vec(value).map_err(|e| format!("serialise payload: {e}"))?;
+    let envelope = encrypt_payload(state, artifact, &plain).await?;
+    safe_write(canonical, &envelope).map_err(|e| e.to_string())
+}
+
+/// High-level encrypted load: safe_read → distinguish envelope from
+/// legacy plaintext → decrypt or parse as appropriate. Surfaces the
+/// `LoadSource` from the recovery ladder unchanged.
+///
+/// The legacy-tolerant branch is what lets users boot through the P4
+/// upgrade without an explicit migration command: a per-DB file
+/// written in P1/P2/P3 (raw JSON under the SDBF preamble) is read
+/// as-is; the next save promotes it to an envelope.
+async fn encrypted_load(
+    state: &EncryptionState,
+    artifact: ArtifactKind,
+    canonical: &Path,
+) -> Result<Option<LoadResult>, String> {
+    let (payload_bytes, source) = match safe_read_raw(canonical).map_err(|e| e.to_string())? {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    if is_envelope_blob(&payload_bytes) {
+        let plain = decrypt_payload(state, artifact, &payload_bytes).await?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&plain).map_err(|e| format!("decrypted JSON: {e}"))?;
+        return Ok(Some(LoadResult { value, source }));
+    }
+
+    // Legacy plaintext-P1 path. The file pre-dates P4 — parse the
+    // bytes as raw JSON and return as-is. The next save will wrap it
+    // in an envelope (per the approved "tolerant read + re-encrypt
+    // on write" policy).
+    let value: serde_json::Value = serde_json::from_slice(&payload_bytes)
+        .map_err(|e| format!("legacy plaintext JSON: {e}"))?;
+    Ok(Some(LoadResult { value, source }))
+}
+
+// ══════════════════════════════════════════════════════════════════
 // Tauri command surface
 // ══════════════════════════════════════════════════════════════════
 
 /// Read the list of `ConnectionDatabase` metadata from
 /// `<app_data>/databases/index.json`. Returns an empty vec on first
 /// boot. Recovery cascade applies — a corrupted index falls back to
-/// `.bak`.
+/// `.bak`. The payload is master-DEK-encrypted under
+/// `ArtifactKind::DatabasesIndex` (P4); legacy plaintext-P1 files
+/// pre-dating P4 are still readable and get promoted on the next save.
 #[tauri::command]
-pub async fn databases_list(app: AppHandle) -> Result<Option<LoadResult>, String> {
+pub async fn databases_list(
+    app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
+) -> Result<Option<LoadResult>, String> {
     let path = index_path(&app)?;
-    safe_read(&path).map_err(|e| e.to_string())
+    encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &path).await
 }
 
-/// Write the list. The caller controls the JSON shape; this command
-/// is JSON-shape-agnostic.
+/// Write the list. Encrypts under `ArtifactKind::DatabasesIndex` before
+/// handing the bytes to the safe writer. Refuses loudly when the
+/// encryption state is locked — there is no plaintext fallback.
 #[tauri::command]
 pub async fn databases_save_index(
     app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
     list: serde_json::Value,
 ) -> Result<(), String> {
     let path = index_path(&app)?;
-    let payload = serde_json::to_vec(&list).map_err(|e| format!("serialise index: {e}"))?;
-    safe_write(&path, &payload).map_err(|e| e.to_string())
+    encrypted_save(&enc_state, ArtifactKind::DatabasesIndex, &path, &list).await
 }
 
 /// Load `<app_data>/databases/<id>.json`. Returns `None` when no
 /// version of the file survives the recovery ladder; the frontend
 /// treats this as "database does not exist" and surfaces a
-/// `DatabaseNotFoundError`.
+/// `DatabaseNotFoundError`. The payload is decrypted under
+/// `ArtifactKind::Connections` (P4) — legacy plaintext-P1 files
+/// pre-dating P4 are still readable.
 #[tauri::command]
 pub async fn load_database_data(
     app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
     database_id: String,
 ) -> Result<Option<LoadResult>, String> {
     let path = per_db_path(&app, &database_id)?;
-    safe_read(&path).map_err(|e| e.to_string())
+    encrypted_load(&enc_state, ArtifactKind::Connections, &path).await
 }
 
 /// Save `<app_data>/databases/<id>.json`. The frontend supplies the
 /// payload as a JSON value — could be a plain object or an encrypted
-/// string envelope — and this command stores it byte-for-byte under
-/// the preamble.
+/// string envelope from the per-database-password layer — and this
+/// command wraps it in the master-DEK envelope before writing.
+/// Refuses loudly when the encryption state is locked.
+///
+/// **Two-layer note:** when the user has set a per-database password
+/// (frontend WebCrypto AES-GCM, the existing checkbox), the value
+/// arriving here is already a string-encoded ciphertext. P4 wraps
+/// that string in the master-DEK envelope as well, giving a
+/// belt-and-suspenders double-encryption. This is intentional —
+/// the per-DB-password layer is compartmentalisation across users
+/// of the same machine, P4 is at-rest protection of the file itself.
 #[tauri::command]
 pub async fn save_database_data(
     app: AppHandle,
+    enc_state: tauri::State<'_, EncryptionState>,
     database_id: String,
     data: serde_json::Value,
 ) -> Result<(), String> {
     let path = per_db_path(&app, &database_id)?;
-    let payload = serde_json::to_vec(&data).map_err(|e| format!("serialise payload: {e}"))?;
-    safe_write(&path, &payload).map_err(|e| e.to_string())
+    encrypted_save(&enc_state, ArtifactKind::Connections, &path, &data).await
 }
 
 /// Best-effort removal of every variant (canonical + .bak + .tmp +
@@ -678,5 +871,287 @@ mod tests {
         safe_write(&path, b"\"\"").unwrap();
         let result = safe_read(&path).unwrap().unwrap();
         assert_eq!(result.value, serde_json::json!(""));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // P4 — master-DEK encryption-at-rest
+    // ──────────────────────────────────────────────────────────────
+    // These tests use the `EncryptionState` shim directly without
+    // any Tauri runtime, since the encrypt/decrypt helpers take a
+    // borrowed state.
+    // ══════════════════════════════════════════════════════════════
+
+    use sorng_encryption::MasterDek;
+
+    async fn unlocked_state(seed: u8) -> EncryptionState {
+        let state = EncryptionState::new();
+        let dek = MasterDek::from_bytes(&[seed; 32]).expect("32-byte DEK");
+        state.install(dek).await;
+        state
+    }
+
+    #[tokio::test]
+    async fn encrypted_round_trip_per_database() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("dbA.json");
+        let state = unlocked_state(0x11).await;
+        let value = serde_json::json!({
+            "connections": [{ "id": "c1", "host": "example.com" }],
+            "settings": {},
+            "timestamp": 42,
+        });
+        encrypted_save(&state, ArtifactKind::Connections, &path, &value)
+            .await
+            .unwrap();
+        // Confirm what's on disk is NOT plaintext JSON — i.e. the
+        // master-DEK layer fired. Strip the SDBF preamble and verify
+        // the payload starts with the SORNG envelope magic.
+        let on_disk = std::fs::read(&path).unwrap();
+        assert!(on_disk.len() > PREAMBLE_LEN);
+        let inner = &on_disk[PREAMBLE_LEN..];
+        assert!(
+            is_envelope_blob(inner),
+            "P4 must wrap the payload in a SORNG envelope on disk"
+        );
+        // And the load path must recover the exact original value.
+        let loaded = encrypted_load(&state, ArtifactKind::Connections, &path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.value, value);
+        assert_eq!(loaded.source, LoadSource::Current);
+    }
+
+    #[tokio::test]
+    async fn encrypted_round_trip_index() {
+        // Index payload is a JSON array at the root — confirms the
+        // envelope codec doesn't care about object-vs-array, unlike
+        // the artifact-specific writers.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("index.json");
+        let state = unlocked_state(0x22).await;
+        let value = serde_json::json!([
+            { "id": "a", "name": "Alpha" },
+            { "id": "b", "name": "Beta" },
+        ]);
+        encrypted_save(&state, ArtifactKind::DatabasesIndex, &path, &value)
+            .await
+            .unwrap();
+        let loaded = encrypted_load(&state, ArtifactKind::DatabasesIndex, &path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.value, value);
+    }
+
+    #[tokio::test]
+    async fn save_refuses_when_locked() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("locked.json");
+        let state = EncryptionState::new(); // locked
+        let err = encrypted_save(
+            &state,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({}),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("locked"),
+            "locked-state error must surface, got: {err}"
+        );
+        // And the file must not have been created.
+        assert!(!path.exists(), "locked save must not touch disk");
+    }
+
+    #[tokio::test]
+    async fn load_refuses_when_locked_on_encrypted_file() {
+        // Write while unlocked, then drop the state and try to read
+        // with a locked state. Must error rather than return data.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("dbE.json");
+        let writer = unlocked_state(0x33).await;
+        encrypted_save(
+            &writer,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "a": 1 }),
+        )
+        .await
+        .unwrap();
+
+        let locked = EncryptionState::new();
+        let err = encrypted_load(&locked, ArtifactKind::Connections, &path)
+            .await
+            .unwrap_err();
+        assert!(err.contains("locked"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn legacy_plaintext_p1_is_still_readable() {
+        // Write a file in the OLD shape: SDBF preamble + raw JSON.
+        // P4 must read it transparently — that's the migration path.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("legacy.json");
+        let legacy_value = serde_json::json!({
+            "connections": [],
+            "settings": {},
+            "timestamp": 7,
+        });
+        let legacy_bytes = serde_json::to_vec(&legacy_value).unwrap();
+        safe_write(&path, &legacy_bytes).unwrap();
+
+        // Even an unlocked state must read the legacy file (the
+        // envelope branch doesn't fire because the magic doesn't
+        // match) — and even a locked state should read it, since
+        // there's no envelope to decrypt.
+        let state = EncryptionState::new();
+        let loaded = encrypted_load(&state, ArtifactKind::Connections, &path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.value, legacy_value);
+    }
+
+    #[tokio::test]
+    async fn legacy_per_db_password_string_payload_still_loads() {
+        // Pre-P4 per-database-password encryption stored a JSON
+        // *string* at the root: a WebCrypto envelope literal like
+        // `"{salt: ..., iv: ..., ciphertext: ...}"` JSON-encoded
+        // down to `"\"...\""` bytes under the SDBF preamble. The
+        // bytes start with `"`, not the SORNG envelope magic, so
+        // the legacy-plaintext branch must accept them and return
+        // the `Value::String` so the frontend WebCrypto layer can
+        // decrypt it. P4 wraps subsequent saves in the master-DEK
+        // envelope; the per-DB string lives inside that envelope's
+        // ciphertext.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("legacy-string.json");
+        let password_envelope = serde_json::json!(
+            "QkFTRTY0LXNhbHQ=.QkFTRTY0LWl2.QkFTRTY0LWNpcGhlcnRleHQ="
+        );
+        let legacy_bytes = serde_json::to_vec(&password_envelope).unwrap();
+        safe_write(&path, &legacy_bytes).unwrap();
+
+        let state = EncryptionState::new(); // locked is fine for legacy
+        let loaded = encrypted_load(&state, ArtifactKind::Connections, &path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.value, password_envelope);
+        assert!(loaded.value.is_string());
+    }
+
+    #[tokio::test]
+    async fn next_save_promotes_legacy_to_envelope() {
+        // The tolerant-read-+-re-encrypt-on-write policy: a legacy
+        // plaintext file is upgraded automatically when the user
+        // next saves. Verify the on-disk shape changes accordingly.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("promote.json");
+        let legacy = serde_json::json!({ "v": 1 });
+        let legacy_bytes = serde_json::to_vec(&legacy).unwrap();
+        safe_write(&path, &legacy_bytes).unwrap();
+
+        let state = unlocked_state(0x44).await;
+        let updated = serde_json::json!({ "v": 2 });
+        encrypted_save(&state, ArtifactKind::Connections, &path, &updated)
+            .await
+            .unwrap();
+
+        let on_disk = std::fs::read(&path).unwrap();
+        let inner = &on_disk[PREAMBLE_LEN..];
+        assert!(
+            is_envelope_blob(inner),
+            "save must promote the file from legacy to envelope shape"
+        );
+    }
+
+    #[tokio::test]
+    async fn cross_kind_isolation_index_vs_per_db() {
+        // A per-DB file (ArtifactKind::Connections) must NOT decrypt
+        // when read under ArtifactKind::DatabasesIndex even with the
+        // same master DEK — the HKDF labels enforce sub-key domain
+        // separation. This is the property new ArtifactKind variants
+        // exist to provide.
+        let dir = tempdir().unwrap();
+        let perdb_path = dir.path().join("perdb.json");
+        let state = unlocked_state(0x55).await;
+        encrypted_save(
+            &state,
+            ArtifactKind::Connections,
+            &perdb_path,
+            &serde_json::json!({ "k": "v" }),
+        )
+        .await
+        .unwrap();
+
+        let err = encrypted_load(&state, ArtifactKind::DatabasesIndex, &perdb_path)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("envelope") || err.contains("auth"),
+            "cross-kind load must fail authentication; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cross_master_dek_isolation() {
+        // Write with master A, try to read with master B — must fail.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("rotated.json");
+        let writer = unlocked_state(0x66).await;
+        encrypted_save(
+            &writer,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "k": "v" }),
+        )
+        .await
+        .unwrap();
+
+        let other = unlocked_state(0x77).await;
+        let err = encrypted_load(&other, ArtifactKind::Connections, &path)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("envelope") || err.contains("auth"),
+            "wrong master must fail; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_ladder_surfaces_source_on_encrypted_files() {
+        // Write twice → canonical and .bak both exist as envelopes.
+        // Delete canonical → next load comes from .bak with source=Backup.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("ladder.json");
+        let state = unlocked_state(0x88).await;
+        encrypted_save(
+            &state,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "gen": 1 }),
+        )
+        .await
+        .unwrap();
+        encrypted_save(
+            &state,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "gen": 2 }),
+        )
+        .await
+        .unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let loaded = encrypted_load(&state, ArtifactKind::Connections, &path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.source, LoadSource::Backup);
+        // Generation 1 is the previous save — the .bak we promoted.
+        assert_eq!(loaded.value, serde_json::json!({ "gen": 1 }));
     }
 }

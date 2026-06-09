@@ -55,6 +55,11 @@ pub enum ArtifactKind {
     Logs,
     /// `macros/*.enc` — macros library (Phase 3).
     Macros,
+    /// `databases/index.json` — the per-database metadata list (P4).
+    /// Distinct from `Connections` so a per-DB payload swapped into
+    /// the index slot fails authentication rather than decoding
+    /// successfully under the wrong slot.
+    DatabasesIndex,
 }
 
 impl ArtifactKind {
@@ -69,6 +74,7 @@ impl ArtifactKind {
             ArtifactKind::Backups => "sorng-v1::backups",
             ArtifactKind::Logs => "sorng-v1::logs",
             ArtifactKind::Macros => "sorng-v1::macros",
+            ArtifactKind::DatabasesIndex => "sorng-v1::databases-index",
         }
     }
 
@@ -83,6 +89,7 @@ impl ArtifactKind {
             ArtifactKind::Backups,
             ArtifactKind::Logs,
             ArtifactKind::Macros,
+            ArtifactKind::DatabasesIndex,
         ]
     }
 }
