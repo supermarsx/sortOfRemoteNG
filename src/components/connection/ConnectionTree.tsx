@@ -123,6 +123,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             singleClickConnect={mgr.settings.singleClickConnect}
             singleClickDisconnect={mgr.settings.singleClickDisconnect}
             doubleClickRename={mgr.settings.doubleClickRename}
+            folderSingleClickToggle={mgr.settings.folderSingleClickToggle}
             onDragStart={mgr.handleItemDragStart}
             onDragOver={mgr.handleItemDragOver}
             onDragLeave={() => { /* let next dragOver set the new target */ }}

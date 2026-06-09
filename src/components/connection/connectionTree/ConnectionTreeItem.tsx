@@ -15,6 +15,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   enableReorder, isDragging, isDragOver, dropPosition,
   onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop,
   singleClickConnect, singleClickDisconnect, doubleClickRename,
+  folderSingleClickToggle,
 }) => {
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
@@ -44,7 +45,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
       return;
     }
     dispatch({ type: "SELECT_CONNECTION", payload: connection });
-    if (!connection.isGroup) {
+    if (connection.isGroup) {
+      // Folder rows: toggle expand on any click within the row
+      // (not just the chevron) when the setting is on. The chevron
+      // button keeps its own onClick + stopPropagation so it still
+      // works either way.
+      if (folderSingleClickToggle) handleToggleExpand();
+    } else {
       if (activeSession && singleClickDisconnect) onDisconnect(connection);
       else if (!activeSession && singleClickConnect) onConnect(connection);
     }
@@ -134,7 +141,20 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
         {connection.isGroup && (
           <button
-            onClick={handleToggleExpand}
+            onClick={(e) => {
+              // When the row-click toggle is on, the row's own
+              // onClick already calls handleToggleExpand; letting
+              // the chevron click bubble would toggle twice (net
+              // no-op). When it's off, the chevron must fire and
+              // the row click only selects, so we don't stop
+              // propagation in that mode.
+              if (folderSingleClickToggle) {
+                e.stopPropagation();
+                handleToggleExpand();
+              } else {
+                handleToggleExpand();
+              }
+            }}
             className="flex items-center justify-center w-4 h-4 mr-1 hover:bg-[var(--color-border)] rounded transition-colors"
           >
             {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}

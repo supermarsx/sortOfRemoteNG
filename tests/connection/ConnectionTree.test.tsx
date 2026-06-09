@@ -96,6 +96,114 @@ describe("ConnectionTree", () => {
     expect(await screen.findByText("Item 1")).toBeInTheDocument();
   });
 
+  it("expands a folder when clicking the row body (folderSingleClickToggle default)", async () => {
+    // The default mock for useSettings ships
+    // folderSingleClickToggle = true, so a click anywhere on the
+    // folder row should toggle expansion — not just the chevron.
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <InitConnections connections={mockConnections} />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+
+    expect(screen.queryByText("Item 1")).toBeNull();
+
+    // Click the folder NAME — well away from the chevron — and
+    // verify the child becomes visible.
+    const folderName = screen.getByText("Group 1");
+    fireEvent.click(folderName);
+
+    expect(await screen.findByText("Item 1")).toBeInTheDocument();
+
+    // Click again on the row body → collapses again.
+    fireEvent.click(folderName);
+    await waitFor(() => {
+      expect(screen.queryByText("Item 1")).toBeNull();
+    });
+  });
+
+  it("does NOT expand a folder on row-body click when folderSingleClickToggle is off", async () => {
+    // The setup-file mock locks in `useSettings()` at module load,
+    // so re-mocking SettingsContext mid-test doesn't reach
+    // already-imported components. Render ConnectionTreeItem
+    // directly with the explicit prop instead — that's the same
+    // surface ConnectionTree threads the setting through, so the
+    // assertion still covers the wiring contract end-to-end.
+    const { default: ConnectionTreeItem } = await import(
+      "../../src/components/connection/connectionTree/ConnectionTreeItem"
+    );
+
+    function Harness() {
+      const { dispatch } = useConnections();
+      React.useEffect(() => {
+        dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
+      }, [dispatch]);
+      const folder = mockConnections[0];
+      const noop = () => {};
+      return (
+        <ConnectionTreeItem
+          connection={folder}
+          level={0}
+          onConnect={noop}
+          onDisconnect={noop}
+          onEdit={noop}
+          onDelete={noop}
+          onCopyHostname={noop}
+          onRename={noop}
+          onExport={noop}
+          onConnectWithOptions={noop}
+          onConnectWithoutCredentials={noop}
+          onExecuteScripts={noop}
+          onDiagnostics={noop}
+          onDetachSession={noop}
+          onDuplicate={noop}
+          onCheckConnection={noop}
+          onWindowsTool={noop}
+          onConnectAll={noop}
+          onConnectAllRecursive={noop}
+          enableReorder={false}
+          isDragging={false}
+          isDragOver={false}
+          dropPosition={null}
+          onDragStart={noop}
+          onDragOver={noop}
+          onDragLeave={noop}
+          onDragEnd={noop}
+          onDrop={noop}
+          singleClickConnect={false}
+          singleClickDisconnect={false}
+          doubleClickRename={false}
+          folderSingleClickToggle={false}
+        />
+      );
+    }
+
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+
+    // Click the folder NAME — must NOT change aria-expanded.
+    const folderName = screen.getByText("Group 1");
+    fireEvent.click(folderName);
+
+    await new Promise((r) => setTimeout(r, 20));
+    const folderRow = folderName.closest('[role="treeitem"]') as HTMLElement;
+    expect(folderRow.getAttribute("aria-expanded")).toBe("false");
+
+    // Chevron path still toggles even when row-click is off.
+    const toggleButton = within(folderRow).getAllByRole("button")[0];
+    fireEvent.click(toggleButton);
+    await waitFor(() => {
+      expect(folderRow.getAttribute("aria-expanded")).toBe("true");
+    });
+  });
+
   it("selects an item when clicked", async () => {
     let selectedId: string | null = null;
     const Observer = () => {

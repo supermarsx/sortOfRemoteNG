@@ -37,6 +37,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'enableAutocomplete', label: 'Autocomplete', description: 'Enable input autocomplete', tags: ['auto complete', 'suggestions'], section: 'behavior', sectionLabel: 'Behavior' },
   { key: 'doubleClickConnect', label: 'Double Click Connect', description: 'Connect on double click', tags: ['double click', 'open', 'mouse'], section: 'behavior', sectionLabel: 'Behavior' },
   { key: 'middleClickCloseTab', label: 'Middle Click Close Tab', description: 'Close tabs with middle mouse click', tags: ['middle click', 'close tab', 'mouse'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'folderSingleClickToggle', label: 'Folder expand on single click', description: 'Click anywhere on a folder row to expand or collapse', tags: ['folder', 'expand', 'collapse', 'tree', 'sidebar', 'click'], section: 'behavior', sectionLabel: 'Behavior' },
   { key: 'openConnectionInBackground', label: 'Open in Background', description: 'Open new connections in background tab', tags: ['background', 'tab', 'new tab'], section: 'behavior', sectionLabel: 'Behavior' },
   { key: 'switchTabOnActivity', label: 'Switch Tab on Activity', description: 'Focus tab when it receives output', tags: ['activity', 'output', 'focus', 'switch'], section: 'behavior', sectionLabel: 'Behavior' },
   { key: 'closeTabOnDisconnect', label: 'Close Tab on Disconnect', description: 'Auto-close tab when session ends', tags: ['close', 'disconnect', 'auto close'], section: 'behavior', sectionLabel: 'Behavior' },

@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { MousePointer2 } from "lucide-react";
+import { MousePointer2, FolderOpen } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -56,6 +56,15 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         description="Middle mouse button closes the clicked tab"
         settingKey="middleClickCloseTab"
         infoTooltip="Clicking a tab with the middle mouse button will close it immediately, similar to browser tab behavior."
+      />
+      <Toggle
+        checked={s.folderSingleClickToggle}
+        onChange={(v) => u({ folderSingleClickToggle: v })}
+        icon={<FolderOpen size={16} />}
+        label="Folder expand on single click"
+        description="Click anywhere on a folder row to expand or collapse it"
+        settingKey="folderSingleClickToggle"
+        infoTooltip="When on, a single click anywhere on a folder in the sidebar tree toggles its expanded state. When off, only the small chevron on the left toggles it and the row body just selects."
       />
     </Card>
   </div>

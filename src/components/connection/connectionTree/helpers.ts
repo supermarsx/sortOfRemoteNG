@@ -72,5 +72,11 @@ export interface ConnectionTreeItemProps {
   singleClickConnect?: boolean;
   singleClickDisconnect?: boolean;
   doubleClickRename?: boolean;
+  /**
+   * When true, clicking anywhere on a folder row toggles expand
+   * (not just the chevron). Matches the natural file-browser
+   * gesture. Defaults to true via SettingsManager defaults.
+   */
+  folderSingleClickToggle?: boolean;
 }
 

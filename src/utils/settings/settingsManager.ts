@@ -104,6 +104,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   doubleClickRename: false,
   doubleClickConnect: true,
   middleClickCloseTab: true,
+  folderSingleClickToggle: true,
 
   // Tab Behavior
   openConnectionInBackground: false,

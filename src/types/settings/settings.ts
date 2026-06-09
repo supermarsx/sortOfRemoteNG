@@ -195,6 +195,13 @@ export interface GlobalSettings {
   doubleClickRename: boolean;
   doubleClickConnect: boolean;
   middleClickCloseTab: boolean;
+  /**
+   * When true, clicking anywhere on a folder row in the connection
+   * tree toggles its expanded state — not just the small chevron.
+   * Defaults to true so the natural file-browser gesture works out
+   * of the box; users who prefer click-to-select-only can disable it.
+   */
+  folderSingleClickToggle: boolean;
 
   // ─── Tab Behavior ───────────────────────────────────────────
   /** Open new connections in a background tab (don't auto-switch) */
