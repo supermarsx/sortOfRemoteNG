@@ -33,6 +33,83 @@ interface InternalProxyManagerProps {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Session status discriminator                                        */
+/* ------------------------------------------------------------------ */
+/**
+ * Classify a session's health from the manager-reported `error_count`
+ * + `last_error` string. Mirrors the categorisation the Rust side
+ * uses for themed error pages (P2) so the badge a user sees here
+ * matches the page they saw in the iframe.
+ *
+ * `Healthy` — at least one request, no errors. `Waiting` — no
+ * requests yet (typical for a freshly-opened tab whose first GET is
+ * in flight, or a no-auth tab whose iframe hasn't navigated to the
+ * proxy yet). Everything else surfaces the last failure category.
+ */
+type SessionStatus =
+  | "healthy"
+  | "waiting"
+  | "refused"
+  | "dns"
+  | "tls"
+  | "timeout"
+  | "auth"
+  | "errors";
+
+const STATUS_META: Record<SessionStatus, { label: string; tone: "ok" | "warn" | "err" | "muted" }> = {
+  healthy: { label: "Healthy", tone: "ok" },
+  waiting: { label: "Waiting", tone: "muted" },
+  refused: { label: "Refused", tone: "err" },
+  dns: { label: "DNS error", tone: "err" },
+  tls: { label: "TLS error", tone: "err" },
+  timeout: { label: "Timeout", tone: "warn" },
+  auth: { label: "Auth required", tone: "warn" },
+  errors: { label: "Errors", tone: "err" },
+};
+
+function classifySession(s: {
+  request_count: number;
+  error_count: number;
+  last_error?: string | null;
+}): SessionStatus {
+  if (s.error_count === 0 && s.request_count === 0) return "waiting";
+  if (s.error_count === 0) return "healthy";
+  const m = (s.last_error || "").toLowerCase();
+  if (m.includes("connection refused") || m.includes("actively refused"))
+    return "refused";
+  if (m.includes("dns") || m.includes("name or service not known") ||
+      m.includes("failed to lookup") || m.includes("no address associated"))
+    return "dns";
+  if (m.includes("certificate") || m.includes("ssl") ||
+      m.includes("tls") || m.includes("handshake") ||
+      m.includes("self-signed") || m.includes("self signed"))
+    return "tls";
+  if (m.includes("timeout") || m.includes("timed out")) return "timeout";
+  if (m.includes("http 401")) return "auth";
+  return "errors";
+}
+
+const StatusBadge: React.FC<{ status: SessionStatus }> = ({ status }) => {
+  const meta = STATUS_META[status];
+  const cls =
+    meta.tone === "ok"
+      ? "bg-success/15 text-success border-success/30"
+      : meta.tone === "warn"
+        ? "bg-warning/15 text-warning border-warning/30"
+        : meta.tone === "err"
+          ? "bg-error/15 text-error border-error/30"
+          : "bg-[var(--color-textMuted)]/10 text-[var(--color-textMuted)] border-[var(--color-border)]";
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 text-[10px] uppercase tracking-wide rounded border ${cls}`}
+      data-testid={`session-status-${status}`}
+    >
+      {meta.label}
+    </span>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -58,8 +135,8 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Activity size={40} className="mx-auto mb-3 opacity-30" />
         <p className="text-sm">No active proxy sessions</p>
         <p className="text-xs mt-1">
-          Sessions are created when you open HTTP/HTTPS connections with
-          authentication.
+          A session is created for every HTTP/HTTPS connection tab — open
+          a connection to see it here.
         </p>
       </div>
     ) : (
@@ -79,6 +156,7 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                   <span className="text-[var(--color-text)] text-sm font-medium truncate">
                     {s.target_url}
                   </span>
+                  <StatusBadge status={classifySession(s)} />
                 </div>
                 <div className="flex items-center space-x-4 text-xs text-[var(--color-textSecondary)]">
                   {s.username && (
@@ -323,19 +401,30 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </h3>
       <div className="text-xs text-[var(--color-textSecondary)] space-y-1.5">
         <p>
-          The internal proxy uses Tauri&apos;s custom URI scheme protocol (
-          <code className="text-info">sortofremote-proxy://</code>) to
-          mediate HTTP requests.
+          Each HTTP/HTTPS connection tab opens a per-session mediator on a
+          random loopback port (<code className="text-info">127.0.0.1:&lt;port&gt;</code>).
+          The iframe loads from that port and the proxy forwards every
+          request to the upstream target — injecting Basic Auth credentials
+          when configured.
         </p>
         <p>
-          All requests from HTTP/HTTPS connection viewers are intercepted and
-          forwarded to the target server with injected credentials. No local TCP
-          ports are opened — all traffic stays within the WebView process.
+          Upstream failures (connection refused, DNS lookup failure, TLS
+          handshake error, timeout, 5xx) return themed HTML pages styled to
+          match the app, not browser-native error chrome.
         </p>
         <p>
-          Sessions are created automatically when you open a connection with
-          Basic Authentication configured, and are cleaned up when the
-          connection tab is closed.
+          When the upstream returns <code className="text-info">401 Unauthorized</code>
+          {' '}with a Basic challenge, the proxy strips the
+          {' '}<code className="text-info">WWW-Authenticate</code> header
+          (suppressing the browser-native popup) and serves a themed inline
+          login form instead. Submitted credentials update the session and
+          can be saved to the underlying connection.
+        </p>
+        <p>
+          Sessions are created when the connection tab opens — including
+          when no Basic Auth is configured — and are cleaned up when the
+          tab closes. Sessions appear here whether or not the upstream is
+          reachable.
         </p>
       </div>
     </div>

@@ -471,13 +471,19 @@ export function useWebBrowser(session: ConnectionSession) {
     };
   }, []);
 
-  // P3: listen for `proxy-credentials-applied`. The Rust-side
+  // P3/P4: listen for `proxy-credentials-applied`. The Rust-side
   // themed-auth POST handler emits this after the user submits the
   // inline login form and the credentials land in the live session.
   // Filtered to this tab's session_id so multiple open tabs don't
-  // cross-talk. P4 will replace the toast with a "Save these
-  // credentials to the connection?" offer; for now the toast just
-  // confirms the round-trip worked.
+  // cross-talk.
+  //
+  // The toast is informational (session-only credentials) plus a
+  // pointer to the connection editor for persistence. A richer
+  // in-tab "Save these credentials?" banner with one-click persist
+  // is the natural follow-up — it requires either a Toast component
+  // capable of action buttons or a small in-tab banner above the
+  // iframe, neither of which exist today. Documented as a TODO so
+  // the next iteration can land it without re-investigation.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
@@ -488,9 +494,17 @@ export function useWebBrowser(session: ConnectionSession) {
     }>("proxy-credentials-applied", (event) => {
       const payload = event.payload;
       if (!payload || payload.session_id !== proxySessionIdRef.current) return;
+      const who = payload.username || "(empty user)";
       toast.success(
-        `Signed in as ${payload.username || "(empty user)"} — session credentials updated.`,
+        `Signed in as ${who}. Save the credentials in the connection editor to avoid re-prompting next time.`,
+        6000,
       );
+      // TODO(P4b): replace toast with an in-tab banner offering a
+      // one-click "Save to this connection" action. Wire to a new
+      // `get_session_credentials(sessionId)` IPC command that
+      // returns { username, password } from the backend session,
+      // then write to the connection record via
+      // `useConnections().dispatch({ type: "UPDATE_CONNECTION", ... })`.
     })
       .then((fn) => {
         if (cancelled) fn();

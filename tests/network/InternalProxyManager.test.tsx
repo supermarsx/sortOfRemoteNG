@@ -94,6 +94,100 @@ describe("InternalProxyManager", () => {
     });
   });
 
+  it("renders the session status badge (P4) — Healthy for a clean session", async () => {
+    render(<InternalProxyManager isOpen onClose={() => {}} />);
+    // The default mocked session has request_count=3, error_count=0
+    // → classifies as Healthy.
+    const badge = await screen.findByTestId("session-status-healthy");
+    expect(badge).toBeInTheDocument();
+    expect(badge.textContent?.toLowerCase()).toContain("healthy");
+  });
+
+  it("classifies sessions by last_error category", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_proxy_session_details") {
+        return [
+          {
+            session_id: "sess-refused",
+            target_url: "https://refused.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:1/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "tcp connect error: Connection refused (os error 111)",
+          },
+          {
+            session_id: "sess-dns",
+            target_url: "https://nope.invalid",
+            username: "",
+            proxy_url: "http://127.0.0.1:2/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "dns error: failed to lookup address information",
+          },
+          {
+            session_id: "sess-tls",
+            target_url: "https://badcert.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:3/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "tls handshake failed: certificate verify failed",
+          },
+          {
+            session_id: "sess-timeout",
+            target_url: "https://slow.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:4/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "operation timed out",
+          },
+          {
+            session_id: "sess-waiting",
+            target_url: "https://just-opened.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:5/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 0,
+            error_count: 0,
+            last_error: null,
+          },
+        ];
+      }
+      if (cmd === "get_proxy_request_log") return [];
+      return null;
+    });
+
+    render(<InternalProxyManager isOpen onClose={() => {}} />);
+
+    expect(await screen.findByTestId("session-status-refused")).toBeInTheDocument();
+    expect(await screen.findByTestId("session-status-dns")).toBeInTheDocument();
+    expect(await screen.findByTestId("session-status-tls")).toBeInTheDocument();
+    expect(await screen.findByTestId("session-status-timeout")).toBeInTheDocument();
+    expect(await screen.findByTestId("session-status-waiting")).toBeInTheDocument();
+  });
+
+  it("info panel describes universal mediation and themed errors (P4 copy fix)", async () => {
+    render(<InternalProxyManager isOpen onClose={() => {}} />);
+    // The info panel lives inside the Statistics tab.
+    await screen.findByText("Sessions");
+    fireEvent.click(screen.getByText("Statistics"));
+    const infoHeader = await screen.findByText("About the Internal Proxy");
+    // Pre-P4 copy claimed a non-existent sortofremote-proxy:// URI
+    // scheme and a "no local TCP ports" guarantee. Those claims are
+    // gone; the new copy honestly describes the loopback mediator.
+    const root = infoHeader.parentElement!;
+    expect(root.textContent).not.toMatch(/no local TCP ports/i);
+    expect(root.textContent).not.toMatch(/sortofremote-proxy:\/\//i);
+    expect(root.textContent).toMatch(/127\.0\.0\.1/);
+    expect(root.textContent).toMatch(/themed/i);
+  });
+
   it("renders as flat tab content without modal wrapper", async () => {
     const { container } = render(
       <InternalProxyManager isOpen onClose={() => {}} />,
