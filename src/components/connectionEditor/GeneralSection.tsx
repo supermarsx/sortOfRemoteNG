@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useContext, useMemo, useState } from "react";
 import {
   Cloud,
   Database,
@@ -21,6 +21,8 @@ import {
 } from "../../utils/window/dragDropManager";
 import { Checkbox, NumberInput, Select } from '../ui/forms';
 import { useTranslation } from 'react-i18next';
+import { sanitizeHostname } from '../../utils/connection/sanitizeHostname';
+import { ToastContext } from '../../contexts/ToastContext';
 
 interface GeneralSectionProps {
   formData: Partial<Connection>;
@@ -121,8 +123,67 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   const { t } = useTranslation();
   const { state: connectionsState } = useConnections();
   const tabGroups = connectionsState.tabGroups;
+  // Non-throwing read so tests / dialogs that mount GeneralSection
+  // without a ToastProvider don't blow up. The sanitiser hint just
+  // goes unnotified in that case.
+  const toastCtx = useContext(ToastContext);
   const [nameError, setNameError] = useState<string | null>(null);
   const [portError, setPortError] = useState<string | null>(null);
+
+  /**
+   * P8: clean a hostname value (strip leading scheme,
+   * extract port if present, drop path/query). Runs on blur so
+   * the user can paste `http://example.com:8443/admin` and end up
+   * with hostname=`example.com`, port=8443, with a heads-up toast
+   * if anything got rewritten. Idempotent.
+   */
+  const sanitizeHostnameField = (raw: string) => {
+    const result = sanitizeHostname(raw);
+    if (!result.stripped && raw === result.hostname) return;
+    setFormData((prev) => {
+      const next: Partial<Connection> = { ...prev, hostname: result.hostname };
+      // Only adopt the extracted port when (a) one was found and
+      // (b) the user hasn't already set a non-default port on the
+      // record. Don't clobber a deliberate choice.
+      if (
+        result.port &&
+        (!prev.port ||
+          prev.port === getDefaultPort(prev.protocol ?? "rdp"))
+      ) {
+        next.port = result.port;
+      }
+      return next;
+    });
+    if (result.stripped) {
+      const parts: string[] = [];
+      parts.push(
+        t(
+          'connectionEditor.hostnameNormalizedScheme',
+          'Removed the `{{scheme}}://` prefix — the protocol is set separately above.',
+          { scheme: result.scheme },
+        ) as string,
+      );
+      if (result.port) {
+        parts.push(
+          t(
+            'connectionEditor.hostnameNormalizedPort',
+            'Moved port {{port}} into the Port field.',
+            { port: result.port },
+          ) as string,
+        );
+      }
+      if (result.path && result.path !== '/') {
+        parts.push(
+          t(
+            'connectionEditor.hostnameNormalizedPath',
+            'Discarded path `{{path}}` — only the host belongs here.',
+            { path: result.path },
+          ) as string,
+        );
+      }
+      toastCtx?.toast.info(parts.join(' '), 6000);
+    }
+  };
 
   const iconOptions = [
     { value: "", label: t('connectionEditor.iconDefault', 'Default'), icon: Monitor },
@@ -302,6 +363,17 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                 onChange={(e) =>
                   setFormData({ ...formData, hostname: e.target.value })
                 }
+                onBlur={(e) => sanitizeHostnameField(e.target.value)}
+                onPaste={(e) => {
+                  // P8: sanitise on paste too so a `http://x:8080/admin`
+                  // gets normalised the moment it lands in the field —
+                  // not only after the user tabs away. Defer one tick so
+                  // React lets the paste land first.
+                  const text = e.clipboardData?.getData('text');
+                  if (text) {
+                    requestAnimationFrame(() => sanitizeHostnameField(text));
+                  }
+                }}
                 data-testid="editor-hostname"
                 className="sor-form-input"
                 placeholder={t('connectionEditor.hostnamePlaceholder', '192.168.1.100 or server.example.com')}

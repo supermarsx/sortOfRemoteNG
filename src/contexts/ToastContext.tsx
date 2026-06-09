@@ -12,7 +12,11 @@ interface ToastContextType {
   removeAll: () => void;
 }
 
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
+// Exported so callers that want a non-throwing read (e.g. components
+// that may render outside a ToastProvider in tests) can use
+// `useContext(ToastContext)` directly and handle the `undefined`
+// case themselves.
+export const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 interface ToastProviderProps {
   children: ReactNode;

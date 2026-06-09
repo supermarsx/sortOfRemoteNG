@@ -19,6 +19,7 @@ import {
   type CertIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
+import { stripSchemePrefix } from "../../utils/connection/sanitizeHostname";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -71,7 +72,14 @@ export function useWebBrowser(session: ConnectionSession) {
     const defaultPort = session.protocol === "https" ? 443 : 80;
     const port = connection?.port || defaultPort;
     const portSuffix = port === defaultPort ? "" : `:${port}`;
-    return `${protocol}://${session.hostname}${portSuffix}/`;
+    // P8: defensively strip any leading scheme on the hostname so
+    // an old or imported connection whose hostname carries
+    // `http://` doesn't produce `http://http://...` here. The
+    // editor also sanitises at input time (GeneralSection.tsx) so
+    // new connections never reach this point un-cleaned — this
+    // belt is for existing data + .mremoteng/.royal imports.
+    const cleanHost = stripSchemePrefix(session.hostname);
+    return `${protocol}://${cleanHost}${portSuffix}/`;
   }, [connection, session.protocol, session.hostname]);
 
   // ── State ───────────────────────────────────────────────────
