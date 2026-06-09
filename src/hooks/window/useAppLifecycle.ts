@@ -210,6 +210,39 @@ export const useAppLifecycle = ({
       if (!mountedRef.current) return;
       setInitProgress(60);
 
+      // Phase 2.5: One-shot IndexedDB → file migration. Idempotent
+      // and cheap on the no-op fast path (just probes the index).
+      // Must run BEFORE Phase 3's collection load so the new file-
+      // backed `databases_list` is the source of truth before
+      // `databaseManager.getAllDatabases()` is called.
+      if (!safeMode) {
+        try {
+          const { migrateIndexedDbToFiles } = await import(
+            "../../utils/connection/indexedDbMigration"
+          );
+          const report = await migrateIndexedDbToFiles();
+          if (report.migrated > 0 || report.failed > 0) {
+            settingsManager.logAction(
+              report.failed > 0 ? "warn" : "info",
+              "Database migration: IndexedDB → files",
+              undefined,
+              `migrated=${report.migrated} alreadyOnDisk=${report.alreadyOnDisk} failed=${report.failed}`,
+            );
+          }
+          if (report.failed > 0) {
+            console.warn(
+              `Database migration: ${report.failed} entries did not move:`,
+              report.failures,
+            );
+          }
+        } catch (e) {
+          // Migration is best-effort. A failure here must not break
+          // boot — the user's existing IndexedDB data is still
+          // reachable through the legacy code path.
+          console.warn("Database migration skipped:", e);
+        }
+      }
+
       // Phase 3: Collection loading — skipped in safe mode (show collection selector instead)
       setInitStatus("Loading connections...");
       if (safeMode) {
