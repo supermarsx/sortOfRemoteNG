@@ -9,3 +9,4 @@ pub mod raw_socket;
 pub mod rlogin;
 pub mod themed_auth;
 pub mod themed_errors;
+pub mod themed_status;

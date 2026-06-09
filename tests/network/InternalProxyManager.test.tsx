@@ -172,6 +172,94 @@ describe("InternalProxyManager", () => {
     expect(await screen.findByTestId("session-status-waiting")).toBeInTheDocument();
   });
 
+  it("classifies HTTP status codes from last_error (P5)", async () => {
+    // Backend formats every upstream 4xx/5xx as "HTTP <code> for <url>"
+    // (http.rs:726). Verify the classifier maps each well-known code
+    // to its own badge tone+label.
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_proxy_session_details") {
+        return [
+          {
+            session_id: "sess-403",
+            target_url: "https://locked.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:1/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "HTTP 403 for https://locked.test",
+          },
+          {
+            session_id: "sess-404",
+            target_url: "https://gone.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:2/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "HTTP 404 for https://gone.test/missing",
+          },
+          {
+            session_id: "sess-429",
+            target_url: "https://api.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:3/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "HTTP 429 for https://api.test",
+          },
+          {
+            session_id: "sess-500",
+            target_url: "https://broken.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:4/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "HTTP 500 for https://broken.test",
+          },
+          {
+            session_id: "sess-503",
+            target_url: "https://overload.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:5/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "HTTP 503 for https://overload.test",
+          },
+          {
+            session_id: "sess-407",
+            target_url: "https://proxy.test",
+            username: "",
+            proxy_url: "http://127.0.0.1:6/",
+            created_at: "2026-01-01T12:00:00.000Z",
+            request_count: 1,
+            error_count: 1,
+            last_error: "HTTP 407 for https://proxy.test",
+          },
+        ];
+      }
+      if (cmd === "get_proxy_request_log") return [];
+      return null;
+    });
+
+    render(<InternalProxyManager isOpen onClose={() => {}} />);
+
+    expect(await screen.findByTestId("session-status-forbidden")).toBeInTheDocument();
+    expect(await screen.findByTestId("session-status-notfound")).toBeInTheDocument();
+    expect(await screen.findByTestId("session-status-ratelimited")).toBeInTheDocument();
+    // Two distinct 5xx codes both land in "Server error" — confirm
+    // exactly two of them are rendered.
+    const serverBadges = await screen.findAllByTestId("session-status-servererror");
+    expect(serverBadges).toHaveLength(2);
+    // 407 falls into the "auth" bucket alongside 401, since the UX is
+    // identical (the proxy will offer a themed challenge or surface
+    // the same "Auth required" badge).
+    expect(await screen.findByTestId("session-status-auth")).toBeInTheDocument();
+  });
+
   it("info panel describes universal mediation and themed errors (P4 copy fix)", async () => {
     render(<InternalProxyManager isOpen onClose={() => {}} />);
     // The info panel lives inside the Statistics tab.

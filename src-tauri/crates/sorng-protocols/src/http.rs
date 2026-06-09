@@ -819,6 +819,78 @@ pub async fn axum_proxy_handler(
                 }
             };
 
+            // ── P5: theme every other upstream 4xx/5xx ──
+            //
+            // P3 already short-circuited 401 + WWW-Authenticate: Basic
+            // above; this branch handles everything else. We gate on
+            // text/html (or missing Content-Type) because an API
+            // consumer hitting /v1/something returning 404 with JSON
+            // expects to see the JSON, not a themed page. The raw
+            // upstream body lives in a `<details>` block on the
+            // themed page so power users can still read it.
+            if status_u16 >= 400 {
+                let is_html_or_empty = content_type
+                    .as_deref()
+                    .map(|ct| {
+                        let lc = ct.to_ascii_lowercase();
+                        lc.contains("text/html") || lc.is_empty()
+                    })
+                    .unwrap_or(true); // missing Content-Type → assume HTML
+                if is_html_or_empty {
+                    // Mirror P2's web-recording capture so a themed
+                    // error still shows up in any active HAR. (This
+                    // is the only side effect the normal Ok-arm has
+                    // before the body is sent; everything else
+                    // downstream is response-shaping that we skip
+                    // by returning early.)
+                    if let Ok(mut recordings) = active_web_recordings().lock() {
+                        if let Some(rec_state) =
+                            recordings.get_mut(&state.session_id)
+                        {
+                            let timestamp_ms =
+                                rec_state.start_time.elapsed().as_millis() as u64;
+                            let mut response_headers: HashMap<String, String> =
+                                HashMap::new();
+                            if rec_state.record_headers {
+                                for (k, v) in resp_hdrs.iter() {
+                                    if let Ok(s) = v.to_str() {
+                                        response_headers
+                                            .insert(k.as_str().to_string(), s.to_string());
+                                    }
+                                }
+                            }
+                            rec_state.entries.push(WebRecordingEntry {
+                                timestamp_ms,
+                                method: method_str.clone(),
+                                url: full_url.clone(),
+                                request_headers: if rec_state.record_headers {
+                                    fwd_headers
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect()
+                                } else {
+                                    HashMap::new()
+                                },
+                                request_body_size: body_bytes.len() as u64,
+                                status: status_u16,
+                                response_headers,
+                                response_body_size: raw_bytes.len() as u64,
+                                content_type: content_type.clone(),
+                                duration_ms: req_start.elapsed().as_millis() as u64,
+                                error: Some(format!("HTTP {}", status_u16)),
+                            });
+                        }
+                    }
+                    return crate::themed_status::themed_status_response(
+                        status_u16,
+                        &full_url,
+                        &raw_bytes,
+                    );
+                }
+                // Non-HTML 4xx/5xx — pass through as-is so JSON/XML
+                // API consumers see the real response.
+            }
+
             // ── Web recording capture ──
             if let Ok(mut recordings) = active_web_recordings().lock() {
                 if let Some(rec_state) = recordings.get_mut(&state.session_id) {
