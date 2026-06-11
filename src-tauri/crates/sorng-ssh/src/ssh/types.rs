@@ -579,17 +579,27 @@ pub struct SshShellClosed {
 // Port Forwarding Types
 // ===============================
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PortForwardConfig {
     pub local_host: String,
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
     pub direction: PortForwardDirection,
+    /// Security opt-in for exposing a local/dynamic forward listener on a
+    /// non-loopback (e.g. `0.0.0.0` or a LAN/public interface) bind address.
+    ///
+    /// Defaults to `false` (secure-by-default): forwards bind to loopback only.
+    /// When `false`, requesting a non-loopback `local_host` is rejected with an
+    /// actionable error. Set to `true` to deliberately expose the forward to
+    /// other hosts on the network.
+    #[serde(default)]
+    pub allow_non_loopback_bind: bool,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum PortForwardDirection {
+    #[default]
     Local,
     Remote,
     Dynamic,
