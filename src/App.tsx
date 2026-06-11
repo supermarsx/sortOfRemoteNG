@@ -10,14 +10,30 @@ import { Monitor, Zap, Plus, Database } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { Connection, ConnectionSession, TabLayout, TabLayoutMode } from "./types/connection/connection";
-import { buildTabLayout, clampGridDim, hasFreeSlot } from "./utils/session/tabLayoutBuilder";
+import {
+  Connection,
+  ConnectionSession,
+  TabLayout,
+  TabLayoutMode,
+} from "./types/connection/connection";
+import {
+  buildTabLayout,
+  clampGridDim,
+  hasFreeSlot,
+} from "./utils/session/tabLayoutBuilder";
 import { realConnectionCount } from "./utils/session/sessionClassification";
-import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings/settings";
+import {
+  CloudSyncProvider,
+  GlobalSettings,
+  defaultCloudSyncConfig,
+} from "./types/settings/settings";
 import { SettingsManager } from "./utils/settings/settingsManager";
 import { StatusChecker } from "./utils/connection/statusChecker";
 import { DatabaseManager } from "./utils/connection/databaseManager";
-import { DatabaseNotFoundError, InvalidPasswordError } from "./utils/core/errors";
+import {
+  DatabaseNotFoundError,
+  InvalidPasswordError,
+} from "./utils/core/errors";
 import { SecureStorage } from "./utils/storage/storage";
 import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
@@ -36,7 +52,12 @@ import { SplashScreen } from "./components/app/SplashScreen";
 import { CriticalErrorScreen } from "./components/app/CriticalErrorScreen";
 import { startMemoryWatchdog } from "./utils/debug/memoryWatchdog";
 import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
-import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/toolSession";
+import {
+  ToolKey,
+  createToolSession,
+  getToolProtocol,
+  isToolProtocol,
+} from "./components/app/toolSession";
 import { generateId } from "./utils/core/id";
 import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
 import { useWindowControls } from "./hooks/window/useWindowControls";
@@ -51,11 +72,13 @@ import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 import { useUpdaterAutoCheck } from "./hooks/updater/useUpdaterAutoCheck";
 import { useStartupFailureAlerts } from "./hooks/app/useStartupFailureAlerts";
+import { useSettingsWriteFailureAlerts } from "./hooks/app/useSettingsWriteFailureAlerts";
 // t5-e4: global reachability-check modal — listens for `bulk-check-connections` CustomEvent.
 import { CheckConnectionsModalMount } from "./components/connection/CheckConnectionsModal";
 
 const AppDialogs = dynamic(
-  () => import("./components/app/AppDialogs").then((module) => module.AppDialogs),
+  () =>
+    import("./components/app/AppDialogs").then((module) => module.AppDialogs),
   { ssr: false },
 );
 
@@ -71,13 +94,16 @@ const AppContent: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showDatabasePanel, setShowDatabasePanel] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
-  const [databasePanelInitialTab, setDatabasePanelInitialTab] = useState<'collections' | undefined>(undefined);
+  const [databasePanelInitialTab, setDatabasePanelInitialTab] = useState<
+    "collections" | undefined
+  >(undefined);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
   // isRdpPanelResizing is in useResizeHandlers hook
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
+  const [diagnosticsConnection, setDiagnosticsConnection] =
+    useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
   >(null);
@@ -86,7 +112,9 @@ const AppContent: React.FC = () => {
     // tiling mode (and custom grid dimensions) survive restarts.
     const initial = settingsManager.getSettings();
     const persisted = initial.tabLayoutState;
-    const mode: TabLayoutMode = (persisted?.mode ?? initial.defaultTabLayout ?? "tabs") as TabLayoutMode;
+    const mode: TabLayoutMode = (persisted?.mode ??
+      initial.defaultTabLayout ??
+      "tabs") as TabLayoutMode;
     return buildTabLayout(mode, [], {
       customCols: persisted?.customCols,
       customRows: persisted?.customRows,
@@ -107,7 +135,7 @@ const AppContent: React.FC = () => {
     title?: string;
     confirmText?: string;
     cancelText?: string;
-    variant?: 'default' | 'danger' | 'warning';
+    variant?: "default" | "danger" | "warning";
     onConfirm: () => void;
     onCancel?: () => void;
     // P9: optional middle button — used by the folder-delete dialog
@@ -116,7 +144,7 @@ const AppContent: React.FC = () => {
     secondaryAction?: {
       label: string;
       onClick: () => void;
-      variant?: 'default' | 'warning';
+      variant?: "default" | "warning";
     };
   }>({
     isOpen: false,
@@ -150,13 +178,14 @@ const AppContent: React.FC = () => {
     confirmDialog,
   } = useSessionManager();
 
-  const { isInitialized, initProgress, initStatus, criticalError } = useAppLifecycle({
-    handleConnect,
-    restoreSession,
-    setShowDatabasePanel,
-    setShowPasswordDialog,
-    setPasswordDialogMode,
-  });
+  const { isInitialized, initProgress, initStatus, criticalError } =
+    useAppLifecycle({
+      handleConnect,
+      restoreSession,
+      setShowDatabasePanel,
+      setShowPasswordDialog,
+      setPasswordDialogMode,
+    });
 
   // Start memory watchdog once settings are available
   useEffect(() => {
@@ -170,96 +199,148 @@ const AppContent: React.FC = () => {
       systemWarningPct: mw.systemWarningPct,
       systemKillPct: mw.systemKillPct,
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time watchdog init on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time watchdog init on mount
   }, []);
 
   // Extracted hooks
   const {
-    isAlwaysOnTop, isWindowPermissionError,
-    handleMinimize, handleToggleTransparency, handleToggleAlwaysOnTop,
-    handleRepatriateWindow, handleMaximize, handleOpenDevtools, handleClose,
+    isAlwaysOnTop,
+    isWindowPermissionError,
+    handleMinimize,
+    handleToggleTransparency,
+    handleToggleAlwaysOnTop,
+    handleRepatriateWindow,
+    handleMaximize,
+    handleOpenDevtools,
+    handleClose,
   } = useWindowControls(appSettings, settingsManager);
   useTooltipSystem();
   useWindowTheme(appSettings, isWindowPermissionError);
   useWindowPersistence(
-    appSettings, settingsManager, isInitialized, isWindowPermissionError,
-    sidebarWidth, setSidebarWidth, sidebarPosition, setSidebarPosition,
-    state.sidebarCollapsed, dispatch,
+    appSettings,
+    settingsManager,
+    isInitialized,
+    isWindowPermissionError,
+    sidebarWidth,
+    setSidebarWidth,
+    sidebarPosition,
+    setSidebarPosition,
+    state.sidebarCollapsed,
+    dispatch,
   );
-  useDetachedSessionEvents(handleSessionClose, state.sessions, dispatch, setActiveSessionId);
-  useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
-  useStartupFailureAlerts();
-  const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } = useWindowManager({
-    sessions: state.sessions,
-    connections: state.connections,
-    tabGroups: state.tabGroups,
+  useDetachedSessionEvents(
+    handleSessionClose,
+    state.sessions,
     dispatch,
     setActiveSessionId,
-    handleSessionClose,
-  });
+  );
+  useUpdaterAutoCheck({ enabled: appReady, startDelayMs: 10_000 });
+  useStartupFailureAlerts();
+  useSettingsWriteFailureAlerts();
+  const { registerWindow: wmRegisterWindow, detachRef: wmDetachRef } =
+    useWindowManager({
+      sessions: state.sessions,
+      connections: state.connections,
+      tabGroups: state.tabGroups,
+      dispatch,
+      setActiveSessionId,
+      handleSessionClose,
+    });
   const { handleMouseDown, handleRdpPanelMouseDown } = useResizeHandlers(
-    sidebarPosition, setSidebarWidth, setRdpPanelWidth, layoutRef,
+    sidebarPosition,
+    setSidebarWidth,
+    setRdpPanelWidth,
+    layoutRef,
   );
 
   // ─── Tool Tab Mode ──────────────────────────────────────────────
   // All tools open as session tabs. Use a ref for the latest sessions
   // so the callback never needs to be re-created.
   const sessionsRef = useRef(state.sessions);
-  useEffect(() => { sessionsRef.current = state.sessions; }, [state.sessions]);
+  useEffect(() => {
+    sessionsRef.current = state.sessions;
+  }, [state.sessions]);
 
   /** Focus a detached Tauri window by its label. */
   const focusDetachedWindow = useCallback((windowId: string) => {
-    getAllWindows().then(windows => {
-      const win = windows.find(w => w.label === windowId);
-      if (win) {
-        win.setFocus().catch(() => undefined);
-        win.unminimize().catch(() => undefined);
-      }
-    }).catch(() => undefined);
+    getAllWindows()
+      .then((windows) => {
+        const win = windows.find((w) => w.label === windowId);
+        if (win) {
+          win.setFocus().catch(() => undefined);
+          win.unminimize().catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   /**
    * Creates a setter that opens/focuses a tool as a session tab.
    * Passing `true` opens or focuses the tab; any other value is a no-op.
    */
-  const makeToolSetter = useCallback((toolKey: ToolKey): React.Dispatch<React.SetStateAction<boolean>> => {
-    return ((v: boolean | ((prev: boolean) => boolean)) => {
-      if (v !== true) return;
-      const protocol = getToolProtocol(toolKey);
-      // Check for detached instance first — focus its window instead of creating a duplicate
-      const detached = sessionsRef.current.find(
-        s => s.protocol === protocol && s.layout?.isDetached,
-      );
-      if (detached?.layout?.windowId) {
-        focusDetachedWindow(detached.layout.windowId);
-        return;
-      }
-      const existing = sessionsRef.current.find(
-        s => s.protocol === protocol && !s.layout?.isDetached,
-      );
-      if (existing) {
-        setActiveSessionId(existing.id);
-      } else {
-        const session = createToolSession(toolKey);
-        dispatch({ type: 'ADD_SESSION', payload: session });
-        requestAnimationFrame(() => setActiveSessionId(session.id));
-      }
-    }) as React.Dispatch<React.SetStateAction<boolean>>;
-  }, [dispatch, setActiveSessionId, focusDetachedWindow]);
+  const makeToolSetter = useCallback(
+    (toolKey: ToolKey): React.Dispatch<React.SetStateAction<boolean>> => {
+      return ((v: boolean | ((prev: boolean) => boolean)) => {
+        if (v !== true) return;
+        const protocol = getToolProtocol(toolKey);
+        // Check for detached instance first — focus its window instead of creating a duplicate
+        const detached = sessionsRef.current.find(
+          (s) => s.protocol === protocol && s.layout?.isDetached,
+        );
+        if (detached?.layout?.windowId) {
+          focusDetachedWindow(detached.layout.windowId);
+          return;
+        }
+        const existing = sessionsRef.current.find(
+          (s) => s.protocol === protocol && !s.layout?.isDetached,
+        );
+        if (existing) {
+          setActiveSessionId(existing.id);
+        } else {
+          const session = createToolSession(toolKey);
+          dispatch({ type: "ADD_SESSION", payload: session });
+          requestAnimationFrame(() => setActiveSessionId(session.id));
+        }
+      }) as React.Dispatch<React.SetStateAction<boolean>>;
+    },
+    [dispatch, setActiveSessionId, focusDetachedWindow],
+  );
 
   // Build wrapped setters once — they're stable because makeToolSetter
   // only depends on stable refs and dispatch.
-  const toolShowSetters = useRef<Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>>(null!);
+  const toolShowSetters = useRef<
+    Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>
+  >(null!);
   if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
-      'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
-      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer',
-      'importExport',
-      'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
-      'diagnostics', 'settings', 'rdpSessions', 'tagManager', 'tabGroupManager',
-      'connectionEditor', 'bulkEditor', 'database',
+      "performanceMonitor",
+      "actionLog",
+      "shortcutManager",
+      "proxyChain",
+      "internalProxy",
+      "wol",
+      "bulkSsh",
+      "serverStats",
+      "opkssh",
+      "mcpServer",
+      "importExport",
+      "scriptManager",
+      "macroManager",
+      "recordingManager",
+      "windowsBackup",
+      "diagnostics",
+      "settings",
+      "rdpSessions",
+      "tagManager",
+      "tabGroupManager",
+      "connectionEditor",
+      "bulkEditor",
+      "database",
     ];
-    const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
+    const result = {} as Record<
+      ToolKey,
+      React.Dispatch<React.SetStateAction<boolean>>
+    >;
     for (const key of keys) result[key] = makeToolSetter(key);
     toolShowSetters.current = result;
   }
@@ -283,17 +364,21 @@ const AppContent: React.FC = () => {
   // Suppress autocomplete on all inputs when the setting is disabled
   useEffect(() => {
     if (appSettings.enableAutocomplete) return;
-    const attr = 'autocomplete';
+    const attr = "autocomplete";
     const applyToAll = () => {
-      document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select').forEach((el) => {
-        if (!el.getAttribute(attr) || el.getAttribute(attr) !== 'off') {
-          el.setAttribute(attr, 'off');
-          // Chrome ignores autocomplete="off" on some fields — use a non-standard
-          // value to ensure the browser doesn't auto-fill.
-          el.setAttribute('data-lpignore', 'true');
-          el.setAttribute('data-form-type', 'other');
-        }
-      });
+      document
+        .querySelectorAll<
+          HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+        >("input, textarea, select")
+        .forEach((el) => {
+          if (!el.getAttribute(attr) || el.getAttribute(attr) !== "off") {
+            el.setAttribute(attr, "off");
+            // Chrome ignores autocomplete="off" on some fields — use a non-standard
+            // value to ensure the browser doesn't auto-fill.
+            el.setAttribute("data-lpignore", "true");
+            el.setAttribute("data-form-type", "other");
+          }
+        });
     };
     applyToAll();
     const observer = new MutationObserver(() => applyToAll());
@@ -320,48 +405,53 @@ const AppContent: React.FC = () => {
 
     (async () => {
       try {
-        const backendSessions = await invoke<Array<{
-          id: string;
-          connectionId?: string;
-          host: string;
-          port: number;
-          connected: boolean;
-          desktopWidth: number;
-          desktopHeight: number;
-        }>>('list_rdp_sessions');
+        const backendSessions = await invoke<
+          Array<{
+            id: string;
+            connectionId?: string;
+            host: string;
+            port: number;
+            connected: boolean;
+            desktopWidth: number;
+            desktopHeight: number;
+          }>
+        >("list_rdp_sessions");
 
-        const connectedSessions = backendSessions.filter(s => s.connected);
+        const connectedSessions = backendSessions.filter((s) => s.connected);
         if (connectedSessions.length === 0) return;
 
         for (const bs of connectedSessions) {
           // Skip if a frontend session already exists for this backend session
           const existing = state.sessions.find(
-            s => s.protocol === 'rdp' && (
-              s.connectionId === bs.connectionId ||
-              s.backendSessionId === bs.id
-            )
+            (s) =>
+              s.protocol === "rdp" &&
+              (s.connectionId === bs.connectionId ||
+                s.backendSessionId === bs.id),
           );
           if (existing) continue;
 
           const connection = bs.connectionId
-            ? state.connections.find(c => c.id === bs.connectionId)
-            : state.connections.find(c =>
-                c.hostname === bs.host && (c.port || 3389) === bs.port && c.protocol === 'rdp'
+            ? state.connections.find((c) => c.id === bs.connectionId)
+            : state.connections.find(
+                (c) =>
+                  c.hostname === bs.host &&
+                  (c.port || 3389) === bs.port &&
+                  c.protocol === "rdp",
               );
 
           const newSession: ConnectionSession = {
             id: generateId(),
             connectionId: connection?.id || bs.connectionId || bs.id,
             name: connection?.name || `${bs.host}:${bs.port}`,
-            status: 'connected',
+            status: "connected",
             startTime: new Date(),
-            protocol: 'rdp',
+            protocol: "rdp",
             hostname: bs.host,
             reconnectAttempts: 0,
             maxReconnectAttempts: 3,
           };
 
-          dispatch({ type: 'ADD_SESSION', payload: newSession });
+          dispatch({ type: "ADD_SESSION", payload: newSession });
           // RDPClient will mount and auto-detect the existing backend session
           // via list_rdp_sessions → attach_rdp_session, receiving the full
           // framebuffer immediately.
@@ -370,7 +460,7 @@ const AppContent: React.FC = () => {
         // Backend may not be ready yet — not an error
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- appReady is the one meaningful trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- appReady is the one meaningful trigger
   }, [appReady]);
 
   const handleQuickConnectWithHistory = useCallback(
@@ -433,18 +523,24 @@ const AppContent: React.FC = () => {
   );
 
   const { handleSessionDetach, handleReattachRdpSession } = useSessionDetach(
-    state.sessions, state.connections, visibleSessions,
-    activeSessionId, dispatch, setActiveSessionId, wmRegisterWindow,
+    state.sessions,
+    state.connections,
+    visibleSessions,
+    activeSessionId,
+    dispatch,
+    setActiveSessionId,
+    wmRegisterWindow,
   );
   // Wire handleSessionDetach into WindowManager (ref avoids circular dependency)
   wmDetachRef.current = handleSessionDetach;
 
   /** Backend RDP session IDs that have an active frontend viewer tab. */
   const activeRdpBackendIds = useMemo(
-    () => state.sessions
-      .filter((s) => s.protocol === 'rdp')
-      .map((s) => s.backendSessionId || s.connectionId)
-      .filter(Boolean) as string[],
+    () =>
+      state.sessions
+        .filter((s) => s.protocol === "rdp")
+        .map((s) => s.backendSessionId || s.connectionId)
+        .filter(Boolean) as string[],
     [state.sessions],
   );
 
@@ -457,15 +553,20 @@ const AppContent: React.FC = () => {
         current.sessions.map((item) => item.sessionId),
       );
       const visibleIds = new Set(visibleSessions.map((session) => session.id));
-      const allVisibleAlreadyPositioned = visibleSessions.every((s) => currentIds.has(s.id));
-      const noStaleEntries = current.sessions.every((item) => visibleIds.has(item.sessionId));
+      const allVisibleAlreadyPositioned = visibleSessions.every((s) =>
+        currentIds.has(s.id),
+      );
+      const noStaleEntries = current.sessions.every((item) =>
+        visibleIds.has(item.sessionId),
+      );
       // For capped modes (grid2/4/6, customGrid) some visible sessions
       // may not be in the layout — that's intentional, not stale.
       // Only rebuild if the *set* changed in a way that affects the
       // layout: a stale entry or a new session that should now claim
       // an empty slot.
       const hasEmptySlotAndNewSession =
-        !allVisibleAlreadyPositioned && hasFreeSlot(current, visibleSessions.length);
+        !allVisibleAlreadyPositioned &&
+        hasFreeSlot(current, visibleSessions.length);
       if (noStaleEntries && !hasEmptySlotAndNewSession) {
         return current;
       }
@@ -494,21 +595,34 @@ const AppContent: React.FC = () => {
         {
           tabLayoutState: {
             mode: tabLayout.mode,
-            customCols: tabLayout.customCols != null ? clampGridDim(tabLayout.customCols) : undefined,
-            customRows: tabLayout.customRows != null ? clampGridDim(tabLayout.customRows) : undefined,
+            customCols:
+              tabLayout.customCols != null
+                ? clampGridDim(tabLayout.customCols)
+                : undefined,
+            customRows:
+              tabLayout.customRows != null
+                ? clampGridDim(tabLayout.customRows)
+                : undefined,
           },
         },
         { silent: true },
       )
       .catch(console.error);
-  }, [tabLayout.mode, tabLayout.customCols, tabLayout.customRows, settingsManager]);
+  }, [
+    tabLayout.mode,
+    tabLayout.customCols,
+    tabLayout.customRows,
+    settingsManager,
+  ]);
 
   // SessionTabs' "Split Right" / "Split Down" context menu items
   // dispatch `split-session` CustomEvents — wire them here so the
   // layout actually changes when the user picks one.
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId: string; direction: "right" | "down" }>).detail;
+      const detail = (
+        event as CustomEvent<{ sessionId: string; direction: "right" | "down" }>
+      ).detail;
       if (!detail || !detail.sessionId) return;
       const mode: TabLayoutMode =
         detail.direction === "down" ? "splitHorizontal" : "splitVertical";
@@ -522,7 +636,8 @@ const AppContent: React.FC = () => {
       );
     };
     window.addEventListener("split-session", handler as EventListener);
-    return () => window.removeEventListener("split-session", handler as EventListener);
+    return () =>
+      window.removeEventListener("split-session", handler as EventListener);
   }, [visibleSessions, setActiveSessionId]);
 
   useEffect(() => {
@@ -561,23 +676,38 @@ const AppContent: React.FC = () => {
           undefined,
           `Collection: ${databaseManager.getCurrentDatabase()?.name}`,
         );
-        
+
         // Save the last opened collection ID for auto-open feature
         const currentSettings = settingsManager.getSettings();
         if (currentSettings.autoOpenLastCollection) {
-          await settingsManager.saveSettings({
-            ...currentSettings,
-            lastOpenedCollectionId: collectionId,
-          }, { silent: true });
+          await settingsManager.saveSettings(
+            {
+              ...currentSettings,
+              lastOpenedCollectionId: collectionId,
+            },
+            { silent: true },
+          );
         }
       } catch (error) {
         console.error("Failed to select collection:", error);
         if (error instanceof DatabaseNotFoundError) {
-          showAlert("Collection not found");
+          showAlert(
+            t("databaseCenter.errors.notFound", "Collection not found"),
+          );
         } else if (error instanceof InvalidPasswordError) {
-          showAlert("Invalid or missing password");
+          showAlert(
+            t(
+              "databaseCenter.errors.invalidPassword",
+              "Invalid or missing password",
+            ),
+          );
         } else {
-          showAlert("Failed to access collection. Please check your password.");
+          showAlert(
+            t(
+              "databaseCenter.errors.accessFailed",
+              "Failed to access collection. Please check your password.",
+            ),
+          );
         }
       }
     },
@@ -587,6 +717,7 @@ const AppContent: React.FC = () => {
       setShowDatabasePanel,
       settingsManager,
       showAlert,
+      t,
     ],
   );
 
@@ -618,26 +749,31 @@ const AppContent: React.FC = () => {
 
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
-    const session = createToolSession('connectionEditor', { name: 'New Connection' });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    const session = createToolSession("connectionEditor", {
+      name: "New Connection",
+    });
+    dispatch({ type: "ADD_SESSION", payload: session });
     requestAnimationFrame(() => setActiveSessionId(session.id));
   };
 
   const handleEditConnection = (connection: Connection) => {
     // Check if an editor tab for this connection already exists
-    const protocol = getToolProtocol('connectionEditor');
+    const protocol = getToolProtocol("connectionEditor");
     const existing = state.sessions.find(
-      s => s.protocol === protocol && s.connectionId === connection.id && !s.layout?.isDetached,
+      (s) =>
+        s.protocol === protocol &&
+        s.connectionId === connection.id &&
+        !s.layout?.isDetached,
     );
     if (existing) {
       setActiveSessionId(existing.id);
       return;
     }
-    const session = createToolSession('connectionEditor', {
+    const session = createToolSession("connectionEditor", {
       connectionId: connection.id,
       name: `Edit: ${connection.name}`,
     });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    dispatch({ type: "ADD_SESSION", payload: session });
     requestAnimationFrame(() => setActiveSessionId(session.id));
   };
 
@@ -688,7 +824,8 @@ const AppContent: React.FC = () => {
         const parentName = connection.parentId
           ? state.connections.find((c) => c.id === connection.parentId)?.name
           : null;
-        const reparentTarget = parentName ?? (t("dialogs.rootFolder", "the root") as string);
+        const reparentTarget =
+          parentName ?? (t("dialogs.rootFolder", "the root") as string);
 
         const cascadeMessage = t(
           "dialogs.confirmDeleteFolderCascade",
@@ -756,11 +893,7 @@ const AppContent: React.FC = () => {
 
     const confirmMessage =
       connection.warnOnClose || settings.warnOnClose
-        ? t(
-            isFolder
-              ? "dialogs.confirmDeleteFolder"
-              : "dialogs.confirmDelete",
-          )
+        ? t(isFolder ? "dialogs.confirmDeleteFolder" : "dialogs.confirmDelete")
         : null;
 
     if (!confirmMessage) {
@@ -774,7 +907,7 @@ const AppContent: React.FC = () => {
 
   const handleOpenSettings = useCallback(() => {
     // Check if a settings tab already exists — reuse it
-    const existing = state.sessions.find(s => s.protocol === 'tool:settings');
+    const existing = state.sessions.find((s) => s.protocol === "tool:settings");
     if (existing) {
       // If detached, focus the external window instead of the tab
       if (existing.layout?.isDetached && existing.layout?.windowId) {
@@ -786,31 +919,34 @@ const AppContent: React.FC = () => {
     }
     const settingsSession: ConnectionSession = {
       id: generateId(),
-      connectionId: 'tool-settings',
-      name: 'Settings',
-      status: 'connected',
+      connectionId: "tool-settings",
+      name: "Settings",
+      status: "connected",
       startTime: new Date(),
-      protocol: 'tool:settings',
-      hostname: '',
+      protocol: "tool:settings",
+      hostname: "",
     };
-    dispatch({ type: 'ADD_SESSION', payload: settingsSession });
+    dispatch({ type: "ADD_SESSION", payload: settingsSession });
     setActiveSessionId(settingsSession.id);
   }, [dispatch, setActiveSessionId, state.sessions, focusDetachedWindow]);
 
-  const handleDiagnostics = useCallback((connection: Connection) => {
-    // Open diagnostics as a dedicated tab instead of a popup dialog
-    const diagSession: ConnectionSession = {
-      id: generateId(),
-      connectionId: connection.id,
-      name: `Diagnostics — ${connection.name}`,
-      status: 'connected',
-      startTime: new Date(),
-      protocol: 'tool:diagnostics',
-      hostname: connection.hostname,
-    };
-    dispatch({ type: 'ADD_SESSION', payload: diagSession });
-    setActiveSessionId(diagSession.id);
-  }, [dispatch, setActiveSessionId]);
+  const handleDiagnostics = useCallback(
+    (connection: Connection) => {
+      // Open diagnostics as a dedicated tab instead of a popup dialog
+      const diagSession: ConnectionSession = {
+        id: generateId(),
+        connectionId: connection.id,
+        name: `Diagnostics — ${connection.name}`,
+        status: "connected",
+        startTime: new Date(),
+        protocol: "tool:diagnostics",
+        hostname: connection.hostname,
+      };
+      dispatch({ type: "ADD_SESSION", payload: diagSession });
+      setActiveSessionId(diagSession.id);
+    },
+    [dispatch, setActiveSessionId],
+  );
 
   const handleDisconnectConnection = useCallback(
     async (connection: Connection) => {
@@ -846,22 +982,27 @@ const AppContent: React.FC = () => {
       setShowPasswordDialog(false);
       settingsManager.logAction(
         "info",
-        "Storage unlocked",
+        t("security.storageUnlocked", "Storage unlocked"),
         undefined,
-        "Data storage unlocked successfully",
+        t(
+          "security.storageUnlockedDetail",
+          "Data storage unlocked successfully",
+        ),
       );
     } catch (error) {
       setPasswordError(
         passwordDialogMode === "unlock"
           ? t("dialogs.invalidPassword")
-          : "Failed to secure data",
+          : t("security.storageSecureFailed", "Failed to secure data"),
       );
       SecureStorage.clearPassword();
       settingsManager.logAction(
         "error",
-        "Storage unlock failed",
+        t("security.storageUnlockFailed", "Storage unlock failed"),
         undefined,
-        error instanceof Error ? error.message : "Unknown error",
+        error instanceof Error
+          ? error.message
+          : t("common.unknownError", "Unknown error"),
       );
     }
   };
@@ -869,7 +1010,9 @@ const AppContent: React.FC = () => {
   const handlePasswordCancel = () => {
     if (passwordDialogMode === "setup") {
       if (!databaseManager.getCurrentDatabase()) {
-        showAlert("No collection selected.");
+        showAlert(
+          t("databaseCenter.errors.noneSelected", "No collection selected."),
+        );
         setShowPasswordDialog(false);
         setPasswordError("");
         return;
@@ -901,11 +1044,11 @@ const AppContent: React.FC = () => {
       title?: string;
       confirmText?: string;
       cancelText?: string;
-      variant?: 'default' | 'danger' | 'warning';
+      variant?: "default" | "danger" | "warning";
       secondaryAction?: {
         label: string;
         onClick: () => void;
-        variant?: 'default' | 'warning';
+        variant?: "default" | "warning";
       };
     },
   ) => {
@@ -983,9 +1126,10 @@ const AppContent: React.FC = () => {
       }
 
       const nowSeconds = Math.floor(Date.now() / 1000);
-      const nextProviderStatus: GlobalSettings["cloudSync"]["providerStatus"] = {
-        ...currentConfig.providerStatus,
-      };
+      const nextProviderStatus: GlobalSettings["cloudSync"]["providerStatus"] =
+        {
+          ...currentConfig.providerStatus,
+        };
 
       targetProviders.forEach((target) => {
         nextProviderStatus[target] = {
@@ -1067,7 +1211,9 @@ const AppContent: React.FC = () => {
     let glowColor = appSettings.backgroundGlowColor || "#2563eb";
     if (appSettings.backgroundGlowFollowsColorScheme) {
       // Read --color-primary from <body> where ThemeManager sets it
-      const computedPrimary = getComputedStyle(document.body).getPropertyValue("--color-primary").trim();
+      const computedPrimary = getComputedStyle(document.body)
+        .getPropertyValue("--color-primary")
+        .trim();
       if (computedPrimary) {
         glowColor = computedPrimary;
       }
@@ -1175,13 +1321,13 @@ const AppContent: React.FC = () => {
       .onCloseRequested(async (event) => {
         // If we're already in the process of closing, allow it
         if (closingMainRef.current) return;
-        
+
         // If we're awaiting confirmation, don't re-trigger
         if (awaitingCloseConfirmRef.current) {
           event.preventDefault();
           return;
         }
-        
+
         // Check if we should warn the user. Only real connections
         // count here — closing the app while only tool tabs are
         // open (Settings, Wake-on-LAN, etc.) is not lossy and
@@ -1189,14 +1335,20 @@ const AppContent: React.FC = () => {
         const settings = settingsManager.getSettings();
         const hasActiveSessions = realConnectionCount(state.sessions) > 0;
 
-        if ((settings.warnOnClose || settings.warnOnExit) && hasActiveSessions) {
+        if (
+          (settings.warnOnClose || settings.warnOnExit) &&
+          hasActiveSessions
+        ) {
           // Prevent close and show confirmation dialog
           event.preventDefault();
           awaitingCloseConfirmRef.current = true;
           pendingCloseRef.current = performClose;
           setDialogState({
             isOpen: true,
-            message: t("dialogs.confirmExit", "You have active sessions. Are you sure you want to close?"),
+            message: t(
+              "dialogs.confirmExit",
+              "You have active sessions. Are you sure you want to close?",
+            ),
             onConfirm: () => {
               awaitingCloseConfirmRef.current = false;
               pendingCloseRef.current?.();
@@ -1214,7 +1366,11 @@ const AppContent: React.FC = () => {
       })
       .then((stop) => {
         if (isCancelled) {
-          try { stop(); } catch { /* ignore */ }
+          try {
+            stop();
+          } catch {
+            /* ignore */
+          }
         } else {
           unlisten = stop;
         }
@@ -1223,7 +1379,11 @@ const AppContent: React.FC = () => {
 
     return () => {
       isCancelled = true;
-      try { unlisten?.(); } catch { /* ignore */ }
+      try {
+        unlisten?.();
+      } catch {
+        /* ignore */
+      }
     };
   }, [settingsManager, state.sessions.length, t]);
 
@@ -1365,7 +1525,7 @@ const AppContent: React.FC = () => {
         setShowQuickConnect={setShowQuickConnect}
         setShowDatabasePanel={(v) => {
           if (v) {
-            setDatabasePanelInitialTab('collections');
+            setDatabasePanelInitialTab("collections");
             toolShowSetters.current.database(true);
           } else {
             toolShowSetters.current.database(false);
@@ -1421,13 +1581,19 @@ const AppContent: React.FC = () => {
             tabLayout={tabLayout}
             onAssignSessionToSlot={(sessionId, slotIndex) => {
               setTabLayout((current) => {
-                if (slotIndex < 0 || slotIndex >= current.sessions.length) return current;
-                const existingSlot = current.sessions.findIndex((s) => s.sessionId === sessionId);
+                if (slotIndex < 0 || slotIndex >= current.sessions.length)
+                  return current;
+                const existingSlot = current.sessions.findIndex(
+                  (s) => s.sessionId === sessionId,
+                );
                 const next = [...current.sessions];
                 const prevOccupant = next[slotIndex].sessionId;
                 next[slotIndex] = { ...next[slotIndex], sessionId };
                 if (existingSlot >= 0 && existingSlot !== slotIndex) {
-                  next[existingSlot] = { ...next[existingSlot], sessionId: prevOccupant };
+                  next[existingSlot] = {
+                    ...next[existingSlot],
+                    sessionId: prevOccupant,
+                  };
                 }
                 return { ...current, sessions: next };
               });
@@ -1440,7 +1606,9 @@ const AppContent: React.FC = () => {
             className="flex-1 overflow-hidden"
             id="session-main-panel"
             role="tabpanel"
-            aria-labelledby={activeSessionId ? `session-tab-${activeSessionId}` : undefined}
+            aria-labelledby={
+              activeSessionId ? `session-tab-${activeSessionId}` : undefined
+            }
           >
             {visibleSessions.length > 0 ? (
               <TabLayoutManager
@@ -1451,24 +1619,51 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} onReattachSession={handleReattachRdpSession} onDetachToWindow={handleSessionDetach} onReconnect={handleConnect} onEditConnection={handleEditConnection} onDatabaseSelect={handleDatabaseSelect} onDatabaseClose={handleDatabaseClose} />}
+                renderSession={(session) => (
+                  <SessionViewer
+                    session={session}
+                    onCloseSession={handleSessionClose}
+                    onActivateSession={setActiveSessionId}
+                    onReattachSession={handleReattachRdpSession}
+                    onDetachToWindow={handleSessionDetach}
+                    onReconnect={handleConnect}
+                    onEditConnection={handleEditConnection}
+                    onDatabaseSelect={handleDatabaseSelect}
+                    onDatabaseClose={handleDatabaseClose}
+                  />
+                )}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
             ) : (
-              <div data-testid="welcome-screen" className="welcome-screen h-full flex flex-col items-center justify-center text-[var(--color-textSecondary)] relative overflow-hidden">
+              <div
+                data-testid="welcome-screen"
+                className="welcome-screen h-full flex flex-col items-center justify-center text-[var(--color-textSecondary)] relative overflow-hidden"
+              >
                 {/* Accent background glow */}
                 <div className="welcome-glow pointer-events-none absolute inset-0" />
                 {!appSettings.hideQuickStartMessage && (
                   <>
-                    <Monitor size={64} className="mb-4 text-primary relative z-10" />
+                    <Monitor
+                      size={64}
+                      className="mb-4 text-primary relative z-10"
+                    />
                     <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
-                      {appSettings.welcomeScreenTitle || `Welcome to ${t("app.title")}`}
+                      {appSettings.welcomeScreenTitle ||
+                        t("app.welcomeTitle", "Welcome to {{appName}}", {
+                          appName: t("app.title"),
+                        })}
                     </h2>
                     <p className="text-center max-w-md mb-6 whitespace-pre-wrap text-[var(--color-textMuted)] relative z-10">
                       {appSettings.welcomeScreenMessage ||
                         (databaseManager.getCurrentDatabase()
-                          ? `Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.`
-                          : `No database is open yet. Select or create a database to start adding and managing connections.`)}
+                          ? t(
+                              "app.welcomeWithDatabase",
+                              "Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.",
+                            )
+                          : t(
+                              "app.welcomeNoDatabase",
+                              "No database is open yet. Select or create a database to start adding and managing connections.",
+                            ))}
                     </p>
                   </>
                 )}
@@ -1480,7 +1675,9 @@ const AppContent: React.FC = () => {
                         className="sor-btn sor-btn-primary flex items-center space-x-2"
                       >
                         <Plus size={16} />
-                        <span>{t("connections.new")} Connection</span>
+                        <span>
+                          {t("connections.newConnection", "New Connection")}
+                        </span>
                       </button>
                     ) : (
                       <button
@@ -1493,14 +1690,16 @@ const AppContent: React.FC = () => {
                           // flipped the legacy flag and never opened
                           // the tool tab — the visible no-op the user
                           // reported.
-                          setDatabasePanelInitialTab('collections');
+                          setDatabasePanelInitialTab("collections");
                           toolShowSetters.current.database(true);
                           setShowDatabasePanel(true);
                         }}
                         className="sor-btn sor-btn-primary flex items-center space-x-2"
                       >
                         <Database size={16} />
-                        <span>{t("collections.select", "Select Database")}</span>
+                        <span>
+                          {t("collections.select", "Select Database")}
+                        </span>
                       </button>
                     )}
                     <button
@@ -1571,7 +1770,6 @@ const AppContent: React.FC = () => {
 
       {/* t5-e4: global reachability-check modal (one mount site). */}
       <CheckConnectionsModalMount />
-
     </div>
   );
 };

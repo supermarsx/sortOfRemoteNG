@@ -135,10 +135,90 @@ pub async fn write_app_settings(
     write_app_settings_inner(&dir, &enc_state, patch).await
 }
 
+/// Number of attempts the atomic writer makes before giving up. Rides
+/// out transient failures (AV file locks, a momentarily-vanished
+/// app-data dir, a temp sweep racing the rename).
+const ATOMIC_WRITE_MAX_ATTEMPTS: u32 = 3;
+/// Base backoff between retry attempts. Multiplied by the attempt index
+/// for a small linear back-off (10ms, 20ms).
+const ATOMIC_WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Derive a per-target temp path so the `.enc` and `.json` writes never
+/// share a single `settings.tmp` and clobber each other's in-flight
+/// bytes. The temp lives in the same directory as the target (so the
+/// final `rename` stays on one filesystem and is atomic) but carries a
+/// file-name-derived, `.tmp`-suffixed name, e.g.
+/// `settings.enc` → `.settings.enc.tmp`, `settings.json` →
+/// `.settings.json.tmp`.
+fn temp_path_for(path: &std::path::Path) -> std::path::PathBuf {
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "settings".to_string());
+    let tmp_name = format!(".{file_name}.tmp");
+    match path.parent() {
+        Some(parent) => parent.join(tmp_name),
+        None => std::path::PathBuf::from(tmp_name),
+    }
+}
+
+/// Write `bytes` to `path` atomically and defensively.
+///
+/// Each attempt: (re)create the target's parent directory so a
+/// vanished/relocated app-data dir self-heals, write the bytes to a
+/// per-target temp file, then atomically `rename` it into place. The
+/// whole sequence is wrapped in a bounded retry so a transient failure
+/// (AV lock, the dir disappearing between create and rename, a swept
+/// temp) is ridden out rather than surfaced as a bare `os error 2`.
+///
+/// On final failure the error is **path-prefixed**
+/// (`write <path>: <e>`) so a future failure is diagnosable instead of
+/// a context-free OS error.
 fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+    let tmp = temp_path_for(path);
+    let mut last_err: Option<String> = None;
+
+    for attempt in 0..ATOMIC_WRITE_MAX_ATTEMPTS {
+        // Self-heal a missing parent every attempt: the dir may have
+        // been deleted between the caller's create_dir_all and now, or
+        // between a previous failed attempt and this one.
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                last_err = Some(format!("{e}"));
+                if attempt + 1 < ATOMIC_WRITE_MAX_ATTEMPTS {
+                    std::thread::sleep(ATOMIC_WRITE_BACKOFF * (attempt + 1));
+                }
+                continue;
+            }
+        }
+
+        if let Err(e) = std::fs::write(&tmp, bytes) {
+            last_err = Some(format!("{e}"));
+            if attempt + 1 < ATOMIC_WRITE_MAX_ATTEMPTS {
+                std::thread::sleep(ATOMIC_WRITE_BACKOFF * (attempt + 1));
+            }
+            continue;
+        }
+
+        match std::fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = Some(format!("{e}"));
+                // Don't leak the temp on a failed rename; ignore the
+                // cleanup result (best-effort).
+                let _ = std::fs::remove_file(&tmp);
+                if attempt + 1 < ATOMIC_WRITE_MAX_ATTEMPTS {
+                    std::thread::sleep(ATOMIC_WRITE_BACKOFF * (attempt + 1));
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "write {}: {}",
+        path.display(),
+        last_err.unwrap_or_else(|| "unknown error".to_string())
+    ))
 }
 
 /// Shallow-merge `patch`'s top-level keys into `existing` at the root.
@@ -252,6 +332,113 @@ mod tests {
     #[test]
     fn rejects_non_object_patch() {
         assert!(merge_root(serde_json::json!({}), &serde_json::json!([1, 2])).is_err());
+    }
+
+    #[test]
+    fn atomic_write_creates_missing_parent() {
+        let tmp = tempdir().unwrap();
+        // Target sits inside a nested directory that does NOT exist yet.
+        let target = tmp
+            .path()
+            .join("nonexistent")
+            .join("deeper")
+            .join("settings.json");
+        assert!(!target.parent().unwrap().exists());
+
+        atomic_write(&target, b"hello-world").unwrap();
+
+        assert!(target.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"hello-world");
+    }
+
+    #[test]
+    fn atomic_write_is_atomic_no_temp_left_behind() {
+        let tmp = tempdir().unwrap();
+        let target = tmp.path().join("settings.json");
+
+        // First write establishes "old" content.
+        atomic_write(&target, b"old-content").unwrap();
+        // Second write replaces it with "new" content.
+        atomic_write(&target, b"new-content").unwrap();
+
+        // Target is fully the new bytes (no partial/truncated write).
+        assert_eq!(std::fs::read(&target).unwrap(), b"new-content");
+
+        // No stray temp file left behind after a successful write.
+        let temp = temp_path_for(&target);
+        assert!(
+            !temp.exists(),
+            "temp file {} should have been renamed away",
+            temp.display()
+        );
+        // Belt-and-braces: nothing matching the legacy single-temp name
+        // either.
+        assert!(!tmp.path().join("settings.tmp").exists());
+    }
+
+    #[test]
+    fn enc_and_json_have_distinct_temp_names() {
+        let tmp = tempdir().unwrap();
+        let enc = tmp.path().join(SETTINGS_ENC_FILENAME);
+        let json = tmp.path().join(SETTINGS_FILENAME);
+
+        let enc_temp = temp_path_for(&enc);
+        let json_temp = temp_path_for(&json);
+
+        // The two settings targets must derive DIFFERENT temp paths so
+        // an interleaved `.enc`/`.json` write can't clobber each
+        // other's in-flight temp.
+        assert_ne!(
+            enc_temp, json_temp,
+            "enc and json must use distinct temp files"
+        );
+        // Both temps live next to their target (same dir → atomic
+        // rename stays on one filesystem).
+        assert_eq!(enc_temp.parent(), Some(tmp.path()));
+        assert_eq!(json_temp.parent(), Some(tmp.path()));
+    }
+
+    #[tokio::test]
+    async fn write_app_settings_inner_recovers_when_dir_deleted() {
+        // Write once into a nested app-data dir, delete the whole dir,
+        // then write again. The resilient writer's per-attempt
+        // create_dir_all (plus the top-level create_dir_all) must
+        // re-create the vanished directory and succeed.
+        let tmp = tempdir().unwrap();
+        let app_data = tmp.path().join("app-data");
+        let locked = EncryptionState::new();
+
+        write_app_settings_inner(
+            &app_data,
+            &locked,
+            serde_json::json!({ "theme": "dark" }),
+        )
+        .await
+        .unwrap();
+        assert!(app_data.join("settings.json").exists());
+
+        // Simulate a cleanup tool / known-folder relocation wiping the
+        // app-data dir out from under us mid-session.
+        std::fs::remove_dir_all(&app_data).unwrap();
+        assert!(!app_data.exists());
+
+        // Next write must self-heal rather than fail with os error 2.
+        write_app_settings_inner(
+            &app_data,
+            &locked,
+            serde_json::json!({ "language": "fr" }),
+        )
+        .await
+        .unwrap();
+        assert!(app_data.join("settings.json").exists());
+
+        let value = read_app_settings_inner(&app_data, &locked)
+            .await
+            .unwrap()
+            .unwrap();
+        // The pre-deletion key is gone (dir was wiped) but the new
+        // write landed cleanly.
+        assert_eq!(value["language"], "fr");
     }
 
     /// Build an unlocked `EncryptionState` directly, bypassing the
