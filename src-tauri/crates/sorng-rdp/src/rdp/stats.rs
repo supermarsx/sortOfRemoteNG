@@ -386,6 +386,8 @@ impl RdpSessionStats {
                     queued_frames: 0,
                     delivered_frames: self.frame_count.load(Ordering::Relaxed),
                     dropped_frames: 0,
+                    coalesced_frames: 0,
+                    average_render_ms: None,
                 });
                 lifecycle.snapshot()
             })
@@ -460,6 +462,8 @@ mod tests {
             queued_frames: 3,
             delivered_frames: 0,
             dropped_frames: 2,
+            coalesced_frames: 5,
+            average_render_ms: Some(4.5),
         });
         stats.set_channel_summary(ChannelSummary {
             enabled_count: 2,
@@ -476,6 +480,8 @@ mod tests {
         assert_eq!(active.frame_flow_summary.queued_frames, 3);
         assert_eq!(active.frame_flow_summary.delivered_frames, 1);
         assert_eq!(active.frame_flow_summary.dropped_frames, 2);
+        assert_eq!(active.frame_flow_summary.coalesced_frames, 5);
+        assert_eq!(active.frame_flow_summary.average_render_ms, Some(4.5));
     }
 
     #[test]

@@ -46,6 +46,8 @@ export interface RDPFrameFlowSummary {
   queuedFrames: number;
   deliveredFrames: number;
   droppedFrames: number;
+  coalescedFrames: number;
+  averageRenderMs?: number;
 }
 
 export type RdpFramePressureState = 'healthy' | 'backpressured';

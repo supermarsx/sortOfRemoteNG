@@ -154,6 +154,8 @@ fn stats_and_lifecycle_snapshots_are_summary_only() {
         queued_frames: 4,
         delivered_frames: 0,
         dropped_frames: 1,
+        coalesced_frames: 0,
+        average_render_ms: None,
     });
     stats.set_last_error("auth_rejected");
 

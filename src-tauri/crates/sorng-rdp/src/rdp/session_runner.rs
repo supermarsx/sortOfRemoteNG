@@ -1859,12 +1859,16 @@ fn run_active_session_loop(
                 queued_frames: dirty_regions.len().min(u16::MAX as usize) as u16,
                 delivered_frames: stats.frame_count.load(Ordering::Relaxed),
                 dropped_frames: delivery_snapshot.failed_frames,
+                ..Default::default()
             });
 
             let mut channel_summary = ChannelSummary::default();
-            if settings.clipboard_enabled {
-                channel_summary.enabled_count = channel_summary.enabled_count.saturating_add(1);
-                channel_summary.ready_count = channel_summary.ready_count.saturating_add(1);
+            // CLIPRDR: merge the live clipboard channel state (enabled/ready/fault)
+            // instead of hardcoding ready, mirroring the RDPDR/RDPSND merge below.
+            if let Some(ref clip_state) = est.clipboard_state {
+                if let Ok(state) = clip_state.lock() {
+                    merge_channel_summary(&mut channel_summary, state.channel_summary());
+                }
             }
             if let Some(rdpdr) = est
                 .active_stage
@@ -1877,6 +1881,17 @@ fn run_active_session_loop(
                 .get_svc_processor_mut::<super::rdpdr::RdpsndClient>()
             {
                 merge_channel_summary(&mut channel_summary, rdpsnd.channel_summary());
+            }
+            // AUDIN: the DVC processor is owned by DRDYNVC inside the active stage
+            // and is not retrievable here (no DVC accessor; audin.rs is outside this
+            // lock), so reflect its registered/enabled state from settings to ensure
+            // the AUDIN channel is accounted for in the summary. Live ready/fault
+            // counters would require a shared AUDIN diagnostics handle (audin.rs).
+            if settings.enable_audio_recording {
+                let audin_summary =
+                    super::audin::AudinDvcProcessor::new(session_id.to_string(), true)
+                        .channel_summary();
+                merge_channel_summary(&mut channel_summary, audin_summary);
             }
             stats.set_channel_summary(channel_summary);
 

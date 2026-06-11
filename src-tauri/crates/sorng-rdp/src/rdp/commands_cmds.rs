@@ -653,6 +653,8 @@ pub async fn rdp_report_frame_telemetry(
         .frame_flow_summary;
     frame_flow_summary.queued_frames = payload.queued_frames;
     frame_flow_summary.dropped_frames = payload.dropped_frames;
+    frame_flow_summary.coalesced_frames = payload.coalesced_frames;
+    frame_flow_summary.average_render_ms = payload.average_render_ms;
     stats.set_frame_flow_summary(frame_flow_summary);
 
     Ok(())
