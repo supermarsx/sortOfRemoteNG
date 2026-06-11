@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
 import { useToastContext } from "../../contexts/ToastContext";
 import type { Connection } from "../../types/connection/connection";
-import { createWinmgmtSession, type WindowsToolId } from "../windows/WindowsToolPanel.helpers";
+import {
+  createWinmgmtSession,
+  type WindowsToolId,
+} from "../windows/WindowsToolPanel.helpers";
 import ConnectionTreeItem from "./connectionTree/ConnectionTreeItem";
 import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";
@@ -22,9 +26,17 @@ interface ConnectionTreeProps {
 }
 
 export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
-  onConnect, onDisconnect, onEdit, onDelete, onDiagnostics,
-  onSessionDetach, onOpenImport, onActivateSession, enableReorder = true,
+  onConnect,
+  onDisconnect,
+  onEdit,
+  onDelete,
+  onDiagnostics,
+  onSessionDetach,
+  onOpenImport,
+  onActivateSession,
+  enableReorder = true,
 }) => {
+  const { t } = useTranslation();
   const mgr = useConnectionTree(onConnect, enableReorder);
   const { toast } = useToastContext();
 
@@ -33,66 +45,91 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
     const handler = (e: Event) => {
       const connectionId = (e as CustomEvent).detail?.connectionId;
       if (!connectionId) return;
-      const el = document.querySelector(`[data-connection-id="${connectionId}"]`);
+      const el = document.querySelector(
+        `[data-connection-id="${connectionId}"]`,
+      );
       if (!el) return;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('sor-tree-item-blink');
-      blinkTimer = setTimeout(() => el.classList.remove('sor-tree-item-blink'), 2000);
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("sor-tree-item-blink");
+      blinkTimer = setTimeout(
+        () => el.classList.remove("sor-tree-item-blink"),
+        2000,
+      );
     };
-    window.addEventListener('reveal-connection', handler);
+    window.addEventListener("reveal-connection", handler);
     return () => {
-      window.removeEventListener('reveal-connection', handler);
+      window.removeEventListener("reveal-connection", handler);
       if (blinkTimer) clearTimeout(blinkTimer);
     };
   }, []);
 
-  const handleConnectAll = useCallback((folder: Connection) => {
-    const children = mgr.state.connections.filter(c => c.parentId === folder.id && !c.isGroup);
-    children.forEach((conn, i) => {
-      setTimeout(() => onConnect(conn), i * 200);
-    });
-  }, [mgr.state.connections, onConnect]);
+  const handleConnectAll = useCallback(
+    (folder: Connection) => {
+      const children = mgr.state.connections.filter(
+        (c) => c.parentId === folder.id && !c.isGroup,
+      );
+      children.forEach((conn, i) => {
+        setTimeout(() => onConnect(conn), i * 200);
+      });
+    },
+    [mgr.state.connections, onConnect],
+  );
 
-  const handleConnectAllRecursive = useCallback((folder: Connection) => {
-    const collectConnections = (parentId: string): Connection[] => {
-      const result: Connection[] = [];
-      for (const conn of mgr.state.connections) {
-        if (conn.parentId === parentId) {
-          if (conn.isGroup) {
-            result.push(...collectConnections(conn.id));
-          } else {
-            result.push(conn);
+  const handleConnectAllRecursive = useCallback(
+    (folder: Connection) => {
+      const collectConnections = (parentId: string): Connection[] => {
+        const result: Connection[] = [];
+        for (const conn of mgr.state.connections) {
+          if (conn.parentId === parentId) {
+            if (conn.isGroup) {
+              result.push(...collectConnections(conn.id));
+            } else {
+              result.push(conn);
+            }
           }
         }
+        return result;
+      };
+      const allConns = collectConnections(folder.id);
+      allConns.forEach((conn, i) => {
+        setTimeout(() => onConnect(conn), i * 200);
+      });
+    },
+    [mgr.state.connections, onConnect],
+  );
+
+  const handleWindowsTool = useCallback(
+    (c: Connection, tool: string) => {
+      const session = createWinmgmtSession(
+        tool as WindowsToolId,
+        c.id,
+        c.name,
+        c.hostname || c.name,
+      );
+      mgr.dispatch({ type: "ADD_SESSION", payload: session });
+
+      // Per-connection focusOnWinmgmtTool overrides the global setting
+      const shouldFocus =
+        c.focusOnWinmgmtTool ?? !mgr.settings.openWinmgmtToolInBackground;
+      if (shouldFocus && onActivateSession) {
+        onActivateSession(session.id);
       }
-      return result;
-    };
-    const allConns = collectConnections(folder.id);
-    allConns.forEach((conn, i) => {
-      setTimeout(() => onConnect(conn), i * 200);
-    });
-  }, [mgr.state.connections, onConnect]);
+    },
+    [mgr, onActivateSession],
+  );
 
-  const handleWindowsTool = useCallback((c: Connection, tool: string) => {
-    const session = createWinmgmtSession(
-      tool as WindowsToolId,
-      c.id,
-      c.name,
-      c.hostname || c.name,
-    );
-    mgr.dispatch({ type: 'ADD_SESSION', payload: session });
-
-    // Per-connection focusOnWinmgmtTool overrides the global setting
-    const shouldFocus = c.focusOnWinmgmtTool ?? !mgr.settings.openWinmgmtToolInBackground;
-    if (shouldFocus && onActivateSession) {
-      onActivateSession(session.id);
-    }
-  }, [mgr, onActivateSession]);
-
-  const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
+  const renderTree = (
+    connections: Connection[],
+    level: number = 0,
+  ): React.ReactNode => {
     return connections.map((connection) => {
-      const childConnections = connection.isGroup ? mgr.buildTree(mgr.filteredConnections, connection.id) : [];
-      const shouldRenderChildren = connection.isGroup && childConnections.length > 0 && (connection.expanded || mgr.hasActiveConnectionFilter);
+      const childConnections = connection.isGroup
+        ? mgr.buildTree(mgr.filteredConnections, connection.id)
+        : [];
+      const shouldRenderChildren =
+        connection.isGroup &&
+        childConnections.length > 0 &&
+        (connection.expanded || mgr.hasActiveConnectionFilter);
 
       return (
         <div key={connection.id}>
@@ -118,15 +155,26 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             onConnectAllRecursive={handleConnectAllRecursive}
             enableReorder={enableReorder}
             isDragging={mgr.draggedId === connection.id}
-            isDragOver={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id}
-            dropPosition={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id ? mgr.dropPosition : null}
+            isDragOver={
+              mgr.dragOverId === connection.id &&
+              mgr.draggedId !== connection.id
+            }
+            dropPosition={
+              mgr.dragOverId === connection.id &&
+              mgr.draggedId !== connection.id
+                ? mgr.dropPosition
+                : null
+            }
             singleClickConnect={mgr.settings.singleClickConnect}
             singleClickDisconnect={mgr.settings.singleClickDisconnect}
             doubleClickRename={mgr.settings.doubleClickRename}
             folderSingleClickToggle={mgr.settings.folderSingleClickToggle}
+            folderDoubleClickToggle={mgr.settings.folderDoubleClickToggle}
             onDragStart={mgr.handleItemDragStart}
             onDragOver={mgr.handleItemDragOver}
-            onDragLeave={() => { /* let next dragOver set the new target */ }}
+            onDragLeave={() => {
+              /* let next dragOver set the new target */
+            }}
             onDragEnd={mgr.handleItemDragEnd}
             onDrop={mgr.handleItemDrop}
           />
@@ -145,7 +193,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
         className={`flex-1 overflow-y-auto ${mgr.draggedId ? "min-h-[100px]" : ""}`}
         data-tauri-disable-drag="true"
         role="tree"
-        aria-label="Connection tree"
+        aria-label={t("connections.connectionTree", "Connection tree")}
         onContextMenu={mgr.handlePanelContextMenu}
         onDragOver={mgr.handlePanelDragOver}
         onDrop={mgr.handlePanelDrop}
@@ -153,7 +201,9 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
         {mgr.filteredConnections.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-[var(--color-textMuted)]">
             <Monitor size={24} className="mb-2" />
-            <p className="text-sm">No connections found</p>
+            <p className="text-sm">
+              {t("connections.noConnectionsFound", "No connections found")}
+            </p>
           </div>
         ) : (
           renderTree(mgr.buildTree(mgr.filteredConnections))
@@ -166,4 +216,3 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
     </>
   );
 };
-

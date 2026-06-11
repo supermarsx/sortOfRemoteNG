@@ -1,7 +1,11 @@
 import type { SectionProps } from "./types";
 import React from "react";
 import { MousePointer2, FolderOpen } from "lucide-react";
-import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SectionHeader,
+  Toggle,
+} from "../../../ui/settings/SettingsPrimitives";
 const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
@@ -65,6 +69,15 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         description="Click anywhere on a folder row to expand or collapse it"
         settingKey="folderSingleClickToggle"
         infoTooltip="When on, a single click anywhere on a folder in the sidebar tree toggles its expanded state. When off, only the small chevron on the left toggles it and the row body just selects."
+      />
+      <Toggle
+        checked={s.folderDoubleClickToggle}
+        onChange={(v) => u({ folderDoubleClickToggle: v })}
+        icon={<FolderOpen size={16} />}
+        label="Folder expand on double click"
+        description="Double-click anywhere on a folder row to expand or collapse it"
+        settingKey="folderDoubleClickToggle"
+        infoTooltip="When on, double-clicking a folder in the sidebar tree toggles its expanded state. This is useful when single-click folder toggling is disabled."
       />
     </Card>
   </div>

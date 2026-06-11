@@ -1,6 +1,12 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  within,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { ConnectionTree } from "../../src/components/connection/ConnectionTree";
@@ -131,9 +137,8 @@ describe("ConnectionTree", () => {
     // directly with the explicit prop instead — that's the same
     // surface ConnectionTree threads the setting through, so the
     // assertion still covers the wiring contract end-to-end.
-    const { default: ConnectionTreeItem } = await import(
-      "../../src/components/connection/connectionTree/ConnectionTreeItem"
-    );
+    const { default: ConnectionTreeItem } =
+      await import("../../src/components/connection/connectionTree/ConnectionTreeItem");
 
     function Harness() {
       const { dispatch } = useConnections();
@@ -204,6 +209,148 @@ describe("ConnectionTree", () => {
     });
   });
 
+  it("toggles a folder on row-body double click when enabled", async () => {
+    const { default: ConnectionTreeItem } =
+      await import("../../src/components/connection/connectionTree/ConnectionTreeItem");
+
+    function Harness() {
+      const { dispatch } = useConnections();
+      React.useEffect(() => {
+        dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
+      }, [dispatch]);
+      const folder = mockConnections[0];
+      const noop = () => {};
+      return (
+        <ConnectionTreeItem
+          connection={folder}
+          level={0}
+          onConnect={noop}
+          onDisconnect={noop}
+          onEdit={noop}
+          onDelete={noop}
+          onCopyHostname={noop}
+          onRename={noop}
+          onExport={noop}
+          onConnectWithOptions={noop}
+          onConnectWithoutCredentials={noop}
+          onExecuteScripts={noop}
+          onDiagnostics={noop}
+          onDetachSession={noop}
+          onDuplicate={noop}
+          onCheckConnection={noop}
+          onWindowsTool={noop}
+          onConnectAll={noop}
+          onConnectAllRecursive={noop}
+          enableReorder={false}
+          isDragging={false}
+          isDragOver={false}
+          dropPosition={null}
+          onDragStart={noop}
+          onDragOver={noop}
+          onDragLeave={noop}
+          onDragEnd={noop}
+          onDrop={noop}
+          singleClickConnect={false}
+          singleClickDisconnect={false}
+          doubleClickRename={false}
+          folderSingleClickToggle={false}
+          folderDoubleClickToggle={true}
+        />
+      );
+    }
+
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+
+    const folderName = screen.getByText("Group 1");
+    const folderRow = folderName.closest('[role="treeitem"]') as HTMLElement;
+
+    fireEvent.doubleClick(folderName);
+    await waitFor(() => {
+      expect(folderRow.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    fireEvent.doubleClick(folderName);
+    await waitFor(() => {
+      expect(folderRow.getAttribute("aria-expanded")).toBe("false");
+    });
+  });
+
+  it("does not let the second click of a folder double-click cancel single-click expansion", async () => {
+    const { default: ConnectionTreeItem } =
+      await import("../../src/components/connection/connectionTree/ConnectionTreeItem");
+
+    function Harness() {
+      const { dispatch } = useConnections();
+      React.useEffect(() => {
+        dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
+      }, [dispatch]);
+      const folder = mockConnections[0];
+      const noop = () => {};
+      return (
+        <ConnectionTreeItem
+          connection={folder}
+          level={0}
+          onConnect={noop}
+          onDisconnect={noop}
+          onEdit={noop}
+          onDelete={noop}
+          onCopyHostname={noop}
+          onRename={noop}
+          onExport={noop}
+          onConnectWithOptions={noop}
+          onConnectWithoutCredentials={noop}
+          onExecuteScripts={noop}
+          onDiagnostics={noop}
+          onDetachSession={noop}
+          onDuplicate={noop}
+          onCheckConnection={noop}
+          onWindowsTool={noop}
+          onConnectAll={noop}
+          onConnectAllRecursive={noop}
+          enableReorder={false}
+          isDragging={false}
+          isDragOver={false}
+          dropPosition={null}
+          onDragStart={noop}
+          onDragOver={noop}
+          onDragLeave={noop}
+          onDragEnd={noop}
+          onDrop={noop}
+          singleClickConnect={false}
+          singleClickDisconnect={false}
+          doubleClickRename={false}
+          folderSingleClickToggle={true}
+          folderDoubleClickToggle={true}
+        />
+      );
+    }
+
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+
+    const folderName = screen.getByText("Group 1");
+    const folderRow = folderName.closest('[role="treeitem"]') as HTMLElement;
+
+    fireEvent.click(folderName, { detail: 1 });
+    fireEvent.click(folderName, { detail: 2 });
+    fireEvent.doubleClick(folderName);
+
+    await waitFor(() => {
+      expect(folderRow.getAttribute("aria-expanded")).toBe("true");
+    });
+  });
+
   it("selects an item when clicked", async () => {
     let selectedId: string | null = null;
     const Observer = () => {
@@ -259,9 +406,7 @@ describe("ConnectionTree", () => {
     const duplicateButton = screen.getByText("connections.clone");
     fireEvent.click(duplicateButton);
 
-    await waitFor(() =>
-      expect(screen.getAllByText("Item 1")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByText("Item 1")).toHaveLength(2));
   });
 
   it("closes item context menu on Escape", async () => {

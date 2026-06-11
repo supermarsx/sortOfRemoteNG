@@ -12,23 +12,23 @@ import {
   defaultDiagnosticsConfig,
   defaultMemoryWatchdogSettings,
   defaultExportSecuritySettings,
-} from '../../types/settings/settings';
-import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../../components/ui/display/loadingElement/defaults';
-import { DEFAULT_MCP_CONFIG } from '../../types/mcp/mcpServer';
-import { SecureStorage } from '../storage/storage';
-import { IndexedDbService } from '../storage/indexedDbService';
-import { generateId } from '../core/id';
-import { getInvoke as tauriInvoke } from '../tauri/invoke';
+} from "../../types/settings/settings";
+import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../../components/ui/display/loadingElement/defaults";
+import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
+import { SecureStorage } from "../storage/storage";
+import { IndexedDbService } from "../storage/indexedDbService";
+import { generateId } from "../core/id";
+import { getInvoke as tauriInvoke } from "../tauri/invoke";
 
 /** Unique label for this window — used to ignore our own sync events. */
 let _windowLabel: string | null = null;
 async function getWindowLabel(): Promise<string> {
   if (_windowLabel) return _windowLabel;
   try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     _windowLabel = getCurrentWindow().label;
   } catch {
-    _windowLabel = 'main';
+    _windowLabel = "main";
   }
   return _windowLabel;
 }
@@ -36,20 +36,79 @@ async function getWindowLabel(): Promise<string> {
 /** Broadcast settings to all other Tauri windows. */
 async function emitSettingsSync(settings: GlobalSettings): Promise<void> {
   try {
-    const { emit } = await import('@tauri-apps/api/event');
+    const { emit } = await import("@tauri-apps/api/event");
     const source = await getWindowLabel();
-    await emit('settings-sync', { settings, source });
+    await emit("settings-sync", { settings, source });
   } catch {
     // Not in Tauri environment — ignore
   }
 }
 
 /**
- * IndexedDB key under which settings were historically stored. Still read
- * once for migration into the app-data file, and used as the persistence
- * target outside the desktop shell (browser / tests).
+ * Module-level in-memory settings store for non-Tauri runtimes (jsdom
+ * tests, plain-browser dev server). The desktop shell persists to
+ * `<app_data_dir>/settings.json` via the backend, which is the
+ * authoritative store. When there is no Tauri `invoke` there is no disk
+ * to write to, so we keep the last-written blob here so reads round-trip
+ * within a session. This is deliberately *not* IndexedDB — all IndexedDB
+ * settings persistence (and its read/write fallbacks) was removed; the
+ * Tauri disk file is the single source of truth.
+ *
+ * NOTE: this store is module-scoped (survives `SettingsManager.resetInstance()`
+ * the same way IndexedDB did) but does NOT persist across reloads/processes.
+ * Browser/test runs were never the shipped persistence path — the desktop
+ * shell always has a Tauri invoke — so no real user data lives here.
  */
-const SETTINGS_STORAGE_KEY = 'mremote-settings';
+let _inMemorySettingsStore: Partial<GlobalSettings> | null = null;
+
+/**
+ * Test-only escape hatch to reset the in-memory non-Tauri settings store.
+ * Production code never calls this.
+ */
+export function _resetInMemorySettingsStore(): void {
+  _inMemorySettingsStore = null;
+}
+
+/** Number of disk-write attempts (1 initial + retries) before giving up. */
+const SETTINGS_WRITE_MAX_ATTEMPTS = 3;
+/** Base backoff in ms between disk-write attempts (grows linearly per attempt). */
+const SETTINGS_WRITE_RETRY_BASE_MS = 150;
+
+/**
+ * Dispatch a `window` CustomEvent describing a settings-write failure so a
+ * mounted React hook can surface a toast. Mirrors the existing
+ * `settings-updated` dispatch pattern — this class never imports React/Toast.
+ */
+function dispatchWriteFailed(
+  error: string,
+  attempt: number,
+  maxAttempts: number,
+  willRetry: boolean,
+): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("settings-write-failed", {
+      detail: { error, attempt, maxAttempts, willRetry },
+    }),
+  );
+}
+
+/**
+ * Dispatch a `window` CustomEvent signalling that a settings write
+ * succeeded after one or more prior failed attempts, so the toast hook can
+ * clear/replace any failure notice.
+ */
+function dispatchWriteRecovered(attempt: number, maxAttempts: number): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("settings-write-recovered", {
+      detail: { attempt, maxAttempts },
+    }),
+  );
+}
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Default global application settings. These values are used when no user
@@ -57,18 +116,18 @@ const SETTINGS_STORAGE_KEY = 'mremote-settings';
  * fall back to these defaults.
  */
 const DEFAULT_SETTINGS: GlobalSettings = {
-  language: 'en',
+  language: "en",
   autoDetectOsLanguage: true,
-  region: 'auto',
-  timeFormat: 'auto',
-  dateFormat: 'auto',
-  timeZone: 'auto',
-  calendarSystem: 'auto',
-  numberingSystem: 'auto',
+  region: "auto",
+  timeFormat: "auto",
+  dateFormat: "auto",
+  timeZone: "auto",
+  calendarSystem: "auto",
+  numberingSystem: "auto",
   rtlLayout: false,
-  theme: 'dark',
-  colorScheme: 'blue',
-  primaryAccentColor: '#3b82f6',
+  theme: "dark",
+  colorScheme: "blue",
+  primaryAccentColor: "#3b82f6",
   useCustomAccent: false,
   autoSaveEnabled: false,
   autoSaveIntervalMinutes: 5,
@@ -92,7 +151,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   reconnectPreviousSessions: false,
   autoOpenLastCollection: true,
   lastOpenedCollectionId: undefined,
-  
+
   // Tray Settings
   minimizeToTray: false,
   closeToTray: false,
@@ -105,6 +164,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   doubleClickConnect: true,
   middleClickCloseTab: true,
   folderSingleClickToggle: true,
+  folderDoubleClickToggle: true,
 
   // Tab Behavior
   openConnectionInBackground: false,
@@ -166,9 +226,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   // Scroll & Input
   terminalScrollSpeed: 1.0,
   terminalSmoothScroll: true,
-  treeRightClickAction: 'contextMenu' as const,
-  mouseBackAction: 'previousTab' as const,
-  mouseForwardAction: 'nextTab' as const,
+  treeRightClickAction: "contextMenu" as const,
+  mouseBackAction: "previousTab" as const,
+  mouseForwardAction: "nextTab" as const,
 
   // Animation Settings
   animationsEnabled: true,
@@ -207,9 +267,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showMcpServerIcon: false,
   showScriptManagerIcon: true,
   showMacroManagerIcon: true,
-  showSyncBackupStatusIcon: false,    // Legacy combined - disabled by default
-  showBackupStatusIcon: true,         // Separate backup icon
-  showCloudSyncStatusIcon: true,      // Separate cloud sync icon
+  showSyncBackupStatusIcon: false, // Legacy combined - disabled by default
+  showBackupStatusIcon: true, // Separate backup icon
+  showCloudSyncStatusIcon: true, // Separate cloud sync icon
   showErrorLogBar: false,
   showRdpSessionsIcon: true,
 
@@ -219,12 +279,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     recordInput: false,
     maxRecordingDurationMinutes: 0,
     maxStoredRecordings: 50,
-    defaultExportFormat: 'asciicast' as const,
+    defaultExportFormat: "asciicast" as const,
   },
   rdpRecording: {
     enabled: true,
     autoRecordRdpSessions: false,
-    defaultVideoFormat: 'webm' as const,
+    defaultVideoFormat: "webm" as const,
     recordingFps: 30,
     videoBitrateMbps: 5,
     maxRdpRecordingDurationMinutes: 0,
@@ -238,7 +298,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     recordHeaders: true,
     maxWebRecordingDurationMinutes: 0,
     maxStoredWebRecordings: 50,
-    defaultExportFormat: 'har' as const,
+    defaultExportFormat: "har" as const,
   },
   showRecordingManagerIcon: true,
   macros: {
@@ -271,28 +331,28 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   performancePollIntervalMs: 20000,
   performanceLatencyTarget: "1.1.1.1",
 
-  encryptionAlgorithm: 'AES-256-GCM',
-  blockCipherMode: 'GCM',
+  encryptionAlgorithm: "AES-256-GCM",
+  blockCipherMode: "GCM",
   keyDerivationIterations: 100000,
   autoBenchmarkIterations: false,
   benchmarkTimeSeconds: 1,
 
   totpEnabled: false,
-  totpIssuer: 'sortOfRemoteNG',
+  totpIssuer: "sortOfRemoteNG",
   totpDigits: 6,
   totpPeriod: 30,
-  totpAlgorithm: 'sha1' as const,
+  totpAlgorithm: "sha1" as const,
 
   globalProxy: {
-    type: 'http',
-    host: '',
+    type: "http",
+    host: "",
     port: 8080,
     enabled: false,
   },
 
-  tabGrouping: 'none',
+  tabGrouping: "none",
   hostnameOverride: false,
-  defaultTabLayout: 'tabs',
+  defaultTabLayout: "tabs",
   enableTabDetachment: false,
   enableTabResize: true,
   enableZoom: true,
@@ -301,13 +361,21 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   colorTags: {},
   defaultTabColor: undefined,
   tabColorPresets: [
-    '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
-    '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#a855f7',
+    "#ef4444",
+    "#f97316",
+    "#eab308",
+    "#22c55e",
+    "#14b8a6",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+    "#6b7280",
+    "#a855f7",
   ],
 
   enableStatusChecking: true,
   statusCheckInterval: 30,
-  statusCheckMethod: 'socket',
+  statusCheckMethod: "socket",
 
   persistWindowSize: true,
   persistWindowPosition: true,
@@ -317,16 +385,16 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   windowSize: { width: 1280, height: 720 },
   windowPosition: { x: 120, y: 80 },
   sidebarWidth: 320,
-  sidebarPosition: 'left',
+  sidebarPosition: "left",
   sidebarCollapsed: false,
 
   autoRepatriateWindow: true,
 
   networkDiscovery: {
     enabled: false,
-    ipRange: '192.168.1.0/24',
-    portRanges: ['22', '80', '443', '3389', '5900'],
-    protocols: ['ssh', 'http', 'https', 'rdp', 'vnc'],
+    ipRange: "192.168.1.0/24",
+    portRanges: ["22", "80", "443", "3389", "5900"],
+    protocols: ["ssh", "http", "https", "rdp", "vnc"],
     timeout: 5000,
     maxConcurrent: 50,
     maxPortConcurrent: 100,
@@ -341,14 +409,14 @@ const DEFAULT_SETTINGS: GlobalSettings = {
       telnet: [23],
     },
     probeStrategies: {
-      ssh: ['websocket'],
-      http: ['http'],
-      https: ['http'],
-      rdp: ['websocket'],
-      vnc: ['websocket'],
-      mysql: ['websocket'],
-      ftp: ['websocket'],
-      telnet: ['websocket'],
+      ssh: ["websocket"],
+      http: ["http"],
+      https: ["http"],
+      rdp: ["websocket"],
+      vnc: ["websocket"],
+      mysql: ["websocket"],
+      ftp: ["websocket"],
+      telnet: ["websocket"],
     },
     cacheTTL: 300000,
     hostnameTtl: 300000,
@@ -360,15 +428,15 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     port: 8080,
     useRandomPort: false,
     authentication: false,
-    apiKey: '',
+    apiKey: "",
     corsEnabled: true,
     rateLimiting: true,
     startOnLaunch: false,
     allowRemoteConnections: false,
     sslEnabled: false,
-    sslMode: 'manual' as const,
-    sslCertPath: '',
-    sslKeyPath: '',
+    sslMode: "manual" as const,
+    sslCertPath: "",
+    sslKeyPath: "",
     maxRequestsPerMinute: 60,
     maxThreads: 4,
     requestTimeout: 30,
@@ -376,10 +444,10 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   wolEnabled: false,
   wolPort: 9,
-  wolBroadcastAddress: '255.255.255.255',
+  wolBroadcastAddress: "255.255.255.255",
 
   enableActionLog: true,
-  logLevel: 'info',
+  logLevel: "info",
   maxLogEntries: 1000,
 
   exportEncryption: false,
@@ -393,12 +461,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Trust & Verification
   enableAutocomplete: false,
-  trustPolicy: 'tofu',
-  httpsTrustPolicy: 'inherit',
-  certificateTrustPolicy: 'inherit',
-  tlsTrustPolicy: 'tofu',
-  sshTrustPolicy: 'always-ask',
-  rdpTrustPolicy: 'inherit',
+  trustPolicy: "tofu",
+  httpsTrustPolicy: "inherit",
+  certificateTrustPolicy: "inherit",
+  tlsTrustPolicy: "tofu",
+  sshTrustPolicy: "always-ask",
+  rdpTrustPolicy: "inherit",
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
 
@@ -414,10 +482,10 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // CredSSP Remediation Defaults
   credsspDefaults: {
-    oracleRemediation: 'mitigated',
+    oracleRemediation: "mitigated",
     allowHybridEx: false,
     nlaFallbackToTls: true,
-    tlsMinVersion: '1.2',
+    tlsMinVersion: "1.2",
     ntlmEnabled: true,
     kerberosEnabled: false,
     pku2uEnabled: false,
@@ -425,19 +493,19 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     remoteCredentialGuard: false,
     enforceServerPublicKeyValidation: true,
     credsspVersion: 6,
-    sspiPackageList: '',
-    nlaMode: 'required',
-    serverCertValidation: 'validate',
+    sspiPackageList: "",
+    nlaMode: "required",
+    serverCertValidation: "validate",
   },
 
   // Password Reveal
   passwordReveal: {
     enabled: true,
-    mode: 'toggle',
+    mode: "toggle",
     autoHideSeconds: 0,
     showByDefault: false,
     maskIcon: false,
-    maskCharacter: '',
+    maskCharacter: "",
     lockSavedPasswords: false,
   },
 
@@ -446,11 +514,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     httpPort: 5985,
     httpsPort: 5986,
     preferSsl: false,
-    authMethod: 'negotiate' as const,
+    authMethod: "negotiate" as const,
     skipCaCheck: false,
     skipCnCheck: false,
     autoFallback: true,
-    namespace: 'root\\cimv2',
+    namespace: "root\\cimv2",
     timeoutSec: 30,
   },
 
@@ -460,10 +528,10 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     enableTls: true,
     enableNla: true,
     autoLogon: false,
-    credsspOracleRemediation: 'mitigated',
+    credsspOracleRemediation: "mitigated",
     allowHybridEx: false,
     nlaFallbackToTls: true,
-    tlsMinVersion: '1.2',
+    tlsMinVersion: "1.2",
     ntlmEnabled: true,
     kerberosEnabled: false,
     pku2uEnabled: false,
@@ -471,19 +539,19 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     remoteCredentialGuard: false,
     enforceServerPublicKeyValidation: true,
     credsspVersion: 6,
-    serverCertValidation: 'warn',
+    serverCertValidation: "warn",
     enableServerPointer: true,
     pointerSoftwareRendering: true,
-    sspiPackageList: '',
+    sspiPackageList: "",
     gatewayEnabled: false,
-    gatewayHostname: '',
+    gatewayHostname: "",
     gatewayPort: 443,
-    gatewayAuthMethod: 'ntlm',
-    gatewayTransportMode: 'auto',
+    gatewayAuthMethod: "ntlm",
+    gatewayTransportMode: "auto",
     gatewayBypassLocal: true,
     enhancedSessionMode: false,
     autoDetect: false,
-    negotiationStrategy: 'nla-first',
+    negotiationStrategy: "nla-first",
     maxRetries: 3,
     retryDelayMs: 1000,
     defaultWidth: 1920,
@@ -501,28 +569,28 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     desktopScaleFactor: 100,
     lossyCompression: true,
     // Audio
-    audioPlaybackMode: 'local' as const,
-    audioRecordingMode: 'disabled' as const,
-    audioQuality: 'dynamic' as const,
+    audioPlaybackMode: "local" as const,
+    audioRecordingMode: "disabled" as const,
+    audioQuality: "dynamic" as const,
     // Input
-    mouseMode: 'absolute' as const,
+    mouseMode: "absolute" as const,
     enableUnicodeInput: true,
     autoDetectKeyboardLayout: true,
-    inputPriority: 'realtime' as const,
+    inputPriority: "realtime" as const,
     batchIntervalMs: 16,
     keyboardLayout: 0x0409,
-    keyboardType: 'ibm-enhanced',
+    keyboardType: "ibm-enhanced",
     keyboardFunctionKeys: 12,
     // Scroll / Mouse Wheel
     scrollSpeed: 1.0,
     smoothScroll: true,
     // Cursor
-    localCursor: 'local' as const,
+    localCursor: "local" as const,
     // Device redirection
     clipboardRedirection: true,
-    clipboardDirection: 'bidirectional',
+    clipboardDirection: "bidirectional",
     printerRedirection: false,
-    printerOutputMode: 'spool-file',
+    printerOutputMode: "spool-file",
     portRedirection: false,
     smartCardRedirection: false,
     webAuthnRedirection: false,
@@ -532,7 +600,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     driveRedirection: false,
     driveRedirections: [],
     // Performance visual
-    connectionSpeed: 'broadband-high' as const,
+    connectionSpeed: "broadband-high" as const,
     disableWallpaper: true,
     disableFullWindowDrag: true,
     disableMenuAnimations: true,
@@ -543,9 +611,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     enableDesktopComposition: false,
     persistentBitmapCaching: false,
     // Render
-    renderBackend: 'webview',
-    frontendRenderer: 'auto',
-    frameScheduling: 'adaptive',
+    renderBackend: "webview",
+    frontendRenderer: "auto",
+    frameScheduling: "adaptive",
     tripleBuffering: true,
     targetFps: 30,
     frameBatching: false,
@@ -553,16 +621,16 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     fullFrameSyncInterval: 300,
     readTimeoutMs: 16,
     // Advanced
-    sessionClosePolicy: 'detach' as const,
-    clientName: '',
+    sessionClosePolicy: "detach" as const,
+    clientName: "",
     clientBuild: 0,
     maxConsecutiveErrors: 50,
     statsIntervalSecs: 1,
     codecsEnabled: true,
     remoteFxEnabled: true,
-    remoteFxEntropy: 'rlgr3' as const,
+    remoteFxEntropy: "rlgr3" as const,
     gfxEnabled: false,
-    h264Decoder: 'auto' as const,
+    h264Decoder: "auto" as const,
     nalPassthrough: false,
     reconnectBaseDelaySecs: 3,
     reconnectMaxDelaySecs: 30,
@@ -570,51 +638,51 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   },
 
   // RDP Session Panel Settings
-  rdpSessionDisplayMode: 'popup' as const,
+  rdpSessionDisplayMode: "popup" as const,
   rdpSessionThumbnailsEnabled: true,
-  rdpSessionThumbnailPolicy: 'realtime' as const,
+  rdpSessionThumbnailPolicy: "realtime" as const,
   rdpSessionThumbnailInterval: 5,
-  rdpSessionClosePolicy: 'detach' as const,
+  rdpSessionClosePolicy: "detach" as const,
   rdpSessionHistoryMax: 1000,
   toolDisplayModes: {
-    recordingManager: 'tab' as const,
-    importExport: 'tab' as const,
-    macroManager: 'tab' as const,
-    scriptManager: 'tab' as const,
-    performanceMonitor: 'tab' as const,
-    actionLog: 'tab' as const,
-    shortcutManager: 'tab' as const,
-    bulkSsh: 'tab' as const,
-    serverStats: 'tab' as const,
-    opkssh: 'tab' as const,
-    mcpServer: 'tab' as const,
-    internalProxy: 'tab' as const,
-    proxyChain: 'tab' as const,
-    wol: 'tab' as const,
-    windowsBackup: 'tab' as const,
-    diagnostics: 'tab' as const,
-    settings: 'tab' as const,
-    rdpSessions: 'tab' as const,
-    tagManager: 'tab' as const,
-    tabGroupManager: 'tab' as const,
-    connectionEditor: 'tab' as const,
-    bulkEditor: 'tab' as const,
-    proxyProfileEditor: 'tab' as const,
-    proxyChainEditor: 'tab' as const,
-    sshTunnelEditor: 'tab' as const,
-    vpnEditor: 'tab' as const,
-    shortcutCreator: 'tab' as const,
-    tunnelChainEditor: 'tab' as const,
-    tunnelProfileEditor: 'tab' as const,
-    database: 'tab' as const,
+    recordingManager: "tab" as const,
+    importExport: "tab" as const,
+    macroManager: "tab" as const,
+    scriptManager: "tab" as const,
+    performanceMonitor: "tab" as const,
+    actionLog: "tab" as const,
+    shortcutManager: "tab" as const,
+    bulkSsh: "tab" as const,
+    serverStats: "tab" as const,
+    opkssh: "tab" as const,
+    mcpServer: "tab" as const,
+    internalProxy: "tab" as const,
+    proxyChain: "tab" as const,
+    wol: "tab" as const,
+    windowsBackup: "tab" as const,
+    diagnostics: "tab" as const,
+    settings: "tab" as const,
+    rdpSessions: "tab" as const,
+    tagManager: "tab" as const,
+    tabGroupManager: "tab" as const,
+    connectionEditor: "tab" as const,
+    bulkEditor: "tab" as const,
+    proxyProfileEditor: "tab" as const,
+    proxyChainEditor: "tab" as const,
+    sshTunnelEditor: "tab" as const,
+    vpnEditor: "tab" as const,
+    shortcutCreator: "tab" as const,
+    tunnelChainEditor: "tab" as const,
+    tunnelProfileEditor: "tab" as const,
+    database: "tab" as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,
   backendConfig: {
-    logLevel: 'info' as const,
+    logLevel: "info" as const,
     maxConcurrentRdpSessions: 10,
-    rdpServerRenderer: 'auto' as const,
-    rdpCodecPreference: 'auto' as const,
+    rdpServerRenderer: "auto" as const,
+    rdpCodecPreference: "auto" as const,
     tcpDefaultBufferSize: 65536,
     tcpKeepAliveSeconds: 30,
     connectionTimeoutSeconds: 15,
@@ -699,7 +767,7 @@ export class SettingsManager {
   private sliceKnownSettings(
     raw: Record<string, unknown> | null | undefined,
   ): Partial<GlobalSettings> | null {
-    if (!raw || typeof raw !== 'object') return null;
+    if (!raw || typeof raw !== "object") return null;
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (key in raw) out[key] = (raw as Record<string, unknown>)[key];
@@ -709,70 +777,106 @@ export class SettingsManager {
 
   /**
    * Read persisted settings. In the desktop shell this reads
-   * `<app_data_dir>/settings.json` via the backend, migrating a legacy
-   * IndexedDB store into the file on first run. Outside Tauri (browser,
-   * tests) it falls back to IndexedDB.
+   * `<app_data_dir>/settings.json` via the backend — the authoritative
+   * store. Outside Tauri (browser, tests) it returns the module-level
+   * in-memory store.
+   *
+   * There is NO IndexedDB fallback. If the backend read fails, the error
+   * propagates to `doLoadSettings`, which degrades to `DEFAULT_SETTINGS`
+   * (it never serves a stale IndexedDB copy). The previous one-time
+   * IndexedDB→disk migration was removed alongside all IndexedDB settings
+   * code; any user whose settings lived *only* in IndexedDB is not
+   * migrated forward (an accepted tradeoff of full IndexedDB removal).
    */
   private async readPersistedSettings(): Promise<Partial<GlobalSettings> | null> {
     const invoke = await tauriInvoke();
     if (!invoke) {
-      return IndexedDbService.getItem<Partial<GlobalSettings>>(SETTINGS_STORAGE_KEY);
+      // No Tauri disk in this runtime — serve the in-memory blob written
+      // earlier this session (or null on a cold start).
+      return _inMemorySettingsStore;
     }
-    try {
-      const fileValue = await invoke<Record<string, unknown> | null>('read_app_settings');
-      const fromFile = this.sliceKnownSettings(fileValue);
-      if (fromFile && Object.keys(fromFile).length > 0) {
-        return fromFile;
-      }
-      // settings.json has no frontend keys yet — migrate the legacy
-      // IndexedDB store into the file once, then keep using the file.
-      // (The IndexedDB copy is left in place as a one-release backstop.)
-      const legacy = await IndexedDbService.getItem<Partial<GlobalSettings>>(
-        SETTINGS_STORAGE_KEY,
-      );
-      if (legacy && Object.keys(legacy).length > 0) {
-        try {
-          await invoke('write_app_settings', { patch: legacy });
-        } catch (e) {
-          console.error('Failed to migrate settings into settings.json:', e);
-        }
-        return legacy;
-      }
-      return null;
-    } catch (error) {
-      console.error('read_app_settings failed; falling back to IndexedDB:', error);
-      return IndexedDbService.getItem<Partial<GlobalSettings>>(SETTINGS_STORAGE_KEY);
+    const fileValue = await invoke<Record<string, unknown> | null>(
+      "read_app_settings",
+    );
+    const fromFile = this.sliceKnownSettings(fileValue);
+    if (fromFile && Object.keys(fromFile).length > 0) {
+      return fromFile;
     }
+    return null;
   }
 
   /**
    * Persist a settings change. In the desktop shell the patch is
    * shallow-merged into `settings.json` by the backend (so partial saves
-   * never drop sibling keys); elsewhere the full in-memory blob is written
-   * to IndexedDB.
+   * never drop sibling keys); outside Tauri the full in-memory blob is
+   * kept in the module-level in-memory store.
+   *
+   * There is NO IndexedDB fallback. A failed `write_app_settings` is
+   * retried a small bounded number of times with backoff (riding out
+   * transient conditions such as a momentarily-missing app-data dir, and
+   * complementing the backend's own retry). On each failed attempt and on
+   * final failure a `settings-write-failed` window CustomEvent is
+   * dispatched (so a mounted hook can toast); if a retry eventually
+   * succeeds after a prior failure a `settings-write-recovered` event is
+   * dispatched. The just-changed in-memory settings are NOT rolled back on
+   * failure — `saveSettings` has already merged them into `this.settings`,
+   * so the user's change survives the session even if the disk write fails.
+   *
+   * On final failure this rethrows so callers (which already wrap
+   * `saveSettings` in try/catch — e.g. the debounced settings save and
+   * window-geometry save) can react. It never throws on the no-Tauri path.
    */
   private async persistSettings(patch: Partial<GlobalSettings>): Promise<void> {
     const invoke = await tauriInvoke();
     if (!invoke) {
-      await IndexedDbService.setItem(SETTINGS_STORAGE_KEY, this.settings);
+      // No Tauri disk — retain the full blob in the module-level store so
+      // a subsequent read in the same session round-trips.
+      _inMemorySettingsStore = { ...this.settings };
       return;
     }
-    try {
-      await invoke('write_app_settings', { patch });
-    } catch (error) {
-      console.error('write_app_settings failed; falling back to IndexedDB:', error);
-      await IndexedDbService.setItem(SETTINGS_STORAGE_KEY, this.settings);
+
+    let sawFailure = false;
+    for (let attempt = 1; attempt <= SETTINGS_WRITE_MAX_ATTEMPTS; attempt++) {
+      try {
+        await invoke("write_app_settings", { patch });
+        if (sawFailure) {
+          // Recovered after one or more failed attempts.
+          dispatchWriteRecovered(attempt, SETTINGS_WRITE_MAX_ATTEMPTS);
+        }
+        return;
+      } catch (error) {
+        sawFailure = true;
+        const message = error instanceof Error ? error.message : String(error);
+        const willRetry = attempt < SETTINGS_WRITE_MAX_ATTEMPTS;
+        console.error(
+          `write_app_settings failed (attempt ${attempt}/${SETTINGS_WRITE_MAX_ATTEMPTS}):`,
+          error,
+        );
+        dispatchWriteFailed(
+          message,
+          attempt,
+          SETTINGS_WRITE_MAX_ATTEMPTS,
+          willRetry,
+        );
+        if (!willRetry) {
+          // Exhausted retries — surface to the caller. The in-memory
+          // settings keep the user's change (no rollback).
+          throw error;
+        }
+        // Linear backoff before the next attempt.
+        await delay(SETTINGS_WRITE_RETRY_BASE_MS * attempt);
+      }
     }
   }
 
   /**
-   * Reset persisted settings back to defaults. Clears the legacy
-   * IndexedDB copy and overwrites the frontend-owned keys in
-   * `settings.json` with DEFAULT_SETTINGS (leaving backend-managed keys
-   * like `updater` untouched). Callers typically reload the app after.
+   * Reset persisted settings back to defaults. Overwrites the
+   * frontend-owned keys in `settings.json` with DEFAULT_SETTINGS (leaving
+   * backend-managed keys like `updater` untouched). Callers typically
+   * reload the app after. No IndexedDB copy is cleared — settings no
+   * longer use IndexedDB.
    */
   async resetStoredSettings(): Promise<void> {
-    await IndexedDbService.removeItem(SETTINGS_STORAGE_KEY);
     this.settings = { ...DEFAULT_SETTINGS };
     this.loaded = true;
     await this.persistSettings(DEFAULT_SETTINGS);
@@ -785,12 +889,33 @@ export class SettingsManager {
         const storedSettings = stored;
         // Validate colorScheme - migrate invalid values like "other" or "custom" to "blue"
         const validColorSchemes = [
-          "red", "rose", "pink", "orange", "amber", "yellow", "lime",
-          "green", "emerald", "teal", "cyan", "sky", "blue", "indigo",
-          "violet", "purple", "fuchsia", "slate", "grey"
+          "red",
+          "rose",
+          "pink",
+          "orange",
+          "amber",
+          "yellow",
+          "lime",
+          "green",
+          "emerald",
+          "teal",
+          "cyan",
+          "sky",
+          "blue",
+          "indigo",
+          "violet",
+          "purple",
+          "fuchsia",
+          "slate",
+          "grey",
         ];
-        if (storedSettings.colorScheme && !validColorSchemes.includes(storedSettings.colorScheme)) {
-          console.warn(`Invalid colorScheme "${storedSettings.colorScheme}" found in settings, resetting to "blue"`);
+        if (
+          storedSettings.colorScheme &&
+          !validColorSchemes.includes(storedSettings.colorScheme)
+        ) {
+          console.warn(
+            `Invalid colorScheme "${storedSettings.colorScheme}" found in settings, resetting to "blue"`,
+          );
           storedSettings.colorScheme = "blue";
         }
 
@@ -798,9 +923,12 @@ export class SettingsManager {
           ...DEFAULT_SETTINGS,
           ...storedSettings,
           httpsTrustPolicy:
-            storedSettings.httpsTrustPolicy ?? storedSettings.tlsTrustPolicy ?? DEFAULT_SETTINGS.httpsTrustPolicy,
+            storedSettings.httpsTrustPolicy ??
+            storedSettings.tlsTrustPolicy ??
+            DEFAULT_SETTINGS.httpsTrustPolicy,
           certificateTrustPolicy:
-            storedSettings.certificateTrustPolicy ?? DEFAULT_SETTINGS.certificateTrustPolicy,
+            storedSettings.certificateTrustPolicy ??
+            DEFAULT_SETTINGS.certificateTrustPolicy,
           networkDiscovery: {
             ...DEFAULT_SETTINGS.networkDiscovery,
             ...(storedSettings.networkDiscovery ?? {}),
@@ -845,7 +973,7 @@ export class SettingsManager {
       this.loaded = true;
       return this.settings;
     } catch (error) {
-      console.error('Failed to load settings:', error);
+      console.error("Failed to load settings:", error);
       this.loaded = true;
       return DEFAULT_SETTINGS;
     }
@@ -857,7 +985,10 @@ export class SettingsManager {
    * @returns {Promise<void>} Resolves when saving succeeds.
    * @throws {Error} If the settings could not be persisted.
    */
-  async saveSettings(settings: Partial<GlobalSettings>, options?: { silent?: boolean }): Promise<void> {
+  async saveSettings(
+    settings: Partial<GlobalSettings>,
+    options?: { silent?: boolean },
+  ): Promise<void> {
     try {
       // Guard against the startup race: if a caller (e.g. window-geometry
       // persistence) saves before the initial load has finished,
@@ -871,17 +1002,22 @@ export class SettingsManager {
       await this.persistSettings(settings);
       // Only log explicit user-initiated saves, not auto-saves or intermediate changes
       if (!options?.silent) {
-        this.logAction('info', 'Settings saved', undefined, 'User settings updated');
+        this.logAction(
+          "info",
+          "Settings saved",
+          undefined,
+          "User settings updated",
+        );
       }
-      if (typeof window !== 'undefined') {
+      if (typeof window !== "undefined") {
         window.dispatchEvent(
-          new CustomEvent('settings-updated', { detail: this.settings }),
+          new CustomEvent("settings-updated", { detail: this.settings }),
         );
       }
       // Broadcast to other Tauri windows
       emitSettingsSync(this.settings);
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      console.error("Failed to save settings:", error);
       throw error;
     }
   }
@@ -897,8 +1033,8 @@ export class SettingsManager {
 
   /**
    * Apply a full settings snapshot received from another window.
-   * Updates in-memory state and IndexedDB but does NOT re-emit the
-   * Tauri sync event (to avoid echo loops).
+   * Updates in-memory state and persists to disk (via the backend) but
+   * does NOT re-emit the Tauri sync event (to avoid echo loops).
    */
   async applySyncedSettings(settings: GlobalSettings): Promise<void> {
     const prev = this.settings;
@@ -914,9 +1050,9 @@ export class SettingsManager {
       prev.windowTransparencyEnabled !== settings.windowTransparencyEnabled ||
       prev.windowTransparencyOpacity !== settings.windowTransparencyOpacity ||
       prev.warnOnDetachClose !== settings.warnOnDetachClose;
-    if (typeof window !== 'undefined' && visualChanged) {
+    if (typeof window !== "undefined" && visualChanged) {
       window.dispatchEvent(
-        new CustomEvent('settings-updated', { detail: this.settings }),
+        new CustomEvent("settings-updated", { detail: this.settings }),
       );
     }
   }
@@ -945,10 +1081,10 @@ export class SettingsManager {
    * @param {number} [duration] - Optional duration associated with the action.
    */
   logAction(
-    level: 'debug' | 'info' | 'warn' | 'error',
+    level: "debug" | "info" | "warn" | "error",
     action: string,
     connectionId?: string,
-    details: string = '',
+    details: string = "",
     duration?: number,
     connectionName?: string,
   ): void {
@@ -960,7 +1096,8 @@ export class SettingsManager {
       level,
       action,
       connectionId,
-      connectionName: connectionName ?? (connectionId ? connectionId : undefined),
+      connectionName:
+        connectionName ?? (connectionId ? connectionId : undefined),
       details,
       duration,
     };
@@ -995,23 +1132,27 @@ export class SettingsManager {
 
   private async saveActionLog(): Promise<void> {
     try {
-      await IndexedDbService.setItem('mremote-action-log', this.actionLog);
+      await IndexedDbService.setItem("mremote-action-log", this.actionLog);
     } catch (error) {
-      console.error('Failed to save action log:', error);
+      console.error("Failed to save action log:", error);
     }
   }
 
   private async loadActionLog(): Promise<void> {
     try {
-      const stored = await IndexedDbService.getItem<any[]>('mremote-action-log');
+      const stored =
+        await IndexedDbService.getItem<any[]>("mremote-action-log");
       if (stored) {
         this.actionLog = stored.map((entry: any) => ({
           ...entry,
-          timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : new Date(entry.timestamp).toISOString(),
+          timestamp:
+            typeof entry.timestamp === "string"
+              ? entry.timestamp
+              : new Date(entry.timestamp).toISOString(),
         }));
       }
     } catch (error) {
-      console.error('Failed to load action log:', error);
+      console.error("Failed to load action log:", error);
     }
   }
 
@@ -1036,9 +1177,9 @@ export class SettingsManager {
   }
 
   /**
-     * Retrieves recorded performance metrics.
-     * @returns {PerformanceMetrics[]} Array of metrics.
-     */
+   * Retrieves recorded performance metrics.
+   * @returns {PerformanceMetrics[]} Array of metrics.
+   */
   getPerformanceMetrics(): PerformanceMetrics[] {
     return this.performanceMetrics;
   }
@@ -1050,20 +1191,25 @@ export class SettingsManager {
 
   private async savePerformanceMetrics(): Promise<void> {
     try {
-      await IndexedDbService.setItem('mremote-performance-metrics', this.performanceMetrics);
+      await IndexedDbService.setItem(
+        "mremote-performance-metrics",
+        this.performanceMetrics,
+      );
     } catch (error) {
-      console.error('Failed to save performance metrics:', error);
+      console.error("Failed to save performance metrics:", error);
     }
   }
 
   private async loadPerformanceMetrics(): Promise<void> {
     try {
-      const stored = await IndexedDbService.getItem<PerformanceMetrics[]>('mremote-performance-metrics');
+      const stored = await IndexedDbService.getItem<PerformanceMetrics[]>(
+        "mremote-performance-metrics",
+      );
       if (stored) {
         this.performanceMetrics = stored;
       }
     } catch (error) {
-      console.error('Failed to load performance metrics:', error);
+      console.error("Failed to load performance metrics:", error);
     }
   }
 
@@ -1073,7 +1219,9 @@ export class SettingsManager {
    * @param {Omit<CustomScript, 'id' | 'createdAt' | 'updatedAt'>} script - Script details without id and timestamps.
    * @returns {CustomScript} The newly created script with id and timestamps.
    */
-  addCustomScript(script: Omit<CustomScript, 'id' | 'createdAt' | 'updatedAt'>): CustomScript {
+  addCustomScript(
+    script: Omit<CustomScript, "id" | "createdAt" | "updatedAt">,
+  ): CustomScript {
     const newScript: CustomScript = {
       ...script,
       id: generateId(),
@@ -1083,7 +1231,12 @@ export class SettingsManager {
 
     this.customScripts.push(newScript);
     void this.saveCustomScripts();
-    this.logAction('info', 'Custom script added', undefined, `Script "${script.name}" created`);
+    this.logAction(
+      "info",
+      "Custom script added",
+      undefined,
+      `Script "${script.name}" created`,
+    );
 
     return newScript;
   }
@@ -1094,7 +1247,7 @@ export class SettingsManager {
    * @param {Partial<CustomScript>} updates - Fields to update.
    */
   updateCustomScript(id: string, updates: Partial<CustomScript>): void {
-    const index = this.customScripts.findIndex(script => script.id === id);
+    const index = this.customScripts.findIndex((script) => script.id === id);
     if (index !== -1) {
       this.customScripts[index] = {
         ...this.customScripts[index],
@@ -1102,7 +1255,12 @@ export class SettingsManager {
         updatedAt: new Date().toISOString(),
       };
       void this.saveCustomScripts();
-      this.logAction('info', 'Custom script updated', undefined, `Script "${this.customScripts[index].name}" updated`);
+      this.logAction(
+        "info",
+        "Custom script updated",
+        undefined,
+        `Script "${this.customScripts[index].name}" updated`,
+      );
     }
   }
 
@@ -1111,10 +1269,17 @@ export class SettingsManager {
    * @param {string} id - Identifier of the script to remove.
    */
   deleteCustomScript(id: string): void {
-    const script = this.customScripts.find(s => s.id === id);
-    this.customScripts = this.customScripts.filter(script => script.id !== id);
+    const script = this.customScripts.find((s) => s.id === id);
+    this.customScripts = this.customScripts.filter(
+      (script) => script.id !== id,
+    );
     void this.saveCustomScripts();
-    this.logAction('info', 'Custom script deleted', undefined, `Script "${script?.name}" deleted`);
+    this.logAction(
+      "info",
+      "Custom script deleted",
+      undefined,
+      `Script "${script?.name}" deleted`,
+    );
   }
 
   /**
@@ -1127,24 +1292,35 @@ export class SettingsManager {
 
   private async saveCustomScripts(): Promise<void> {
     try {
-      await IndexedDbService.setItem('mremote-custom-scripts', this.customScripts);
+      await IndexedDbService.setItem(
+        "mremote-custom-scripts",
+        this.customScripts,
+      );
     } catch (error) {
-      console.error('Failed to save custom scripts:', error);
+      console.error("Failed to save custom scripts:", error);
     }
   }
 
   private async loadCustomScripts(): Promise<void> {
     try {
-      const stored = await IndexedDbService.getItem<any[]>('mremote-custom-scripts');
+      const stored = await IndexedDbService.getItem<any[]>(
+        "mremote-custom-scripts",
+      );
       if (stored) {
         this.customScripts = stored.map((script: any) => ({
           ...script,
-          createdAt: typeof script.createdAt === 'string' ? script.createdAt : new Date(script.createdAt).toISOString(),
-          updatedAt: typeof script.updatedAt === 'string' ? script.updatedAt : new Date(script.updatedAt).toISOString(),
+          createdAt:
+            typeof script.createdAt === "string"
+              ? script.createdAt
+              : new Date(script.createdAt).toISOString(),
+          updatedAt:
+            typeof script.updatedAt === "string"
+              ? script.updatedAt
+              : new Date(script.updatedAt).toISOString(),
         }));
       }
     } catch (error) {
-      console.error('Failed to load custom scripts:', error);
+      console.error("Failed to load custom scripts:", error);
     }
   }
 
@@ -1161,17 +1337,17 @@ export class SettingsManager {
   async benchmarkKeyDerivation(
     targetTimeSeconds: number = 1,
     maxTimeSeconds: number = 30,
-    maxIterations: number = 20
+    maxIterations: number = 20,
   ): Promise<number> {
     if (
-      typeof globalThis.performance?.now !== 'function' ||
-      typeof globalThis.crypto?.subtle === 'undefined'
+      typeof globalThis.performance?.now !== "function" ||
+      typeof globalThis.crypto?.subtle === "undefined"
     ) {
-      throw new Error('Required Web APIs not available');
+      throw new Error("Required Web APIs not available");
     }
 
-    const testPassword = 'benchmark-test-password';
-    const testSalt = 'benchmark-test-salt';
+    const testPassword = "benchmark-test-password";
+    const testSalt = "benchmark-test-salt";
     let iterations = 10000;
     let lastTime = 0;
     let iterationCount = 0;
@@ -1180,10 +1356,10 @@ export class SettingsManager {
     const benchmarkStart = globalThis.performance.now();
 
     this.logAction(
-      'info',
-      'Key derivation benchmark started',
+      "info",
+      "Key derivation benchmark started",
       undefined,
-      `Target time: ${targetTimeSeconds}s`
+      `Target time: ${targetTimeSeconds}s`,
     );
 
     // Binary search for optimal iterations
@@ -1195,8 +1371,8 @@ export class SettingsManager {
       for (let i = 0; i < iterations; i++) {
         // Simple hash operation to simulate work
         await globalThis.crypto.subtle.digest(
-          'SHA-256',
-          new TextEncoder().encode(testPassword + testSalt + i)
+          "SHA-256",
+          new TextEncoder().encode(testPassword + testSalt + i),
         );
 
         // Track elapsed time inside the loop and break if exceeded
@@ -1227,7 +1403,12 @@ export class SettingsManager {
       lastTime = duration;
     }
 
-    this.logAction('info', 'Key derivation benchmark completed', undefined, `Optimal iterations: ${iterations}`);
+    this.logAction(
+      "info",
+      "Key derivation benchmark completed",
+      undefined,
+      `Optimal iterations: ${iterations}`,
+    );
     return iterations;
   }
 
@@ -1240,13 +1421,15 @@ export class SettingsManager {
   async checkSingleWindow(): Promise<boolean> {
     if (!this.settings.singleWindowMode) return true;
 
-    const windowId = sessionStorage.getItem('mremote-window-id');
-    const activeWindowId = await IndexedDbService.getItem<string>('mremote-active-window');
+    const windowId = sessionStorage.getItem("mremote-window-id");
+    const activeWindowId = await IndexedDbService.getItem<string>(
+      "mremote-active-window",
+    );
 
     if (!windowId) {
       const newWindowId = generateId();
-      sessionStorage.setItem('mremote-window-id', newWindowId);
-      await IndexedDbService.setItem('mremote-active-window', newWindowId);
+      sessionStorage.setItem("mremote-window-id", newWindowId);
+      await IndexedDbService.setItem("mremote-active-window", newWindowId);
       return true;
     }
 
@@ -1254,7 +1437,7 @@ export class SettingsManager {
       return false; // Another window is active
     }
 
-    await IndexedDbService.setItem('mremote-active-window', windowId);
+    await IndexedDbService.setItem("mremote-active-window", windowId);
     return true;
   }
 
@@ -1272,10 +1455,12 @@ export class SettingsManager {
     // Auto-benchmark if enabled
     if (this.settings.autoBenchmarkIterations) {
       try {
-        const optimalIterations = await this.benchmarkKeyDerivation(this.settings.benchmarkTimeSeconds);
+        const optimalIterations = await this.benchmarkKeyDerivation(
+          this.settings.benchmarkTimeSeconds,
+        );
         await this.saveSettings({ keyDerivationIterations: optimalIterations });
       } catch (error) {
-        console.error('Auto-benchmark failed:', error);
+        console.error("Auto-benchmark failed:", error);
       }
     }
   }

@@ -1,23 +1,53 @@
-import { Monitor, Terminal, Eye, Globe, Phone, Database, Server, Shield, Cloud, Folder, Star, HardDrive } from 'lucide-react';
-import { Connection } from '../../../types/connection/connection';
+import {
+  Monitor,
+  Terminal,
+  Eye,
+  Globe,
+  Phone,
+  Database,
+  Server,
+  Shield,
+  Cloud,
+  Folder,
+  Star,
+  HardDrive,
+} from "lucide-react";
+import { Connection } from "../../../types/connection/connection";
 
 export const getProtocolIcon = (protocol: string) => {
   switch (protocol) {
-    case "rdp": return Monitor;
-    case "ssh": return Terminal;
-    case "vnc": return Eye;
-    case "http": case "https": return Globe;
-    case "telnet": case "rlogin": return Phone;
-    case "mysql": return Database;
-    case "winrm": return Server;
-    default: return Monitor;
+    case "rdp":
+      return Monitor;
+    case "ssh":
+      return Terminal;
+    case "vnc":
+      return Eye;
+    case "http":
+    case "https":
+      return Globe;
+    case "telnet":
+    case "rlogin":
+      return Phone;
+    case "mysql":
+      return Database;
+    case "winrm":
+      return Server;
+    default:
+      return Monitor;
   }
 };
 
 export const iconRegistry: Record<string, typeof Monitor> = {
-  monitor: Monitor, terminal: Terminal, globe: Globe, database: Database,
-  server: Server, shield: Shield, cloud: Cloud, folder: Folder,
-  star: Star, drive: HardDrive,
+  monitor: Monitor,
+  terminal: Terminal,
+  globe: Globe,
+  database: Database,
+  server: Server,
+  shield: Shield,
+  cloud: Cloud,
+  folder: Folder,
+  star: Star,
+  drive: HardDrive,
 };
 
 export const getConnectionIcon = (connection: Connection) => {
@@ -28,10 +58,14 @@ export const getConnectionIcon = (connection: Connection) => {
 
 export const getStatusColor = (status?: string) => {
   switch (status) {
-    case "connected": return "text-success";
-    case "connecting": return "text-warning";
-    case "error": return "text-error";
-    default: return "text-[var(--color-textSecondary)]";
+    case "connected":
+      return "text-success";
+    case "connecting":
+      return "text-warning";
+    case "error":
+      return "text-error";
+    default:
+      return "text-[var(--color-textSecondary)]";
   }
 };
 
@@ -65,10 +99,16 @@ export interface ConnectionTreeItemProps {
   isDragOver: boolean;
   dropPosition: "before" | "after" | "inside" | null;
   onDragStart: (connectionId: string) => void;
-  onDragOver: (connectionId: string, position: "before" | "after" | "inside") => void;
+  onDragOver: (
+    connectionId: string,
+    position: "before" | "after" | "inside",
+  ) => void;
   onDragLeave: () => void;
   onDragEnd: () => void;
-  onDrop: (connectionId: string, position: "before" | "after" | "inside") => void;
+  onDrop: (
+    connectionId: string,
+    position: "before" | "after" | "inside",
+  ) => void;
   singleClickConnect?: boolean;
   singleClickDisconnect?: boolean;
   doubleClickRename?: boolean;
@@ -78,5 +118,9 @@ export interface ConnectionTreeItemProps {
    * gesture. Defaults to true via SettingsManager defaults.
    */
   folderSingleClickToggle?: boolean;
+  /**
+   * When true, double-clicking a folder row toggles expand/collapse.
+   * This is especially useful when folderSingleClickToggle is off.
+   */
+  folderDoubleClickToggle?: boolean;
 }
-

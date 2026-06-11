@@ -1,46 +1,103 @@
-import { ConnectionTreeItemProps, getConnectionIcon, getStatusColor } from "./helpers";
+import {
+  ConnectionTreeItemProps,
+  getConnectionIcon,
+  getStatusColor,
+} from "./helpers";
 import TreeItemMenu from "./TreeItemMenu";
 import MultiSelectMenu from "./MultiSelectMenu";
 import React, { useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useConnections } from "../../../contexts/useConnections";
 import { isToolProtocol } from "../../app/toolSession";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreVertical, Play, Power, Shield, Star } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  MoreVertical,
+  Play,
+  Power,
+  Shield,
+  Star,
+} from "lucide-react";
 
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
-  connection, level,
-  onConnect, onDisconnect, onEdit, onDelete, onCopyHostname, onRename, onExport,
-  onConnectWithOptions, onConnectWithoutCredentials, onExecuteScripts,
-  onDiagnostics, onDetachSession, onDuplicate, onCheckConnection, onWindowsTool,
-  onConnectAll, onConnectAllRecursive,
-  enableReorder, isDragging, isDragOver, dropPosition,
-  onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop,
-  singleClickConnect, singleClickDisconnect, doubleClickRename,
+  connection,
+  level,
+  onConnect,
+  onDisconnect,
+  onEdit,
+  onDelete,
+  onCopyHostname,
+  onRename,
+  onExport,
+  onConnectWithOptions,
+  onConnectWithoutCredentials,
+  onExecuteScripts,
+  onDiagnostics,
+  onDetachSession,
+  onDuplicate,
+  onCheckConnection,
+  onWindowsTool,
+  onConnectAll,
+  onConnectAllRecursive,
+  enableReorder,
+  isDragging,
+  isDragOver,
+  dropPosition,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDragEnd,
+  onDrop,
+  singleClickConnect,
+  singleClickDisconnect,
+  doubleClickRename,
   folderSingleClickToggle,
+  folderDoubleClickToggle,
 }) => {
+  const { t } = useTranslation();
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
   const [showMultiMenu, setShowMultiMenu] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
 
   const ProtocolIcon = getConnectionIcon(connection);
   const isSelected = state.selectedConnectionIds.has(connection.id);
   const isMultiSelected = state.selectedConnectionIds.size > 1;
-  const activeSession = state.sessions.find((s) => s.connectionId === connection.id && !isToolProtocol(s.protocol));
+  const activeSession = state.sessions.find(
+    (s) => s.connectionId === connection.id && !isToolProtocol(s.protocol),
+  );
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
       setIsExpanded(!isExpanded);
-      dispatch({ type: "UPDATE_CONNECTION", payload: { ...connection, expanded: !isExpanded } });
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...connection, expanded: !isExpanded },
+      });
     }
+  };
+
+  const handleFolderRowClick = (clickCount: number) => {
+    if (!folderSingleClickToggle || clickCount > 1) return;
+    handleToggleExpand();
   };
 
   const handleClick = (e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey || e.shiftKey) {
       dispatch({
         type: "TOGGLE_SELECT_CONNECTION",
-        payload: { id: connection.id, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey },
+        payload: {
+          id: connection.id,
+          ctrl: e.ctrlKey || e.metaKey,
+          shift: e.shiftKey,
+        },
       });
       return;
     }
@@ -49,8 +106,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
       // Folder rows: toggle expand on any click within the row
       // (not just the chevron) when the setting is on. The chevron
       // button keeps its own onClick + stopPropagation so it still
-      // works either way.
-      if (folderSingleClickToggle) handleToggleExpand();
+      // works either way. Ignore the second click from a double-click
+      // gesture so two click events do not cancel each other out.
+      handleFolderRowClick(e.detail);
     } else {
       if (activeSession && singleClickDisconnect) onDisconnect(connection);
       else if (!activeSession && singleClickConnect) onConnect(connection);
@@ -58,7 +116,12 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   };
 
   const handleDoubleClick = () => {
-    if (connection.isGroup) return;
+    if (connection.isGroup) {
+      if (folderDoubleClickToggle && !folderSingleClickToggle) {
+        handleToggleExpand();
+      }
+      return;
+    }
     if (doubleClickRename) onRename(connection);
     else onConnect(connection);
   };
@@ -85,7 +148,10 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     setShowMenu(true);
   };
 
-  const calcDropPosition = (clientY: number, rect: DOMRect): "before" | "after" | "inside" => {
+  const calcDropPosition = (
+    clientY: number,
+    rect: DOMRect,
+  ): "before" | "after" | "inside" => {
     const y = clientY - rect.top;
     const height = rect.height;
     if (connection.isGroup) {
@@ -97,15 +163,28 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   };
 
   return (
-    <div data-testid={connection.isGroup ? "connection-group" : "connection-tree-item"} className="relative" role="treeitem" aria-expanded={connection.isGroup ? isExpanded : undefined} aria-selected={isSelected} tabIndex={isSelected ? 0 : -1}>
+    <div
+      data-testid={
+        connection.isGroup ? "connection-group" : "connection-tree-item"
+      }
+      className="relative"
+      role="treeitem"
+      aria-expanded={connection.isGroup ? isExpanded : undefined}
+      aria-selected={isSelected}
+      tabIndex={isSelected ? 0 : -1}
+    >
       <div
         data-connection-item="true"
         data-connection-id={connection.id}
         data-tauri-disable-drag="true"
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-[var(--color-border)]/50 transition-colors relative ${
-          isSelected ? "bg-primary/20 text-primary" : "text-[var(--color-textSecondary)]"
+          isSelected
+            ? "bg-primary/20 text-primary"
+            : "text-[var(--color-textSecondary)]"
         } ${isDragging ? "opacity-50 scale-95" : ""} ${
-          isDragOver && dropPosition === "inside" ? "bg-primary/20 ring-2 ring-primary/50 ring-inset" : ""
+          isDragOver && dropPosition === "inside"
+            ? "bg-primary/20 ring-2 ring-primary/50 ring-inset"
+            : ""
         }`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleClick}
@@ -121,9 +200,16 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         }}
         onDragOver={(e) => {
           if (!enableReorder) return;
-          e.preventDefault(); e.stopPropagation();
+          e.preventDefault();
+          e.stopPropagation();
           e.dataTransfer.dropEffect = "move";
-          onDragOver(connection.id, calcDropPosition(e.clientY, e.currentTarget.getBoundingClientRect()));
+          onDragOver(
+            connection.id,
+            calcDropPosition(
+              e.clientY,
+              e.currentTarget.getBoundingClientRect(),
+            ),
+          );
         }}
         onDragLeave={(e) => {
           const relatedTarget = e.relatedTarget as HTMLElement;
@@ -132,12 +218,23 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         onDragEnd={onDragEnd}
         onDrop={(e) => {
           if (!enableReorder) return;
-          e.preventDefault(); e.stopPropagation();
-          onDrop(connection.id, calcDropPosition(e.clientY, e.currentTarget.getBoundingClientRect()));
+          e.preventDefault();
+          e.stopPropagation();
+          onDrop(
+            connection.id,
+            calcDropPosition(
+              e.clientY,
+              e.currentTarget.getBoundingClientRect(),
+            ),
+          );
         }}
       >
-        {isDragOver && dropPosition === "before" && <div className="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10" />}
-        {isDragOver && dropPosition === "after" && <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary z-10" />}
+        {isDragOver && dropPosition === "before" && (
+          <div className="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10" />
+        )}
+        {isDragOver && dropPosition === "after" && (
+          <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary z-10" />
+        )}
 
         {connection.isGroup && (
           <button
@@ -157,47 +254,98 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             }}
             className="flex items-center justify-center w-4 h-4 mr-1 hover:bg-[var(--color-border)] rounded transition-colors"
           >
-            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {isExpanded ? (
+              <ChevronDown size={12} />
+            ) : (
+              <ChevronRight size={12} />
+            )}
           </button>
         )}
 
         <div className="flex items-center min-w-0 flex-1">
           {connection.isGroup ? (
-            isExpanded ? <FolderOpen size={16} className="mr-2 text-warning" /> : <Folder size={16} className="mr-2 text-warning" />
+            isExpanded ? (
+              <FolderOpen size={16} className="mr-2 text-warning" />
+            ) : (
+              <Folder size={16} className="mr-2 text-warning" />
+            )
           ) : (
-            <ProtocolIcon size={16} className={`mr-2 ${getStatusColor(activeSession?.status)}`} />
+            <ProtocolIcon
+              size={16}
+              className={`mr-2 ${getStatusColor(activeSession?.status)}`}
+            />
           )}
           {connection.favorite && (
-            <Star size={11} className="mr-1 text-warning flex-shrink-0" fill="currentColor" />
+            <Star
+              size={11}
+              className="mr-1 text-warning flex-shrink-0"
+              fill="currentColor"
+            />
           )}
           <span className="truncate text-sm">{connection.name}</span>
-          {!connection.isGroup && ((connection.security?.tunnelChain?.length ?? 0) > 0 || connection.proxyChainId || connection.connectionChainId) && (
-            <span className="ml-1 flex-shrink-0 text-[var(--color-textMuted)]" title="VPN/Proxy chain configured">
-              <Shield size={10} />
-            </span>
-          )}
+          {!connection.isGroup &&
+            ((connection.security?.tunnelChain?.length ?? 0) > 0 ||
+              connection.proxyChainId ||
+              connection.connectionChainId) && (
+              <span
+                className="ml-1 flex-shrink-0 text-[var(--color-textMuted)]"
+                title={t(
+                  "connections.vpnProxyChainConfigured",
+                  "VPN/Proxy chain configured",
+                )}
+              >
+                <Shield size={10} />
+              </span>
+            )}
           {activeSession && (
-            <div className={`ml-2 w-2 h-2 rounded-full ${
-              activeSession.status === "connected" ? "bg-success"
-                : activeSession.status === "connecting" ? "bg-warning" : "bg-error"
-            }`} />
+            <div
+              className={`ml-2 w-2 h-2 rounded-full ${
+                activeSession.status === "connected"
+                  ? "bg-success"
+                  : activeSession.status === "connecting"
+                    ? "bg-warning"
+                    : "bg-error"
+              }`}
+            />
           )}
         </div>
 
         <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-          {!connection.isGroup && (
-            activeSession ? (
-              <button onClick={(e) => { e.stopPropagation(); onDisconnect(connection); }} className="p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Disconnect"><Power size={12} /></button>
+          {!connection.isGroup &&
+            (activeSession ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDisconnect(connection);
+                }}
+                className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+                data-tooltip={t("connections.disconnect", "Disconnect")}
+              >
+                <Power size={12} />
+              </button>
             ) : (
-              <button onClick={(e) => { e.stopPropagation(); onConnect(connection); }} className="p-1 hover:bg-[var(--color-border)] rounded transition-colors" data-tooltip="Connect"><Play size={12} /></button>
-            )
-          )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onConnect(connection);
+                }}
+                className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+                data-tooltip={t("quickConnect.connect", "Connect")}
+              >
+                <Play size={12} />
+              </button>
+            ))}
           <button
             ref={triggerRef}
             onClick={(e) => {
               e.stopPropagation();
-              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-              setMenuPosition({ x: Math.max(8, rect.right - 140), y: rect.bottom + 6 });
+              const rect = (
+                e.currentTarget as HTMLButtonElement
+              ).getBoundingClientRect();
+              setMenuPosition({
+                x: Math.max(8, rect.right - 140),
+                y: rect.bottom + 6,
+              });
               if (isMultiSelected && isSelected) {
                 setShowMultiMenu((prev) => !prev);
               } else {

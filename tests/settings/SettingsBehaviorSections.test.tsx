@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import BehaviorSettings from "../../src/components/SettingsDialog/sections/BehaviorSettings";
@@ -15,6 +15,8 @@ const behaviorSettings = {
   doubleClickConnect: true,
   doubleClickRename: false,
   middleClickCloseTab: true,
+  folderSingleClickToggle: true,
+  folderDoubleClickToggle: true,
   openConnectionInBackground: false,
   openWinmgmtToolInBackground: false,
   switchTabOnActivity: false,
@@ -71,10 +73,7 @@ const behaviorSettings = {
 describe("Behavior settings section accents", () => {
   it("uses the accent color for the page and subsection icons", () => {
     const { container } = render(
-      <BehaviorSettings
-        settings={behaviorSettings}
-        updateSettings={vi.fn()}
-      />,
+      <BehaviorSettings settings={behaviorSettings} updateSettings={vi.fn()} />,
     );
 
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
@@ -89,5 +88,22 @@ describe("Behavior settings section accents", () => {
     for (const icon of sectionIcons) {
       expect(icon.getAttribute("class")).toContain("text-primary");
     }
+  });
+
+  it("updates the folder double-click toggle", () => {
+    const updateSettings = vi.fn();
+
+    render(
+      <BehaviorSettings
+        settings={behaviorSettings}
+        updateSettings={updateSettings}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText(/folder expand on double click/i));
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      folderDoubleClickToggle: false,
+    });
   });
 });

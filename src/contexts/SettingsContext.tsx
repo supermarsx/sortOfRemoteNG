@@ -1,9 +1,26 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig, defaultDiagnosticsConfig, defaultMemoryWatchdogSettings, defaultExportSecuritySettings } from '../types/settings/settings';
-import { SettingsManager } from '../utils/settings/settingsManager';
-import { DEFAULT_LOADING_ELEMENT_SETTINGS } from '../components/ui/display/loadingElement/defaults';
-import { DEFAULT_MCP_CONFIG } from '../types/mcp/mcpServer';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
+import {
+  GlobalSettings,
+  defaultSSHTerminalConfig,
+  defaultSSHConnectionConfig,
+  defaultBackupConfig,
+  defaultCloudSyncConfig,
+  defaultDiagnosticsConfig,
+  defaultMemoryWatchdogSettings,
+  defaultExportSecuritySettings,
+} from "../types/settings/settings";
+import { SettingsManager } from "../utils/settings/settingsManager";
+import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../components/ui/display/loadingElement/defaults";
+import { DEFAULT_MCP_CONFIG } from "../types/mcp/mcpServer";
 
 interface SettingsContextType {
   settings: GlobalSettings;
@@ -12,17 +29,17 @@ interface SettingsContextType {
 }
 
 export const defaultSettings: GlobalSettings = {
-  language: 'en',
+  language: "en",
   autoDetectOsLanguage: true,
-  region: 'auto',
-  timeFormat: 'auto',
-  dateFormat: 'auto',
-  timeZone: 'auto',
-  calendarSystem: 'auto',
-  numberingSystem: 'auto',
+  region: "auto",
+  timeFormat: "auto",
+  dateFormat: "auto",
+  timeZone: "auto",
+  calendarSystem: "auto",
+  numberingSystem: "auto",
   rtlLayout: false,
-  theme: 'dark',
-  colorScheme: 'blue',
+  theme: "dark",
+  colorScheme: "blue",
   autoSaveEnabled: false,
   autoSaveIntervalMinutes: 5,
   singleWindowMode: false,
@@ -52,6 +69,7 @@ export const defaultSettings: GlobalSettings = {
   doubleClickConnect: true,
   middleClickCloseTab: true,
   folderSingleClickToggle: true,
+  folderDoubleClickToggle: true,
 
   // Tab Behavior
   openConnectionInBackground: false,
@@ -113,9 +131,9 @@ export const defaultSettings: GlobalSettings = {
   // Scroll & Input
   terminalScrollSpeed: 1.0,
   terminalSmoothScroll: true,
-  treeRightClickAction: 'contextMenu' as const,
-  mouseBackAction: 'previousTab' as const,
-  mouseForwardAction: 'nextTab' as const,
+  treeRightClickAction: "contextMenu" as const,
+  mouseBackAction: "previousTab" as const,
+  mouseForwardAction: "nextTab" as const,
   animationsEnabled: true,
   animationDuration: 550,
   reduceMotion: false,
@@ -150,12 +168,12 @@ export const defaultSettings: GlobalSettings = {
     recordInput: false,
     maxRecordingDurationMinutes: 0,
     maxStoredRecordings: 50,
-    defaultExportFormat: 'asciicast' as const,
+    defaultExportFormat: "asciicast" as const,
   },
   rdpRecording: {
     enabled: true,
     autoRecordRdpSessions: false,
-    defaultVideoFormat: 'webm' as const,
+    defaultVideoFormat: "webm" as const,
     recordingFps: 30,
     videoBitrateMbps: 5,
     maxRdpRecordingDurationMinutes: 0,
@@ -169,7 +187,7 @@ export const defaultSettings: GlobalSettings = {
     recordHeaders: true,
     maxWebRecordingDurationMinutes: 0,
     maxStoredWebRecordings: 50,
-    defaultExportFormat: 'har' as const,
+    defaultExportFormat: "har" as const,
   },
   showRecordingManagerIcon: true,
   macros: {
@@ -196,19 +214,19 @@ export const defaultSettings: GlobalSettings = {
   enablePerformanceTracking: true,
   performancePollIntervalMs: 20000,
   performanceLatencyTarget: "1.1.1.1",
-  encryptionAlgorithm: 'AES-256-GCM',
-  blockCipherMode: 'GCM',
+  encryptionAlgorithm: "AES-256-GCM",
+  blockCipherMode: "GCM",
   keyDerivationIterations: 100000,
   autoBenchmarkIterations: false,
   benchmarkTimeSeconds: 1,
   totpEnabled: false,
-  totpIssuer: 'sortOfRemoteNG',
+  totpIssuer: "sortOfRemoteNG",
   totpDigits: 6,
   totpPeriod: 30,
-  totpAlgorithm: 'sha1',
+  totpAlgorithm: "sha1",
   globalProxy: {
-    type: 'http',
-    host: '',
+    type: "http",
+    host: "",
     port: 8080,
     enabled: false,
   },
@@ -217,9 +235,9 @@ export const defaultSettings: GlobalSettings = {
   proxyAutoRestart: false,
   proxyMaxAutoRestarts: 3,
   confirmDeleteAllBookmarks: true,
-  tabGrouping: 'none',
+  tabGrouping: "none",
   hostnameOverride: false,
-  defaultTabLayout: 'tabs',
+  defaultTabLayout: "tabs",
   enableTabDetachment: true,
   enableTabResize: true,
   enableZoom: true,
@@ -228,12 +246,20 @@ export const defaultSettings: GlobalSettings = {
   colorTags: {},
   defaultTabColor: undefined,
   tabColorPresets: [
-    '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
-    '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#a855f7',
+    "#ef4444",
+    "#f97316",
+    "#eab308",
+    "#22c55e",
+    "#14b8a6",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+    "#6b7280",
+    "#a855f7",
   ],
   enableStatusChecking: true,
   statusCheckInterval: 60000,
-  statusCheckMethod: 'ping',
+  statusCheckMethod: "ping",
   persistWindowSize: true,
   persistWindowPosition: true,
   persistSidebarWidth: true,
@@ -241,9 +267,9 @@ export const defaultSettings: GlobalSettings = {
   persistSidebarCollapsed: true,
   networkDiscovery: {
     enabled: true,
-    ipRange: '192.168.1.0/24',
-    portRanges: ['22', '3389', '5900'],
-    protocols: ['ssh', 'rdp', 'vnc'],
+    ipRange: "192.168.1.0/24",
+    portRanges: ["22", "3389", "5900"],
+    protocols: ["ssh", "rdp", "vnc"],
     timeout: 1000,
     maxConcurrent: 50,
     maxPortConcurrent: 10,
@@ -263,9 +289,9 @@ export const defaultSettings: GlobalSettings = {
     startOnLaunch: false,
     allowRemoteConnections: false,
     sslEnabled: false,
-    sslMode: 'manual' as const,
-    sslCertPath: '',
-    sslKeyPath: '',
+    sslMode: "manual" as const,
+    sslCertPath: "",
+    sslKeyPath: "",
     maxRequestsPerMinute: 60,
     maxThreads: 4,
     requestTimeout: 30,
@@ -273,10 +299,10 @@ export const defaultSettings: GlobalSettings = {
   // Wake on LAN
   wolEnabled: true,
   wolPort: 9,
-  wolBroadcastAddress: '255.255.255.255',
+  wolBroadcastAddress: "255.255.255.255",
   // Logging
   enableActionLog: true,
-  logLevel: 'info',
+  logLevel: "info",
   maxLogEntries: 1000,
   // Export Settings
   exportEncryption: false,
@@ -294,28 +320,28 @@ export const defaultSettings: GlobalSettings = {
   showServerStatsIcon: true,
   showOpksshIcon: true,
   showMcpServerIcon: true,
-  showSyncBackupStatusIcon: false,     // Legacy combined - disabled by default
-  showBackupStatusIcon: true,          // Separate backup icon
-  showCloudSyncStatusIcon: true,       // Separate cloud sync icon
+  showSyncBackupStatusIcon: false, // Legacy combined - disabled by default
+  showBackupStatusIcon: true, // Separate backup icon
+  showCloudSyncStatusIcon: true, // Separate cloud sync icon
   autoRepatriateWindow: true,
   // Trust & Verification
   enableAutocomplete: false,
-  trustPolicy: 'tofu',
-  httpsTrustPolicy: 'inherit',
-  certificateTrustPolicy: 'inherit',
-  tlsTrustPolicy: 'tofu',
-  sshTrustPolicy: 'always-ask',
-  rdpTrustPolicy: 'inherit',
+  trustPolicy: "tofu",
+  httpsTrustPolicy: "inherit",
+  certificateTrustPolicy: "inherit",
+  tlsTrustPolicy: "tofu",
+  sshTrustPolicy: "always-ask",
+  rdpTrustPolicy: "inherit",
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
   // Windows Remote Management Tools
   enableWinrmTools: true,
   // CredSSP Remediation Defaults
   credsspDefaults: {
-    oracleRemediation: 'mitigated',
+    oracleRemediation: "mitigated",
     allowHybridEx: false,
     nlaFallbackToTls: true,
-    tlsMinVersion: '1.2',
+    tlsMinVersion: "1.2",
     ntlmEnabled: true,
     kerberosEnabled: false,
     pku2uEnabled: false,
@@ -323,18 +349,18 @@ export const defaultSettings: GlobalSettings = {
     remoteCredentialGuard: false,
     enforceServerPublicKeyValidation: true,
     credsspVersion: 6,
-    sspiPackageList: '',
-    nlaMode: 'required',
-    serverCertValidation: 'validate',
+    sspiPackageList: "",
+    nlaMode: "required",
+    serverCertValidation: "validate",
   },
   // Password Reveal
   passwordReveal: {
     enabled: true,
-    mode: 'toggle',
+    mode: "toggle",
     autoHideSeconds: 0,
     showByDefault: false,
     maskIcon: false,
-    maskCharacter: '',
+    maskCharacter: "",
     lockSavedPasswords: false,
   },
   // WinRM Global Defaults
@@ -342,11 +368,11 @@ export const defaultSettings: GlobalSettings = {
     httpPort: 5985,
     httpsPort: 5986,
     preferSsl: false,
-    authMethod: 'negotiate' as const,
+    authMethod: "negotiate" as const,
     skipCaCheck: false,
     skipCnCheck: false,
     autoFallback: true,
-    namespace: 'root\\cimv2',
+    namespace: "root\\cimv2",
     timeoutSec: 30,
   },
   // RDP Global Defaults
@@ -355,10 +381,10 @@ export const defaultSettings: GlobalSettings = {
     enableTls: true,
     enableNla: true,
     autoLogon: false,
-    credsspOracleRemediation: 'mitigated',
+    credsspOracleRemediation: "mitigated",
     allowHybridEx: false,
     nlaFallbackToTls: true,
-    tlsMinVersion: '1.2',
+    tlsMinVersion: "1.2",
     ntlmEnabled: true,
     kerberosEnabled: false,
     pku2uEnabled: false,
@@ -366,19 +392,19 @@ export const defaultSettings: GlobalSettings = {
     remoteCredentialGuard: false,
     enforceServerPublicKeyValidation: true,
     credsspVersion: 6,
-    serverCertValidation: 'warn',
+    serverCertValidation: "warn",
     enableServerPointer: true,
     pointerSoftwareRendering: true,
-    sspiPackageList: '',
+    sspiPackageList: "",
     gatewayEnabled: false,
-    gatewayHostname: '',
+    gatewayHostname: "",
     gatewayPort: 443,
-    gatewayAuthMethod: 'ntlm',
-    gatewayTransportMode: 'auto',
+    gatewayAuthMethod: "ntlm",
+    gatewayTransportMode: "auto",
     gatewayBypassLocal: true,
     enhancedSessionMode: false,
     autoDetect: false,
-    negotiationStrategy: 'nla-first',
+    negotiationStrategy: "nla-first",
     maxRetries: 3,
     retryDelayMs: 1000,
     defaultWidth: 1920,
@@ -396,28 +422,28 @@ export const defaultSettings: GlobalSettings = {
     desktopScaleFactor: 100,
     lossyCompression: true,
     // Audio
-    audioPlaybackMode: 'local' as const,
-    audioRecordingMode: 'disabled' as const,
-    audioQuality: 'dynamic' as const,
+    audioPlaybackMode: "local" as const,
+    audioRecordingMode: "disabled" as const,
+    audioQuality: "dynamic" as const,
     // Input
-    mouseMode: 'absolute' as const,
+    mouseMode: "absolute" as const,
     enableUnicodeInput: true,
     autoDetectKeyboardLayout: true,
-    inputPriority: 'realtime' as const,
+    inputPriority: "realtime" as const,
     batchIntervalMs: 16,
     keyboardLayout: 0x0409,
-    keyboardType: 'ibm-enhanced',
+    keyboardType: "ibm-enhanced",
     keyboardFunctionKeys: 12,
     // Scroll / Mouse Wheel
     scrollSpeed: 1.0,
     smoothScroll: true,
     // Cursor
-    localCursor: 'local' as const,
+    localCursor: "local" as const,
     // Device redirection
     clipboardRedirection: true,
-    clipboardDirection: 'bidirectional',
+    clipboardDirection: "bidirectional",
     printerRedirection: false,
-    printerOutputMode: 'spool-file',
+    printerOutputMode: "spool-file",
     portRedirection: false,
     smartCardRedirection: false,
     webAuthnRedirection: false,
@@ -427,7 +453,7 @@ export const defaultSettings: GlobalSettings = {
     driveRedirection: false,
     driveRedirections: [],
     // Performance visual
-    connectionSpeed: 'broadband-high' as const,
+    connectionSpeed: "broadband-high" as const,
     disableWallpaper: true,
     disableFullWindowDrag: true,
     disableMenuAnimations: true,
@@ -444,73 +470,73 @@ export const defaultSettings: GlobalSettings = {
     fullFrameSyncInterval: 300,
     readTimeoutMs: 16,
     // Advanced
-    sessionClosePolicy: 'detach' as const,
-    clientName: '',
+    sessionClosePolicy: "detach" as const,
+    clientName: "",
     clientBuild: 0,
     maxConsecutiveErrors: 50,
     statsIntervalSecs: 1,
     // Bitmap Codecs
     codecsEnabled: true,
     remoteFxEnabled: true,
-    remoteFxEntropy: 'rlgr3' as const,
+    remoteFxEntropy: "rlgr3" as const,
     gfxEnabled: false,
-    h264Decoder: 'auto' as const,
+    h264Decoder: "auto" as const,
     nalPassthrough: false,
     // Render Backend
-    renderBackend: 'webview' as const,
-    frontendRenderer: 'auto' as const,
-    frameScheduling: 'adaptive' as const,
+    renderBackend: "webview" as const,
+    frontendRenderer: "auto" as const,
+    frameScheduling: "adaptive" as const,
     tripleBuffering: true,
     reconnectBaseDelaySecs: 3,
     reconnectMaxDelaySecs: 30,
     reconnectOnNetworkLoss: true,
   },
   // RDP Session Panel Settings
-  rdpSessionDisplayMode: 'popup' as const,
+  rdpSessionDisplayMode: "popup" as const,
   rdpSessionThumbnailsEnabled: true,
-  rdpSessionThumbnailPolicy: 'realtime' as const,
+  rdpSessionThumbnailPolicy: "realtime" as const,
   rdpSessionThumbnailInterval: 5,
-  rdpSessionClosePolicy: 'detach' as const,
+  rdpSessionClosePolicy: "detach" as const,
   rdpSessionHistoryMax: 1000,
   toolDisplayModes: {
-    recordingManager: 'tab' as const,
-    importExport: 'tab' as const,
-    macroManager: 'tab' as const,
-    scriptManager: 'tab' as const,
-    performanceMonitor: 'tab' as const,
-    actionLog: 'tab' as const,
-    shortcutManager: 'tab' as const,
-    bulkSsh: 'tab' as const,
-    serverStats: 'tab' as const,
-    opkssh: 'tab' as const,
-    mcpServer: 'tab' as const,
-    internalProxy: 'tab' as const,
-    proxyChain: 'tab' as const,
-    wol: 'tab' as const,
-    windowsBackup: 'tab' as const,
-    diagnostics: 'tab' as const,
-    settings: 'tab' as const,
-    rdpSessions: 'tab' as const,
-    tagManager: 'tab' as const,
-    tabGroupManager: 'tab' as const,
-    connectionEditor: 'tab' as const,
-    bulkEditor: 'tab' as const,
-    proxyProfileEditor: 'tab' as const,
-    proxyChainEditor: 'tab' as const,
-    sshTunnelEditor: 'tab' as const,
-    vpnEditor: 'tab' as const,
-    shortcutCreator: 'tab' as const,
-    tunnelChainEditor: 'tab' as const,
-    tunnelProfileEditor: 'tab' as const,
-    database: 'tab' as const,
+    recordingManager: "tab" as const,
+    importExport: "tab" as const,
+    macroManager: "tab" as const,
+    scriptManager: "tab" as const,
+    performanceMonitor: "tab" as const,
+    actionLog: "tab" as const,
+    shortcutManager: "tab" as const,
+    bulkSsh: "tab" as const,
+    serverStats: "tab" as const,
+    opkssh: "tab" as const,
+    mcpServer: "tab" as const,
+    internalProxy: "tab" as const,
+    proxyChain: "tab" as const,
+    wol: "tab" as const,
+    windowsBackup: "tab" as const,
+    diagnostics: "tab" as const,
+    settings: "tab" as const,
+    rdpSessions: "tab" as const,
+    tagManager: "tab" as const,
+    tabGroupManager: "tab" as const,
+    connectionEditor: "tab" as const,
+    bulkEditor: "tab" as const,
+    proxyProfileEditor: "tab" as const,
+    proxyChainEditor: "tab" as const,
+    sshTunnelEditor: "tab" as const,
+    vpnEditor: "tab" as const,
+    shortcutCreator: "tab" as const,
+    tunnelChainEditor: "tab" as const,
+    tunnelProfileEditor: "tab" as const,
+    database: "tab" as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,
   backendConfig: {
-    logLevel: 'info' as const,
+    logLevel: "info" as const,
     maxConcurrentRdpSessions: 10,
-    rdpServerRenderer: 'auto' as const,
-    rdpCodecPreference: 'auto' as const,
+    rdpServerRenderer: "auto" as const,
+    rdpCodecPreference: "auto" as const,
     tcpDefaultBufferSize: 65536,
     tcpKeepAliveSeconds: 30,
     connectionTimeoutSeconds: 15,
@@ -521,9 +547,13 @@ export const defaultSettings: GlobalSettings = {
   },
 };
 
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+const SettingsContext = createContext<SettingsContextType | undefined>(
+  undefined,
+);
 
-export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [settings, setSettings] = useState<GlobalSettings>(defaultSettings);
   const settingsManager = SettingsManager.getInstance();
 
@@ -545,49 +575,52 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings(loadedSettings);
   }, [settingsManager]);
 
-  const updateSettings = useCallback(async (updates: Partial<GlobalSettings>) => {
-    // Before the initial load completes, settingsRef.current is still the
-    // defaults. Merging onto it would persist a full defaults-based object
-    // and wipe the user's stored settings. Wait for the load first.
-    if (!loadedRef.current && loadPromiseRef.current) {
-      try {
-        const loaded = await loadPromiseRef.current;
-        settingsRef.current = loaded;
-      } catch {
-        // Load failed — fall through and merge onto whatever we have.
+  const updateSettings = useCallback(
+    async (updates: Partial<GlobalSettings>) => {
+      // Before the initial load completes, settingsRef.current is still the
+      // defaults. Merging onto it would persist a full defaults-based object
+      // and wipe the user's stored settings. Wait for the load first.
+      if (!loadedRef.current && loadPromiseRef.current) {
+        try {
+          const loaded = await loadPromiseRef.current;
+          settingsRef.current = loaded;
+        } catch {
+          // Load failed — fall through and merge onto whatever we have.
+        }
       }
-    }
-    // Capture old values BEFORE mutating the ref
-    const previous = settingsRef.current;
-    const merged = { ...previous, ...updates };
-    settingsRef.current = merged;
-    setSettings(merged);
-    await settingsManager.saveSettings(merged);
+      // Capture old values BEFORE mutating the ref
+      const previous = settingsRef.current;
+      const merged = { ...previous, ...updates };
+      settingsRef.current = merged;
+      setSettings(merged);
+      await settingsManager.saveSettings(merged);
 
-    // Log each changed setting
-    const changedKeys = Object.keys(updates) as (keyof GlobalSettings)[];
-    if (changedKeys.length > 0) {
-      const settingDetails = changedKeys
-        .map(key => {
-          const oldVal = previous[key];
-          const newVal = updates[key];
-          const formatVal = (v: unknown): string => {
-            if (v === null || v === undefined) return 'null';
-            if (typeof v === 'object') return JSON.stringify(v);
-            return String(v);
-          };
-          return `${key}: ${formatVal(oldVal)} → ${formatVal(newVal)}`;
-        })
-        .join(', ');
+      // Log each changed setting
+      const changedKeys = Object.keys(updates) as (keyof GlobalSettings)[];
+      if (changedKeys.length > 0) {
+        const settingDetails = changedKeys
+          .map((key) => {
+            const oldVal = previous[key];
+            const newVal = updates[key];
+            const formatVal = (v: unknown): string => {
+              if (v === null || v === undefined) return "null";
+              if (typeof v === "object") return JSON.stringify(v);
+              return String(v);
+            };
+            return `${key}: ${formatVal(oldVal)} → ${formatVal(newVal)}`;
+          })
+          .join(", ");
 
-      settingsManager.logAction(
-        'info',
-        'Settings changed',
-        undefined,
-        settingDetails
-      );
-    }
-  }, [settingsManager]);
+        settingsManager.logAction(
+          "info",
+          "Settings changed",
+          undefined,
+          settingDetails,
+        );
+      }
+    },
+    [settingsManager],
+  );
 
   useEffect(() => {
     reloadSettings();
@@ -603,37 +636,37 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     (async () => {
       try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const label = getCurrentWindow().label;
         // Skip sync listener in detached windows
-        if (label !== 'main') return;
+        if (label !== "main") return;
 
-        const { listen } = await import('@tauri-apps/api/event');
+        const { listen } = await import("@tauri-apps/api/event");
 
-        const unlistenFn = await listen<{ settings: GlobalSettings; source: string }>(
-          'settings-sync',
-          async (event) => {
-            if (event.payload.source === label) return;
-            const incoming = event.payload.settings;
-            if (!incoming || typeof incoming !== 'object') return;
-            const current = settingsRef.current;
-            let changed = false;
-            try {
-              changed = JSON.stringify(current) !== JSON.stringify(incoming);
-            } catch {
-              changed = true;
-            }
-            try {
-              await settingsManager.applySyncedSettings(incoming);
-            } catch {
-              // Sync failed — don't update React state with potentially invalid data
-              return;
-            }
-            if (mounted && changed) {
-              setSettings(incoming);
-            }
-          },
-        );
+        const unlistenFn = await listen<{
+          settings: GlobalSettings;
+          source: string;
+        }>("settings-sync", async (event) => {
+          if (event.payload.source === label) return;
+          const incoming = event.payload.settings;
+          if (!incoming || typeof incoming !== "object") return;
+          const current = settingsRef.current;
+          let changed = false;
+          try {
+            changed = JSON.stringify(current) !== JSON.stringify(incoming);
+          } catch {
+            changed = true;
+          }
+          try {
+            await settingsManager.applySyncedSettings(incoming);
+          } catch {
+            // Sync failed — don't update React state with potentially invalid data
+            return;
+          }
+          if (mounted && changed) {
+            setSettings(incoming);
+          }
+        });
         if (mounted) {
           unlisten = unlistenFn;
         } else {
@@ -665,7 +698,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 export const useSettings = (): SettingsContextType => {
   const context = useContext(SettingsContext);
   if (!context) {
-    throw new Error('useSettings must be used within a SettingsProvider');
+    throw new Error("useSettings must be used within a SettingsProvider");
   }
   return context;
 };

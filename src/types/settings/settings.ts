@@ -1,19 +1,31 @@
 // Re-export all types from split files so existing imports continue to work
-export * from './backupSettings';
-export * from './cloudSyncSettings';
-export * from './vpnSettings';
-export * from '../ssh/sshSettings';
+export * from "./backupSettings";
+export * from "./cloudSyncSettings";
+export * from "./vpnSettings";
+export * from "../ssh/sshSettings";
 
 // Imports needed for GlobalSettings interface
-import type { BackupConfig } from './backupSettings';
-import type { CloudSyncConfig } from './cloudSyncSettings';
-import type { OpenVPNConfig } from './vpnSettings';
-import type { LoadingElementSettings } from '../../components/ui/display/loadingElement/types';
-import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings';
-import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
-import type { ClipboardDirection, RdpPrinterOutputMode } from '../connection/connection';
-import type { InheritableTrustPolicy, TrustPolicy } from '../../utils/auth/trustStore';
-import type { McpServerConfig } from '../mcp/mcpServer';
+import type { BackupConfig } from "./backupSettings";
+import type { CloudSyncConfig } from "./cloudSyncSettings";
+import type { OpenVPNConfig } from "./vpnSettings";
+import type { LoadingElementSettings } from "../../components/ui/display/loadingElement/types";
+import type {
+  SSHTerminalConfig,
+  SSHConnectionConfig,
+} from "../ssh/sshSettings";
+import type {
+  RDPRecordingConfig,
+  WebRecordingConfig,
+} from "../recording/macroTypes";
+import type {
+  ClipboardDirection,
+  RdpPrinterOutputMode,
+} from "../connection/connection";
+import type {
+  InheritableTrustPolicy,
+  TrustPolicy,
+} from "../../utils/auth/trustStore";
+import type { McpServerConfig } from "../mcp/mcpServer";
 
 export const Themes = [
   "dark",
@@ -68,14 +80,14 @@ export interface QuickConnectHistoryEntry {
 }
 
 export type ExportFormat =
-  | 'json'
-  | 'xml'
-  | 'csv'
-  | 'txt'
-  | 'markdown'
-  | 'html'
-  | 'excel'
-  | 'mremoteng';
+  | "json"
+  | "xml"
+  | "csv"
+  | "txt"
+  | "markdown"
+  | "html"
+  | "excel"
+  | "mremoteng";
 
 export type ExportPasswordScore = 0 | 1 | 2 | 3 | 4;
 
@@ -106,7 +118,7 @@ export interface ExportSecuritySettings {
 }
 
 export const defaultExportSecuritySettings: ExportSecuritySettings = {
-  defaultFormat: 'json',
+  defaultFormat: "json",
   includeConnectionsByDefault: true,
   includePasswordsByDefault: false,
   includeSettingsByDefault: true,
@@ -128,7 +140,7 @@ export const defaultExportSecuritySettings: ExportSecuritySettings = {
   detectRepeatedCharacters: true,
   detectSequentialPatterns: true,
   rewardUncommonSymbols: true,
-  customCommonPasswords: '',
+  customCommonPasswords: "",
 };
 
 export interface GlobalSettings {
@@ -141,9 +153,9 @@ export interface GlobalSettings {
    *  "auto" or empty follows the system region. */
   region?: string;
   /** Clock format for displayed timestamps. "auto" follows the locale. */
-  timeFormat?: 'auto' | '12h' | '24h';
+  timeFormat?: "auto" | "12h" | "24h";
   /** Date display style for timestamps. "auto" follows the locale. */
-  dateFormat?: 'auto' | 'short' | 'medium' | 'long';
+  dateFormat?: "auto" | "short" | "medium" | "long";
   /** IANA time zone for displayed timestamps. "auto" uses the system zone. */
   timeZone?: string;
   /** Unicode calendar system (e.g. "gregory", "islamic"). "auto" = locale. */
@@ -202,6 +214,11 @@ export interface GlobalSettings {
    * of the box; users who prefer click-to-select-only can disable it.
    */
   folderSingleClickToggle: boolean;
+  /**
+   * When true, double-clicking a folder row in the connection tree toggles
+   * its expanded state. Useful when single-click folder toggling is disabled.
+   */
+  folderDoubleClickToggle: boolean;
 
   // ─── Tab Behavior ───────────────────────────────────────────
   /** Open new connections in a background tab (don't auto-switch) */
@@ -307,11 +324,11 @@ export interface GlobalSettings {
   /** Enable smooth scrolling in terminal */
   terminalSmoothScroll: boolean;
   /** Right-click action in connection tree: 'contextMenu' or 'quickConnect' */
-  treeRightClickAction: 'contextMenu' | 'quickConnect';
+  treeRightClickAction: "contextMenu" | "quickConnect";
   /** Mouse-back button action: 'none', 'previousTab', 'disconnect' */
-  mouseBackAction: 'none' | 'previousTab' | 'disconnect';
+  mouseBackAction: "none" | "previousTab" | "disconnect";
   /** Mouse-forward button action: 'none', 'nextTab', 'reconnect' */
-  mouseForwardAction: 'none' | 'nextTab' | 'reconnect';
+  mouseForwardAction: "none" | "nextTab" | "reconnect";
 
   // Animation Settings
   animationsEnabled: boolean;
@@ -354,9 +371,9 @@ export interface GlobalSettings {
   showMcpServerIcon: boolean;
   showScriptManagerIcon: boolean;
   showMacroManagerIcon: boolean;
-  showSyncBackupStatusIcon: boolean;  // Legacy combined icon
-  showBackupStatusIcon: boolean;      // Separate backup icon
-  showCloudSyncStatusIcon: boolean;   // Separate cloud sync icon
+  showSyncBackupStatusIcon: boolean; // Legacy combined icon
+  showBackupStatusIcon: boolean; // Separate backup icon
+  showCloudSyncStatusIcon: boolean; // Separate cloud sync icon
   showErrorLogBar: boolean;
   showRdpSessionsIcon: boolean;
 
@@ -381,7 +398,20 @@ export interface GlobalSettings {
   performanceLatencyTarget: string;
 
   // Security Settings
-  encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305" | "AES-256-GCM-SIV" | "Salsa20" | "XSalsa20-Poly1305" | "Threefish-256" | "Threefish-512" | "Threefish-1024" | "Serpent-256-GCM" | "Serpent-256-CBC" | "Twofish-256-GCM" | "Twofish-256-CBC";
+  encryptionAlgorithm:
+    | "AES-256-GCM"
+    | "AES-256-CBC"
+    | "ChaCha20-Poly1305"
+    | "AES-256-GCM-SIV"
+    | "Salsa20"
+    | "XSalsa20-Poly1305"
+    | "Threefish-256"
+    | "Threefish-512"
+    | "Threefish-1024"
+    | "Serpent-256-GCM"
+    | "Serpent-256-CBC"
+    | "Twofish-256-GCM"
+    | "Twofish-256-CBC";
   blockCipherMode: "GCM" | "CBC" | "CTR" | "OFB" | "CFB" | "GCM-SIV" | "SIV";
   keyDerivationIterations: number;
   autoBenchmarkIterations: boolean;
@@ -392,7 +422,7 @@ export interface GlobalSettings {
   totpIssuer: string;
   totpDigits: number;
   totpPeriod: number;
-  totpAlgorithm: 'sha1' | 'sha256' | 'sha512';
+  totpAlgorithm: "sha1" | "sha256" | "sha512";
 
   // Proxy Settings
   globalProxy?: ProxyConfig;
@@ -413,8 +443,8 @@ export interface GlobalSettings {
     wireguardBinaryPath?: string;
     autoConnectOnStartup?: string[];
     statusPollingIntervalMs?: number;
-    defaultVpnType?: 'openvpn' | 'wireguard' | 'tailscale' | 'zerotier';
-    dnsHandling?: 'vpn-dns' | 'system-dns' | 'both';
+    defaultVpnType?: "openvpn" | "wireguard" | "tailscale" | "zerotier";
+    dnsHandling?: "vpn-dns" | "system-dns" | "both";
   };
 
   // Tab Settings
@@ -505,7 +535,7 @@ export interface GlobalSettings {
     startOnLaunch: boolean;
     allowRemoteConnections: boolean;
     sslEnabled: boolean;
-    sslMode: 'manual' | 'self-signed' | 'letsencrypt';
+    sslMode: "manual" | "self-signed" | "letsencrypt";
     sslCertPath?: string;
     sslKeyPath?: string;
     sslDomain?: string;
@@ -571,7 +601,7 @@ export interface GlobalSettings {
    * separated from `httpsTrustPolicy` (which targets HTTPS servers
    * with public CAs) to let users pick a more permissive default for RDP
    * without weakening their browser-style TLS trust.
-    * `inherit` defers to `trustPolicy`.
+   * `inherit` defers to `trustPolicy`.
    */
   rdpTrustPolicy: InheritableTrustPolicy;
   /** Show certificate / host-key info in the URL bar / terminal toolbar */
@@ -628,7 +658,7 @@ export interface GlobalSettings {
 
   // ─── RDP Session Panel Settings ─────────────────────────────
   /** Display mode for the RDP session manager: 'panel' (right sidebar) or 'popup' (modal overlay) */
-  rdpSessionDisplayMode: 'panel' | 'popup';
+  rdpSessionDisplayMode: "panel" | "popup";
   /** Whether to show live thumbnails in the RDP session list */
   rdpSessionThumbnailsEnabled: boolean;
   /**
@@ -638,11 +668,11 @@ export interface GlobalSettings {
    * - 'on-detach': Capture only when the viewer is detached
    * - 'manual': Only capture when the user explicitly requests
    */
-  rdpSessionThumbnailPolicy: 'realtime' | 'on-blur' | 'on-detach' | 'manual';
+  rdpSessionThumbnailPolicy: "realtime" | "on-blur" | "on-detach" | "manual";
   /** Thumbnail refresh interval in seconds (only for 'realtime' policy) */
   rdpSessionThumbnailInterval: number;
   /** What happens when an RDP tab is closed: 'disconnect' fully ends the session, 'detach' keeps it running in background */
-  rdpSessionClosePolicy: 'disconnect' | 'detach' | 'ask';
+  rdpSessionClosePolicy: "disconnect" | "detach" | "ask";
   /** Maximum number of RDP session history entries to retain */
   rdpSessionHistoryMax: number;
 
@@ -663,13 +693,13 @@ export interface GlobalSettings {
 /** Global default CredSSP remediation configuration */
 export interface CredsspDefaultsConfig {
   /** Encryption Oracle Remediation policy */
-  oracleRemediation: 'force-updated' | 'mitigated' | 'vulnerable';
+  oracleRemediation: "force-updated" | "mitigated" | "vulnerable";
   /** Allow HYBRID_EX protocol (Early User Auth Result) */
   allowHybridEx: boolean;
   /** Allow fallback from NLA to TLS when NLA negotiation fails */
   nlaFallbackToTls: boolean;
   /** Minimum TLS version for RDP connections */
-  tlsMinVersion: '1.0' | '1.1' | '1.2' | '1.3';
+  tlsMinVersion: "1.0" | "1.1" | "1.2" | "1.3";
   /** Enable NTLM authentication */
   ntlmEnabled: boolean;
   /** Enable Kerberos authentication */
@@ -687,9 +717,9 @@ export interface CredsspDefaultsConfig {
   /** Custom SSPI package list override (e.g. "!kerberos,!pku2u") */
   sspiPackageList: string;
   /** Default NLA mode for new connections */
-  nlaMode: 'required' | 'preferred' | 'disabled';
+  nlaMode: "required" | "preferred" | "disabled";
   /** Default server cert validation mode */
-  serverCertValidation: 'validate' | 'warn' | 'ignore';
+  serverCertValidation: "validate" | "warn" | "ignore";
 }
 
 /** Password reveal (show/hide eye icon) configuration */
@@ -697,7 +727,7 @@ export interface PasswordRevealConfig {
   /** Whether the eye icon is shown on password fields at all */
   enabled: boolean;
   /** Interaction mode: 'toggle' = click to toggle, 'hold' = hold to reveal */
-  mode: 'toggle' | 'hold';
+  mode: "toggle" | "hold";
   /** Auto-hide password after this many seconds (0 = never auto-hide) */
   autoHideSeconds: number;
   /** Show passwords by default when a password field is rendered */
@@ -730,7 +760,7 @@ export interface WinrmGlobalDefaultsConfig {
   /** Prefer HTTPS over HTTP by default */
   preferSsl: boolean;
   /** Default authentication method */
-  authMethod: 'basic' | 'negotiate' | 'ntlm' | 'kerberos' | 'credssp';
+  authMethod: "basic" | "negotiate" | "ntlm" | "kerberos" | "credssp";
   /** Skip CA certificate validation for HTTPS by default */
   skipCaCheck: boolean;
   /** Skip CN / hostname verification for HTTPS by default */
@@ -759,13 +789,13 @@ export interface RdpGlobalDefaultsConfig {
   /** Auto logon (send credentials in INFO packet) */
   autoLogon: boolean;
   /** Encryption Oracle Remediation policy */
-  credsspOracleRemediation: 'force-updated' | 'mitigated' | 'vulnerable';
+  credsspOracleRemediation: "force-updated" | "mitigated" | "vulnerable";
   /** Allow HYBRID_EX protocol (Early User Auth Result) */
   allowHybridEx: boolean;
   /** Allow fallback from NLA to TLS when NLA negotiation fails */
   nlaFallbackToTls: boolean;
   /** Minimum TLS version for RDP connections */
-  tlsMinVersion: '1.0' | '1.1' | '1.2' | '1.3';
+  tlsMinVersion: "1.0" | "1.1" | "1.2" | "1.3";
   /** Enable NTLM authentication */
   ntlmEnabled: boolean;
   /** Enable Kerberos authentication */
@@ -781,7 +811,7 @@ export interface RdpGlobalDefaultsConfig {
   /** CredSSP TSRequest version to advertise */
   credsspVersion: number;
   /** Server certificate validation mode */
-  serverCertValidation: 'validate' | 'warn' | 'ignore';
+  serverCertValidation: "validate" | "warn" | "ignore";
   /** Enable server-side pointer rendering */
   enableServerPointer: boolean;
   /** Use software rendering for pointer/cursor */
@@ -797,9 +827,9 @@ export interface RdpGlobalDefaultsConfig {
   /** Default gateway port */
   gatewayPort: number;
   /** Default gateway auth method */
-  gatewayAuthMethod: 'ntlm' | 'basic' | 'digest' | 'negotiate' | 'smartcard';
+  gatewayAuthMethod: "ntlm" | "basic" | "digest" | "negotiate" | "smartcard";
   /** Default gateway transport */
-  gatewayTransportMode: 'auto' | 'http' | 'udp';
+  gatewayTransportMode: "auto" | "http" | "udp";
   /** Bypass gateway for local addresses */
   gatewayBypassLocal: boolean;
 
@@ -811,7 +841,13 @@ export interface RdpGlobalDefaultsConfig {
   /** Enable auto-detect negotiation by default */
   autoDetect: boolean;
   /** Default negotiation strategy */
-  negotiationStrategy: 'auto' | 'nla-first' | 'tls-first' | 'nla-only' | 'tls-only' | 'plain-only';
+  negotiationStrategy:
+    | "auto"
+    | "nla-first"
+    | "tls-first"
+    | "nla-only"
+    | "tls-only"
+    | "plain-only";
   /** Max auto-detect retries */
   maxRetries: number;
   /** Delay between retries in ms */
@@ -851,21 +887,21 @@ export interface RdpGlobalDefaultsConfig {
 
   // ─── Audio defaults ──────────────────────────────────────
   /** Default audio playback mode */
-  audioPlaybackMode: 'local' | 'remote' | 'disabled';
+  audioPlaybackMode: "local" | "remote" | "disabled";
   /** Default audio recording mode */
-  audioRecordingMode: 'enabled' | 'disabled';
+  audioRecordingMode: "enabled" | "disabled";
   /** Default audio quality */
-  audioQuality: 'dynamic' | 'medium' | 'high';
+  audioQuality: "dynamic" | "medium" | "high";
 
   // ─── Input defaults ──────────────────────────────────────
   /** Default mouse input mode */
-  mouseMode: 'relative' | 'absolute';
+  mouseMode: "relative" | "absolute";
   /** Enable Unicode keyboard input by default */
   enableUnicodeInput: boolean;
   /** Auto-detect keyboard layout on connect */
   autoDetectKeyboardLayout: boolean;
   /** Input priority mode: 'realtime' sends immediately, 'batched' groups inputs */
-  inputPriority: 'realtime' | 'batched';
+  inputPriority: "realtime" | "batched";
   /** Batch interval in ms when inputPriority is 'batched' */
   batchIntervalMs: number;
   /** Keyboard layout code (e.g. 0x0409 for US English) */
@@ -884,7 +920,7 @@ export interface RdpGlobalDefaultsConfig {
   // ─── Cursor defaults ─────────────────────────────────────
   /** Local cursor mode: 'local' = always show, 'remote' = hide when
    *  server takes control, 'dot' = small dot overlay */
-  localCursor: 'local' | 'remote' | 'dot';
+  localCursor: "local" | "remote" | "dot";
 
   // ─── Device redirection defaults ─────────────────────────
   /** Enable clipboard redirection by default */
@@ -910,11 +946,22 @@ export interface RdpGlobalDefaultsConfig {
   /** Enable drive/folder redirection by default */
   driveRedirection: boolean;
   /** Default drive mappings for new RDP connections */
-  driveRedirections?: { name: string; path: string; readOnly?: boolean; enabled?: boolean }[];
+  driveRedirections?: {
+    name: string;
+    path: string;
+    readOnly?: boolean;
+    enabled?: boolean;
+  }[];
 
   // ─── Performance / Visual Experience defaults ─────────────
   /** Default connection speed preset */
-  connectionSpeed: 'modem' | 'broadband-low' | 'broadband-high' | 'wan' | 'lan' | 'auto-detect';
+  connectionSpeed:
+    | "modem"
+    | "broadband-low"
+    | "broadband-high"
+    | "wan"
+    | "lan"
+    | "auto-detect";
   /** Disable desktop wallpaper */
   disableWallpaper: boolean;
   /** Disable full-window drag */
@@ -948,7 +995,7 @@ export interface RdpGlobalDefaultsConfig {
 
   // ─── Advanced defaults ─────────────────────────────────────
   /** Action when closing an RDP session: disconnect, detach, ask, or use global policy */
-  sessionClosePolicy: 'disconnect' | 'detach' | 'ask' | 'global';
+  sessionClosePolicy: "disconnect" | "detach" | "ask" | "global";
   /** Client name advertised during RDP negotiation (empty = auto) */
   clientName: string;
   /** Client build number advertised during RDP negotiation (0 = auto) */
@@ -964,11 +1011,11 @@ export interface RdpGlobalDefaultsConfig {
   /** Enable RemoteFX (RFX) codec */
   remoteFxEnabled: boolean;
   /** RemoteFX entropy algorithm */
-  remoteFxEntropy: 'rlgr1' | 'rlgr3';
+  remoteFxEntropy: "rlgr1" | "rlgr3";
   /** Enable RDPGFX (H.264 hardware decode) via Dynamic Virtual Channel */
   gfxEnabled: boolean;
   /** H.264 decoder preference */
-  h264Decoder: 'auto' | 'media-foundation' | 'openh264';
+  h264Decoder: "auto" | "media-foundation" | "openh264";
   /** Send raw H.264 NAL units to frontend for WebCodecs decode (skip backend decode) */
   nalPassthrough: boolean;
 
@@ -980,7 +1027,7 @@ export interface RdpGlobalDefaultsConfig {
    * - `wgpu` — GPU compositor (CPU fallback currently)
    * - `auto` — try wgpu → softbuffer → webview
    */
-  renderBackend: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
+  renderBackend: "auto" | "softbuffer" | "wgpu" | "webview";
 
   // ─── Client-side Renderer default ──────────────────────────
   /**
@@ -993,10 +1040,17 @@ export interface RdpGlobalDefaultsConfig {
    * - `webcodecs-worker` — WebCodecs H.264 GPU decode in a Worker
    * - `webcodecs-cpu` — WebCodecs H.264 software decode in a Worker
    */
-  frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker' | 'webcodecs-cpu';
+  frontendRenderer:
+    | "auto"
+    | "canvas2d"
+    | "webgl"
+    | "webgpu"
+    | "offscreen-worker"
+    | "webcodecs-worker"
+    | "webcodecs-cpu";
 
   /** Frame scheduling mode: vsync (~16ms), low-latency (~1ms), or adaptive */
-  frameScheduling: 'vsync' | 'low-latency' | 'adaptive';
+  frameScheduling: "vsync" | "low-latency" | "adaptive";
   /** Enable triple buffering (ping-pong textures) in WebGL renderer */
   tripleBuffering: boolean;
 
@@ -1010,7 +1064,19 @@ export interface RdpGlobalDefaultsConfig {
 }
 
 export interface ProxyConfig {
-  type: "http" | "https" | "socks4" | "socks5" | "ssh" | "dns-tunnel" | "icmp-tunnel" | "websocket" | "quic" | "tcp-over-dns" | "http-connect" | "shadowsocks";
+  type:
+    | "http"
+    | "https"
+    | "socks4"
+    | "socks5"
+    | "ssh"
+    | "dns-tunnel"
+    | "icmp-tunnel"
+    | "websocket"
+    | "quic"
+    | "tcp-over-dns"
+    | "http-connect"
+    | "shadowsocks";
   host: string;
   port: number;
   username?: string;
@@ -1046,12 +1112,15 @@ export interface ProxyPreset {
   /** Human label shown in the presets list. */
   name: string;
   /** Frozen proxy configuration. `enabled` is omitted on purpose. */
-  config: Omit<ProxyConfig, 'enabled'>;
+  config: Omit<ProxyConfig, "enabled">;
 }
 
 /** Mint a stable id for a new `ProxyPreset`. */
 export function generateProxyPresetId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return `proxy-preset-${crypto.randomUUID()}`;
   }
   return `proxy-preset-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
@@ -1127,10 +1196,10 @@ export interface TOTPConfig {
 }
 
 export interface BackendConfig {
-  logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error';
+  logLevel: "trace" | "debug" | "info" | "warn" | "error";
   maxConcurrentRdpSessions: number;
-  rdpServerRenderer: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
-  rdpCodecPreference: 'auto' | 'remotefx' | 'gfx' | 'h264' | 'bitmap';
+  rdpServerRenderer: "auto" | "softbuffer" | "wgpu" | "webview";
+  rdpCodecPreference: "auto" | "remotefx" | "gfx" | "h264" | "bitmap";
   tcpDefaultBufferSize: number;
   tcpKeepAliveSeconds: number;
   connectionTimeoutSeconds: number;
@@ -1279,7 +1348,7 @@ export interface RecordingConfig {
   recordInput: boolean;
   maxRecordingDurationMinutes: number;
   maxStoredRecordings: number;
-  defaultExportFormat: 'json' | 'asciicast' | 'script' | 'gif';
+  defaultExportFormat: "json" | "asciicast" | "script" | "gif";
 }
 
 export interface MacroConfig {
@@ -1291,36 +1360,36 @@ export interface MacroConfig {
 /** Tools always open as tabs. This interface lists every tool that can be
  *  opened as a session tab so that ToolKey can be derived from it. */
 export interface ToolDisplayModes {
-  recordingManager: 'tab';
-  importExport: 'tab';
-  macroManager: 'tab';
-  scriptManager: 'tab';
-  performanceMonitor: 'tab';
-  actionLog: 'tab';
-  shortcutManager: 'tab';
-  bulkSsh: 'tab';
-  serverStats: 'tab';
-  opkssh: 'tab';
-  mcpServer: 'tab';
-  internalProxy: 'tab';
-  proxyChain: 'tab';
-  wol: 'tab';
-  windowsBackup: 'tab';
-  diagnostics: 'tab';
-  settings: 'tab';
-  rdpSessions: 'tab';
-  tagManager: 'tab';
-  tabGroupManager: 'tab';
-  connectionEditor: 'tab';
-  proxyProfileEditor: 'tab';
-  proxyChainEditor: 'tab';
-  sshTunnelEditor: 'tab';
-  shortcutCreator: 'tab';
-  vpnEditor: 'tab';
-  tunnelChainEditor: 'tab';
-  tunnelProfileEditor: 'tab';
-  bulkEditor: 'tab';
-  database: 'tab';
+  recordingManager: "tab";
+  importExport: "tab";
+  macroManager: "tab";
+  scriptManager: "tab";
+  performanceMonitor: "tab";
+  actionLog: "tab";
+  shortcutManager: "tab";
+  bulkSsh: "tab";
+  serverStats: "tab";
+  opkssh: "tab";
+  mcpServer: "tab";
+  internalProxy: "tab";
+  proxyChain: "tab";
+  wol: "tab";
+  windowsBackup: "tab";
+  diagnostics: "tab";
+  settings: "tab";
+  rdpSessions: "tab";
+  tagManager: "tab";
+  tabGroupManager: "tab";
+  connectionEditor: "tab";
+  proxyProfileEditor: "tab";
+  proxyChainEditor: "tab";
+  sshTunnelEditor: "tab";
+  shortcutCreator: "tab";
+  vpnEditor: "tab";
+  tunnelChainEditor: "tab";
+  tunnelProfileEditor: "tab";
+  bulkEditor: "tab";
+  database: "tab";
 }
 
 export interface SettingsDialogConfig {

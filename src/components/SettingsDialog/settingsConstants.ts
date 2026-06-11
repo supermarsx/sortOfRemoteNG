@@ -26,7 +26,13 @@ import {
   RefreshCw,
   LucideIcon,
 } from "lucide-react";
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultDiagnosticsConfig, defaultExportSecuritySettings } from "../../types/settings/settings";
+import {
+  GlobalSettings,
+  defaultSSHTerminalConfig,
+  defaultSSHConnectionConfig,
+  defaultDiagnosticsConfig,
+  defaultExportSecuritySettings,
+} from "../../types/settings/settings";
 import { DEFAULT_LOADING_ELEMENT_SETTINGS } from "../ui/display/loadingElement/defaults";
 import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
 
@@ -36,8 +42,8 @@ import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
 
 export interface SettingsTab {
   id: string;
-  labelKey: string;     // i18n key or literal
-  fallback?: string;    // fallback if labelKey isn't a valid key
+  labelKey: string; // i18n key or literal
+  fallback?: string; // fallback if labelKey isn't a valid key
   icon: LucideIcon;
 }
 
@@ -48,10 +54,20 @@ export const SETTINGS_TABS: SettingsTab[] = [
   { id: "general", labelKey: "settings.general", icon: Monitor },
   { id: "language", labelKey: "Language", icon: Languages },
   { id: "behavior", labelKey: "Behavior", icon: MousePointerClick },
-  { id: "startup", labelKey: "settings.startup.title", fallback: "Startup & Tray", icon: Power },
+  {
+    id: "startup",
+    labelKey: "settings.startup.title",
+    fallback: "Startup & Tray",
+    icon: Power,
+  },
   { id: "layout", labelKey: "Layout", icon: LayoutGrid },
   { id: "theme", labelKey: "settings.theme", icon: Palette },
-  { id: "updater", labelKey: "settings.updater.title", fallback: "Updater", icon: RefreshCw },
+  {
+    id: "updater",
+    labelKey: "settings.updater.title",
+    fallback: "Updater",
+    icon: RefreshCw,
+  },
 
   // ── Security ──
   { id: "security", labelKey: "settings.security", icon: Shield },
@@ -60,7 +76,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
   // ── Protocol defaults ──
   { id: "rdpDefaults", labelKey: "RDP", icon: MonitorDot },
-  { id: "sshTerminal", labelKey: "settings.sshTerminal.tab", fallback: "SSH", icon: Terminal },
+  {
+    id: "sshTerminal",
+    labelKey: "settings.sshTerminal.tab",
+    fallback: "SSH",
+    icon: Terminal,
+  },
   { id: "webBrowser", labelKey: "Web Browser", icon: Globe },
 
   // ── Networking ──
@@ -77,7 +98,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
 
   // ── Server / integration surfaces ──
   { id: "api", labelKey: "API Server", icon: Server },
-  { id: "mcpServer", labelKey: "mcpServer.title", fallback: "MCP Server", icon: Bot },
+  {
+    id: "mcpServer",
+    labelKey: "mcpServer.title",
+    fallback: "MCP Server",
+    icon: Bot,
+  },
 
   // ── System & diagnostics ──
   { id: "backend", labelKey: "Backend", icon: Cpu },
@@ -124,6 +150,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "doubleClickConnect",
     "middleClickCloseTab",
     "folderSingleClickToggle",
+    "folderDoubleClickToggle",
     "singleWindowMode",
     "singleConnectionMode",
     "reconnectOnReload",
@@ -341,6 +368,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
   singleClickDisconnect: false,
   doubleClickRename: false,
   folderSingleClickToggle: true,
+  folderDoubleClickToggle: true,
   animationsEnabled: true,
   animationDuration: 550,
   reduceMotion: false,
@@ -426,14 +454,14 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     enableNla: true,
     autoLogon: false,
     gatewayEnabled: false,
-    gatewayHostname: '',
+    gatewayHostname: "",
     gatewayPort: 443,
-    gatewayAuthMethod: 'ntlm',
-    gatewayTransportMode: 'auto',
+    gatewayAuthMethod: "ntlm",
+    gatewayTransportMode: "auto",
     gatewayBypassLocal: true,
     enhancedSessionMode: false,
     autoDetect: false,
-    negotiationStrategy: 'nla-first',
+    negotiationStrategy: "nla-first",
     maxRetries: 3,
     retryDelayMs: 1000,
     defaultWidth: 1920,
@@ -443,23 +471,23 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     resizeToWindow: true,
     desktopScaleFactor: 100,
     lossyCompression: true,
-    audioPlaybackMode: 'local',
-    audioRecordingMode: 'disabled',
-    audioQuality: 'dynamic',
-    mouseMode: 'absolute',
+    audioPlaybackMode: "local",
+    audioRecordingMode: "disabled",
+    audioQuality: "dynamic",
+    mouseMode: "absolute",
     enableUnicodeInput: true,
     autoDetectKeyboardLayout: true,
     clipboardRedirection: true,
-    clipboardDirection: 'bidirectional',
+    clipboardDirection: "bidirectional",
     printerRedirection: false,
-    printerOutputMode: 'spool-file',
+    printerOutputMode: "spool-file",
     portRedirection: false,
     smartCardRedirection: false,
     webAuthnRedirection: false,
     videoCaptureRedirection: false,
     usbRedirection: false,
     audioInputRedirection: false,
-    connectionSpeed: 'broadband-high',
+    connectionSpeed: "broadband-high",
     disableWallpaper: true,
     disableFullWindowDrag: true,
     disableMenuAnimations: true,
@@ -469,9 +497,9 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     enableFontSmoothing: true,
     enableDesktopComposition: false,
     persistentBitmapCaching: false,
-    renderBackend: 'webview',
-    frontendRenderer: 'auto',
-    frameScheduling: 'adaptive',
+    renderBackend: "webview",
+    frontendRenderer: "auto",
+    frameScheduling: "adaptive",
     tripleBuffering: true,
     targetFps: 30,
     frameBatching: false,
@@ -480,14 +508,14 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     readTimeoutMs: 16,
     codecsEnabled: true,
     remoteFxEnabled: true,
-    remoteFxEntropy: 'rlgr3',
+    remoteFxEntropy: "rlgr3",
     gfxEnabled: false,
-    h264Decoder: 'auto',
+    h264Decoder: "auto",
     nalPassthrough: false,
     reconnectBaseDelaySecs: 3,
     reconnectMaxDelaySecs: 30,
     reconnectOnNetworkLoss: true,
-  } as GlobalSettings['rdpDefaults'],
+  } as GlobalSettings["rdpDefaults"],
   mcpServer: DEFAULT_MCP_CONFIG,
   diagnostics: defaultDiagnosticsConfig,
 };
