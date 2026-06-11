@@ -1,0 +1,34 @@
+# Dependencies and package-manager output
+node_modules
+
+# Build, test, and framework output
+.next
+out
+dist
+dist-ssr
+coverage
+target
+target-*
+src-tauri/target
+.wdio-drivers
+
+# Local automation and cache directories
+.claude
+.copilot
+.kilo
+.orchestration
+.orb-previews
+.venv
+
+# Logs and generated compiler state
+*.log
+*.tsbuildinfo
+*-output.txt
+*-err.txt
+*-test.txt
+*-test*.txt
+*-check.txt
+*_output.txt
+
+# Vendored/reference source retained for protocol research, not formatted by app tooling.
+docs/cedar-reference

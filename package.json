@@ -12,6 +12,8 @@
     "stage:opkssh-vendor:disable": "node ./scripts/stage-opkssh-vendor.mjs --disable",
     "start": "next start",
     "lint": "eslint .",
+    "format": "node ./scripts/format-changed.mjs --check",
+    "format:write": "node ./scripts/format-changed.mjs --write",
     "test": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --run",
     "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --run --coverage",
     "test:import-export": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --config vitest.import-export.config.ts --run",
