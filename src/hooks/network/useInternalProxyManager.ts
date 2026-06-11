@@ -113,8 +113,11 @@ export function useInternalProxyManager(isOpen: boolean) {
 
   const handleRefresh = useCallback(async () => {
     setIsLoading(true);
-    await fetchData();
-    setIsLoading(false);
+    try {
+      await fetchData();
+    } finally {
+      setIsLoading(false);
+    }
   }, [fetchData]);
 
   // Initial load + auto-refresh

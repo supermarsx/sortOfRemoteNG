@@ -75,7 +75,7 @@ describe("InternalProxyManager", () => {
     // P6b: log entries are now expandable rows (not a flat table).
     // The collapsed row is a <button> with aria-expanded; the parent
     // is a bordered div, not a <table>.
-    const rowButton = logUrl.closest('button[aria-expanded]');
+    const rowButton = logUrl.closest("button[aria-expanded]");
     expect(rowButton).not.toBeNull();
     expect(rowButton?.getAttribute("aria-expanded")).toBe("false");
 
@@ -85,6 +85,44 @@ describe("InternalProxyManager", () => {
     ).toBeInTheDocument();
     const summaryCards = document.querySelectorAll(".sor-surface-card");
     expect(summaryCards.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the refresh button stable while loading", async () => {
+    let resolveSessions: (value: any[]) => void = () => {};
+    const sessionsPromise = new Promise<any[]>((resolve) => {
+      resolveSessions = resolve;
+    });
+
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_proxy_session_details") {
+        return sessionsPromise;
+      }
+
+      if (cmd === "get_proxy_request_log") {
+        return [];
+      }
+
+      return null;
+    });
+
+    render(<InternalProxyManager isOpen onClose={() => {}} />);
+
+    const refreshButton = await screen.findByRole("button", {
+      name: /refreshing/i,
+    });
+    expect(refreshButton).toHaveAttribute("aria-busy", "true");
+    expect(refreshButton).toBeDisabled();
+    expect(refreshButton.className).not.toContain("animate-spin");
+    expect(
+      refreshButton.querySelector("svg")?.getAttribute("class") ?? "",
+    ).not.toContain("animate-spin");
+
+    resolveSessions([]);
+
+    await waitFor(() => {
+      expect(refreshButton).toHaveAttribute("aria-busy", "false");
+      expect(refreshButton).toBeEnabled();
+    });
   });
 
   it("stops all sessions when Stop All is clicked", async () => {
@@ -169,11 +207,17 @@ describe("InternalProxyManager", () => {
 
     render(<InternalProxyManager isOpen onClose={() => {}} />);
 
-    expect(await screen.findByTestId("session-status-refused")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-refused"),
+    ).toBeInTheDocument();
     expect(await screen.findByTestId("session-status-dns")).toBeInTheDocument();
     expect(await screen.findByTestId("session-status-tls")).toBeInTheDocument();
-    expect(await screen.findByTestId("session-status-timeout")).toBeInTheDocument();
-    expect(await screen.findByTestId("session-status-waiting")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-timeout"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-waiting"),
+    ).toBeInTheDocument();
   });
 
   it("classifies HTTP status codes from last_error (P5)", async () => {
@@ -251,17 +295,27 @@ describe("InternalProxyManager", () => {
 
     render(<InternalProxyManager isOpen onClose={() => {}} />);
 
-    expect(await screen.findByTestId("session-status-forbidden")).toBeInTheDocument();
-    expect(await screen.findByTestId("session-status-notfound")).toBeInTheDocument();
-    expect(await screen.findByTestId("session-status-ratelimited")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-forbidden"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-notfound"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-ratelimited"),
+    ).toBeInTheDocument();
     // Two distinct 5xx codes both land in "Server error" — confirm
     // exactly two of them are rendered.
-    const serverBadges = await screen.findAllByTestId("session-status-servererror");
+    const serverBadges = await screen.findAllByTestId(
+      "session-status-servererror",
+    );
     expect(serverBadges).toHaveLength(2);
     // 407 falls into the "auth" bucket alongside 401, since the UX is
     // identical (the proxy will offer a themed challenge or surface
     // the same "Auth required" badge).
-    expect(await screen.findByTestId("session-status-auth")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-status-auth"),
+    ).toBeInTheDocument();
   });
 
   it("expands a request-log row and copies the URL on click (P6b)", async () => {
@@ -281,8 +335,9 @@ describe("InternalProxyManager", () => {
     // Collapsed row is a button with aria-expanded="false". Click it
     // and verify the expand pane appears with the URL detail field +
     // a copy button.
-    const row = (await screen.findByText("https://example.com/api/status"))
-      .closest('button[aria-expanded]');
+    const row = (
+      await screen.findByText("https://example.com/api/status")
+    ).closest("button[aria-expanded]");
     expect(row).not.toBeNull();
     expect(row?.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(row!);

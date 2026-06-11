@@ -18,7 +18,7 @@ import {
   ScrollText,
   BarChart3,
 } from "lucide-react";
-import { ErrorBanner } from '../ui/display';
+import { ErrorBanner } from "../ui/display";
 import {
   useInternalProxyManager,
   formatTime,
@@ -27,7 +27,7 @@ import {
   getMethodColor,
   ManagerTab,
 } from "../../hooks/network/useInternalProxyManager";
-import { Checkbox } from '../ui/forms';
+import { Checkbox } from "../ui/forms";
 
 type Mgr = ReturnType<typeof useInternalProxyManager>;
 
@@ -64,7 +64,10 @@ type SessionStatus =
   | "servererror"
   | "errors";
 
-const STATUS_META: Record<SessionStatus, { label: string; tone: "ok" | "warn" | "err" | "muted" }> = {
+const STATUS_META: Record<
+  SessionStatus,
+  { label: string; tone: "ok" | "warn" | "err" | "muted" }
+> = {
   healthy: { label: "Healthy", tone: "ok" },
   waiting: { label: "Waiting", tone: "muted" },
   refused: { label: "Refused", tone: "err" },
@@ -90,12 +93,21 @@ function classifySession(s: {
   // ── Transport failures (no upstream response received) ──
   if (m.includes("connection refused") || m.includes("actively refused"))
     return "refused";
-  if (m.includes("dns") || m.includes("name or service not known") ||
-      m.includes("failed to lookup") || m.includes("no address associated"))
+  if (
+    m.includes("dns") ||
+    m.includes("name or service not known") ||
+    m.includes("failed to lookup") ||
+    m.includes("no address associated")
+  )
     return "dns";
-  if (m.includes("certificate") || m.includes("ssl") ||
-      m.includes("tls") || m.includes("handshake") ||
-      m.includes("self-signed") || m.includes("self signed"))
+  if (
+    m.includes("certificate") ||
+    m.includes("ssl") ||
+    m.includes("tls") ||
+    m.includes("handshake") ||
+    m.includes("self-signed") ||
+    m.includes("self signed")
+  )
     return "tls";
   if (m.includes("timeout") || m.includes("timed out")) return "timeout";
   // ── HTTP status-coded failures (P5) ──
@@ -157,8 +169,8 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Activity size={40} className="mx-auto mb-3 opacity-30" />
         <p className="text-sm">No active proxy sessions</p>
         <p className="text-xs mt-1">
-          A session is created for every HTTP/HTTPS connection tab — open
-          a connection to see it here.
+          A session is created for every HTTP/HTTPS connection tab — open a
+          connection to see it here.
         </p>
       </div>
     ) : (
@@ -171,10 +183,7 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-2 mb-1">
-                  <Globe
-                    size={14}
-                    className="text-info flex-shrink-0"
-                  />
+                  <Globe size={14} className="text-info flex-shrink-0" />
                   <span className="text-[var(--color-text)] text-sm font-medium truncate">
                     {s.target_url}
                   </span>
@@ -272,19 +281,29 @@ const LogRow: React.FC<{
         <span className="text-[10px] text-[var(--color-textMuted)] font-mono whitespace-nowrap w-14 flex-shrink-0">
           {formatTime(entry.timestamp)}
         </span>
-        <span className={`text-[10px] font-mono font-semibold w-12 flex-shrink-0 ${getMethodColor(entry.method)}`}>
+        <span
+          className={`text-[10px] font-mono font-semibold w-12 flex-shrink-0 ${getMethodColor(entry.method)}`}
+        >
           {entry.method}
         </span>
         <span className="flex-1 text-xs text-[var(--color-textSecondary)] truncate min-w-0">
           {entry.url}
         </span>
-        <span className={`text-[10px] font-mono font-semibold w-10 text-right flex-shrink-0 ${getStatusColor(entry.status)}`}>
+        <span
+          className={`text-[10px] font-mono font-semibold w-10 text-right flex-shrink-0 ${getStatusColor(entry.status)}`}
+        >
           {entry.status}
         </span>
         {expanded ? (
-          <ChevronUp size={12} className="text-[var(--color-textMuted)] flex-shrink-0" />
+          <ChevronUp
+            size={12}
+            className="text-[var(--color-textMuted)] flex-shrink-0"
+          />
         ) : (
-          <ChevronDown size={12} className="text-[var(--color-textMuted)] flex-shrink-0" />
+          <ChevronDown
+            size={12}
+            className="text-[var(--color-textMuted)] flex-shrink-0"
+          />
         )}
       </button>
       {expanded && (
@@ -382,8 +401,8 @@ const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3">
     <div className="flex items-center justify-between">
       <p className="text-sm text-[var(--color-textSecondary)]">
-        Last {mgr.requestLog.length} proxied requests (newest first).
-        Click a row to see full details and copy individual fields.
+        Last {mgr.requestLog.length} proxied requests (newest first). Click a
+        row to see full details and copy individual fields.
       </p>
       {mgr.requestLog.length > 0 && (
         <button
@@ -529,10 +548,10 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <div className="text-xs text-[var(--color-textSecondary)] space-y-1.5">
         <p>
           Each HTTP/HTTPS connection tab opens a per-session mediator on a
-          random loopback port (<code className="text-info">127.0.0.1:&lt;port&gt;</code>).
-          The iframe loads from that port and the proxy forwards every
-          request to the upstream target — injecting Basic Auth credentials
-          when configured.
+          random loopback port (
+          <code className="text-info">127.0.0.1:&lt;port&gt;</code>). The iframe
+          loads from that port and the proxy forwards every request to the
+          upstream target — injecting Basic Auth credentials when configured.
         </p>
         <p>
           Upstream failures (connection refused, DNS lookup failure, TLS
@@ -540,18 +559,18 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           match the app, not browser-native error chrome.
         </p>
         <p>
-          When the upstream returns <code className="text-info">401 Unauthorized</code>
-          {' '}with a Basic challenge, the proxy strips the
-          {' '}<code className="text-info">WWW-Authenticate</code> header
+          When the upstream returns{" "}
+          <code className="text-info">401 Unauthorized</code> with a Basic
+          challenge, the proxy strips the{" "}
+          <code className="text-info">WWW-Authenticate</code> header
           (suppressing the browser-native popup) and serves a themed inline
-          login form instead. Submitted credentials update the session and
-          can be saved to the underlying connection.
+          login form instead. Submitted credentials update the session and can
+          be saved to the underlying connection.
         </p>
         <p>
-          Sessions are created when the connection tab opens — including
-          when no Basic Auth is configured — and are cleaned up when the
-          tab closes. Sessions appear here whether or not the upstream is
-          reachable.
+          Sessions are created when the connection tab opens — including when no
+          Basic Auth is configured — and are cleaned up when the tab closes.
+          Sessions appear here whether or not the upstream is reachable.
         </p>
       </div>
     </div>
@@ -562,7 +581,12 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 /*  Tab bar                                                            */
 /* ------------------------------------------------------------------ */
 
-const tabs: { id: ManagerTab; label: string; icon: React.ElementType; countKey?: 'sessions' | 'logs' }[] = [
+const tabs: {
+  id: ManagerTab;
+  label: string;
+  icon: React.ElementType;
+  countKey?: "sessions" | "logs";
+}[] = [
   { id: "sessions", label: "Sessions", icon: Activity, countKey: "sessions" },
   { id: "logs", label: "Request Log", icon: ScrollText, countKey: "logs" },
   { id: "stats", label: "Statistics", icon: BarChart3 },
@@ -588,9 +612,12 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = mgr.activeTab === tab.id;
-            const count = tab.countKey === 'sessions' ? mgr.sessions.length
-              : tab.countKey === 'logs' ? mgr.requestLog.length
-              : undefined;
+            const count =
+              tab.countKey === "sessions"
+                ? mgr.sessions.length
+                : tab.countKey === "logs"
+                  ? mgr.requestLog.length
+                  : undefined;
             return (
               <button
                 key={tab.id}
@@ -600,7 +627,9 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
                 <Icon size={14} />
                 <span className="flex-1 text-left">{tab.label}</span>
                 {count !== undefined && count > 0 && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">{count}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none bg-[var(--color-border)]">
+                    {count}
+                  </span>
                 )}
               </button>
             );
@@ -608,14 +637,24 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
         </div>
         <div className="mt-auto p-3 border-t border-[var(--color-border)] space-y-2">
           <div className="text-[10px] text-[var(--color-textMuted)]">
-            {mgr.sessions.length} session{mgr.sessions.length !== 1 ? 's' : ''} &middot; {mgr.totalRequests} proxied
+            {mgr.sessions.length} session{mgr.sessions.length !== 1 ? "s" : ""}{" "}
+            &middot; {mgr.totalRequests} proxied
           </div>
           <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-textSecondary)] cursor-pointer">
-            <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} />
+            <Checkbox
+              checked={mgr.autoRefresh}
+              onChange={(v: boolean) => mgr.setAutoRefresh(v)}
+            />
             <span>Auto-refresh</span>
           </label>
-          <button onClick={mgr.handleRefresh} className={`sor-btn sor-btn-secondary sor-btn-xs w-full ${mgr.isLoading ? 'animate-spin' : ''}`}>
-            <RefreshCw size={12} /> Refresh
+          <button
+            onClick={mgr.handleRefresh}
+            disabled={mgr.isLoading}
+            aria-busy={mgr.isLoading}
+            className="sor-btn sor-btn-secondary sor-btn-xs w-full disabled:opacity-60"
+          >
+            <RefreshCw size={12} />{" "}
+            {mgr.isLoading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
