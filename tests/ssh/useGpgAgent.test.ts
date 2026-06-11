@@ -69,7 +69,7 @@ describe("useGpgAgent", () => {
     expect(invoke).toHaveBeenCalledWith("gpg_stop_agent");
   });
 
-  it("restartAgent invokes gpg_restart_agent", async () => {
+  it("restartAgent invokes gpg_reload_agent", async () => {
     const { result } = renderHook(() => useGpgAgent());
     await waitFor(() => expect(result.current.status).not.toBeNull());
 
@@ -77,7 +77,7 @@ describe("useGpgAgent", () => {
       await result.current.restartAgent();
     });
 
-    expect(invoke).toHaveBeenCalledWith("gpg_restart_agent");
+    expect(invoke).toHaveBeenCalledWith("gpg_reload_agent");
   });
 
   it("startAgent failure sets error", async () => {
@@ -164,7 +164,7 @@ describe("useGpgAgent", () => {
 
     expect(res).toEqual(importResult);
     expect(invoke).toHaveBeenCalledWith("gpg_import_key", {
-      data: [1, 2, 3],
+      dataB64: "AQID",
       armor: true,
     });
   });
@@ -210,16 +210,17 @@ describe("useGpgAgent", () => {
     expect(res).toEqual(sigResult);
     expect(invoke).toHaveBeenCalledWith("gpg_sign_data", {
       keyId: "KEY1",
-      data: [72, 105],
+      dataB64: "SGk=",
       detached: true,
       armor: true,
+      hashAlgo: null,
     });
   });
 
-  it("encryptData invokes gpg_encrypt", async () => {
+  it("encryptData invokes gpg_encrypt_data", async () => {
     const encResult = { data: [99] };
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      if (cmd === "gpg_encrypt") return encResult;
+      if (cmd === "gpg_encrypt_data") return encResult;
       if (cmd === "gpg_get_status") return { running: true };
       if (cmd === "gpg_list_keys") return [];
       return undefined;
@@ -234,19 +235,19 @@ describe("useGpgAgent", () => {
     });
 
     expect(res).toEqual(encResult);
-    expect(invoke).toHaveBeenCalledWith("gpg_encrypt", {
+    expect(invoke).toHaveBeenCalledWith("gpg_encrypt_data", {
       recipients: ["REC1"],
-      data: [72],
+      dataB64: "SA==",
       armor: true,
       sign: false,
       signer: null,
     });
   });
 
-  it("decryptData invokes gpg_decrypt", async () => {
+  it("decryptData invokes gpg_decrypt_data", async () => {
     const decResult = { data: [72, 105] };
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-      if (cmd === "gpg_decrypt") return decResult;
+      if (cmd === "gpg_decrypt_data") return decResult;
       if (cmd === "gpg_get_status") return { running: true };
       if (cmd === "gpg_list_keys") return [];
       return undefined;
@@ -261,11 +262,14 @@ describe("useGpgAgent", () => {
     });
 
     expect(res).toEqual(decResult);
+    expect(invoke).toHaveBeenCalledWith("gpg_decrypt_data", {
+      dataB64: "Yw==",
+    });
   });
 
   // ── Trust ─────────────────────────────────────────────────────────
 
-  it("setTrust invokes gpg_set_trust", async () => {
+  it("setTrust invokes gpg_set_owner_trust", async () => {
     const { result } = renderHook(() => useGpgAgent());
     await waitFor(() => expect(result.current.status).not.toBeNull());
 
@@ -273,7 +277,7 @@ describe("useGpgAgent", () => {
       await result.current.setTrust("KEY1", "full" as any);
     });
 
-    expect(invoke).toHaveBeenCalledWith("gpg_set_trust", {
+    expect(invoke).toHaveBeenCalledWith("gpg_set_owner_trust", {
       keyId: "KEY1",
       trust: "full",
     });

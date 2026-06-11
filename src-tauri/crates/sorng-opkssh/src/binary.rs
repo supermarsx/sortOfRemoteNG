@@ -1421,10 +1421,35 @@ fn cli_backend_from_path(cli_binary_path: Option<&PathBuf>) -> Option<OpksshBack
         .map(|binary_path| OpksshBackend::Cli { binary_path })
 }
 
+/// Redact any OIDC `client_secret` that could appear in opkssh argv before
+/// logging. A `--provider=issuer,client_id,client_secret[,scopes]` value has
+/// its 3rd comma-separated field (the secret) replaced with `***`. argv is
+/// world-readable, so this is defense-in-depth for the log surface only — the
+/// login path keeps the secret off argv entirely (see `login::build_login_args`).
+fn redact_command_args(args: &[&str]) -> Vec<String> {
+    args.iter()
+        .map(|arg| {
+            if let Some(value) = arg.strip_prefix("--provider=") {
+                let mut parts: Vec<String> = value.split(',').map(|p| p.to_string()).collect();
+                // issuer,client_id,client_secret[,scopes] → redact field index 2.
+                if parts.len() > 2 && !parts[2].is_empty() {
+                    parts[2] = "***".to_string();
+                    return format!("--provider={}", parts.join(","));
+                }
+            }
+            (*arg).to_string()
+        })
+        .collect()
+}
+
 /// Run an arbitrary opkssh command and return the raw output.
 pub async fn run_command(binary_path: &PathBuf, args: &[&str]) -> Result<CommandOutput, String> {
     let start = std::time::Instant::now();
-    info!("Running opkssh: {:?} {:?}", binary_path, args);
+    info!(
+        "Running opkssh: {:?} {:?}",
+        binary_path,
+        redact_command_args(args)
+    );
 
     let output = Command::new(binary_path)
         .args(args)
@@ -1446,6 +1471,30 @@ pub async fn run_command(binary_path: &PathBuf, args: &[&str]) -> Result<Command
 mod tests {
     use super::*;
     use std::ffi::OsString;
+
+    #[test]
+    fn test_redact_command_args_hides_provider_secret() {
+        let args = vec![
+            "login",
+            "--provider=https://issuer.example,client-id,super-secret,openid",
+            "--key-file-name=id_ecdsa",
+        ];
+        let redacted = redact_command_args(&args);
+        assert!(redacted.iter().all(|a| !a.contains("super-secret")));
+        assert_eq!(
+            redacted[1],
+            "--provider=https://issuer.example,client-id,***,openid"
+        );
+        assert_eq!(redacted[0], "login");
+        assert_eq!(redacted[2], "--key-file-name=id_ecdsa");
+    }
+
+    #[test]
+    fn test_redact_command_args_secretless_provider_unchanged() {
+        let args = vec!["login", "--provider=https://issuer.example,client-id"];
+        let redacted = redact_command_args(&args);
+        assert_eq!(redacted[1], "--provider=https://issuer.example,client-id");
+    }
 
     struct VendorOverrideEnvGuard {
         saved: Option<OsString>,

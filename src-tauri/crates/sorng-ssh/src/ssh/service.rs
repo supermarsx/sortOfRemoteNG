@@ -2183,22 +2183,22 @@ impl SshService {
         }
 
         // ── X11 forwarding ──────────────────────────────────────────
-        let mut x11_to_enable: Option<X11ForwardingConfig> = None;
+        // HONEST UNSUPPORTED: the underlying SSH transport (ssh2/libssh2
+        // 0.9.x) exposes no `x11-req` channel-request binding, so the remote
+        // sshd can never be told to forward X11. Earlier code logged
+        // "X11 forwarding requested" and spun up a local proxy listener, which
+        // misled users into believing forwarding was active when it was a
+        // silent no-op. We now surface an explicit, clearly-logged unsupported
+        // status and do NOT start the (non-functional) proxy listener.
         if let Some(ref x11_cfg) = session.config.x11_forwarding {
             if x11_cfg.enabled {
-                if let Err(e) = channel.handle_extended_data(ssh2::ExtendedData::Merge) {
-                    log::warn!(
-                        "Failed to set up X11 forwarding: {} (continuing without)",
-                        e
-                    );
-                } else {
-                    log::info!(
-                        "[{}] X11 forwarding requested (trusted={})",
-                        session_id,
-                        x11_cfg.trusted
-                    );
-                    x11_to_enable = Some(x11_cfg.clone());
-                }
+                log::warn!(
+                    "[{}] X11 forwarding requested (trusted={}) but is NOT supported by the \
+                     current SSH backend (ssh2/libssh2 has no x11-req binding); ignoring. \
+                     The remote session will have no DISPLAY forwarded.",
+                    session_id,
+                    x11_cfg.trusted
+                );
             }
         }
 
@@ -2226,15 +2226,8 @@ impl SshService {
 
         session.session.set_blocking(false);
 
-        // Release the mutable borrow on self.sessions before calling self.enable_x11_forwarding
+        // Release the mutable borrow on self.sessions.
         let _ = session;
-
-        // Enable X11 proxy listener if requested (after releasing session borrow)
-        if let Some(x11_cfg) = x11_to_enable {
-            if let Err(e) = self.enable_x11_forwarding(session_id, x11_cfg) {
-                log::warn!("[{}] Failed to start X11 proxy: {}", session_id, e);
-            }
-        }
 
         // Re-borrow session for the remaining work
         let _session = self

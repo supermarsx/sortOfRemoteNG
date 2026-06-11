@@ -241,33 +241,85 @@ pub async fn run_login_operation(
         .unwrap_or_else(|| "OPKSSH login did not produce a result".to_string()))
 }
 
+/// Synthetic provider alias used to reference a custom inline provider that is
+/// supplied to the opkssh CLI through the `OPKSSH_PROVIDERS` environment
+/// variable instead of on the (world-readable) process argv.
+const INLINE_PROVIDER_ALIAS: &str = "sorng-inline-provider";
+
+/// Returns `true` when the login uses a custom issuer/client_id whose
+/// `client_secret` must be kept off argv. When this is the case, the provider
+/// triple is passed via the `OPKSSH_PROVIDERS` env var (see
+/// [`build_login_env_providers`]) and argv only references the synthetic alias.
+fn uses_inline_secret_provider(opts: &OpksshLoginOptions) -> bool {
+    opts.issuer.is_some()
+        && opts.client_id.is_some()
+        && opts
+            .client_secret
+            .as_deref()
+            .is_some_and(|secret| !secret.is_empty())
+}
+
+/// Build the `OPKSSH_PROVIDERS` env value for an inline custom provider so the
+/// `client_secret` never appears on the process command line.
+///
+/// Format (matches opkssh upstream + `providers::parse_env_providers`):
+/// `alias,issuer,client_id,client_secret,scopes`.
+///
+/// Returns `None` when the login does not carry an inline secret (alias-only or
+/// secretless custom providers stay on argv, which contains no secret).
+pub fn build_login_env_providers(opts: &OpksshLoginOptions) -> Option<String> {
+    if !uses_inline_secret_provider(opts) {
+        return None;
+    }
+
+    let issuer = opts.issuer.as_deref().unwrap_or_default();
+    let client_id = opts.client_id.as_deref().unwrap_or_default();
+    let secret = opts.client_secret.as_deref().unwrap_or_default();
+    let scopes = opts.scopes.as_deref().unwrap_or_default();
+
+    Some(format!(
+        "{INLINE_PROVIDER_ALIAS},{issuer},{client_id},{secret},{scopes}"
+    ))
+}
+
 /// Build the command-line arguments for `opkssh login`.
+///
+/// SECURITY: the OIDC `client_secret` is NEVER placed on argv (process argv is
+/// world-readable via `ps`/`/proc/<pid>/cmdline`). When an inline custom
+/// provider carries a secret, the full provider triple is supplied to the
+/// opkssh child through the `OPKSSH_PROVIDERS` environment variable (see
+/// [`build_login_env_providers`]) and argv only references the synthetic
+/// [`INLINE_PROVIDER_ALIAS`].
 pub fn build_login_args(opts: &OpksshLoginOptions) -> Vec<String> {
     let mut args = vec!["login".to_string()];
 
-    // Provider flag: --provider="issuer,client_id[,client_secret][,scopes]"
-    if let Some(ref provider) = opts.provider {
+    if uses_inline_secret_provider(opts) {
+        // Secret is delivered via OPKSSH_PROVIDERS; reference the alias only.
+        args.push(format!("--provider={}", INLINE_PROVIDER_ALIAS));
+    } else {
         // Simple alias like "google", "azure", etc.
-        if opts.issuer.is_none() && opts.client_id.is_none() {
-            args.push(provider.clone());
+        if let Some(ref provider) = opts.provider {
+            if opts.issuer.is_none() && opts.client_id.is_none() {
+                args.push(provider.clone());
+            }
         }
-    }
 
-    if let Some(ref issuer) = opts.issuer {
-        let mut provider_str = issuer.clone();
-        if let Some(ref cid) = opts.client_id {
-            provider_str = format!("{},{}", provider_str, cid);
-            if let Some(ref secret) = opts.client_secret {
-                provider_str = format!("{},{}", provider_str, secret);
-            } else if opts.scopes.is_some() {
-                // Need empty secret placeholder to set scopes
-                provider_str = format!("{},", provider_str);
+        // Custom provider without a secret: issuer[,client_id[,,scopes]] only.
+        // No client_secret is ever interpolated here.
+        if let Some(ref issuer) = opts.issuer {
+            let mut provider_str = issuer.clone();
+            if let Some(ref cid) = opts.client_id {
+                provider_str = format!("{},{}", provider_str, cid);
+                if opts.scopes.is_some() {
+                    // Empty secret placeholder so scopes land in the 4th field.
+                    provider_str = format!("{},", provider_str);
+                }
+                if let Some(ref scopes) = opts.scopes {
+                    provider_str = format!("{},{}", provider_str, scopes);
+                }
             }
-            if let Some(ref scopes) = opts.scopes {
-                provider_str = format!("{},{}", provider_str, scopes);
-            }
+            args.push(format!("--provider={}", provider_str));
         }
-        args.push(format!("--provider={}", provider_str));
     }
 
     if let Some(ref key_name) = opts.key_file_name {
@@ -285,19 +337,58 @@ pub fn build_login_args(opts: &OpksshLoginOptions) -> Vec<String> {
     args
 }
 
+/// Redact any `client_secret` that may appear in an `OPKSSH_PROVIDERS`-style
+/// value (`alias,issuer,client_id,client_secret,scopes;...`) so it can be
+/// safely logged. The 4th comma-separated field of every entry is replaced
+/// with `***`.
+pub fn redact_env_providers(env_providers: &str) -> String {
+    env_providers
+        .split(';')
+        .map(|entry| {
+            if entry.trim().is_empty() {
+                return entry.to_string();
+            }
+            let mut parts: Vec<String> = entry.split(',').map(|p| p.to_string()).collect();
+            if parts.len() > 3 && !parts[3].is_empty() {
+                parts[3] = "***".to_string();
+            }
+            parts.join(",")
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
 /// Execute `opkssh login` and parse the result.
+///
+/// SECURITY: when the login carries an inline `client_secret`, it is passed to
+/// the opkssh child via the `OPKSSH_PROVIDERS` environment variable (never on
+/// argv) and is redacted in all log output.
 pub async fn execute_login(
     binary_path: &PathBuf,
     opts: &OpksshLoginOptions,
 ) -> Result<OpksshLoginResult, String> {
     let args = build_login_args(opts);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let env_providers = build_login_env_providers(opts);
 
-    info!("Executing opkssh login with args: {:?}", args_refs);
+    // args no longer contain a secret (build_login_args keeps it off argv), but
+    // log the redacted env-provider summary so the secret never reaches logs.
+    match env_providers.as_deref() {
+        Some(env) => info!(
+            "Executing opkssh login with args: {:?} (OPKSSH_PROVIDERS={})",
+            args_refs,
+            redact_env_providers(env)
+        ),
+        None => info!("Executing opkssh login with args: {:?}", args_refs),
+    }
 
     let start = std::time::Instant::now();
-    let output = Command::new(binary_path)
-        .args(&args_refs)
+    let mut command = Command::new(binary_path);
+    command.args(&args_refs);
+    if let Some(ref env) = env_providers {
+        command.env("OPKSSH_PROVIDERS", env);
+    }
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to execute opkssh login: {}", e))?;
@@ -477,6 +568,69 @@ mod tests {
         assert!(args.contains(
             &"--provider=https://auth.example.com,my-client,,openid profile email".to_string()
         ));
+    }
+
+    #[test]
+    fn test_client_secret_never_on_argv() {
+        let opts = OpksshLoginOptions {
+            issuer: Some("https://auth.example.com".into()),
+            client_id: Some("my-client".into()),
+            client_secret: Some("super-secret".into()),
+            scopes: Some("openid email".into()),
+            ..Default::default()
+        };
+        let args = build_login_args(&opts);
+        // The secret must NOT appear in any argv token.
+        assert!(
+            args.iter().all(|a| !a.contains("super-secret")),
+            "client_secret leaked onto argv: {args:?}"
+        );
+        // argv references the synthetic alias instead.
+        assert!(args.contains(&format!("--provider={}", INLINE_PROVIDER_ALIAS)));
+    }
+
+    #[test]
+    fn test_inline_secret_goes_to_env_providers() {
+        let opts = OpksshLoginOptions {
+            issuer: Some("https://auth.example.com".into()),
+            client_id: Some("my-client".into()),
+            client_secret: Some("super-secret".into()),
+            scopes: Some("openid email".into()),
+            ..Default::default()
+        };
+        let env = build_login_env_providers(&opts).expect("env providers built");
+        assert_eq!(
+            env,
+            format!("{INLINE_PROVIDER_ALIAS},https://auth.example.com,my-client,super-secret,openid email")
+        );
+    }
+
+    #[test]
+    fn test_no_env_providers_without_inline_secret() {
+        let opts = OpksshLoginOptions {
+            issuer: Some("https://auth.example.com".into()),
+            client_id: Some("my-client".into()),
+            scopes: Some("openid email".into()),
+            ..Default::default()
+        };
+        assert!(build_login_env_providers(&opts).is_none());
+    }
+
+    #[test]
+    fn test_redact_env_providers_hides_secret() {
+        let redacted =
+            redact_env_providers("alias,https://issuer.example,client-id,super-secret,openid");
+        assert!(!redacted.contains("super-secret"));
+        assert_eq!(
+            redacted,
+            "alias,https://issuer.example,client-id,***,openid"
+        );
+    }
+
+    #[test]
+    fn test_redact_env_providers_no_secret_field_unchanged() {
+        let redacted = redact_env_providers("alias,https://issuer.example,client-id");
+        assert_eq!(redacted, "alias,https://issuer.example,client-id");
     }
 
     #[test]

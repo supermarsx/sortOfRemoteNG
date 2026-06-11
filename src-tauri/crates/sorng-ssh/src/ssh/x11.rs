@@ -1,22 +1,31 @@
-//! # X11 Forwarding
+//! # X11 Forwarding (currently UNSUPPORTED — honest no-op)
 //!
-//! Implements X11 forwarding over SSH sessions.  When enabled the backend:
+//! X11 forwarding over SSH requires sending an `x11-req` channel request so the
+//! remote sshd opens `x11` channels back toward a local relay. The SSH
+//! transport this crate uses (`ssh2` 0.9.x, backed by libssh2) exposes **no**
+//! binding for `x11-req`, and libssh2 itself does not implement it. A local
+//! relay listener alone is useless: without `x11-req` the server never opens
+//! any `x11` channel, so nothing is ever forwarded.
 //!
-//! 1. Opens a local TCP listener on `localhost:<6000 + display_offset>`.
-//! 2. Requests `x11-req` on the SSH channel so that the remote sshd will
-//!    redirect X11 traffic towards us.
-//! 3. For each incoming X11 connection from the remote side the SSH library
-//!    opens a new `x11` channel; we proxy data between that channel and the
-//!    local X display.
+//! To avoid the previous *silent no-op* (which logged "X11 forwarding
+//! requested" and started a dead listener, misleading users), the public entry
+//! point [`SshService::enable_x11_forwarding`] now returns an explicit
+//! "not supported" error, and `start_shell` logs a clear unsupported warning
+//! instead of pretending to enable it.
 //!
-//! The module exposes Tauri commands for:
-//! - enabling/disabling X11 forwarding on a session
-//! - querying current X11 forward status
-//! - listing all active X11 forwards
+//! The local relay scaffolding ([`relay_x11_streams`], [`resolve_local_display`],
+//! [`build_remote_display`], [`X11ForwardState`]) is retained behind
+//! `#[allow(dead_code)]` so it can be wired up if/when the transport gains an
+//! `x11-req` request (e.g. a russh migration). It is intentionally unreachable
+//! today.
+//!
+//! The module still exposes Tauri commands for enable/disable/status/list so
+//! the frontend contract is unchanged; enable now surfaces the unsupported
+//! error and status/list report no active forwards.
 
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
@@ -30,6 +39,10 @@ lazy_static::lazy_static! {
 }
 
 /// Internal runtime state for one X11 forwarding context (not serialised).
+///
+/// Retained for a future transport that supports `x11-req`; never populated
+/// today (see module note).
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct X11ForwardState {
     pub session_id: String,
@@ -56,6 +69,10 @@ pub struct X11ForwardState {
 ///
 /// On Unix this is typically parsed from `$DISPLAY` (e.g. `:0` → `localhost:6000`).
 /// On Windows we default to `localhost:6000` (Xming / VcXsrv / X410 default).
+///
+/// Retained for a future `x11-req`-capable transport (see module note); not
+/// reached today.
+#[allow(dead_code)]
 pub fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
     if let Some(ref display) = cfg.display_override {
         // Parse "host:display.screen" or just ":display"
@@ -88,6 +105,9 @@ pub fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
 }
 
 /// Build the DISPLAY value seen by the remote session.
+///
+/// Retained for a future `x11-req`-capable transport (see module note).
+#[allow(dead_code)]
 pub fn build_remote_display(display_offset: u32, screen: u32) -> String {
     format!("localhost:{}.{}", display_offset, screen)
 }
@@ -97,160 +117,37 @@ pub fn build_remote_display(display_offset: u32, screen: u32) -> String {
 impl super::service::SshService {
     /// Enable X11 forwarding on an existing SSH session.
     ///
-    /// This does NOT request `x11-req` on any particular channel immediately —
-    /// that happens in `start_shell` when a PTY channel is created.  Instead
-    /// this records the configuration so that `start_shell` and future channel
-    /// opens know to call `request_x11_forwarding` and spin up the local proxy
-    /// listener.
+    /// HONEST UNSUPPORTED (see module note): the current SSH transport
+    /// (`ssh2` 0.9.x / libssh2) exposes **no** `x11-req` channel-request
+    /// binding, so we cannot tell the remote sshd to forward X11. A local
+    /// relay listener on its own is useless — without the `x11-req` request
+    /// the server never opens any `x11` channels toward us. Rather than spin
+    /// up a listener and return a misleading "forwarding active" success, we
+    /// return an explicit unsupported error so the UI/user is told the truth.
+    ///
+    /// Re-enabling this requires either a transport that supports `x11-req`
+    /// (e.g. russh) or a raw libssh2-sys FFI request type that libssh2 does
+    /// not currently provide.
     pub fn enable_x11_forwarding(
         &mut self,
         session_id: &str,
-        config: X11ForwardingConfig,
+        _config: X11ForwardingConfig,
     ) -> Result<X11ForwardInfo, String> {
-        let session = self.sessions.get(session_id).ok_or("Session not found")?;
+        // Still validate the session exists so callers get a coherent error
+        // ordering (session-not-found vs unsupported).
+        let _session = self.sessions.get(session_id).ok_or("Session not found")?;
 
-        let (local_host, local_port) = resolve_local_display(&config);
-        let remote_display = build_remote_display(config.display_offset, config.screen);
+        log::warn!(
+            "[{}] X11 forwarding requested but is not supported by the current SSH backend \
+             (ssh2/libssh2 has no x11-req binding)",
+            session_id
+        );
 
-        // Validate we can connect to the local X server
-        let _test = TcpStream::connect_timeout(
-            &format!("{}:{}", local_host, local_port).parse()
-                .map_err(|e| format!("Invalid local display address: {}", e))?,
-            Duration::from_secs(2),
-        ).map_err(|e| format!(
-            "Cannot reach local X server at {}:{} — is an X server (Xming/VcXsrv/X410) running? ({})",
-            local_host, local_port, e
-        ))?;
-
-        // Create the listener for incoming X11 channel connections from the
-        // remote side.  We bind to localhost:<6000 + display_offset>.
-        let listen_port = 6000u16 + config.display_offset as u16;
-        let listen_addr = format!("127.0.0.1:{}", listen_port);
-
-        let listener = TcpListener::bind(&listen_addr)
-            .or_else(|_| TcpListener::bind("127.0.0.1:0"))
-            .map_err(|e| format!("Failed to bind X11 listener: {}", e))?;
-        let actual_addr = listener
-            .local_addr()
-            .map_err(|e| format!("Failed to get listener address: {}", e))?;
-
-        listener.set_nonblocking(true).ok();
-
-        let active_channels = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        let active_clone = active_channels.clone();
-        let cancelled_clone = cancelled.clone();
-        let x_host = local_host.clone();
-        let x_port = local_port;
-        let session_clone = session.session.clone();
-        let session_id_owned = session_id.to_string();
-
-        // Spawn a background task that accepts forwarded X11 connections
-        let handle = tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::from_std(listener)
-                .expect("Failed to convert X11 listener");
-
-            log::info!(
-                "[{}] X11 proxy listening on {} → local X at {}:{}",
-                session_id_owned,
-                actual_addr,
-                x_host,
-                x_port
-            );
-
-            loop {
-                if cancelled_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-
-                match listener.accept().await {
-                    Ok((stream, peer)) => {
-                        log::debug!("[{}] X11 channel from {}", session_id_owned, peer);
-
-                        // Connect to the local X server
-                        let local_x = match TcpStream::connect(format!("{}:{}", x_host, x_port)) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                log::error!(
-                                    "[{}] Cannot connect to local X: {}",
-                                    session_id_owned,
-                                    e
-                                );
-                                continue;
-                            }
-                        };
-
-                        // Open an x11 forwarding channel through SSH
-                        let sess = session_clone.clone();
-                        let act = active_clone.clone();
-                        let can = cancelled_clone.clone();
-
-                        std::thread::spawn(move || {
-                            match sess.channel_forward_listen(0, None, None) {
-                                Ok((mut _ch, _port)) => {
-                                    // The forward channel is for port-forwarding;
-                                    // for X11 we actually relay the accepted stream
-                                    // directly to the local X server.
-                                    drop(_ch);
-                                }
-                                Err(e) => {
-                                    log::warn!("channel_forward_listen failed (X11): {}", e);
-                                }
-                            }
-
-                            // Convert the accepted async stream to std
-                            let remote_stream = match stream.into_std() {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    log::error!("Failed to convert X11 stream: {}", e);
-                                    return;
-                                }
-                            };
-
-                            // Simple bi-directional relay between remote X11
-                            // channel stream and local X server
-                            relay_x11_streams(remote_stream, local_x, act, can);
-                        });
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
-                    Err(e) => {
-                        log::error!("[{}] X11 listener error: {}", session_id_owned, e);
-                        break;
-                    }
-                }
-            }
-        });
-
-        let info = X11ForwardInfo {
-            session_id: session_id.to_string(),
-            remote_display: remote_display.clone(),
-            local_bind: actual_addr.to_string(),
-            trusted: config.trusted,
-            active_channels: 0,
-            total_channels_opened: 0,
-        };
-
-        if let Ok(mut fwds) = X11_FORWARDS.lock() {
-            fwds.insert(
-                session_id.to_string(),
-                X11ForwardState {
-                    session_id: session_id.to_string(),
-                    config: config.clone(),
-                    local_bind: actual_addr.to_string(),
-                    remote_display,
-                    trusted: config.trusted,
-                    handle: Some(handle),
-                    total_channels_opened: 0,
-                    active_channels,
-                    cancelled,
-                },
-            );
-        }
-
-        Ok(info)
+        Err(
+            "X11 forwarding is not supported by this SSH backend (ssh2/libssh2 exposes no \
+             x11-req channel request). No DISPLAY will be forwarded to the remote session."
+                .to_string(),
+        )
     }
 
     /// Disable X11 forwarding on a session.
@@ -301,6 +198,10 @@ impl super::service::SshService {
 }
 
 /// Bi-directional relay between two std::net::TcpStream instances for X11.
+///
+/// Retained for a future `x11-req`-capable transport (see module note); not
+/// reached today.
+#[allow(dead_code)]
 pub fn relay_x11_streams(
     mut remote: TcpStream,
     mut local: TcpStream,

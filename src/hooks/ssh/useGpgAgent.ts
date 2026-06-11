@@ -25,10 +25,25 @@ import type {
 function isTauri(): boolean {
   return (
     typeof window !== "undefined" &&
-    Boolean(
-      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-    )
+    Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__)
   );
+}
+
+function bytesToBase64(data: number[]): string {
+  const bytes = Uint8Array.from(data);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function reasonCode(reason: string): number {
+  const parsed = Number.parseInt(reason, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────
@@ -42,9 +57,9 @@ export function useGpgAgent() {
   const [cardInfo, setCardInfo] = useState<SmartCardInfo | null>(null);
   const [trustStats, setTrustStats] = useState<TrustDbStats | null>(null);
   const [auditEntries, setAuditEntries] = useState<GpgAuditEntry[]>([]);
-  const [keyserverResults, setKeyserverResults] = useState<
-    KeyServerResult[]
-  >([]);
+  const [keyserverResults, setKeyserverResults] = useState<KeyServerResult[]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
@@ -89,7 +104,7 @@ export function useGpgAgent() {
   const fetchTrustStats = useCallback(async () => {
     if (!isTauri()) return;
     try {
-      const stats = await invoke<TrustDbStats>("gpg_get_trust_db_stats");
+      const stats = await invoke<TrustDbStats>("gpg_trust_db_stats");
       setTrustStats(stats);
     } catch (e) {
       console.error("Failed to fetch trust DB stats:", e);
@@ -143,7 +158,7 @@ export function useGpgAgent() {
     setLoading(true);
     setError(null);
     try {
-      await invoke("gpg_restart_agent");
+      await invoke("gpg_reload_agent");
       await fetchStatus();
     } catch (e: any) {
       setError(e?.toString() ?? "Failed to restart GPG agent");
@@ -154,19 +169,16 @@ export function useGpgAgent() {
 
   // ── Config ─────────────────────────────────────────────
 
-  const updateConfig = useCallback(
-    async (newConfig: GpgAgentConfig) => {
-      if (!isTauri()) return;
-      setError(null);
-      try {
-        await invoke("gpg_update_config", { config: newConfig });
-        setConfig(newConfig);
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to update config");
-      }
-    },
-    [],
-  );
+  const updateConfig = useCallback(async (newConfig: GpgAgentConfig) => {
+    if (!isTauri()) return;
+    setError(null);
+    try {
+      await invoke("gpg_update_config", { config: newConfig });
+      setConfig(newConfig);
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to update config");
+    }
+  }, []);
 
   const detectEnvironment = useCallback(async () => {
     if (!isTauri()) return;
@@ -209,38 +221,32 @@ export function useGpgAgent() {
     [fetchKeys],
   );
 
-  const importKey = useCallback(
-    async (data: number[], armor: boolean) => {
-      if (!isTauri()) return null;
-      setError(null);
-      try {
-        return await invoke<KeyImportResult>("gpg_import_key", {
-          data,
-          armor,
-        });
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to import key");
-        return null;
-      }
-    },
-    [],
-  );
+  const importKey = useCallback(async (data: number[], armor: boolean) => {
+    if (!isTauri()) return null;
+    setError(null);
+    try {
+      return await invoke<KeyImportResult>("gpg_import_key", {
+        dataB64: bytesToBase64(data),
+        armor,
+      });
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to import key");
+      return null;
+    }
+  }, []);
 
-  const importKeyFile = useCallback(
-    async (path: string) => {
-      if (!isTauri()) return null;
-      setError(null);
-      try {
-        return await invoke<KeyImportResult>("gpg_import_key_file", {
-          path,
-        });
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to import key file");
-        return null;
-      }
-    },
-    [],
-  );
+  const importKeyFile = useCallback(async (path: string) => {
+    if (!isTauri()) return null;
+    setError(null);
+    try {
+      return await invoke<KeyImportResult>("gpg_import_key_file", {
+        path,
+      });
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to import key file");
+      return null;
+    }
+  }, []);
 
   const exportKey = useCallback(
     async (
@@ -290,12 +296,7 @@ export function useGpgAgent() {
   // ── UID Management ─────────────────────────────────────
 
   const addUid = useCallback(
-    async (
-      keyId: string,
-      name: string,
-      email: string,
-      comment: string,
-    ) => {
+    async (keyId: string, name: string, email: string, comment: string) => {
       if (!isTauri()) return;
       setError(null);
       try {
@@ -402,9 +403,9 @@ export function useGpgAgent() {
       if (!isTauri()) return null;
       setError(null);
       try {
-        return await invoke<string>("gpg_gen_revocation", {
+        return await invoke<string>("gpg_generate_revocation", {
           keyId,
-          reason,
+          reason: reasonCode(reason),
           description,
         });
       } catch (e: any) {
@@ -429,9 +430,10 @@ export function useGpgAgent() {
       try {
         return await invoke<SignatureResult>("gpg_sign_data", {
           keyId,
-          data,
+          dataB64: bytesToBase64(data),
           detached,
           armor,
+          hashAlgo: null,
         });
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to sign data");
@@ -450,8 +452,8 @@ export function useGpgAgent() {
       setError(null);
       try {
         return await invoke<VerificationResult>("gpg_verify_signature", {
-          data,
-          signature,
+          dataB64: bytesToBase64(data),
+          signatureB64: signature ? bytesToBase64(signature) : null,
         });
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to verify signature");
@@ -474,8 +476,10 @@ export function useGpgAgent() {
         await invoke("gpg_sign_key", {
           signerId,
           targetId,
-          uids,
+          uidNames: uids.map(String),
           localOnly,
+          trustLevel: 0,
+          exportable: false,
         });
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to sign key");
@@ -497,9 +501,9 @@ export function useGpgAgent() {
       if (!isTauri()) return null;
       setError(null);
       try {
-        return await invoke<EncryptionResult>("gpg_encrypt", {
+        return await invoke<EncryptionResult>("gpg_encrypt_data", {
           recipients,
-          data,
+          dataB64: bytesToBase64(data),
           armor,
           sign,
           signer,
@@ -517,7 +521,9 @@ export function useGpgAgent() {
       if (!isTauri()) return null;
       setError(null);
       try {
-        return await invoke<DecryptionResult>("gpg_decrypt", { data });
+        return await invoke<DecryptionResult>("gpg_decrypt_data", {
+          dataB64: bytesToBase64(data),
+        });
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to decrypt data");
         return null;
@@ -528,18 +534,15 @@ export function useGpgAgent() {
 
   // ── Trust Management ───────────────────────────────────
 
-  const setTrust = useCallback(
-    async (keyId: string, trust: KeyOwnerTrust) => {
-      if (!isTauri()) return;
-      setError(null);
-      try {
-        await invoke("gpg_set_trust", { keyId, trust });
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to set trust");
-      }
-    },
-    [],
-  );
+  const setTrust = useCallback(async (keyId: string, trust: KeyOwnerTrust) => {
+    if (!isTauri()) return;
+    setError(null);
+    try {
+      await invoke("gpg_set_owner_trust", { keyId, trust });
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to set trust");
+    }
+  }, []);
 
   const updateTrustDb = useCallback(async () => {
     if (!isTauri()) return;
@@ -559,10 +562,9 @@ export function useGpgAgent() {
     setLoading(true);
     setError(null);
     try {
-      const results = await invoke<KeyServerResult[]>(
-        "gpg_search_keyserver",
-        { query },
-      );
+      const results = await invoke<KeyServerResult[]>("gpg_search_keyserver", {
+        query,
+      });
       setKeyserverResults(results);
     } catch (e: any) {
       setError(e?.toString() ?? "Failed to search keyserver");
@@ -585,18 +587,15 @@ export function useGpgAgent() {
     [fetchKeys],
   );
 
-  const sendToKeyserver = useCallback(
-    async (keyId: string) => {
-      if (!isTauri()) return;
-      setError(null);
-      try {
-        await invoke("gpg_send_to_keyserver", { keyId });
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to send to keyserver");
-      }
-    },
-    [],
-  );
+  const sendToKeyserver = useCallback(async (keyId: string) => {
+    if (!isTauri()) return;
+    setError(null);
+    try {
+      await invoke("gpg_send_to_keyserver", { keyId });
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to send to keyserver");
+    }
+  }, []);
 
   const refreshKeys = useCallback(async () => {
     if (!isTauri()) return;
@@ -629,25 +628,22 @@ export function useGpgAgent() {
     if (!isTauri()) return null;
     setError(null);
     try {
-      return await invoke<SmartCardInfo[]>("gpg_card_list");
+      return await invoke<SmartCardInfo[]>("gpg_list_cards");
     } catch (e: any) {
       setError(e?.toString() ?? "Failed to list cards");
       return null;
     }
   }, []);
 
-  const cardChangePin = useCallback(
-    async (pinType: string) => {
-      if (!isTauri()) return;
-      setError(null);
-      try {
-        await invoke("gpg_card_change_pin", { pinType });
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to change PIN");
-      }
-    },
-    [],
-  );
+  const cardChangePin = useCallback(async (pinType: string) => {
+    if (!isTauri()) return;
+    setError(null);
+    try {
+      await invoke("gpg_card_change_pin", { pinType });
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to change PIN");
+    }
+  }, []);
 
   const cardFactoryReset = useCallback(async () => {
     if (!isTauri()) return;
@@ -660,25 +656,22 @@ export function useGpgAgent() {
     }
   }, [getCardStatus]);
 
-  const cardSetAttr = useCallback(
-    async (attr: string, value: string) => {
-      if (!isTauri()) return;
-      setError(null);
-      try {
-        await invoke("gpg_card_set_attr", { attr, value });
-      } catch (e: any) {
-        setError(e?.toString() ?? "Failed to set card attribute");
-      }
-    },
-    [],
-  );
+  const cardSetAttr = useCallback(async (attr: string, value: string) => {
+    if (!isTauri()) return;
+    setError(null);
+    try {
+      await invoke("gpg_card_set_attribute", { attribute: attr, value });
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to set card attribute");
+    }
+  }, []);
 
   const cardGenKey = useCallback(
     async (slot: string, algo: string) => {
       if (!isTauri()) return;
       setError(null);
       try {
-        await invoke("gpg_card_gen_key", { slot, algo });
+        await invoke("gpg_card_generate_key", { slot, algorithm: algo });
         await getCardStatus();
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to generate card key");

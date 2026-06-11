@@ -47,7 +47,9 @@ pub async fn test_proxy_command(
 
     Ok(ProxyCommandStatus {
         session_id: String::new(),
-        command: cmd_string,
+        // Redact before returning — the expanded command may embed inline
+        // `user:pass@host` or `--proxy-auth` credentials.
+        command: redact_proxy_credentials(&cmd_string),
         alive,
         pid: Some(pid),
     })
@@ -55,6 +57,10 @@ pub async fn test_proxy_command(
 
 /// Expand a ProxyCommand template/command with the given host/port/username
 /// placeholders and return the resulting string. Useful for preview in the UI.
+///
+/// The returned string is credential-redacted: inline `user:pass@host`,
+/// `--proxy-auth`, `-P`/`-p` secrets and similar shapes are masked so the
+/// preview (which may be copied into logs) never carries plaintext secrets.
 #[tauri::command]
 pub fn expand_proxy_command(
     config: ProxyCommandConfig,
@@ -62,5 +68,6 @@ pub fn expand_proxy_command(
     port: u16,
     username: String,
 ) -> Result<String, String> {
-    build_command_string(&config, &host, port, &username)
+    let expanded = build_command_string(&config, &host, port, &username)?;
+    Ok(redact_proxy_credentials(&expanded))
 }

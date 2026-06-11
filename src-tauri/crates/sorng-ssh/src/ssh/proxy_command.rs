@@ -65,17 +65,38 @@ fn validate_shell_safe(input: &str) -> Result<String, String> {
     }
 }
 
-/// Redact credentials from a proxy command string before logging.
-fn redact_proxy_credentials(cmd: &str) -> String {
+/// Redact credentials from a proxy command string before it is logged or
+/// returned to the frontend.
+///
+/// This masks:
+/// - `--proxy-auth user:pass` (ncat) and `-P pass` (connect) flag values
+/// - inline `user:pass@host` authorities (connect / ssh URLs)
+/// - and then defers to the shared [`crate::redact::redact_secrets`] sweep
+///   which additionally catches `-p<password>` flags, `key=secret`/`token`
+///   pairs, private-key blocks, and AWS/GCP token shapes.
+///
+/// Callers must use the redacted value anywhere the expanded command can reach
+/// a log sink or a serialised `ProxyCommandStatus`.
+///
+/// NOTE: must be `pub` (not `pub(crate)`) — `proxy_command_cmds.rs` is
+/// `include!`-d into BOTH `sorng-ssh` and the `app` crate (via the
+/// `src-tauri/src/ssh_commands.rs` shim, which re-exports this module with
+/// `pub use crate::ssh::proxy_command::*`). A `pub(crate)` item would not flow
+/// through that glob re-export into the app compile context, breaking the
+/// `use super::proxy_command::*;` import there (E0425). Mirrors the other
+/// `pub` proxy-command symbols referenced the same way.
+pub fn redact_proxy_credentials(cmd: &str) -> String {
     // Redact --proxy-auth user:pass patterns (ncat)
     let result = regex::Regex::new(r"--proxy-auth\s+\S+")
         .expect("valid regex literal")
         .replace_all(cmd, "--proxy-auth [REDACTED]");
-    // Redact user:pass@host patterns (connect)
+    // Redact user:pass@host patterns (connect / inline URL credentials)
     let result = regex::Regex::new(r"\S+:\S+@(\S+)")
         .expect("valid regex literal")
         .replace_all(&result, "[REDACTED]@$1");
-    result.to_string()
+    // Defer to the shared crate-wide secret sweep for the remaining shapes
+    // (-p<pass> flags, key=secret pairs, key blocks, cloud tokens).
+    crate::redact::redact_secrets(&result, &[])
 }
 
 /// Expand `%h`, `%p`, `%r` placeholders in a command string.
@@ -343,7 +364,7 @@ pub fn spawn_proxy_command(
         log::info!(
             "[{}] ProxyCommand `{}` terminated",
             session_id_owned,
-            cmd_clone
+            redact_proxy_credentials(&cmd_clone)
         );
     });
 
@@ -405,7 +426,9 @@ pub fn get_proxy_command_status(session_id: &str) -> Result<Option<ProxyCommandS
         let alive = !state.cancelled.load(std::sync::atomic::Ordering::Relaxed);
         ProxyCommandStatus {
             session_id: session_id.to_string(),
-            command: state.command.clone(),
+            // Never surface the raw expanded command — it can contain inline
+            // `user:pass@host` or proxy-auth credentials.
+            command: redact_proxy_credentials(&state.command),
             alive,
             pid: None, // child moved into relay thread
         }
@@ -434,6 +457,47 @@ pub fn spawn_shell_command(cmd: &str) -> std::io::Result<Child> {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::redact_proxy_credentials;
+
+    #[test]
+    fn redacts_inline_user_pass_at_host() {
+        let cmd = "connect -S alice:s3cr3t@proxy.example.com:1080 target.example.com 22";
+        let red = redact_proxy_credentials(cmd);
+        assert!(!red.contains("s3cr3t"), "password leaked: {red}");
+        assert!(!red.contains("alice:s3cr3t"), "user:pass leaked: {red}");
+        // The non-secret host/port context is preserved.
+        assert!(red.contains("target.example.com"));
+        assert!(red.contains("[REDACTED]@"));
+    }
+
+    #[test]
+    fn redacts_ncat_proxy_auth_flag() {
+        let cmd = "ncat --proxy-type socks5 --proxy 10.0.0.1:1080 --proxy-auth bob:hunter2 host 22";
+        let red = redact_proxy_credentials(cmd);
+        assert!(!red.contains("hunter2"), "proxy-auth secret leaked: {red}");
+        assert!(!red.contains("bob:hunter2"), "proxy-auth pair leaked: {red}");
+        assert!(red.contains("--proxy-auth [REDACTED]"));
+    }
+
+    #[test]
+    fn redacts_short_password_flag_via_shared_sweep() {
+        // -psecret is caught by the shared crate::redact sweep.
+        let cmd = "someproxy -psupersecret host 22";
+        let red = redact_proxy_credentials(cmd);
+        assert!(!red.contains("supersecret"), "-p secret leaked: {red}");
+    }
+
+    #[test]
+    fn leaves_credential_free_command_intact() {
+        let cmd = "nc target.example.com 22";
+        assert_eq!(redact_proxy_credentials(cmd), cmd);
     }
 }
 
