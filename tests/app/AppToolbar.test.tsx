@@ -4,7 +4,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { AppToolbar } from "../../src/components/app/AppToolbar";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string, defaultValue?: string) => defaultValue ?? key }),
+  useTranslation: () => ({
+    t: (key: string, defaultValue?: string) => defaultValue ?? key,
+  }),
 }));
 
 vi.mock("../../src/components/sync/BackupStatusPopup", () => ({
@@ -94,6 +96,17 @@ describe("AppToolbar", () => {
     expect(container.querySelector(".app-bar")).toBeTruthy();
   });
 
+  it("uses title-bar drag regions for both top bars", () => {
+    render(<AppToolbar {...(makeProps() as any)} />);
+
+    expect(screen.getByTestId("toolbar")).toHaveAttribute(
+      "data-tauri-drag-region",
+    );
+    expect(screen.getByTestId("toolbar-actions")).toHaveAttribute(
+      "data-tauri-drag-region",
+    );
+  });
+
   it("shows the settings button when showSettingsIcon is true and clicking it calls setShowSettings", () => {
     const props = makeProps();
     render(<AppToolbar {...(props as any)} />);
@@ -105,7 +118,9 @@ describe("AppToolbar", () => {
 
   it("opens Import / Export through the toolbar action", () => {
     const props = makeProps({
-      databaseManager: { getCurrentDatabase: () => ({ id: "col-1", name: "Test" }) } as any,
+      databaseManager: {
+        getCurrentDatabase: () => ({ id: "col-1", name: "Test" }),
+      } as any,
     });
 
     render(<AppToolbar {...(props as any)} />);
@@ -159,7 +174,9 @@ describe("AppToolbar", () => {
 
   it("shows RDP sessions button when showRdpSessionsIcon is enabled", () => {
     const props = makeProps({
-      databaseManager: { getCurrentDatabase: () => ({ id: "col-1", name: "Test" }) } as any,
+      databaseManager: {
+        getCurrentDatabase: () => ({ id: "col-1", name: "Test" }),
+      } as any,
     });
     render(<AppToolbar {...(props as any)} />);
     const btn = screen.getByTitle("RDP Sessions");

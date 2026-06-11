@@ -30,7 +30,10 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { GlobalSettings, CloudSyncProvider } from "../../types/settings/settings";
+import {
+  GlobalSettings,
+  CloudSyncProvider,
+} from "../../types/settings/settings";
 import { Connection } from "../../types/connection/connection";
 import { BackupStatusPopup } from "../sync/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "../sync/CloudSyncStatusPopup";
@@ -163,7 +166,11 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           <button
             onClick={handleToggleAlwaysOnTop}
             className="app-bar-button p-2"
-            title={isAlwaysOnTop ? t("toolbar.unpinWindow", "Unpin window") : t("toolbar.pinWindow", "Pin window")}
+            title={
+              isAlwaysOnTop
+                ? t("toolbar.unpinWindow", "Unpin window")
+                : t("toolbar.pinWindow", "Pin window")
+            }
           >
             <Pin
               size={14}
@@ -204,8 +211,13 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
         </div>
       </div>
 
-      {/* Secondary actions bar */}
-      <div className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none relative z-20">
+      {/* Secondary actions bar. It is also a drag region so empty space
+          behaves like the title bar while the buttons remain clickable. */}
+      <div
+        data-testid="toolbar-actions"
+        className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none relative z-20"
+        data-tauri-drag-region
+      >
         <div className="flex items-center space-x-1">
           {appSettings.showQuickConnectIcon && (
             <button
@@ -322,7 +334,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowBulkSSH(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t('bulkSsh.title', 'Bulk SSH')}
+              title={t("bulkSsh.title", "Bulk SSH")}
             >
               <Terminal size={14} />
             </button>
@@ -332,7 +344,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowServerStats(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t('serverStats.title', 'Server Stats')}
+              title={t("serverStats.title", "Server Stats")}
             >
               <Server size={14} />
             </button>
@@ -342,7 +354,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowOpkssh(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t('opkssh.title', 'opkssh')}
+              title={t("opkssh.title", "opkssh")}
             >
               <Shield size={14} />
             </button>
@@ -352,7 +364,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowMcpServer(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t('mcpServer.title', 'MCP Server')}
+              title={t("mcpServer.title", "MCP Server")}
             >
               <Server size={14} />
             </button>
@@ -362,7 +374,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowScriptManager(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t('scriptManager.title', 'Script Manager')}
+              title={t("scriptManager.title", "Script Manager")}
             >
               <FileCode size={14} />
             </button>
@@ -450,9 +462,9 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                   settings: appSettings,
                   timestamp: Date.now(),
                 };
-                await invoke('backup_run_now', {
-                  backupType: 'manual',
-                  data
+                await invoke("backup_run_now", {
+                  backupType: "manual",
+                  data,
                 });
               }}
               onOpenSettings={() => setShowSettings(true)}
@@ -478,12 +490,12 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
                     settings: appSettings,
                     timestamp: Date.now(),
                   };
-                  await invoke('backup_run_now', {
-                    backupType: 'manual',
-                    data
+                  await invoke("backup_run_now", {
+                    backupType: "manual",
+                    data,
                   });
                 } catch (error) {
-                  console.error('Backup failed:', error);
+                  console.error("Backup failed:", error);
                 }
               }}
               onOpenSettings={() => setShowSettings(true)}
