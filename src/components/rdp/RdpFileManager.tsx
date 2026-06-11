@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -34,6 +35,11 @@ interface HistoryEntry {
   files: string[];
 }
 
+interface BatchExportEntry {
+  filename: string;
+  content: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
@@ -45,11 +51,53 @@ function basename(path: string): string {
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
-      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
     return iso;
   }
+}
+
+const SUPPORTED_RDP_SETTINGS = [
+  "full address",
+  "server port",
+  "username",
+  "domain",
+  "screen mode id",
+  "desktopwidth",
+  "desktopheight",
+  "session bpp",
+  "use multimon",
+  "smart sizing",
+  "redirectclipboard",
+  "redirectprinters",
+  "drivestoredirect",
+  "audiomode",
+  "authentication level",
+  "enablecredsspsupport",
+  "gatewayhostname",
+];
+
+function storageConnections(data: unknown): RdpConnection[] {
+  const value =
+    data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const connections = Array.isArray(value.connections) ? value.connections : [];
+  return connections
+    .filter(
+      (conn): conn is Record<string, unknown> =>
+        Boolean(conn) && typeof conn === "object",
+    )
+    .filter((conn) => String(conn.protocol ?? "").toLowerCase() === "rdp")
+    .map((conn) => ({
+      ...conn,
+      name: String(conn.name ?? conn.hostname ?? "RDP connection"),
+      hostname: String(conn.hostname ?? conn.host ?? ""),
+      port: typeof conn.port === "number" ? conn.port : 3389,
+      username: typeof conn.username === "string" ? conn.username : undefined,
+    }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -62,21 +110,16 @@ export const RdpFileManager: React.FC = () => {
   /* ── state ── */
   const [activeTab, setActiveTab] = useState<"import" | "export">("import");
   const [importEntries, setImportEntries] = useState<ImportEntry[]>([]);
-  const [exportConnections, setExportConnections] = useState<RdpConnection[]>([]);
+  const [exportConnections, setExportConnections] = useState<RdpConnection[]>(
+    [],
+  );
   const [exportSelected, setExportSelected] = useState<Set<number>>(new Set());
   const [exportPreview, setExportPreview] = useState<string>("");
-  const [supportedSettings, setSupportedSettings] = useState<string[]>([]);
+  const [supportedSettings] = useState<string[]>(SUPPORTED_RDP_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  /* ── load supported settings on mount ── */
-  useEffect(() => {
-    invoke<string[]>("rdp_get_supported_settings")
-      .then(setSupportedSettings)
-      .catch(() => {/* ignore */});
-  }, []);
 
   /* ── clear error after 5 s ── */
   useEffect(() => {
@@ -85,9 +128,17 @@ export const RdpFileManager: React.FC = () => {
     return () => clearTimeout(id);
   }, [error]);
 
-  const pushHistory = useCallback((action: HistoryEntry["action"], files: string[]) => {
-    setHistory((h) => [{ timestamp: new Date().toISOString(), action, files }, ...h].slice(0, 50));
-  }, []);
+  const pushHistory = useCallback(
+    (action: HistoryEntry["action"], files: string[]) => {
+      setHistory((h) =>
+        [{ timestamp: new Date().toISOString(), action, files }, ...h].slice(
+          0,
+          50,
+        ),
+      );
+    },
+    [],
+  );
 
   /* ── import handlers ── */
   const handlePickFiles = useCallback(async () => {
@@ -102,14 +153,31 @@ export const RdpFileManager: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const parsed = await invoke<(RdpConnection | null)[]>("rdp_parse_batch", { filePaths: paths });
       const entries: ImportEntry[] = await Promise.all(
-        paths.map(async (fp, i) => {
-          let validation: ValidationResult | null = null;
+        paths.map(async (fp) => {
+          let validation: ValidationResult = {
+            valid: false,
+            errors: [],
+            warnings: [],
+          };
+          let connection: RdpConnection | null = null;
           try {
-            validation = await invoke<ValidationResult>("rdp_validate", { filePath: fp });
-          } catch { /* skip */ }
-          return { filePath: fp, connection: parsed[i] ?? null, validation, selected: true };
+            const content = await readTextFile(fp);
+            const issues = await invoke<string[]>("rdpfile_validate", {
+              content,
+            });
+            validation = {
+              valid: issues.length === 0,
+              errors: [],
+              warnings: issues,
+            };
+            connection = await invoke<RdpConnection>("rdpfile_import", {
+              content,
+            });
+          } catch (err) {
+            validation = { valid: false, errors: [String(err)], warnings: [] };
+          }
+          return { filePath: fp, connection, validation, selected: true };
         }),
       );
       setImportEntries((prev) => [...prev, ...entries]);
@@ -121,13 +189,18 @@ export const RdpFileManager: React.FC = () => {
   }, []);
 
   const toggleImportEntry = useCallback((idx: number) => {
-    setImportEntries((prev) => prev.map((e, i) => (i === idx ? { ...e, selected: !e.selected } : e)));
+    setImportEntries((prev) =>
+      prev.map((e, i) => (i === idx ? { ...e, selected: !e.selected } : e)),
+    );
   }, []);
 
   const handleImportSelected = useCallback(() => {
     const imported = importEntries.filter((e) => e.selected && e.connection);
     if (imported.length === 0) return;
-    pushHistory("import", imported.map((e) => e.filePath));
+    pushHistory(
+      "import",
+      imported.map((e) => e.filePath),
+    );
     setImportEntries([]);
   }, [importEntries, pushHistory]);
 
@@ -137,8 +210,8 @@ export const RdpFileManager: React.FC = () => {
   const handleLoadConnections = useCallback(async () => {
     try {
       setLoading(true);
-      const conns = await invoke<RdpConnection[]>("rdp_parse_batch", { filePaths: [] });
-      setExportConnections(conns);
+      const data = await invoke<unknown>("load_data");
+      setExportConnections(storageConnections(data));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -157,7 +230,9 @@ export const RdpFileManager: React.FC = () => {
 
   const handlePreview = useCallback(async (conn: RdpConnection) => {
     try {
-      const preview = await invoke<string>("rdp_preview", { connection: conn });
+      const preview = await invoke<string>("rdpfile_export", {
+        connection: conn,
+      });
       setExportPreview(preview);
     } catch (e) {
       setError(String(e));
@@ -165,7 +240,9 @@ export const RdpFileManager: React.FC = () => {
   }, []);
 
   const handleExportSelected = useCallback(async () => {
-    const conns = [...exportSelected].map((i) => exportConnections[i]).filter(Boolean);
+    const conns = [...exportSelected]
+      .map((i) => exportConnections[i])
+      .filter(Boolean);
     if (conns.length === 0) return;
 
     try {
@@ -177,13 +254,29 @@ export const RdpFileManager: React.FC = () => {
           defaultPath: `${conns[0].name || "connection"}.rdp`,
         });
         if (!outPath) return;
-        await invoke("rdp_generate_file", { connection: conns[0], outputPath: outPath });
+        const content = await invoke<string>("rdpfile_export", {
+          connection: conns[0],
+        });
+        await writeTextFile(outPath, content);
         pushHistory("export", [outPath]);
       } else {
-        const outDir = await open({ directory: true });
+        const selectedDir = await open({ directory: true });
+        const outDir = Array.isArray(selectedDir)
+          ? selectedDir[0]
+          : selectedDir;
         if (!outDir) return;
-        await invoke("rdp_generate_batch", { connections: conns, outputDir: outDir });
-        pushHistory("export", conns.map((c) => `${outDir}/${c.name || "connection"}.rdp`));
+        const entries = await invoke<BatchExportEntry[]>(
+          "rdpfile_batch_export",
+          { connections: conns },
+        );
+        const written = await Promise.all(
+          entries.map(async (entry) => {
+            const path = `${outDir}/${entry.filename}`;
+            await writeTextFile(path, entry.content);
+            return path;
+          }),
+        );
+        pushHistory("export", written);
       }
       setExportSelected(new Set());
     } catch (e) {
@@ -195,7 +288,9 @@ export const RdpFileManager: React.FC = () => {
 
   /* ── render helpers ── */
   const validCount = importEntries.filter((e) => e.validation?.valid).length;
-  const invalidCount = importEntries.filter((e) => e.validation && !e.validation.valid).length;
+  const invalidCount = importEntries.filter(
+    (e) => e.validation && !e.validation.valid,
+  ).length;
   const switchTab = (nextTab: "import" | "export") => setActiveTab(nextTab);
   const handleTabKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -211,8 +306,14 @@ export const RdpFileManager: React.FC = () => {
     <div className="sor-rdpmgr">
       {/* Header */}
       <header className="sor-rdpmgr-header">
-        <h2 className="sor-rdpmgr-title">{t("rdpManager.title", "RDP File Manager")}</h2>
-        <div className="sor-rdpmgr-actions" role="tablist" aria-label="RDP file manager tabs">
+        <h2 className="sor-rdpmgr-title">
+          {t("rdpManager.title", "RDP File Manager")}
+        </h2>
+        <div
+          className="sor-rdpmgr-actions"
+          role="tablist"
+          aria-label="RDP file manager tabs"
+        >
           <button
             id="rdp-file-manager-tab-import"
             type="button"
@@ -241,22 +342,39 @@ export const RdpFileManager: React.FC = () => {
       </header>
 
       {/* Error banner */}
-      {error && <div className="sor-rdpmgr-alert sor-rdpmgr-alert--error">{error}</div>}
+      {error && (
+        <div className="sor-rdpmgr-alert sor-rdpmgr-alert--error">{error}</div>
+      )}
 
       {/* Loading overlay */}
-      {loading && <div className="sor-rdpmgr-loading"><span className="sor-rdpmgr-spinner" />{t("common.loading", "Loading…")}</div>}
+      {loading && (
+        <div className="sor-rdpmgr-loading">
+          <span className="sor-rdpmgr-spinner" />
+          {t("common.loading", "Loading…")}
+        </div>
+      )}
 
       {/* ── Import tab ── */}
       {activeTab === "import" && (
-        <section className="sor-rdpmgr-section" role="tabpanel" id="rdp-file-manager-panel-import" aria-labelledby="rdp-file-manager-tab-import">
-          <h3 className="sor-rdpmgr-section-title">{t("rdpManager.importTitle", "Import RDP Files")}</h3>
+        <section
+          className="sor-rdpmgr-section"
+          role="tabpanel"
+          id="rdp-file-manager-panel-import"
+          aria-labelledby="rdp-file-manager-tab-import"
+        >
+          <h3 className="sor-rdpmgr-section-title">
+            {t("rdpManager.importTitle", "Import RDP Files")}
+          </h3>
 
           {/* Drop-zone / picker */}
           <div
             className="sor-rdpmgr-dropzone"
             role="button"
             tabIndex={0}
-            aria-label={t("rdpManager.dropHint", "Click to browse or drag .rdp files here")}
+            aria-label={t(
+              "rdpManager.dropHint",
+              "Click to browse or drag .rdp files here",
+            )}
             onClick={handlePickFiles}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -266,15 +384,22 @@ export const RdpFileManager: React.FC = () => {
             }}
           >
             <p className="sor-rdpmgr-dropzone-label">
-              {t("rdpManager.dropHint", "Click to browse or drag .rdp files here")}
+              {t(
+                "rdpManager.dropHint",
+                "Click to browse or drag .rdp files here",
+              )}
             </p>
           </div>
 
           {/* Validation summary */}
           {importEntries.length > 0 && (
             <div className="sor-rdpmgr-validation-summary">
-              <span className="sor-rdpmgr-badge sor-rdpmgr-badge--success">{validCount} {t("rdpManager.valid", "valid")}</span>
-              <span className="sor-rdpmgr-badge sor-rdpmgr-badge--error">{invalidCount} {t("rdpManager.invalid", "invalid")}</span>
+              <span className="sor-rdpmgr-badge sor-rdpmgr-badge--success">
+                {validCount} {t("rdpManager.valid", "valid")}
+              </span>
+              <span className="sor-rdpmgr-badge sor-rdpmgr-badge--error">
+                {invalidCount} {t("rdpManager.invalid", "invalid")}
+              </span>
             </div>
           )}
 
@@ -285,27 +410,52 @@ export const RdpFileManager: React.FC = () => {
                 <thead>
                   <tr>
                     <th className="sor-rdpmgr-th">{""}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.file", "File")}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.host", "Host")}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.user", "User")}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.status", "Status")}</th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.file", "File")}
+                    </th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.host", "Host")}
+                    </th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.user", "User")}
+                    </th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.status", "Status")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {importEntries.map((entry, i) => (
                     <tr key={entry.filePath} className="sor-rdpmgr-tr">
                       <td className="sor-rdpmgr-td">
-                        <input type="checkbox" checked={entry.selected} onChange={() => toggleImportEntry(i)} />
+                        <input
+                          type="checkbox"
+                          checked={entry.selected}
+                          onChange={() => toggleImportEntry(i)}
+                        />
                       </td>
-                      <td className="sor-rdpmgr-td sor-rdpmgr-mono">{basename(entry.filePath)}</td>
-                      <td className="sor-rdpmgr-td">{entry.connection?.hostname ?? "—"}</td>
-                      <td className="sor-rdpmgr-td">{entry.connection?.username ?? "—"}</td>
+                      <td className="sor-rdpmgr-td sor-rdpmgr-mono">
+                        {basename(entry.filePath)}
+                      </td>
                       <td className="sor-rdpmgr-td">
-                        {entry.validation?.valid
-                          ? <span className="sor-rdpmgr-badge sor-rdpmgr-badge--success">{t("rdpManager.ok", "OK")}</span>
-                          : <span className="sor-rdpmgr-badge sor-rdpmgr-badge--error" title={entry.validation?.errors.join("; ")}>
-                              {t("rdpManager.err", "Error")}
-                            </span>}
+                        {entry.connection?.hostname ?? "—"}
+                      </td>
+                      <td className="sor-rdpmgr-td">
+                        {entry.connection?.username ?? "—"}
+                      </td>
+                      <td className="sor-rdpmgr-td">
+                        {entry.validation?.valid ? (
+                          <span className="sor-rdpmgr-badge sor-rdpmgr-badge--success">
+                            {t("rdpManager.ok", "OK")}
+                          </span>
+                        ) : (
+                          <span
+                            className="sor-rdpmgr-badge sor-rdpmgr-badge--error"
+                            title={entry.validation?.errors.join("; ")}
+                          >
+                            {t("rdpManager.err", "Error")}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -317,10 +467,17 @@ export const RdpFileManager: React.FC = () => {
           {/* Import actions */}
           {importEntries.length > 0 && (
             <div className="sor-rdpmgr-bar">
-              <button className="sor-rdpmgr-btn sor-rdpmgr-btn--primary" disabled={loading || importEntries.every((e) => !e.selected)} onClick={handleImportSelected}>
-                {t("rdpManager.importSelected", "Import Selected")} ({importEntries.filter((e) => e.selected).length})
+              <button
+                className="sor-rdpmgr-btn sor-rdpmgr-btn--primary"
+                disabled={loading || importEntries.every((e) => !e.selected)}
+                onClick={handleImportSelected}
+              >
+                {t("rdpManager.importSelected", "Import Selected")} (
+                {importEntries.filter((e) => e.selected).length})
               </button>
-              <button className="sor-rdpmgr-btn" onClick={clearImport}>{t("rdpManager.clear", "Clear")}</button>
+              <button className="sor-rdpmgr-btn" onClick={clearImport}>
+                {t("rdpManager.clear", "Clear")}
+              </button>
             </div>
           )}
         </section>
@@ -328,10 +485,21 @@ export const RdpFileManager: React.FC = () => {
 
       {/* ── Export tab ── */}
       {activeTab === "export" && (
-        <section className="sor-rdpmgr-section" role="tabpanel" id="rdp-file-manager-panel-export" aria-labelledby="rdp-file-manager-tab-export">
-          <h3 className="sor-rdpmgr-section-title">{t("rdpManager.exportTitle", "Export RDP Files")}</h3>
+        <section
+          className="sor-rdpmgr-section"
+          role="tabpanel"
+          id="rdp-file-manager-panel-export"
+          aria-labelledby="rdp-file-manager-tab-export"
+        >
+          <h3 className="sor-rdpmgr-section-title">
+            {t("rdpManager.exportTitle", "Export RDP Files")}
+          </h3>
 
-          <button className="sor-rdpmgr-btn" onClick={handleLoadConnections} disabled={loading}>
+          <button
+            className="sor-rdpmgr-btn"
+            onClick={handleLoadConnections}
+            disabled={loading}
+          >
             {t("rdpManager.loadConnections", "Load Connections")}
           </button>
 
@@ -342,21 +510,37 @@ export const RdpFileManager: React.FC = () => {
                 <thead>
                   <tr>
                     <th className="sor-rdpmgr-th">{""}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.name", "Name")}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.host", "Host")}</th>
-                    <th className="sor-rdpmgr-th">{t("rdpManager.preview", "Preview")}</th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.name", "Name")}
+                    </th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.host", "Host")}
+                    </th>
+                    <th className="sor-rdpmgr-th">
+                      {t("rdpManager.preview", "Preview")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {exportConnections.map((conn, i) => (
                     <tr key={`${conn.name}-${i}`} className="sor-rdpmgr-tr">
                       <td className="sor-rdpmgr-td">
-                        <input type="checkbox" checked={exportSelected.has(i)} onChange={() => toggleExportEntry(i)} />
+                        <input
+                          type="checkbox"
+                          checked={exportSelected.has(i)}
+                          onChange={() => toggleExportEntry(i)}
+                        />
                       </td>
                       <td className="sor-rdpmgr-td">{conn.name}</td>
-                      <td className="sor-rdpmgr-td">{conn.hostname}{conn.port ? `:${conn.port}` : ""}</td>
                       <td className="sor-rdpmgr-td">
-                        <button className="sor-rdpmgr-link" onClick={() => handlePreview(conn)}>
+                        {conn.hostname}
+                        {conn.port ? `:${conn.port}` : ""}
+                      </td>
+                      <td className="sor-rdpmgr-td">
+                        <button
+                          className="sor-rdpmgr-link"
+                          onClick={() => handlePreview(conn)}
+                        >
                           {t("rdpManager.show", "Show")}
                         </button>
                       </td>
@@ -370,7 +554,9 @@ export const RdpFileManager: React.FC = () => {
           {/* Export preview */}
           {exportPreview && (
             <div className="sor-rdpmgr-preview">
-              <h4 className="sor-rdpmgr-preview-title">{t("rdpManager.previewTitle", "RDP File Preview")}</h4>
+              <h4 className="sor-rdpmgr-preview-title">
+                {t("rdpManager.previewTitle", "RDP File Preview")}
+              </h4>
               <pre className="sor-rdpmgr-code">{exportPreview}</pre>
             </div>
           )}
@@ -378,8 +564,13 @@ export const RdpFileManager: React.FC = () => {
           {/* Export action */}
           {exportConnections.length > 0 && (
             <div className="sor-rdpmgr-bar">
-              <button className="sor-rdpmgr-btn sor-rdpmgr-btn--primary" disabled={loading || exportSelected.size === 0} onClick={handleExportSelected}>
-                {t("rdpManager.exportSelected", "Export Selected")} ({exportSelected.size})
+              <button
+                className="sor-rdpmgr-btn sor-rdpmgr-btn--primary"
+                disabled={loading || exportSelected.size === 0}
+                onClick={handleExportSelected}
+              >
+                {t("rdpManager.exportSelected", "Export Selected")} (
+                {exportSelected.size})
               </button>
             </div>
           )}
@@ -388,17 +579,28 @@ export const RdpFileManager: React.FC = () => {
 
       {/* ── Supported Settings ── */}
       <section className="sor-rdpmgr-section">
-        <button className="sor-rdpmgr-collapse-toggle" onClick={() => setSettingsOpen((v) => !v)}>
-          <span>{t("rdpManager.supportedSettings", "Supported RDP Settings")}</span>
-          <span className="sor-rdpmgr-chevron" data-open={settingsOpen}>▸</span>
+        <button
+          className="sor-rdpmgr-collapse-toggle"
+          onClick={() => setSettingsOpen((v) => !v)}
+        >
+          <span>
+            {t("rdpManager.supportedSettings", "Supported RDP Settings")}
+          </span>
+          <span className="sor-rdpmgr-chevron" data-open={settingsOpen}>
+            ▸
+          </span>
         </button>
         {settingsOpen && (
           <ul className="sor-rdpmgr-settings-list">
             {supportedSettings.map((s) => (
-              <li key={s} className="sor-rdpmgr-settings-item">{s}</li>
+              <li key={s} className="sor-rdpmgr-settings-item">
+                {s}
+              </li>
             ))}
             {supportedSettings.length === 0 && (
-              <li className="sor-rdpmgr-muted">{t("rdpManager.noSettings", "No settings loaded")}</li>
+              <li className="sor-rdpmgr-muted">
+                {t("rdpManager.noSettings", "No settings loaded")}
+              </li>
             )}
           </ul>
         )}
@@ -406,18 +608,31 @@ export const RdpFileManager: React.FC = () => {
 
       {/* ── History log ── */}
       <section className="sor-rdpmgr-section">
-        <h3 className="sor-rdpmgr-section-title">{t("rdpManager.history", "Import / Export History")}</h3>
+        <h3 className="sor-rdpmgr-section-title">
+          {t("rdpManager.history", "Import / Export History")}
+        </h3>
         {history.length === 0 && (
-          <p className="sor-rdpmgr-muted">{t("rdpManager.noHistory", "No activity yet")}</p>
+          <p className="sor-rdpmgr-muted">
+            {t("rdpManager.noHistory", "No activity yet")}
+          </p>
         )}
         <ul className="sor-rdpmgr-history">
           {history.map((h, i) => (
-            <li key={`history-${h.action}-${h.timestamp}`} className="sor-rdpmgr-history-item">
-              <span className={`sor-rdpmgr-badge sor-rdpmgr-badge--${h.action === "import" ? "info" : "success"}`}>
+            <li
+              key={`history-${h.action}-${h.timestamp}`}
+              className="sor-rdpmgr-history-item"
+            >
+              <span
+                className={`sor-rdpmgr-badge sor-rdpmgr-badge--${h.action === "import" ? "info" : "success"}`}
+              >
                 {h.action}
               </span>
-              <span className="sor-rdpmgr-history-time">{formatTime(h.timestamp)}</span>
-              <span className="sor-rdpmgr-mono">{h.files.map(basename).join(", ")}</span>
+              <span className="sor-rdpmgr-history-time">
+                {formatTime(h.timestamp)}
+              </span>
+              <span className="sor-rdpmgr-mono">
+                {h.files.map(basename).join(", ")}
+              </span>
             </li>
           ))}
         </ul>
