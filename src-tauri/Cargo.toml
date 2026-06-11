@@ -222,7 +222,13 @@ futures = "0.3"
 async-trait = "0.1"
 
 # ── Framework ─────────────────────────────────────────────────────────
-tauri = { version = "=2.11.0", features = ["devtools", "webview-data-url"] }
+# NOTE: the `devtools` Tauri feature is intentionally NOT enabled here.
+# Tauri auto-enables DevTools on debug builds (`cfg(debug_assertions)`),
+# so dev workflows keep DevTools, while release builds (`--release`) ship
+# WITHOUT the DevTools machinery. DevTools-related code is additionally
+# gated by `cfg(any(debug_assertions, feature = "devtools"))` to match
+# Tauri's own gate on `WebviewWindow::open_devtools`.
+tauri = { version = "=2.11.0", features = ["webview-data-url"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }

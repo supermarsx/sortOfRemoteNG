@@ -223,6 +223,7 @@ pub fn is_command(command: &str) -> bool {
             | "dash_force_refresh"
             | "dash_get_config"
             | "dash_update_config"
+            | "dash_set_thresholds"
             | "dash_get_layout"
             | "dash_update_layout"
             | "dash_get_heatmap"
@@ -646,6 +647,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         dashboard_commands::dash_force_refresh,
         dashboard_commands::dash_get_config,
         dashboard_commands::dash_update_config,
+        dashboard_commands::dash_set_thresholds,
         dashboard_commands::dash_get_layout,
         dashboard_commands::dash_update_layout,
         dashboard_commands::dash_get_heatmap,

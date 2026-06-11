@@ -4,9 +4,13 @@ pub fn is_command(command: &str) -> bool {
     matches!(
         command,
         "greet"
-            | "open_devtools"
             | "open_url_external"
             | "get_launch_args"
+            | "get_system_memory_info"
+            | "close_all_windows"
+            | "restart_app"
+            | "clear_app_data"
+            | "factory_reset"
             | "add_user"
             | "verify_user"
             | "list_users"
@@ -245,6 +249,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_wireguard"
             | "disconnect_wireguard"
             | "get_wireguard_connection"
+            | "get_wireguard_status"
             | "list_wireguard_connections"
             | "delete_wireguard_connection"
             | "update_wireguard_connection"
@@ -252,6 +257,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_zerotier"
             | "disconnect_zerotier"
             | "get_zerotier_connection"
+            | "get_zerotier_status"
             | "list_zerotier_connections"
             | "delete_zerotier_connection"
             | "update_zerotier_connection"
@@ -259,6 +265,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_tailscale"
             | "disconnect_tailscale"
             | "get_tailscale_connection"
+            | "get_tailscale_status"
             | "list_tailscale_connections"
             | "delete_tailscale_connection"
             | "update_tailscale_connection"
@@ -266,6 +273,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_pptp"
             | "disconnect_pptp"
             | "get_pptp_connection"
+            | "get_pptp_status"
             | "list_pptp_connections"
             | "delete_pptp_connection"
             | "update_pptp_connection"
@@ -273,6 +281,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_l2tp"
             | "disconnect_l2tp"
             | "get_l2tp_connection"
+            | "get_l2tp_status"
             | "list_l2tp_connections"
             | "delete_l2tp_connection"
             | "update_l2tp_connection"
@@ -280,6 +289,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_ikev2"
             | "disconnect_ikev2"
             | "get_ikev2_connection"
+            | "get_ikev2_status"
             | "list_ikev2_connections"
             | "delete_ikev2_connection"
             | "update_ikev2_connection"
@@ -287,6 +297,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_ipsec"
             | "disconnect_ipsec"
             | "get_ipsec_connection"
+            | "get_ipsec_status"
             | "list_ipsec_connections"
             | "delete_ipsec_connection"
             | "update_ipsec_connection"
@@ -294,6 +305,7 @@ pub fn is_command(command: &str) -> bool {
             | "connect_sstp"
             | "disconnect_sstp"
             | "get_sstp_connection"
+            | "get_sstp_status"
             | "list_sstp_connections"
             | "delete_sstp_connection"
             | "update_sstp_connection"
@@ -517,6 +529,9 @@ pub fn is_command(command: &str) -> bool {
             | "biometric_is_available"
             | "biometric_verify"
             | "biometric_verify_and_derive_key"
+            | "biometric_needs_migration"
+            | "biometric_cleanup_legacy"
+            | "biometric_platform_info"
             | "vault_status"
             | "vault_is_available"
             | "vault_backend_name"
@@ -750,6 +765,7 @@ pub fn is_command(command: &str) -> bool {
                     | "connect_softether"
                     | "disconnect_softether"
                     | "get_softether_connection"
+                    | "get_softether_status"
                     | "list_softether_connections"
                     | "delete_softether_connection"
                     | "update_softether_connection"
@@ -1086,6 +1102,19 @@ pub fn is_command(command: &str) -> bool {
             false
         }
     } || {
+        // ── Backup (8) ───────────────────────────────────────────────
+        matches!(
+            command,
+            "backup_update_config"
+                | "backup_get_config"
+                | "backup_get_status"
+                | "backup_run_now"
+                | "backup_list"
+                | "backup_list_all_targets"
+                | "backup_restore"
+                | "backup_delete"
+        )
+    } || {
         // ── Backup Verify (35) ────────────────────────────────────────
         // Gated behind `ops` because `sorng_backup_verify` is re-exported
         // via `sorng-app-domains-ops`.
@@ -1134,15 +1163,41 @@ pub fn is_command(command: &str) -> bool {
         {
             false
         }
+    } || {
+        // ── DevTools (debug-only) ────────────────────────────────────
+        // `open_devtools` is only a real, registered command in debug
+        // builds. Release (`--release`) builds neither register it (see
+        // `build()` below) nor recognize it here, so the
+        // `core:webview:allow-internal-toggle-devtools` capability has
+        // nothing to authorize in release.
+        #[cfg(debug_assertions)]
+        {
+            command == "open_devtools"
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            false
+        }
     }
 }
 
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         app_shell_commands::greet,
+        // DevTools command is registered ONLY in debug builds. In a release
+        // (`--release`) build `open_devtools` is not part of the IPC handler,
+        // so it cannot be invoked even though the function still exists as an
+        // inert no-op (and Tauri's own DevTools machinery is absent without
+        // the `devtools` feature).
+        #[cfg(debug_assertions)]
         app_shell_commands::open_devtools,
         app_shell_commands::open_url_external,
         app_shell_commands::get_launch_args,
+        app_shell_commands::get_system_memory_info,
+        app_shell_commands::close_all_windows,
+        app_shell_commands::restart_app,
+        app_shell_commands::clear_app_data,
+        app_shell_commands::factory_reset,
         app_auth_commands::add_user,
         app_auth_commands::verify_user,
         app_auth_commands::list_users,
@@ -1159,6 +1214,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         storage_commands::write_app_data,
         app_settings_commands::read_app_settings,
         app_settings_commands::write_app_settings,
+        backup_commands::backup_update_config,
+        backup_commands::backup_get_config,
+        backup_commands::backup_get_status,
+        backup_commands::backup_run_now,
+        backup_commands::backup_list,
+        backup_commands::backup_list_all_targets,
+        backup_commands::backup_restore,
+        backup_commands::backup_delete,
         database_files::databases_list,
         database_files::databases_save_index,
         database_files::load_database_data,
@@ -1432,6 +1495,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         wireguard_commands::connect_wireguard,
         wireguard_commands::disconnect_wireguard,
         wireguard_commands::get_wireguard_connection,
+        wireguard_commands::get_wireguard_status,
         wireguard_commands::list_wireguard_connections,
         wireguard_commands::delete_wireguard_connection,
         wireguard_commands::update_wireguard_connection,
@@ -1439,6 +1503,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         zerotier_commands::connect_zerotier,
         zerotier_commands::disconnect_zerotier,
         zerotier_commands::get_zerotier_connection,
+        zerotier_commands::get_zerotier_status,
         zerotier_commands::list_zerotier_connections,
         zerotier_commands::delete_zerotier_connection,
         zerotier_commands::update_zerotier_connection,
@@ -1446,6 +1511,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         tailscale_commands::connect_tailscale,
         tailscale_commands::disconnect_tailscale,
         tailscale_commands::get_tailscale_connection,
+        tailscale_commands::get_tailscale_status,
         tailscale_commands::list_tailscale_connections,
         tailscale_commands::delete_tailscale_connection,
         tailscale_commands::update_tailscale_connection,
@@ -1453,6 +1519,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         pptp_commands::connect_pptp,
         pptp_commands::disconnect_pptp,
         pptp_commands::get_pptp_connection,
+        pptp_commands::get_pptp_status,
         pptp_commands::list_pptp_connections,
         pptp_commands::delete_pptp_connection,
         pptp_commands::update_pptp_connection,
@@ -1460,6 +1527,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         l2tp_commands::connect_l2tp,
         l2tp_commands::disconnect_l2tp,
         l2tp_commands::get_l2tp_connection,
+        l2tp_commands::get_l2tp_status,
         l2tp_commands::list_l2tp_connections,
         l2tp_commands::delete_l2tp_connection,
         l2tp_commands::update_l2tp_connection,
@@ -1467,6 +1535,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         ikev2_commands::connect_ikev2,
         ikev2_commands::disconnect_ikev2,
         ikev2_commands::get_ikev2_connection,
+        ikev2_commands::get_ikev2_status,
         ikev2_commands::list_ikev2_connections,
         ikev2_commands::delete_ikev2_connection,
         ikev2_commands::update_ikev2_connection,
@@ -1474,6 +1543,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         ipsec_commands::connect_ipsec,
         ipsec_commands::disconnect_ipsec,
         ipsec_commands::get_ipsec_connection,
+        ipsec_commands::get_ipsec_status,
         ipsec_commands::list_ipsec_connections,
         ipsec_commands::delete_ipsec_connection,
         ipsec_commands::update_ipsec_connection,
@@ -1481,6 +1551,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         sstp_commands::connect_sstp,
         sstp_commands::disconnect_sstp,
         sstp_commands::get_sstp_connection,
+        sstp_commands::get_sstp_status,
         sstp_commands::list_sstp_connections,
         sstp_commands::delete_sstp_connection,
         sstp_commands::update_sstp_connection,
@@ -1718,6 +1789,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         biometrics_commands::biometric_is_available,
         biometrics_commands::biometric_verify,
         biometrics_commands::biometric_verify_and_derive_key,
+        biometrics_commands::biometric_needs_migration,
+        biometrics_commands::biometric_cleanup_legacy,
+        biometrics_commands::biometric_platform_info,
         // Vault (native OS keychain)
         vault_commands::vault_status,
         vault_commands::vault_is_available,
@@ -2034,6 +2108,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         softether_commands::disconnect_softether,
         #[cfg(feature = "vpn-softether")]
         softether_commands::get_softether_connection,
+        #[cfg(feature = "vpn-softether")]
+        softether_commands::get_softether_status,
         #[cfg(feature = "vpn-softether")]
         softether_commands::list_softether_connections,
         #[cfg(feature = "vpn-softether")]

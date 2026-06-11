@@ -12,3 +12,6 @@ serde_json = { workspace = true }
 log = { workspace = true }
 sorng-app-shell = { path = "../sorng-app-shell" }
 tauri-plugin-autostart = "=2.5.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_SystemInformation"] }

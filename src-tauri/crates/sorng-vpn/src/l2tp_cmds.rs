@@ -50,6 +50,15 @@ pub async fn get_l2tp_connection(
 }
 
 #[tauri::command]
+pub async fn get_l2tp_status(
+    connection_id: String,
+    state: tauri::State<'_, L2TPServiceState>,
+) -> Result<L2TPStatus, String> {
+    let service = state.lock().await;
+    service.get_status(&connection_id).await
+}
+
+#[tauri::command]
 pub async fn list_l2tp_connections(
     state: tauri::State<'_, L2TPServiceState>,
 ) -> Result<Vec<L2TPConnection>, String> {
@@ -74,5 +83,7 @@ pub async fn update_l2tp_connection(
     state: tauri::State<'_, L2TPServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }

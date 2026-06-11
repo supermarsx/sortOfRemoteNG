@@ -12,17 +12,17 @@ mod agent_commands;
 mod anydesk_commands;
 #[path = "../../../src/app_auth_commands.rs"]
 mod app_auth_commands;
+#[path = "../../../src/app_settings_commands.rs"]
+mod app_settings_commands;
 #[allow(dead_code)]
 #[path = "../../../src/app_shell_commands.rs"]
 mod app_shell_commands;
-#[path = "../../../src/app_settings_commands.rs"]
-mod app_settings_commands;
-#[path = "../../../src/encryption_rotation_commands.rs"]
-mod encryption_rotation_commands;
-#[path = "../../../src/database_files.rs"]
-mod database_files;
 #[path = "../../../src/cpu_commands.rs"]
 mod cpu_commands;
+#[path = "../../../src/database_files.rs"]
+mod database_files;
+#[path = "../../../src/encryption_rotation_commands.rs"]
+mod encryption_rotation_commands;
 // The enum + resolver are only consumed by the middleware in the main
 // app crate; from the core-commands crate's perspective only the static
 // metadata is read by `api_capability_commands::get_api_capabilities`.
@@ -33,6 +33,8 @@ mod api_capability;
 mod api_capability_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
+#[path = "../../../src/backup_commands.rs"]
+mod backup_commands;
 #[cfg(feature = "ops")]
 #[path = "../../../src/backup_verify_commands.rs"]
 mod backup_verify_commands;
@@ -53,8 +55,6 @@ mod commander_commands;
 mod consul_commands;
 #[path = "../../../src/cryptojs_compat_commands.rs"]
 mod cryptojs_compat_commands;
-#[path = "../../../src/xlsx_crypto_commands.rs"]
-mod xlsx_crypto_commands;
 #[path = "../../../src/db_commands.rs"]
 mod db_commands;
 #[cfg(feature = "ops")]
@@ -141,6 +141,8 @@ mod vault_commands;
 mod vercel_commands;
 #[path = "../../../src/vnc_commands.rs"]
 mod vnc_commands;
+#[path = "../../../src/xlsx_crypto_commands.rs"]
+mod xlsx_crypto_commands;
 // ── t3-e55: remote-display protocols ───────────────────────────────
 #[path = "../../../src/ard_commands.rs"]
 mod ard_commands;

@@ -38,6 +38,15 @@ pub async fn get_tailscale_connection(
 }
 
 #[tauri::command]
+pub async fn get_tailscale_status(
+    connection_id: String,
+    tailscale_service: tauri::State<'_, TailscaleServiceState>,
+) -> Result<TailscaleStatus, String> {
+    let service = tailscale_service.lock().await;
+    Ok(service.get_connection(&connection_id).await?.status)
+}
+
+#[tauri::command]
 pub async fn list_tailscale_connections(
     tailscale_service: tauri::State<'_, TailscaleServiceState>,
 ) -> Result<Vec<TailscaleConnection>, String> {
@@ -62,6 +71,7 @@ pub async fn update_tailscale_connection(
     tailscale_service: tauri::State<'_, TailscaleServiceState>,
 ) -> Result<(), String> {
     let mut service = tailscale_service.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }
-

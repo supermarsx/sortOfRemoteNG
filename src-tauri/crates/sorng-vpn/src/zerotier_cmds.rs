@@ -38,6 +38,15 @@ pub async fn get_zerotier_connection(
 }
 
 #[tauri::command]
+pub async fn get_zerotier_status(
+    connection_id: String,
+    zerotier_service: tauri::State<'_, ZeroTierServiceState>,
+) -> Result<ZeroTierStatus, String> {
+    let service = zerotier_service.lock().await;
+    Ok(service.get_connection(&connection_id).await?.status)
+}
+
+#[tauri::command]
 pub async fn list_zerotier_connections(
     zerotier_service: tauri::State<'_, ZeroTierServiceState>,
 ) -> Result<Vec<ZeroTierConnection>, String> {
@@ -62,6 +71,7 @@ pub async fn update_zerotier_connection(
     zerotier_service: tauri::State<'_, ZeroTierServiceState>,
 ) -> Result<(), String> {
     let mut service = zerotier_service.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }
-

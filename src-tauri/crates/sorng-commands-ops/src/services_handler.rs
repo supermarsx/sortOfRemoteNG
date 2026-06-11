@@ -602,6 +602,7 @@ fn is_command_b(command: &str) -> bool {
             | "dash_force_refresh"
             | "dash_get_config"
             | "dash_update_config"
+            | "dash_set_thresholds"
             | "dash_get_layout"
             | "dash_update_layout"
             | "dash_get_heatmap"
@@ -1895,6 +1896,7 @@ fn build_b() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         dashboard_commands::dash_force_refresh,
         dashboard_commands::dash_get_config,
         dashboard_commands::dash_update_config,
+        dashboard_commands::dash_set_thresholds,
         dashboard_commands::dash_get_layout,
         dashboard_commands::dash_update_layout,
         dashboard_commands::dash_get_heatmap,
@@ -2617,9 +2619,15 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
     let c = build_c();
     move |invoke| {
         let cmd = invoke.message.command();
-        if is_command_a(cmd) { return a(invoke); }
-        if is_command_b(cmd) { return b(invoke); }
-        if is_command_c(cmd) { return c(invoke); }
+        if is_command_a(cmd) {
+            return a(invoke);
+        }
+        if is_command_b(cmd) {
+            return b(invoke);
+        }
+        if is_command_c(cmd) {
+            return c(invoke);
+        }
         false
     }
 }

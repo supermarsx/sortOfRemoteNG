@@ -49,6 +49,15 @@ pub async fn get_pptp_connection(
 }
 
 #[tauri::command]
+pub async fn get_pptp_status(
+    connection_id: String,
+    state: tauri::State<'_, PPTPServiceState>,
+) -> Result<PPTPStatus, String> {
+    let service = state.lock().await;
+    service.get_status(&connection_id).await
+}
+
+#[tauri::command]
 pub async fn list_pptp_connections(
     state: tauri::State<'_, PPTPServiceState>,
 ) -> Result<Vec<PPTPConnection>, String> {
@@ -73,5 +82,7 @@ pub async fn update_pptp_connection(
     state: tauri::State<'_, PPTPServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }

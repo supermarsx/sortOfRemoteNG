@@ -240,6 +240,7 @@ pub struct DashboardConfig {
     pub widgets: Vec<WidgetConfig>,
     pub max_concurrent_checks: usize,
     pub health_check_timeout_ms: u64,
+    pub thresholds: DashboardThresholds,
 }
 
 impl Default for DashboardConfig {
@@ -252,6 +253,26 @@ impl Default for DashboardConfig {
             widgets: Vec::new(),
             max_concurrent_checks: 10,
             health_check_timeout_ms: 5000,
+            thresholds: DashboardThresholds::default(),
+        }
+    }
+}
+
+/// Alert thresholds controlled by the dashboard settings panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardThresholds {
+    pub latency_ms: f64,
+    pub cpu_percent: f64,
+    pub memory_percent: f64,
+}
+
+impl Default for DashboardThresholds {
+    fn default() -> Self {
+        Self {
+            latency_ms: 500.0,
+            cpu_percent: 80.0,
+            memory_percent: 80.0,
         }
     }
 }

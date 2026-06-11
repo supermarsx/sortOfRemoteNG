@@ -49,6 +49,15 @@ pub async fn get_sstp_connection(
 }
 
 #[tauri::command]
+pub async fn get_sstp_status(
+    connection_id: String,
+    state: tauri::State<'_, SSTPServiceState>,
+) -> Result<SSTPStatus, String> {
+    let service = state.lock().await;
+    service.get_status(&connection_id).await
+}
+
+#[tauri::command]
 pub async fn list_sstp_connections(
     state: tauri::State<'_, SSTPServiceState>,
 ) -> Result<Vec<SSTPConnection>, String> {
@@ -73,5 +82,7 @@ pub async fn update_sstp_connection(
     state: tauri::State<'_, SSTPServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }

@@ -52,6 +52,15 @@ pub async fn get_ikev2_connection(
 }
 
 #[tauri::command]
+pub async fn get_ikev2_status(
+    connection_id: String,
+    state: tauri::State<'_, IKEv2ServiceState>,
+) -> Result<IKEv2Status, String> {
+    let service = state.lock().await;
+    service.get_status(&connection_id).await
+}
+
+#[tauri::command]
 pub async fn list_ikev2_connections(
     state: tauri::State<'_, IKEv2ServiceState>,
 ) -> Result<Vec<IKEv2Connection>, String> {
@@ -76,5 +85,7 @@ pub async fn update_ikev2_connection(
     state: tauri::State<'_, IKEv2ServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }

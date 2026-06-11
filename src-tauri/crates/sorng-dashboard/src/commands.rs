@@ -149,6 +149,18 @@ pub async fn dash_update_config(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn dash_set_thresholds(
+    state: State<'_, DashboardServiceState>,
+    thresholds: DashboardThresholds,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let mut config = svc.get_config();
+    config.thresholds = thresholds;
+    svc.update_config(config);
+    Ok(())
+}
+
 // ─── Layout ─────────────────────────────────────────────────────────
 
 #[tauri::command]

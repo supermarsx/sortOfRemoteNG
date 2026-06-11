@@ -93,11 +93,25 @@ pub mod commands {
         Ok(())
     }
 
+    /// Open the webview DevTools for the main window.
+    ///
+    /// DevTools are gated to debug builds. The workspace intentionally does
+    /// NOT enable the `devtools` Tauri feature (see `src-tauri/Cargo.toml`),
+    /// so Tauri's `WebviewWindow::open_devtools` — itself gated by
+    /// `cfg(any(debug_assertions, feature = "devtools"))` — only exists under
+    /// `debug_assertions`. In a release build this command is therefore an
+    /// inert no-op AND is not registered in the IPC handler (see
+    /// `core_handler::build`), so the
+    /// `core:webview:allow-internal-toggle-devtools` capability has nothing
+    /// to authorize.
     #[tauri::command]
     pub fn open_devtools(app: tauri::AppHandle) {
+        #[cfg(debug_assertions)]
         if let Some(window) = app.get_webview_window("main") {
             window.open_devtools();
         }
+        #[cfg(not(debug_assertions))]
+        let _ = app;
     }
 
     #[tauri::command]

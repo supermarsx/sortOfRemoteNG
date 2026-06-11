@@ -38,6 +38,15 @@ pub async fn get_wireguard_connection(
 }
 
 #[tauri::command]
+pub async fn get_wireguard_status(
+    connection_id: String,
+    wireguard_service: tauri::State<'_, WireGuardServiceState>,
+) -> Result<WireGuardStatus, String> {
+    let service = wireguard_service.lock().await;
+    Ok(service.get_connection(&connection_id).await?.status)
+}
+
+#[tauri::command]
 pub async fn list_wireguard_connections(
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
 ) -> Result<Vec<WireGuardConnection>, String> {
@@ -62,6 +71,7 @@ pub async fn update_wireguard_connection(
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
 ) -> Result<(), String> {
     let mut service = wireguard_service.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }
-

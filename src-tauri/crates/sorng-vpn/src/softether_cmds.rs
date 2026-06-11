@@ -45,6 +45,15 @@ pub async fn get_softether_connection(
 }
 
 #[tauri::command]
+pub async fn get_softether_status(
+    connection_id: String,
+    state: tauri::State<'_, SoftEtherServiceState>,
+) -> Result<SoftEtherStatus, String> {
+    let service = state.lock().await;
+    service.get_status(&connection_id).await
+}
+
+#[tauri::command]
 pub async fn list_softether_connections(
     state: tauri::State<'_, SoftEtherServiceState>,
 ) -> Result<Vec<SoftEtherConnection>, String> {
@@ -69,5 +78,7 @@ pub async fn update_softether_connection(
     state: tauri::State<'_, SoftEtherServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }
