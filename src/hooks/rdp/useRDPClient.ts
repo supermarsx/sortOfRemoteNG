@@ -24,6 +24,7 @@ import { useRdpFrameBackpressure } from './useRdpFrameBackpressure';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
 import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent, RDPLifecycleEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
+import { resolveChainConfig } from '../../utils/ssh/resolveChainConfig';
 
 const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
   data as Uint8ClampedArray<ArrayBuffer>;
@@ -123,6 +124,14 @@ export function useRDPClient(session: ConnectionSession) {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+  // Tracks an SSH local-forward tunnel established for an imported mRemoteNG
+  // SSH-tunnel/jump connection (RDP-through-SSH). Holds the backend SSH session
+  // id and the RDP tunnel id so they can be torn down on disconnect/unmount.
+  // Null when the RDP connection is direct (no imported tunnel layer).
+  const rdpTunnelRef = useRef<{ sshSessionId: string; tunnelId: string } | null>(null);
+  // Stable indirection so callbacks defined before teardownRdpTunnel (handleDisconnect,
+  // cleanup) can trigger tunnel teardown without a temporal-dead-zone reference.
+  const teardownRdpTunnelRef = useRef<() => Promise<void>>(() => Promise.resolve());
   // Generation counter to detect stale async continuations (StrictMode double-mount).
   // Each initializeRDPConnection call increments this; after every await, we check
   // if it still matches to avoid overwriting state from a newer init.
@@ -149,6 +158,10 @@ export function useRDPClient(session: ConnectionSession) {
   rdpSettingsRef.current = rdpSettings;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  // Live connection-store snapshot for chain/tunnel resolution inside the
+  // stable (deps: []) tunnel-establishment callback.
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
   // Keep the renderer type ref in sync with the resolved settings
   frontendRendererTypeRef.current = (rdpSettings.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
 
@@ -301,6 +314,8 @@ export function useRDPClient(session: ConnectionSession) {
     } catch (e) {
       debugLog(`Disconnect error: ${e}`);
     }
+    // Tear down any imported-mRemoteNG SSH tunnel backing this session.
+    await teardownRdpTunnelRef.current();
     sessionIdRef.current = null;
     setRdpSessionId(null);
     setIsConnected(false);
@@ -445,6 +460,103 @@ export function useRDPClient(session: ConnectionSession) {
       });
     }
   }, [isConnected]);
+
+  // ─── SSH-tunnel (imported mRemoteNG RDP-through-SSH) ────────────────
+
+  /**
+   * Tear down any SSH local-forward tunnel established for this RDP session.
+   * Stops the RDP port forward (`stop_rdp_tunnel`) and closes the SSH session
+   * (`disconnect_ssh`). Safe to call when no tunnel is active. Never throws.
+   */
+  const teardownRdpTunnel = useCallback(async () => {
+    const t = rdpTunnelRef.current;
+    if (!t) return;
+    rdpTunnelRef.current = null;
+    try {
+      await invoke('stop_rdp_tunnel', { tunnelId: t.tunnelId });
+    } catch (e) {
+      debugLog(`stop_rdp_tunnel error: ${e}`);
+    }
+    try {
+      await invoke('disconnect_ssh', { sessionId: t.sshSessionId });
+    } catch (e) {
+      debugLog(`tunnel disconnect_ssh error: ${e}`);
+    }
+  }, []);
+  teardownRdpTunnelRef.current = teardownRdpTunnel;
+
+  /**
+   * If the connection carries an enabled imported SSH-tunnel / jump-host layer
+   * (mRemoteNG `SSHTunnelConnectionName`), establish an SSH session to the
+   * bastion and forward the real RDP target through it via `setup_rdp_tunnel`.
+   * Returns the local `{ host, port }` that RDP should dial (127.0.0.1:<port>),
+   * or null when no tunnel is needed (direct connect). Throws on tunnel failure
+   * so the caller surfaces a connection error rather than silently bypassing
+   * the tunnel and dialing the target directly.
+   */
+  const establishRdpTunnel = useCallback(
+    async (
+      conn: Connection,
+      targetHost: string,
+      targetPort: number,
+    ): Promise<{ host: string; port: number } | null> => {
+      // Cheap gate: only proceed when an enabled ssh-tunnel/ssh-jump layer exists.
+      const hasTunnelLayer = (conn.security?.tunnelChain ?? []).some(
+        (l) => l.enabled !== false && (l.type === 'ssh-tunnel' || l.type === 'ssh-jump'),
+      );
+      if (!hasTunnelLayer) return null;
+
+      const resolved = await resolveChainConfig(conn, connectionsRef.current);
+      const jumps = resolved.jump_hosts;
+      if (!jumps.length || !jumps[0].host) return null;
+
+      // The bastion adjacent to the RDP target is the LAST resolved jump host;
+      // any preceding hops become pre-jumps for the SSH connection itself.
+      const bastion = jumps[jumps.length - 1];
+      const preJumps = jumps.slice(0, -1);
+
+      const sshConfig: Record<string, unknown> = {
+        host: bastion.host,
+        port: bastion.port || 22,
+        username: bastion.username || '',
+        password: bastion.password ?? null,
+        private_key_path: bastion.private_key_path ?? null,
+        private_key_passphrase: bastion.private_key_passphrase ?? null,
+        agent_forwarding: bastion.agent_forwarding ?? false,
+        jump_hosts: preJumps,
+        proxy_config: resolved.proxy_config ?? null,
+        proxy_chain: resolved.proxy_chain ?? null,
+        mixed_chain: resolved.mixed_chain ?? null,
+        openvpn_config: resolved.openvpn_config ?? null,
+      };
+
+      const sshSessionId = await invoke<string>('connect_ssh', { config: sshConfig });
+      try {
+        const status = await invoke<{ tunnel_id?: string; local_port: number }>('setup_rdp_tunnel', {
+          sessionId: sshSessionId,
+          config: {
+            remote_rdp_host: targetHost || 'localhost',
+            remote_rdp_port: targetPort,
+            bind_interface: '127.0.0.1',
+            label: conn.name ?? null,
+          },
+        });
+        rdpTunnelRef.current = {
+          sshSessionId,
+          tunnelId: status.tunnel_id ?? `rdp_${sshSessionId}`,
+        };
+        debugLog(`RDP-over-SSH tunnel up: 127.0.0.1:${status.local_port} -> ${targetHost}:${targetPort} via ${bastion.host}`);
+        return { host: '127.0.0.1', port: status.local_port };
+      } catch (e) {
+        // SSH connected but the forward failed — close the SSH session so we
+        // don't leak it, then surface the error.
+        invoke('disconnect_ssh', { sessionId: sshSessionId }).catch(() => {});
+        rdpTunnelRef.current = null;
+        throw e;
+      }
+    },
+    [],
+  );
 
   // ─── Connection lifecycle ──────────────────────────────────────────
 
@@ -640,10 +752,39 @@ export function useRDPClient(session: ConnectionSession) {
       const resW = display?.width ?? 1920;
       const resH = display?.height ?? 1080;
 
+      // If this connection was imported with an SSH tunnel (mRemoteNG
+      // SSHTunnelConnectionName), establish the SSH local forward first and
+      // redirect the RDP dial to 127.0.0.1:<bound port>. Direct connections
+      // return null and dial the target host as before.
+      const targetHost = sess.hostname;
+      const targetPort = conn.port || 3389;
+      let dialHost = targetHost;
+      let dialPort = targetPort;
+      try {
+        const tunnel = await establishRdpTunnel(conn, targetHost, targetPort);
+        if (tunnel) {
+          if (stale()) {
+            // A newer init started while we were setting up the tunnel — tear it
+            // down so we don't leak the SSH session / forward.
+            await teardownRdpTunnel();
+            return;
+          }
+          setStatusMessage('SSH tunnel established — connecting RDP...');
+          dialHost = tunnel.host;
+          dialPort = tunnel.port;
+        }
+      } catch (tunnelErr) {
+        if (stale()) return;
+        setConnectionStatus('error');
+        setStatusMessage(`SSH tunnel failed: ${tunnelErr}`);
+        toast.error('SSH tunnel for RDP failed', 5000);
+        return;
+      }
+
       const connectionDetails = {
         connectionId: conn.id,
-        host: sess.hostname,
-        port: conn.port || 3389,
+        host: dialHost,
+        port: dialPort,
         username: conn.username || '',
         password: conn.password || '',
         domain: conn.domain,
@@ -667,6 +808,7 @@ export function useRDPClient(session: ConnectionSession) {
         // Try to clean up this orphaned backend session.
         console.log(`[RDP init gen=${gen}] STALE after connect_rdp (sessionId=${sessionId}), aborting`);
         invoke('disconnect_rdp', { sessionId }).catch(() => {});
+        teardownRdpTunnel();
         return;
       }
 
@@ -730,6 +872,10 @@ export function useRDPClient(session: ConnectionSession) {
   const cleanup = useCallback(async () => {
     // Bump generation so any in-flight initializeRDPConnection aborts
     initGenRef.current++;
+    // Tear down any imported-mRemoteNG SSH tunnel backing this session. The
+    // backend RDP session is intentionally kept for reattach (see note below),
+    // but the SSH forward is per-mount and must be released.
+    void teardownRdpTunnelRef.current();
     sessionIdRef.current = null;
     setIsConnected(false);
     setConnectionStatus('disconnected');
