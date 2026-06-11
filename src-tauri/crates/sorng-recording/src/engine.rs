@@ -222,9 +222,14 @@ impl RecordingEngine {
     pub fn append_terminal_output(&mut self, session_id: &str, data: &str) {
         if let Some(rec) = self.terminal_recordings.get_mut(session_id) {
             let ts = rec.start_instant.elapsed().as_millis() as u64;
+            // Redact credentials (typed/echoed passwords, password prompts,
+            // key=value secrets, private-key blocks, cloud tokens) BEFORE the
+            // chunk is buffered. Persistence falls back to plaintext JSON when
+            // encryption-at-rest is locked/absent, so redaction must happen
+            // here regardless of encryption state — never store the raw stream.
             rec.entries.push(TerminalRecordingEntry {
                 timestamp_ms: ts,
-                data: data.to_string(),
+                data: crate::redact::redact_stream(data),
                 entry_type: TerminalEntryType::Output,
             });
         }
@@ -234,9 +239,10 @@ impl RecordingEngine {
         if let Some(rec) = self.terminal_recordings.get_mut(session_id) {
             if rec.record_input {
                 let ts = rec.start_instant.elapsed().as_millis() as u64;
+                // See append_terminal_output: redact before buffering.
                 rec.entries.push(TerminalRecordingEntry {
                     timestamp_ms: ts,
-                    data: data.to_string(),
+                    data: crate::redact::redact_stream(data),
                     entry_type: TerminalEntryType::Input,
                 });
             }
@@ -869,7 +875,7 @@ impl RecordingEngine {
                             now.duration_since(rec.last_step_time).as_millis() as u64
                         };
                         rec.steps.push(MacroStep {
-                            command: rec.command_buffer.clone(),
+                            command: crate::redact::redact_stream(&rec.command_buffer),
                             delay_ms,
                             send_newline: true,
                         });
@@ -909,7 +915,7 @@ impl RecordingEngine {
                 now.duration_since(rec.last_step_time).as_millis() as u64
             };
             rec.steps.push(MacroStep {
-                command: rec.command_buffer.clone(),
+                command: crate::redact::redact_stream(&rec.command_buffer),
                 delay_ms,
                 send_newline: false,
             });
@@ -1335,6 +1341,74 @@ impl RecordingEngine {
             )
         });
         before - self.jobs.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn start_term(engine: &mut RecordingEngine, record_input: bool) -> String {
+        engine
+            .start_terminal_recording(
+                "sess-1".to_string(),
+                RecordingProtocol::Ssh,
+                "host".to_string(),
+                "alice".to_string(),
+                80,
+                24,
+                record_input,
+                vec![],
+            )
+            .expect("start recording")
+    }
+
+    #[test]
+    fn recorded_terminal_output_redacts_password_prompt() {
+        let mut engine = RecordingEngine::new();
+        start_term(&mut engine, true);
+
+        // Server echoes a sudo password prompt then (worst case) the secret.
+        engine.append_terminal_output("sess-1", "[sudo] password for alice: hunter2\r\n");
+        // User-typed input that contains an inline credential flag.
+        engine.append_terminal_input("sess-1", "mysql -psupersecret -uroot\r");
+
+        let recording = engine.stop_terminal_recording("sess-1").expect("stop");
+        let blob = serde_json::to_string(&recording).expect("serialize");
+
+        // The persisted stream (this is exactly what storage.rs writes, plaintext
+        // or encrypted) must NOT contain the raw secrets.
+        assert!(
+            !blob.contains("hunter2"),
+            "password prompt secret leaked into recording: {blob}"
+        );
+        assert!(
+            !blob.contains("supersecret"),
+            "echoed -p flag secret leaked into recording: {blob}"
+        );
+        assert!(blob.contains("[redacted]"), "redaction marker missing: {blob}");
+        // Non-secret content is preserved.
+        assert!(blob.contains("mysql"));
+        assert!(blob.contains("-uroot"));
+    }
+
+    #[test]
+    fn recorded_macro_step_redacts_secret() {
+        let mut engine = RecordingEngine::new();
+        engine
+            .start_macro_recording("sess-2".to_string(), RecordingProtocol::Ssh)
+            .expect("start macro");
+        // Type a command containing an inline password, then Enter.
+        engine.macro_record_input("sess-2", "export TOKEN=ya29.abcdef123\r");
+        let mac = engine
+            .stop_macro_recording("sess-2", "m".to_string(), None, None, vec![])
+            .expect("stop macro");
+        let blob = serde_json::to_string(&mac).expect("serialize");
+        assert!(
+            !blob.contains("ya29.abcdef123"),
+            "macro step leaked GCP token: {blob}"
+        );
+        assert!(blob.contains("[redacted]"));
     }
 }
 

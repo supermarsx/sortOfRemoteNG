@@ -5,5 +5,6 @@ pub mod error;
 pub mod engine;
 pub mod encoders;
 pub mod compression;
+pub mod redact;
 pub mod storage;
 pub mod service;

@@ -13,6 +13,11 @@ chrono = { workspace = true }
 log = { workspace = true }
 base64 = { workspace = true }
 sha2 = { workspace = true }
+# Credential redaction of recorded session streams (terminal input/output).
+# Mirrors the sorng-ssh redact.rs pattern set without taking a dependency on
+# the heavy sorng-ssh crate just for a handful of regexes.
+regex = { workspace = true }
+lazy_static = { workspace = true }
 # Vendor dylib (zstd + flate2)
 sorng-compression-vendor = { path = "../sorng-compression-vendor" }
 # Encryption-at-rest (Phase 2a) — dispatched envelope read/write for
