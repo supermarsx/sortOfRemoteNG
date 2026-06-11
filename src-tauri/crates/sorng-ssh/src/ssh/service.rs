@@ -2468,13 +2468,53 @@ impl SshService {
         Ok(forward_id)
     }
 
+    /// Resolve and validate the bind address for a local/dynamic port forward.
+    ///
+    /// Secure-by-default policy (t6 finding #10, user decision 2026-06-11):
+    /// - An empty `local_host` defaults to loopback (`127.0.0.1`).
+    /// - A loopback bind (`127.0.0.1`, `::1`, `localhost`) is always allowed.
+    /// - A non-loopback / wildcard bind (e.g. `0.0.0.0`, `::`, a LAN/public
+    ///   interface) is REJECTED unless `allow_non_loopback_bind` is explicitly
+    ///   set on the forward config.
+    ///
+    /// Returns the effective bind host string to use, or an actionable error.
+    fn resolve_forward_bind(config: &PortForwardConfig) -> Result<String, String> {
+        let requested = config.local_host.trim();
+        let host = if requested.is_empty() {
+            "127.0.0.1"
+        } else {
+            requested
+        };
+
+        let is_loopback = match host.parse::<std::net::IpAddr>() {
+            Ok(ip) => ip.is_loopback(),
+            // Non-IP literals: only the conventional loopback hostname is
+            // treated as loopback. Anything else is considered non-loopback.
+            Err(_) => host.eq_ignore_ascii_case("localhost"),
+        };
+
+        if is_loopback || config.allow_non_loopback_bind {
+            Ok(host.to_string())
+        } else {
+            Err(format!(
+                "Refusing to bind SSH port forward to non-loopback address '{}'. \
+                 Port forwards default to loopback (127.0.0.1) so the tunnel is only \
+                 reachable from this machine. To deliberately expose this forward to \
+                 other hosts on the network, set `allow_non_loopback_bind = true` on \
+                 the port-forward configuration.",
+                host
+            ))
+        }
+    }
+
     async fn setup_local_port_forward(
         session: &mut SshSession,
         config: &PortForwardConfig,
         id: String,
     ) -> Result<PortForwardHandle, String> {
+        let bind_host = Self::resolve_forward_bind(config)?;
         let listener =
-            std::net::TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
+            std::net::TcpListener::bind(format!("{}:{}", bind_host, config.local_port))
                 .map_err(|e| format!("Failed to bind local port: {}", e))?;
 
         listener
@@ -2806,7 +2846,8 @@ impl SshService {
         config: &PortForwardConfig,
         id: String,
     ) -> Result<PortForwardHandle, String> {
-        let listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
+        let bind_host = Self::resolve_forward_bind(config)?;
+        let listener = TcpListener::bind(format!("{}:{}", bind_host, config.local_port))
             .map_err(|e| format!("Failed to bind SOCKS port: {}", e))?;
 
         listener
@@ -4171,5 +4212,73 @@ mod tests {
         assert_eq!(result.stderr, "err");
         assert_eq!(result.exit_code, 1);
         assert_eq!(result.remote_path, "/tmp/y");
+    }
+
+    // ── Port-forward bind policy (t6 #10: loopback-default + opt-in) ─────
+
+    use crate::ssh::types::{PortForwardConfig, PortForwardDirection};
+
+    fn forward_config(local_host: &str, allow_non_loopback_bind: bool) -> PortForwardConfig {
+        PortForwardConfig {
+            local_host: local_host.to_string(),
+            local_port: 8080,
+            remote_host: "db.internal".to_string(),
+            remote_port: 3306,
+            direction: PortForwardDirection::Local,
+            allow_non_loopback_bind,
+        }
+    }
+
+    #[test]
+    fn forward_bind_loopback_is_allowed() {
+        let cfg = forward_config("127.0.0.1", false);
+        assert_eq!(
+            super::SshService::resolve_forward_bind(&cfg).unwrap(),
+            "127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn forward_bind_ipv6_loopback_and_localhost_allowed() {
+        assert_eq!(
+            super::SshService::resolve_forward_bind(&forward_config("::1", false)).unwrap(),
+            "::1"
+        );
+        assert_eq!(
+            super::SshService::resolve_forward_bind(&forward_config("localhost", false)).unwrap(),
+            "localhost"
+        );
+    }
+
+    #[test]
+    fn forward_bind_empty_host_defaults_to_loopback() {
+        let cfg = forward_config("", false);
+        assert_eq!(
+            super::SshService::resolve_forward_bind(&cfg).unwrap(),
+            "127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn forward_bind_non_loopback_rejected_without_optin() {
+        for host in ["0.0.0.0", "::", "192.168.1.50", "10.0.0.1"] {
+            let cfg = forward_config(host, false);
+            let err = super::SshService::resolve_forward_bind(&cfg)
+                .expect_err("non-loopback bind without opt-in must be rejected");
+            assert!(err.contains(host), "error should name the host: {err}");
+            assert!(
+                err.contains("allow_non_loopback_bind"),
+                "error should explain how to opt in: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn forward_bind_non_loopback_allowed_with_optin() {
+        let cfg = forward_config("0.0.0.0", true);
+        assert_eq!(
+            super::SshService::resolve_forward_bind(&cfg).unwrap(),
+            "0.0.0.0"
+        );
     }
 }

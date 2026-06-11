@@ -298,10 +298,15 @@ mod tests {
             remote_host: "db.local".to_string(),
             remote_port: 3306,
             direction: PortForwardDirection::Local,
+            allow_non_loopback_bind: false,
         };
         let json = serde_json::to_string(&config).unwrap();
         let de: PortForwardConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(de.local_port, 8080);
+        // Secure-by-default: omitting the opt-in in legacy payloads deserializes to false.
+        let legacy = r#"{"local_host":"127.0.0.1","local_port":8080,"remote_host":"db.local","remote_port":3306,"direction":"Local"}"#;
+        let de_legacy: PortForwardConfig = serde_json::from_str(legacy).unwrap();
+        assert!(!de_legacy.allow_non_loopback_bind);
     }
 
     // ===== TOTP Tests =====

@@ -23,6 +23,7 @@ pub async fn setup_ftp_tunnel(
         remote_host: config.remote_ftp_host.clone(),
         remote_port: config.remote_ftp_port,
         direction: PortForwardDirection::Local,
+        allow_non_loopback_bind: false,
     };
 
     let control_forward_id = ssh.setup_port_forward(&session_id, control_config).await?;
@@ -49,6 +50,7 @@ pub async fn setup_ftp_tunnel(
                 remote_host: config.remote_ftp_host.clone(),
                 remote_port: data_port,
                 direction: PortForwardDirection::Local,
+                allow_non_loopback_bind: false,
             };
 
             match ssh.setup_port_forward(&session_id, data_config).await {
@@ -182,6 +184,9 @@ pub async fn setup_rdp_tunnel(
         remote_host: config.remote_rdp_host.clone(),
         remote_port: config.remote_rdp_port,
         direction: PortForwardDirection::Local,
+        // Loopback-only by default. A user-supplied non-loopback bind_interface
+        // is rejected by setup_port_forward unless the forward opts in.
+        allow_non_loopback_bind: false,
     };
 
     let forward_id = ssh.setup_port_forward(&session_id, forward_config).await?;
@@ -458,6 +463,9 @@ pub async fn setup_vnc_tunnel(
         remote_host: config.remote_vnc_host.clone(),
         remote_port,
         direction: PortForwardDirection::Local,
+        // Loopback-only by default. A user-supplied non-loopback bind_interface
+        // is rejected by setup_port_forward unless the forward opts in.
+        allow_non_loopback_bind: false,
     };
 
     let forward_id = ssh.setup_port_forward(&session_id, forward_config).await?;
