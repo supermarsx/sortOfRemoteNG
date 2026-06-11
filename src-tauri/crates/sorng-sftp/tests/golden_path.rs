@@ -20,6 +20,7 @@
 
 #![cfg(feature = "docker-e2e")]
 
+use secrecy::SecretString;
 use sorng_sftp::sftp::service::SftpService;
 use sorng_sftp::sftp::types::{
     KnownHostsPolicy, SftpConnectionConfig, SftpListOptions, SftpSortField,
@@ -34,7 +35,7 @@ fn test_config() -> SftpConnectionConfig {
         host: env_or("SSH_HOST", "127.0.0.1"),
         port: env_or("SSH_PORT", "2222").parse().unwrap_or(2222),
         username: env_or("SSH_USER", "testuser"),
-        password: Some(env_or("SSH_PASSWORD", "testpass")),
+        password: Some(SecretString::new(env_or("SSH_PASSWORD", "testpass"))),
         private_key_path: None,
         private_key_passphrase: None,
         private_key_data: None,

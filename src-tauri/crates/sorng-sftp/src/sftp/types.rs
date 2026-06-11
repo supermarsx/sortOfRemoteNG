@@ -1,6 +1,7 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 use chrono::{DateTime, Utc};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -44,14 +45,14 @@ pub struct SftpConnectionConfig {
     #[serde(default = "default_sftp_port")]
     pub port: u16,
     pub username: String,
-    #[serde(default)]
-    pub password: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub password: Option<SecretString>,
     #[serde(default)]
     pub private_key_path: Option<String>,
-    #[serde(default)]
-    pub private_key_passphrase: Option<String>,
-    #[serde(default)]
-    pub private_key_data: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub private_key_passphrase: Option<SecretString>,
+    #[serde(skip_serializing, default)]
+    pub private_key_data: Option<SecretString>,
     #[serde(default = "default_false")]
     pub use_agent: bool,
     #[serde(default)]
@@ -74,7 +75,7 @@ pub struct SftpConnectionConfig {
     pub color_tag: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum KnownHostsPolicy {
     #[default]
@@ -92,8 +93,8 @@ pub struct SftpProxyConfig {
     pub port: u16,
     #[serde(default)]
     pub username: Option<String>,
-    #[serde(default)]
-    pub password: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub password: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

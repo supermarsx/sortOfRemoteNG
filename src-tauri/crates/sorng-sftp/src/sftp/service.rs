@@ -4,6 +4,7 @@ use crate::sftp::types::*;
 use crate::sftp::upload_chunked::UploadHandle;
 use chrono::Utc;
 use log::{info, warn};
+use secrecy::ExposeSecret;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::net::TcpStream;
@@ -11,6 +12,88 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+// ── Host-key helpers ─────────────────────────────────────────────────────────
+
+/// Outcome of checking a presented host key against the local known_hosts
+/// store. Mirror of `ssh2::CheckResult`, decoupled so the policy decision is
+/// pure and unit-testable without a live SSH session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostKeyCheck {
+    Match,
+    Mismatch,
+    NotFound,
+    Failure,
+}
+
+impl From<ssh2::CheckResult> for HostKeyCheck {
+    fn from(r: ssh2::CheckResult) -> Self {
+        match r {
+            ssh2::CheckResult::Match => HostKeyCheck::Match,
+            ssh2::CheckResult::Mismatch => HostKeyCheck::Mismatch,
+            ssh2::CheckResult::NotFound => HostKeyCheck::NotFound,
+            ssh2::CheckResult::Failure => HostKeyCheck::Failure,
+        }
+    }
+}
+
+/// What to do once the host key has passed the policy gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostKeyAction {
+    /// Key is already trusted — proceed.
+    Accept,
+    /// Trust-on-first-use: record the key, then proceed.
+    AcceptAndPersist,
+}
+
+/// Pure host-key policy decision. Returns the action to take, or an actionable
+/// rejection reason. `Ignore` is handled by the caller before this is reached.
+///
+/// * `Match`     → always accept.
+/// * `Failure`   → always reject (internal known_hosts error).
+/// * `Mismatch`  → always reject under every non-`Ignore` policy (possible MITM).
+/// * `NotFound`  → `Strict` rejects; `AcceptNew`/`Ask` trust-on-first-use.
+fn decide_host_key_action(
+    check: HostKeyCheck,
+    policy: KnownHostsPolicy,
+) -> Result<HostKeyAction, String> {
+    match check {
+        HostKeyCheck::Match => Ok(HostKeyAction::Accept),
+        HostKeyCheck::Failure => {
+            Err("internal error checking known_hosts.".to_string())
+        }
+        HostKeyCheck::Mismatch => Err(
+            "the server key does not match the key recorded in known_hosts. \
+             This may indicate a man-in-the-middle attack."
+                .to_string(),
+        ),
+        HostKeyCheck::NotFound => match policy {
+            KnownHostsPolicy::Strict => {
+                Err("host is not in known_hosts and the policy is Strict.".to_string())
+            }
+            // AcceptNew and Ask both trust-on-first-use for unknown hosts;
+            // neither ever silently accepts a *changed* key (Mismatch above).
+            KnownHostsPolicy::AcceptNew | KnownHostsPolicy::Ask => {
+                Ok(HostKeyAction::AcceptAndPersist)
+            }
+            // Reached only if a caller forgets to short-circuit Ignore.
+            KnownHostsPolicy::Ignore => Ok(HostKeyAction::Accept),
+        },
+    }
+}
+
+/// Human-readable label for a host-key type (for logging only).
+fn host_key_type_label(host_key_type: ssh2::HostKeyType) -> &'static str {
+    match host_key_type {
+        ssh2::HostKeyType::Rsa => "ssh-rsa",
+        ssh2::HostKeyType::Dss => "ssh-dss",
+        ssh2::HostKeyType::Ecdsa256 => "ecdsa-sha2-nistp256",
+        ssh2::HostKeyType::Ecdsa384 => "ecdsa-sha2-nistp384",
+        ssh2::HostKeyType::Ecdsa521 => "ecdsa-sha2-nistp521",
+        ssh2::HostKeyType::Ed25519 => "ssh-ed25519",
+        _ => "unknown",
+    }
+}
 
 // ── Internal session handle (not serialised to the frontend) ─────────────────
 
@@ -82,6 +165,12 @@ impl SftpService {
             .handshake()
             .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
+        // ── Host-key verification (BEFORE any credential is sent) ─────────────
+        // A MITM must be detected before authenticate() so that no password,
+        // passphrase, or key material is ever transmitted to an unverified
+        // server. Honors `config.known_hosts_policy`.
+        Self::verify_host_key(&session, &config)?;
+
         // Banner
         let banner = session.banner().map(|b| b.to_string());
 
@@ -145,6 +234,162 @@ impl SftpService {
         Ok(info)
     }
 
+    // ── Host-key verification ──────────────────────────────────────────────
+
+    /// Verify the server host key against the configured `known_hosts_policy`
+    /// BEFORE authentication, mirroring core SSH's host-key trust model.
+    ///
+    /// Policies:
+    /// * `Strict`     — reject if the host is unknown OR the key mismatches.
+    ///                  Only an exact match in `known_hosts` is accepted.
+    /// * `AcceptNew`  — trust-on-first-use: a previously unknown host is
+    ///                  recorded in `known_hosts` and accepted; a *mismatch*
+    ///                  with a recorded key is always rejected.
+    /// * `Ask`        — (default) behaves like `AcceptNew` for unknown hosts
+    ///                  (records + accepts on first use) but rejects on
+    ///                  mismatch. The SFTP service has no interactive prompt
+    ///                  channel, so this is the safe non-interactive analogue
+    ///                  of core SSH's `Ask` — it never silently accepts a
+    ///                  changed key.
+    /// * `Ignore`     — explicit, dangerous opt-out: skip verification
+    ///                  entirely (e.g. throwaway/e2e hosts). Logged as a
+    ///                  warning.
+    ///
+    /// On any rejection the connection is aborted with an actionable error
+    /// before authenticate() runs, so no credential is sent to an unverified
+    /// server.
+    fn verify_host_key(session: &Session, config: &SftpConnectionConfig) -> Result<(), String> {
+        if matches!(config.known_hosts_policy, KnownHostsPolicy::Ignore) {
+            warn!(
+                "SFTP host-key verification DISABLED (policy=Ignore) for {}:{} — connection is not protected against MITM",
+                config.host, config.port
+            );
+            return Ok(());
+        }
+
+        let known_hosts_path = Self::known_hosts_path();
+
+        let (host_key, key_type) = session
+            .host_key()
+            .ok_or_else(|| "Host-key verification failed: server presented no host key".to_string())?;
+        let host_key = host_key.to_vec();
+
+        let check_result = {
+            let mut known_hosts = session
+                .known_hosts()
+                .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
+            // A missing/unreadable known_hosts file is fine — every host is
+            // then "NotFound" and handled per-policy below.
+            let _ = known_hosts
+                .read_file(Path::new(&known_hosts_path), ssh2::KnownHostFileKind::OpenSSH);
+            known_hosts.check_port(&config.host, config.port, &host_key)
+        };
+
+        let check = HostKeyCheck::from(check_result);
+        match decide_host_key_action(check, config.known_hosts_policy)
+            .map_err(|reason| format!(
+                "Host-key verification FAILED for {}:{}: {} Connection aborted; no credentials were sent.{}",
+                config.host,
+                config.port,
+                reason,
+                match check {
+                    HostKeyCheck::Mismatch => format!(
+                        " Server key fingerprint {}. If the host key legitimately changed, remove \
+                         the stale entry from {} and reconnect.",
+                        Self::host_key_fingerprint(&host_key),
+                        known_hosts_path
+                    ),
+                    HostKeyCheck::NotFound => format!(
+                        " Add the host to {} or use a less strict known-hosts policy to connect.",
+                        known_hosts_path
+                    ),
+                    _ => String::new(),
+                }
+            ))? {
+            HostKeyAction::Accept => {
+                info!("SFTP host key verified for {}:{}", config.host, config.port);
+                Ok(())
+            }
+            HostKeyAction::AcceptAndPersist => {
+                Self::persist_host_key(
+                    session,
+                    &known_hosts_path,
+                    &config.host,
+                    config.port,
+                    &host_key,
+                    key_type,
+                )?;
+                info!(
+                    "SFTP host key for {}:{} accepted on first use and saved to known_hosts ({})",
+                    config.host,
+                    config.port,
+                    host_key_type_label(key_type)
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// Default known_hosts path: `~/.ssh/known_hosts` (shared with core SSH so
+    /// trust is consistent across the app).
+    fn known_hosts_path() -> String {
+        dirs::home_dir()
+            .map(|p| p.join(".ssh").join("known_hosts"))
+            .unwrap_or_else(|| Path::new("known_hosts").to_path_buf())
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// SHA-256 hex fingerprint for actionable error messages.
+    fn host_key_fingerprint(host_key: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(host_key);
+        format!("SHA256:{}", hex::encode(hasher.finalize()))
+    }
+
+    /// Append a newly trusted host key to the known_hosts file (TOFU).
+    fn persist_host_key(
+        session: &Session,
+        known_hosts_path: &str,
+        host: &str,
+        port: u16,
+        host_key: &[u8],
+        key_type: ssh2::HostKeyType,
+    ) -> Result<(), String> {
+        let mut known_hosts = session
+            .known_hosts()
+            .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
+
+        let _ = known_hosts.read_file(Path::new(known_hosts_path), ssh2::KnownHostFileKind::OpenSSH);
+
+        let entry_name = if port == 22 {
+            host.to_string()
+        } else {
+            format!("[{}]:{}", host, port)
+        };
+
+        known_hosts
+            .add(
+                &entry_name,
+                host_key,
+                "Added by SortOfRemoteNG (SFTP)",
+                key_type.into(),
+            )
+            .map_err(|e| format!("Failed to add host key to known_hosts: {}", e))?;
+
+        if let Some(parent) = Path::new(known_hosts_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create known_hosts directory: {}", e))?;
+        }
+
+        known_hosts
+            .write_file(Path::new(known_hosts_path), ssh2::KnownHostFileKind::OpenSSH)
+            .map_err(|e| format!("Failed to write known_hosts file: {}", e))?;
+
+        Ok(())
+    }
+
     // ── Authentication helpers ───────────────────────────────────────────────
 
     fn authenticate(
@@ -169,11 +414,14 @@ impl SftpService {
 
         // 2. Private-key data (PEM in memory) — write to a temp file and use pubkey_file
         if let Some(ref key_data) = config.private_key_data {
-            let passphrase = config.private_key_passphrase.as_deref();
+            let passphrase = config
+                .private_key_passphrase
+                .as_ref()
+                .map(|p| p.expose_secret().as_str());
             // ssh2 doesn't expose userauth_pubkey_memory; write to temp file
             let tmp_dir = std::env::temp_dir();
             let tmp_key = tmp_dir.join(format!("sorng_sftp_key_{}", uuid::Uuid::new_v4()));
-            if std::fs::write(&tmp_key, key_data.as_bytes()).is_ok() {
+            if std::fs::write(&tmp_key, key_data.expose_secret().as_bytes()).is_ok() {
                 // Restrict permissions on the temp key file (Unix only)
                 #[cfg(unix)]
                 {
@@ -195,7 +443,10 @@ impl SftpService {
 
         // 3. Private-key file
         if let Some(ref key_path) = config.private_key_path {
-            let passphrase = config.private_key_passphrase.as_deref();
+            let passphrase = config
+                .private_key_passphrase
+                .as_ref()
+                .map(|p| p.expose_secret().as_str());
             session
                 .userauth_pubkey_file(&config.username, None, Path::new(key_path), passphrase)
                 .map_err(|e| format!("Public-key (file) auth failed: {}", e))?;
@@ -210,7 +461,10 @@ impl SftpService {
                 for name in &["id_ed25519", "id_rsa", "id_ecdsa"] {
                     let path = ssh_dir.join(name);
                     if path.exists() {
-                        let passphrase = config.private_key_passphrase.as_deref();
+                        let passphrase = config
+                            .private_key_passphrase
+                            .as_ref()
+                            .map(|p| p.expose_secret().as_str());
                         if session
                             .userauth_pubkey_file(&config.username, None, &path, passphrase)
                             .is_ok()
@@ -225,6 +479,7 @@ impl SftpService {
 
         // 5. Password / keyboard-interactive
         if let Some(ref password) = config.password {
+            let password = password.expose_secret();
             // Try password auth first
             if session
                 .userauth_password(&config.username, password)
@@ -396,6 +651,85 @@ impl SftpService {
                 handle.info.connected = false;
                 Ok(false)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod host_key_tests {
+    use super::{decide_host_key_action, HostKeyAction, HostKeyCheck};
+    use crate::sftp::types::KnownHostsPolicy;
+
+    #[test]
+    fn matching_key_is_always_accepted() {
+        for policy in [
+            KnownHostsPolicy::Strict,
+            KnownHostsPolicy::AcceptNew,
+            KnownHostsPolicy::Ask,
+            KnownHostsPolicy::Ignore,
+        ] {
+            assert_eq!(
+                decide_host_key_action(HostKeyCheck::Match, policy),
+                Ok(HostKeyAction::Accept),
+                "Match must be accepted under {:?}",
+                policy
+            );
+        }
+    }
+
+    #[test]
+    fn mismatch_is_rejected_under_every_verifying_policy() {
+        // Mismatch (possible MITM) is never accepted, regardless of policy.
+        for policy in [
+            KnownHostsPolicy::Strict,
+            KnownHostsPolicy::AcceptNew,
+            KnownHostsPolicy::Ask,
+        ] {
+            let result = decide_host_key_action(HostKeyCheck::Mismatch, policy);
+            assert!(
+                result.is_err(),
+                "Mismatch must be rejected under {:?}, got {:?}",
+                policy,
+                result
+            );
+            assert!(
+                result.unwrap_err().contains("man-in-the-middle"),
+                "rejection reason should flag MITM"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_host_is_rejected_under_strict() {
+        let result = decide_host_key_action(HostKeyCheck::NotFound, KnownHostsPolicy::Strict);
+        assert!(result.is_err(), "Strict must reject an unknown host");
+        assert!(result.unwrap_err().contains("Strict"));
+    }
+
+    #[test]
+    fn unknown_host_is_tofu_under_accept_new_and_ask() {
+        for policy in [KnownHostsPolicy::AcceptNew, KnownHostsPolicy::Ask] {
+            assert_eq!(
+                decide_host_key_action(HostKeyCheck::NotFound, policy),
+                Ok(HostKeyAction::AcceptAndPersist),
+                "{:?} should trust-on-first-use and persist",
+                policy
+            );
+        }
+    }
+
+    #[test]
+    fn internal_failure_is_always_rejected() {
+        for policy in [
+            KnownHostsPolicy::Strict,
+            KnownHostsPolicy::AcceptNew,
+            KnownHostsPolicy::Ask,
+        ] {
+            assert!(
+                decide_host_key_action(HostKeyCheck::Failure, policy).is_err(),
+                "Failure must be rejected under {:?}",
+                policy
+            );
         }
     }
 }
