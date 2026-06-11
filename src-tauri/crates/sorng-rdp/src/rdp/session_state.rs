@@ -436,15 +436,18 @@ pub struct ChannelSummary {
     pub failed_count: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameFlowSummary {
     pub queued_frames: u16,
     pub delivered_frames: u64,
     pub dropped_frames: u64,
+    pub coalesced_frames: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub average_render_ms: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStateSnapshot {
     pub session_id: String,
@@ -460,7 +463,7 @@ pub struct SessionStateSnapshot {
     pub frame_flow_summary: FrameFlowSummary,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TransitionOutcome {
     pub previous: SessionState,
     pub next: SessionState,

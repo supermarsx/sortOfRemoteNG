@@ -59,6 +59,8 @@ impl FrameFlowSnapshot {
             queued_frames: self.queued_frames,
             delivered_frames: self.delivered_frames,
             dropped_frames: self.dropped_frames,
+            coalesced_frames: self.coalesced_frames,
+            average_render_ms: None,
         }
     }
 }
