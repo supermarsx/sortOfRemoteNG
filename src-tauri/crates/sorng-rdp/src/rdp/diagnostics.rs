@@ -2,6 +2,8 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Instant;
 
+use secrecy::{ExposeSecret, SecretString};
+
 use crate::ironrdp::connector::{self, ClientConnector, State as _};
 use crate::ironrdp_blocking::Framed;
 
@@ -20,7 +22,7 @@ pub fn run_diagnostics(
     host: &str,
     port: u16,
     username: &str,
-    password: &str,
+    password: &SecretString,
     domain: Option<&str>,
     settings: &ResolvedSettings,
     cached_tls_connector: Option<RdpTlsConfig>,
@@ -70,7 +72,7 @@ pub fn run_diagnostics(
     let probe_config = connector::Config {
         credentials: connector::Credentials::UsernamePassword {
             username: actual_user.clone(),
-            password: password.to_string(),
+            password: password.expose_secret().to_string(),
         },
         domain: actual_domain,
         enable_tls: settings.enable_tls,
@@ -381,7 +383,7 @@ fn probe_color_depth(
     host: &str,
     port: u16,
     username: &str,
-    password: &str,
+    password: &SecretString,
     domain: Option<&str>,
     settings: &ResolvedSettings,
     depth: u32,
@@ -421,7 +423,7 @@ fn probe_color_depth(
     let config = connector::Config {
         credentials: connector::Credentials::UsernamePassword {
             username: actual_user,
-            password: password.to_string(),
+            password: password.expose_secret().to_string(),
         },
         domain: actual_domain,
         enable_tls: settings.enable_tls,
@@ -531,7 +533,7 @@ fn probe_color_depths_on_failure(
     host: &str,
     port: u16,
     username: &str,
-    password: &str,
+    password: &SecretString,
     domain: Option<&str>,
     settings: &ResolvedSettings,
 ) -> Option<DiagnosticStep> {
@@ -611,7 +613,7 @@ fn probe_alternative_protocols(
     host: &str,
     port: u16,
     username: &str,
-    password: &str,
+    password: &SecretString,
     domain: Option<&str>,
     settings: &ResolvedSettings,
 ) -> Option<DiagnosticStep> {
@@ -648,7 +650,7 @@ fn probe_alternative_protocols(
                     let config = connector::Config {
                         credentials: connector::Credentials::UsernamePassword {
                             username: actual_user,
-                            password: password.to_string(),
+                            password: password.expose_secret().to_string(),
                         },
                         domain: actual_domain,
                         enable_tls: tls,

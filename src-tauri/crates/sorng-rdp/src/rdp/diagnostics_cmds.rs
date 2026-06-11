@@ -1,3 +1,5 @@
+use secrecy::SecretString;
+
 use super::diagnostics::*;
 
 /// Run a deep diagnostic probe against an RDP server.
@@ -14,9 +16,14 @@ pub async fn diagnose_rdp_connection(
     domain: Option<String>,
     rdp_settings: Option<RdpSettingsPayload>,
 ) -> Result<DiagnosticReport, String> {
+    // Wrap the incoming credential in the same SecretString type the
+    // production session path uses (see commands_cmds.rs / session_runner.rs)
+    // so it is redacted/zeroized consistently and never logged. The Tauri
+    // command still accepts the raw `password` string from the frontend; we
+    // wrap it immediately at the boundary.
     let h = host.clone();
     let u = username.clone();
-    let p = password.clone();
+    let p = SecretString::new(password);
     let d = domain.clone();
 
     let payload = rdp_settings.unwrap_or_default();

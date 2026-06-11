@@ -53,7 +53,7 @@ fn rdp_connect_list_disconnect_golden_path() {
     let host = env_or("RDP_HOST", "127.0.0.1");
     let port: u16 = env_or("RDP_PORT", "13389").parse().unwrap_or(13389);
     let username = env_or("RDP_USER", "ubuntu");
-    let password = env_or("RDP_PASSWORD", "ubuntu");
+    let password = secrecy::SecretString::new(env_or("RDP_PASSWORD", "ubuntu"));
 
     // Use the default payload (width/height defaults picked by `from_payload`).
     let payload = RdpSettingsPayload::default();
