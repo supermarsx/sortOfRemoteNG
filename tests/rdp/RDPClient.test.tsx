@@ -559,6 +559,170 @@ describe("RDPClient", () => {
         expect(screen.getByText("7")).toBeInTheDocument();
       });
     });
+
+    it("renders channel/frame/failure-class diagnostics rows from a rich rdp://lifecycle event", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+
+      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      internalsButton.click();
+
+      await act(async () => {
+        mockListeners["rdp://stats"]?.({
+          payload: {
+            session_id: "rdp-session-123",
+            uptime_secs: 42,
+            bytes_received: 1048576,
+            bytes_sent: 65536,
+            pdus_received: 500,
+            pdus_sent: 100,
+            frame_count: 300,
+            fps: 25.0,
+            input_events: 150,
+            errors_recovered: 2,
+            reactivations: 1,
+            phase: "active",
+            last_error: null,
+          },
+        });
+        mockListeners["rdp://lifecycle"]?.({
+          payload: {
+            sessionId: "rdp-session-123",
+            state: "active",
+            activeSubstate: "running",
+            phaseStartedAtMs: 10,
+            transitionCount: 7,
+            reconnectAttempt: 0,
+            lastFailureClass: "credssp-auth",
+            channelSummary: {
+              enabledCount: 4,
+              readyCount: 3,
+              failedCount: 1,
+            },
+            frameFlowSummary: {
+              queuedFrames: 12,
+              deliveredFrames: 287,
+              droppedFrames: 5,
+              coalescedFrames: 9,
+              averageRenderMs: 4.25,
+            },
+          },
+        });
+      });
+
+      await waitFor(() => {
+        // Channel summary rows
+        expect(screen.getByText("Channels Enabled")).toBeInTheDocument();
+        expect(screen.getByText("Channels Ready")).toBeInTheDocument();
+        // readyCount/enabledCount is rendered as separate text nodes ({x}/{y}),
+        // so match the containing cell value rather than a single text node.
+        expect(
+          screen.getByText(
+            (_content, el) =>
+              el?.className?.includes?.("font-mono") === true &&
+              el.textContent?.replace(/\s+/g, "") === "3/4",
+          ),
+        ).toBeInTheDocument();
+        expect(screen.getByText("Channel Faults")).toBeInTheDocument();
+
+        // Frame-flow rows, including the new coalesced + avg-render fields
+        expect(screen.getByText("Frames Queued")).toBeInTheDocument();
+        expect(screen.getByText("12")).toBeInTheDocument();
+        expect(screen.getByText("Frames Delivered")).toBeInTheDocument();
+        expect(screen.getByText("287")).toBeInTheDocument();
+        expect(screen.getByText("Frames Dropped")).toBeInTheDocument();
+        expect(screen.getByText("Frames Coalesced")).toBeInTheDocument();
+        expect(screen.getByText("9")).toBeInTheDocument();
+        // Avg Render: when averageRenderMs is a number, the value cell renders
+        // the ms-formatted value (not the em-dash placeholder). The label sits
+        // in a sibling cell; assert the label row exists and that its value cell
+        // is present-and-non-dash.
+        const avgRenderLabel = screen.getByText("Avg Render");
+        const avgRenderValue =
+          avgRenderLabel.parentElement?.querySelector(".font-mono");
+        expect(avgRenderValue).toBeTruthy();
+        expect(avgRenderValue?.textContent).not.toBe("–");
+
+        // Failure class shows the populated class
+        expect(screen.getByText("Failure Class")).toBeInTheDocument();
+        expect(screen.getByText("credssp-auth")).toBeInTheDocument();
+      });
+    });
+
+    it("renders defensively for a pre-L2 lifecycle event (no coalesced/avgRender/failureClass)", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+
+      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      internalsButton.click();
+
+      await act(async () => {
+        mockListeners["rdp://stats"]?.({
+          payload: {
+            session_id: "rdp-session-123",
+            uptime_secs: 42,
+            bytes_received: 1048576,
+            bytes_sent: 65536,
+            pdus_received: 500,
+            pdus_sent: 100,
+            frame_count: 300,
+            fps: 25.0,
+            input_events: 150,
+            errors_recovered: 2,
+            reactivations: 1,
+            phase: "active",
+            last_error: null,
+          },
+        });
+        // Pre-L2 shape: no coalescedFrames, no averageRenderMs, no lastFailureClass.
+        mockListeners["rdp://lifecycle"]?.({
+          payload: {
+            sessionId: "rdp-session-123",
+            state: "active",
+            activeSubstate: "running",
+            phaseStartedAtMs: 10,
+            transitionCount: 3,
+            reconnectAttempt: 0,
+            channelSummary: {
+              enabledCount: 2,
+              readyCount: 2,
+              failedCount: 0,
+            },
+            frameFlowSummary: {
+              queuedFrames: 0,
+              deliveredFrames: 300,
+              droppedFrames: 0,
+            },
+          },
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Frames Coalesced")).toBeInTheDocument();
+        expect(screen.getByText("Avg Render")).toBeInTheDocument();
+        expect(screen.getByText("Failure Class")).toBeInTheDocument();
+        // Absent optional fields render the em-dash placeholder (U+2013).
+        const dashes = screen.getAllByText("–");
+        // coalescedFrames, averageRenderMs, and lastFailureClass are all absent here.
+        expect(dashes.length).toBeGreaterThanOrEqual(3);
+      });
+    });
   });
 
   describe("Certificate Trust", () => {

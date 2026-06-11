@@ -566,6 +566,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => 
           rdpSettings={mgr.rdpSettings}
           activeRenderBackend={mgr.activeRenderBackend}
           activeFrontendRenderer={mgr.activeFrontendRenderer}
+          framePressureState={mgr.framePressureState}
+          frameBackpressureTelemetry={mgr.frameBackpressureTelemetry}
           onClose={() => mgr.setShowInternals(false)}
         />
       )}
