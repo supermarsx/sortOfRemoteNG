@@ -87,4 +87,5 @@ e2e/screenshots/failure-*.png
 # Local verification build directories
 /target-fv-*
 /target-t*
+/target-verify-*
 /src-tauri/target-t*
