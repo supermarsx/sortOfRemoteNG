@@ -1,53 +1,48 @@
 // Portable Mode types
 
-export type PortableMode = 'installed' | 'portable' | 'hybrid';
+export type PortableMode = "installed" | "portable";
 
 export interface PortableStatus {
   mode: PortableMode;
-  markerPresent: boolean;
-  dataPath: string;
-  configPath: string;
-  cachePath: string;
-  logsPath: string;
-  extensionsPath: string;
-  tempPath: string;
-  isWritable: boolean;
-  driveLabel: string | null;
-  driveType: string | null;
-  freeSpaceBytes: number;
-  totalSpaceBytes: number;
+  data_dir: string;
+  total_size_bytes: number;
+  free_space_bytes: number;
+  file_count: number;
+  is_removable_drive: boolean;
+  drive_label: string | null;
 }
 
 export interface PortablePaths {
-  data: string;
-  config: string;
-  cache: string;
-  logs: string;
-  extensions: string;
-  backups: string;
-  recordings: string;
-  temp: string;
+  base_dir: string;
+  data_dir: string;
+  settings_dir: string;
+  collections_dir: string;
+  backups_dir: string;
+  recordings_dir: string;
+  extensions_dir: string;
+  logs_dir: string;
+  temp_dir: string;
+  cache_dir: string;
 }
 
 export interface PortableConfig {
-  autoDetect: boolean;
-  preferPortable: boolean;
-  syncOnEject: boolean;
-  compactOnExit: boolean;
-  encryptPortableData: boolean;
-  maxCacheSizeMb: number;
-  maxLogSizeMb: number;
-  cleanTempOnExit: boolean;
+  mode: PortableMode;
+  data_directory: string;
+  relative_data_dir: string;
+  portable_marker_file: string;
+  store_settings_alongside: boolean;
+  store_recordings_alongside: boolean;
+  store_backups_alongside: boolean;
+  store_extensions_alongside: boolean;
+  max_portable_size_mb: number | null;
 }
 
 export interface DriveInfo {
   label: string;
-  driveLetter: string;
-  driveType: 'removable' | 'fixed' | 'network' | 'unknown';
-  fileSystem: string;
-  totalBytes: number;
-  freeBytes: number;
-  isReadOnly: boolean;
+  total_bytes: number;
+  free_bytes: number;
+  is_removable: boolean;
+  filesystem_type: string;
 }
 
 export interface MigrationResult {

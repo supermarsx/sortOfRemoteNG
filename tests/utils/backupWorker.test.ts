@@ -5,7 +5,7 @@ import { join } from "@tauri-apps/api/path";
 import type { BackupConfig } from "../../src/types/settings/backupSettings";
 
 // We need a fresh module for each test since backupWorker is a singleton
-let backupWorker: typeof import("../../src/utils/services/backupWorker")["backupWorker"];
+let backupWorker: (typeof import("../../src/utils/services/backupWorker"))["backupWorker"];
 let BackupWorkerService: any;
 
 function makeConfig(overrides: Partial<BackupConfig> = {}): BackupConfig {
@@ -181,21 +181,25 @@ describe("BackupWorkerService", () => {
       vi.mocked(invoke).mockResolvedValue(undefined);
     });
 
-    it("calls invoke('run_backup') with correct config", async () => {
+    it("updates config and calls backup_run_now with current data", async () => {
       await backupWorker.initialize(
         makeConfig({ format: "xml", includePasswords: true }),
       );
       const job = await backupWorker.runBackup();
 
       expect(invoke).toHaveBeenCalledWith(
-        "run_backup",
+        "backup_update_config",
         expect.objectContaining({
           config: expect.objectContaining({
             format: "xml",
-            include_passwords: true,
+            includePasswords: true,
           }),
         }),
       );
+      expect(invoke).toHaveBeenCalledWith("backup_run_now", {
+        backupType: "full",
+        data: expect.objectContaining({ connections: [] }),
+      });
       expect(job.status).toBe("completed");
     });
 
@@ -258,7 +262,7 @@ describe("BackupWorkerService", () => {
         makeConfig({ backupOnClose: true, enabled: true }),
       );
       await backupWorker.backupOnClose();
-      expect(invoke).toHaveBeenCalledWith("run_backup", expect.anything());
+      expect(invoke).toHaveBeenCalledWith("backup_run_now", expect.anything());
     });
 
     it("skips backup when backupOnClose is false", async () => {
@@ -266,7 +270,10 @@ describe("BackupWorkerService", () => {
         makeConfig({ backupOnClose: false, enabled: true }),
       );
       await backupWorker.backupOnClose();
-      expect(invoke).not.toHaveBeenCalledWith("run_backup", expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith(
+        "backup_run_now",
+        expect.anything(),
+      );
     });
 
     it("skips backup when not enabled", async () => {
@@ -274,7 +281,10 @@ describe("BackupWorkerService", () => {
         makeConfig({ backupOnClose: true, enabled: false }),
       );
       await backupWorker.backupOnClose();
-      expect(invoke).not.toHaveBeenCalledWith("run_backup", expect.anything());
+      expect(invoke).not.toHaveBeenCalledWith(
+        "backup_run_now",
+        expect.anything(),
+      );
     });
   });
 
@@ -282,10 +292,30 @@ describe("BackupWorkerService", () => {
   describe("cleanupOldBackups", () => {
     it("removes files beyond maxBackupsToKeep", async () => {
       vi.mocked(readDir).mockResolvedValue([
-        { name: "sortOfRemoteNG-backup-2024-01-05T12-00-00-000Z.json", isDirectory: false, isFile: true, isSymlink: false },
-        { name: "sortOfRemoteNG-backup-2024-01-04T12-00-00-000Z.json", isDirectory: false, isFile: true, isSymlink: false },
-        { name: "sortOfRemoteNG-backup-2024-01-03T12-00-00-000Z.json", isDirectory: false, isFile: true, isSymlink: false },
-        { name: "sortOfRemoteNG-backup-2024-01-02T12-00-00-000Z.json", isDirectory: false, isFile: true, isSymlink: false },
+        {
+          name: "sortOfRemoteNG-backup-2024-01-05T12-00-00-000Z.json",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
+        {
+          name: "sortOfRemoteNG-backup-2024-01-04T12-00-00-000Z.json",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
+        {
+          name: "sortOfRemoteNG-backup-2024-01-03T12-00-00-000Z.json",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
+        {
+          name: "sortOfRemoteNG-backup-2024-01-02T12-00-00-000Z.json",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
       ] as any);
 
       await backupWorker.initialize(makeConfig({ maxBackupsToKeep: 2 }));
@@ -390,17 +420,13 @@ describe("BackupWorkerService", () => {
   // ---------- differential vs full backup logic ----------
   describe("differential vs full backup logic", () => {
     it("runs full backup when differentialEnabled is false", async () => {
-      await backupWorker.initialize(
-        makeConfig({ differentialEnabled: false }),
-      );
+      await backupWorker.initialize(makeConfig({ differentialEnabled: false }));
       const job = await backupWorker.runBackup();
       expect(job.type).toBe("full");
     });
 
     it("runs full backup on first run even when differential is enabled", async () => {
-      await backupWorker.initialize(
-        makeConfig({ differentialEnabled: true }),
-      );
+      await backupWorker.initialize(makeConfig({ differentialEnabled: true }));
       // No lastFullBackupTime → must be full
       const job = await backupWorker.runBackup();
       expect(job.type).toBe("full");
@@ -462,9 +488,24 @@ describe("BackupWorkerService", () => {
   describe("extractTimestampFromFilename", () => {
     it("correctly parses timestamps so cleanup deletes only the oldest files", async () => {
       vi.mocked(readDir).mockResolvedValue([
-        { name: "sortOfRemoteNG-backup-2024-01-08T12-30-00-000Z.json", isDirectory: false, isFile: true, isSymlink: false },
-        { name: "sortOfRemoteNG-backup-2024-01-09T12-30-00-000Z-diff-encrypted.xml.gz", isDirectory: false, isFile: true, isSymlink: false },
-        { name: "unrelated-file.txt", isDirectory: false, isFile: true, isSymlink: false },
+        {
+          name: "sortOfRemoteNG-backup-2024-01-08T12-30-00-000Z.json",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
+        {
+          name: "sortOfRemoteNG-backup-2024-01-09T12-30-00-000Z-diff-encrypted.xml.gz",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
+        {
+          name: "unrelated-file.txt",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
       ] as any);
 
       await backupWorker.initialize(makeConfig({ maxBackupsToKeep: 1 }));
@@ -476,13 +517,25 @@ describe("BackupWorkerService", () => {
       );
       // Unrelated file should not be touched
       const removeCalls = vi.mocked(remove).mock.calls.map((c) => c[0]);
-      expect(removeCalls.every((p) => !String(p).includes("unrelated"))).toBe(true);
+      expect(removeCalls.every((p) => !String(p).includes("unrelated"))).toBe(
+        true,
+      );
     });
 
     it("ignores files that do not match backup pattern", async () => {
       vi.mocked(readDir).mockResolvedValue([
-        { name: "random-file.json", isDirectory: false, isFile: true, isSymlink: false },
-        { name: "not-a-backup.xml.gz", isDirectory: false, isFile: true, isSymlink: false },
+        {
+          name: "random-file.json",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
+        {
+          name: "not-a-backup.xml.gz",
+          isDirectory: false,
+          isFile: true,
+          isSymlink: false,
+        },
       ] as any);
 
       await backupWorker.initialize(makeConfig({ maxBackupsToKeep: 1 }));
