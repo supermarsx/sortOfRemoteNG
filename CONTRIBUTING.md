@@ -54,7 +54,7 @@ npm run tauri:dev
 # Frontend unit tests
 npm test
 
-# Lint + format (frontend)
+# Lint + changed-file format (frontend)
 npm run lint
 npm run format
 
@@ -82,7 +82,7 @@ for per-OS `librdkafka` install and build-flag selection
 
 Every PR must pass:
 
-- `format` — `npm run format` (Prettier).
+- `format` — `npm run format` (Prettier on changed files).
 - `lint` — `npm run lint` (ESLint).
 - `test` — `npm test -- --run --coverage`.
 - `e2e-smoke` — Docker-backed SSH + SFTP smoke tests only.

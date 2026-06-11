@@ -103,16 +103,22 @@ That means:
 - Environment setup is split across package scripts, compose overlays, and specialty docs.
 - Feature gating is inconsistent across Rust E2E crates and docs.
 
+Audit snapshot from 2026-06-09:
+
+- `rg "browser\\.pause" e2e -n` reports 650 fixed sleeps.
+- Highest-count hotspots are `22-smart-filters/smart-filter-manager.spec.ts` (28), `34-security-extended/security-extended.spec.ts` (24), `31-settings-extended/settings-extended-tabs.spec.ts` (23), `25-ddns/ddns-manager.spec.ts` (21), and three 20-count specs under multi-window, UI features, and SSH tools.
+- These counts make Workstream 2 measurable: reduce the hotspot files first before broad suite promotion.
+
 ### 3.4 Coverage shape today
 
 Current coverage can be grouped into four buckets:
 
-| Bucket | Current state | Trust level |
-|---|---|---|
-| Rust protocol golden paths | Real and useful | High |
-| WDIO core app + local flows | Broad but not CI-gated | Medium |
-| WDIO Docker-backed protocol UI flows | Useful but timing-heavy | Medium |
-| Extended product surfaces (updater, marketplace, cloud sync, vendor panels) | Broad but shallow | Low to Medium |
+| Bucket                                                                      | Current state           | Trust level   |
+| --------------------------------------------------------------------------- | ----------------------- | ------------- |
+| Rust protocol golden paths                                                  | Real and useful         | High          |
+| WDIO core app + local flows                                                 | Broad but not CI-gated  | Medium        |
+| WDIO Docker-backed protocol UI flows                                        | Useful but timing-heavy | Medium        |
+| Extended product surfaces (updater, marketplace, cloud sync, vendor panels) | Broad but shallow       | Low to Medium |
 
 ---
 

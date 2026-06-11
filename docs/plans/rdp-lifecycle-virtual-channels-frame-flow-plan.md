@@ -35,11 +35,11 @@ The current RDP implementation already has strong foundations:
 
 The next architecture step is to stop treating RDP as a single long-running loop with several side modules. RDP should be modeled as three coordinated systems:
 
-| System | Current shape | Target shape |
-| --- | --- | --- |
-| Session lifecycle | Mostly implicit in `session_runner.rs`, with phase stats in `stats.rs` | Explicit typed lifecycle state machine with guarded transitions and observable state snapshots |
-| Virtual channels | Per-module channel behavior with no central lifecycle or dependency graph | Unified virtual channel manager with channel state, lifecycle hooks, fault isolation, and channel-level flow budgets |
-| Frame delivery | Backend pushes frames; frontend schedules and renders from bounded queues | Credit/backpressure-aware frame flow with render telemetry, bounded buffers, coalescing, and diagnostics |
+| System            | Current shape                                                             | Target shape                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Session lifecycle | Mostly implicit in `session_runner.rs`, with phase stats in `stats.rs`    | Explicit typed lifecycle state machine with guarded transitions and observable state snapshots                       |
+| Virtual channels  | Per-module channel behavior with no central lifecycle or dependency graph | Unified virtual channel manager with channel state, lifecycle hooks, fault isolation, and channel-level flow budgets |
+| Frame delivery    | Backend pushes frames; frontend schedules and renders from bounded queues | Credit/backpressure-aware frame flow with render telemetry, bounded buffers, coalescing, and diagnostics             |
 
 This plan uses the useful historical lesson from old Terminal Services/RDP architecture: lifecycle, channels, and flow control need to be first-class. It does not copy old NT5-era implementation details, protocol code, crypto, constants, or assumptions. The goal is to make the existing IronRDP-based client more resilient, observable, testable, and ready for beta-quality RDP sessions.
 
@@ -149,12 +149,12 @@ Weaknesses:
 
 The architecture work should include or depend on closing these existing RDP issues:
 
-| Issue | Why it matters to this plan |
-| --- | --- |
-| Worker/WebCodecs `toDataView()` scope bug | Frame-flow work must not build on a broken fast path. |
-| `drive_redirection_enabled` no-op | Virtual channel manager needs trustworthy enable/disable gates. |
-| Certificate trust prompt gap | Lifecycle errors should distinguish trust failure, user rejection, and network failure. |
-| Plaintext RDP password lifetime | Lifecycle state snapshots and diagnostics must never retain secrets. |
+| Issue                                     | Why it matters to this plan                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| Worker/WebCodecs `toDataView()` scope bug | Frame-flow work must not build on a broken fast path.                                   |
+| `drive_redirection_enabled` no-op         | Virtual channel manager needs trustworthy enable/disable gates.                         |
+| Certificate trust prompt gap              | Lifecycle errors should distinguish trust failure, user rejection, and network failure. |
+| Plaintext RDP password lifetime           | Lifecycle state snapshots and diagnostics must never retain secrets.                    |
 
 ---
 
@@ -193,13 +193,13 @@ RDP Session Actor
 
 ### 4.3 Target runtime responsibilities
 
-| Runtime component | Owns | Does not own |
-| --- | --- | --- |
-| `LifecycleStateMachine` | Session state, transition rules, failure classification, state snapshots | Protocol parsing, virtual channel payloads, renderer details |
-| `VirtualChannelManager` | Channel registry, channel state, channel routing, init ordering, failure isolation | Raw IronRDP transport, frontend rendering |
-| `FrameFlowController` | Frame budgets, backpressure state, drop/coalesce policy, render telemetry | Protocol negotiation, clipboard/device messages |
-| `session_runner.rs` | Actor orchestration and integration with IronRDP | Ad hoc hidden state decisions that belong to the state machine |
-| Frontend RDP pipeline | Render scheduling, render telemetry, visible diagnostics | Backend lifecycle decisions |
+| Runtime component       | Owns                                                                               | Does not own                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `LifecycleStateMachine` | Session state, transition rules, failure classification, state snapshots           | Protocol parsing, virtual channel payloads, renderer details   |
+| `VirtualChannelManager` | Channel registry, channel state, channel routing, init ordering, failure isolation | Raw IronRDP transport, frontend rendering                      |
+| `FrameFlowController`   | Frame budgets, backpressure state, drop/coalesce policy, render telemetry          | Protocol negotiation, clipboard/device messages                |
+| `session_runner.rs`     | Actor orchestration and integration with IronRDP                                   | Ad hoc hidden state decisions that belong to the state machine |
+| Frontend RDP pipeline   | Render scheduling, render telemetry, visible diagnostics                           | Backend lifecycle decisions                                    |
 
 ---
 
@@ -294,39 +294,39 @@ Examples:
 
 ### 5.3 Transition table
 
-| Current state | Event | Next state | Required actions |
-| --- | --- | --- | --- |
-| `Idle` | `UserConnect` | `Resolving` | Resolve host, emit connecting snapshot |
-| `Resolving` | host resolved | `Connecting` | Open TCP transport |
-| `Connecting` | `TcpConnected` | `NegotiatingSecurity` | Start X.224/TLS/CredSSP path |
-| `NegotiatingSecurity` | `TlsReady` / `CredSspReady` | `Authenticating` | Continue auth and cert policy handling |
-| `Authenticating` | auth complete | `Activating` | Run RDP activation sequence |
-| `Activating` | `ActivationComplete` | `Active(Running)` | Init channels, start frame flow |
-| `Active(_)` | `DeactivateAllReceived` | `Reactivating` | Pause frame flow, suspend channels, re-run activation |
-| `Reactivating` | `ReactivationComplete` | `Active(Running)` | Resume channels, refresh surfaces, emit recovery event |
-| `Active(_)` | `FrontendDetached` | `Active(FrontendDetached)` | Keep backend alive, stop live render pushes, keep frame store budget |
-| `Active(FrontendDetached)` | `FrontendAttached` | `Active(Running)` | Send snapshot, resume frame pushes |
-| `Active(_)` | `BackpressureRaised` | `Active(FrontendBackpressured)` | Enable coalescing/drop policy |
-| `Active(FrontendBackpressured)` | `BackpressureCleared` | `Active(Running)` | Resume normal frame policy |
-| `Active(_)` | `NetworkLost` | `Reconnecting` | Freeze channel state, schedule reconnect |
-| `Reconnecting` | reconnect success | `Activating` or `Reactivating` | Rebuild transport and activation state |
-| any non-terminal | `UserDisconnect` | `Disconnecting` | Drain, close, emit disconnecting snapshot |
-| `Disconnecting` | close complete | `Terminated(UserRequested)` | Release resources |
-| any non-terminal | fatal error | `Terminated(Failed)` | Release resources, preserve failure context |
+| Current state                   | Event                       | Next state                      | Required actions                                                     |
+| ------------------------------- | --------------------------- | ------------------------------- | -------------------------------------------------------------------- |
+| `Idle`                          | `UserConnect`               | `Resolving`                     | Resolve host, emit connecting snapshot                               |
+| `Resolving`                     | host resolved               | `Connecting`                    | Open TCP transport                                                   |
+| `Connecting`                    | `TcpConnected`              | `NegotiatingSecurity`           | Start X.224/TLS/CredSSP path                                         |
+| `NegotiatingSecurity`           | `TlsReady` / `CredSspReady` | `Authenticating`                | Continue auth and cert policy handling                               |
+| `Authenticating`                | auth complete               | `Activating`                    | Run RDP activation sequence                                          |
+| `Activating`                    | `ActivationComplete`        | `Active(Running)`               | Init channels, start frame flow                                      |
+| `Active(_)`                     | `DeactivateAllReceived`     | `Reactivating`                  | Pause frame flow, suspend channels, re-run activation                |
+| `Reactivating`                  | `ReactivationComplete`      | `Active(Running)`               | Resume channels, refresh surfaces, emit recovery event               |
+| `Active(_)`                     | `FrontendDetached`          | `Active(FrontendDetached)`      | Keep backend alive, stop live render pushes, keep frame store budget |
+| `Active(FrontendDetached)`      | `FrontendAttached`          | `Active(Running)`               | Send snapshot, resume frame pushes                                   |
+| `Active(_)`                     | `BackpressureRaised`        | `Active(FrontendBackpressured)` | Enable coalescing/drop policy                                        |
+| `Active(FrontendBackpressured)` | `BackpressureCleared`       | `Active(Running)`               | Resume normal frame policy                                           |
+| `Active(_)`                     | `NetworkLost`               | `Reconnecting`                  | Freeze channel state, schedule reconnect                             |
+| `Reconnecting`                  | reconnect success           | `Activating` or `Reactivating`  | Rebuild transport and activation state                               |
+| any non-terminal                | `UserDisconnect`            | `Disconnecting`                 | Drain, close, emit disconnecting snapshot                            |
+| `Disconnecting`                 | close complete              | `Terminated(UserRequested)`     | Release resources                                                    |
+| any non-terminal                | fatal error                 | `Terminated(Failed)`            | Release resources, preserve failure context                          |
 
 ### 5.4 Failure classification
 
 Add typed failure categories so reconnect and UI decisions are less guessy:
 
-| Failure class | Examples | Retry behavior |
-| --- | --- | --- |
-| `TrustRejected` | User rejected certificate, pin mismatch | Do not retry automatically |
-| `AuthRejected` | Bad credentials, account locked | Do not retry automatically |
-| `NetworkTransient` | Timeout, reset, route loss | Retry with backoff if policy allows |
-| `ServerClosed` | Clean server close | Retry only if session policy says so |
-| `ProtocolViolation` | Invalid PDU sequence | Do not retry blindly; emit diagnostic |
-| `ChannelFault` | Clipboard/RDPDR/AUDIN parser or state error | Isolate channel if possible |
-| `RendererUnavailable` | Frontend cannot attach renderer | Keep session alive if detached fallback is allowed |
+| Failure class         | Examples                                    | Retry behavior                                     |
+| --------------------- | ------------------------------------------- | -------------------------------------------------- |
+| `TrustRejected`       | User rejected certificate, pin mismatch     | Do not retry automatically                         |
+| `AuthRejected`        | Bad credentials, account locked             | Do not retry automatically                         |
+| `NetworkTransient`    | Timeout, reset, route loss                  | Retry with backoff if policy allows                |
+| `ServerClosed`        | Clean server close                          | Retry only if session policy says so               |
+| `ProtocolViolation`   | Invalid PDU sequence                        | Do not retry blindly; emit diagnostic              |
+| `ChannelFault`        | Clipboard/RDPDR/AUDIN parser or state error | Isolate channel if possible                        |
+| `RendererUnavailable` | Frontend cannot attach renderer             | Keep session alive if detached fallback is allowed |
 
 ### 5.5 Lifecycle snapshots
 
@@ -438,24 +438,24 @@ pub enum ChannelState {
 
 Different channel classes need different behavior under pressure:
 
-| Priority | Channels/events | Policy |
-| --- | --- | --- |
-| Critical | Lifecycle control, disconnect, reconnect, reactivation | Never drop; bounded queue with immediate error if blocked |
-| High | Input, pointer shape, focus, resize | Prefer latest event; coalesce pointer movement if needed |
-| Interactive | Clipboard text, audio control, small device metadata | Bounded queue; short timeout; visible fault if stuck |
-| Bulk | Drive redirection file I/O, printer data, large clipboard files | Backpressure-aware; can pause/resume; never block graphics indefinitely |
-| Graphics | Bitmap/GFX/H.264 frames | Coalesce/drop superseded frames according to frame-flow policy |
+| Priority    | Channels/events                                                 | Policy                                                                  |
+| ----------- | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Critical    | Lifecycle control, disconnect, reconnect, reactivation          | Never drop; bounded queue with immediate error if blocked               |
+| High        | Input, pointer shape, focus, resize                             | Prefer latest event; coalesce pointer movement if needed                |
+| Interactive | Clipboard text, audio control, small device metadata            | Bounded queue; short timeout; visible fault if stuck                    |
+| Bulk        | Drive redirection file I/O, printer data, large clipboard files | Backpressure-aware; can pause/resume; never block graphics indefinitely |
+| Graphics    | Bitmap/GFX/H.264 frames                                         | Coalesce/drop superseded frames according to frame-flow policy          |
 
 ### 6.6 Dependency and ordering graph
 
 Declare channel dependencies centrally:
 
-| Channel | Depends on | Initialization order | Reactivation behavior |
-| --- | --- | --- | --- |
-| RDPGFX | Active graphics capability negotiation | After activation | Recreate surfaces or refresh surfaces after reactivation |
-| RDPDR | Device redirection enabled and negotiated | Early after activation | Suspend I/O, re-announce if required |
-| CLIPRDR | Clipboard enabled and server channel present | After static channel registration | Re-sync formats after reactivation |
-| AUDIN/RDPSND | Audio enabled and codecs negotiated | After activation | Flush and renegotiate if server requires |
+| Channel      | Depends on                                   | Initialization order              | Reactivation behavior                                    |
+| ------------ | -------------------------------------------- | --------------------------------- | -------------------------------------------------------- |
+| RDPGFX       | Active graphics capability negotiation       | After activation                  | Recreate surfaces or refresh surfaces after reactivation |
+| RDPDR        | Device redirection enabled and negotiated    | Early after activation            | Suspend I/O, re-announce if required                     |
+| CLIPRDR      | Clipboard enabled and server channel present | After static channel registration | Re-sync formats after reactivation                       |
+| AUDIN/RDPSND | Audio enabled and codecs negotiated          | After activation                  | Flush and renegotiate if server requires                 |
 
 ### 6.7 Channel failure isolation
 
@@ -566,15 +566,15 @@ pub enum FrameDisposition {
 
 ### 7.5 Frame classification
 
-| Data type | Priority | Drop/coalesce policy |
-| --- | --- | --- |
-| Pointer visibility/shape | High | Keep latest; do not let old pointer updates backlog |
-| Desktop resize/surface reset | Critical | Never drop; flush incompatible queued frames |
-| Full-frame bitmap/H.264 frame | Graphics | Drop superseded frames if newer full frame exists |
-| Dirty-rect bitmap update | Graphics | Coalesce when rectangles overlap or newer update supersedes old pixels |
-| Snapshot for detach/reattach | Store | Keep latest complete surface; bounded history |
-| Recording frame | Store/recording | Follow recording policy; do not reuse live drop policy blindly |
-| Diagnostics frame metadata | Low | Sample under pressure |
+| Data type                     | Priority        | Drop/coalesce policy                                                   |
+| ----------------------------- | --------------- | ---------------------------------------------------------------------- |
+| Pointer visibility/shape      | High            | Keep latest; do not let old pointer updates backlog                    |
+| Desktop resize/surface reset  | Critical        | Never drop; flush incompatible queued frames                           |
+| Full-frame bitmap/H.264 frame | Graphics        | Drop superseded frames if newer full frame exists                      |
+| Dirty-rect bitmap update      | Graphics        | Coalesce when rectangles overlap or newer update supersedes old pixels |
+| Snapshot for detach/reattach  | Store           | Keep latest complete surface; bounded history                          |
+| Recording frame               | Store/recording | Follow recording policy; do not reuse live drop policy blindly         |
+| Diagnostics frame metadata    | Low             | Sample under pressure                                                  |
 
 ### 7.6 Frontend telemetry
 
@@ -612,14 +612,14 @@ Rules:
 
 Default budgets should be conservative and configurable:
 
-| Budget | Initial target |
-| --- | --- |
-| Frontend live queue | Already bounded; formalize threshold in shared constants |
-| Backend pending live frames | 2 to 3 frames or equivalent byte budget |
-| Backend frame store live snapshot | Latest complete surface plus small history |
-| Backpressure high watermark | Frontend queue depth >= 75% or average render > 32 ms |
-| Backpressure low watermark | Frontend queue depth <= 25% and average render < 20 ms |
-| Severe pressure | Render latency > 500 ms or repeated channel send failures |
+| Budget                            | Initial target                                            |
+| --------------------------------- | --------------------------------------------------------- |
+| Frontend live queue               | Already bounded; formalize threshold in shared constants  |
+| Backend pending live frames       | 2 to 3 frames or equivalent byte budget                   |
+| Backend frame store live snapshot | Latest complete surface plus small history                |
+| Backpressure high watermark       | Frontend queue depth >= 75% or average render > 32 ms     |
+| Backpressure low watermark        | Frontend queue depth <= 25% and average render < 20 ms    |
+| Severe pressure                   | Render latency > 500 ms or repeated channel send failures |
 
 When pressure rises:
 
@@ -675,13 +675,13 @@ Extend or add diagnostics types near:
 
 Snapshot sections:
 
-| Section | Fields |
-| --- | --- |
-| Lifecycle | current state, active substate, last transition, transition count, reconnect attempt |
-| Transport | connected/disconnected, TLS mode, cert validation policy result, RTT estimate if available |
-| Channels | per-channel enabled/state/priority/last error/message counts/queue depth |
-| Frame flow | live queue, store budget, renderer telemetry, dropped/coalesced/delivered counters |
-| Frontend | attached/detached, renderer name, visibility, last telemetry timestamp |
+| Section    | Fields                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| Lifecycle  | current state, active substate, last transition, transition count, reconnect attempt       |
+| Transport  | connected/disconnected, TLS mode, cert validation policy result, RTT estimate if available |
+| Channels   | per-channel enabled/state/priority/last error/message counts/queue depth                   |
+| Frame flow | live queue, store budget, renderer telemetry, dropped/coalesced/delivered counters         |
+| Frontend   | attached/detached, renderer name, visibility, last telemetry timestamp                     |
 
 ### 8.3 Frontend diagnostics panel
 
@@ -703,12 +703,12 @@ UI requirements:
 
 Add structured tracing spans:
 
-| Span | Key fields |
-| --- | --- |
-| `rdp.lifecycle.transition` | session id, previous state, next state, event, duration |
-| `rdp.channel.transition` | session id, channel, previous state, next state, reason |
-| `rdp.frame.backpressure` | session id, policy, queue depth, average render ms, dropped count |
-| `rdp.reconnect.attempt` | session id, attempt, failure class, backoff ms |
+| Span                       | Key fields                                                        |
+| -------------------------- | ----------------------------------------------------------------- |
+| `rdp.lifecycle.transition` | session id, previous state, next state, event, duration           |
+| `rdp.channel.transition`   | session id, channel, previous state, next state, reason           |
+| `rdp.frame.backpressure`   | session id, policy, queue depth, average render ms, dropped count |
+| `rdp.reconnect.attempt`    | session id, attempt, failure class, backoff ms                    |
 
 ---
 
@@ -751,13 +751,13 @@ Channel configuration gates should be centralized in the virtual channel manager
 
 When a feature fails, degradation should be explicit:
 
-| Feature failure | Expected behavior |
-| --- | --- |
-| WebCodecs unavailable | Fall back to Canvas2D/WebGL path and emit renderer diagnostic |
-| Clipboard channel failed | Session remains active; clipboard shows disabled/faulted status |
+| Feature failure          | Expected behavior                                                         |
+| ------------------------ | ------------------------------------------------------------------------- |
+| WebCodecs unavailable    | Fall back to Canvas2D/WebGL path and emit renderer diagnostic             |
+| Clipboard channel failed | Session remains active; clipboard shows disabled/faulted status           |
 | Drive redirection failed | Session remains active; device channel shows fault; no hidden retry storm |
-| Audio failed | Session remains active; audio status shows unavailable |
-| Cert trust rejected | Session stops; no auto-reconnect |
+| Audio failed             | Session remains active; audio status shows unavailable                    |
+| Cert trust rejected      | Session stops; no auto-reconnect                                          |
 
 ---
 
@@ -765,50 +765,50 @@ When a feature fails, degradation should be explicit:
 
 ### 10.1 Backend Rust
 
-| File | Change |
-| --- | --- |
-| `src-tauri/crates/sorng-rdp/src/rdp/session_state.rs` | New lifecycle state machine, events, transition outcomes, tests. |
-| `src-tauri/crates/sorng-rdp/src/rdp/session_runner.rs` | Integrate state machine, dispatch actions, remove duplicated lifecycle decisions. |
-| `src-tauri/crates/sorng-rdp/src/rdp/stats.rs` | Align existing phase stats with `SessionStateSnapshot`; avoid competing state sources. |
-| `src-tauri/crates/sorng-rdp/src/rdp/types.rs` | Add safe state/channel/frame diagnostic event types; remove secret-bearing snapshot paths. |
-| `src-tauri/crates/sorng-rdp/src/rdp/session_poller.rs` | Surface poller wake/network events as typed lifecycle events if needed. |
-| `src-tauri/crates/sorng-rdp/src/rdp/wake_channel.rs` | Add wake messages for backpressure updates and frontend attach/detach if not already represented. |
-| `src-tauri/crates/sorng-rdp/src/rdp/virtual_channels/mod.rs` | New channel manager module root. |
-| `src-tauri/crates/sorng-rdp/src/rdp/virtual_channels/manager.rs` | New registry, lifecycle dispatch, channel state snapshots. |
-| `src-tauri/crates/sorng-rdp/src/rdp/virtual_channels/flow.rs` | Channel-level queue budgets and priority metadata. |
-| `src-tauri/crates/sorng-rdp/src/rdp/rdpdr/mod.rs` | Adapt to channel lifecycle; fix drive enablement gate; expose diagnostics. |
-| `src-tauri/crates/sorng-rdp/src/rdp/clipboard.rs` | Adapt to channel lifecycle; add re-sync hooks and fault snapshots. |
-| `src-tauri/crates/sorng-rdp/src/rdp/audin.rs` | Adapt to channel lifecycle if audio is active in the current implementation. |
-| `src-tauri/crates/sorng-rdp/src/gfx/processor.rs` | Bridge dynamic graphics channel state and frame-flow metadata where practical. |
-| `src-tauri/crates/sorng-rdp/src/rdp/frame_flow_control.rs` | New frame backpressure policy, budgets, counters, and disposition logic. |
-| `src-tauri/crates/sorng-rdp/src/rdp/frame_delivery.rs` | Route output through `FrameFlowController`; classify outputs. |
-| `src-tauri/crates/sorng-rdp/src/rdp/frame_channel.rs` | Add bounded delivery accounting and send-failure classification. |
-| `src-tauri/crates/sorng-rdp/src/rdp/frame_store.rs` | Separate live, snapshot, detach, and recording budgets. |
-| `src-tauri/crates/sorng-rdp/src/rdp/diagnostics.rs` | Add lifecycle/channel/frame-flow diagnostics snapshot. |
-| `src-tauri/crates/sorng-rdp/src/rdp/diagnostics_cmds.rs` | Expose diagnostics through Tauri command if existing command shape supports it. |
-| `src-tauri/crates/sorng-rdp/tests/reconnect.rs` | Add lifecycle graph assertions around reconnect/reactivation. |
-| `src-tauri/crates/sorng-rdp/tests/rdpdr_e2e.rs` | Add channel gating and reactivation coverage. |
-| `src-tauri/crates/sorng-rdp/tests/rdpdr_fuzzish.rs` | Add channel failure isolation cases where useful. |
+| File                                                             | Change                                                                                            |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `src-tauri/crates/sorng-rdp/src/rdp/session_state.rs`            | New lifecycle state machine, events, transition outcomes, tests.                                  |
+| `src-tauri/crates/sorng-rdp/src/rdp/session_runner.rs`           | Integrate state machine, dispatch actions, remove duplicated lifecycle decisions.                 |
+| `src-tauri/crates/sorng-rdp/src/rdp/stats.rs`                    | Align existing phase stats with `SessionStateSnapshot`; avoid competing state sources.            |
+| `src-tauri/crates/sorng-rdp/src/rdp/types.rs`                    | Add safe state/channel/frame diagnostic event types; remove secret-bearing snapshot paths.        |
+| `src-tauri/crates/sorng-rdp/src/rdp/session_poller.rs`           | Surface poller wake/network events as typed lifecycle events if needed.                           |
+| `src-tauri/crates/sorng-rdp/src/rdp/wake_channel.rs`             | Add wake messages for backpressure updates and frontend attach/detach if not already represented. |
+| `src-tauri/crates/sorng-rdp/src/rdp/virtual_channels/mod.rs`     | New channel manager module root.                                                                  |
+| `src-tauri/crates/sorng-rdp/src/rdp/virtual_channels/manager.rs` | New registry, lifecycle dispatch, channel state snapshots.                                        |
+| `src-tauri/crates/sorng-rdp/src/rdp/virtual_channels/flow.rs`    | Channel-level queue budgets and priority metadata.                                                |
+| `src-tauri/crates/sorng-rdp/src/rdp/rdpdr/mod.rs`                | Adapt to channel lifecycle; fix drive enablement gate; expose diagnostics.                        |
+| `src-tauri/crates/sorng-rdp/src/rdp/clipboard.rs`                | Adapt to channel lifecycle; add re-sync hooks and fault snapshots.                                |
+| `src-tauri/crates/sorng-rdp/src/rdp/audin.rs`                    | Adapt to channel lifecycle if audio is active in the current implementation.                      |
+| `src-tauri/crates/sorng-rdp/src/gfx/processor.rs`                | Bridge dynamic graphics channel state and frame-flow metadata where practical.                    |
+| `src-tauri/crates/sorng-rdp/src/rdp/frame_flow_control.rs`       | New frame backpressure policy, budgets, counters, and disposition logic.                          |
+| `src-tauri/crates/sorng-rdp/src/rdp/frame_delivery.rs`           | Route output through `FrameFlowController`; classify outputs.                                     |
+| `src-tauri/crates/sorng-rdp/src/rdp/frame_channel.rs`            | Add bounded delivery accounting and send-failure classification.                                  |
+| `src-tauri/crates/sorng-rdp/src/rdp/frame_store.rs`              | Separate live, snapshot, detach, and recording budgets.                                           |
+| `src-tauri/crates/sorng-rdp/src/rdp/diagnostics.rs`              | Add lifecycle/channel/frame-flow diagnostics snapshot.                                            |
+| `src-tauri/crates/sorng-rdp/src/rdp/diagnostics_cmds.rs`         | Expose diagnostics through Tauri command if existing command shape supports it.                   |
+| `src-tauri/crates/sorng-rdp/tests/reconnect.rs`                  | Add lifecycle graph assertions around reconnect/reactivation.                                     |
+| `src-tauri/crates/sorng-rdp/tests/rdpdr_e2e.rs`                  | Add channel gating and reactivation coverage.                                                     |
+| `src-tauri/crates/sorng-rdp/tests/rdpdr_fuzzish.rs`              | Add channel failure isolation cases where useful.                                                 |
 
 ### 10.2 Frontend TypeScript
 
-| File | Change |
-| --- | --- |
-| `src/components/rdp/rdpFramePipeline.ts` | Emit render telemetry, expose queue depth, integrate high/low watermark events. |
-| `src/components/rdp/rdpRenderers.ts` | Fix worker/WebCodecs helper scope; ensure renderer telemetry works across all renderers. |
-| `src/components/rdp/useRdpFrameBackpressure.ts` | New hook for throttled telemetry and backpressure reporting. |
-| `src/components/rdp/RDPSessionManager.tsx` | Consume lifecycle snapshots and optionally surface diagnostics. |
-| `src/types/rdp.ts` or nearest RDP type file | Mirror new Rust diagnostic and telemetry payloads. |
-| `tests/rdp/rendererWorkers.test.ts` | Keep worker/WebCodecs regression coverage green. |
-| `tests/rdp/rdpFramePipeline*.test.ts` | Add slow-render, queue pressure, detach/reattach, and coalescing tests. |
+| File                                            | Change                                                                                   |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `src/components/rdp/rdpFramePipeline.ts`        | Emit render telemetry, expose queue depth, integrate high/low watermark events.          |
+| `src/components/rdp/rdpRenderers.ts`            | Fix worker/WebCodecs helper scope; ensure renderer telemetry works across all renderers. |
+| `src/components/rdp/useRdpFrameBackpressure.ts` | New hook for throttled telemetry and backpressure reporting.                             |
+| `src/components/rdp/RDPSessionManager.tsx`      | Consume lifecycle snapshots and optionally surface diagnostics.                          |
+| `src/types/rdp.ts` or nearest RDP type file     | Mirror new Rust diagnostic and telemetry payloads.                                       |
+| `tests/rdp/rendererWorkers.test.ts`             | Keep worker/WebCodecs regression coverage green.                                         |
+| `tests/rdp/rdpFramePipeline*.test.ts`           | Add slow-render, queue pressure, detach/reattach, and coalescing tests.                  |
 
 ### 10.3 Documentation
 
-| File | Change |
-| --- | --- |
-| `ARCHITECTURE.md` | Add a short RDP session actor subsection after implementation lands. |
-| `docs/testing/` | Add RDP diagnostics and live fixture runbook if needed. |
-| `docs/plans/rdp-lifecycle-virtual-channels-frame-flow-plan.md` | This plan. Keep updated as phases complete. |
+| File                                                           | Change                                                               |
+| -------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `ARCHITECTURE.md`                                              | Add a short RDP session actor subsection after implementation lands. |
+| `docs/testing/`                                                | Add RDP diagnostics and live fixture runbook if needed.              |
+| `docs/plans/rdp-lifecycle-virtual-channels-frame-flow-plan.md` | This plan. Keep updated as phases complete.                          |
 
 ---
 
@@ -816,34 +816,34 @@ When a feature fails, degradation should be explicit:
 
 ### 11.1 Unit tests
 
-| Area | Tests |
-| --- | --- |
+| Area                    | Tests                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Lifecycle state machine | Valid transitions, invalid transitions, idempotent disconnect, fatal from any state, reactivation from active only. |
-| Failure classification | Trust rejection, auth rejection, transient network loss, protocol violation, channel fault. |
-| Virtual channel manager | Registration, enable/disable, ordering, duplicate channel rejection, failed optional channel isolation. |
-| RDPDR gate | Disabled drive redirection registers no drive devices. |
-| Frame flow controller | Budget accounting, high/low watermark transitions, coalescing, drop counters, detach policy. |
-| Secret safety | Diagnostics serialization redacts or omits secret fields. |
+| Failure classification  | Trust rejection, auth rejection, transient network loss, protocol violation, channel fault.                         |
+| Virtual channel manager | Registration, enable/disable, ordering, duplicate channel rejection, failed optional channel isolation.             |
+| RDPDR gate              | Disabled drive redirection registers no drive devices.                                                              |
+| Frame flow controller   | Budget accounting, high/low watermark transitions, coalescing, drop counters, detach policy.                        |
+| Secret safety           | Diagnostics serialization redacts or omits secret fields.                                                           |
 
 ### 11.2 Frontend tests
 
-| Area | Tests |
-| --- | --- |
-| Renderer workers | Worker/WebCodecs helpers available in worker scope. |
-| Frame telemetry | Queue depth and render latency reported at capped cadence. |
-| Backpressure hook | High/low watermark events emitted once per threshold crossing. |
-| Detach/reattach | Detached state suppresses live frame sends and reattach requests snapshot. |
-| Diagnostics UI | States and channel rows render without exposing secret fields. |
+| Area              | Tests                                                                      |
+| ----------------- | -------------------------------------------------------------------------- |
+| Renderer workers  | Worker/WebCodecs helpers available in worker scope.                        |
+| Frame telemetry   | Queue depth and render latency reported at capped cadence.                 |
+| Backpressure hook | High/low watermark events emitted once per threshold crossing.             |
+| Detach/reattach   | Detached state suppresses live frame sends and reattach requests snapshot. |
+| Diagnostics UI    | States and channel rows render without exposing secret fields.             |
 
 ### 11.3 Integration tests
 
-| Area | Tests |
-| --- | --- |
-| Reconnect | Network loss from active state enters `Reconnecting`, retries when transient, terminates on permanent classes. |
-| Reactivation | `DeactivateAll` enters `Reactivating`, suspends channels, resumes channels, refreshes frame state. |
-| Multi-channel | Clipboard and drive redirection active together; one channel fault does not kill the other. |
-| Backpressure | Synthetic slow frontend keeps backend memory bounded and session responsive. |
-| Certificate trust | Reject/accept/ignore trust flows produce correct lifecycle states. |
+| Area              | Tests                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------- |
+| Reconnect         | Network loss from active state enters `Reconnecting`, retries when transient, terminates on permanent classes. |
+| Reactivation      | `DeactivateAll` enters `Reactivating`, suspends channels, resumes channels, refreshes frame state.             |
+| Multi-channel     | Clipboard and drive redirection active together; one channel fault does not kill the other.                    |
+| Backpressure      | Synthetic slow frontend keeps backend memory bounded and session responsive.                                   |
+| Certificate trust | Reject/accept/ignore trust flows produce correct lifecycle states.                                             |
 
 ### 11.4 Commands to validate focused slices
 
@@ -1036,16 +1036,16 @@ Exit criteria:
 
 ## 14. Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-| --- | --- | --- |
-| Duplicating IronRDP internal state | Confusing bugs and impossible transitions | Model only app/session lifecycle; keep protocol internals inside IronRDP. |
-| Refactoring `session_runner.rs` all at once | High regression risk | Add pure state machine first, then integrate one event family at a time. |
-| Channel manager fights existing channel modules | Large rewrite with little value | Start as registry/diagnostics/gating layer; adapt modules gradually. |
-| Backpressure drops meaningful frames | Visual artifacts or stale screen | Only drop superseded graphics updates; preserve resize/surface reset/pointer/control events. |
-| Telemetry IPC becomes noisy | More overhead than benefit | Cap telemetry cadence and emit immediately only on threshold crossings. |
-| Diagnostics leak sensitive data | Security regression | Use explicit safe snapshot types and tests for redaction/serialization. |
-| Live xrdp cannot reproduce all edge cases | False confidence | Combine unit state-machine tests, mocked channel tests, fuzzish parser tests, and live smokes. |
-| Detach policy diverges from live render policy | Reattach artifacts | Treat detach as its own flow mode with snapshot-first reattach tests. |
+| Risk                                            | Impact                                    | Mitigation                                                                                     |
+| ----------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Duplicating IronRDP internal state              | Confusing bugs and impossible transitions | Model only app/session lifecycle; keep protocol internals inside IronRDP.                      |
+| Refactoring `session_runner.rs` all at once     | High regression risk                      | Add pure state machine first, then integrate one event family at a time.                       |
+| Channel manager fights existing channel modules | Large rewrite with little value           | Start as registry/diagnostics/gating layer; adapt modules gradually.                           |
+| Backpressure drops meaningful frames            | Visual artifacts or stale screen          | Only drop superseded graphics updates; preserve resize/surface reset/pointer/control events.   |
+| Telemetry IPC becomes noisy                     | More overhead than benefit                | Cap telemetry cadence and emit immediately only on threshold crossings.                        |
+| Diagnostics leak sensitive data                 | Security regression                       | Use explicit safe snapshot types and tests for redaction/serialization.                        |
+| Live xrdp cannot reproduce all edge cases       | False confidence                          | Combine unit state-machine tests, mocked channel tests, fuzzish parser tests, and live smokes. |
+| Detach policy diverges from live render policy  | Reattach artifacts                        | Treat detach as its own flow mode with snapshot-first reattach tests.                          |
 
 ---
 
@@ -1068,19 +1068,19 @@ This section is the implementation board for finishing the RDP review work. It t
 
 ### 16.1 Current completion state
 
-| Area | Status | Evidence | Remaining work |
-| --- | --- | --- | --- |
-| Review and architecture plan | Done | This plan exists and records lifecycle/channel/frame-flow goals. | Keep this tracker updated as slices land. |
-| Pure lifecycle model | Done | `src-tauri/crates/sorng-rdp/src/rdp/session_state.rs` has typed states, events, actions, snapshots, and unit tests. | Continue expanding event coverage only when new runner cases are wired. |
-| Runtime lifecycle observability | In progress | `RdpStatsEvent` carries lifecycle snapshots and the runner emits `rdp://lifecycle` beside stats. | Move from phase-derived snapshots to event-driven transitions at high-value runner points. |
-| Frontend lifecycle consumption | In progress | `useRDPClient` listens for `rdp://lifecycle`; internals panel can show lifecycle state and transition count. | Add richer diagnostics rows after channel/frame summaries exist. |
-| Drive redirection gate | Partially done | `effective_drive_redirections()` and `should_register_rdpdr()` exist in `session_runner.rs`. | Confirm with focused tests that disabled drive redirection registers no drives across SVC and DVC paths. |
-| Credential lifetime | Partially done | `RdpActiveConnection.cached_password` uses `SecretString`. | Audit connection/startup paths for temporary plaintext clones and snapshot/diagnostic leaks. |
-| Worker/WebCodecs fast path | Unknown | Prior review flagged `toDataView()` worker-scope bug. | Re-run renderer worker tests and fix any remaining worker-scope helper gaps. |
-| Certificate trust lifecycle | In progress elsewhere | Trust settings work exists in frontend and cert trust backend. | Map trust accept/reject/mismatch to lifecycle failure classes and tests. |
-| Virtual channel manager | Not started | Existing channels remain per-module. | Add registry/diagnostics skeleton, then adapt RDPDR, CLIPRDR, AUDIN, and optional GFX bridge. |
-| Backpressure frame controller | Not started | Frontend queue exists; backend is not credit-aware. | Add backend frame budgets, frontend telemetry, high/low watermarks, coalescing counters. |
-| Diagnostics UI | Partial | RDP internals panel exists and now receives lifecycle information. | Add channel rows, frame-flow counters, last failure class, and queue state. |
+| Area                            | Status                    | Evidence                                                                                                                                                | Remaining work                                                                                |
+| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Review and architecture plan    | Done                      | This plan exists and records lifecycle/channel/frame-flow goals.                                                                                        | Keep this tracker updated as slices land.                                                     |
+| Pure lifecycle model            | Done                      | `src-tauri/crates/sorng-rdp/src/rdp/session_state.rs` has typed states, events, actions, snapshots, and unit tests.                                     | Continue expanding event coverage only when new runner cases are wired.                       |
+| Runtime lifecycle observability | In progress               | `RdpStatsEvent` carries lifecycle snapshots and the runner emits `rdp://lifecycle` beside stats.                                                        | Move from phase-derived snapshots to event-driven transitions at high-value runner points.    |
+| Frontend lifecycle consumption  | In progress               | `useRDPClient` listens for `rdp://lifecycle`; internals panel can show lifecycle state and transition count.                                            | Add richer diagnostics rows after channel/frame summaries exist.                              |
+| Drive redirection gate          | Covered                   | `effective_drive_redirections()` and `should_register_rdpdr()` exist in `session_runner.rs`; `cargo test -p sorng-rdp --test redirection_flags` passes. | Keep coverage in sync when SVC/DVC drive registration changes.                                |
+| Credential lifetime             | Covered for current paths | `RdpActiveConnection.cached_password` uses `SecretString`; `cargo test -p sorng-rdp --test credential_hygiene` passes.                                  | Re-audit if new startup, reconnect, snapshot, or diagnostics paths clone credentials.         |
+| Worker/WebCodecs fast path      | Covered                   | Focused renderer worker Vitest coverage passes and the worker-scope helper bug is not reproducing.                                                      | Keep worker tests in the pre-merge focused set when frame fast-path code changes.             |
+| Certificate trust lifecycle     | In progress elsewhere     | Trust settings work exists in frontend and cert trust backend.                                                                                          | Map trust accept/reject/mismatch to lifecycle failure classes and tests.                      |
+| Virtual channel manager         | Not started               | Existing channels remain per-module.                                                                                                                    | Add registry/diagnostics skeleton, then adapt RDPDR, CLIPRDR, AUDIN, and optional GFX bridge. |
+| Backpressure frame controller   | Not started               | Frontend queue exists; backend is not credit-aware.                                                                                                     | Add backend frame budgets, frontend telemetry, high/low watermarks, coalescing counters.      |
+| Diagnostics UI                  | Partial                   | RDP internals panel exists and now receives lifecycle information.                                                                                      | Add channel rows, frame-flow counters, last failure class, and queue state.                   |
 
 ### 16.2 Finish order
 

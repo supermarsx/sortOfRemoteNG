@@ -24,19 +24,23 @@
 ## 1. Executive Summary
 
 We have a working Windows Hello implementation using WinRT `UserConsentVerifier`.
-The current macOS implementation is **incomplete** — it shells out to `bioutil`/`security`
-CLI tools, which doesn't reliably trigger Touch ID and bypasses the Secure Enclave entirely.
+The macOS availability and prompt path now uses native `LAContext` wrappers in
+`src-tauri/crates/sorng-biometrics/src/platform/macos/`; legacy migration helpers
+are also exposed through the registered Tauri command surface. The remaining
+macOS gap is hardware-bound secret/key material: Keychain and Secure Enclave
+storage still need the Phase 2/3 work below before biometric-derived secrets are
+fully hardware-bound.
 
 This plan upgrades macOS biometrics to use **native Apple frameworks** via Objective-C FFI:
 
-| Capability | Current (macOS) | Target (macOS) |
-|---|---|---|
-| Touch ID prompt | `security find-generic-password` (unreliable) | `LAContext.evaluatePolicy()` (native) |
-| Hardware detection | `bioutil -c` / `system_profiler` shell commands | `LAContext.canEvaluatePolicy()` (instant) |
-| Key storage | SHA256(machine_id) — no hardware binding | Secure Enclave `kSecAttrTokenIDSecureEnclave` |
-| Biometric-gated secrets | Keychain without proper ACL | Keychain + `SecAccessControl` with `.biometryCurrentSet` |
-| Apple Watch unlock | Not supported | `LAPolicy.deviceOwnerAuthenticationWithBiometricsOrWatch` |
-| Machine ID | `ioreg` shell command | `IOPlatformUUID` via IOKit FFI (already fine, minor cleanup) |
+| Capability              | Current (macOS)                                        | Target (macOS)                                               |
+| ----------------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
+| Touch ID prompt         | `LAContext.evaluatePolicy()` native path is present    | Harden prompt/error coverage and keep fallback paths tested  |
+| Hardware detection      | `LAContext.canEvaluatePolicy()` native path is present | Continue platform CI coverage                                |
+| Key storage             | SHA256(machine_id) — no hardware binding               | Secure Enclave `kSecAttrTokenIDSecureEnclave`                |
+| Biometric-gated secrets | Keychain without proper ACL                            | Keychain + `SecAccessControl` with `.biometryCurrentSet`     |
+| Apple Watch unlock      | Not supported                                          | `LAPolicy.deviceOwnerAuthenticationWithBiometricsOrWatch`    |
+| Machine ID              | `ioreg` shell command                                  | `IOPlatformUUID` via IOKit FFI (already fine, minor cleanup) |
 
 **Minimum macOS version**: 10.13.2+ (Touch ID on MacBook Pro with Touch Bar);
 realistically targets **macOS 12+** (Monterey) for modern LAPolicy options.
@@ -48,6 +52,7 @@ realistically targets **macOS 12+** (Monterey) for modern LAPolicy options.
 ### 2.1 What Works (Windows)
 
 `src-tauri/crates/sorng-biometrics/src/platform/windows.rs`:
+
 - Uses `Windows.Security.Credentials.UI.UserConsentVerifier` (proper WinRT API)
 - `CheckAvailabilityAsync()` for hardware/enrollment detection
 - `RequestVerificationAsync()` for biometric prompt
@@ -59,17 +64,20 @@ realistically targets **macOS 12+** (Monterey) for modern LAPolicy options.
 `src-tauri/crates/sorng-biometrics/src/platform/macos.rs`:
 
 **Problem 1: Shell-command-based availability check**
+
 ```rust
 // Current — unreliable, slow, spawns 3 processes
 let bioutil_ok = Command::new("bioutil").arg("-c").output()...;
 let has_secure_enclave = Command::new("system_profiler").args(["SPiBridgeDataType"]).output()...;
 let is_apple_silicon = Command::new("sysctl").args(["-n", "machdep.cpu.brand_string"]).output()...;
 ```
+
 - `bioutil -c` may not exist on all macOS versions
 - `system_profiler` is slow (~1s)
 - Does NOT check if Touch ID is actually enrolled (only guesses)
 
 **Problem 2: Canary-item trick doesn't trigger Touch ID**
+
 ```rust
 // Current — "security find-generic-password" does NOT trigger Touch ID
 // It only triggers the Keychain password dialog, not the biometric prompt
@@ -77,6 +85,7 @@ let output = Command::new("security")
     .args(["find-generic-password", "-s", service_name, "-a", account_name, "-w"])
     .output()?;
 ```
+
 The `security` CLI tool does NOT prompt for Touch ID — it shows a password dialog.
 Touch ID is only triggered when a Keychain item has a `SecAccessControl` with
 biometric policy, AND is accessed via the Security framework C API (not CLI).
@@ -86,6 +95,7 @@ The key derivation is `SHA256(machine_id + reason + salt)` — purely software.
 A compromised machine can reconstruct this key without any biometric.
 
 **Problem 4: `security-framework` dependency unused**
+
 ```toml
 # In Cargo.toml but never imported in macos.rs
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -145,6 +155,7 @@ core-foundation                — CFString, CFData helpers
 ```
 
 **Why `objc2` over raw `objc` crate?**
+
 - Type-safe: compile-time checked message sends
 - Well-maintained (part of the official `objc2` ecosystem)
 - Direct struct wrappers for Apple frameworks
@@ -373,21 +384,21 @@ pub(crate) async fn prompt(reason: &str) -> BiometricResult<bool> {
 
 ### 4.5 LAError Code Reference
 
-| Code | Constant | Our Mapping |
-|------|----------|-------------|
-| 0 | Success | `Ok(true)` |
-| -1 | `LAErrorAuthenticationFailed` | `BiometricError::auth_failed()` |
-| -2 | `LAErrorUserCancel` | `BiometricError::user_cancelled()` |
-| -3 | `LAErrorUserFallback` | User chose "Enter Password" — handle as password flow |
-| -4 | `LAErrorSystemCancel` | System cancelled (e.g., another app came to front) |
-| -5 | `LAErrorPasscodeNotSet` | No system passcode set |
-| -6 | `LAErrorBiometryNotAvailable` [previously TouchIDNotAvailable] | `HardwareUnavailable` |
-| -7 | `LAErrorBiometryNotEnrolled` [previously TouchIDNotEnrolled] | `NotEnrolled` |
-| -8 | `LAErrorBiometryLockout` [previously TouchIDLockout] | Too many failures, need passcode |
-| -9 | `LAErrorAppCancel` | App cancelled the evaluation |
-| -10 | `LAErrorInvalidContext` | Context invalidated |
-| -11 | `LAErrorNotInteractive` | Not running interactively |
-| -1004 | `LAErrorWatchNotAvailable` | Apple Watch not paired/nearby |
+| Code  | Constant                                                       | Our Mapping                                           |
+| ----- | -------------------------------------------------------------- | ----------------------------------------------------- |
+| 0     | Success                                                        | `Ok(true)`                                            |
+| -1    | `LAErrorAuthenticationFailed`                                  | `BiometricError::auth_failed()`                       |
+| -2    | `LAErrorUserCancel`                                            | `BiometricError::user_cancelled()`                    |
+| -3    | `LAErrorUserFallback`                                          | User chose "Enter Password" — handle as password flow |
+| -4    | `LAErrorSystemCancel`                                          | System cancelled (e.g., another app came to front)    |
+| -5    | `LAErrorPasscodeNotSet`                                        | No system passcode set                                |
+| -6    | `LAErrorBiometryNotAvailable` [previously TouchIDNotAvailable] | `HardwareUnavailable`                                 |
+| -7    | `LAErrorBiometryNotEnrolled` [previously TouchIDNotEnrolled]   | `NotEnrolled`                                         |
+| -8    | `LAErrorBiometryLockout` [previously TouchIDLockout]           | Too many failures, need passcode                      |
+| -9    | `LAErrorAppCancel`                                             | App cancelled the evaluation                          |
+| -10   | `LAErrorInvalidContext`                                        | Context invalidated                                   |
+| -11   | `LAErrorNotInteractive`                                        | Not running interactively                             |
+| -1004 | `LAErrorWatchNotAvailable`                                     | Apple Watch not paired/nearby                         |
 
 ---
 
@@ -399,9 +410,11 @@ pub(crate) async fn prompt(reason: &str) -> BiometricResult<bool> {
 ### 5.1 Why Secure Enclave?
 
 Currently, `verify_and_derive_key()` derives a key via:
+
 ```rust
 SHA256(machine_id + reason + "sorng-biometrics-key-v1")
 ```
+
 This key can be reconstructed by anyone with access to the machine ID — no biometric
 needed. A proper implementation uses the **Secure Enclave** to generate a key that
 physically cannot be extracted without biometric verification.
@@ -555,16 +568,16 @@ For macOS, the key derivation path changes:
 
 ### 5.5 Hardware Requirements
 
-| Mac Model | Secure Enclave | Touch ID | Notes |
-|-----------|---------------|----------|-------|
-| MacBook Pro 2016+ (Touch Bar) | T1 chip | Yes | Original Touch ID Macs |
-| MacBook Pro 2018+ | T2 chip | Yes | |
-| MacBook Air 2018+ | T2 chip | Yes | |
-| iMac Pro 2017 | T2 chip | No (no sensor) | SE available but no biometric |
-| Mac mini 2018+ | T2 chip | No (no sensor) | Can use Magic Keyboard w/ Touch ID |
-| Apple Silicon (M1/M2/M3/M4+) | Built-in | Yes (laptops) | Desktops: Magic Keyboard w/ Touch ID |
-| Mac Pro (Intel) | No | No | No SE or Touch ID |
-| Mac Pro (Apple Silicon) | Built-in | No (no sensor) | Magic Keyboard w/ Touch ID |
+| Mac Model                     | Secure Enclave | Touch ID       | Notes                                |
+| ----------------------------- | -------------- | -------------- | ------------------------------------ |
+| MacBook Pro 2016+ (Touch Bar) | T1 chip        | Yes            | Original Touch ID Macs               |
+| MacBook Pro 2018+             | T2 chip        | Yes            |                                      |
+| MacBook Air 2018+             | T2 chip        | Yes            |                                      |
+| iMac Pro 2017                 | T2 chip        | No (no sensor) | SE available but no biometric        |
+| Mac mini 2018+                | T2 chip        | No (no sensor) | Can use Magic Keyboard w/ Touch ID   |
+| Apple Silicon (M1/M2/M3/M4+)  | Built-in       | Yes (laptops)  | Desktops: Magic Keyboard w/ Touch ID |
+| Mac Pro (Intel)               | No             | No             | No SE or Touch ID                    |
+| Mac Pro (Apple Silicon)       | Built-in       | No (no sensor) | Magic Keyboard w/ Touch ID           |
 
 **Fallback**: Mac desktops without Touch ID sensor but with SE can still use
 `DeviceOwnerAuthentication` (password-based). Macs without SE fall back to
@@ -741,9 +754,9 @@ pub async fn biometric_platform_info() -> Result<BiometricPlatformInfo, String> 
 ```typescript
 // New type
 interface BiometricPlatformInfo {
-  os: 'windows' | 'macos' | 'linux';
-  platformLabel: string;  // "Touch ID", "Windows Hello", "Fingerprint"
-  iconHint: 'fingerprint' | 'face' | 'shield' | 'watch';
+  os: "windows" | "macos" | "linux";
+  platformLabel: string; // "Touch ID", "Windows Hello", "Fingerprint"
+  iconHint: "fingerprint" | "face" | "shield" | "watch";
 }
 ```
 
@@ -761,13 +774,13 @@ interface BiometricPlatformInfo {
 
 ### 7.3 macOS-Specific UI Enhancements
 
-| Element | Windows | macOS | Linux |
-|---------|---------|-------|-------|
-| Icon | Fingerprint / Shield | Fingerprint (Touch ID) | Fingerprint |
-| Label | "Windows Hello" | "Touch ID" | "Fingerprint" |
-| Setup text | "Use Windows Hello..." | "Use Touch ID to secure..." | "Use fingerprint..." |
-| Fallback text | "Enter PIN" | "Enter password" | "Enter password" |
-| Settings toggle | "Require Windows Hello" | "Require Touch ID" | "Require fingerprint" |
+| Element         | Windows                 | macOS                       | Linux                 |
+| --------------- | ----------------------- | --------------------------- | --------------------- |
+| Icon            | Fingerprint / Shield    | Fingerprint (Touch ID)      | Fingerprint           |
+| Label           | "Windows Hello"         | "Touch ID"                  | "Fingerprint"         |
+| Setup text      | "Use Windows Hello..."  | "Use Touch ID to secure..." | "Use fingerprint..."  |
+| Fallback text   | "Enter PIN"             | "Enter password"            | "Enter password"      |
+| Settings toggle | "Require Windows Hello" | "Require Touch ID"          | "Require fingerprint" |
 
 ### 7.4 Security Settings Panel
 
@@ -776,15 +789,15 @@ Add biometric-specific settings in `SecuritySettings.tsx`:
 ```typescript
 // New settings
 interface BiometricSettings {
-  enabled: boolean;                    // Master toggle
-  requireForUnlock: boolean;           // Require biometric to unlock vault
+  enabled: boolean; // Master toggle
+  requireForUnlock: boolean; // Require biometric to unlock vault
   requireForConnectionPassword: boolean; // Require biometric to view saved passwords
-  allowPasswordFallback: boolean;      // Allow system password when biometric fails
-  lockoutBehavior: 'block' | 'fallback'; // What to do when biometric is locked out
+  allowPasswordFallback: boolean; // Allow system password when biometric fails
+  lockoutBehavior: "block" | "fallback"; // What to do when biometric is locked out
   // macOS-specific:
-  watchUnlockEnabled: boolean;         // Allow Apple Watch to unlock
+  watchUnlockEnabled: boolean; // Allow Apple Watch to unlock
   // Windows-specific:
-  windowsHelloPin: boolean;            // Allow PIN as fallback in Windows Hello
+  windowsHelloPin: boolean; // Allow PIN as fallback in Windows Hello
 }
 ```
 
@@ -797,9 +810,9 @@ export interface BiometricInfo {
   available: boolean;
   enrolled: boolean;
   platformLabel: string;
-  kinds: BiometricKind[];    // 'fingerprint' | 'face_recognition' | 'iris' | 'other'
+  kinds: BiometricKind[]; // 'fingerprint' | 'face_recognition' | 'iris' | 'other'
   os: string;
-  iconHint: 'fingerprint' | 'face' | 'shield';
+  iconHint: "fingerprint" | "face" | "shield";
 }
 
 export function useBiometricInfo() {
@@ -809,16 +822,20 @@ export function useBiometricInfo() {
   useEffect(() => {
     async function check() {
       try {
-        const status = await invoke<BiometricStatus>('biometric_check_availability');
+        const status = await invoke<BiometricStatus>(
+          "biometric_check_availability",
+        );
         setInfo({
           available: status.hardwareAvailable && status.enrolled,
           enrolled: status.enrolled,
           platformLabel: status.platformLabel,
           kinds: status.kinds,
           os: await getOS(),
-          iconHint: status.kinds.includes('fingerprint') ? 'fingerprint'
-                  : status.kinds.includes('face_recognition') ? 'face'
-                  : 'shield',
+          iconHint: status.kinds.includes("fingerprint")
+            ? "fingerprint"
+            : status.kinds.includes("face_recognition")
+              ? "face"
+              : "shield",
         });
       } catch {
         setInfo(null);
@@ -845,6 +862,7 @@ export function useBiometricInfo() {
 Apple's `LocalAuthentication` framework supports the policy
 `LAPolicyDeviceOwnerAuthenticationWithBiometricsOrWatch` (macOS 10.15+).
 When this policy is used:
+
 - Touch ID is tried first
 - If Touch ID is unavailable or fails, the nearby Apple Watch is attempted
 - The Watch shows a "Double-click to approve" prompt
@@ -858,6 +876,7 @@ Policy::BiometricOrWatch =>
 ```
 
 The only change needed is:
+
 1. A user setting to enable Apple Watch unlock
 2. A check for Watch availability:
    ```rust
@@ -1060,7 +1079,7 @@ For CI on macOS:
 # .github/workflows/macos-biometric-tests.yml
 jobs:
   biometric-integration:
-    runs-on: macos-14  # Apple Silicon runner
+    runs-on: macos-14 # Apple Silicon runner
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -1116,20 +1135,20 @@ mod ci_tests {
 
 ### 9.4 Manual Test Matrix
 
-| # | Scenario | Expected Result | Platform |
-|---|----------|----------------|----------|
-| 1 | Open unlock dialog on MacBook with Touch ID enrolled | Shows "Touch ID" label + fingerprint icon | macOS |
-| 2 | Tap "Authenticate" → place finger on sensor | Touch ID sheet appears → success → vault unlocks | macOS |
-| 3 | Tap "Authenticate" → wrong finger 3x | Error: "Biometric verification failed" | macOS |
-| 4 | Tap "Authenticate" → press Cancel | Error: "User cancelled" → dialog stays open | macOS |
-| 5 | Touch ID locked out (too many failures) | Falls back to system password prompt | macOS |
-| 6 | Mac desktop without Touch ID (no Magic Keyboard w/Touch ID) | Passkey option hidden or shows "Enter Password" | macOS |
-| 7 | Mac desktop with Magic Keyboard w/Touch ID | Touch ID works normally | macOS |
-| 8 | Unenroll all fingerprints → open app | Shows "No fingerprints enrolled" warning | macOS |
-| 9 | Add new fingerprint after SE key was created | SE key invalidated (`.biometryCurrentSet`), re-setup required | macOS |
-| 10 | Apple Watch unlock enabled, Touch ID fails → Watch prompt | Watch shows "Double-click to approve" | macOS |
-| 11 | Store secret → read secret back | Touch ID prompt on read, correct data returned | macOS |
-| 12 | Lid closed (clamshell mode) with external display | Touch ID unavailable → password fallback | macOS |
+| #   | Scenario                                                    | Expected Result                                               | Platform |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------- | -------- |
+| 1   | Open unlock dialog on MacBook with Touch ID enrolled        | Shows "Touch ID" label + fingerprint icon                     | macOS    |
+| 2   | Tap "Authenticate" → place finger on sensor                 | Touch ID sheet appears → success → vault unlocks              | macOS    |
+| 3   | Tap "Authenticate" → wrong finger 3x                        | Error: "Biometric verification failed"                        | macOS    |
+| 4   | Tap "Authenticate" → press Cancel                           | Error: "User cancelled" → dialog stays open                   | macOS    |
+| 5   | Touch ID locked out (too many failures)                     | Falls back to system password prompt                          | macOS    |
+| 6   | Mac desktop without Touch ID (no Magic Keyboard w/Touch ID) | Passkey option hidden or shows "Enter Password"               | macOS    |
+| 7   | Mac desktop with Magic Keyboard w/Touch ID                  | Touch ID works normally                                       | macOS    |
+| 8   | Unenroll all fingerprints → open app                        | Shows "No fingerprints enrolled" warning                      | macOS    |
+| 9   | Add new fingerprint after SE key was created                | SE key invalidated (`.biometryCurrentSet`), re-setup required | macOS    |
+| 10  | Apple Watch unlock enabled, Touch ID fails → Watch prompt   | Watch shows "Double-click to approve"                         | macOS    |
+| 11  | Store secret → read secret back                             | Touch ID prompt on read, correct data returned                | macOS    |
+| 12  | Lid closed (clamshell mode) with external display           | Touch ID unavailable → password fallback                      | macOS    |
 
 ---
 
@@ -1141,6 +1160,7 @@ mod ci_tests {
 ### 10.1 Current Duplication
 
 Both crates implement:
+
 - Platform detection (`is_available`)
 - macOS authentication via `security` CLI
 - Machine ID retrieval
@@ -1162,7 +1182,7 @@ Both crates implement:
 +     let result = sorng_biometrics::authenticate::verify_and_derive_key(reason)
 +         .await
 +         .map_err(|e| e.to_string())?;
-+     
++
 +     if result.success {
 +         let key = hex::decode(&result.derived_key_hex.unwrap_or_default())
 +             .map_err(|e| e.to_string())?;
@@ -1210,14 +1230,14 @@ core-foundation = "0.10"
 
 ### 11.2 Why Each Dependency
 
-| Crate | Purpose | Size Impact |
-|-------|---------|-------------|
-| `objc2` | Type-safe ObjC FFI runtime | ~50KB (macOS only) |
-| `objc2-foundation` | `NSString`, `NSError` wrappers | ~30KB |
-| `objc2-local-authentication` | `LAContext`, `LAPolicy`, `LABiometryType` | ~15KB |
-| `block2` | ObjC block (closure) support for callbacks | ~10KB |
-| `security-framework` | Keychain, `SecAccessControl`, `SecKey` | Already dep'd |
-| `core-foundation` | `CFString`, `CFData` for Security API interop | ~20KB |
+| Crate                        | Purpose                                       | Size Impact        |
+| ---------------------------- | --------------------------------------------- | ------------------ |
+| `objc2`                      | Type-safe ObjC FFI runtime                    | ~50KB (macOS only) |
+| `objc2-foundation`           | `NSString`, `NSError` wrappers                | ~30KB              |
+| `objc2-local-authentication` | `LAContext`, `LAPolicy`, `LABiometryType`     | ~15KB              |
+| `block2`                     | ObjC block (closure) support for callbacks    | ~10KB              |
+| `security-framework`         | Keychain, `SecAccessControl`, `SecKey`        | Already dep'd      |
+| `core-foundation`            | `CFString`, `CFData` for Security API interop | ~20KB              |
 
 **Total added binary size**: ~125KB (macOS target only, zero impact on Windows/Linux).
 
@@ -1287,25 +1307,27 @@ In `src-tauri/tauri.conf.json`:
 
 ### 13.1 Threat Model
 
-| Threat | Mitigation |
-|--------|-----------|
-| Malware reads derived key from memory | SE key never leaves hardware; derived key zeroed after use |
-| Fingerprint spoofing | Apple's Secure Enclave handles anti-spoofing; we trust the OS |
-| Keychain item accessed without biometric | `SecAccessControlCreateFlags::BIOMETRY_CURRENT_SET` prevents this |
-| New fingerprint enrolled → unauthorized access | `.biometryCurrentSet` invalidates key when enrollment changes |
-| App impersonation (another app triggers our Keychain) | Keychain ACL bound to our code signing identity |
-| CI/CD secrets leakage | No biometric secrets stored in CI; tests use mocks |
-| Downgrade to shell-command approach | Remove all `Command::new("security")`/`Command::new("bioutil")` code |
+| Threat                                                | Mitigation                                                           |
+| ----------------------------------------------------- | -------------------------------------------------------------------- |
+| Malware reads derived key from memory                 | SE key never leaves hardware; derived key zeroed after use           |
+| Fingerprint spoofing                                  | Apple's Secure Enclave handles anti-spoofing; we trust the OS        |
+| Keychain item accessed without biometric              | `SecAccessControlCreateFlags::BIOMETRY_CURRENT_SET` prevents this    |
+| New fingerprint enrolled → unauthorized access        | `.biometryCurrentSet` invalidates key when enrollment changes        |
+| App impersonation (another app triggers our Keychain) | Keychain ACL bound to our code signing identity                      |
+| CI/CD secrets leakage                                 | No biometric secrets stored in CI; tests use mocks                   |
+| Downgrade to shell-command approach                   | Remove all `Command::new("security")`/`Command::new("bioutil")` code |
 
 ### 13.2 `.biometryCurrentSet` vs `.biometryAny`
 
 We use **`.biometryCurrentSet`**:
+
 - Key/secret is invalidated if ANY fingerprint is added or removed
 - More secure: prevents a new (potentially unauthorized) fingerprint from accessing old data
 - User must re-setup biometric encryption after fingerprint changes
 - Trade-off: slight inconvenience when user adds a new finger
 
 Alternative `.biometryAny`:
+
 - Key survives fingerprint enrollment changes
 - Less secure: a new fingerprint could access old data
 - Better UX for users who frequently update fingerprints
@@ -1316,6 +1338,7 @@ Alternative `.biometryAny`:
 ### 13.3 Key Rotation
 
 When the biometric enrollment changes (`.biometryCurrentSet` invalidates):
+
 1. Detect the invalidation on next unlock attempt (Keychain returns `errSecAuthFailed`)
 2. Show a re-setup dialog: "Your fingerprints have changed. Please re-authenticate
    with your password to re-enable Touch ID."
@@ -1329,6 +1352,7 @@ When the biometric enrollment changes (`.biometryCurrentSet` invalidates):
 ### 14.1 Data Migration
 
 Users who set up biometric auth with the old shell-command approach:
+
 1. On first launch with new code, detect the old canary Keychain item
    (`com.sortofremoteng.biometric` / `biometric-canary`)
 2. Prompt user to re-authenticate with password
@@ -1364,7 +1388,7 @@ Add a version field to biometric settings:
   "biometric": {
     "version": 2,
     "enabled": true,
-    "method": "secure_enclave",    // v1 was "keychain_canary"
+    "method": "secure_enclave", // v1 was "keychain_canary"
     "watchUnlock": false,
     "created": "2026-04-15T..."
   }
@@ -1377,59 +1401,60 @@ Add a version field to biometric settings:
 
 ### Rust (Backend)
 
-| File | Action | Description |
-|------|--------|-------------|
-| `sorng-biometrics/Cargo.toml` | **Modify** | Add `objc2`, `objc2-foundation`, `objc2-local-authentication`, `block2` deps |
-| `sorng-biometrics/src/platform/macos.rs` | **Delete** | Replace with directory module |
-| `sorng-biometrics/src/platform/macos/mod.rs` | **Create** | Public API: `check_availability()`, `prompt()`, `needs_migration()` |
-| `sorng-biometrics/src/platform/macos/la_context.rs` | **Create** | LAContext FFI wrapper, `can_evaluate()`, `evaluate()` |
-| `sorng-biometrics/src/platform/macos/keychain.rs` | **Create** | Biometric-gated Keychain read/write/delete |
-| `sorng-biometrics/src/platform/macos/secure_enclave.rs` | **Create** | SE key generation, signing, key derivation |
-| `sorng-biometrics/src/platform/macos/helpers.rs` | **Create** | Machine ID, enrollment detection, biometry type mapping |
-| `sorng-biometrics/src/platform/macos/migration.rs` | **Create** | Legacy canary item detection and cleanup |
-| `sorng-biometrics/src/platform/mod.rs` | **Modify** | Update `macos` module declaration |
-| `sorng-biometrics/src/types.rs` | **Modify** | Add `BiometryType` enum (TouchID/FaceID/OpticID/None) |
-| `sorng-biometrics/src/authenticate.rs` | **Modify** | macOS path uses SE key derivation instead of SHA256 |
-| `sorng-biometrics/src/commands.rs` | **Modify** | Add `biometric_platform_info`, `biometric_needs_migration` |
-| `sorng-auth/Cargo.toml` | **Modify** | Add `sorng-biometrics` dependency |
-| `sorng-auth/src/passkey.rs` | **Modify** | Delegate to `sorng-biometrics` instead of reimplementing |
-| `src-tauri/src/vault_commands.rs` | **Modify** | Use new Keychain module for macOS vault ops |
-| `src-tauri/tauri.conf.json` | **Modify** | Add macOS entitlements path, min system version |
-| `src-tauri/entitlements.plist` | **Create** | Keychain access groups |
-| `src-tauri/Info.plist` | **Modify** | Add `NSFaceIDUsageDescription` |
+| File                                                    | Action     | Description                                                                  |
+| ------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------- |
+| `sorng-biometrics/Cargo.toml`                           | **Modify** | Add `objc2`, `objc2-foundation`, `objc2-local-authentication`, `block2` deps |
+| `sorng-biometrics/src/platform/macos.rs`                | **Delete** | Replace with directory module                                                |
+| `sorng-biometrics/src/platform/macos/mod.rs`            | **Create** | Public API: `check_availability()`, `prompt()`, `needs_migration()`          |
+| `sorng-biometrics/src/platform/macos/la_context.rs`     | **Create** | LAContext FFI wrapper, `can_evaluate()`, `evaluate()`                        |
+| `sorng-biometrics/src/platform/macos/keychain.rs`       | **Create** | Biometric-gated Keychain read/write/delete                                   |
+| `sorng-biometrics/src/platform/macos/secure_enclave.rs` | **Create** | SE key generation, signing, key derivation                                   |
+| `sorng-biometrics/src/platform/macos/helpers.rs`        | **Create** | Machine ID, enrollment detection, biometry type mapping                      |
+| `sorng-biometrics/src/platform/macos/migration.rs`      | **Create** | Legacy canary item detection and cleanup                                     |
+| `sorng-biometrics/src/platform/mod.rs`                  | **Modify** | Update `macos` module declaration                                            |
+| `sorng-biometrics/src/types.rs`                         | **Modify** | Add `BiometryType` enum (TouchID/FaceID/OpticID/None)                        |
+| `sorng-biometrics/src/authenticate.rs`                  | **Modify** | macOS path uses SE key derivation instead of SHA256                          |
+| `sorng-biometrics/src/commands.rs`                      | **Modify** | Add `biometric_platform_info`, `biometric_needs_migration`                   |
+| `sorng-auth/Cargo.toml`                                 | **Modify** | Add `sorng-biometrics` dependency                                            |
+| `sorng-auth/src/passkey.rs`                             | **Modify** | Delegate to `sorng-biometrics` instead of reimplementing                     |
+| `src-tauri/src/vault_commands.rs`                       | **Modify** | Use new Keychain module for macOS vault ops                                  |
+| `src-tauri/tauri.conf.json`                             | **Modify** | Add macOS entitlements path, min system version                              |
+| `src-tauri/entitlements.plist`                          | **Create** | Keychain access groups                                                       |
+| `src-tauri/Info.plist`                                  | **Modify** | Add `NSFaceIDUsageDescription`                                               |
 
 ### TypeScript (Frontend)
 
-| File | Action | Description |
-|------|--------|-------------|
-| `src/hooks/security/useBiometricInfo.ts` | **Create** | Hook for platform-aware biometric info |
-| `src/hooks/security/usePasswordDialog.ts` | **Modify** | Use `useBiometricInfo` for platform-aware labels |
-| `src/components/security/PasswordDialog.tsx` | **Modify** | Dynamic labels, icons, platform-specific messaging |
+| File                                                          | Action     | Description                                          |
+| ------------------------------------------------------------- | ---------- | ---------------------------------------------------- |
+| `src/hooks/security/useBiometricInfo.ts`                      | **Create** | Hook for platform-aware biometric info               |
+| `src/hooks/security/usePasswordDialog.ts`                     | **Modify** | Use `useBiometricInfo` for platform-aware labels     |
+| `src/components/security/PasswordDialog.tsx`                  | **Modify** | Dynamic labels, icons, platform-specific messaging   |
 | `src/components/SettingsDialog/sections/SecuritySettings.tsx` | **Modify** | Biometric settings (watch unlock, enrollment policy) |
-| `src/utils/storage/storage.ts` | **Modify** | Add `getBiometricPlatformInfo()` method |
-| `src/types/biometrics.ts` | **Create** | TypeScript types for biometric status/info |
+| `src/utils/storage/storage.ts`                                | **Modify** | Add `getBiometricPlatformInfo()` method              |
+| `src/types/biometrics.ts`                                     | **Create** | TypeScript types for biometric status/info           |
 
 ### Tests
 
-| File | Action | Description |
-|------|--------|-------------|
-| `tests/security/biometrics.test.ts` | **Create** | Frontend biometric hook + dialog tests |
-| `sorng-biometrics/src/platform/macos/mod.rs` | tests module | CI integration tests |
-| `sorng-biometrics/src/types.rs` | tests module | Serialization roundtrip tests |
-| `sorng-biometrics/src/authenticate.rs` | tests module | Key derivation determinism tests |
+| File                                         | Action       | Description                            |
+| -------------------------------------------- | ------------ | -------------------------------------- |
+| `tests/security/biometrics.test.ts`          | **Create**   | Frontend biometric hook + dialog tests |
+| `sorng-biometrics/src/platform/macos/mod.rs` | tests module | CI integration tests                   |
+| `sorng-biometrics/src/types.rs`              | tests module | Serialization roundtrip tests          |
+| `sorng-biometrics/src/authenticate.rs`       | tests module | Key derivation determinism tests       |
 
 ### Config / CI
 
-| File | Action | Description |
-|------|--------|-------------|
+| File                                          | Action     | Description                         |
+| --------------------------------------------- | ---------- | ----------------------------------- |
 | `.github/workflows/macos-biometric-tests.yml` | **Create** | macOS CI runner for biometric tests |
-| `src-tauri/entitlements.plist` | **Create** | macOS code signing entitlements |
+| `src-tauri/entitlements.plist`                | **Create** | macOS code signing entitlements     |
 
 ---
 
 ## 16. Rollout & Milestones
 
 ### Milestone 1: Native Touch ID Prompt (Phase 1)
+
 - Replace shell commands with `LAContext.evaluatePolicy()`
 - Instant availability detection via `canEvaluatePolicy()`
 - Proper LAError code mapping
@@ -1437,18 +1462,21 @@ Add a version field to biometric settings:
 - **Deliverable**: Touch ID works natively on macOS
 
 ### Milestone 2: Secure Enclave Keys (Phase 2)
+
 - SE key generation with biometric ACL
 - Key derivation via SE signing
 - Keychain-based SE key persistence
 - **Deliverable**: Derived keys are hardware-bound
 
 ### Milestone 3: Proper Keychain Integration (Phase 3)
+
 - Biometric-gated secret storage
 - `store_with_biometric()` / `read_with_biometric()`
 - Vault commands updated
 - **Deliverable**: Secrets require Touch ID to access
 
 ### Milestone 4: Platform-Aware UI (Phase 4)
+
 - Dynamic labels ("Touch ID" / "Windows Hello")
 - Platform-appropriate icons
 - Biometric settings panel
@@ -1456,12 +1484,14 @@ Add a version field to biometric settings:
 - **Deliverable**: UI adapts to platform
 
 ### Milestone 5: Apple Watch + Migration (Phases 5 + 7)
+
 - Apple Watch unlock option
 - Legacy canary item migration
 - `sorng-auth/passkey.rs` consolidation
 - **Deliverable**: Full feature parity + clean codebase
 
 ### Milestone 6: Testing + Polish (Phase 6)
+
 - Full test suite (unit + integration + frontend)
 - CI pipeline for macOS
 - Manual test matrix completion
@@ -1474,59 +1504,59 @@ Add a version field to biometric settings:
 
 ### LAContext Methods
 
-| Method | Purpose |
-|--------|---------|
-| `canEvaluatePolicy:error:` | Check if biometric is available & enrolled |
-| `evaluatePolicy:localizedReason:reply:` | Show biometric prompt |
-| `biometryType` | Returns `.touchID`, `.faceID`, `.opticID`, or `.none` |
-| `invalidate` | Invalidate context (force re-auth next time) |
-| `evaluatedPolicyDomainState` | Opaque data representing current enrollment state |
+| Method                                  | Purpose                                               |
+| --------------------------------------- | ----------------------------------------------------- |
+| `canEvaluatePolicy:error:`              | Check if biometric is available & enrolled            |
+| `evaluatePolicy:localizedReason:reply:` | Show biometric prompt                                 |
+| `biometryType`                          | Returns `.touchID`, `.faceID`, `.opticID`, or `.none` |
+| `invalidate`                            | Invalidate context (force re-auth next time)          |
+| `evaluatedPolicyDomainState`            | Opaque data representing current enrollment state     |
 
 ### LAPolicy Values
 
-| Policy | Description | macOS Version |
-|--------|-------------|---------------|
-| `deviceOwnerAuthenticationWithBiometrics` | Biometric only | 10.12.2+ |
-| `deviceOwnerAuthentication` | Biometric + password fallback | 10.12.2+ |
-| `deviceOwnerAuthenticationWithBiometricsOrWatch` | Biometric + Apple Watch | 10.15+ |
-| `deviceOwnerAuthenticationWithWatch` | Apple Watch only | 10.15+ |
+| Policy                                           | Description                   | macOS Version |
+| ------------------------------------------------ | ----------------------------- | ------------- |
+| `deviceOwnerAuthenticationWithBiometrics`        | Biometric only                | 10.12.2+      |
+| `deviceOwnerAuthentication`                      | Biometric + password fallback | 10.12.2+      |
+| `deviceOwnerAuthenticationWithBiometricsOrWatch` | Biometric + Apple Watch       | 10.15+        |
+| `deviceOwnerAuthenticationWithWatch`             | Apple Watch only              | 10.15+        |
 
 ### SecAccessControl Flags
 
-| Flag | Description |
-|------|-------------|
+| Flag                  | Description                                                              |
+| --------------------- | ------------------------------------------------------------------------ |
 | `.biometryCurrentSet` | Require currently enrolled biometrics (invalidated on enrollment change) |
-| `.biometryAny` | Require any enrolled biometric (survives enrollment changes) |
-| `.privateKeyUsage` | Allow private key operations (needed for SE keys) |
-| `.userPresence` | Biometric or passcode |
-| `.devicePasscode` | Device passcode only |
+| `.biometryAny`        | Require any enrolled biometric (survives enrollment changes)             |
+| `.privateKeyUsage`    | Allow private key operations (needed for SE keys)                        |
+| `.userPresence`       | Biometric or passcode                                                    |
+| `.devicePasscode`     | Device passcode only                                                     |
 
 ### Security Error Codes (Keychain)
 
-| Code | Name | Meaning |
-|------|------|---------|
-| 0 | `errSecSuccess` | Operation succeeded |
-| -128 | `errSecUserCanceled` | User cancelled the auth prompt |
-| -25293 | `errSecAuthFailed` | Authentication failed |
-| -25299 | `errSecDuplicateItem` | Item already exists |
-| -25300 | `errSecItemNotFound` | Item not found |
+| Code   | Name                       | Meaning                                 |
+| ------ | -------------------------- | --------------------------------------- |
+| 0      | `errSecSuccess`            | Operation succeeded                     |
+| -128   | `errSecUserCanceled`       | User cancelled the auth prompt          |
+| -25293 | `errSecAuthFailed`         | Authentication failed                   |
+| -25299 | `errSecDuplicateItem`      | Item already exists                     |
+| -25300 | `errSecItemNotFound`       | Item not found                          |
 | -34018 | `errSecMissingEntitlement` | Missing entitlement for Keychain access |
 
 ---
 
 ## Appendix B: Comparison with Windows Hello Implementation
 
-| Aspect | Windows Hello | macOS Touch ID (Target) |
-|--------|--------------|------------------------|
-| **API** | WinRT `UserConsentVerifier` | `LAContext` (LocalAuthentication) |
-| **Availability check** | `CheckAvailabilityAsync()` | `canEvaluatePolicy:error:` |
-| **Auth prompt** | `RequestVerificationAsync()` | `evaluatePolicy:localizedReason:reply:` |
-| **Key storage** | Software SHA256 | Secure Enclave (hardware) |
-| **Keychain/Credential** | Windows Credential Manager | macOS Keychain + SecAccessControl |
-| **Sensor detection** | WBF Registry | `LAContext.biometryType` |
-| **Watch support** | N/A | `deviceOwnerAuthenticationWithBiometricsOrWatch` |
-| **FFI approach** | `windows` crate (WinRT) | `objc2` crate (ObjC) |
-| **Async model** | WinRT IAsyncOperation | ObjC completion block → mpsc channel |
+| Aspect                  | Windows Hello                | macOS Touch ID (Target)                          |
+| ----------------------- | ---------------------------- | ------------------------------------------------ |
+| **API**                 | WinRT `UserConsentVerifier`  | `LAContext` (LocalAuthentication)                |
+| **Availability check**  | `CheckAvailabilityAsync()`   | `canEvaluatePolicy:error:`                       |
+| **Auth prompt**         | `RequestVerificationAsync()` | `evaluatePolicy:localizedReason:reply:`          |
+| **Key storage**         | Software SHA256              | Secure Enclave (hardware)                        |
+| **Keychain/Credential** | Windows Credential Manager   | macOS Keychain + SecAccessControl                |
+| **Sensor detection**    | WBF Registry                 | `LAContext.biometryType`                         |
+| **Watch support**       | N/A                          | `deviceOwnerAuthenticationWithBiometricsOrWatch` |
+| **FFI approach**        | `windows` crate (WinRT)      | `objc2` crate (ObjC)                             |
+| **Async model**         | WinRT IAsyncOperation        | ObjC completion block → mpsc channel             |
 
 > **Future parity opportunity**: Windows Hello also supports Secure Enclave-equivalent
 > via **TPM 2.0** + **Windows Hello for Business**. A follow-up project could upgrade

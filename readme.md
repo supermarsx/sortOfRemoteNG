@@ -14,6 +14,7 @@ This project aims to provide a unified interface for all your remote management 
 ## ✨ Key Features
 
 ### 🔌 Multi-Protocol Connectivity
+
 - **Remote Desktop**: RDP, VNC, and RustDesk integration (RustDesk backend wired; final invoke-handler registration lands with the wiring aggregator).
 - **Shell & Terminal**: Full-featured SSH client and Web Terminal.
 - **File Transfer**: FTP and SFTP (backend implemented; invoke-handler registration in progress). SMB/CIFS support is transitioning from a placeholder UI to a real `pavao`-backed Rust crate — treat as beta until the aggregator lands.
@@ -21,17 +22,20 @@ This project aims to provide a unified interface for all your remote management 
 - **Databases**: Built-in MySQL client.
 
 ### 🛠️ Network Utilities
+
 - **Network Discovery**: Scan local networks to automatically find and add hosts.
 - **Wake-on-LAN (WoL)**: Wake devices on demand or set up **scheduled wake tasks**.
 - **Port Monitoring**: Check status and availability of services.
 
 ### 🔒 Security & Authentication
+
 - **Secure Storage**: AES-256 encryption for all stored credentials.
 - **TOTP Manager**: Integrated Time-based One-Time Password generator for 2FA.
 - **SSH Key Management**: Manage and use SSH keys effortlessly.
 - **Access Control**: User authentication system with bcrypt password hashing.
 
 ### 🚀 Advanced Capabilities
+
 - **Script Engine**: Automate tasks using a sandboxed TypeScript/JavaScript engine powered by `rquickjs` (frontend wiring is being re-enabled; track via `sorng-ssh`'s `script-engine` feature).
 - **VPN Management**: Integrations for OpenVPN, WireGuard, ZeroTier, and Tailscale. IKEv2, IPsec, SSTP, L2TP, and PPTP ship behind a native Rust VPN crate; SoftEther support is in progress.
 - **AI Agent**: Chat, agentic workflows, and code-assist dispatch through real LLM providers (OpenAI, Anthropic, Google, Ollama, local). Provider wiring is being finalised — configure providers in-app before use.
@@ -64,7 +68,7 @@ Full platform install instructions, the runtime-probe diagnostic flow, and the M
 
 ## 💻 Tech Stack
 
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS
+- **Frontend**: Next.js, React, TypeScript, Tailwind CSS
 - **Backend**: Rust, Tauri
 - **Data Storage**: IndexedDB (Frontend), SQLite/JSON (Backend configurations)
 
@@ -113,18 +117,20 @@ for the full dev-loop.
 ### Installation
 
 1.  **Clone the repository**
+
     ```bash
     git clone https://github.com/supermarsx/sortOfRemoteNG.git
     cd sortOfRemoteNG
     ```
 
 2.  **Install dependencies**
+
     ```bash
     npm install
     ```
 
 3.  **Run in Development Mode**
-    Start the Vite dev server and the Tauri application window:
+    Start the Next.js dev server and the Tauri application window:
     ```bash
     npm run tauri:dev
     ```
@@ -136,6 +142,7 @@ Create an optimized executable/installer for your current OS:
 ```bash
 npm run tauri:build
 ```
+
 Artifacts will be generated in `src-tauri/target/release/bundle/`.
 
 ## ⚙️ Configuration & Auth
@@ -143,17 +150,20 @@ Artifacts will be generated in `src-tauri/target/release/bundle/`.
 The application supports local user authentication. By default, it looks for a `users.json` file.
 
 **Example `users.json` structure:**
+
 ```json
 [
-  { 
-    "username": "admin", 
-    "passwordHash": "$2a$10$..." 
+  {
+    "username": "admin",
+    "passwordHash": "$2a$10$..."
   }
 ]
 ```
-*Note: Passwords must be bcrypt hashes.*
+
+_Note: Passwords must be bcrypt hashes._
 
 Environment variables for advanced configuration:
+
 - `API_KEY`: Optional API key for external access.
 - `JWT_SECRET`: Secret for signing internal tokens.
 - `USER_STORE_PATH`: Custom path to `users.json`.
