@@ -5,9 +5,11 @@
 
 pub mod db;
 pub mod http;
+pub mod autologin_asset;
 pub mod raw_socket;
 pub mod rlogin;
 pub mod theme_tokens;
 pub mod themed_auth;
+pub mod themed_autologin;
 pub mod themed_errors;
 pub mod themed_status;

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 pub use sha2::{Digest, Sha256};
 pub use std::collections::HashMap;
-pub use std::sync::atomic::{AtomicU64, Ordering};
+pub use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
@@ -401,6 +401,41 @@ pub struct BasicAuthProxyConfig {
     /// back to the dark-theme defaults in `theme_tokens::Default`.
     #[serde(default)]
     pub theme_tokens: Option<crate::theme_tokens::ThemeTokens>,
+    /// t20: web auto-login arming for this proxy session. When `true`, the
+    /// proxy auto-submits the session's saved `username`/`password` into the
+    /// device's login form on connect (the mRemoteNG + cdp-auth behaviour).
+    /// Defaults to `false` (disabled) — must be explicitly opted in per
+    /// connection. No new plaintext credential is carried; auto-login reuses
+    /// the existing `username`/`password` fields above, delivered only to this
+    /// session's bound `target_origin`.
+    #[serde(default)]
+    pub http_auto_login: bool,
+    /// t20: optional CSS-selector overrides for the auto-login form heuristic
+    /// (the cdp-auth `field_id` / `field_name` analogue). When absent the
+    /// backend falls back to its conservative auto-detection. Mirrors the
+    /// frontend `HttpAutoLoginSelectors` field-for-field for serde
+    /// compatibility.
+    #[serde(default)]
+    pub http_auto_login_selectors: Option<HttpAutoLoginSelectors>,
+}
+
+/// CSS-selector overrides for web auto-login form detection (t20).
+///
+/// Mirrors the frontend `HttpAutoLoginSelectors`
+/// (`src/types/connection/connection.ts`) field-for-field. Every field is
+/// optional; an omitted selector defers to the backend auto-detection
+/// heuristic. Carries selectors only — never credential material.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HttpAutoLoginSelectors {
+    /// CSS selector for the username/login input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username_selector: Option<String>,
+    /// CSS selector for the password input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_selector: Option<String>,
+    /// CSS selector for the submit control to click after filling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submit_selector: Option<String>,
 }
 
 /// Response from starting the proxy mediator
@@ -566,6 +601,19 @@ pub struct AxumProxyState {
     /// changes themes mid-session without restarting the proxy.
     pub theme: Arc<std::sync::RwLock<crate::theme_tokens::ThemeTokens>>,
     pub target_origin: String,
+    /// t20 web auto-login: armed when `config.http_auto_login` is set for this
+    /// session. Disarmed after the first credential hand-out (single-shot — a
+    /// re-rendered login-error page cannot loop the proxy into re-dispensing).
+    pub auto_login_armed: Arc<AtomicBool>,
+    /// t20: per-page nonce for the auto-login credential endpoint. A SEPARATE
+    /// slot from `pending_nonce` (different lifecycle: auto-login arms on an
+    /// armed HTML page, themed-auth arms on a 401). Minted on each injected
+    /// page; consumed on first read by `autologin_cred_handler`.
+    pub auto_login_nonce: Arc<std::sync::RwLock<Option<String>>>,
+    /// t20: optional CSS-selector overrides for the device login form
+    /// (authoritative when set). Non-secret; passed through to the injected
+    /// client so a set-but-unmatched selector means "do not fill".
+    pub auto_login_selectors: Option<HttpAutoLoginSelectors>,
     pub client: reqwest::Client,
     pub request_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
@@ -985,13 +1033,35 @@ pub async fn axum_proxy_handler(
                 let nav_script = "<script>try{window.parent.postMessage(\
                     {type:'proxy_navigate',url:location.href},'*')\
                     }catch(e){}</script>";
+                // t20: when auto-login is armed for this session, also inject
+                // the bootstrap that fetches the saved credential over the
+                // nonce-guarded same-origin endpoint and fills + submits the
+                // device login form. Returns None (and injects nothing extra)
+                // when not armed. The injected HTML carries ONLY a per-page
+                // nonce + non-secret selectors — never the credential.
+                let autologin_script =
+                    crate::themed_autologin::build_autologin_injection(&state)
+                        .unwrap_or_default();
+                // e5 hardened client asset defines
+                // `window.__sorng_autologin.fetchCredsAndRun`, which the e3
+                // bootstrap checks for and defers to. It MUST appear BEFORE the
+                // bootstrap so the global exists when the bootstrap runs. Gate
+                // it on the bootstrap being non-empty (i.e. auto-login armed) so
+                // the asset is never shipped on non-armed pages.
+                let autologin_asset = if autologin_script.is_empty() {
+                    String::new()
+                } else {
+                    crate::autologin_asset::autologin_client_asset_script()
+                };
+                let injected_scripts =
+                    format!("{}{}{}", nav_script, autologin_asset, autologin_script);
                 let body_str = String::from_utf8_lossy(&final_body);
                 if body_str.contains("</body>") {
-                    let injected =
-                        body_str.replacen("</body>", &format!("{}</body>", nav_script), 1);
+                    let injected = body_str
+                        .replacen("</body>", &format!("{}</body>", injected_scripts), 1);
                     final_body = injected.into_bytes();
                 } else {
-                    final_body.extend_from_slice(nav_script.as_bytes());
+                    final_body.extend_from_slice(injected_scripts.as_bytes());
                 }
             }
 
@@ -1474,6 +1544,15 @@ pub fn parse_tls_certificate_details(_der: &[u8], fingerprint: &str) -> ParsedTl
 // ─── Deep HTTP/HTTPS Connection Diagnostics ─────────────────────────────────
 
 pub use sorng_core::diagnostics::{self as diagnostics, DiagnosticReport, DiagnosticStep};
+
+// t20: re-export the web auto-login credential endpoint path + handler through
+// the `http` module so they resolve via `crate::http::...` from BOTH crates that
+// share `http_cmds.rs`. `http_cmds.rs` is `include!`-ed into `sorng-commands-core`
+// (whose crate root has no `themed_autologin` module), so a direct
+// `crate::themed_autologin::...` path fails there. Routing through `http` mirrors
+// the existing `crate::http::themed_auth_post_handler` pattern: both crate roots
+// expose a `http` module that re-exports from this file.
+pub use crate::themed_autologin::{autologin_cred_handler, AUTOLOGIN_PATH};
 
 // ─── Web Session Recording Commands ──────────────────────────────
 

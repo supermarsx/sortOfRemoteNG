@@ -6,6 +6,23 @@ export type HttpBookmarkItem =
   | { name: string; path: string; isFolder?: false }
   | { name: string; isFolder: true; children: HttpBookmarkItem[] };
 
+/**
+ * Optional CSS-selector overrides for web auto-login form detection.
+ * Mirrors the Rust `HttpAutoLoginSelectors` on `BasicAuthProxyConfig`
+ * (`sorng-protocols/src/http.rs`) field-for-field for serde compatibility.
+ * Every field is optional; an omitted selector defers to the backend
+ * auto-detection heuristic. No credential material lives here — only
+ * selectors.
+ */
+export interface HttpAutoLoginSelectors {
+  /** CSS selector for the username/login input (e.g. `#user`, `input[name=login]`). */
+  usernameSelector?: string;
+  /** CSS selector for the password input (e.g. `#pass`, `input[type=password]`). */
+  passwordSelector?: string;
+  /** CSS selector for the submit control / button to click after filling. */
+  submitSelector?: string;
+}
+
 export interface Connection {
   id: string;
   name: string;
@@ -70,7 +87,33 @@ export interface Connection {
   basicAuthPassword?: string;
   httpVerifySsl?: boolean;
   httpBookmarks?: HttpBookmarkItem[];
-  
+
+  /**
+   * Web auto-login: when enabled, opening this saved web (http/https)
+   * connection auto-submits the credentials already configured on this
+   * connection (its `basicAuthUsername`/`basicAuthPassword`, falling back to
+   * `username`/`password`) into the device/appliance login form, the way
+   * mRemoteNG + cdp-auth / Royal TS / Devolutions RDM do.
+   *
+   * Off by default (`undefined`/`false` = disabled). No per-login
+   * confirmation when enabled — "auto" means auto. The credential is the one
+   * the admin saved for *this* connection and is delivered only to the
+   * connection's own bound proxy origin; there is intentionally NO separate
+   * plaintext credential field here — auto-login reuses the existing saved
+   * secret path.
+   */
+  httpAutoLogin?: boolean;
+
+  /**
+   * Optional per-connection CSS-selector overrides for the auto-login form
+   * heuristic (the cdp-auth `field_id` / `field_name` analogue), for device
+   * UIs whose login form the conservative auto-detector misses. All fields
+   * are optional; when omitted the backend falls back to its heuristic
+   * (first visible `input[type=password]`, the labelled/`autocomplete=username`
+   * field, and the form's own submit control).
+   */
+  httpAutoLoginSelectors?: HttpAutoLoginSelectors;
+
   // Database specific
   database?: string;
   

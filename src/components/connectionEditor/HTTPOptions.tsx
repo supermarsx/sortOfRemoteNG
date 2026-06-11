@@ -3,6 +3,7 @@ import { useHTTPOptions } from "../../hooks/connection/useHTTPOptions";
 import { HTTPOptionsProps } from "./httpOptions/types";
 import AuthTypeSection from "./httpOptions/AuthTypeSection";
 import BasicAuthFields from "./httpOptions/BasicAuthFields";
+import AutoLoginSection from "./httpOptions/AutoLoginSection";
 import TlsVerifySection from "./httpOptions/TlsVerifySection";
 import TrustPolicySection from "./httpOptions/TrustPolicySection";
 import CustomHeadersSection from "./httpOptions/CustomHeadersSection";
@@ -22,6 +23,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
     <>
       <AuthTypeSection mgr={mgr} />
       <BasicAuthFields mgr={mgr} />
+      <AutoLoginSection mgr={mgr} />
       <TlsVerifySection mgr={mgr} />
       <TrustPolicySection mgr={mgr} />
       <CustomHeadersSection mgr={mgr} />

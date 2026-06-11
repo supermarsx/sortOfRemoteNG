@@ -3,7 +3,10 @@ import { debugLog } from "../../utils/core/debugLogger";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { ConnectionSession, HttpBookmarkItem } from "../../types/connection/connection";
+import {
+  ConnectionSession,
+  HttpBookmarkItem,
+} from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
@@ -290,7 +293,13 @@ export function useWebBrowser(session: ConnectionSession) {
       };
       setCertIdentity(identity);
       const connId = connection?.id;
-      const result = verifyIdentity(session.hostname, port, "https", identity, connId);
+      const result = verifyIdentity(
+        session.hostname,
+        port,
+        "https",
+        identity,
+        connId,
+      );
       if (result.status === "trusted") {
         // P6c: the cert was previously accepted (this session or a
         // prior one). Tell the proxy not to second-guess us.
@@ -325,12 +334,26 @@ export function useWebBrowser(session: ConnectionSession) {
       debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
       return true;
     }
-  }, [session.protocol, session.hostname, connection, settings.httpsTrustPolicy, settings.trustPolicy, settings.tlsTrustPolicy]);
+  }, [
+    session.protocol,
+    session.hostname,
+    connection,
+    settings.httpsTrustPolicy,
+    settings.trustPolicy,
+    settings.tlsTrustPolicy,
+  ]);
 
   const handleTrustAccept = useCallback(() => {
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
-      trustIdentity(session.hostname, port, "https", certIdentity, true, connection?.id);
+      trustIdentity(
+        session.hostname,
+        port,
+        "https",
+        certIdentity,
+        true,
+        connection?.id,
+      );
     }
     // P6c: persist the user's accept so the next `navigateToUrl`
     // call passes `verify_ssl: false` to the proxy. Pre-P6c this was
@@ -485,6 +508,27 @@ export function useWebBrowser(session: ConnectionSession) {
                   ((connection as unknown as Record<string, unknown>)
                     ?.httpVerifySsl ?? true) !== false,
                 connection_id: connection?.id ?? "",
+                // t20: arm proxy-side web auto-login for this session
+                // when the connection opted in. Default off. The
+                // credential itself is NOT sent separately — the
+                // backend reuses the `username`/`password` fields above
+                // (already populated from `resolvedCreds`). We only
+                // forward the enable flag and any CSS-selector
+                // overrides, mapping the camelCase Connection fields to
+                // the snake_case `BasicAuthProxyConfig` keys the proxy
+                // expects (mirrors basicAuthUsername→username,
+                // httpVerifySsl→verify_ssl above). See t20-e2 contract.
+                http_auto_login: connection?.httpAutoLogin ?? false,
+                http_auto_login_selectors: connection?.httpAutoLoginSelectors
+                  ? {
+                      username_selector:
+                        connection.httpAutoLoginSelectors.usernameSelector,
+                      password_selector:
+                        connection.httpAutoLoginSelectors.passwordSelector,
+                      submit_selector:
+                        connection.httpAutoLoginSelectors.submitSelector,
+                    }
+                  : undefined,
                 // P7: ship the live theme snapshot so themed pages
                 // served by the proxy (errors, status, auth challenge)
                 // match the user's selected theme. If they change
@@ -549,6 +593,7 @@ export function useWebBrowser(session: ConnectionSession) {
       resolvedCreds,
       connection,
       stopProxy,
+      readThemeTokens,
       historyIndex,
       fetchAndVerifyCert,
       settings.webRecording,
@@ -613,7 +658,9 @@ export function useWebBrowser(session: ConnectionSession) {
         else unlisten = fn;
       })
       .catch((err) => {
-        debugLog("WebBrowser", "Failed to subscribe to proxy auth event", { err });
+        debugLog("WebBrowser", "Failed to subscribe to proxy auth event", {
+          err,
+        });
       });
     return () => {
       cancelled = true;
@@ -635,7 +682,10 @@ export function useWebBrowser(session: ConnectionSession) {
         >("check_proxy_health", { sessionIds: [sid] });
         const entry = results.find((r) => r.session_id === sid);
         if (entry && !entry.alive) {
-          debugLog("WebBrowser", "Proxy health check failed", { sid, error: entry.error });
+          debugLog("WebBrowser", "Proxy health check failed", {
+            sid,
+            error: entry.error,
+          });
           setProxyAlive(false);
           const maxRestarts = settings.proxyMaxAutoRestarts ?? 5;
           const canAutoRestart =
@@ -1025,14 +1075,7 @@ export function useWebBrowser(session: ConnectionSession) {
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!filePath) return;
-      try {
-        await invoke("save_page_as_pdf", {
-          sessionId: proxySessionIdRef.current,
-          outputPath: filePath,
-        });
-      } catch {
-        iframeRef.current?.contentWindow?.print();
-      }
+      iframeRef.current?.contentWindow?.print();
     } catch (e) {
       console.error("Save page failed:", e);
     }

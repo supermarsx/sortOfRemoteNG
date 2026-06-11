@@ -174,6 +174,11 @@ pub async fn start_basic_auth_proxy(
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(theme_tokens)),
         target_origin: target_origin.clone(),
+        // t20: arm web auto-login for this session per the connection's opt-in
+        // flag. Separate nonce slot from themed-auth's `pending_nonce`.
+        auto_login_armed: Arc::new(AtomicBool::new(config.http_auto_login)),
+        auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
+        auto_login_selectors: config.http_auto_login_selectors.clone(),
         client,
         request_count: request_count.clone(),
         error_count: error_count.clone(),
@@ -190,6 +195,13 @@ pub async fn start_basic_auth_proxy(
         .route(
             "/__sortofremoteng_auth",
             axum::routing::post(crate::http::themed_auth_post_handler),
+        )
+        // t20: nonce-guarded same-origin credential endpoint for web
+        // auto-login. Registered ahead of the proxy fallback so the credential
+        // hand-out never reaches the fallback's request/recording logs.
+        .route(
+            crate::http::AUTOLOGIN_PATH,
+            axum::routing::get(crate::http::autologin_cred_handler),
         )
         .fallback(axum_proxy_handler)
         .with_state(proxy_state);
@@ -478,6 +490,14 @@ pub async fn restart_proxy_session(
             crate::theme_tokens::ThemeTokens::dark_default(),
         )),
         target_origin: target_origin.clone(),
+        // t20: a restart recovers a dead session that has already passed its
+        // connect-time auto-login (creds were dispensed once and the session is
+        // disarmed). Restart starts DISARMED — re-arming only happens on a
+        // fresh proxy session (a real reconnect via start_basic_auth_proxy),
+        // which preserves the single-shot guarantee.
+        auto_login_armed: Arc::new(AtomicBool::new(false)),
+        auto_login_nonce: Arc::new(std::sync::RwLock::new(None)),
+        auto_login_selectors: None,
         client,
         request_count: request_count.clone(),
         error_count: error_count.clone(),
@@ -490,6 +510,12 @@ pub async fn restart_proxy_session(
         .route(
             "/__sortofremoteng_auth",
             axum::routing::post(crate::http::themed_auth_post_handler),
+        )
+        // t20: keep the route registered for shape parity; a restarted session
+        // is disarmed, so this endpoint returns 403 until a fresh reconnect.
+        .route(
+            crate::http::AUTOLOGIN_PATH,
+            axum::routing::get(crate::http::autologin_cred_handler),
         )
         .fallback(axum_proxy_handler)
         .with_state(proxy_state);

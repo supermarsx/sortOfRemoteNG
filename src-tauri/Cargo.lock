@@ -9633,6 +9633,7 @@ dependencies = [
  "sorng-app-shell",
  "tauri",
  "tauri-plugin-autostart",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9695,6 +9696,7 @@ dependencies = [
  "tracing",
  "uuid",
  "windows 0.62.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11557,7 +11559,9 @@ version = "0.1.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
+ "lazy_static",
  "log 0.4.29",
+ "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -11764,6 +11768,7 @@ dependencies = [
  "lazy_static",
  "log 0.4.29",
  "rand 0.8.6",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.10.9",
