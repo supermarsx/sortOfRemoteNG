@@ -537,9 +537,20 @@ export function useConnectionDiagnostics(connection: Connection) {
               path: "/", method: "GET", expectedStatus: null, connectTimeoutSecs: diag.protocolDiagTimeoutSecs, verifySsl: true,
             });
           } else if (proto === "rdp") {
+            // Pass the connection's REAL RDP settings under the `rdpSettings` key.
+            // The backend command param is `rdp_settings` (no serde rename_all on the
+            // command), so Tauri's default snake->camel mapping expects the JS key
+            // `rdpSettings`. The previous `settings: null` key was silently dropped,
+            // so the probe always ran against DEFAULT TLS/CredSSP/32bpp instead of the
+            // connection's configured security/display profile. `RDPConnectionSettings`
+            // deserializes directly into the backend `RdpSettingsPayload` (camelCase),
+            // mirroring how `connect_rdp` is invoked. When the connection has no RDP
+            // settings, send an empty object so the backend applies its own defaults
+            // rather than receiving a dropped/absent arg.
             report = await invoke<ProtocolDiagnosticReport>("diagnose_rdp_connection", {
               host: connection.hostname, port, username: connection.username || "",
-              password: connection.password || "", domain: connection.domain || null, settings: null,
+              password: connection.password || "", domain: connection.domain || null,
+              rdpSettings: connection.rdpSettings ?? {},
             });
           }
           setProtocolReport(report);
