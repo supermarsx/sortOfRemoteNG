@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   importFromMRemoteNG,
   importFromRDCMan,
@@ -12,7 +14,16 @@ import {
   detectImportFormat,
   importConnections,
   getFormatName,
+  encryptMRemoteNGXml,
+  decryptMRemoteNGXml,
 } from '../../src/components/ImportExport/utils';
+
+// confCons fixture carrying several SSHTunnelConnectionName shapes (named
+// tunnel, inherited tunnel, inherited jump-host creds, unresolved tunnel).
+const CONF_CONS_TUNNELS_XML = readFileSync(
+  resolve(__dirname, 'fixtures', 'confCons-tunnels.xml'),
+  'utf8',
+);
 
 // ──────────────────────────────────────────
 // Format detection
@@ -253,6 +264,67 @@ describe('importFromMRemoteNG', () => {
     await expect(importFromMRemoteNG('<Connections><Node></Connections>')).rejects.toThrow(
       'Invalid XML format:',
     );
+  });
+});
+
+// ──────────────────────────────────────────
+// mRemoteNG SSHTunnelConnectionName tunnels (fixture-driven)
+//
+// t19: imported tunnels must emit a runnable tunnelChain layer per §1.4.
+// Deeper per-case coverage lives in MremoteTunnelImport.test.ts; this block
+// keeps the vendor-suite smoke coverage for the tunnel construct.
+// ──────────────────────────────────────────
+describe('importFromMRemoteNG — SSHTunnelConnectionName tunnels', () => {
+  it('emits an ssh-tunnel layer for an RDP target with inline jump-host creds', async () => {
+    const conns = await importFromMRemoteNG(CONF_CONS_TUNNELS_XML);
+    const layer = conns.find((c) => c.name === 'Internal RDP')?.security
+      ?.tunnelChain?.[0];
+
+    expect(layer).toMatchObject({
+      type: 'ssh-tunnel',
+      enabled: true,
+      sshTunnel: {
+        host: 'bastion.example.com',
+        port: 2222,
+        username: 'jump',
+        password: 'secret',
+        remoteHost: '10.10.0.25',
+        remotePort: 3389,
+      },
+    });
+  });
+
+  it('emits an ssh-jump layer for an SSH target', async () => {
+    const conns = await importFromMRemoteNG(CONF_CONS_TUNNELS_XML);
+    const layer = conns.find((c) => c.name === 'Internal SSH')?.security
+      ?.tunnelChain?.[0];
+    expect(layer?.type).toBe('ssh-jump');
+    expect(layer?.enabled).toBe(true);
+  });
+
+  it('does not attach a tunnel when InheritSSHTunnelConnectionName is absent', async () => {
+    const conns = await importFromMRemoteNG(CONF_CONS_TUNNELS_XML);
+    const noInherit = conns.find((c) => c.name === 'No-Inherit RDP');
+    expect(noInherit?.security?.tunnelChain ?? []).toHaveLength(0);
+  });
+
+  it('survives encrypt → decrypt → import with per-field jump-host password intact', async () => {
+    const plain = `<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" ConfVersion="2.7">
+  <Node Name="Bastion" Type="Connection" Protocol="SSH2"
+    Hostname="bastion.example.com" Port="22" Username="jump" Password="enc-secret" />
+  <Node Name="Target RDP" Type="Connection" Protocol="RDP"
+    Hostname="10.0.0.9" Port="3389" SSHTunnelConnectionName="Bastion" />
+</Connections>`;
+    const enc = await encryptMRemoteNGXml(plain, { password: 'mpw' });
+    expect(enc).not.toContain('Password="enc-secret"');
+
+    // The hook layer decrypts before parsing; mirror that here.
+    const dec = await decryptMRemoteNGXml(enc, 'mpw');
+    const conns = await importFromMRemoteNG(dec);
+    const layer = conns.find((c) => c.name === 'Target RDP')?.security
+      ?.tunnelChain?.[0];
+    expect(layer?.sshTunnel?.password).toBe('enc-secret');
   });
 });
 

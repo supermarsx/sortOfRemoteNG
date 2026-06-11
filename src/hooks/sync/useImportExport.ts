@@ -338,10 +338,19 @@ const hasSecretishValue = (value: unknown, fieldName?: string): boolean => {
 const connectionHasCredentials = (connection: Connection): boolean =>
   hasSecretishValue(connection);
 
+// mRemoteNG-imported tunnels seed a chain layer whose type follows the
+// §1.4 contract: 'ssh-jump' for SSH targets and 'ssh-tunnel' for non-SSH
+// targets (RDP/VNC/HTTP/…). The import option / preview / strip helpers
+// must recognise BOTH so a jump-host layer (Rust-path output or an
+// ssh-target import) is not invisible to the "Import SSH tunnels" option,
+// the sshTunnel preview rows, or the strip logic.
+const SSH_TUNNEL_LAYER_TYPES = new Set<string>(['ssh-tunnel', 'ssh-jump']);
+
+const isSshTunnelLayer = (layer: { type?: string }): boolean =>
+  SSH_TUNNEL_LAYER_TYPES.has(layer.type ?? '');
+
 const getConnectionSshTunnelLayers = (connection: Connection) =>
-  (connection.security?.tunnelChain ?? []).filter(
-    (layer) => layer.type === 'ssh-tunnel',
-  );
+  (connection.security?.tunnelChain ?? []).filter(isSshTunnelLayer);
 
 const hasConnectionSshTunnel = (connection: Connection): boolean =>
   Boolean(connection.security?.sshTunnel) ||
@@ -359,7 +368,7 @@ const stripConnectionSshTunnels = (connection: Connection): Connection => {
 
   if (nextSecurity.tunnelChain) {
     const keptLayers = nextSecurity.tunnelChain.filter(
-      (layer) => layer.type !== 'ssh-tunnel',
+      (layer) => !isSshTunnelLayer(layer),
     );
     if (keptLayers.length > 0) {
       nextSecurity.tunnelChain = keptLayers;
@@ -951,7 +960,12 @@ const buildImportPreviewItems = (
       kind: 'sshTunnel',
       sourceIndex,
       sourcePath: getConnectionPath(connection, importedById),
-      name: `${safeString(connection.name) || 'Unnamed item'} SSH tunnel`,
+      // 'ssh-jump' (SSH target) and 'ssh-tunnel' (RDP/VNC/HTTP target) layers
+      // are both surfaced as SSH tunnels here. Prefer the layer's own name
+      // (carries "via <jump host>") so the jump host is visible in the row.
+      name:
+        safeString(firstLayer?.name) ||
+        `${safeString(connection.name) || 'Unnamed item'} SSH tunnel`,
       protocol: 'ssh',
       hostname:
         firstTunnel?.host ||

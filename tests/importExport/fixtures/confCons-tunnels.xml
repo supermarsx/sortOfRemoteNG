@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Test fixture: an mRemoteNG confCons.xml exercising the SSHTunnelConnectionName
+  tunnel construct in several shapes that t19 must import correctly.
+
+  Tree:
+    Bastions (Container)
+      Edge Bastion        SSH2  bastion.example.com:2222  jump/secret      (named tunnel target)
+    Datacenter (Container, Username=dcadmin Password=dcpass)
+      DC Jump             SSH2  dc-jump.example.com:22  InheritUsername/Password
+                                                            (jump host inherits container creds — R7)
+      Internal RDP        RDP   10.10.0.25:3389  SSHTunnelConnectionName="Edge Bastion"
+                                                            (named tunnel; non-ssh target ⇒ ssh-tunnel)
+      Internal SSH        SSH2  10.10.0.40:22    SSHTunnelConnectionName="DC Jump"
+                                                            (ssh target ⇒ ssh-jump; jump host has inherited creds)
+    Tunneled Group (Container, SSHTunnelConnectionName="Edge Bastion")
+      Inherited RDP       RDP   10.20.0.5:3389   InheritSSHTunnelConnectionName="true"
+                                                            (inherited tunnel — should attach)
+      No-Inherit RDP      RDP   10.20.0.6:3389
+                                                            (no inherit flag ⇒ must NOT attach — R6)
+    Orphan RDP            RDP   10.30.0.9:3389   SSHTunnelConnectionName="Ghost Host"
+                                                            (unresolved jump host ⇒ disabled layer)
+-->
+<Connections Name="Connections" Export="false" Protected="" ConfVersion="2.7">
+  <Node Name="Bastions" Type="Container" Expanded="true">
+    <Node Name="Edge Bastion" Type="Connection" Protocol="SSH2"
+      Hostname="bastion.example.com" Port="2222" Username="jump" Password="secret"
+      Domain="" Descr="Edge SSH bastion" />
+  </Node>
+  <Node Name="Datacenter" Type="Container" Expanded="true"
+    Username="dcadmin" Password="dcpass">
+    <Node Name="DC Jump" Type="Connection" Protocol="SSH2"
+      Hostname="dc-jump.example.com" Port="22"
+      InheritUsername="true" InheritPassword="true" />
+    <Node Name="Internal RDP" Type="Connection" Protocol="RDP"
+      Hostname="10.10.0.25" Port="3389" Username="admin" Domain="CORP"
+      SSHTunnelConnectionName="Edge Bastion" />
+    <Node Name="Internal SSH" Type="Connection" Protocol="SSH2"
+      Hostname="10.10.0.40" Port="22" Username="ops"
+      SSHTunnelConnectionName="DC Jump" />
+  </Node>
+  <Node Name="Tunneled Group" Type="Container" Expanded="true"
+    SSHTunnelConnectionName="Edge Bastion">
+    <Node Name="Inherited RDP" Type="Connection" Protocol="RDP"
+      Hostname="10.20.0.5" Port="3389" Username="svc"
+      InheritSSHTunnelConnectionName="true" />
+    <Node Name="No-Inherit RDP" Type="Connection" Protocol="RDP"
+      Hostname="10.20.0.6" Port="3389" Username="svc" />
+  </Node>
+  <Node Name="Orphan RDP" Type="Connection" Protocol="RDP"
+    Hostname="10.30.0.9" Port="3389" Username="admin"
+    SSHTunnelConnectionName="Ghost Host" />
+</Connections>

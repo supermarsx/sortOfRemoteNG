@@ -83,8 +83,19 @@ export interface ResolvedChainConfig {
 
 // ── Main entry point ──────────────────────────────────────────────
 
+/**
+ * @param connection  The target connection whose chain/tunnel should be resolved.
+ * @param connections Optional connection store snapshot. Used to resolve
+ *   tunnel/jump layers that reference another connection only by
+ *   `sshTunnel.connectionId` (e.g. mRemoteNG `SSHTunnelConnectionName`
+ *   imports) into concrete host/port/credentials. Callers that have the
+ *   live connection list (e.g. `useWebTerminal`, `useRDPClient`) should
+ *   pass it so imported tunnels resolve even when inline host fields are
+ *   absent; omitting it preserves the previous inline-only behavior.
+ */
 export async function resolveChainConfig(
   connection: Connection,
+  connections?: Connection[],
 ): Promise<ResolvedChainConfig> {
   const result: ResolvedChainConfig = {
     jump_hosts: [],
@@ -95,16 +106,27 @@ export async function resolveChainConfig(
     vpnPreSteps: [],
   };
 
+  const lookupConnection = makeConnectionLookup(connections);
+
   // Priority 0: tunnelChainId — saved chain reference (resolves profiles)
   if (connection.tunnelChainId) {
-    resolveTunnelChainById(connection.tunnelChainId, result);
+    resolveTunnelChainById(connection.tunnelChainId, result, lookupConnection);
     return result;
   }
 
   // Priority 1: Modern tunnelChain (most flexible, inline layers)
+  //
+  // Note: we no longer unconditionally early-return here. A tunnelChain made
+  // up entirely of layer types this resolver does not turn into jump_hosts /
+  // proxies (the old "non-empty chain ⇒ empty config" trap, R2) would
+  // otherwise suppress the legacy fallbacks below and yield a silent no-op.
+  // We only short-circuit when the chain actually produced a usable result.
   if (connection.security?.tunnelChain?.length) {
-    resolveTunnelChain(connection.security.tunnelChain, result);
-    return result;
+    resolveTunnelChain(connection.security.tunnelChain, result, lookupConnection);
+    if (chainProducedResult(result)) {
+      return result;
+    }
+    // Otherwise fall through to legacy/saved-chain resolution.
   }
 
   // Priority 2: proxyChainId — look up saved chain
@@ -125,11 +147,73 @@ export async function resolveChainConfig(
   return result;
 }
 
+// ── Connection lookup + result helpers ────────────────────────────
+
+type ConnectionLookup = (id: string) => Connection | undefined;
+
+/**
+ * Build a stable id → connection lookup from an optional connection list.
+ * Returns a function that always resolves to `undefined` when no list is
+ * supplied, so resolution degrades to inline-only fields.
+ */
+function makeConnectionLookup(connections?: Connection[]): ConnectionLookup {
+  if (!connections?.length) {
+    return () => undefined;
+  }
+  const byId = new Map<string, Connection>();
+  for (const conn of connections) {
+    if (conn?.id) byId.set(conn.id, conn);
+  }
+  return (id: string) => byId.get(id);
+}
+
+/** True when chain resolution produced something the runtime can act on. */
+function chainProducedResult(result: ResolvedChainConfig): boolean {
+  return (
+    result.jump_hosts.length > 0 ||
+    result.proxy_config !== null ||
+    result.proxy_chain !== null ||
+    result.mixed_chain !== null ||
+    result.openvpn_config !== null ||
+    result.vpnPreSteps.length > 0
+  );
+}
+
+/**
+ * Resolve an `ssh-jump` / `ssh-tunnel` layer's effective jump-host fields.
+ *
+ * mRemoteNG tunnel imports (and the Rust converter) seed a layer whose
+ * `sshTunnel` carries a `connectionId` reference to the jump/bastion host.
+ * The frontend importer inlines host/port/creds too, but the Rust path and
+ * any hand-built layer may only carry the reference — so when the inline
+ * host is missing we resolve it from the connection store. Inline values
+ * always win over the referenced connection (post-inheritance creds the
+ * importer captured should not be silently overwritten).
+ */
+function resolveJumpHostFields(
+  ssh: NonNullable<TunnelChainLayer['sshTunnel']>,
+  lookup: ConnectionLookup,
+): ResolvedJumpHost {
+  const ref =
+    !ssh.host && ssh.connectionId ? lookup(ssh.connectionId) : undefined;
+
+  return {
+    host: ssh.host || ref?.hostname || '',
+    port: ssh.port ?? ref?.port ?? 22,
+    username: ssh.username ?? ref?.username ?? '',
+    password: ssh.password ?? ref?.password ?? null,
+    private_key_path: ssh.privateKey ?? ref?.privateKey ?? null,
+    private_key_passphrase: ssh.passphrase ?? ref?.passphrase ?? null,
+    agent_forwarding: ssh.agentForwarding,
+  };
+}
+
 // ── Priority 0: tunnelChainId reference ──────────────────────────
 
 function resolveTunnelChainById(
   chainId: string,
   result: ResolvedChainConfig,
+  lookup: ConnectionLookup,
 ): void {
   const chain = proxyCollectionManager.getTunnelChain(chainId);
   if (!chain) {
@@ -149,7 +233,7 @@ function resolveTunnelChainById(
     return layer;
   });
 
-  resolveTunnelChain(resolvedLayers, result);
+  resolveTunnelChain(resolvedLayers, result, lookup);
 }
 
 // ── Priority 1: Modern tunnelChain ────────────────────────────────
@@ -157,6 +241,7 @@ function resolveTunnelChainById(
 function resolveTunnelChain(
   layers: TunnelChainLayer[],
   result: ResolvedChainConfig,
+  lookup: ConnectionLookup,
 ): void {
   const enabledLayers = layers.filter((l) => l.enabled);
 
@@ -189,13 +274,21 @@ function resolveTunnelChain(
       }
 
       // ── SSH jump hosts ──────────────────────────────────
-      case 'ssh-jump': {
+      // `ssh-jump` is the modern ProxyJump hop. `ssh-tunnel` is the layer
+      // type the importers emit for an mRemoteNG SSHTunnelConnectionName
+      // when the target is NOT ssh (RDP/VNC/HTTP/… through an SSH bastion):
+      // the imported tunnel names a bastion host that the target is routed
+      // through, which is exactly a jump host for chain-resolution purposes.
+      // Both carry their bastion details in `layer.sshTunnel` (inline and/or
+      // a `connectionId` reference resolved below), so we treat them alike
+      // here instead of dropping `ssh-tunnel` and yielding an empty config.
+      case 'ssh-jump':
+      case 'ssh-tunnel': {
         sshJumpLayers.push(layer);
         break;
       }
 
-      // ssh-proxycmd and ssh-stdio are handled by useWebTerminal,
-      // ssh-tunnel is a forwarding concept — none produce jump_hosts.
+      // ssh-proxycmd and ssh-stdio are handled by useWebTerminal.
       // tor, i2p, stunnel, chisel, ngrok, cloudflared are tunnel
       // pre-steps similar to VPN but not yet modeled here.
       default:
@@ -210,16 +303,20 @@ function resolveTunnelChain(
     // Build a mixed chain preserving the original layer order
     const hops: ResolvedMixedChainHop[] = [];
     for (const layer of enabledLayers) {
-      if (layer.type === 'ssh-jump' && layer.sshTunnel) {
+      if (
+        (layer.type === 'ssh-jump' || layer.type === 'ssh-tunnel') &&
+        layer.sshTunnel
+      ) {
+        const jh = resolveJumpHostFields(layer.sshTunnel, lookup);
         hops.push({
           type: 'ssh_jump',
-          host: layer.sshTunnel.host ?? '',
-          port: layer.sshTunnel.port ?? 22,
-          username: layer.sshTunnel.username ?? '',
-          password: layer.sshTunnel.password ?? null,
-          private_key_path: layer.sshTunnel.privateKey ?? null,
-          private_key_passphrase: layer.sshTunnel.passphrase ?? null,
-          agent_forwarding: layer.sshTunnel.agentForwarding,
+          host: jh.host,
+          port: jh.port,
+          username: jh.username,
+          password: jh.password ?? null,
+          private_key_path: jh.private_key_path ?? null,
+          private_key_passphrase: jh.private_key_passphrase ?? null,
+          agent_forwarding: jh.agent_forwarding,
         });
       } else if (
         (layer.type === 'proxy' || layer.type === 'shadowsocks') &&
@@ -242,25 +339,23 @@ function resolveTunnelChain(
       const ssh = layer.sshTunnel;
       if (!ssh) continue;
 
-      // If the layer references multiple jump hosts, expand them
+      // If the layer references multiple jump hosts, expand them. Each entry
+      // may itself reference a connection by id (resolve when host missing).
       if (ssh.jumpHosts?.length) {
         for (const jh of ssh.jumpHosts) {
+          const ref =
+            !jh.host && jh.connectionId ? lookup(jh.connectionId) : undefined;
           result.jump_hosts.push({
-            host: jh.host,
-            port: jh.port ?? 22,
-            username: jh.username ?? '',
+            host: jh.host || ref?.hostname || '',
+            port: jh.port ?? ref?.port ?? 22,
+            username: jh.username ?? ref?.username ?? '',
           });
         }
       } else {
-        result.jump_hosts.push({
-          host: ssh.host ?? '',
-          port: ssh.port ?? 22,
-          username: ssh.username ?? '',
-          password: ssh.password ?? null,
-          private_key_path: ssh.privateKey ?? null,
-          private_key_passphrase: ssh.passphrase ?? null,
-          agent_forwarding: ssh.agentForwarding,
-        });
+        // Single bastion: inline fields win, with a `connectionId` reference
+        // (mRemoteNG SSHTunnelConnectionName / Rust converter output) as the
+        // fallback source for host/port/credentials.
+        result.jump_hosts.push(resolveJumpHostFields(ssh, lookup));
       }
     }
 

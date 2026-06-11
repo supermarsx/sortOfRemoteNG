@@ -112,37 +112,114 @@ pub fn mrng_to_app_connection(mrng: &MrngConnectionInfo) -> Value {
     conn
 }
 
+/// Resolved, post-inheritance view of a jump-host node used when
+/// inlining tunnel credentials into a target connection's chain layer.
+#[derive(Clone, Default)]
+struct JumpHostInfo {
+    id: String,
+    hostname: String,
+    port: u16,
+    username: String,
+    password: String,
+}
+
 /// Convert a tree of mRemoteNG connections to a flat list of app connections
 /// with `parentId` references.
 ///
-/// After the per-node conversion runs, a second pass rewrites the SSH
-/// tunnel references each connection picked up from mRemoteNG's
-/// `SSHTunnelConnectionName` attribute. That attribute identifies the
-/// jump host by *name*, but the application's `security.sshTunnel`
-/// shape (and the newer `tunnelChain` layers) reference it by the
-/// connection's stable `id`. Without this rewrite the tunnel host
-/// reference never resolves at connect time.
+/// Two things happen beyond the per-node conversion:
 ///
-/// The same pass also seeds a single-layer `tunnelChain` entry of
-/// type `ssh-jump` so the imported connection participates in the
-/// app's specialized SSH tunnel pipeline alongside the legacy single
-/// `sshTunnel` field — both are written for back-compat with older
-/// runtime code that only reads `security.sshTunnel`.
+/// 1. **Inheritance resolution.** mRemoteNG containers carry property
+///    values that descendants pull down via per-property `Inherit*`
+///    flags (Username/Password/Domain/Port, and crucially
+///    `SSHTunnelConnectionName`). The per-node converter only sees a
+///    single node, so we first walk the tree carrying an ancestor
+///    stack and resolve effective values before flattening.
+///
+/// 2. **Tunnel inlining.** mRemoteNG's `SSHTunnelConnectionName`
+///    identifies the jump host by *name*. The app references it by
+///    stable `id`, and — critically — the runtime chain resolver reads
+///    inline `host`/`port`/`username`/`password` off the tunnel layer
+///    (it does not chase `connectionId` references on its own when the
+///    inline host is present). So we resolve the named node to its
+///    post-inheritance host/port/creds and inline them into both the
+///    legacy `security.sshTunnel` block and a single `tunnelChain`
+///    layer. The layer `type` follows the normative contract: an
+///    `ssh-jump` for SSH targets, `ssh-tunnel` otherwise.
 pub fn mrng_tree_to_flat_connections(root: &MrngConnectionInfo) -> Vec<Value> {
-    let mut result = Vec::new();
-    flatten_node(root, None, &mut result);
+    // First materialise effective (post-inheritance) nodes so the
+    // per-node conversion and the tunnel inlining both see resolved
+    // credentials/host/port and the resolved tunnel reference.
+    let mut effective_root = root.clone();
+    resolve_inheritance(&mut effective_root, &[]);
 
-    // Build a name → constant_id index across the whole tree so
-    // `SSHTunnelConnectionName` references (by-name) can be rewritten
-    // to the actual ids the rest of the app uses at runtime.
-    let mut name_to_id: HashMap<String, String> = HashMap::new();
-    collect_name_to_id(root, &mut name_to_id);
+    let mut result = Vec::new();
+    flatten_node(&effective_root, None, &mut result);
+
+    // Index every node by display name → its resolved jump-host info.
+    // First-in-tree-order wins on duplicate names (mRemoteNG does not
+    // enforce name uniqueness; deterministic first-match is documented
+    // behaviour shared with the frontend importer).
+    let mut name_to_jump: HashMap<String, JumpHostInfo> = HashMap::new();
+    collect_jump_hosts(&effective_root, &mut name_to_jump);
 
     for conn in result.iter_mut() {
-        resolve_ssh_tunnel_reference(conn, &name_to_id);
+        resolve_ssh_tunnel_reference(conn, &name_to_jump);
     }
 
     result
+}
+
+/// Walk the tree top-down, filling in each node's inherited properties
+/// from the nearest ancestor that supplies a value. `ancestors` is the
+/// container chain from root (front) to immediate parent (back), each
+/// already resolved.
+///
+/// mRemoteNG defaults every `Inherit*` flag to **false**; the parser
+/// reflects that default, so an absent flag never triggers inheritance
+/// here. We only pull a value down when the flag is explicitly set.
+fn resolve_inheritance(node: &mut MrngConnectionInfo, ancestors: &[MrngConnectionInfo]) {
+    // Helper: nearest ancestor (closest parent first) whose field is
+    // non-empty, for string-valued inherited properties.
+    fn nearest_str(
+        ancestors: &[MrngConnectionInfo],
+        get: impl Fn(&MrngConnectionInfo) -> &str,
+    ) -> Option<&str> {
+        ancestors.iter().rev().map(get).find(|v| !v.is_empty())
+    }
+
+    if node.inheritance.username {
+        if let Some(v) = nearest_str(ancestors, |a| a.username.as_str()) {
+            node.username = v.to_string();
+        }
+    }
+    if node.inheritance.password {
+        if let Some(v) = nearest_str(ancestors, |a| a.password.as_str()) {
+            node.password = v.to_string();
+        }
+    }
+    if node.inheritance.domain {
+        if let Some(v) = nearest_str(ancestors, |a| a.domain.as_str()) {
+            node.domain = v.to_string();
+        }
+    }
+    if node.inheritance.port {
+        if let Some(p) = ancestors.iter().rev().map(|a| a.port).find(|p| *p != 0) {
+            node.port = p;
+        }
+    }
+    if node.inheritance.ssh_tunnel_connection_name {
+        if let Some(v) = nearest_str(ancestors, |a| a.ssh_tunnel_connection_name.as_str()) {
+            node.ssh_tunnel_connection_name = v.to_string();
+        }
+    }
+
+    // Recurse: this (now-resolved) node becomes part of the ancestor
+    // chain for its children.
+    let mut chain = ancestors.to_vec();
+    chain.push(node.clone());
+    for child in node.children.iter_mut() {
+        resolve_inheritance(child, &chain);
+    }
 }
 
 fn flatten_node(node: &MrngConnectionInfo, parent_id: Option<&str>, result: &mut Vec<Value>) {
@@ -160,40 +237,51 @@ fn flatten_node(node: &MrngConnectionInfo, parent_id: Option<&str>, result: &mut
     }
 }
 
-/// Walk the mRemoteNG tree and record every node's display name →
-/// stable id. Multiple nodes with the same name in different folders
-/// pick the first one we visit (mRemoteNG itself doesn't enforce
-/// uniqueness; the user is on the hook for naming jump hosts
-/// distinctly when they want them referenced reliably).
-fn collect_name_to_id(node: &MrngConnectionInfo, out: &mut HashMap<String, String>) {
+/// Walk the (already inheritance-resolved) tree and record every node's
+/// display name → its jump-host info (id + effective host/port/creds).
+/// Multiple nodes with the same name keep the first one we visit, in
+/// tree order, matching the frontend importer's deterministic
+/// first-match rule.
+fn collect_jump_hosts(node: &MrngConnectionInfo, out: &mut HashMap<String, JumpHostInfo>) {
     if !node.name.is_empty() && !node.constant_id.is_empty() {
         out.entry(node.name.clone())
-            .or_insert_with(|| node.constant_id.clone());
+            .or_insert_with(|| JumpHostInfo {
+                id: node.constant_id.clone(),
+                hostname: node.hostname.clone(),
+                port: node.port,
+                username: node.username.clone(),
+                password: node.password.clone(),
+            });
     }
     for child in &node.children {
-        collect_name_to_id(child, out);
+        collect_jump_hosts(child, out);
     }
 }
 
 /// Rewrite a connection's SSH tunnel reference in place:
-///   * if `security.sshTunnel.connectionId` matches a known node
-///     name, replace it with that node's id;
-///   * regardless of whether the lookup succeeded, also emit a
-///     single-layer `security.tunnelChain` of type `ssh-jump` so the
-///     specialized-tunnel pipeline sees the connection.
+///   * resolve the `connectionId` (currently the jump host's *name*)
+///     to the real node id when the host is part of this import;
+///   * inline the jump host's effective host/port/username/password
+///     into the legacy `security.sshTunnel` block so the runtime chain
+///     resolver — which reads inline fields, not `connectionId`
+///     references — can actually dial it;
+///   * emit a single `security.tunnelChain` layer carrying the same
+///     inlined data. The layer `type` is `ssh-jump` for SSH targets and
+///     `ssh-tunnel` for everything else, per the normative contract.
 ///
-/// When the lookup *fails* (the named host wasn't part of this
-/// import), we leave the original name in place so the user can
-/// resolve it manually — that's still strictly more useful than the
-/// silent no-op the previous converter produced.
-fn resolve_ssh_tunnel_reference(conn: &mut Value, name_to_id: &HashMap<String, String>) {
+/// When the named host isn't in this import we keep the original name
+/// in `connectionId`, leave the inline host blank, and mark the layer
+/// `enabled: false` so the user sees (and can repair) the dangling
+/// reference rather than silently connecting to an empty host.
+fn resolve_ssh_tunnel_reference(conn: &mut Value, name_to_jump: &HashMap<String, JumpHostInfo>) {
     let obj = match conn.as_object_mut() {
         Some(o) => o,
         None => return,
     };
 
-    // Pull the existing legacy `sshTunnel` block out so we can edit
-    // it; bail when it's missing because there's nothing to do.
+    // The target's own protocol decides the chain layer type.
+    let target_is_ssh = obj.get("protocol").and_then(|v| v.as_str()) == Some("ssh");
+
     let Some(security) = obj.get_mut("security").and_then(|v| v.as_object_mut()) else {
         return;
     };
@@ -204,8 +292,7 @@ fn resolve_ssh_tunnel_reference(conn: &mut Value, name_to_id: &HashMap<String, S
         return;
     };
 
-    // The converter stored the mRemoteNG host *name* in
-    // `connectionId`. Resolve to the real id when we have it.
+    // The converter stored the mRemoteNG host *name* in `connectionId`.
     let original_reference = ssh_tunnel
         .get("connectionId")
         .and_then(|v| v.as_str())
@@ -214,14 +301,32 @@ fn resolve_ssh_tunnel_reference(conn: &mut Value, name_to_id: &HashMap<String, S
     if original_reference.is_empty() {
         return;
     }
-    let resolved_id = name_to_id
-        .get(&original_reference)
-        .cloned()
-        .unwrap_or_else(|| original_reference.clone());
-    ssh_tunnel.insert("connectionId".into(), json!(resolved_id));
 
-    // Snapshot the fields we need for the new chain layer before we
-    // hand the borrow back to the `security` map.
+    let resolved = name_to_jump.get(&original_reference);
+    let resolved_id = resolved
+        .map(|j| j.id.clone())
+        .unwrap_or_else(|| original_reference.clone());
+    let jump_host = resolved.map(|j| j.hostname.clone()).unwrap_or_default();
+    let jump_port = resolved.map(|j| j.port).filter(|p| *p != 0).unwrap_or(22);
+    let jump_user = resolved.map(|j| j.username.clone()).unwrap_or_default();
+    let jump_pass = resolved.map(|j| j.password.clone()).unwrap_or_default();
+    let enabled = resolved.is_some() && !jump_host.is_empty();
+
+    // Inline the resolved data into the legacy tunnel block too, so
+    // older runtime paths and re-export both have real values.
+    ssh_tunnel.insert("connectionId".into(), json!(resolved_id));
+    if !jump_host.is_empty() {
+        ssh_tunnel.insert("host".into(), json!(jump_host));
+        ssh_tunnel.insert("port".into(), json!(jump_port));
+    }
+    if !jump_user.is_empty() {
+        ssh_tunnel.insert("username".into(), json!(jump_user));
+    }
+    if !jump_pass.is_empty() {
+        ssh_tunnel.insert("password".into(), json!(jump_pass));
+    }
+
+    // Snapshot the target-side fields for the chain layer.
     let remote_host = ssh_tunnel
         .get("remoteHost")
         .and_then(|v| v.as_str())
@@ -236,23 +341,38 @@ fn resolve_ssh_tunnel_reference(conn: &mut Value, name_to_id: &HashMap<String, S
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    // Seed a one-layer `tunnelChain` so the connection participates
-    // in the specialized-tunnel pipeline. The legacy `sshTunnel`
-    // field stays alongside for back-compat with older runtime code.
+    let layer_type = if target_is_ssh {
+        "ssh-jump"
+    } else {
+        "ssh-tunnel"
+    };
+    let layer_name = format!("mRemoteNG SSH tunnel via {original_reference}");
+
+    // Build the inlined sshTunnel block for the chain layer.
+    let mut tunnel = Map::new();
+    tunnel.insert("connectionId".into(), json!(resolved_id));
+    tunnel.insert("forwardType".into(), json!("local"));
+    if !jump_host.is_empty() {
+        tunnel.insert("host".into(), json!(jump_host));
+        tunnel.insert("port".into(), json!(jump_port));
+    }
+    if !jump_user.is_empty() {
+        tunnel.insert("username".into(), json!(jump_user));
+    }
+    if !jump_pass.is_empty() {
+        tunnel.insert("password".into(), json!(jump_pass));
+    }
+    tunnel.insert("remoteHost".into(), json!(remote_host));
+    tunnel.insert("remotePort".into(), json!(remote_port));
+
     let chain_layer = json!({
         "id": uuid::Uuid::new_v4().to_string(),
-        "type": "ssh-jump",
-        "enabled": true,
-        "name": "Imported from mRemoteNG",
+        "type": layer_type,
+        "enabled": enabled,
+        "name": layer_name,
+        "localBindHost": "127.0.0.1",
         "localBindPort": local_port,
-        "sshTunnel": {
-            "connectionId": resolved_id,
-            "forwardType": "local",
-            "remoteHost": remote_host,
-            "remotePort": remote_port,
-            "jumpTargetHost": remote_host,
-            "jumpTargetPort": remote_port,
-        }
+        "sshTunnel": Value::Object(tunnel),
     });
     security.insert("tunnelChain".into(), json!([chain_layer]));
 }
@@ -998,17 +1118,24 @@ mod tests {
             .expect("target connection");
         let tunnel = &target_value["security"]["sshTunnel"];
         // Legacy field's connectionId is now the resolved id, not the
-        // human name.
+        // human name, and the jump host's host/port are inlined.
         assert_eq!(tunnel["connectionId"], "jump-uuid");
-        // A specialized-tunnel chain layer was seeded alongside.
+        assert_eq!(tunnel["host"], "Bastion.example.com");
+        assert_eq!(tunnel["port"], 22);
+        // A specialized-tunnel chain layer was seeded alongside with
+        // the jump host inlined (the runtime resolver reads inline
+        // host/port, not the connectionId reference).
         let chain = target_value["security"]["tunnelChain"]
             .as_array()
             .expect("tunnelChain array");
         assert_eq!(chain.len(), 1);
         assert_eq!(chain[0]["type"], "ssh-jump");
         assert_eq!(chain[0]["enabled"], true);
+        assert_eq!(chain[0]["localBindHost"], "127.0.0.1");
         assert_eq!(chain[0]["sshTunnel"]["connectionId"], "jump-uuid");
         assert_eq!(chain[0]["sshTunnel"]["forwardType"], "local");
+        assert_eq!(chain[0]["sshTunnel"]["host"], "Bastion.example.com");
+        assert_eq!(chain[0]["sshTunnel"]["port"], 22);
     }
 
     #[test]
@@ -1035,17 +1162,167 @@ mod tests {
             target_value["security"]["sshTunnel"]["connectionId"],
             "ExternalBastion",
         );
+        // No inline host could be resolved, so none is written.
+        assert!(target_value["security"]["sshTunnel"].get("host").is_none());
         // A chain layer is still seeded so the specialized pipeline
-        // sees the connection — the chain entry points at the same
-        // unresolved name so the user can fix it from either UI.
+        // sees the connection — but it is disabled (no resolvable host)
+        // so the user can fix it rather than dialing an empty host.
         let chain = target_value["security"]["tunnelChain"]
             .as_array()
             .expect("tunnelChain array");
         assert_eq!(chain.len(), 1);
-        assert_eq!(
-            chain[0]["sshTunnel"]["connectionId"],
-            "ExternalBastion",
-        );
+        assert_eq!(chain[0]["enabled"], false);
+        assert_eq!(chain[0]["sshTunnel"]["connectionId"], "ExternalBastion",);
+        assert!(chain[0]["sshTunnel"].get("host").is_none());
+    }
+
+    #[test]
+    fn import_inlines_jump_host_credentials_into_chain_layer() {
+        // A named tunnel entry: the jump host carries its own
+        // username/password, and the target references it by name. The
+        // emitted layer must inline host/port/username/password so the
+        // runtime resolver can dial it without chasing a reference.
+        let mut root = MrngConnectionInfo::default();
+        root.constant_id = "root".into();
+        root.name = "root".into();
+        root.node_type = MrngNodeType::Root;
+
+        let mut jump = make_node("Bastion", "jump-uuid");
+        jump.hostname = "bastion.internal".into();
+        jump.port = 2222;
+        jump.username = "jumpuser".into();
+        jump.password = "jumppass".into();
+
+        let mut target = make_node("ProdServer", "target-uuid");
+        target.ssh_tunnel_connection_name = "Bastion".into();
+        root.children.push(jump);
+        root.children.push(target);
+
+        let flat = mrng_tree_to_flat_connections(&root);
+        let target_value = flat
+            .iter()
+            .find(|c| c["id"] == "target-uuid")
+            .expect("target connection");
+
+        let layer = &target_value["security"]["tunnelChain"][0];
+        assert_eq!(layer["type"], "ssh-jump");
+        assert_eq!(layer["enabled"], true);
+        let t = &layer["sshTunnel"];
+        assert_eq!(t["connectionId"], "jump-uuid");
+        assert_eq!(t["host"], "bastion.internal");
+        assert_eq!(t["port"], 2222);
+        assert_eq!(t["username"], "jumpuser");
+        assert_eq!(t["password"], "jumppass");
+    }
+
+    #[test]
+    fn import_inherits_tunnel_name_and_jump_creds_from_container() {
+        // An inherited-tunnel entry: the target inherits
+        // SSHTunnelConnectionName from its folder, and the jump host
+        // inherits its credentials from that same folder. Both must be
+        // resolved before the layer is emitted.
+        let mut root = MrngConnectionInfo::default();
+        root.constant_id = "root".into();
+        root.name = "root".into();
+        root.node_type = MrngNodeType::Root;
+
+        let mut folder = MrngConnectionInfo::default();
+        folder.constant_id = "folder-uuid".into();
+        folder.name = "Prod".into();
+        folder.node_type = MrngNodeType::Container;
+        folder.ssh_tunnel_connection_name = "Bastion".into();
+        folder.username = "folderuser".into();
+        folder.password = "folderpass".into();
+
+        // Jump host inherits username/password from the folder.
+        let mut jump = make_node("Bastion", "jump-uuid");
+        jump.hostname = "bastion.internal".into();
+        jump.username.clear();
+        jump.password.clear();
+        jump.inheritance.username = true;
+        jump.inheritance.password = true;
+
+        // Target inherits its tunnel reference from the folder.
+        let mut target = make_node("ProdServer", "target-uuid");
+        target.ssh_tunnel_connection_name.clear();
+        target.inheritance.ssh_tunnel_connection_name = true;
+
+        folder.children.push(jump);
+        folder.children.push(target);
+        root.children.push(folder);
+
+        let flat = mrng_tree_to_flat_connections(&root);
+        let target_value = flat
+            .iter()
+            .find(|c| c["id"] == "target-uuid")
+            .expect("target connection");
+
+        let layer = &target_value["security"]["tunnelChain"][0];
+        assert_eq!(layer["enabled"], true);
+        let t = &layer["sshTunnel"];
+        // Inherited tunnel reference resolved to the jump host id.
+        assert_eq!(t["connectionId"], "jump-uuid");
+        assert_eq!(t["host"], "bastion.internal");
+        // Jump host's inherited credentials are inlined.
+        assert_eq!(t["username"], "folderuser");
+        assert_eq!(t["password"], "folderpass");
+    }
+
+    #[test]
+    fn import_resolves_tunnel_referencing_sibling_container_connection() {
+        // A tunnel referencing a sibling/container connection: the jump
+        // host lives in a different folder than the target. Resolution
+        // is by name across the whole tree, and a non-SSH target emits
+        // an `ssh-tunnel` (not `ssh-jump`) layer per the contract.
+        let mut root = MrngConnectionInfo::default();
+        root.constant_id = "root".into();
+        root.name = "root".into();
+        root.node_type = MrngNodeType::Root;
+
+        // Sibling folder holding the jump host.
+        let mut infra = MrngConnectionInfo::default();
+        infra.constant_id = "infra-uuid".into();
+        infra.name = "Infra".into();
+        infra.node_type = MrngNodeType::Container;
+        let mut jump = make_node("Bastion", "jump-uuid");
+        jump.hostname = "bastion.dmz".into();
+        jump.port = 22;
+        jump.username = "ops".into();
+        infra.children.push(jump);
+
+        // Sibling folder holding an RDP target that tunnels via Bastion.
+        let mut apps = MrngConnectionInfo::default();
+        apps.constant_id = "apps-uuid".into();
+        apps.name = "Apps".into();
+        apps.node_type = MrngNodeType::Container;
+        let mut target = make_node("WinHost", "target-uuid");
+        target.protocol = MrngProtocol::RDP;
+        target.hostname = "win.internal".into();
+        target.port = 3389;
+        target.ssh_tunnel_connection_name = "Bastion".into();
+        apps.children.push(target);
+
+        root.children.push(infra);
+        root.children.push(apps);
+
+        let flat = mrng_tree_to_flat_connections(&root);
+        let target_value = flat
+            .iter()
+            .find(|c| c["id"] == "target-uuid")
+            .expect("target connection");
+
+        let layer = &target_value["security"]["tunnelChain"][0];
+        // RDP target → ssh-tunnel layer type.
+        assert_eq!(layer["type"], "ssh-tunnel");
+        assert_eq!(layer["enabled"], true);
+        let t = &layer["sshTunnel"];
+        assert_eq!(t["connectionId"], "jump-uuid");
+        assert_eq!(t["host"], "bastion.dmz");
+        assert_eq!(t["port"], 22);
+        assert_eq!(t["username"], "ops");
+        // Remote side carries the actual target host/port.
+        assert_eq!(t["remoteHost"], "win.internal");
+        assert_eq!(t["remotePort"], 3389);
     }
 
     #[test]

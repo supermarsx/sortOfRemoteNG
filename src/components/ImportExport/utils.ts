@@ -1,4 +1,4 @@
-import { Connection, type TunnelChainLayer } from '../../types/connection/connection';
+import { Connection, type TunnelChainLayer, type TunnelType } from '../../types/connection/connection';
 import { generateId } from '../../utils/core/id';
 
 export const parseCSVLine = (line: string): string[] => {
@@ -449,11 +449,55 @@ const resolveMRemoteNGSshTunnelName = (
   const explicit = getMRemoteNGAttribute(node, 'SSHTunnelConnectionName')?.trim();
   if (explicit) return explicit;
 
+  // mRemoteNG defaults every `Inherit*` flag to FALSE. Only inherit the
+  // container's tunnel when the node explicitly opts in with
+  // `InheritSSHTunnelConnectionName="true"`. When the attribute is absent
+  // (undefined) we must NOT inherit (R6 — previously this fell through to
+  // `inheritedTunnelName`, attaching tunnels to connections that should not
+  // have them, especially in trimmed/older confCons files).
   const inherit = parseMRemoteNGBool(
     getMRemoteNGAttribute(node, 'InheritSSHTunnelConnectionName'),
   );
-  if (inherit === false) return undefined;
-  return inheritedTunnelName;
+  if (inherit === true) return inheritedTunnelName;
+  return undefined;
+};
+
+/**
+ * Container-inheritable connection properties for mRemoteNG nodes. mRemoteNG
+ * lets a connection inherit Username/Password/Domain/Hostname/Port from its
+ * parent container via `Inherit*` flags (default false). We thread the
+ * container's resolved values down the tree so that jump-host nodes which
+ * inherit their credentials still import with usable host/creds (R7).
+ */
+interface MRemoteNGInheritableProps {
+  username?: string;
+  password?: string;
+  domain?: string;
+  hostname?: string;
+  port?: string;
+}
+
+/**
+ * Resolve a single connection property, honouring the node's `Inherit<Prop>`
+ * flag. A direct attribute always wins; otherwise the parent container's value
+ * is used only when `Inherit<Prop>="true"`. Absent flag ⇒ no inheritance
+ * (mRemoteNG default-false semantics).
+ */
+const resolveMRemoteNGInheritedProp = (
+  node: Element,
+  attrName: string,
+  inheritFlagName: string,
+  inheritedValue: string | undefined,
+): string | undefined => {
+  const direct = node.getAttribute(attrName);
+  if (direct !== null && direct !== '') return direct;
+
+  const inherit = parseMRemoteNGBool(getMRemoteNGAttribute(node, inheritFlagName));
+  if (inherit === true && inheritedValue !== undefined && inheritedValue !== '') {
+    return inheritedValue;
+  }
+  // Preserve a present-but-empty direct attribute as empty (explicit clear).
+  return direct !== null ? direct : undefined;
 };
 
 /**
@@ -964,6 +1008,7 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
     node: Element,
     parentId?: string,
     inheritedTunnelName?: string,
+    inheritedProps?: MRemoteNGInheritableProps,
   ): void => {
     const nodeType = node.getAttribute('Type') || 'Connection';
     const name = node.getAttribute('Name') || 'Unnamed';
@@ -971,13 +1016,13 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
       node,
       inheritedTunnelName,
     );
-    
+
     if (nodeType === 'Container') {
       // This is a folder
       const folderId = generateId();
       const expanded = (node.getAttribute('Expanded') || '').toLowerCase() === 'true';
       folderIdMap.set(node, folderId);
-      
+
       connections.push({
         id: folderId,
         name: name,
@@ -993,19 +1038,39 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
         updatedAt: new Date().toISOString(),
       });
 
+      // A container can itself carry connection-shaped attributes (Username,
+      // Password, …) plus its own `Inherit*` flags that pull from ITS parent.
+      // Resolve the values the container exposes to its children (R7), so a
+      // multi-level folder hierarchy propagates credentials correctly.
+      const containerProps: MRemoteNGInheritableProps = {
+        username: resolveMRemoteNGInheritedProp(node, 'Username', 'InheritUsername', inheritedProps?.username),
+        password: resolveMRemoteNGInheritedProp(node, 'Password', 'InheritPassword', inheritedProps?.password),
+        domain: resolveMRemoteNGInheritedProp(node, 'Domain', 'InheritDomain', inheritedProps?.domain),
+        hostname: resolveMRemoteNGInheritedProp(node, 'Hostname', 'InheritHostname', inheritedProps?.hostname),
+        port: resolveMRemoteNGInheritedProp(node, 'Port', 'InheritPort', inheritedProps?.port),
+      };
+
       // Parse child nodes
       const children = node.querySelectorAll(':scope > Node');
       children.forEach(child =>
-        parseNode(child, folderId, sshTunnelConnectionName),
+        parseNode(child, folderId, sshTunnelConnectionName, containerProps),
       );
     } else {
       // This is a connection
       const protocol = node.getAttribute('Protocol') || 'RDP';
-      const hostname = node.getAttribute('Hostname') || '';
-      const port = parsePortOrDefault(node.getAttribute('Port'), protocol);
-      const username = node.getAttribute('Username') || undefined;
-      const password = node.getAttribute('Password') || undefined;
-      const domain = node.getAttribute('Domain') || undefined;
+      // Resolve credential/host/port honouring container inheritance (R7).
+      const hostname =
+        resolveMRemoteNGInheritedProp(node, 'Hostname', 'InheritHostname', inheritedProps?.hostname) || '';
+      const port = parsePortOrDefault(
+        resolveMRemoteNGInheritedProp(node, 'Port', 'InheritPort', inheritedProps?.port),
+        protocol,
+      );
+      const username =
+        resolveMRemoteNGInheritedProp(node, 'Username', 'InheritUsername', inheritedProps?.username) || undefined;
+      const password =
+        resolveMRemoteNGInheritedProp(node, 'Password', 'InheritPassword', inheritedProps?.password) || undefined;
+      const domain =
+        resolveMRemoteNGInheritedProp(node, 'Domain', 'InheritDomain', inheritedProps?.domain) || undefined;
       const description = node.getAttribute('Descr') || node.getAttribute('Description') || undefined;
       
       // mRemoteNG specific fields
@@ -1056,15 +1121,25 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
 
   rootNodes.forEach(node => parseNode(node));
 
+  // Jump/bastion hosts referenced by `SSHTunnelConnectionName` are SSH
+  // connections. mRemoteNG resolves the tunnel target by NAME across the whole
+  // tree; when names collide we deterministically prefer the FIRST occurrence
+  // in tree order (R8). `connections` is populated in document order by the
+  // recursive parse above, so a first-write-wins map yields that ordering.
   const sshConnections = connections.filter(
     (connection) => !connection.isGroup && connection.protocol === 'ssh',
   );
-  const sshConnectionsByName = new Map(
-    sshConnections.map((connection) => [connection.name, connection]),
-  );
-  const sshConnectionsByLowerName = new Map(
-    sshConnections.map((connection) => [connection.name.toLowerCase(), connection]),
-  );
+  const sshConnectionsByName = new Map<string, Connection>();
+  const sshConnectionsByLowerName = new Map<string, Connection>();
+  for (const connection of sshConnections) {
+    if (!sshConnectionsByName.has(connection.name)) {
+      sshConnectionsByName.set(connection.name, connection);
+    }
+    const lower = connection.name.toLowerCase();
+    if (!sshConnectionsByLowerName.has(lower)) {
+      sshConnectionsByLowerName.set(lower, connection);
+    }
+  }
 
   pendingSshTunnels.forEach((pending) => {
     const targetConnection = connections.find(
@@ -1080,15 +1155,26 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
       tunnelConnection && Number.isFinite(Number(tunnelConnection.port))
         ? Number(tunnelConnection.port)
         : 22;
+
+    // §1.4 contract: SSH targets use a `ssh-jump` layer (the SSH runtime
+    // resolver treats it as a jump host); every other protocol (RDP/VNC/HTTP/…)
+    // uses a `ssh-tunnel` layer consumed by the per-protocol tunnel runtime.
+    // The `connectionId` reference is always kept (for re-resolution against the
+    // connection store) and inline host/port/creds are inlined whenever the
+    // jump host resolves.
+    const layerType: TunnelType =
+      targetConnection.protocol === 'ssh' ? 'ssh-jump' : 'ssh-tunnel';
+
     const layer: TunnelChainLayer = {
       id: generateId(),
-      type: 'ssh-tunnel',
+      type: layerType,
       enabled: Boolean(tunnelHost),
       name: `mRemoteNG SSH tunnel via ${pending.tunnelConnectionName}`,
       localBindHost: '127.0.0.1',
       localBindPort: 0,
       sshTunnel: {
         forwardType: 'local',
+        ...(tunnelConnection?.id && { connectionId: tunnelConnection.id }),
         ...(tunnelHost && { host: tunnelHost }),
         port: tunnelPort > 0 ? tunnelPort : 22,
         ...(tunnelConnection?.username && { username: tunnelConnection.username }),
