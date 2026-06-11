@@ -1,6 +1,11 @@
 // Connection Health Dashboard types
 
-export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unknown' | 'unreachable';
+export type HealthStatus =
+  | "healthy"
+  | "degraded"
+  | "unhealthy"
+  | "unknown"
+  | "unreachable";
 
 export interface ConnectionHealthEntry {
   connectionId: string;
@@ -32,8 +37,13 @@ export interface DashboardAlert {
   id: string;
   connectionId: string;
   connectionName: string;
-  alertType: 'latency_high' | 'connection_down' | 'cert_expiring' | 'packet_loss' | 'status_change';
-  severity: 'info' | 'warning' | 'critical';
+  alertType:
+    | "latency_high"
+    | "connection_down"
+    | "cert_expiring"
+    | "packet_loss"
+    | "status_change";
+  severity: "info" | "warning" | "critical";
   message: string;
   timestamp: string;
   acknowledged: boolean;
@@ -73,7 +83,15 @@ export interface HeatmapCell {
 
 export interface DashboardWidget {
   id: string;
-  widgetType: 'health_summary' | 'heatmap' | 'alerts' | 'sparklines' | 'quick_stats' | 'recent' | 'top_latency' | 'protocol_breakdown';
+  widgetType:
+    | "health_summary"
+    | "heatmap"
+    | "alerts"
+    | "sparklines"
+    | "quick_stats"
+    | "recent"
+    | "top_latency"
+    | "protocol_breakdown";
   title: string;
   x: number;
   y: number;
@@ -95,11 +113,23 @@ export interface DashboardConfig {
   maxSparklinePoints: number;
   parallelChecks: number;
   showOnStartup: boolean;
+  thresholds?: DashboardThresholds;
+}
+
+export interface DashboardThresholds {
+  latencyMs: number;
+  cpuPercent: number;
+  memoryPercent: number;
 }
 
 export interface DashboardState {
   summary: HealthSummary;
   alerts: DashboardAlert[];
-  recentConnections: Array<{ connectionId: string; connectionName: string; protocol: string; timestamp: string }>;
+  recentConnections: Array<{
+    connectionId: string;
+    connectionName: string;
+    protocol: string;
+    timestamp: string;
+  }>;
   monitoring: boolean;
 }

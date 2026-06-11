@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { PerformanceMonitor } from "../../src/components/monitoring/PerformanceMonitor";
-import { invoke } from "@tauri-apps/api/core";
 
 const mocks = vi.hoisted(() => ({
   getPerformanceMetrics: vi.fn(),
@@ -10,10 +9,6 @@ const mocks = vi.hoisted(() => ({
   recordPerformanceMetric: vi.fn(),
   saveSettings: vi.fn(),
   clearPerformanceMetrics: vi.fn(),
-}));
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
 }));
 
 vi.mock("../../src/utils/settings/settingsManager", () => ({
@@ -60,19 +55,12 @@ describe("PerformanceMonitor", () => {
     ]);
     mocks.saveSettings.mockResolvedValue(undefined);
 
-    vi.mocked(invoke).mockResolvedValue({
-      connectionTime: 0,
-      dataTransferred: 0,
-      latency: 18,
-      throughput: 910,
-      cpuUsage: 28,
-      memoryUsage: 40,
-      timestamp: Date.now(),
-    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
   });
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   it("renders with current and summary sections", async () => {
@@ -92,11 +80,10 @@ describe("PerformanceMonitor", () => {
     });
   });
 
-  it("records refreshed metrics from backend", async () => {
+  it("records refreshed metrics from browser sampling", async () => {
     render(<PerformanceMonitor isOpen onClose={() => {}} />);
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("get_system_metrics");
       expect(mocks.recordPerformanceMetric).toHaveBeenCalled();
     });
   });
@@ -115,7 +102,9 @@ describe("PerformanceMonitor", () => {
 
   it("export button has accessible aria-label", async () => {
     render(<PerformanceMonitor isOpen onClose={() => {}} />);
-    const btn = await screen.findByLabelText("Export performance metrics as CSV");
+    const btn = await screen.findByLabelText(
+      "Export performance metrics as CSV",
+    );
     expect(btn).toBeInTheDocument();
   });
 });

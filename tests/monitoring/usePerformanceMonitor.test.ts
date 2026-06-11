@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { invoke } from "@tauri-apps/api/core";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -26,8 +25,6 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
 }));
 
 import { usePerformanceMonitor } from "../../src/hooks/monitoring/usePerformanceMonitor";
-
-const mockInvoke = vi.mocked(invoke);
 
 // ── Helpers ────────────────────────────────────────────
 
@@ -57,10 +54,6 @@ describe("usePerformanceMonitor", () => {
     mocks.getPerformanceMetrics.mockReturnValue([]);
     mocks.saveSettings.mockResolvedValue(undefined);
 
-    // Backend metrics succeed by default so the hook doesn't call fetch
-    mockInvoke.mockResolvedValue(makeMetric() as never);
-
-    // Stub fetch too in case fallback is triggered
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
   });
 
@@ -193,7 +186,10 @@ describe("usePerformanceMonitor", () => {
   // ── Data loading (isOpen=true) ───────────────────────
 
   it("loads stored metrics when opened", async () => {
-    const storedMetrics = [makeMetric(), makeMetric({ timestamp: Date.now() - 1000 })];
+    const storedMetrics = [
+      makeMetric(),
+      makeMetric({ timestamp: Date.now() - 1000 }),
+    ];
     mocks.getPerformanceMetrics.mockReturnValue(storedMetrics);
 
     renderHook(() => usePerformanceMonitor(true));
@@ -203,31 +199,7 @@ describe("usePerformanceMonitor", () => {
     });
   });
 
-  it("fetches backend metrics via invoke when available", async () => {
-    const backendMetric = makeMetric({ cpuUsage: 45, memoryUsage: 70 });
-    mockInvoke.mockResolvedValueOnce(backendMetric as never);
-
-    renderHook(() => usePerformanceMonitor(true));
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("get_system_metrics");
-    });
-  });
-
-  it("records metrics after successful invoke call", async () => {
-    const backendMetric = makeMetric({ cpuUsage: 45 });
-    mockInvoke.mockResolvedValue(backendMetric as never);
-
-    renderHook(() => usePerformanceMonitor(true));
-
-    await waitFor(() => {
-      expect(mocks.recordPerformanceMetric).toHaveBeenCalled();
-    });
-  });
-
-  it("falls back to browser sampling when invoke fails", async () => {
-    mockInvoke.mockRejectedValue(new Error("no backend") as never);
-
+  it("records metrics from browser sampling when opened", async () => {
     renderHook(() => usePerformanceMonitor(true));
 
     await waitFor(() => {
@@ -322,14 +294,20 @@ describe("usePerformanceMonitor", () => {
 
     // Mock DOM APIs after renderHook so they don't break React's container creation
     const origCreateElement = document.createElement.bind(document);
-    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
-      if (tag === "a") {
-        return { click: vi.fn(), href: "", download: "" } as any;
-      }
-      return origCreateElement(tag);
-    });
-    const appendSpy = vi.spyOn(document.body, "appendChild").mockImplementation((n) => n);
-    const removeSpy = vi.spyOn(document.body, "removeChild").mockImplementation((n) => n);
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "a") {
+          return { click: vi.fn(), href: "", download: "" } as any;
+        }
+        return origCreateElement(tag);
+      });
+    const appendSpy = vi
+      .spyOn(document.body, "appendChild")
+      .mockImplementation((n) => n);
+    const removeSpy = vi
+      .spyOn(document.body, "removeChild")
+      .mockImplementation((n) => n);
     vi.stubGlobal("URL", {
       createObjectURL: vi.fn().mockReturnValue("blob:url"),
       revokeObjectURL: vi.fn(),

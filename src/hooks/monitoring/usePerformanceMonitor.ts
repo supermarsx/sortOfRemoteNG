@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { PerformanceMetrics } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
-import { invoke } from "@tauri-apps/api/core";
 
 /* ------------------------------------------------------------------ */
 /*  Module-level helpers                                               */
@@ -56,25 +55,6 @@ export function usePerformanceMonitor(isOpen: boolean) {
 
   const updateCurrentMetrics = useCallback(async () => {
     const now = performance.now();
-    try {
-      const backendMetrics =
-        await invoke<Partial<PerformanceMetrics>>("get_system_metrics");
-      const metric: PerformanceMetrics = {
-        connectionTime: backendMetrics.connectionTime ?? 0,
-        dataTransferred: backendMetrics.dataTransferred ?? 0,
-        latency: backendMetrics.latency ?? 0,
-        throughput: backendMetrics.throughput ?? 0,
-        cpuUsage: backendMetrics.cpuUsage ?? 0,
-        memoryUsage: backendMetrics.memoryUsage ?? 0,
-        timestamp: backendMetrics.timestamp ?? now,
-      };
-      setCurrentMetrics(metric);
-      settingsManager.recordPerformanceMetric(metric);
-      return;
-    } catch {
-      // Fall back to browser-side sampling when backend metrics are unavailable.
-    }
-
     const memoryInfo = (performance as any).memory;
     const latency = await measureLatency(latencyTarget);
 

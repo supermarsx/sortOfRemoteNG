@@ -7,11 +7,18 @@ const mockInvoke = vi.mocked(invoke);
 
 const makeState = (overrides: Record<string, unknown> = {}) => ({
   monitoring: true,
-  lastRefresh: "2026-03-30T00:00:00Z",
-  connectionCount: 10,
-  healthyCount: 8,
-  unhealthyCount: 2,
-  alertCount: 1,
+  summary: {
+    total: 10,
+    healthy: 8,
+    degraded: 0,
+    unhealthy: 2,
+    unknown: 0,
+    unreachable: 0,
+    averageLatencyMs: 25,
+    overallUptimePercent: 98.5,
+  },
+  alerts: [],
+  recentConnections: [],
   ...overrides,
 });
 
@@ -19,10 +26,15 @@ const makeHealthEntry = (overrides: Record<string, unknown> = {}) => ({
   connectionId: "conn-1",
   connectionName: "Server A",
   protocol: "ssh",
+  hostname: "server-a.example.com",
   status: "healthy",
   latencyMs: 25,
-  lastCheck: "2026-03-30T00:00:00Z",
+  lastChecked: "2026-03-30T00:00:00Z",
+  lastSeen: "2026-03-30T00:00:00Z",
   uptimePercent: 99.9,
+  errorMessage: null,
+  checkCount: 1,
+  failCount: 0,
   ...overrides,
 });
 
@@ -39,10 +51,11 @@ const makeAlert = (overrides: Record<string, unknown> = {}) => ({
 
 const makeQuickStats = (overrides: Record<string, unknown> = {}) => ({
   totalConnections: 20,
-  healthyCount: 18,
-  unhealthyCount: 2,
-  avgLatencyMs: 45,
-  uptimePercent: 98.5,
+  activeSessionCount: 2,
+  protocolBreakdown: { ssh: 12, rdp: 8 },
+  recentConnectionCount: 4,
+  averageLatencyMs: 45,
+  alertCount: 1,
   ...overrides,
 });
 
@@ -79,6 +92,11 @@ describe("useDashboard", () => {
       maxSparklinePoints: 60,
       parallelChecks: 10,
       showOnStartup: false,
+      thresholds: {
+        latencyMs: 500,
+        cpuPercent: 80,
+        memoryPercent: 80,
+      },
     });
   });
 
@@ -87,8 +105,15 @@ describe("useDashboard", () => {
     expect(result.current.layout.widgets).toHaveLength(6);
     expect(result.current.layout.columns).toBe(12);
     expect(result.current.layout.rowHeight).toBe(80);
-    expect(result.current.layout.widgets.map((w: { id: string }) => w.id)).toEqual([
-      "summary", "alerts", "stats", "heatmap", "recent", "sparklines",
+    expect(
+      result.current.layout.widgets.map((w: { id: string }) => w.id),
+    ).toEqual([
+      "summary",
+      "alerts",
+      "stats",
+      "heatmap",
+      "recent",
+      "sparklines",
     ]);
   });
 
@@ -99,7 +124,9 @@ describe("useDashboard", () => {
     mockInvoke.mockResolvedValueOnce(state as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchState(); });
+    await act(async () => {
+      await result.current.fetchState();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_state");
     expect(result.current.state).toEqual(state);
@@ -109,7 +136,9 @@ describe("useDashboard", () => {
     mockInvoke.mockRejectedValueOnce("State error");
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchState(); });
+    await act(async () => {
+      await result.current.fetchState();
+    });
 
     expect(result.current.error).toBe("State error");
   });
@@ -122,10 +151,12 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown = null;
-    await act(async () => { res = await result.current.fetchHealthSummary(); });
+    await act(async () => {
+      res = await result.current.fetchHealthSummary();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_health_summary");
-    expect(res).toEqual(summary);
+    expect(res).toEqual(expect.objectContaining(summary));
   });
 
   it("fetchHealthSummary returns null on error", async () => {
@@ -133,7 +164,9 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown = "not-null";
-    await act(async () => { res = await result.current.fetchHealthSummary(); });
+    await act(async () => {
+      res = await result.current.fetchHealthSummary();
+    });
 
     expect(res).toBeNull();
     expect(result.current.error).toBe("Summary error");
@@ -146,7 +179,9 @@ describe("useDashboard", () => {
     mockInvoke.mockResolvedValueOnce(stats as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchQuickStats(); });
+    await act(async () => {
+      await result.current.fetchQuickStats();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_quick_stats");
     expect(result.current.quickStats).toEqual(stats);
@@ -155,12 +190,17 @@ describe("useDashboard", () => {
   // --- fetchAlerts ---
 
   it("fetchAlerts returns alerts array", async () => {
-    const alerts = [makeAlert(), makeAlert({ id: "alert-2", severity: "critical" })];
+    const alerts = [
+      makeAlert(),
+      makeAlert({ id: "alert-2", severity: "critical" }),
+    ];
     mockInvoke.mockResolvedValueOnce(alerts as never);
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown[] = [];
-    await act(async () => { res = await result.current.fetchAlerts(); });
+    await act(async () => {
+      res = await result.current.fetchAlerts();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_alerts");
     expect(res).toHaveLength(2);
@@ -171,7 +211,9 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown[] = ["not-empty"];
-    await act(async () => { res = await result.current.fetchAlerts(); });
+    await act(async () => {
+      res = await result.current.fetchAlerts();
+    });
 
     expect(res).toEqual([]);
     expect(result.current.error).toBe("Alerts error");
@@ -186,20 +228,29 @@ describe("useDashboard", () => {
     });
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.acknowledgeAlert("alert-1"); });
+    await act(async () => {
+      await result.current.acknowledgeAlert("alert-1");
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("dash_acknowledge_alert", { alertId: "alert-1" });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_acknowledge_alert", {
+      alertId: "alert-1",
+    });
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_state");
   });
 
   // --- fetchAllHealth ---
 
   it("fetchAllHealth sets healthEntries state", async () => {
-    const entries = [makeHealthEntry(), makeHealthEntry({ connectionId: "conn-2", connectionName: "Server B" })];
+    const entries = [
+      makeHealthEntry(),
+      makeHealthEntry({ connectionId: "conn-2", connectionName: "Server B" }),
+    ];
     mockInvoke.mockResolvedValueOnce(entries as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchAllHealth(); });
+    await act(async () => {
+      await result.current.fetchAllHealth();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_all_health");
     expect(result.current.healthEntries).toHaveLength(2);
@@ -210,7 +261,9 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown[] = ["not-empty"];
-    await act(async () => { res = await result.current.fetchAllHealth(); });
+    await act(async () => {
+      res = await result.current.fetchAllHealth();
+    });
 
     expect(res).toEqual([]);
     expect(result.current.error).toBe("Health error");
@@ -224,9 +277,13 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown = null;
-    await act(async () => { res = await result.current.fetchConnectionHealth("conn-1"); });
+    await act(async () => {
+      res = await result.current.fetchConnectionHealth("conn-1");
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("dash_get_connection_health", { connectionId: "conn-1" });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_get_connection_health", {
+      connectionId: "conn-1",
+    });
     expect(res).toEqual(entry);
   });
 
@@ -240,7 +297,9 @@ describe("useDashboard", () => {
     mockInvoke.mockResolvedValueOnce(cells as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchHeatmap(); });
+    await act(async () => {
+      await result.current.fetchHeatmap();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_heatmap");
     expect(result.current.heatmap).toHaveLength(2);
@@ -251,7 +310,9 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown[] = ["not-empty"];
-    await act(async () => { res = await result.current.fetchHeatmap(); });
+    await act(async () => {
+      res = await result.current.fetchHeatmap();
+    });
 
     expect(res).toEqual([]);
   });
@@ -263,9 +324,14 @@ describe("useDashboard", () => {
     mockInvoke.mockResolvedValueOnce(sparkline as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchSparkline("conn-1"); });
+    await act(async () => {
+      await result.current.fetchSparkline("conn-1");
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("dash_get_sparkline", { connectionId: "conn-1" });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_get_sparkline", {
+      connectionId: "conn-1",
+      width: 60,
+    });
     expect(result.current.sparklines["conn-1"]).toEqual(sparkline);
   });
 
@@ -276,10 +342,14 @@ describe("useDashboard", () => {
     const { result } = renderHook(() => useDashboard());
 
     mockInvoke.mockResolvedValueOnce(sp1 as never);
-    await act(async () => { await result.current.fetchSparkline("conn-1"); });
+    await act(async () => {
+      await result.current.fetchSparkline("conn-1");
+    });
 
     mockInvoke.mockResolvedValueOnce(sp2 as never);
-    await act(async () => { await result.current.fetchSparkline("conn-2"); });
+    await act(async () => {
+      await result.current.fetchSparkline("conn-2");
+    });
 
     expect(result.current.sparklines["conn-1"]).toEqual(sp1);
     expect(result.current.sparklines["conn-2"]).toEqual(sp2);
@@ -288,14 +358,23 @@ describe("useDashboard", () => {
   // --- fetchRecent ---
 
   it("fetchRecent uses default limit of 10", async () => {
-    const recent = [{ connectionId: "conn-1", connectionName: "Server A", protocol: "ssh", timestamp: "2026-03-30T00:00:00Z" }];
+    const recent = [
+      {
+        connectionId: "conn-1",
+        connectionName: "Server A",
+        protocol: "ssh",
+        timestamp: "2026-03-30T00:00:00Z",
+      },
+    ];
     mockInvoke.mockResolvedValueOnce(recent as never);
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown[] = [];
-    await act(async () => { res = await result.current.fetchRecent(); });
+    await act(async () => {
+      res = await result.current.fetchRecent();
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("dash_get_recent", { limit: 10 });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_get_recent", { count: 10 });
     expect(res).toHaveLength(1);
   });
 
@@ -303,9 +382,11 @@ describe("useDashboard", () => {
     mockInvoke.mockResolvedValueOnce([] as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchRecent(5); });
+    await act(async () => {
+      await result.current.fetchRecent(5);
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("dash_get_recent", { limit: 5 });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_get_recent", { count: 5 });
   });
 
   // --- fetchTopLatency ---
@@ -314,21 +395,28 @@ describe("useDashboard", () => {
     mockInvoke.mockResolvedValueOnce([] as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.fetchTopLatency(); });
+    await act(async () => {
+      await result.current.fetchTopLatency();
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("dash_get_top_latency", { limit: 10 });
+    expect(mockInvoke).toHaveBeenCalledWith("dash_get_top_latency", {
+      count: 10,
+    });
   });
 
   // --- startMonitoring / stopMonitoring ---
 
   it("startMonitoring invokes backend and refreshes state", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "dash_get_state") return Promise.resolve(makeState({ monitoring: true }));
+      if (cmd === "dash_get_state")
+        return Promise.resolve(makeState({ monitoring: true }));
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.startMonitoring(); });
+    await act(async () => {
+      await result.current.startMonitoring();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_start_monitoring");
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_state");
@@ -336,12 +424,15 @@ describe("useDashboard", () => {
 
   it("stopMonitoring invokes backend and refreshes state", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "dash_get_state") return Promise.resolve(makeState({ monitoring: false }));
+      if (cmd === "dash_get_state")
+        return Promise.resolve(makeState({ monitoring: false }));
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.stopMonitoring(); });
+    await act(async () => {
+      await result.current.stopMonitoring();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_stop_monitoring");
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_state");
@@ -351,7 +442,9 @@ describe("useDashboard", () => {
     mockInvoke.mockRejectedValueOnce("Cannot start");
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.startMonitoring(); });
+    await act(async () => {
+      await result.current.startMonitoring();
+    });
 
     expect(result.current.error).toBe("Cannot start");
   });
@@ -373,7 +466,9 @@ describe("useDashboard", () => {
     });
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.forceRefresh(); });
+    await act(async () => {
+      await result.current.forceRefresh();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_force_refresh");
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_state");
@@ -394,7 +489,9 @@ describe("useDashboard", () => {
     });
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.forceRefresh(); });
+    await act(async () => {
+      await result.current.forceRefresh();
+    });
 
     expect(result.current.loading).toBe(false);
   });
@@ -403,7 +500,9 @@ describe("useDashboard", () => {
     mockInvoke.mockRejectedValueOnce("Refresh error");
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.forceRefresh(); });
+    await act(async () => {
+      await result.current.forceRefresh();
+    });
 
     expect(result.current.error).toBe("Refresh error");
     expect(result.current.loading).toBe(false);
@@ -412,23 +511,37 @@ describe("useDashboard", () => {
   // --- loadConfig / updateConfig ---
 
   it("loadConfig overwrites default config", async () => {
-    const cfg = { enabled: false, refreshIntervalMs: 60000, healthCheckTimeoutMs: 10000, maxSparklinePoints: 120, parallelChecks: 5, showOnStartup: true };
+    const cfg = {
+      enabled: false,
+      refreshIntervalMs: 60000,
+      healthCheckTimeoutMs: 10000,
+      maxSparklinePoints: 120,
+      parallelChecks: 5,
+      showOnStartup: true,
+    };
     mockInvoke.mockResolvedValueOnce(cfg as never);
 
     const { result } = renderHook(() => useDashboard());
-    await act(async () => { await result.current.loadConfig(); });
+    await act(async () => {
+      await result.current.loadConfig();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_config");
-    expect(result.current.config).toEqual(cfg);
+    expect(result.current.config).toEqual(expect.objectContaining(cfg));
   });
 
   it("updateConfig merges with existing config", async () => {
     const { result } = renderHook(() => useDashboard());
 
-    await act(async () => { await result.current.updateConfig({ refreshIntervalMs: 60000 }); });
+    await act(async () => {
+      await result.current.updateConfig({ refreshIntervalMs: 60000 });
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_update_config", {
-      config: expect.objectContaining({ refreshIntervalMs: 60000, enabled: true }),
+      config: expect.objectContaining({
+        poll_interval_seconds: 60,
+        enabled: true,
+      }),
     });
     expect(result.current.config.refreshIntervalMs).toBe(60000);
   });
@@ -441,7 +554,9 @@ describe("useDashboard", () => {
 
     const { result } = renderHook(() => useDashboard());
     let res: unknown[] = [];
-    await act(async () => { res = await result.current.fetchUnhealthy(); });
+    await act(async () => {
+      res = await result.current.fetchUnhealthy();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("dash_get_unhealthy");
     expect(res).toHaveLength(1);
