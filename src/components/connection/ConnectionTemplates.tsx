@@ -27,7 +27,14 @@ interface ConnectionTemplatesProps {
   onClose?: () => void;
 }
 
-type CategoryFilter = "all" | "ssh" | "rdp" | "vnc" | "database" | "web" | "custom";
+type CategoryFilter =
+  | "all"
+  | "ssh"
+  | "rdp"
+  | "vnc"
+  | "database"
+  | "web"
+  | "custom";
 
 interface SettingRow {
   key: string;
@@ -42,7 +49,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-ssh-linux",
     name: "SSH Linux Server",
-    description: "Standard SSH connection to a Linux server with key-based authentication.",
+    description:
+      "Standard SSH connection to a Linux server with key-based authentication.",
     protocol: "SSH",
     port: 22,
     category: "ssh",
@@ -56,7 +64,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-ssh-jump",
     name: "SSH Jump Host",
-    description: "SSH connection via a jump/bastion host for accessing internal networks.",
+    description:
+      "SSH connection via a jump/bastion host for accessing internal networks.",
     protocol: "SSH",
     port: 22,
     category: "ssh",
@@ -70,7 +79,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-rdp-server",
     name: "RDP Windows Server",
-    description: "Remote Desktop connection to a Windows Server with admin console.",
+    description:
+      "Remote Desktop connection to a Windows Server with admin console.",
     protocol: "RDP",
     port: 3389,
     category: "rdp",
@@ -84,12 +94,18 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-rdp-workstation",
     name: "RDP Workstation",
-    description: "Remote Desktop connection to a Windows workstation for daily use.",
+    description:
+      "Remote Desktop connection to a Windows workstation for daily use.",
     protocol: "RDP",
     port: 3389,
     category: "rdp",
     icon: "💻",
-    settings: { nla: true, resolution: "auto", redirectClipboard: true, redirectPrinters: true },
+    settings: {
+      nla: true,
+      resolution: "auto",
+      redirectClipboard: true,
+      redirectPrinters: true,
+    },
     tags: ["rdp", "windows", "workstation"],
     createdAt: "2025-01-01T00:00:00Z",
     updatedAt: "2025-01-01T00:00:00Z",
@@ -112,7 +128,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-sftp",
     name: "SFTP Server",
-    description: "Secure file transfer over SSH for uploading and downloading files.",
+    description:
+      "Secure file transfer over SSH for uploading and downloading files.",
     protocol: "SFTP",
     port: 22,
     category: "ssh",
@@ -126,7 +143,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-http-api",
     name: "HTTP API",
-    description: "HTTP/HTTPS endpoint for REST API monitoring and health checks.",
+    description:
+      "HTTP/HTTPS endpoint for REST API monitoring and health checks.",
     protocol: "HTTP",
     port: 443,
     category: "web",
@@ -154,7 +172,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-postgres",
     name: "Database PostgreSQL",
-    description: "PostgreSQL database connection with SSL and connection pooling.",
+    description:
+      "PostgreSQL database connection with SSL and connection pooling.",
     protocol: "PostgreSQL",
     port: 5432,
     category: "database",
@@ -168,7 +187,8 @@ const BUILTIN_TEMPLATES: ConnectionTemplate[] = [
   {
     id: "builtin-k8s",
     name: "Kubernetes Cluster",
-    description: "Kubernetes cluster connection for container orchestration management.",
+    description:
+      "Kubernetes cluster connection for container orchestration management.",
     protocol: "K8s",
     port: 6443,
     category: "web",
@@ -191,7 +211,17 @@ const CATEGORY_FILTERS: { value: CategoryFilter; label: string }[] = [
   { value: "custom", label: "Custom" },
 ];
 
-const PROTOCOL_OPTIONS = ["SSH", "RDP", "VNC", "SFTP", "HTTP", "MySQL", "PostgreSQL", "K8s", "Other"];
+const PROTOCOL_OPTIONS = [
+  "SSH",
+  "RDP",
+  "VNC",
+  "SFTP",
+  "HTTP",
+  "MySQL",
+  "PostgreSQL",
+  "K8s",
+  "Other",
+];
 
 const STORAGE_KEY = "sor-connection-templates";
 
@@ -220,14 +250,19 @@ function saveUserTemplates(templates: ConnectionTemplate[]): void {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: ConnectionTemplatesProps) {
+export default function ConnectionTemplates({
+  onCreateFromTemplate,
+  onClose,
+}: ConnectionTemplatesProps) {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [userTemplates, setUserTemplates] = useState<ConnectionTemplate[]>(loadUserTemplates);
+  const [userTemplates, setUserTemplates] =
+    useState<ConnectionTemplate[]>(loadUserTemplates);
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [search, setSearch] = useState("");
-  const [selectedTemplate, setSelectedTemplate] = useState<ConnectionTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<ConnectionTemplate | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
 
   /* ---- form state ---- */
@@ -237,7 +272,9 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
   const [formPort, setFormPort] = useState(22);
   const [formCategory, setFormCategory] = useState("ssh");
   const [formTags, setFormTags] = useState("");
-  const [formSettings, setFormSettings] = useState<SettingRow[]>([{ key: "", value: "" }]);
+  const [formSettings, setFormSettings] = useState<SettingRow[]>([
+    { key: "", value: "" },
+  ]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   /* ---- persist on change ---- */
@@ -266,7 +303,9 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
     (tpl: ConnectionTemplate) => {
       /* bump usage count for user templates */
       setUserTemplates((prev) =>
-        prev.map((u) => (u.id === tpl.id ? { ...u, usageCount: u.usageCount + 1 } : u)),
+        prev.map((u) =>
+          u.id === tpl.id ? { ...u, usageCount: u.usageCount + 1 } : u,
+        ),
       );
       onCreateFromTemplate?.(tpl);
     },
@@ -297,7 +336,10 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
     setFormCategory(tpl.category);
     setFormTags(tpl.tags.join(", "));
     setFormSettings(
-      Object.entries(tpl.settings).map(([key, value]) => ({ key, value: String(value) })),
+      Object.entries(tpl.settings).map(([key, value]) => ({
+        key,
+        value: String(value),
+      })),
     );
     setEditingId(tpl.id);
     setShowCreateForm(true);
@@ -323,7 +365,10 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
                 protocol: formProtocol,
                 port: formPort,
                 category: formCategory,
-                tags: formTags.split(",").map((s) => s.trim()).filter(Boolean),
+                tags: formTags
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
                 settings,
                 updatedAt: now,
               }
@@ -340,7 +385,10 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
         category: formCategory,
         icon: "📌",
         settings,
-        tags: formTags.split(",").map((s) => s.trim()).filter(Boolean),
+        tags: formTags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
         createdAt: now,
         updatedAt: now,
         usageCount: 0,
@@ -349,7 +397,17 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
     }
     setShowCreateForm(false);
     resetForm();
-  }, [formName, formDescription, formProtocol, formPort, formCategory, formTags, formSettings, editingId, resetForm]);
+  }, [
+    formName,
+    formDescription,
+    formProtocol,
+    formPort,
+    formCategory,
+    formTags,
+    formSettings,
+    editingId,
+    resetForm,
+  ]);
 
   const handleDeleteTemplate = useCallback(
     (id: string) => {
@@ -363,9 +421,14 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
     setFormSettings((prev) => [...prev, { key: "", value: "" }]);
   }, []);
 
-  const updateSettingRow = useCallback((idx: number, field: "key" | "value", val: string) => {
-    setFormSettings((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
-  }, []);
+  const updateSettingRow = useCallback(
+    (idx: number, field: "key" | "value", val: string) => {
+      setFormSettings((prev) =>
+        prev.map((r, i) => (i === idx ? { ...r, [field]: val } : r)),
+      );
+    },
+    [],
+  );
 
   const removeSettingRow = useCallback((idx: number) => {
     setFormSettings((prev) => prev.filter((_, i) => i !== idx));
@@ -389,14 +452,18 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const imported = JSON.parse(reader.result as string) as ConnectionTemplate[];
+        const imported = JSON.parse(
+          reader.result as string,
+        ) as ConnectionTemplate[];
         if (!Array.isArray(imported)) return;
         setUserTemplates((prev) => {
           const ids = new Set(prev.map((t) => t.id));
           const fresh = imported.filter((t) => !ids.has(t.id));
           return [...prev, ...fresh];
         });
-      } catch { /* ignore malformed JSON */ }
+      } catch {
+        /* ignore malformed JSON */
+      }
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -404,16 +471,19 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
 
   const handleSaveFromExisting = useCallback(async () => {
     try {
-      const connections = await invoke<Array<{ name: string; protocol: string; port: number }>>(
-        "list_connections",
-      );
+      const data = await invoke<{
+        connections?: Array<{ name: string; protocol: string; port: number }>;
+      }>("load_data");
+      const connections = data?.connections ?? [];
       if (connections?.length) {
         const conn = connections[0];
         setFormName(conn.name + " (template)");
         setFormProtocol(conn.protocol ?? "SSH");
         setFormPort(conn.port ?? 22);
       }
-    } catch { /* invoke may not be available in dev */ }
+    } catch {
+      /* invoke may not be available in dev */
+    }
   }, []);
 
   /* ---- render helpers ---- */
@@ -423,21 +493,39 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
   /*  Create / Edit Modal                                              */
   /* ---------------------------------------------------------------- */
   const renderCreateForm = () => (
-    <div className="sor-tpl-modal-overlay" onClick={() => setShowCreateForm(false)}>
+    <div
+      className="sor-tpl-modal-overlay"
+      onClick={() => setShowCreateForm(false)}
+    >
       <div className="sor-tpl-modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="sor-tpl-modal-title">
-          {editingId ? t("templates.editTemplate", "Edit Template") : t("templates.createTemplate", "Create Template")}
+          {editingId
+            ? t("templates.editTemplate", "Edit Template")
+            : t("templates.createTemplate", "Create Template")}
         </h3>
 
         <label className="sor-tpl-label">{t("templates.name", "Name")}</label>
-        <input className="sor-form-input-sm" value={formName} onChange={(e) => setFormName(e.target.value)} />
+        <input
+          className="sor-form-input-sm"
+          value={formName}
+          onChange={(e) => setFormName(e.target.value)}
+        />
 
-        <label className="sor-tpl-label">{t("templates.description", "Description")}</label>
-        <textarea className="sor-tpl-textarea" rows={2} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} />
+        <label className="sor-tpl-label">
+          {t("templates.description", "Description")}
+        </label>
+        <textarea
+          className="sor-tpl-textarea"
+          rows={2}
+          value={formDescription}
+          onChange={(e) => setFormDescription(e.target.value)}
+        />
 
         <div className="sor-tpl-row">
           <div className="sor-tpl-field">
-            <label className="sor-tpl-label">{t("templates.protocol", "Protocol")}</label>
+            <label className="sor-tpl-label">
+              {t("templates.protocol", "Protocol")}
+            </label>
             <Select
               value={formProtocol}
               onChange={(v) => setFormProtocol(v)}
@@ -447,45 +535,95 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
             />
           </div>
           <div className="sor-tpl-field">
-            <label className="sor-tpl-label">{t("templates.port", "Port")}</label>
-            <input className="sor-form-input-sm" type="number" value={formPort} onChange={(e) => setFormPort(Number(e.target.value))} />
+            <label className="sor-tpl-label">
+              {t("templates.port", "Port")}
+            </label>
+            <input
+              className="sor-form-input-sm"
+              type="number"
+              value={formPort}
+              onChange={(e) => setFormPort(Number(e.target.value))}
+            />
           </div>
           <div className="sor-tpl-field">
-            <label className="sor-tpl-label">{t("templates.category", "Category")}</label>
+            <label className="sor-tpl-label">
+              {t("templates.category", "Category")}
+            </label>
             <Select
               value={formCategory}
               onChange={(v) => setFormCategory(v)}
               variant="form-sm"
               className="w-full"
-              options={CATEGORY_FILTERS.filter((c) => c.value !== "all").map((c) => ({ value: c.value, label: c.label }))}
+              options={CATEGORY_FILTERS.filter((c) => c.value !== "all").map(
+                (c) => ({ value: c.value, label: c.label }),
+              )}
             />
           </div>
         </div>
 
-        <label className="sor-tpl-label">{t("templates.tags", "Tags (comma-separated)")}</label>
-        <input className="sor-form-input-sm" value={formTags} onChange={(e) => setFormTags(e.target.value)} placeholder="tag1, tag2" />
+        <label className="sor-tpl-label">
+          {t("templates.tags", "Tags (comma-separated)")}
+        </label>
+        <input
+          className="sor-form-input-sm"
+          value={formTags}
+          onChange={(e) => setFormTags(e.target.value)}
+          placeholder="tag1, tag2"
+        />
 
-        <label className="sor-tpl-label">{t("templates.settings", "Settings")}</label>
+        <label className="sor-tpl-label">
+          {t("templates.settings", "Settings")}
+        </label>
         <div className="sor-tpl-settings-editor">
           {formSettings.map((row, idx) => (
-            <div key={`setting-${row.key}-${idx}`} className="sor-tpl-setting-row">
-              <input className="sor-form-input-sm" placeholder="key" value={row.key} onChange={(e) => updateSettingRow(idx, "key", e.target.value)} />
-              <input className="sor-form-input-sm" placeholder="value" value={row.value} onChange={(e) => updateSettingRow(idx, "value", e.target.value)} />
-              <button className="sor-tpl-btn-icon" onClick={() => removeSettingRow(idx)} title="Remove">✕</button>
+            <div
+              key={`setting-${row.key}-${idx}`}
+              className="sor-tpl-setting-row"
+            >
+              <input
+                className="sor-form-input-sm"
+                placeholder="key"
+                value={row.key}
+                onChange={(e) => updateSettingRow(idx, "key", e.target.value)}
+              />
+              <input
+                className="sor-form-input-sm"
+                placeholder="value"
+                value={row.value}
+                onChange={(e) => updateSettingRow(idx, "value", e.target.value)}
+              />
+              <button
+                className="sor-tpl-btn-icon"
+                onClick={() => removeSettingRow(idx)}
+                title="Remove"
+              >
+                ✕
+              </button>
             </div>
           ))}
-          <button className="sor-tpl-btn-sm" onClick={addSettingRow}>+ {t("templates.addSetting", "Add Setting")}</button>
+          <button className="sor-tpl-btn-sm" onClick={addSettingRow}>
+            + {t("templates.addSetting", "Add Setting")}
+          </button>
         </div>
 
         <div className="sor-tpl-modal-actions">
-          <button className="sor-tpl-btn-sm sor-tpl-btn-secondary" onClick={handleSaveFromExisting}>
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-secondary"
+            onClick={handleSaveFromExisting}
+          >
             {t("templates.saveFromExisting", "Load from Existing Connection")}
           </button>
           <div className="sor-tpl-spacer" />
-          <button className="sor-tpl-btn-sm sor-tpl-btn-secondary" onClick={() => setShowCreateForm(false)}>
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-secondary"
+            onClick={() => setShowCreateForm(false)}
+          >
             {t("common.cancel", "Cancel")}
           </button>
-          <button className="sor-tpl-btn-sm sor-tpl-btn-primary" onClick={handleSaveTemplate}>
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-primary"
+            onClick={handleSaveTemplate}
+          >
             {t("common.save", "Save")}
           </button>
         </div>
@@ -508,18 +646,30 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
             <span className="sor-tpl-badge">{tpl.protocol}</span>
             <span className="sor-tpl-detail-port">:{tpl.port}</span>
           </div>
-          <button className="sor-tpl-btn-icon" onClick={() => setSelectedTemplate(null)} title="Close">✕</button>
+          <button
+            className="sor-tpl-btn-icon"
+            onClick={() => setSelectedTemplate(null)}
+            title="Close"
+          >
+            ✕
+          </button>
         </div>
 
         <p className="sor-tpl-detail-desc">{tpl.description}</p>
 
         {tpl.tags.length > 0 && (
           <div className="sor-tpl-detail-tags">
-            {tpl.tags.map((tag) => <span key={tag} className="sor-tpl-tag">{tag}</span>)}
+            {tpl.tags.map((tag) => (
+              <span key={tag} className="sor-tpl-tag">
+                {tag}
+              </span>
+            ))}
           </div>
         )}
 
-        <h4 className="sor-tpl-detail-section">{t("templates.settings", "Settings")}</h4>
+        <h4 className="sor-tpl-detail-section">
+          {t("templates.settings", "Settings")}
+        </h4>
         <table className="sor-tpl-settings-table">
           <tbody>
             {Object.entries(tpl.settings).map(([k, v]) => (
@@ -532,20 +682,34 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
         </table>
 
         <div className="sor-tpl-detail-meta">
-          <span>{t("templates.usageCount", "Used")} {tpl.usageCount}×</span>
-          <span>{t("templates.created", "Created")} {new Date(tpl.createdAt).toLocaleDateString()}</span>
+          <span>
+            {t("templates.usageCount", "Used")} {tpl.usageCount}×
+          </span>
+          <span>
+            {t("templates.created", "Created")}{" "}
+            {new Date(tpl.createdAt).toLocaleDateString()}
+          </span>
         </div>
 
         <div className="sor-tpl-detail-actions">
-          <button className="sor-tpl-btn-sm sor-tpl-btn-primary" onClick={() => handleUseTemplate(tpl)}>
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-primary"
+            onClick={() => handleUseTemplate(tpl)}
+          >
             {t("templates.createConnection", "Create Connection")}
           </button>
           {!isBuiltin(tpl.id) && (
             <>
-              <button className="sor-tpl-btn-sm sor-tpl-btn-secondary" onClick={() => openEditForm(tpl)}>
+              <button
+                className="sor-tpl-btn-sm sor-tpl-btn-secondary"
+                onClick={() => openEditForm(tpl)}
+              >
                 {t("common.edit", "Edit")}
               </button>
-              <button className="sor-tpl-btn-sm sor-tpl-btn-danger" onClick={() => handleDeleteTemplate(tpl.id)}>
+              <button
+                className="sor-tpl-btn-sm sor-tpl-btn-danger"
+                onClick={() => handleDeleteTemplate(tpl.id)}
+              >
                 {t("common.delete", "Delete")}
               </button>
             </>
@@ -562,20 +726,43 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
     <div className="sor-tpl-container" data-testid="template-list">
       {/* ---- Header ---- */}
       <div className="sor-tpl-header">
-        <h2 className="sor-tpl-title">{t("templates.title", "Connection Templates")}</h2>
+        <h2 className="sor-tpl-title">
+          {t("templates.title", "Connection Templates")}
+        </h2>
         <div className="sor-tpl-header-actions">
-          <button className="sor-tpl-btn-sm sor-tpl-btn-secondary" onClick={handleExport}>
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-secondary"
+            onClick={handleExport}
+          >
             {t("templates.export", "Export")}
           </button>
-          <button className="sor-tpl-btn-sm sor-tpl-btn-secondary" onClick={() => fileInputRef.current?.click()}>
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-secondary"
+            onClick={() => fileInputRef.current?.click()}
+          >
             {t("templates.import", "Import")}
           </button>
-          <input ref={fileInputRef} type="file" accept=".json" className="sor-tpl-hidden" onChange={handleImport} />
-          <button className="sor-tpl-btn-sm sor-tpl-btn-primary" onClick={openCreateForm}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="sor-tpl-hidden"
+            onChange={handleImport}
+          />
+          <button
+            className="sor-tpl-btn-sm sor-tpl-btn-primary"
+            onClick={openCreateForm}
+          >
             + {t("templates.new", "New Template")}
           </button>
           {onClose && (
-            <button className="sor-tpl-btn-icon" onClick={onClose} title="Close">✕</button>
+            <button
+              className="sor-tpl-btn-icon"
+              onClick={onClose}
+              title="Close"
+            >
+              ✕
+            </button>
           )}
         </div>
       </div>
@@ -606,7 +793,9 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
         {/* ---- Gallery grid ---- */}
         <div className="sor-tpl-grid">
           {filtered.length === 0 && (
-            <p className="sor-tpl-empty">{t("templates.noResults", "No templates match your search.")}</p>
+            <p className="sor-tpl-empty">
+              {t("templates.noResults", "No templates match your search.")}
+            </p>
           )}
           {filtered.map((tpl) => (
             <div
@@ -622,10 +811,15 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
               <h4 className="sor-tpl-card-name">{tpl.name}</h4>
               <p className="sor-tpl-card-desc">{tpl.description}</p>
               <div className="sor-tpl-card-footer">
-                <span className="sor-tpl-card-usage">{tpl.usageCount}× {t("templates.used", "used")}</span>
+                <span className="sor-tpl-card-usage">
+                  {tpl.usageCount}× {t("templates.used", "used")}
+                </span>
                 <button
                   className="sor-tpl-btn-sm sor-tpl-btn-primary"
-                  onClick={(e) => { e.stopPropagation(); handleUseTemplate(tpl); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUseTemplate(tpl);
+                  }}
                 >
                   {t("templates.useTemplate", "Use Template")}
                 </button>

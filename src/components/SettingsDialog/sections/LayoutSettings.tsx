@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { GlobalSettings } from "../../../types/settings/settings";
 import {
   LayoutGrid,
@@ -49,86 +50,193 @@ interface LayoutSettingsProps {
 /* ── Tab layout / grouping option configs ─────────────── */
 
 const TAB_GROUPING_CONFIG = [
-  { value: "none", label: "None", description: "No grouping" },
+  {
+    value: "none",
+    labelKey: "settingsLayout.tabGrouping.none",
+    labelDefault: "None",
+    descriptionKey: "settingsLayout.tabGrouping.noneDescription",
+    descriptionDefault: "No grouping",
+  },
   {
     value: "protocol",
-    label: "By Protocol",
-    description: "Group by SSH, RDP, etc.",
+    labelKey: "settingsLayout.tabGrouping.protocol",
+    labelDefault: "By Protocol",
+    descriptionKey: "settingsLayout.tabGrouping.protocolDescription",
+    descriptionDefault: "Group by SSH, RDP, etc.",
   },
   {
     value: "status",
-    label: "By Status",
-    description: "Group by connection state",
+    labelKey: "settingsLayout.tabGrouping.status",
+    labelDefault: "By Status",
+    descriptionKey: "settingsLayout.tabGrouping.statusDescription",
+    descriptionDefault: "Group by connection state",
   },
   {
     value: "hostname",
-    label: "By Hostname",
-    description: "Group by server name",
+    labelKey: "settingsLayout.tabGrouping.hostname",
+    labelDefault: "By Hostname",
+    descriptionKey: "settingsLayout.tabGrouping.hostnameDescription",
+    descriptionDefault: "Group by server name",
   },
 ];
 
 const DEFAULT_TAB_LAYOUT_CONFIG: Array<{
   value: GlobalSettings["defaultTabLayout"];
-  label: string;
-  description: string;
+  labelKey: string;
+  labelDefault: string;
+  descriptionKey: string;
+  descriptionDefault: string;
 }> = [
-  { value: "tabs", label: "Tabs", description: "One session visible at a time" },
-  { value: "splitVertical", label: "Split L/R", description: "2 columns, fills rows" },
-  { value: "splitHorizontal", label: "Split T/B", description: "2 rows, fills columns" },
-  { value: "sideBySide", label: "Side-by-Side", description: "2 cols, all sessions" },
-  { value: "grid2", label: "Grid 2", description: "Capped at 2 tiles" },
-  { value: "grid4", label: "Grid 4", description: "Capped at 4 tiles" },
-  { value: "grid6", label: "Grid 6", description: "Capped at 6 tiles" },
-  { value: "mosaic", label: "Mosaic", description: "Auto sqrt grid" },
-  { value: "miniMosaic", label: "Mini Mosaic", description: "Preview tiles" },
-  { value: "customGrid", label: "Custom Grid", description: "Pick rows × cols" },
+  {
+    value: "tabs",
+    labelKey: "settingsLayout.defaultTabLayout.tabs",
+    labelDefault: "Tabs",
+    descriptionKey: "settingsLayout.defaultTabLayout.tabsDescription",
+    descriptionDefault: "One session visible at a time",
+  },
+  {
+    value: "splitVertical",
+    labelKey: "settingsLayout.defaultTabLayout.splitVertical",
+    labelDefault: "Split L/R",
+    descriptionKey: "settingsLayout.defaultTabLayout.splitVerticalDescription",
+    descriptionDefault: "2 columns, fills rows",
+  },
+  {
+    value: "splitHorizontal",
+    labelKey: "settingsLayout.defaultTabLayout.splitHorizontal",
+    labelDefault: "Split T/B",
+    descriptionKey:
+      "settingsLayout.defaultTabLayout.splitHorizontalDescription",
+    descriptionDefault: "2 rows, fills columns",
+  },
+  {
+    value: "sideBySide",
+    labelKey: "settingsLayout.defaultTabLayout.sideBySide",
+    labelDefault: "Side-by-Side",
+    descriptionKey: "settingsLayout.defaultTabLayout.sideBySideDescription",
+    descriptionDefault: "2 cols, all sessions",
+  },
+  {
+    value: "grid2",
+    labelKey: "settingsLayout.defaultTabLayout.grid2",
+    labelDefault: "Grid 2",
+    descriptionKey: "settingsLayout.defaultTabLayout.grid2Description",
+    descriptionDefault: "Capped at 2 tiles",
+  },
+  {
+    value: "grid4",
+    labelKey: "settingsLayout.defaultTabLayout.grid4",
+    labelDefault: "Grid 4",
+    descriptionKey: "settingsLayout.defaultTabLayout.grid4Description",
+    descriptionDefault: "Capped at 4 tiles",
+  },
+  {
+    value: "grid6",
+    labelKey: "settingsLayout.defaultTabLayout.grid6",
+    labelDefault: "Grid 6",
+    descriptionKey: "settingsLayout.defaultTabLayout.grid6Description",
+    descriptionDefault: "Capped at 6 tiles",
+  },
+  {
+    value: "mosaic",
+    labelKey: "settingsLayout.defaultTabLayout.mosaic",
+    labelDefault: "Mosaic",
+    descriptionKey: "settingsLayout.defaultTabLayout.mosaicDescription",
+    descriptionDefault: "Auto sqrt grid",
+  },
+  {
+    value: "miniMosaic",
+    labelKey: "settingsLayout.defaultTabLayout.miniMosaic",
+    labelDefault: "Mini Mosaic",
+    descriptionKey: "settingsLayout.defaultTabLayout.miniMosaicDescription",
+    descriptionDefault: "Preview tiles",
+  },
+  {
+    value: "customGrid",
+    labelKey: "settingsLayout.defaultTabLayout.customGrid",
+    labelDefault: "Custom Grid",
+    descriptionKey: "settingsLayout.defaultTabLayout.customGridDescription",
+    descriptionDefault: "Pick rows x cols",
+  },
 ];
 
 export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
   settings,
   updateSettings,
 }) => {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       <SectionHeading
         icon={<LayoutGrid className="w-5 h-5 text-primary" />}
-        title="Layout"
-        description="Default tab layout and grouping, window persistence, sidebar behavior, tab reordering, and secondary bar icon visibility."
+        title={t("settingsLayout.title", "Layout")}
+        description={t(
+          "settingsLayout.description",
+          "Default tab layout and grouping, window persistence, sidebar behavior, tab reordering, and secondary bar icon visibility.",
+        )}
       />
 
       {/* Window Persistence */}
       <div className="space-y-4">
         <SectionHeader
           icon={<Maximize2 className="w-4 h-4 text-primary" />}
-          title="Window Persistence"
+          title={t("settingsLayout.windowPersistence", "Window Persistence")}
         />
         <Card>
           <Toggle
             checked={settings.persistWindowSize}
             onChange={(v) => updateSettings({ persistWindowSize: v })}
             icon={<Maximize2 size={16} />}
-            label="Remember window size"
-            description="Save and restore the window dimensions between sessions"
+            label={t(
+              "settingsLayout.rememberWindowSize",
+              "Remember window size",
+            )}
+            description={t(
+              "settingsLayout.rememberWindowSizeDescription",
+              "Save and restore the window dimensions between sessions",
+            )}
             settingKey="persistWindowSize"
-            infoTooltip="Save and restore the window dimensions between sessions"
+            infoTooltip={t(
+              "settingsLayout.rememberWindowSizeTooltip",
+              "Save and restore the window dimensions between sessions",
+            )}
           />
           <Toggle
             checked={settings.persistWindowPosition}
             onChange={(v) => updateSettings({ persistWindowPosition: v })}
             icon={<Move size={16} />}
-            label="Remember window position"
-            description="Save and restore where the window sits on screen"
+            label={t(
+              "settingsLayout.rememberWindowPosition",
+              "Remember window position",
+            )}
+            description={t(
+              "settingsLayout.rememberWindowPositionDescription",
+              "Save and restore where the window sits on screen",
+            )}
             settingKey="persistWindowPosition"
-            infoTooltip="Save and restore the window location on screen between sessions"
+            infoTooltip={t(
+              "settingsLayout.rememberWindowPositionTooltip",
+              "Save and restore the window location on screen between sessions",
+            )}
           />
           <Toggle
             checked={settings.autoRepatriateWindow}
             onChange={(v) => updateSettings({ autoRepatriateWindow: v })}
             icon={<ScreenShare size={16} />}
-            label="Auto-repatriate window if off-screen"
-            description="Bring the window back to a visible monitor when its saved position is off-screen (e.g. after disconnecting an external display)"
+            label={t(
+              "settingsLayout.autoRepatriateWindow",
+              "Auto-repatriate window if off-screen",
+            )}
+            description={t(
+              "settingsLayout.autoRepatriateWindowDescription",
+              "Bring the window back to a visible monitor when its saved position is off-screen (e.g. after disconnecting an external display)",
+            )}
             settingKey="autoRepatriateWindow"
-            infoTooltip="Move the window back to a visible monitor if its saved position is off-screen"
+            infoTooltip={t(
+              "settingsLayout.autoRepatriateWindowTooltip",
+              "Move the window back to a visible monitor if its saved position is off-screen",
+            )}
           />
         </Card>
       </div>
@@ -137,35 +245,62 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
       <div className="space-y-4">
         <SectionHeader
           icon={<PanelLeft className="w-4 h-4 text-primary" />}
-          title="Sidebar Persistence"
+          title={t("settingsLayout.sidebarPersistence", "Sidebar Persistence")}
         />
         <Card>
           <Toggle
             checked={settings.persistSidebarWidth}
             onChange={(v) => updateSettings({ persistSidebarWidth: v })}
             icon={<ArrowLeftRight size={16} />}
-            label="Remember sidebar width"
-            description="Restore the sidebar width after restarting"
+            label={t(
+              "settingsLayout.rememberSidebarWidth",
+              "Remember sidebar width",
+            )}
+            description={t(
+              "settingsLayout.rememberSidebarWidthDescription",
+              "Restore the sidebar width after restarting",
+            )}
             settingKey="persistSidebarWidth"
-            infoTooltip="Persist the sidebar width so it stays the same after restarting"
+            infoTooltip={t(
+              "settingsLayout.rememberSidebarWidthTooltip",
+              "Persist the sidebar width so it stays the same after restarting",
+            )}
           />
           <Toggle
             checked={settings.persistSidebarPosition}
             onChange={(v) => updateSettings({ persistSidebarPosition: v })}
             icon={<Move size={16} />}
-            label="Remember sidebar position"
-            description="Save whether the sidebar is docked left or right"
+            label={t(
+              "settingsLayout.rememberSidebarPosition",
+              "Remember sidebar position",
+            )}
+            description={t(
+              "settingsLayout.rememberSidebarPositionDescription",
+              "Save whether the sidebar is docked left or right",
+            )}
             settingKey="persistSidebarPosition"
-            infoTooltip="Save whether the sidebar is docked to the left or right side"
+            infoTooltip={t(
+              "settingsLayout.rememberSidebarPositionTooltip",
+              "Save whether the sidebar is docked to the left or right side",
+            )}
           />
           <Toggle
             checked={settings.persistSidebarCollapsed}
             onChange={(v) => updateSettings({ persistSidebarCollapsed: v })}
             icon={<FoldVertical size={16} />}
-            label="Remember sidebar collapsed state"
-            description="Persist expanded or collapsed sidebar state between sessions"
+            label={t(
+              "settingsLayout.rememberSidebarCollapsed",
+              "Remember sidebar collapsed state",
+            )}
+            description={t(
+              "settingsLayout.rememberSidebarCollapsedDescription",
+              "Persist expanded or collapsed sidebar state between sessions",
+            )}
             settingKey="persistSidebarCollapsed"
-            infoTooltip="Persist whether the sidebar is expanded or collapsed between sessions"
+            infoTooltip={t(
+              "settingsLayout.rememberSidebarCollapsedTooltip",
+              "Persist whether the sidebar is expanded or collapsed between sessions",
+            )}
           />
         </Card>
       </div>
@@ -174,26 +309,44 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
       <div className="space-y-4">
         <SectionHeader
           icon={<GripVertical className="w-4 h-4 text-primary" />}
-          title="Tab Interaction"
+          title={t("settingsLayout.tabInteraction", "Tab Interaction")}
         />
         <Card>
           <Toggle
             checked={settings.enableTabReorder}
             onChange={(v) => updateSettings({ enableTabReorder: v })}
             icon={<FileStack size={16} />}
-            label="Allow tab reordering"
-            description="Drag-and-drop tabs in the tab bar"
+            label={t(
+              "settingsLayout.allowTabReordering",
+              "Allow tab reordering",
+            )}
+            description={t(
+              "settingsLayout.allowTabReorderingDescription",
+              "Drag-and-drop tabs in the tab bar",
+            )}
             settingKey="enableTabReorder"
-            infoTooltip="Enable drag-and-drop reordering of connection tabs in the tab bar"
+            infoTooltip={t(
+              "settingsLayout.allowTabReorderingTooltip",
+              "Enable drag-and-drop reordering of connection tabs in the tab bar",
+            )}
           />
           <Toggle
             checked={settings.enableConnectionReorder}
             onChange={(v) => updateSettings({ enableConnectionReorder: v })}
             icon={<Network size={16} />}
-            label="Allow connection reordering"
-            description="Drag-and-drop connections inside the sidebar tree"
+            label={t(
+              "settingsLayout.allowConnectionReordering",
+              "Allow connection reordering",
+            )}
+            description={t(
+              "settingsLayout.allowConnectionReorderingDescription",
+              "Drag-and-drop connections inside the sidebar tree",
+            )}
             settingKey="enableConnectionReorder"
-            infoTooltip="Enable drag-and-drop reordering of connections in the sidebar tree"
+            infoTooltip={t(
+              "settingsLayout.allowConnectionReorderingTooltip",
+              "Enable drag-and-drop reordering of connections in the sidebar tree",
+            )}
           />
         </Card>
       </div>
@@ -204,8 +357,13 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
           icon={<LayoutGrid className="w-4 h-4 text-primary" />}
           title={
             <span className="flex items-center gap-2">
-              Default Tab Layout
-              <InfoTooltip text="Tiling mode used when the app starts. The active mode is also persisted across launches once you change it from the toolbar." />
+              {t("settingsLayout.defaultTabLayoutTitle", "Default Tab Layout")}
+              <InfoTooltip
+                text={t(
+                  "settingsLayout.defaultTabLayoutTooltip",
+                  "Tiling mode used when the app starts. The active mode is also persisted across launches once you change it from the toolbar.",
+                )}
+              />
             </span>
           }
         />
@@ -214,7 +372,9 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             {DEFAULT_TAB_LAYOUT_CONFIG.map((option) => (
               <button
                 key={option.value}
-                onClick={() => updateSettings({ defaultTabLayout: option.value })}
+                onClick={() =>
+                  updateSettings({ defaultTabLayout: option.value })
+                }
                 data-testid={`default-tab-layout-${option.value}`}
                 className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                   settings.defaultTabLayout === option.value
@@ -223,9 +383,11 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
                 }`}
               >
                 <LayoutGrid className="w-5 h-5 mb-1" />
-                <span className="text-sm font-medium">{option.label}</span>
+                <span className="text-sm font-medium">
+                  {t(option.labelKey, option.labelDefault)}
+                </span>
                 <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
-                  {option.description}
+                  {t(option.descriptionKey, option.descriptionDefault)}
                 </span>
               </button>
             ))}
@@ -239,8 +401,13 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
           icon={<Layers className="w-4 h-4 text-primary" />}
           title={
             <span className="flex items-center gap-2">
-              Tab Grouping
-              <InfoTooltip text="Organize open connection tabs into groups based on a shared property." />
+              {t("settingsLayout.tabGroupingTitle", "Tab Grouping")}
+              <InfoTooltip
+                text={t(
+                  "settingsLayout.tabGroupingTooltip",
+                  "Organize open connection tabs into groups based on a shared property.",
+                )}
+              />
             </span>
           }
         />
@@ -249,7 +416,9 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             {TAB_GROUPING_CONFIG.map((option) => (
               <button
                 key={option.value}
-                onClick={() => updateSettings({ tabGrouping: option.value as any })}
+                onClick={() =>
+                  updateSettings({ tabGrouping: option.value as any })
+                }
                 className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                   settings.tabGrouping === option.value
                     ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
@@ -257,9 +426,11 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
                 }`}
               >
                 <Layers className="w-5 h-5 mb-1" />
-                <span className="text-sm font-medium">{option.label}</span>
+                <span className="text-sm font-medium">
+                  {t(option.labelKey, option.labelDefault)}
+                </span>
                 <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
-                  {option.description}
+                  {t(option.descriptionKey, option.descriptionDefault)}
                 </span>
               </button>
             ))}
@@ -271,184 +442,262 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
       <div className="space-y-4">
         <SectionHeader
           icon={<Settings className="w-4 h-4 text-primary" />}
-          title="Secondary Bar Icons"
+          title={t("settingsLayout.secondaryBarIcons", "Secondary Bar Icons")}
         />
         <Card className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
           <Toggle
             checked={settings.showQuickConnectIcon}
             onChange={(v) => updateSettings({ showQuickConnectIcon: v })}
             icon={<Zap size={16} />}
-            label="Quick Connect"
+            label={t("connections.quickConnect", "Quick Connect")}
             settingKey="showQuickConnectIcon"
-            infoTooltip="Show the Quick Connect icon for rapidly connecting to a host"
+            infoTooltip={t(
+              "settingsLayout.showQuickConnectIconTooltip",
+              "Show the Quick Connect icon for rapidly connecting to a host",
+            )}
           />
           <Toggle
             checked={settings.showCollectionSwitcherIcon}
             onChange={(v) => updateSettings({ showCollectionSwitcherIcon: v })}
             icon={<FolderSync size={16} />}
-            label="Collection Switcher"
+            label={t(
+              "settingsLayout.collectionSwitcher",
+              "Collection Switcher",
+            )}
             settingKey="showCollectionSwitcherIcon"
-            infoTooltip="Show the icon for switching between connection collections"
+            infoTooltip={t(
+              "settingsLayout.collectionSwitcherTooltip",
+              "Show the icon for switching between connection collections",
+            )}
           />
           <Toggle
             checked={settings.showImportExportIcon}
             onChange={(v) => updateSettings({ showImportExportIcon: v })}
             icon={<FileStack size={16} />}
-            label="Import / Export"
+            label={t("settingsLayout.importExport", "Import / Export")}
             settingKey="showImportExportIcon"
-            infoTooltip="Show the icon for importing and exporting connection data"
+            infoTooltip={t(
+              "settingsLayout.importExportTooltip",
+              "Show the icon for importing and exporting connection data",
+            )}
           />
           <Toggle
             checked={settings.showSettingsIcon}
             onChange={(v) => updateSettings({ showSettingsIcon: v })}
             icon={<Settings size={16} />}
-            label="Settings"
+            label={t("settings.title", "Settings")}
             settingKey="showSettingsIcon"
-            infoTooltip="Show the settings icon in the secondary bar"
+            infoTooltip={t(
+              "settingsLayout.settingsIconTooltip",
+              "Show the settings icon in the secondary bar",
+            )}
           />
           <Toggle
             checked={settings.showProxyMenuIcon}
             onChange={(v) => updateSettings({ showProxyMenuIcon: v })}
             icon={<Shield size={16} />}
-            label="Proxy / VPN Menu"
+            label={t("settingsLayout.proxyVpnMenu", "Proxy / VPN Menu")}
             settingKey="showProxyMenuIcon"
-            infoTooltip="Show the proxy and VPN management icon"
+            infoTooltip={t(
+              "settingsLayout.proxyVpnMenuTooltip",
+              "Show the proxy and VPN management icon",
+            )}
           />
           <Toggle
             checked={settings.showInternalProxyIcon}
             onChange={(v) => updateSettings({ showInternalProxyIcon: v })}
             icon={<ArrowUpDown size={16} />}
-            label="Internal Proxy Manager"
+            label={t(
+              "settingsLayout.internalProxyManager",
+              "Internal Proxy Manager",
+            )}
             settingKey="showInternalProxyIcon"
-            infoTooltip="Show the internal authentication proxy manager icon"
+            infoTooltip={t(
+              "settingsLayout.internalProxyManagerTooltip",
+              "Show the internal authentication proxy manager icon",
+            )}
           />
           <Toggle
             checked={settings.showShortcutManagerIcon}
             onChange={(v) => updateSettings({ showShortcutManagerIcon: v })}
             icon={<Keyboard size={16} />}
-            label="Shortcut Manager"
+            label={t("settingsLayout.shortcutManager", "Shortcut Manager")}
             settingKey="showShortcutManagerIcon"
-            infoTooltip="Show the keyboard shortcut manager icon"
+            infoTooltip={t(
+              "settingsLayout.shortcutManagerTooltip",
+              "Show the keyboard shortcut manager icon",
+            )}
           />
           <Toggle
             checked={settings.showPerformanceMonitorIcon}
             onChange={(v) => updateSettings({ showPerformanceMonitorIcon: v })}
             icon={<Activity size={16} />}
-            label="Performance Monitor"
+            label={t(
+              "settingsLayout.performanceMonitor",
+              "Performance Monitor",
+            )}
             settingKey="showPerformanceMonitorIcon"
-            infoTooltip="Show the real-time performance monitor icon"
+            infoTooltip={t(
+              "settingsLayout.performanceMonitorTooltip",
+              "Show the real-time performance monitor icon",
+            )}
           />
           <Toggle
             checked={settings.showActionLogIcon}
             onChange={(v) => updateSettings({ showActionLogIcon: v })}
             icon={<FileStack size={16} />}
-            label="Action Log"
+            label={t("settingsLayout.actionLog", "Action Log")}
             settingKey="showActionLogIcon"
-            infoTooltip="Show the action log icon for reviewing recent application actions and events"
+            infoTooltip={t(
+              "settingsLayout.actionLogTooltip",
+              "Show the action log icon for reviewing recent application actions and events",
+            )}
           />
           <Toggle
             checked={settings.showDevtoolsIcon}
             onChange={(v) => updateSettings({ showDevtoolsIcon: v })}
             icon={<Code size={16} />}
-            label="Devtools"
+            label={t("settingsLayout.devtools", "Devtools")}
             settingKey="showDevtoolsIcon"
-            infoTooltip="Show the developer tools icon for inspecting the application UI"
+            infoTooltip={t(
+              "settingsLayout.devtoolsTooltip",
+              "Show the developer tools icon for inspecting the application UI",
+            )}
           />
           <Toggle
             checked={settings.showDebugPanelIcon}
             onChange={(v) => updateSettings({ showDebugPanelIcon: v })}
             icon={<FlaskConical size={16} />}
-            label="Debug Panel"
+            label={t("settingsLayout.debugPanel", "Debug Panel")}
             settingKey="showDebugPanelIcon"
-            infoTooltip="Show the debug panel icon for development and troubleshooting tools"
+            infoTooltip={t(
+              "settingsLayout.debugPanelTooltip",
+              "Show the debug panel icon for development and troubleshooting tools",
+            )}
           />
           <Toggle
             checked={settings.showSecurityIcon}
             onChange={(v) => updateSettings({ showSecurityIcon: v })}
             icon={<ShieldCheck size={16} />}
-            label="Security"
+            label={t("settings.security", "Security")}
             settingKey="showSecurityIcon"
-            infoTooltip="Show the security icon for quick access to security-related tools"
+            infoTooltip={t(
+              "settingsLayout.securityIconTooltip",
+              "Show the security icon for quick access to security-related tools",
+            )}
           />
           <Toggle
             checked={settings.showWolIcon}
             onChange={(v) => updateSettings({ showWolIcon: v })}
             icon={<Power size={16} />}
-            label="Wake-on-LAN"
+            label={t("settingsLayout.wakeOnLan", "Wake-on-LAN")}
             settingKey="showWolIcon"
-            infoTooltip="Show the Wake-on-LAN icon for sending wake packets to remote machines"
+            infoTooltip={t(
+              "settingsLayout.wakeOnLanTooltip",
+              "Show the Wake-on-LAN icon for sending wake packets to remote machines",
+            )}
           />
           <Toggle
             checked={settings.showBulkSSHIcon}
             onChange={(v) => updateSettings({ showBulkSSHIcon: v })}
             icon={<Terminal size={16} />}
-            label="Bulk SSH Commander"
+            label={t("settingsLayout.bulkSshCommander", "Bulk SSH Commander")}
             settingKey="showBulkSSHIcon"
-            infoTooltip="Show the Bulk SSH Commander icon for running SSH commands across multiple hosts"
+            infoTooltip={t(
+              "settingsLayout.bulkSshCommanderTooltip",
+              "Show the Bulk SSH Commander icon for running SSH commands across multiple hosts",
+            )}
           />
           <Toggle
             checked={settings.showScriptManagerIcon}
             onChange={(v) => updateSettings({ showScriptManagerIcon: v })}
             icon={<FileCode size={16} />}
-            label="Script Manager"
+            label={t("settingsLayout.scriptManager", "Script Manager")}
             settingKey="showScriptManagerIcon"
-            infoTooltip="Show the Script Manager icon for managing reusable scripts"
+            infoTooltip={t(
+              "settingsLayout.scriptManagerTooltip",
+              "Show the Script Manager icon for managing reusable scripts",
+            )}
           />
           <Toggle
             checked={settings.showMacroManagerIcon}
             onChange={(v) => updateSettings({ showMacroManagerIcon: v })}
             icon={<ListVideo size={16} />}
-            label="Macro Manager"
+            label={t("settingsLayout.macroManager", "Macro Manager")}
             settingKey="showMacroManagerIcon"
-            infoTooltip="Show the Macro Manager icon for recording and replaying command sequences"
+            infoTooltip={t(
+              "settingsLayout.macroManagerTooltip",
+              "Show the Macro Manager icon for recording and replaying command sequences",
+            )}
           />
           <Toggle
             checked={settings.showRecordingManagerIcon}
             onChange={(v) => updateSettings({ showRecordingManagerIcon: v })}
             icon={<Disc size={16} />}
-            label="Recording Manager"
+            label={t("settingsLayout.recordingManager", "Recording Manager")}
             settingKey="showRecordingManagerIcon"
-            infoTooltip="Show the Recording Manager icon for managing recorded sessions"
+            infoTooltip={t(
+              "settingsLayout.recordingManagerTooltip",
+              "Show the Recording Manager icon for managing recorded sessions",
+            )}
           />
           <Toggle
             checked={settings.showErrorLogBar}
             onChange={(v) => updateSettings({ showErrorLogBar: v })}
             icon={<Bug size={16} />}
-            label="Error Log Bar"
+            label={t("settingsLayout.errorLogBar", "Error Log Bar")}
             settingKey="showErrorLogBar"
-            infoTooltip="Show the error log bar toggle for quickly opening recent application errors"
+            infoTooltip={t(
+              "settingsLayout.errorLogBarTooltip",
+              "Show the error log bar toggle for quickly opening recent application errors",
+            )}
           />
           <Toggle
             checked={settings.showBackupStatusIcon}
             onChange={(v) => updateSettings({ showBackupStatusIcon: v })}
             icon={<HardDrive size={16} />}
-            label="Backup Status"
+            label={t("settingsLayout.backupStatus", "Backup Status")}
             settingKey="showBackupStatusIcon"
-            infoTooltip="Show the backup status icon for monitoring local backup state"
+            infoTooltip={t(
+              "settingsLayout.backupStatusTooltip",
+              "Show the backup status icon for monitoring local backup state",
+            )}
           />
           <Toggle
             checked={settings.showCloudSyncStatusIcon}
             onChange={(v) => updateSettings({ showCloudSyncStatusIcon: v })}
             icon={<Cloud size={16} />}
-            label="Cloud Sync Status"
+            label={t("settingsLayout.cloudSyncStatus", "Cloud Sync Status")}
             settingKey="showCloudSyncStatusIcon"
-            infoTooltip="Show the cloud sync status icon for monitoring remote synchronization state"
+            infoTooltip={t(
+              "settingsLayout.cloudSyncStatusTooltip",
+              "Show the cloud sync status icon for monitoring remote synchronization state",
+            )}
           />
           <Toggle
             checked={settings.showSyncBackupStatusIcon}
             onChange={(v) => updateSettings({ showSyncBackupStatusIcon: v })}
             icon={<RefreshCw size={16} />}
-            label="Sync & Backup (Combined)"
+            label={t(
+              "settingsLayout.syncBackupCombined",
+              "Sync & Backup (Combined)",
+            )}
             settingKey="showSyncBackupStatusIcon"
-            infoTooltip="Show a combined status icon for backup and cloud sync activity"
+            infoTooltip={t(
+              "settingsLayout.syncBackupCombinedTooltip",
+              "Show a combined status icon for backup and cloud sync activity",
+            )}
           />
           <Toggle
             checked={settings.showRdpSessionsIcon}
             onChange={(v) => updateSettings({ showRdpSessionsIcon: v })}
             icon={<Cpu size={16} />}
-            label="RDP Sessions"
+            label={t("settingsLayout.rdpSessions", "RDP Sessions")}
             settingKey="showRdpSessionsIcon"
-            infoTooltip="Show the RDP Sessions icon for opening and monitoring RDP session tools"
+            infoTooltip={t(
+              "settingsLayout.rdpSessionsTooltip",
+              "Show the RDP Sessions icon for opening and monitoring RDP session tools",
+            )}
           />
         </Card>
       </div>

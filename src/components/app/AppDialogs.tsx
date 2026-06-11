@@ -1,5 +1,6 @@
 import React from "react";
 import dynamic from "next/dynamic";
+import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
@@ -9,27 +10,36 @@ import { ErrorLogBar } from "./ErrorLogBar";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
 
 const AutoLockManager = dynamic(
-  () => import("../security/AutoLockManager").then((module) => module.AutoLockManager),
+  () =>
+    import("../security/AutoLockManager").then(
+      (module) => module.AutoLockManager,
+    ),
   { ssr: false },
 );
 const QuickConnect = dynamic(
-  () => import("../connection/QuickConnect").then((module) => module.QuickConnect),
+  () =>
+    import("../connection/QuickConnect").then((module) => module.QuickConnect),
   { ssr: false },
 );
-const PasswordDialog = dynamic(
-  () => import("../security/PasswordDialog"),
-  { ssr: false },
-);
+const PasswordDialog = dynamic(() => import("../security/PasswordDialog"), {
+  ssr: false,
+});
 const SettingsDialog = dynamic(
   () => import("../SettingsDialog").then((module) => module.SettingsDialog),
   { ssr: false },
 );
 const ConnectionDiagnostics = dynamic(
-  () => import("../connection/ConnectionDiagnostics").then((module) => module.ConnectionDiagnostics),
+  () =>
+    import("../connection/ConnectionDiagnostics").then(
+      (module) => module.ConnectionDiagnostics,
+    ),
   { ssr: false },
 );
 const RDPCertTrustPrompt = dynamic(
-  () => import("../rdp/RDPCertTrustPrompt").then((module) => module.RDPCertTrustPrompt),
+  () =>
+    import("../rdp/RDPCertTrustPrompt").then(
+      (module) => module.RDPCertTrustPrompt,
+    ),
   { ssr: false },
 );
 
@@ -58,13 +68,13 @@ interface AppDialogsProps {
     title?: string;
     confirmText?: string;
     cancelText?: string;
-    variant?: 'default' | 'danger' | 'warning';
+    variant?: "default" | "danger" | "warning";
     onConfirm: () => void;
     onCancel?: () => void;
     secondaryAction?: {
       label: string;
       onClick: () => void;
-      variant?: 'default' | 'warning';
+      variant?: "default" | "warning";
     };
   };
   closeConfirmDialog: () => void;
@@ -88,6 +98,7 @@ interface AppDialogsProps {
 }
 
 export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
+  const { t } = useTranslation();
   const {
     appSettings,
     showDatabasePanel,
@@ -200,8 +211,11 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
 
       <FeatureErrorBoundary
         boundaryKey="settings-dialog"
-        title="Settings crashed"
-        message="The settings dialog hit a render error. You can retry without restarting the app."
+        title={t("errorBoundary.settingsCrashed", "Settings crashed")}
+        message={t(
+          "errorBoundary.settingsCrashedDescription",
+          "The settings dialog hit a render error. You can retry without restarting the app.",
+        )}
       >
         <SettingsDialog
           isOpen={showSettings}

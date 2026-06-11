@@ -1,10 +1,15 @@
-
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
 import type { Connection } from "../../../types/connection/connection";
 import { Upload, Wifi } from "lucide-react";
 import { useTranslation } from "react-i18next";
-function PanelContextMenu({ mgr, onOpenImport }: { mgr: ConnectionTreeMgr; onOpenImport?: () => void }) {
+function PanelContextMenu({
+  mgr,
+  onOpenImport,
+}: {
+  mgr: ConnectionTreeMgr;
+  onOpenImport?: () => void;
+}) {
   const { t } = useTranslation();
   const open = Boolean(mgr.panelMenuPosition);
   if (!open) return null;
@@ -20,24 +25,33 @@ function PanelContextMenu({ mgr, onOpenImport }: { mgr: ConnectionTreeMgr; onOpe
       position={mgr.panelMenuPosition}
       className="min-w-[160px] rounded-lg py-1"
       dataTestId="connection-tree-panel-menu"
-      ariaLabel="Connection tree context menu"
+      ariaLabel={t(
+        "connections.connectionTreeContextMenu",
+        "Connection tree context menu",
+      )}
     >
       {onOpenImport && (
         <button
-          onClick={() => { onOpenImport(); mgr.setPanelMenuPosition(null); }}
+          onClick={() => {
+            onOpenImport();
+            mgr.setPanelMenuPosition(null);
+          }}
           className="sor-menu-item"
         >
           <Upload size={14} />
-          Import…
+          {t("connections.import", "Import...")}
         </button>
       )}
       {hasSelection && (
         <button
-          onClick={() => { mgr.handleCheckConnections(selected); mgr.setPanelMenuPosition(null); }}
+          onClick={() => {
+            mgr.handleCheckConnections(selected);
+            mgr.setPanelMenuPosition(null);
+          }}
           className="sor-menu-item"
         >
           <Wifi size={14} />
-          {t('connections.checkTheseConnections')}
+          {t("connections.checkTheseConnections")}
         </button>
       )}
     </MenuSurface>
@@ -56,6 +70,5 @@ interface ConnectionTreeProps {
   onOpenImport?: () => void;
   enableReorder?: boolean;
 }
-
 
 export default PanelContextMenu;

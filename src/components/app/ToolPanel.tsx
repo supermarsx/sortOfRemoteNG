@@ -1,14 +1,12 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { useMemo } from "react";
 import dynamic from "next/dynamic";
+import { useTranslation } from "react-i18next";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
-import {
-  getToolKeyFromProtocol,
-  ToolKey,
-} from "./toolSession";
+import { getToolKeyFromProtocol, ToolKey } from "./toolSession";
 
 const PerformanceMonitor = dynamic(
   () =>
@@ -25,17 +23,20 @@ const ActionLogViewer = dynamic(
   { ssr: false },
 );
 const ShortcutManagerDialog = dynamic(
-  () => import("./ShortcutManagerDialog").then((module) => module.ShortcutManagerDialog),
+  () =>
+    import("./ShortcutManagerDialog").then(
+      (module) => module.ShortcutManagerDialog,
+    ),
   { ssr: false },
 );
 const ShortcutCreator = dynamic(
-  () => import("./ShortcutManagerDialog").then((module) => module.ShortcutCreator),
+  () =>
+    import("./ShortcutManagerDialog").then((module) => module.ShortcutCreator),
   { ssr: false },
 );
-const ProxyChainMenu = dynamic(
-  () => import("../network/ProxyChainMenu"),
-  { ssr: false },
-);
+const ProxyChainMenu = dynamic(() => import("../network/ProxyChainMenu"), {
+  ssr: false,
+});
 const InternalProxyManager = dynamic(
   () =>
     import("../network/InternalProxyManager").then(
@@ -44,16 +45,17 @@ const InternalProxyManager = dynamic(
   { ssr: false },
 );
 const WOLQuickTool = dynamic(
-  () =>
-    import("../network/WOLQuickTool").then((module) => module.WOLQuickTool),
+  () => import("../network/WOLQuickTool").then((module) => module.WOLQuickTool),
   { ssr: false },
 );
 const BulkSSHCommander = dynamic(
-  () => import("../ssh/BulkSSHCommander").then((module) => module.BulkSSHCommander),
+  () =>
+    import("../ssh/BulkSSHCommander").then((module) => module.BulkSSHCommander),
   { ssr: false },
 );
 const ServerStatsPanel = dynamic(
-  () => import("../ssh/ServerStatsPanel").then((module) => module.ServerStatsPanel),
+  () =>
+    import("../ssh/ServerStatsPanel").then((module) => module.ServerStatsPanel),
   { ssr: false },
 );
 const OpksshPanel = dynamic(
@@ -65,23 +67,25 @@ const McpServerPanel = dynamic(
   { ssr: false },
 );
 const ScriptManager = dynamic(
-  () => import("../recording/ScriptManager").then((module) => module.ScriptManager),
+  () =>
+    import("../recording/ScriptManager").then((module) => module.ScriptManager),
   { ssr: false },
 );
-const MacroManager = dynamic(
-  () => import("../recording/MacroManager"),
-  { ssr: false },
-);
+const MacroManager = dynamic(() => import("../recording/MacroManager"), {
+  ssr: false,
+});
 const RecordingManager = dynamic(
   () => import("../recording/RecordingManager"),
   { ssr: false },
 );
-const WindowsBackupPanel = dynamic(
-  () => import("../sync/WindowsBackupPanel"),
-  { ssr: false },
-);
+const WindowsBackupPanel = dynamic(() => import("../sync/WindowsBackupPanel"), {
+  ssr: false,
+});
 const ConnectionDiagnostics = dynamic(
-  () => import("../connection/ConnectionDiagnostics").then((m) => m.ConnectionDiagnostics),
+  () =>
+    import("../connection/ConnectionDiagnostics").then(
+      (m) => m.ConnectionDiagnostics,
+    ),
   { ssr: false },
 );
 const SettingsTabContent = dynamic(
@@ -97,7 +101,8 @@ const RDPSessionPanelTab = dynamic(
   { ssr: false },
 );
 const TagManagerDialog = dynamic(
-  () => import("../connection/TagManagerDialog").then((m) => m.TagManagerDialog),
+  () =>
+    import("../connection/TagManagerDialog").then((m) => m.TagManagerDialog),
   { ssr: false },
 );
 const TabGroupManager = dynamic(
@@ -105,11 +110,13 @@ const TabGroupManager = dynamic(
   { ssr: false },
 );
 const ConnectionEditor = dynamic(
-  () => import("../connection/ConnectionEditor").then((m) => m.ConnectionEditor),
+  () =>
+    import("../connection/ConnectionEditor").then((m) => m.ConnectionEditor),
   { ssr: false },
 );
 const ProxyProfileEditor = dynamic(
-  () => import("../network/ProxyProfileEditor").then((m) => m.ProxyProfileEditor),
+  () =>
+    import("../network/ProxyProfileEditor").then((m) => m.ProxyProfileEditor),
   { ssr: false },
 );
 const SSHTunnelDialog = dynamic(
@@ -120,10 +127,7 @@ const ProxyChainEditor = dynamic(
   () => import("../network/ProxyChainEditor").then((m) => m.ProxyChainEditor),
   { ssr: false },
 );
-const VpnEditor = dynamic(
-  () => import("../network/VpnEditor"),
-  { ssr: false },
-);
+const VpnEditor = dynamic(() => import("../network/VpnEditor"), { ssr: false });
 const TunnelChainEditorPanel = dynamic(
   () => import("../network/proxyChainMenu/TunnelChainEditorPanel"),
   { ssr: false },
@@ -133,7 +137,10 @@ const TunnelProfileEditorPanel = dynamic(
   { ssr: false },
 );
 const BulkConnectionEditor = dynamic(
-  () => import("../connection/BulkConnectionEditor").then((m) => m.BulkConnectionEditor),
+  () =>
+    import("../connection/BulkConnectionEditor").then(
+      (m) => m.BulkConnectionEditor,
+    ),
   { ssr: false },
 );
 const DatabasePanel = dynamic(
@@ -147,8 +154,12 @@ interface ToolTabViewerProps {
   /** RDP panel extras — provided by SessionViewer from App-level hooks */
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
-  onReconnect?: (connection: import("../../types/connection/connection").Connection) => void;
-  onEditConnection?: (connection: import("../../types/connection/connection").Connection) => void;
+  onReconnect?: (
+    connection: import("../../types/connection/connection").Connection,
+  ) => void;
+  onEditConnection?: (
+    connection: import("../../types/connection/connection").Connection,
+  ) => void;
   /** Open the requested database (id, optional password). */
   onDatabaseSelect?: (
     databaseId: string,
@@ -162,16 +173,27 @@ interface ToolTabViewerProps {
  * Renders the appropriate tool component inside a session tab.
  * Used by SessionViewer when the session protocol starts with "tool:".
  */
-export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, onReattachSession, onDetachToWindow, onReconnect, onEditConnection, onDatabaseSelect, onDatabaseClose }) => {
+export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
+  session,
+  onClose,
+  onReattachSession,
+  onDetachToWindow,
+  onReconnect,
+  onEditConnection,
+  onDatabaseSelect,
+  onDatabaseClose,
+}) => {
+  const { t } = useTranslation();
   const { state } = useConnections();
   const { settings } = useSettings();
   const toolKey = getToolKeyFromProtocol(session.protocol);
 
   const activeRdpBackendIds = useMemo(
-    () => state.sessions
-      .filter((s) => s.protocol === 'rdp')
-      .map((s) => s.backendSessionId || s.connectionId)
-      .filter(Boolean) as string[],
+    () =>
+      state.sessions
+        .filter((s) => s.protocol === "rdp")
+        .map((s) => s.backendSessionId || s.connectionId)
+        .filter(Boolean) as string[],
     [state.sessions],
   );
 
@@ -182,52 +204,91 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, 
   // fill the tab, and forces the inner dialog to fill it too.
   return (
     <div className="tool-tab-embedded h-full relative overflow-hidden">
-      {toolKey === 'performanceMonitor' && <PerformanceMonitor isOpen onClose={onClose} />}
-      {toolKey === 'actionLog' && <ActionLogViewer isOpen onClose={onClose} />}
-      {toolKey === 'shortcutManager' && <ShortcutManagerDialog isOpen onClose={onClose} />}
-      {toolKey === 'proxyChain' && <ProxyChainMenu isOpen onClose={onClose} />}
-      {toolKey === 'internalProxy' && <InternalProxyManager isOpen onClose={onClose} />}
-      {toolKey === 'wol' && <WOLQuickTool isOpen onClose={onClose} />}
-      {toolKey === 'bulkSsh' && <BulkSSHCommander isOpen onClose={onClose} />}
-      {toolKey === 'serverStats' && <ServerStatsPanel isOpen onClose={onClose} />}
-      {toolKey === 'opkssh' && <OpksshPanel isOpen onClose={onClose} />}
-      {toolKey === 'mcpServer' && <McpServerPanel isOpen onClose={onClose} />}
-      {toolKey === 'scriptManager' && <ScriptManager isOpen onClose={onClose} />}
-      {toolKey === 'macroManager' && <MacroManager isOpen onClose={onClose} />}
-      {toolKey === 'recordingManager' && <RecordingManager isOpen onClose={onClose} />}
-      {toolKey === 'windowsBackup' && <WindowsBackupPanel isOpen onClose={onClose} />}
-      {toolKey === 'diagnostics' && (() => {
-        const conn = state.connections.find(c => c.id === session.connectionId);
-        return conn ? <ConnectionDiagnostics connection={conn} onClose={onClose} /> : null;
-      })()}
-      {toolKey === 'settings' && <SettingsTabContent onClose={onClose} />}
-      {toolKey === 'importExport' && (
+      {toolKey === "performanceMonitor" && (
+        <PerformanceMonitor isOpen onClose={onClose} />
+      )}
+      {toolKey === "actionLog" && <ActionLogViewer isOpen onClose={onClose} />}
+      {toolKey === "shortcutManager" && (
+        <ShortcutManagerDialog isOpen onClose={onClose} />
+      )}
+      {toolKey === "proxyChain" && <ProxyChainMenu isOpen onClose={onClose} />}
+      {toolKey === "internalProxy" && (
+        <InternalProxyManager isOpen onClose={onClose} />
+      )}
+      {toolKey === "wol" && <WOLQuickTool isOpen onClose={onClose} />}
+      {toolKey === "bulkSsh" && <BulkSSHCommander isOpen onClose={onClose} />}
+      {toolKey === "serverStats" && (
+        <ServerStatsPanel isOpen onClose={onClose} />
+      )}
+      {toolKey === "opkssh" && <OpksshPanel isOpen onClose={onClose} />}
+      {toolKey === "mcpServer" && <McpServerPanel isOpen onClose={onClose} />}
+      {toolKey === "scriptManager" && (
+        <ScriptManager isOpen onClose={onClose} />
+      )}
+      {toolKey === "macroManager" && <MacroManager isOpen onClose={onClose} />}
+      {toolKey === "recordingManager" && (
+        <RecordingManager isOpen onClose={onClose} />
+      )}
+      {toolKey === "windowsBackup" && (
+        <WindowsBackupPanel isOpen onClose={onClose} />
+      )}
+      {toolKey === "diagnostics" &&
+        (() => {
+          const conn = state.connections.find(
+            (c) => c.id === session.connectionId,
+          );
+          return conn ? (
+            <ConnectionDiagnostics connection={conn} onClose={onClose} />
+          ) : null;
+        })()}
+      {toolKey === "settings" && <SettingsTabContent onClose={onClose} />}
+      {toolKey === "importExport" && (
         <div className="h-full overflow-y-auto bg-[var(--color-surface)] p-6">
           <ImportExport isOpen embedded onClose={onClose} />
         </div>
       )}
-      {toolKey === 'tagManager' && <TagManagerDialog isOpen onClose={onClose} />}
-      {toolKey === 'tabGroupManager' && <TabGroupManager isOpen onClose={onClose} />}
-      {toolKey === 'database' && (
-        <DatabasePanel onClose={onClose} onDatabaseSelect={onDatabaseSelect} onDatabaseClose={onDatabaseClose} />
+      {toolKey === "tagManager" && (
+        <TagManagerDialog isOpen onClose={onClose} />
       )}
-      {toolKey === 'bulkEditor' && (
-        <BulkConnectionEditor isOpen onClose={onClose} onEditConnection={onEditConnection} />
+      {toolKey === "tabGroupManager" && (
+        <TabGroupManager isOpen onClose={onClose} />
       )}
-      {toolKey === 'connectionEditor' && (
+      {toolKey === "database" && (
+        <DatabasePanel
+          onClose={onClose}
+          onDatabaseSelect={onDatabaseSelect}
+          onDatabaseClose={onDatabaseClose}
+        />
+      )}
+      {toolKey === "bulkEditor" && (
+        <BulkConnectionEditor
+          isOpen
+          onClose={onClose}
+          onEditConnection={onEditConnection}
+        />
+      )}
+      {toolKey === "connectionEditor" && (
         <FeatureErrorBoundary
           boundaryKey={session.connectionId}
-          title="Connection Editor crashed"
-          message="The connection editor hit a render error. You can retry without restarting the app."
+          title={t(
+            "errorBoundary.connectionEditorCrashed",
+            "Connection Editor crashed",
+          )}
+          message={t(
+            "errorBoundary.connectionEditorCrashedDescription",
+            "The connection editor hit a render error. You can retry without restarting the app.",
+          )}
         >
           <ConnectionEditor
-            connection={state.connections.find(c => c.id === session.connectionId)}
+            connection={state.connections.find(
+              (c) => c.id === session.connectionId,
+            )}
             isOpen
             onClose={onClose}
           />
         </FeatureErrorBoundary>
       )}
-      {toolKey === 'rdpSessions' && (
+      {toolKey === "rdpSessions" && (
         <RDPSessionPanelTab
           isVisible
           connections={state.connections}
@@ -241,25 +302,53 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose, 
           thumbnailInterval={settings.rdpSessionThumbnailInterval}
         />
       )}
-      {toolKey === 'shortcutCreator' && <ShortcutCreator isOpen onClose={onClose} />}
-      {toolKey === 'proxyProfileEditor' && <ProxyProfileEditor isOpen onClose={onClose} onSave={() => onClose()} />}
-      {toolKey === 'proxyChainEditor' && <ProxyChainEditor isOpen onClose={onClose} onSave={() => onClose()} editingChain={null} />}
-      {toolKey === 'sshTunnelEditor' && <SSHTunnelDialog isOpen onClose={onClose} onSave={() => onClose()} sshConnections={state.connections.filter(c => c.protocol === 'ssh')} />}
-      {toolKey === 'vpnEditor' && <VpnEditor isOpen onClose={onClose} onSave={() => onClose()} />}
-      {toolKey === 'tunnelChainEditor' && (
+      {toolKey === "shortcutCreator" && (
+        <ShortcutCreator isOpen onClose={onClose} />
+      )}
+      {toolKey === "proxyProfileEditor" && (
+        <ProxyProfileEditor isOpen onClose={onClose} onSave={() => onClose()} />
+      )}
+      {toolKey === "proxyChainEditor" && (
+        <ProxyChainEditor
+          isOpen
+          onClose={onClose}
+          onSave={() => onClose()}
+          editingChain={null}
+        />
+      )}
+      {toolKey === "sshTunnelEditor" && (
+        <SSHTunnelDialog
+          isOpen
+          onClose={onClose}
+          onSave={() => onClose()}
+          sshConnections={state.connections.filter((c) => c.protocol === "ssh")}
+        />
+      )}
+      {toolKey === "vpnEditor" && (
+        <VpnEditor isOpen onClose={onClose} onSave={() => onClose()} />
+      )}
+      {toolKey === "tunnelChainEditor" && (
         <TunnelChainEditorPanel
           isOpen
           onClose={onClose}
           onSave={() => onClose()}
-          editingChainId={session.connectionId?.startsWith('tool-') ? undefined : session.connectionId}
+          editingChainId={
+            session.connectionId?.startsWith("tool-")
+              ? undefined
+              : session.connectionId
+          }
         />
       )}
-      {toolKey === 'tunnelProfileEditor' && (
+      {toolKey === "tunnelProfileEditor" && (
         <TunnelProfileEditorPanel
           isOpen
           onClose={onClose}
           onSave={() => onClose()}
-          editingProfileId={session.connectionId?.startsWith('tool-') ? undefined : session.connectionId}
+          editingProfileId={
+            session.connectionId?.startsWith("tool-")
+              ? undefined
+              : session.connectionId
+          }
         />
       )}
     </div>

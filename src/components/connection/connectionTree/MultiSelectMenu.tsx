@@ -1,10 +1,9 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import type { Connection } from "../../../types/connection/connection";
-import {
-  Copy, FileDown, Link, Play, Power, Star, Trash2, Unlink, X,
-} from "lucide-react";
+import { Copy, FileDown, Play, Power, Star, Trash2, X } from "lucide-react";
 
 interface MultiSelectMenuProps {
   showMenu: boolean;
@@ -27,6 +26,7 @@ function MultiSelectMenu({
   onDelete,
   onExport,
 }: MultiSelectMenuProps) {
+  const { t } = useTranslation();
   const { state, dispatch } = useConnections();
 
   const selectedIds = state.selectedConnectionIds;
@@ -46,9 +46,7 @@ function MultiSelectMenu({
 
   const handleConnectAll = () => {
     nonGroups
-      .filter(
-        (c) => !state.sessions.some((s) => s.connectionId === c.id),
-      )
+      .filter((c) => !state.sessions.some((s) => s.connectionId === c.id))
       .forEach((c) => onConnect(c));
   };
 
@@ -104,19 +102,28 @@ function MultiSelectMenu({
     >
       {/* Header showing count */}
       <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[var(--color-textMuted)] border-b border-[var(--color-border)]/50">
-        {selected.length} items selected
+        {t("connections.itemsSelected", {
+          defaultValue: "{{count}} items selected",
+          count: selected.length,
+        })}
       </div>
 
       {hasDisconnected && (
         <button onClick={act(handleConnectAll)} className="sor-menu-item">
           <Play size={14} className="mr-2" />
-          Connect All ({nonGroups.length - connectedSessions.length})
+          {t("connections.connectAllCount", {
+            defaultValue: "Connect All ({{count}})",
+            count: nonGroups.length - connectedSessions.length,
+          })}
         </button>
       )}
       {hasConnected && (
         <button onClick={act(handleDisconnectAll)} className="sor-menu-item">
           <Power size={14} className="mr-2" />
-          Disconnect All ({connectedSessions.length})
+          {t("connections.disconnectAllCount", {
+            defaultValue: "Disconnect All ({{count}})",
+            count: connectedSessions.length,
+          })}
         </button>
       )}
 
@@ -124,22 +131,22 @@ function MultiSelectMenu({
 
       <button onClick={act(handleFavoriteAll)} className="sor-menu-item">
         <Star size={14} className="mr-2" />
-        Favorite All
+        {t("connections.favoriteAll", "Favorite All")}
       </button>
       <button onClick={act(handleUnfavoriteAll)} className="sor-menu-item">
         <Star size={14} className="mr-2 text-[var(--color-textMuted)]" />
-        Unfavorite All
+        {t("connections.unfavoriteAll", "Unfavorite All")}
       </button>
 
       <div className="sor-menu-divider" />
 
       <button onClick={act(handleCopyHostnames)} className="sor-menu-item">
         <Copy size={14} className="mr-2" />
-        Copy All Hostnames
+        {t("connections.copyAllHostnames", "Copy All Hostnames")}
       </button>
       <button onClick={act(handleExportAll)} className="sor-menu-item">
         <FileDown size={14} className="mr-2" />
-        Export Selected
+        {t("connections.exportSelected", "Export Selected")}
       </button>
 
       <div className="sor-menu-divider" />
@@ -149,11 +156,17 @@ function MultiSelectMenu({
         className="sor-menu-item"
       >
         <X size={14} className="mr-2" />
-        Clear Selection
+        {t("connections.clearSelection", "Clear Selection")}
       </button>
-      <button onClick={act(handleDeleteAll)} className="sor-menu-item sor-menu-item-danger">
+      <button
+        onClick={act(handleDeleteAll)}
+        className="sor-menu-item sor-menu-item-danger"
+      >
         <Trash2 size={14} className="mr-2" />
-        Delete Selected ({selected.length})
+        {t("connections.deleteSelectedCount", {
+          defaultValue: "Delete Selected ({{count}})",
+          count: selected.length,
+        })}
       </button>
     </MenuSurface>
   );

@@ -1,10 +1,12 @@
-import React from 'react';
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import React from "react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface FeatureErrorBoundaryProps extends React.PropsWithChildren {
   boundaryKey?: string | number;
   title?: string;
   message?: string;
+  retryLabel?: string;
 }
 
 interface FeatureErrorBoundaryState {
@@ -12,7 +14,10 @@ interface FeatureErrorBoundaryState {
   errorMessage: string | null;
 }
 
-export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryProps, FeatureErrorBoundaryState> {
+export class FeatureErrorBoundary extends React.Component<
+  FeatureErrorBoundaryProps,
+  FeatureErrorBoundaryState
+> {
   state: FeatureErrorBoundaryState = {
     hasError: false,
     errorMessage: null,
@@ -26,13 +31,17 @@ export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryPr
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[FeatureErrorBoundary] Panel render failed:', error, errorInfo);
+    console.error(
+      "[FeatureErrorBoundary] Panel render failed:",
+      error,
+      errorInfo,
+    );
   }
 
   componentDidUpdate(prevProps: FeatureErrorBoundaryProps) {
     if (
-      this.state.hasError
-      && prevProps.boundaryKey !== this.props.boundaryKey
+      this.state.hasError &&
+      prevProps.boundaryKey !== this.props.boundaryKey
     ) {
       this.setState({ hasError: false, errorMessage: null });
     }
@@ -47,8 +56,11 @@ export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryPr
       return this.props.children;
     }
 
-    const title = this.props.title ?? 'Panel crashed';
-    const message = this.props.message ?? 'This view hit a render error. You can retry without restarting the app.';
+    const title = this.props.title ?? "Panel crashed";
+    const message =
+      this.props.message ??
+      "This view hit a render error. You can retry without restarting the app.";
+    const retryLabel = this.props.retryLabel ?? "Retry Panel";
 
     return (
       <div className="flex h-full items-center justify-center bg-[var(--color-background)] p-6">
@@ -56,8 +68,12 @@ export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryPr
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-error/10 text-error">
             <AlertTriangle size={24} />
           </div>
-          <h3 className="mb-2 text-lg font-semibold text-[var(--color-text)]">{title}</h3>
-          <p className="mb-4 text-sm text-[var(--color-textSecondary)]">{message}</p>
+          <h3 className="mb-2 text-lg font-semibold text-[var(--color-text)]">
+            {title}
+          </h3>
+          <p className="mb-4 text-sm text-[var(--color-textSecondary)]">
+            {message}
+          </p>
           {this.state.errorMessage && (
             <pre className="mb-4 whitespace-pre-wrap rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left text-xs text-[var(--color-textSecondary)]">
               {this.state.errorMessage}
@@ -68,7 +84,7 @@ export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryPr
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-primary/90"
           >
             <RotateCcw size={14} />
-            Retry Panel
+            {retryLabel}
           </button>
         </div>
       </div>
@@ -76,4 +92,35 @@ export class FeatureErrorBoundary extends React.Component<FeatureErrorBoundaryPr
   }
 }
 
-export default FeatureErrorBoundary;
+const TranslatedFeatureErrorBoundary: React.FC<FeatureErrorBoundaryProps> = (
+  props,
+) => {
+  const { t } = useTranslation();
+
+  return (
+    <FeatureErrorBoundary
+      {...props}
+      title={
+        props.title ??
+        t("errorBoundary.panelCrashed", {
+          defaultValue: "Panel crashed",
+        })
+      }
+      message={
+        props.message ??
+        t("errorBoundary.panelCrashedDescription", {
+          defaultValue:
+            "This view hit a render error. You can retry without restarting the app.",
+        })
+      }
+      retryLabel={
+        props.retryLabel ??
+        t("errorBoundary.retryPanel", {
+          defaultValue: "Retry Panel",
+        })
+      }
+    />
+  );
+};
+
+export default TranslatedFeatureErrorBoundary;

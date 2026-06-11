@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
  * BSOD-style screen shown when the application critically fails to initialize
@@ -7,7 +8,8 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
  * Uses only inline styles so it renders even when the CSS/theme system is broken.
  */
 
-const MONO = "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace";
+const MONO =
+  "'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace";
 const SANS =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
@@ -45,6 +47,7 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
   title,
   detail,
 }) => {
+  const { t } = useTranslation();
   const [showDetail, setShowDetail] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showGuardrails, setShowGuardrails] = useState(false);
@@ -58,11 +61,11 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
 
   const handleCopy = useCallback(() => {
     const report = [
-      `sortOfRemoteNG — Critical Error Report`,
+      t("criticalError.reportTitle", "sortOfRemoteNG — Critical Error Report"),
       `========================================`,
-      `Stop code: ${title}`,
-      `Time: ${new Date().toISOString()}`,
-      `User-Agent: ${navigator.userAgent}`,
+      `${t("criticalError.stopCode", "Stop code")}: ${title}`,
+      `${t("criticalError.time", "Time")}: ${new Date().toISOString()}`,
+      `${t("criticalError.userAgent", "User-Agent")}: ${navigator.userAgent}`,
       ``,
       detail,
     ].join("\n");
@@ -71,7 +74,7 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
       copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
     });
-  }, [title, detail]);
+  }, [title, detail, t]);
 
   const handleRestart = useCallback(() => {
     window.location.reload();
@@ -162,7 +165,10 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
             margin: "0 0 12px",
           }}
         >
-          sortOfRemoteNG ran into a critical problem and cannot start.
+          {t(
+            "criticalError.title",
+            "sortOfRemoteNG ran into a critical problem and cannot start.",
+          )}
         </h1>
         <p
           style={{
@@ -173,9 +179,10 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
             lineHeight: 1.6,
           }}
         >
-          The application was unable to complete its initialization. This is
-          usually caused by corrupted settings, a locked database, or a missing
-          system dependency.
+          {t(
+            "criticalError.description",
+            "The application was unable to complete its initialization. This is usually caused by corrupted settings, a locked database, or a missing system dependency.",
+          )}
         </p>
 
         {/* Stop code card */}
@@ -199,7 +206,7 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
               marginBottom: 4,
             }}
           >
-            Stop code
+            {t("criticalError.stopCode", "Stop code")}
           </div>
           <div
             style={{
@@ -227,7 +234,9 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
               textUnderlineOffset: 3,
             }}
           >
-            {showDetail ? "Hide details" : "Show details"}
+            {showDetail
+              ? t("criticalError.hideDetails", "Hide details")
+              : t("criticalError.showDetails", "Show details")}
           </button>
           {showDetail && (
             <pre
@@ -262,15 +271,23 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
         >
           <button
             onClick={handleRestart}
-            style={{ ...btnBase, background: ACCENT, color: "#fff", fontWeight: 600, border: "none" }}
+            style={{
+              ...btnBase,
+              background: ACCENT,
+              color: "#fff",
+              fontWeight: 600,
+              border: "none",
+            }}
           >
-            Restart Application
+            {t("criticalError.restartApplication", "Restart Application")}
           </button>
           <button onClick={handleClearData} style={btnBase}>
-            Clear Data &amp; Restart
+            {t("criticalError.clearDataRestart", "Clear Data & Restart")}
           </button>
           <button onClick={handleCopy} style={btnBase}>
-            {copied ? "Copied!" : "Copy Error Report"}
+            {copied
+              ? t("criticalError.copied", "Copied!")
+              : t("criticalError.copyErrorReport", "Copy Error Report")}
           </button>
         </div>
 
@@ -291,7 +308,9 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
               textUnderlineOffset: 3,
             }}
           >
-            {showGuardrails ? "Hide safe mode options" : "Safe mode options..."}
+            {showGuardrails
+              ? t("criticalError.hideSafeModeOptions", "Hide safe mode options")
+              : t("criticalError.safeModeOptions", "Safe mode options...")}
           </button>
 
           {showGuardrails && (
@@ -312,22 +331,29 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
                   lineHeight: 1.6,
                 }}
               >
-                Safe mode skips startup guardrails that may be causing the failure:
-                single-window enforcement, unexpected-close detection, auto-open
-                last collection, session reconnection, and auto-benchmarking.
+                {t(
+                  "criticalError.safeModeDescription",
+                  "Safe mode skips startup guardrails that may be causing the failure: single-window enforcement, unexpected-close detection, auto-open last collection, session reconnection, and auto-benchmarking.",
+                )}
               </p>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button
                   onClick={handleSafeModeOnce}
                   style={{ ...btnBase, borderColor: AMBER, color: AMBER }}
                 >
-                  Safe Mode (this launch only)
+                  {t(
+                    "criticalError.safeModeOnce",
+                    "Safe Mode (this launch only)",
+                  )}
                 </button>
                 <button
                   onClick={handleSafeModePermanent}
                   style={{ ...btnBase, borderColor: RED, color: RED }}
                 >
-                  Disable Guardrails Permanently
+                  {t(
+                    "criticalError.disableGuardrailsPermanently",
+                    "Disable Guardrails Permanently",
+                  )}
                 </button>
               </div>
               <p
@@ -339,8 +365,10 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
                   fontFamily: MONO,
                 }}
               >
-                Permanent mode can be reverted from Settings &gt; Startup after
-                the application loads successfully.
+                {t(
+                  "criticalError.safeModePermanentHint",
+                  "Permanent mode can be reverted from Settings > Startup after the application loads successfully.",
+                )}
               </p>
             </div>
           )}
@@ -355,9 +383,14 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
             lineHeight: 1.8,
           }}
         >
-          <div>Time: {new Date().toISOString()}</div>
-          <div>Platform: {navigator.userAgent.split(" ").slice(-3).join(" ")}</div>
-          <div>Version: v0.1.0</div>
+          <div>
+            {t("criticalError.time", "Time")}: {new Date().toISOString()}
+          </div>
+          <div>
+            {t("criticalError.platform", "Platform")}:{" "}
+            {navigator.userAgent.split(" ").slice(-3).join(" ")}
+          </div>
+          <div>{t("criticalError.version", "Version")}: v0.1.0</div>
         </div>
       </div>
     </div>

@@ -1,16 +1,31 @@
-import React from 'react';
-import { useTranslation } from 'react-i18next';
+import React from "react";
+import { useTranslation } from "react-i18next";
 import {
-  Search, Trash2, Copy, ChevronDown, ChevronUp,
-  FolderOpen, Server, Globe, Database, Terminal, Monitor,
-  CheckSquare, Square, Minus, Star, RefreshCw, Edit3, KeyRound,
-} from 'lucide-react';
-import { Connection } from '../../types/connection/connection';
+  Search,
+  Trash2,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  FolderOpen,
+  Server,
+  Globe,
+  Database,
+  Terminal,
+  Monitor,
+  CheckSquare,
+  Square,
+  Minus,
+  Star,
+  RefreshCw,
+  Edit3,
+  KeyRound,
+} from "lucide-react";
+import { Connection } from "../../types/connection/connection";
 import {
   useBulkConnectionEditor,
   type BulkConnectionEditorMgr,
-} from '../../hooks/connection/useBulkConnectionEditor';
-import { Checkbox } from '../ui/forms';
+} from "../../hooks/connection/useBulkConnectionEditor";
+import { Checkbox } from "../ui/forms";
 
 interface BulkConnectionEditorProps {
   isOpen: boolean;
@@ -18,7 +33,7 @@ interface BulkConnectionEditorProps {
   onEditConnection?: (connection: Connection) => void;
 }
 
-type EditableField = 'name' | 'hostname' | 'port' | 'username';
+type EditableField = "name" | "hostname" | "port" | "username";
 
 const protocolIcons: Record<string, React.ReactNode> = {
   rdp: <Monitor size={14} className="text-primary" />,
@@ -35,6 +50,7 @@ const protocolIcons: Record<string, React.ReactNode> = {
 // ── Sub-components ─────────────────────────────────────────────────
 
 function BulkEditorHeader({ mgr }: { mgr: BulkConnectionEditorMgr }) {
+  const { t } = useTranslation();
   return (
     <div className="relative z-10 flex items-center gap-3 px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="p-2 bg-primary/20 rounded-lg">
@@ -42,10 +58,14 @@ function BulkEditorHeader({ mgr }: { mgr: BulkConnectionEditorMgr }) {
       </div>
       <div className="min-w-0">
         <h2 className="text-base font-semibold text-[var(--color-text)] leading-tight">
-          Bulk Connection Editor
+          {t("connections.bulkEditor.title", "Bulk Connection Editor")}
         </h2>
         <p className="text-xs text-[var(--color-textSecondary)] truncate">
-          {mgr.connections.length} connections • Double-click any cell to edit
+          {t(
+            "connections.bulkEditor.subtitle",
+            "{{count}} connections - Double-click any cell to edit",
+            { count: mgr.connections.length },
+          )}
         </p>
       </div>
     </div>
@@ -57,10 +77,16 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
   return (
     <div className="relative z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between gap-4 bg-[var(--color-surfaceHover)]/50">
       <div className="relative flex-1 max-w-md">
-        <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textMuted)]" />
+        <Search
+          size={14}
+          className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textMuted)]"
+        />
         <input
           type="text"
-          placeholder="Search by name, hostname, protocol, or tag..."
+          placeholder={t(
+            "connections.bulkEditor.searchPlaceholder",
+            "Search by name, hostname, protocol, or tag...",
+          )}
           value={mgr.searchTerm}
           onChange={(e) => mgr.setSearchTerm(e.target.value)}
           className="w-full pl-9 pr-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
@@ -69,19 +95,32 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
 
       <div className="flex items-center space-x-2">
         <label className="flex items-center space-x-2 text-xs text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] transition-colors">
-          <Checkbox checked={mgr.showFavoritesFirst} onChange={(v: boolean) => mgr.setShowFavoritesFirst(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-warning w-3.5 h-3.5" />
+          <Checkbox
+            checked={mgr.showFavoritesFirst}
+            onChange={(v: boolean) => mgr.setShowFavoritesFirst(v)}
+            className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-warning w-3.5 h-3.5"
+          />
           <Star size={12} className="text-warning" />
-          <span>Favorites first</span>
+          <span>
+            {t("connections.bulkEditor.favoritesFirst", "Favorites first")}
+          </span>
         </label>
       </div>
 
       {mgr.selectedIds.size > 0 && (
         <div className="flex items-center space-x-2 pl-4 border-l border-[var(--color-border)]">
-          <span className="text-sm text-primary font-medium">{mgr.selectedIds.size} selected</span>
+          <span className="text-sm text-primary font-medium">
+            {t("connections.bulkEditor.selected", "{{count}} selected", {
+              count: mgr.selectedIds.size,
+            })}
+          </span>
           <button
             onClick={() => mgr.toggleSelectedFavorites(true)}
             className="px-2.5 py-1.5 bg-warning/10 hover:bg-warning/20 text-warning rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
-            title="Add to favorites"
+            title={t(
+              "connections.bulkEditor.addToFavorites",
+              "Add to favorites",
+            )}
             data-testid="bulk-favorite"
           >
             <Star size={12} />
@@ -90,19 +129,19 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             onClick={() => mgr.duplicateSelected()}
             className="px-2.5 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
             data-testid="bulk-duplicate"
-            title={t('connections.clone')}
+            title={t("connections.clone")}
           >
             <Copy size={12} />
-            <span>{t('connections.clone')}</span>
+            <span>{t("connections.clone")}</span>
           </button>
           <button
             onClick={() => mgr.duplicateSelected({ includeCredentials: true })}
             className="px-2.5 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
             data-testid="bulk-duplicate-with-credentials"
-            title={t('connections.cloneWithCredentials')}
+            title={t("connections.cloneWithCredentials")}
           >
             <KeyRound size={12} />
-            <span>{t('connections.cloneWithCredentials')}</span>
+            <span>{t("connections.cloneWithCredentials")}</span>
           </button>
           <button
             onClick={() => mgr.setShowDeleteConfirm(true)}
@@ -110,7 +149,7 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             data-testid="bulk-delete"
           >
             <Trash2 size={12} />
-            <span>Delete</span>
+            <span>{t("connections.delete", "Delete")}</span>
           </button>
         </div>
       )}
@@ -118,9 +157,19 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
   );
 }
 
-function SortIcon({ field, mgr }: { field: string; mgr: BulkConnectionEditorMgr }) {
+function SortIcon({
+  field,
+  mgr,
+}: {
+  field: string;
+  mgr: BulkConnectionEditorMgr;
+}) {
   if (mgr.sortField !== field) return null;
-  return mgr.sortDirection === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />;
+  return mgr.sortDirection === "asc" ? (
+    <ChevronUp size={12} />
+  ) : (
+    <ChevronDown size={12} />
+  );
 }
 
 function EditableCell({
@@ -136,18 +185,26 @@ function EditableCell({
   className?: string;
   mgr: BulkConnectionEditorMgr;
 }) {
-  const isEditing = mgr.editingCell?.id === connection.id && mgr.editingCell?.field === field;
+  const { t } = useTranslation();
+  const isEditing =
+    mgr.editingCell?.id === connection.id && mgr.editingCell?.field === field;
 
   if (isEditing) {
     return (
       <input
-        type={field === 'port' ? 'number' : 'text'}
+        type={field === "port" ? "number" : "text"}
         value={mgr.editValue}
         onChange={(e) => mgr.setEditValue(e.target.value)}
         onBlur={mgr.saveEdit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); mgr.saveEdit(); }
-          if (e.key === 'Escape') { e.preventDefault(); mgr.cancelEdit(); }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            mgr.saveEdit();
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            mgr.cancelEdit();
+          }
         }}
         className="sor-form-input-sm"
         autoFocus
@@ -157,17 +214,20 @@ function EditableCell({
 
   return (
     <span
-      className={`cursor-text hover:bg-[var(--color-surfaceHover)]/50 px-1 py-0.5 rounded transition-colors inline-flex items-center ${className || ''}`}
+      className={`cursor-text hover:bg-[var(--color-surfaceHover)]/50 px-1 py-0.5 rounded transition-colors inline-flex items-center ${className || ""}`}
       onDoubleClick={() => mgr.handleDoubleClick(connection.id, field, value)}
-      title="Double-click to edit"
+      title={t(
+        "connections.bulkEditor.doubleClickToEdit",
+        "Double-click to edit",
+      )}
     >
-      {field === 'name' && connection.colorTag && (
+      {field === "name" && connection.colorTag && (
         <span
           className="inline-block w-2 h-2 rounded-full mr-2 flex-shrink-0"
           style={{ backgroundColor: connection.colorTag }}
         />
       )}
-      {value || (field === 'username' ? '-' : '')}
+      {value || (field === "username" ? "-" : "")}
     </span>
   );
 }
@@ -183,7 +243,7 @@ function ConnectionRow({
   return (
     <tr
       className={`hover:bg-[var(--color-surfaceHover)]/30 transition-colors group ${
-        mgr.selectedIds.has(connection.id) ? 'bg-primary/10' : ''
+        mgr.selectedIds.has(connection.id) ? "bg-primary/10" : ""
       }`}
     >
       <td className="px-3 py-2.5">
@@ -194,7 +254,10 @@ function ConnectionRow({
           {mgr.selectedIds.has(connection.id) ? (
             <CheckSquare size={16} className="text-primary" />
           ) : (
-            <Square size={16} className="text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
+            <Square
+              size={16}
+              className="text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]"
+            />
           )}
         </button>
       </td>
@@ -203,30 +266,59 @@ function ConnectionRow({
           onClick={() => mgr.toggleFavorite(connection)}
           className={`p-1 rounded transition-all ${
             connection.favorite
-              ? 'text-warning hover:text-warning/80'
-              : 'text-[var(--color-textMuted)] hover:text-warning'
+              ? "text-warning hover:text-warning/80"
+              : "text-[var(--color-textMuted)] hover:text-warning"
           }`}
         >
-          <Star size={14} fill={connection.favorite ? 'currentColor' : 'none'} />
+          <Star
+            size={14}
+            fill={connection.favorite ? "currentColor" : "none"}
+          />
         </button>
       </td>
       <td className="px-3 py-2.5">
-        <EditableCell connection={connection} field="name" value={connection.name} className="text-[var(--color-text)] font-medium" mgr={mgr} />
+        <EditableCell
+          connection={connection}
+          field="name"
+          value={connection.name}
+          className="text-[var(--color-text)] font-medium"
+          mgr={mgr}
+        />
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center space-x-1.5">
           {protocolIcons[connection.protocol] || <Server size={14} />}
-          <span className="text-[var(--color-textSecondary)] uppercase text-xs font-medium">{connection.protocol}</span>
+          <span className="text-[var(--color-textSecondary)] uppercase text-xs font-medium">
+            {connection.protocol}
+          </span>
         </div>
       </td>
       <td className="px-3 py-2.5">
-        <EditableCell connection={connection} field="hostname" value={connection.hostname} className="text-[var(--color-textSecondary)]" mgr={mgr} />
+        <EditableCell
+          connection={connection}
+          field="hostname"
+          value={connection.hostname}
+          className="text-[var(--color-textSecondary)]"
+          mgr={mgr}
+        />
       </td>
       <td className="px-3 py-2.5">
-        <EditableCell connection={connection} field="port" value={connection.port} className="text-[var(--color-textMuted)] font-mono" mgr={mgr} />
+        <EditableCell
+          connection={connection}
+          field="port"
+          value={connection.port}
+          className="text-[var(--color-textMuted)] font-mono"
+          mgr={mgr}
+        />
       </td>
       <td className="px-3 py-2.5">
-        <EditableCell connection={connection} field="username" value={connection.username} className="text-[var(--color-textMuted)]" mgr={mgr} />
+        <EditableCell
+          connection={connection}
+          field="username"
+          value={connection.username}
+          className="text-[var(--color-textMuted)]"
+          mgr={mgr}
+        />
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -234,7 +326,10 @@ function ConnectionRow({
             <button
               onClick={() => mgr.handleEditInFullEditor(connection)}
               className="p-1.5 hover:bg-primary/20 rounded-lg text-[var(--color-textMuted)] hover:text-primary transition-colors"
-              title="Edit in full editor"
+              title={t(
+                "connections.bulkEditor.editInFullEditor",
+                "Edit in full editor",
+              )}
             >
               <Edit3 size={14} />
             </button>
@@ -242,15 +337,17 @@ function ConnectionRow({
           <button
             onClick={() => mgr.duplicateConnection(connection)}
             className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
-            title={t('connections.clone')}
+            title={t("connections.clone")}
             data-testid="row-clone"
           >
             <Copy size={14} />
           </button>
           <button
-            onClick={() => mgr.duplicateConnection(connection, { includeCredentials: true })}
+            onClick={() =>
+              mgr.duplicateConnection(connection, { includeCredentials: true })
+            }
             className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
-            title={t('connections.cloneWithCredentials')}
+            title={t("connections.cloneWithCredentials")}
             data-testid="row-clone-with-credentials"
           >
             <KeyRound size={14} />
@@ -258,7 +355,7 @@ function ConnectionRow({
           <button
             onClick={() => mgr.deleteConnection(connection.id)}
             className="p-1.5 hover:bg-error/20 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
-            title="Delete"
+            title={t("common.delete", "Delete")}
           >
             <Trash2 size={14} />
           </button>
@@ -269,18 +366,19 @@ function ConnectionRow({
 }
 
 function ConnectionTable({ mgr }: { mgr: BulkConnectionEditorMgr }) {
+  const { t } = useTranslation();
   const ariaSortFor = (
-    field: 'name' | 'protocol' | 'hostname' | 'favorite',
-  ): React.AriaAttributes['aria-sort'] => {
-    if (mgr.sortField !== field) return 'none';
-    return mgr.sortDirection === 'asc' ? 'ascending' : 'descending';
+    field: "name" | "protocol" | "hostname" | "favorite",
+  ): React.AriaAttributes["aria-sort"] => {
+    if (mgr.sortField !== field) return "none";
+    return mgr.sortDirection === "asc" ? "ascending" : "descending";
   };
 
   const renderSortableHeader = (
     label: React.ReactNode,
-    field: 'name' | 'protocol' | 'hostname' | 'favorite',
+    field: "name" | "protocol" | "hostname" | "favorite",
     className: string,
-    buttonClassName = 'flex w-full items-center space-x-1 text-left hover:text-[var(--color-text)] transition-colors',
+    buttonClassName = "flex w-full items-center space-x-1 text-left hover:text-[var(--color-text)] transition-colors",
     ariaLabel?: string,
   ) => (
     <th className={className} aria-sort={ariaSortFor(field)}>
@@ -306,44 +404,89 @@ function ConnectionTable({ mgr }: { mgr: BulkConnectionEditorMgr }) {
                 onClick={mgr.toggleSelectAll}
                 className="p-1 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
                 aria-label={
-                  mgr.selectionState === 'all'
-                    ? 'Clear current selection'
-                    : 'Select all visible connections'
+                  mgr.selectionState === "all"
+                    ? t(
+                        "connections.bulkEditor.clearSelection",
+                        "Clear current selection",
+                      )
+                    : t(
+                        "connections.bulkEditor.selectAllVisible",
+                        "Select all visible connections",
+                      )
                 }
               >
-                {mgr.selectionState === 'all' && <CheckSquare size={16} className="text-primary" />}
-                {mgr.selectionState === 'partial' && <Minus size={16} className="text-primary" />}
-                {mgr.selectionState === 'none' && <Square size={16} />}
+                {mgr.selectionState === "all" && (
+                  <CheckSquare size={16} className="text-primary" />
+                )}
+                {mgr.selectionState === "partial" && (
+                  <Minus size={16} className="text-primary" />
+                )}
+                {mgr.selectionState === "none" && <Square size={16} />}
               </button>
             </th>
             {renderSortableHeader(
               <Star size={12} />,
-              'favorite',
-              'w-10 px-2 py-3',
-              'flex items-center space-x-1 hover:text-[var(--color-text)] transition-colors',
-              'Sort by favorite status',
+              "favorite",
+              "w-10 px-2 py-3",
+              "flex items-center space-x-1 hover:text-[var(--color-text)] transition-colors",
+              t(
+                "connections.bulkEditor.sortByFavorite",
+                "Sort by favorite status",
+              ),
             )}
-            {renderSortableHeader(<span>Name</span>, 'name', 'px-3 py-3 text-left')}
-            {renderSortableHeader(<span>Protocol</span>, 'protocol', 'w-28 px-3 py-3 text-left')}
-            {renderSortableHeader(<span>Hostname</span>, 'hostname', 'px-3 py-3 text-left')}
-            <th className="w-20 px-3 py-3 text-left">Port</th>
-            <th className="px-3 py-3 text-left">Username</th>
-            <th className="w-24 px-3 py-3 text-right">Actions</th>
+            {renderSortableHeader(
+              <span>{t("connection.name", "Name")}</span>,
+              "name",
+              "px-3 py-3 text-left",
+            )}
+            {renderSortableHeader(
+              <span>{t("connection.protocol", "Protocol")}</span>,
+              "protocol",
+              "w-28 px-3 py-3 text-left",
+            )}
+            {renderSortableHeader(
+              <span>{t("connection.hostname", "Hostname/IP")}</span>,
+              "hostname",
+              "px-3 py-3 text-left",
+            )}
+            <th className="w-20 px-3 py-3 text-left">
+              {t("connection.port", "Port")}
+            </th>
+            <th className="px-3 py-3 text-left">
+              {t("connection.username", "Username")}
+            </th>
+            <th className="w-24 px-3 py-3 text-right">
+              {t("connections.bulkEditor.actions", "Actions")}
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]/30">
           {mgr.filteredConnections.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-4 py-16 text-center text-[var(--color-textSecondary)]">
+              <td
+                colSpan={8}
+                className="px-4 py-16 text-center text-[var(--color-textSecondary)]"
+              >
                 <div className="flex flex-col items-center space-y-2">
                   <Search size={32} className="text-[var(--color-textMuted)]" />
-                  <span>{mgr.searchTerm ? 'No connections match your search' : 'No connections found'}</span>
+                  <span>
+                    {mgr.searchTerm
+                      ? t(
+                          "connections.bulkEditor.noSearchMatches",
+                          "No connections match your search",
+                        )
+                      : t("connections.noConnections", "No connections found")}
+                  </span>
                 </div>
               </td>
             </tr>
           ) : (
             mgr.filteredConnections.map((connection) => (
-              <ConnectionRow key={connection.id} connection={connection} mgr={mgr} />
+              <ConnectionRow
+                key={connection.id}
+                connection={connection}
+                mgr={mgr}
+              />
             ))
           )}
         </tbody>
@@ -353,30 +496,55 @@ function ConnectionTable({ mgr }: { mgr: BulkConnectionEditorMgr }) {
 }
 
 function BulkEditorFooter({ mgr }: { mgr: BulkConnectionEditorMgr }) {
+  const { t } = useTranslation();
   return (
     <div className="border-t border-[var(--color-border)] px-4 py-3 flex items-center justify-between text-xs bg-[var(--color-surfaceHover)]/50">
       <div className="flex items-center space-x-4">
         <span className="text-[var(--color-textSecondary)]">
-          Showing{' '}
-          <span className="text-[var(--color-text)] font-medium">{mgr.filteredConnections.length}</span> of{' '}
-          <span className="text-[var(--color-text)] font-medium">{mgr.connections.length}</span> connections
+          {t("connections.bulkEditor.showingPrefix", "Showing")}{" "}
+          <span className="text-[var(--color-text)] font-medium">
+            {mgr.filteredConnections.length}
+          </span>{" "}
+          {t("connections.bulkEditor.showingOf", "of")}{" "}
+          <span className="text-[var(--color-text)] font-medium">
+            {mgr.connections.length}
+          </span>{" "}
+          {t("connections.bulkEditor.connections", "connections")}
         </span>
         {mgr.filteredConnections.filter((c) => c.favorite).length > 0 && (
           <span className="flex items-center space-x-1 text-warning/80">
             <Star size={10} fill="currentColor" />
-            <span>{mgr.filteredConnections.filter((c) => c.favorite).length} favorites</span>
+            <span>
+              {t(
+                "connections.bulkEditor.favoritesCount",
+                "{{count}} favorites",
+                {
+                  count: mgr.filteredConnections.filter((c) => c.favorite)
+                    .length,
+                },
+              )}
+            </span>
           </span>
         )}
       </div>
       <div className="flex items-center space-x-3 text-[var(--color-textMuted)]">
         <span>
-          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">Double-click</kbd> to edit
+          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">
+            Double-click
+          </kbd>{" "}
+          {t("connections.bulkEditor.toEdit", "to edit")}
         </span>
         <span>
-          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">Enter</kbd> to save
+          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">
+            Enter
+          </kbd>{" "}
+          {t("connections.bulkEditor.toSave", "to save")}
         </span>
         <span>
-          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">Esc</kbd> to cancel edit
+          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[10px]">
+            Esc
+          </kbd>{" "}
+          {t("connections.bulkEditor.toCancelEdit", "to cancel edit")}
         </span>
       </div>
     </div>
@@ -384,6 +552,7 @@ function BulkEditorFooter({ mgr }: { mgr: BulkConnectionEditorMgr }) {
 }
 
 function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
+  const { t } = useTranslation();
   if (!mgr.showDeleteConfirm) return null;
   return (
     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-20">
@@ -392,26 +561,30 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           <div className="p-2 bg-error/20 rounded-lg">
             <Trash2 size={20} className="text-error" />
           </div>
-          <h3 className="text-lg font-semibold text-[var(--color-text)]">Delete Connections</h3>
+          <h3 className="text-lg font-semibold text-[var(--color-text)]">
+            {t("connections.bulkEditor.deleteTitle", "Delete Connections")}
+          </h3>
         </div>
         <p className="text-[var(--color-textSecondary)] mb-6">
-          Are you sure you want to delete{' '}
-          <span className="text-error font-medium">{mgr.selectedIds.size}</span> selected
-          connection(s)? This action cannot be undone.
+          {t(
+            "connections.bulkEditor.deleteConfirm",
+            "Are you sure you want to delete {{count}} selected connection(s)? This action cannot be undone.",
+            { count: mgr.selectedIds.size },
+          )}
         </p>
         <div className="flex justify-end space-x-3">
           <button
             onClick={() => mgr.setShowDeleteConfirm(false)}
             className="px-4 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
           >
-            Cancel
+            {t("dialogs.cancel", "Cancel")}
           </button>
           <button
             onClick={mgr.deleteSelected}
             className="px-4 py-2 bg-error hover:bg-error/80 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2"
           >
             <Trash2 size={14} />
-            <span>Delete</span>
+            <span>{t("connections.delete", "Delete")}</span>
           </button>
         </div>
       </div>

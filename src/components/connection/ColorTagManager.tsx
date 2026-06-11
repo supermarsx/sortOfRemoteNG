@@ -1,9 +1,13 @@
 import React from "react";
 import { Plus, Palette, Edit, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Modal, ModalHeader, ModalBody } from "../ui/overlays/Modal";
-import { EmptyState } from '../ui/display';
-import { useColorTagManager, PREDEFINED_COLORS } from "../../hooks/connection/useColorTagManager";
-import { Checkbox } from '../ui/forms';
+import { EmptyState } from "../ui/display";
+import {
+  useColorTagManager,
+  PREDEFINED_COLORS,
+} from "../../hooks/connection/useColorTagManager";
+import { Checkbox } from "../ui/forms";
 
 type Mgr = ReturnType<typeof useColorTagManager>;
 
@@ -27,6 +31,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
   colorTags,
   onUpdateColorTags,
 }) => {
+  const { t } = useTranslation();
   const mgr = useColorTagManager(colorTags, onUpdateColorTags);
 
   if (!isOpen) return null;
@@ -46,7 +51,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           title={
             <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center space-x-2">
               <Palette size={20} className="text-primary" />
-              <span>Color Tag Manager</span>
+              <span>{t("colorTags.title", "Color Tag Manager")}</span>
             </h2>
           }
           actions={
@@ -55,7 +60,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
               className="sor-btn-primary-sm"
             >
               <Plus size={14} />
-              <span>Add Tag</span>
+              <span>{t("colorTags.addTag", "Add Tag")}</span>
             </button>
           }
         />
@@ -65,12 +70,14 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           {mgr.showAddForm && (
             <div className="bg-[var(--color-border)] rounded-lg p-4 mb-6">
               <h3 className="text-[var(--color-text)] font-medium mb-4">
-                Add New Color Tag
+                {t("colorTags.addNew", "Add New Color Tag")}
               </h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className="sor-form-label">Tag Name</label>
+                  <label className="sor-form-label">
+                    {t("colorTags.tagName", "Tag Name")}
+                  </label>
                   <input
                     type="text"
                     value={mgr.newTag.name || ""}
@@ -78,12 +85,14 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                       mgr.setNewTag({ ...mgr.newTag, name: e.target.value })
                     }
                     className="sor-form-input"
-                    placeholder="Enter tag name"
+                    placeholder={t("colorTags.enterTagName", "Enter tag name")}
                   />
                 </div>
 
                 <div>
-                  <label className="sor-form-label">Color</label>
+                  <label className="sor-form-label">
+                    {t("colorTags.color", "Color")}
+                  </label>
                   <div className="flex items-center space-x-3">
                     <input
                       type="color"
@@ -97,7 +106,9 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                       {PREDEFINED_COLORS.map((color) => (
                         <button
                           key={color}
-                          onClick={() => mgr.setNewTag({ ...mgr.newTag, color })}
+                          onClick={() =>
+                            mgr.setNewTag({ ...mgr.newTag, color })
+                          }
                           className={`w-6 h-6 rounded border-2 transition-all ${
                             mgr.newTag.color === color
                               ? "border-[var(--color-border)] scale-110"
@@ -111,9 +122,18 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                 </div>
 
                 <label className="flex items-center space-x-2">
-                  <Checkbox checked={mgr.newTag.global || false} onChange={(v: boolean) => mgr.setNewTag({ ...mgr.newTag, global: v })} variant="form" />
+                  <Checkbox
+                    checked={mgr.newTag.global || false}
+                    onChange={(v: boolean) =>
+                      mgr.setNewTag({ ...mgr.newTag, global: v })
+                    }
+                    variant="form"
+                  />
                   <span className="text-[var(--color-textSecondary)]">
-                    Global tag (available for all connections)
+                    {t(
+                      "colorTags.globalTagDescription",
+                      "Global tag (available for all connections)",
+                    )}
                   </span>
                 </label>
 
@@ -122,13 +142,13 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                     onClick={() => mgr.setShowAddForm(false)}
                     className="sor-btn sor-btn-secondary"
                   >
-                    Cancel
+                    {t("dialogs.cancel", "Cancel")}
                   </button>
                   <button
                     onClick={mgr.handleAddTag}
                     className="sor-btn sor-btn-primary"
                   >
-                    Add Tag
+                    {t("colorTags.addTag", "Add Tag")}
                   </button>
                 </div>
               </div>
@@ -139,30 +159,40 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           {mgr.editingTag && (
             <div className="bg-[var(--color-border)] rounded-lg p-4 mb-6">
               <h3 className="text-[var(--color-text)] font-medium mb-4">
-                Edit Color Tag
+                {t("colorTags.editTitle", "Edit Color Tag")}
               </h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className="sor-form-label">Tag Name</label>
+                  <label className="sor-form-label">
+                    {t("colorTags.tagName", "Tag Name")}
+                  </label>
                   <input
                     type="text"
                     value={mgr.editingTag.name}
                     onChange={(e) =>
-                      mgr.setEditingTag({ ...mgr.editingTag!, name: e.target.value })
+                      mgr.setEditingTag({
+                        ...mgr.editingTag!,
+                        name: e.target.value,
+                      })
                     }
                     className="sor-form-input"
                   />
                 </div>
 
                 <div>
-                  <label className="sor-form-label">Color</label>
+                  <label className="sor-form-label">
+                    {t("colorTags.color", "Color")}
+                  </label>
                   <div className="flex items-center space-x-3">
                     <input
                       type="color"
                       value={mgr.editingTag.color}
                       onChange={(e) =>
-                        mgr.setEditingTag({ ...mgr.editingTag!, color: e.target.value })
+                        mgr.setEditingTag({
+                          ...mgr.editingTag!,
+                          color: e.target.value,
+                        })
                       }
                       className="w-12 h-8 rounded border border-[var(--color-border)]"
                     />
@@ -186,9 +216,15 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                 </div>
 
                 <label className="flex items-center space-x-2">
-                  <Checkbox checked={mgr.editingTag.global} onChange={(v: boolean) => mgr.setEditingTag({ ...mgr.editingTag!, global: v })} variant="form" />
+                  <Checkbox
+                    checked={mgr.editingTag.global}
+                    onChange={(v: boolean) =>
+                      mgr.setEditingTag({ ...mgr.editingTag!, global: v })
+                    }
+                    variant="form"
+                  />
                   <span className="text-[var(--color-textSecondary)]">
-                    Global tag
+                    {t("colorTags.globalTag", "Global tag")}
                   </span>
                 </label>
 
@@ -197,13 +233,13 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                     onClick={() => mgr.setEditingTag(null)}
                     className="sor-btn sor-btn-secondary"
                   >
-                    Cancel
+                    {t("dialogs.cancel", "Cancel")}
                   </button>
                   <button
                     onClick={mgr.handleUpdateTag}
                     className="sor-btn sor-btn-primary"
                   >
-                    Update
+                    {t("common.update", "Update")}
                   </button>
                 </div>
               </div>
@@ -213,15 +249,18 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           {/* Color Tags List */}
           <div className="space-y-3">
             <h3 className="text-[var(--color-text)] font-medium">
-              Existing Color Tags
+              {t("colorTags.existing", "Existing Color Tags")}
             </h3>
 
             {Object.values(colorTags).length === 0 ? (
               <EmptyState
                 icon={Palette}
                 iconSize={48}
-                message="No color tags created yet"
-                hint="Add a color tag to organize your connections"
+                message={t("colorTags.empty", "No color tags created yet")}
+                hint={t(
+                  "colorTags.emptyHint",
+                  "Add a color tag to organize your connections",
+                )}
                 className="py-8"
               />
             ) : (
@@ -241,7 +280,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                       </span>
                       {tag.global && (
                         <span className="ml-2 text-xs text-primary bg-primary/30 px-2 py-1 rounded">
-                          Global
+                          {t("colorTags.global", "Global")}
                         </span>
                       )}
                     </div>
@@ -251,14 +290,14 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                     <button
                       onClick={() => mgr.handleEditTag(tag)}
                       className="sor-icon-btn-sm"
-                      title="Edit"
+                      title={t("common.edit", "Edit")}
                     >
                       <Edit size={16} />
                     </button>
                     <button
                       onClick={() => mgr.handleDeleteTag(tag.id)}
                       className="sor-icon-btn-danger"
-                      title="Delete"
+                      title={t("common.delete", "Delete")}
                     >
                       <Trash2 size={16} />
                     </button>
