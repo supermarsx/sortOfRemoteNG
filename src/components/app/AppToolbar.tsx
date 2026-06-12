@@ -284,7 +284,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setRdpPanelOpen(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t("toolbar.rdpSessions", "RDP Sessions")}
+              title={t("toolbar.sessionManager", "Session Manager")}
             >
               <Cpu size={14} />
             </button>
@@ -294,7 +294,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               onClick={() => setShowInternalProxyManager(true)}
               disabled={noCollection}
               className="app-bar-button p-2"
-              title={t("toolbar.internalProxy", "Internal Proxy Manager")}
+              title={t("toolbar.sessionManager", "Session Manager")}
             >
               <ArrowUpDown size={14} />
             </button>

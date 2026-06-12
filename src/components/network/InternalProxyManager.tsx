@@ -82,7 +82,7 @@ const STATUS_META: Record<
   errors: { label: "Errors", tone: "err" },
 };
 
-function classifySession(s: {
+export function classifySession(s: {
   request_count: number;
   error_count: number;
   last_error?: string | null;
@@ -123,7 +123,9 @@ function classifySession(s: {
   return "errors";
 }
 
-const StatusBadge: React.FC<{ status: SessionStatus }> = ({ status }) => {
+export type { SessionStatus as ProxySessionStatus };
+
+export const StatusBadge: React.FC<{ status: SessionStatus }> = ({ status }) => {
   const meta = STATUS_META[status];
   const cls =
     meta.tone === "ok"
@@ -397,7 +399,7 @@ const LogDetailField: React.FC<{
   </div>
 );
 
-const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+export const ProxyLogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3">
     <div className="flex items-center justify-between">
       <p className="text-sm text-[var(--color-textSecondary)]">
@@ -433,7 +435,7 @@ const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
-const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+export const ProxyStatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     {/* Summary cards */}
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -663,8 +665,8 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
         <ErrorBanner error={mgr.error} onClear={() => mgr.setError("")} />
         <div className="flex-1 overflow-y-auto p-4">
           {mgr.activeTab === "sessions" && <SessionsTab mgr={mgr} />}
-          {mgr.activeTab === "logs" && <LogsTab mgr={mgr} />}
-          {mgr.activeTab === "stats" && <StatsTab mgr={mgr} />}
+          {mgr.activeTab === "logs" && <ProxyLogsTab mgr={mgr} />}
+          {mgr.activeTab === "stats" && <ProxyStatsTab mgr={mgr} />}
         </div>
       </div>
     </div>

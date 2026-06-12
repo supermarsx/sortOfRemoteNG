@@ -37,10 +37,10 @@ const ShortcutCreator = dynamic(
 const ProxyChainMenu = dynamic(() => import("../network/ProxyChainMenu"), {
   ssr: false,
 });
-const InternalProxyManager = dynamic(
+const SessionManager = dynamic(
   () =>
-    import("../network/InternalProxyManager").then(
-      (module) => module.InternalProxyManager,
+    import("../session/sessionManager/SessionManager").then(
+      (module) => module.SessionManager,
     ),
   { ssr: false },
 );
@@ -94,10 +94,6 @@ const SettingsTabContent = dynamic(
 );
 const ImportExport = dynamic(
   () => import("../ImportExport").then((m) => m.ImportExport),
-  { ssr: false },
-);
-const RDPSessionPanelTab = dynamic(
-  () => import("../rdp/RDPSessionPanel").then((m) => m.RDPSessionPanel),
   { ssr: false },
 );
 const TagManagerDialog = dynamic(
@@ -213,7 +209,18 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       )}
       {toolKey === "proxyChain" && <ProxyChainMenu isOpen onClose={onClose} />}
       {toolKey === "internalProxy" && (
-        <InternalProxyManager isOpen onClose={onClose} />
+        <SessionManager
+          isVisible
+          connections={state.connections}
+          activeBackendSessionIds={activeRdpBackendIds}
+          onClose={onClose}
+          onReattachSession={onReattachSession}
+          onDetachToWindow={onDetachToWindow}
+          onReconnect={onReconnect}
+          thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
+          thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
+          thumbnailInterval={settings.rdpSessionThumbnailInterval}
+        />
       )}
       {toolKey === "wol" && <WOLQuickTool isOpen onClose={onClose} />}
       {toolKey === "bulkSsh" && <BulkSSHCommander isOpen onClose={onClose} />}
@@ -289,7 +296,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
         </FeatureErrorBoundary>
       )}
       {toolKey === "rdpSessions" && (
-        <RDPSessionPanelTab
+        <SessionManager
           isVisible
           connections={state.connections}
           activeBackendSessionIds={activeRdpBackendIds}
