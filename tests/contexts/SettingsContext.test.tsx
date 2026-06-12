@@ -122,6 +122,77 @@ describe('SettingsContext', () => {
     expect(result.current.settings.language).toBe('de');
   });
 
+  it('applies same-window settings-updated events live without remount', async () => {
+    const mgr = SettingsManager.getInstance();
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mgr.loadSettings).toHaveBeenCalled();
+      });
+    });
+
+    // Sanity: starts at the loaded value, not the new one.
+    expect(result.current.settings.language).toBe('en');
+
+    // SettingsManager.saveSettings() dispatches the full merged blob as detail.
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('settings-updated', {
+          detail: { language: 'es', theme: 'dark' },
+        }),
+      );
+    });
+
+    // Same hook instance (no remount) now reflects the new value.
+    expect(result.current.settings.language).toBe('es');
+  });
+
+  it('does not re-persist when handling settings-updated (no loop)', async () => {
+    const mgr = SettingsManager.getInstance();
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mgr.loadSettings).toHaveBeenCalled();
+      });
+    });
+
+    vi.mocked(mgr.saveSettings).mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('settings-updated', {
+          detail: { language: 'pt', theme: 'dark' },
+        }),
+      );
+    });
+
+    expect(result.current.settings.language).toBe('pt');
+    // The listener must only setSettings — never call saveSettings (would loop).
+    expect(mgr.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed settings-updated detail', async () => {
+    const mgr = SettingsManager.getInstance();
+    const { result } = renderHook(() => useSettings(), { wrapper });
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mgr.loadSettings).toHaveBeenCalled();
+      });
+    });
+
+    expect(result.current.settings.language).toBe('en');
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('settings-updated', { detail: null }));
+    });
+
+    // Unchanged — guard rejected the malformed detail.
+    expect(result.current.settings.language).toBe('en');
+  });
+
   it('throws when used without provider', () => {
     expect(() => {
       renderHook(() => useSettings());

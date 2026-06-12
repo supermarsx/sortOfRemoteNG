@@ -683,6 +683,37 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [settingsManager]);
 
+  // Listen for same-window `settings-updated` DOM events. SettingsManager.
+  // saveSettings() dispatches this with the full merged settings blob whenever
+  // settings are persisted — including from the Settings dialog, which writes
+  // straight to the manager and never calls this context's updateSettings().
+  // Without this, the context value would stay frozen at mount and every
+  // useSettings() consumer (connection-tree click/folder behavior, etc.) would
+  // need an app restart to pick up changes. We ONLY push the incoming blob into
+  // setSettings here — never re-persist — so this cannot loop back into
+  // saveSettings. (Cross-window propagation stays on the separate
+  // `settings-sync` Tauri event above.)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<GlobalSettings>).detail;
+      if (!detail || typeof detail !== "object") return;
+      // Skip redundant renders when nothing actually changed (e.g. the
+      // context's own updateSettings already applied this blob before saving).
+      let changed = true;
+      try {
+        changed = JSON.stringify(settingsRef.current) !== JSON.stringify(detail);
+      } catch {
+        changed = true;
+      }
+      if (!changed) return;
+      settingsRef.current = detail;
+      setSettings(detail);
+    };
+    window.addEventListener("settings-updated", onUpdated);
+    return () => window.removeEventListener("settings-updated", onUpdated);
+  }, []);
+
   const contextValue = useMemo(
     () => ({ settings, updateSettings, reloadSettings }),
     [settings, updateSettings, reloadSettings],
