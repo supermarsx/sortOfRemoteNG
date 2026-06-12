@@ -33,28 +33,69 @@ export const DEFAULT_PORT = 3001;
 export const MAX_PORT_SCAN = 100;
 
 /**
- * Resolve whether a TCP port is free to bind on the loopback + all interfaces.
- * Uses a real bind attempt (the same operation `next dev` performs), so this
- * detects EADDRINUSE exactly as the dev server would.
+ * Try to bind a single (host, port) pair and report whether it's available.
+ * A "stack unavailable" error (e.g. no IPv6 on this machine) is NOT a conflict
+ * for our purposes — we only care about EADDRINUSE/EACCES, which mean something
+ * is actually holding the port on that stack.
  *
  * @param {number} port
- * @param {string} [host] bind host (default 0.0.0.0 to match `next dev`)
- * @returns {Promise<boolean>} true if the port is free
+ * @param {string} host
+ * @returns {Promise<boolean>} true if free (or the stack is unavailable here)
  */
-export function isPortFree(port, host = "0.0.0.0") {
+function tryBind(port, host) {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once("error", (err) => {
-      // EADDRINUSE / EACCES / EADDRNOTAVAIL all mean "cannot bind here".
       server.close(() => {});
-      resolve(false);
-      void err;
+      // Stack not present (no IPv6, etc.) -> not a real conflict on this stack.
+      if (
+        err &&
+        (err.code === "EADDRNOTAVAIL" ||
+          err.code === "EAFNOSUPPORT" ||
+          err.code === "EINVAL")
+      ) {
+        resolve(true);
+      } else {
+        // EADDRINUSE / EACCES -> occupied or unusable.
+        resolve(false);
+      }
     });
     server.once("listening", () => {
       server.close(() => resolve(true));
     });
-    server.listen(port, host);
+    try {
+      server.listen(port, host);
+    } catch {
+      resolve(false);
+    }
   });
+}
+
+/**
+ * Resolve whether a TCP port is free to bind, checking BOTH network stacks.
+ *
+ * CRITICAL: `next dev` binds the IPv6 dual-stack wildcard (`::`, which surfaces
+ * as ":::<port>" in an EADDRINUSE error and also covers IPv4). A probe that only
+ * tried IPv4 `0.0.0.0` would report a port "free" while an IPv6 `::` listener
+ * still held it -> the resolver would hand back the "free" port WITHOUT climbing,
+ * and `next dev` would then EADDRINUSE on `:::<port>`. (This was the bug: the
+ * increment-until-free fallback never triggered because the probe and the real
+ * bind were checking different stacks.)
+ *
+ * We therefore treat a port as free only if it can be bound on BOTH `0.0.0.0`
+ * (IPv4) AND `::` (IPv6 dual-stack) — matching what the dev server actually does.
+ *
+ * @param {number} port
+ * @returns {Promise<boolean>} true if the port is free on every relevant stack
+ */
+export async function isPortFree(port) {
+  // Order matters only for speed: check IPv6 dual-stack first since that's what
+  // next dev binds and is the most common holder.
+  for (const host of ["::", "0.0.0.0"]) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await tryBind(port, host))) return false;
+  }
+  return true;
 }
 
 /**
