@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack --port 3001",
+    "dev": "node ./scripts/dev-server.mjs",
+    "dev:check": "node ./scripts/dev-server.mjs --check",
     "build": "next build",
     "stage:opkssh-vendor": "node ./scripts/stage-opkssh-vendor.mjs",
     "stage:opkssh-vendor:enable": "node ./scripts/stage-opkssh-vendor.mjs --enable",
@@ -19,7 +20,7 @@
     "test:import-export": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --config vitest.import-export.config.ts --run",
     "test:coverage:import-export": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --config vitest.import-export.config.ts --run --coverage",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev --features full-dev -- --no-default-features",
+    "tauri:dev": "node ./scripts/tauri-dev.mjs --features full-dev -- --no-default-features",
     "tauri:build": "tauri build --features full-dev -- --no-default-features",
     "turbo:dev": "turbo dev",
     "turbo:build": "turbo build",
