@@ -5,6 +5,7 @@ export * from "./useSSHAgentManager";
 export * from "./useSSHCommandHistory";
 export * from "./useSSHKeyManager";
 export * from "./useSSHOptions";
+export * from "./useSSH3Terminal";
 export * from "./useSSHOverrides";
 export * from "./useTerminalBackground";
 export * from "./useWebTerminal";
