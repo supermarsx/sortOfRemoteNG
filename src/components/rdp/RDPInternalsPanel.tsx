@@ -33,7 +33,15 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
   const lifecycleSnapshot = lifecycle ?? stats?.lifecycle ?? null;
   const channelSummary = lifecycleSnapshot?.channelSummary ?? null;
   const frameFlow = lifecycleSnapshot?.frameFlowSummary ?? null;
+  // Tier-B RDPGFX diagnostics ride on the stats event (absent when GFX disabled).
+  const gfx = stats?.gfx ?? null;
   const noValue = '\u2013';
+  // Map the raw snake_case FailureClass (backend session_state.rs) to a
+  // human-readable label; fall back to the raw value for unknown classes so a
+  // future backend class still renders meaningfully. Raw value stays as the
+  // tooltip for diagnostics.
+  const failureClassLabel = (raw: string): string =>
+    t(`rdpInternals.failureClassLabel.${raw}`, { defaultValue: raw });
   return (
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between mb-3">
@@ -79,7 +87,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
                 className={`font-mono truncate ${lifecycleSnapshot.lastFailureClass ? 'text-error' : 'text-[var(--color-textSecondary)]'}`}
                 title={lifecycleSnapshot.lastFailureClass ?? undefined}
               >
-                {lifecycleSnapshot.lastFailureClass ?? noValue}
+                {lifecycleSnapshot.lastFailureClass
+                  ? failureClassLabel(lifecycleSnapshot.lastFailureClass)
+                  : noValue}
               </div>
             </div>
           </>
@@ -130,6 +140,42 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
               <div className="text-[var(--color-textMuted)] mb-1">{t('rdpInternals.avgRender', 'Avg Render')}</div>
               <div className="text-[var(--color-text)] font-mono">
                 {typeof frameFlow.averageRenderMs === 'number' ? t('rdpInternals.value.ms', { ms: frameFlow.averageRenderMs.toFixed(1), defaultValue: '{{ms}}ms' }) : noValue}
+              </div>
+            </div>
+          </>
+        )}
+        {gfx && (
+          <>
+            <div className="bg-[var(--color-background)] rounded p-2">
+              <div className="text-[var(--color-textMuted)] mb-1">{t('rdpInternals.gfxCodec', 'GFX Codec')}</div>
+              <div
+                className={`font-mono ${(gfx.summary?.readyCount ?? 0) > 0 ? 'text-success' : 'text-[var(--color-textSecondary)]'}`}
+                title={typeof gfx.capVersion === 'number' ? `capVersion 0x${gfx.capVersion.toString(16).toUpperCase()}` : undefined}
+              >
+                {gfx.codec ?? noValue}
+              </div>
+            </div>
+            <div className="bg-[var(--color-background)] rounded p-2">
+              <div className="text-[var(--color-textMuted)] mb-1">{t('rdpInternals.gfxSurfaces', 'GFX Surfaces')}</div>
+              <div className="text-[var(--color-text)] font-mono">{(gfx.surfacesActive ?? 0).toLocaleString()}</div>
+            </div>
+            <div className="bg-[var(--color-background)] rounded p-2">
+              <div className="text-[var(--color-textMuted)] mb-1">{t('rdpInternals.gfxFrames', 'GFX Frames')}</div>
+              <div className="text-info font-mono">
+                {(gfx.framesDecoded ?? 0).toLocaleString()}
+                <span className="text-[var(--color-textMuted)]">
+                  {' '}
+                  {t('rdpInternals.gfxAcks', { acks: (gfx.frameAcksSent ?? 0).toLocaleString(), defaultValue: '({{acks}} acks)' })}
+                </span>
+              </div>
+            </div>
+            <div className="bg-[var(--color-background)] rounded p-2">
+              <div className="text-[var(--color-textMuted)] mb-1">{t('rdpInternals.gfxErrors', 'GFX Errors')}</div>
+              <div
+                className={`font-mono ${(gfx.pipelineErrors ?? 0) > 0 ? 'text-error' : 'text-success'}`}
+                title={gfx.lastErrorClass ?? undefined}
+              >
+                {(gfx.pipelineErrors ?? 0).toLocaleString()}
               </div>
             </div>
           </>

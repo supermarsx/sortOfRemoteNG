@@ -82,6 +82,12 @@ impl SurfaceManager {
         self.surfaces.get(&surface_id)
     }
 
+    /// Number of currently-allocated surfaces. Surfaced into the GFX
+    /// diagnostics snapshot so the panel can show "surfaces active".
+    pub fn active_count(&self) -> u16 {
+        self.surfaces.len().min(u16::MAX as usize) as u16
+    }
+
     /// Blit decoded RGBA data into a surface at the given dest rect.
     ///
     /// `src_data` is contiguous RGBA with stride = `src_width * 4`.
@@ -140,6 +146,19 @@ mod tests {
     fn new_manager_has_no_surfaces() {
         let mgr = SurfaceManager::new();
         assert!(mgr.get_surface(0).is_none());
+        assert_eq!(mgr.active_count(), 0);
+    }
+
+    #[test]
+    fn active_count_tracks_create_and_delete() {
+        let mut mgr = SurfaceManager::new();
+        mgr.create_surface(1, 4, 4);
+        mgr.create_surface(2, 4, 4);
+        assert_eq!(mgr.active_count(), 2);
+        mgr.delete_surface(1);
+        assert_eq!(mgr.active_count(), 1);
+        mgr.reset();
+        assert_eq!(mgr.active_count(), 0);
     }
 
     #[test]

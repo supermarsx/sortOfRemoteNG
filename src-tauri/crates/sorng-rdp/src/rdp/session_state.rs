@@ -582,6 +582,32 @@ impl LifecycleStateMachine {
         }
     }
 
+    /// Stamp the typed failure class onto the snapshot WITHOUT changing the
+    /// projected state.
+    ///
+    /// The runner drives the linear connect/disconnect phases through the
+    /// string-based phase projection (`force_state(SessionState::from(phase))`).
+    /// That projection has no channel to carry a per-error `FailureClass`, so
+    /// `SessionState::from(ConnectionPhase::Error)` is hardwired to
+    /// `Failed(ProtocolViolation)`. This setter lets the runner record the
+    /// *real* class (auth/trust/network/…) classified from the error message,
+    /// independently of the state machine's default. Because `snapshot()`
+    /// prefers `self.last_failure_class` over the state-derived class, the
+    /// value stamped here is authoritative for the emitted snapshot.
+    ///
+    /// Used for both terminal-failure stamping (after `force_state("error")`,
+    /// to correct the default `ProtocolViolation`) and for the reconnect path,
+    /// where the state stays `Reconnecting` (which carries no class of its own)
+    /// but the diagnostics should still surface `NetworkTransient`.
+    pub fn set_last_failure_class(&mut self, class: FailureClass) {
+        self.last_failure_class = Some(class);
+    }
+
+    /// The currently recorded failure class, if any.
+    pub fn last_failure_class(&self) -> Option<&FailureClass> {
+        self.last_failure_class.as_ref()
+    }
+
     pub fn force_state(&mut self, state: SessionState, now_ms: u64) -> SessionStateSnapshot {
         let state_changed = self.state != state;
         if state_changed {
@@ -1026,6 +1052,79 @@ mod tests {
         assert!(!encoded.contains("username"));
         assert!(!encoded.contains("host"));
         assert!(!encoded.contains("pdu"));
+    }
+
+    #[test]
+    fn set_last_failure_class_stamps_class_without_changing_state() {
+        // Simulate the runner ordering: phase projection to the terminal error
+        // state stamps the default ProtocolViolation, then the runner corrects
+        // it with the real classified class (R1: default-class clobber).
+        let mut machine = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Active(ActiveSubstate::Running),
+            0,
+        );
+
+        // Phase projection: ConnectionPhase::Error -> Terminated(Failed(ProtocolViolation)).
+        machine.force_state(
+            SessionState::Terminated(TerminationReason::Failed(FailureClass::ProtocolViolation)),
+            10,
+        );
+        assert_eq!(
+            machine.snapshot().last_failure_class.as_deref(),
+            Some("protocol_violation")
+        );
+        let count_after_force = machine.transition_count();
+
+        // Runner stamps the real class AFTER the phase transition.
+        machine.set_last_failure_class(FailureClass::AuthRejected);
+
+        // The stamped class wins; state and transition count are untouched.
+        assert_eq!(machine.state().name(), "terminated");
+        assert_eq!(machine.transition_count(), count_after_force);
+        assert_eq!(
+            machine.last_failure_class(),
+            Some(&FailureClass::AuthRejected)
+        );
+        let snapshot = machine.snapshot();
+        assert_eq!(snapshot.state, "terminated");
+        assert_eq!(snapshot.last_failure_class.as_deref(), Some("auth_rejected"));
+    }
+
+    #[test]
+    fn set_last_failure_class_records_network_class_on_reconnecting_state() {
+        // The reconnect path keeps the Reconnecting state (which carries no
+        // class of its own) but should still surface NetworkTransient.
+        let mut machine = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Reconnecting(ReconnectContext::network_lost(2, 0)),
+            0,
+        );
+        assert_eq!(machine.snapshot().last_failure_class, None);
+
+        machine.set_last_failure_class(FailureClass::NetworkTransient);
+
+        let snapshot = machine.snapshot();
+        assert_eq!(snapshot.state, "reconnecting");
+        assert_eq!(snapshot.reconnect_attempt, 2);
+        assert_eq!(
+            snapshot.last_failure_class.as_deref(),
+            Some("network_transient")
+        );
+    }
+
+    #[test]
+    fn set_last_failure_class_snapshot_stays_secret_safe() {
+        let mut machine = LifecycleStateMachine::with_state(
+            "session-1",
+            SessionState::Terminated(TerminationReason::Failed(FailureClass::ProtocolViolation)),
+            0,
+        );
+        machine.set_last_failure_class(FailureClass::TrustRejected);
+        let encoded = serde_json::to_string(&machine.snapshot()).unwrap();
+        assert!(encoded.contains("trust_rejected"));
+        assert!(!encoded.contains("password"));
+        assert!(!encoded.contains("username"));
     }
 
     #[test]

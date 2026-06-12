@@ -69,6 +69,11 @@ pub struct RdpStatsEvent {
     pub last_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lifecycle: Option<SessionStateSnapshot>,
+    /// RDPGFX Tier-B graphics-pipeline diagnostics (codec/cap/surfaces/frames/
+    /// acks/errors). `None` when GFX is disabled. Serializes as a `gfx` object
+    /// with camelCase keys for the panel's Graphics row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gfx: Option<crate::gfx::processor::GfxDiagnostics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

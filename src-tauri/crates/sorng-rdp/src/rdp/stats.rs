@@ -2,7 +2,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use super::session_state::{
-    ChannelSummary, FrameFlowSummary, LifecycleStateMachine, SessionState, SessionStateSnapshot,
+    ChannelSummary, FailureClass, FrameFlowSummary, LifecycleStateMachine, SessionState,
+    SessionStateSnapshot,
 };
 use super::types::RdpStatsEvent;
 
@@ -125,6 +126,12 @@ pub struct RdpSessionStats {
 
     /// Consecutive PDU-processing errors without a successful PDU.
     pub consecutive_pdu_errors: AtomicU64,
+
+    /// Latest RDPGFX Tier-B diagnostics snapshot (codec/cap/surfaces/frames/
+    /// acks/errors). The runner reads the GFX shared handle at each stats
+    /// interval and stashes it here so `to_event` can ride it on the stats event
+    /// for the panel's Graphics row. `None` when GFX is disabled.
+    gfx_diagnostics: std::sync::Mutex<Option<crate::gfx::processor::GfxDiagnostics>>,
 }
 
 impl Default for RdpSessionStats {
@@ -159,6 +166,16 @@ impl RdpSessionStats {
             last_keepalive_time_ms: AtomicU64::new(0),
             consecutive_zero_reads: AtomicU64::new(0),
             consecutive_pdu_errors: AtomicU64::new(0),
+            gfx_diagnostics: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Stash the latest RDPGFX Tier-B diagnostics snapshot so it rides the next
+    /// emitted stats event. Called by the runner at each stats interval after it
+    /// reads the GFX shared handle.
+    pub fn set_gfx_diagnostics(&self, gfx: Option<crate::gfx::processor::GfxDiagnostics>) {
+        if let Ok(mut slot) = self.gfx_diagnostics.lock() {
+            *slot = gfx;
         }
     }
 
@@ -196,6 +213,19 @@ impl RdpSessionStats {
     pub fn set_last_error(&self, err: &str) {
         if let Ok(mut e) = self.last_error.lock() {
             *e = Some(err.to_string());
+        }
+    }
+
+    /// Stamp the typed lifecycle failure class on the mutex-guarded FSM
+    /// WITHOUT changing the projected state.
+    ///
+    /// The runner calls this at its failure/terminal/network-loss sites after
+    /// it has classified the error, so the emitted lifecycle snapshot carries
+    /// the real `FailureClass` (auth/trust/network/…) instead of the default
+    /// `ProtocolViolation` stamped by the `error` phase projection.
+    pub fn set_failure_class(&self, class: FailureClass) {
+        if let Ok(mut lifecycle) = self.lifecycle.lock() {
+            lifecycle.set_last_failure_class(class);
         }
     }
 
@@ -364,6 +394,7 @@ impl RdpSessionStats {
             phase: self.get_phase(),
             last_error: self.last_error.lock().ok().and_then(|e| e.clone()),
             lifecycle: Some(self.lifecycle_snapshot(session_id)),
+            gfx: self.gfx_diagnostics.lock().ok().and_then(|g| g.clone()),
         }
     }
 

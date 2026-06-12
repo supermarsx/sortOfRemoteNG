@@ -34,12 +34,40 @@ export interface RDPStatsEvent {
   phase: string;
   last_error: string | null;
   lifecycle?: RDPLifecycleEvent;
+  /** RDPGFX (MS-RDPEGFX) graphics-pipeline diagnostics; absent when GFX is disabled. */
+  gfx?: RDPGfxDiagnostics;
 }
 
 export interface RDPChannelSummary {
   enabledCount: number;
   readyCount: number;
   failedCount: number;
+}
+
+/**
+ * RDPGFX graphics-pipeline diagnostics. `summary` mirrors the one-channel
+ * ready/fault view that also folds into the lifecycle channel summary; the
+ * remaining fields are GFX-specific (negotiated codec/cap version, surfaces,
+ * frames decoded, frame-acks, pipeline errors).
+ */
+export interface RDPGfxDiagnostics {
+  summary: RDPChannelSummary;
+  /** Negotiated capability version (CAPVERSION_*), once CapsConfirm arrives. */
+  capVersion?: number;
+  /** Negotiated codec name ("AVC444" | "AVC420" | "uncompressed" | …). */
+  codec?: string;
+  /** Surfaces currently allocated by the server. */
+  surfacesActive: number;
+  /** Total frames decoded (or NAL-forwarded in passthrough mode). */
+  framesDecoded: number;
+  /** Frame-acknowledge PDUs sent back to the server. */
+  frameAcksSent: number;
+  /** Recoverable per-frame pipeline errors (do NOT fault the channel). */
+  pipelineErrors: number;
+  /** Class of the most recent pipeline error. */
+  lastErrorClass?: string;
+  /** When true, raw H.264 NALs are forwarded for frontend WebCodecs decode. */
+  nalPassthrough: boolean;
 }
 
 export interface RDPFrameFlowSummary {

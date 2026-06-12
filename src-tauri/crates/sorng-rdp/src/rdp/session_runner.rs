@@ -25,7 +25,8 @@ use super::multimon::build_display_control_messages;
 use super::network::{
     extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient,
 };
-use super::session_state::{ChannelSummary, FrameFlowSummary};
+use super::cert_trust::classify_security_error_for_lifecycle;
+use super::session_state::{ChannelSummary, FailureClass, FrameFlowSummary};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
@@ -81,6 +82,53 @@ fn set_phase_and_emit_lifecycle(
     phase: &str,
 ) {
     stats.set_phase(phase);
+    emit_lifecycle_snapshot(event_emitter, stats, session_id);
+}
+
+/// Classify a runner-level failure message into a typed `FailureClass`.
+///
+/// Single source of truth: delegates to
+/// `classify_security_error_for_lifecycle` (cert_trust.rs) so the
+/// trust/auth/network/protocol buckets stay consistent across the codebase.
+/// Conservative by design — anything unrecognized falls back to
+/// `ProtocolViolation` (diagnostic-only; never gates behavior).
+fn classify_runner_failure(err_msg: &str) -> FailureClass {
+    classify_security_error_for_lifecycle(err_msg)
+}
+
+/// Drive the lifecycle into a terminal-failure state carrying the *real*
+/// `FailureClass` classified from `err_msg`, then emit the snapshot.
+///
+/// Ordering contract (plan R1 — default-class clobber): `set_phase("error")`
+/// transitions to `Terminated` and stamps the default `ProtocolViolation` via
+/// `force_state`. We therefore call `set_failure_class(real_class)` AFTER the
+/// phase transition so the authoritative class wins before the snapshot is
+/// emitted (`snapshot()` prefers the explicitly stamped class).
+fn set_failure_and_emit_lifecycle(
+    stats: &RdpSessionStats,
+    event_emitter: &DynEventEmitter,
+    session_id: &str,
+    err_msg: &str,
+) {
+    let class = classify_runner_failure(err_msg);
+    stats.set_phase("error");
+    stats.set_failure_class(class);
+    emit_lifecycle_snapshot(event_emitter, stats, session_id);
+}
+
+/// Drive the lifecycle into the `reconnecting` state and stamp the given
+/// failure class (network loss is `NetworkTransient`), then emit the snapshot.
+///
+/// The `Reconnecting` state carries no failure class of its own, so the class
+/// is stamped independently of the phase projection.
+fn set_reconnecting_and_emit_lifecycle(
+    stats: &RdpSessionStats,
+    event_emitter: &DynEventEmitter,
+    session_id: &str,
+    class: FailureClass,
+) {
+    stats.set_phase("reconnecting");
+    stats.set_failure_class(class);
     emit_lifecycle_snapshot(event_emitter, stats, session_id);
 }
 
@@ -213,6 +261,11 @@ struct EstablishedSession {
     /// was moved into DRDYNVC, letting the runner merge AUDIN's real
     /// ready/fault/enabled state into the lifecycle channel summary.
     audin_summary: Option<super::audin::SharedAudinSummary>,
+    /// Live RDPGFX diagnostics shared out of the `GfxProcessor` before it was
+    /// moved into DRDYNVC. Carries both the one-channel ready/fault summary
+    /// (merged into the lifecycle channel summary) and the Tier-B GFX signals
+    /// (codec/cap/surfaces/frames/acks/errors) ridden on the stats event.
+    gfx_diagnostics: Option<crate::gfx::processor::SharedGfxDiagnostics>,
 }
 
 // ---- Blocking RDP session runner ----
@@ -323,7 +376,10 @@ pub fn run_rdp_session(
             }
 
             log::error!("RDP session {session_id} error: {err_msg}");
-            set_phase_and_emit_lifecycle(&stats, &event_emitter, &session_id, "error");
+            // Classify the terminal error and stamp the real FailureClass so the
+            // diagnostics "Failure Class" row reflects auth/trust/network nuance
+            // rather than the default ProtocolViolation. (plan §3 / R1)
+            set_failure_and_emit_lifecycle(&stats, &event_emitter, &session_id, &err_msg);
             stats.set_last_error(&err_msg);
             let _ = event_emitter.emit_event(
                 "rdp://status",
@@ -884,6 +940,11 @@ fn establish_rdp_connection(
         ),
     );
 
+    // GFX is a DVC moved into DRDYNVC (like AUDIN), so the runner cannot call a
+    // method on the live processor. Clone the processor's shared diagnostics
+    // handle BEFORE the move, so the active-session loop can read GFX's live
+    // ready/fault state + the Tier-B GFX signals (codec/surfaces/frames/errors).
+    let mut gfx_diagnostics: Option<crate::gfx::processor::SharedGfxDiagnostics> = None;
     let gfx_frame_rx = if settings.gfx_enabled {
         let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxOutput>();
         let gfx_proc = crate::gfx::processor::GfxProcessor::new(
@@ -891,6 +952,7 @@ fn establish_rdp_connection(
             gfx_tx,
             settings.nal_passthrough,
         );
+        gfx_diagnostics = Some(gfx_proc.shared_diagnostics());
         drdynvc = drdynvc.with_dynamic_channel(gfx_proc);
         Some(gfx_rx)
     } else {
@@ -1304,6 +1366,7 @@ fn establish_rdp_connection(
         gfx_frame_rx,
         clipboard_state,
         audin_summary,
+        gfx_diagnostics,
     })
 }
 
@@ -1903,6 +1966,18 @@ fn run_active_session_loop(
             if let Some(ref audin_summary) = est.audin_summary {
                 if let Ok(summary) = audin_summary.lock() {
                     merge_channel_summary(&mut channel_summary, summary.clone());
+                }
+            }
+            // RDPGFX: the graphics-pipeline DVC is moved into DRDYNVC and publishes
+            // its live channel state + GFX-specific signals into the runner-held
+            // shared handle on every transition. Merge its one-channel ready/fault
+            // into the channel summary (Tier A, mirrors the AUDIN merge above) and
+            // stash the Tier-B snapshot onto the stats event for the panel's
+            // dedicated Graphics row.
+            if let Some(ref gfx_diagnostics) = est.gfx_diagnostics {
+                if let Ok(gfx) = gfx_diagnostics.lock() {
+                    merge_channel_summary(&mut channel_summary, gfx.summary.clone());
+                    stats.set_gfx_diagnostics(Some(gfx.clone()));
                 }
             }
             stats.set_channel_summary(channel_summary);
@@ -2638,7 +2713,16 @@ where
                     "RDP session {session_id}: reconnect attempt {reconnect_count} failed: {message}"
                 );
 
-                set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "reconnecting");
+                // A reconnect attempt failed — the session is in a transient
+                // network-loss recovery loop. Stamp NetworkTransient so the
+                // diagnostics row reflects the real class (the Reconnecting
+                // state carries no class of its own). (plan §3)
+                set_reconnecting_and_emit_lifecycle(
+                    stats,
+                    event_emitter,
+                    session_id,
+                    FailureClass::NetworkTransient,
+                );
                 let _ = event_emitter.emit_event(
                     "rdp://status",
                     serde_json::to_value(&RdpStatusEvent {
@@ -2723,6 +2807,13 @@ where
                     format!("Reconnecting ({reconnect_count}): {message}"),
                     session_id,
                 );
+                // Network-loss-driven reconnect → transient network class.
+                set_reconnecting_and_emit_lifecycle(
+                    stats,
+                    event_emitter,
+                    session_id,
+                    FailureClass::NetworkTransient,
+                );
             }
             SessionLoopExit::ReconnectRequested => {
                 reconnect_count += 1;
@@ -2736,10 +2827,11 @@ where
                     format!("Manual reconnect ({reconnect_count})"),
                     session_id,
                 );
+                // Manual reconnect is not a failure — leave the class untouched.
+                set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "reconnecting");
             }
         }
 
-        set_phase_and_emit_lifecycle(stats, event_emitter, session_id, "reconnecting");
         let _ = event_emitter.emit_event(
             "rdp://status",
             serde_json::to_value(&RdpStatusEvent {
