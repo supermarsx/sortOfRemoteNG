@@ -14,15 +14,24 @@ const TlsSection: React.FC<WinrmSectionProps> = ({ ws, update }) => (
     icon={<Shield size={14} className="text-info" />}
     defaultOpen
   >
+    <p className="text-xs text-[var(--color-textMuted)] mb-2 leading-relaxed">
+      By default this connection&apos;s certificate is trust-on-first-use:
+      pinned on first connect, rejected if it changes, and reviewable in the
+      Trust Center under Legacy TLS. The options below relax that to accept any
+      certificate (Always Trust) — useful for lab appliances, but it disables
+      change detection.
+    </p>
+
     <label className={CSS.label}>
       <Checkbox
         checked={ws.skipCaCheck ?? false}
         onChange={(v: boolean) => update({ skipCaCheck: v })}
       />
-      <span>Skip CA certificate validation <InfoTooltip text="Accept certificates not signed by a trusted Certificate Authority. Useful for self-signed certificates in lab environments." /></span>
+      <span>Trust certificate without verification (Always Trust) <InfoTooltip text="Accept the server certificate without trust-on-first-use pinning or CA validation — equivalent to an Always Trust override in the Trust Center. Useful for self-signed certificates in lab environments, but no change detection." /></span>
     </label>
     <p className="text-xs text-[var(--color-textMuted)] ml-5 mt-0.5 mb-2">
-      Accept self-signed or untrusted certificates. Useful for lab environments.
+      Accept self-signed or untrusted certificates without pinning. Useful for
+      lab environments.
     </p>
 
     <label className={CSS.label}>

@@ -376,6 +376,7 @@ interface TrustRecordGroupSectionProps {
   recordKeyPrefix: string;
   connectionId?: string;
   mgr: Mgr;
+  description?: React.ReactNode;
 }
 
 const TrustRecordGroupSection: React.FC<TrustRecordGroupSectionProps> = ({
@@ -385,6 +386,7 @@ const TrustRecordGroupSection: React.FC<TrustRecordGroupSectionProps> = ({
   recordKeyPrefix,
   connectionId,
   mgr,
+  description,
 }) => {
   if (records.length === 0) return null;
 
@@ -393,6 +395,11 @@ const TrustRecordGroupSection: React.FC<TrustRecordGroupSectionProps> = ({
       <h5 className="sor-sub-heading">
         {icon} {title} ({records.length})
       </h5>
+      {description && (
+        <p className="text-[11px] text-[var(--color-textMuted)] leading-relaxed mb-2 -mt-0.5">
+          {description}
+        </p>
+      )}
       <div className="space-y-2">
         {records.map((record, index) => (
           <TrustRecordRow
@@ -459,6 +466,27 @@ function renderTrustRecordGroups(
         recordKeyPrefix={`${recordKeyPrefix}-legacy-tls`}
         connectionId={connectionId}
         mgr={mgr}
+        description={
+          <>
+            TLS certificates for management clients that previously skipped
+            verification — Supermicro BMC, Hetzner, Oracle Cloud (OCI),
+            Warpgate, WinRM/PowerShell, and WMI. These now follow{" "}
+            <span className="text-[var(--color-textSecondary)] font-medium">
+              trust-on-first-use
+            </span>{" "}
+            by default: the certificate is pinned the first time you connect and
+            the connection is rejected if it changes later (possible
+            man-in-the-middle). These backends run without a prompt, so
+            &ldquo;Always Ask&rdquo; also behaves as trust-on-first-use for them.
+            Remove a record below to re-pin on the next connection. To keep the
+            old &ldquo;accept any certificate&rdquo; behaviour for a specific
+            host, set that connection&apos;s trust policy to{" "}
+            <span className="text-[var(--color-textSecondary)] font-medium">
+              Always Trust
+            </span>
+            .
+          </>
+        }
       />
     </>
   );
