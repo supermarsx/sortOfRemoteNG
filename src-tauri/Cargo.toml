@@ -207,6 +207,7 @@ members = [
   "crates/sorng-commands-access",
   "crates/sorng-smb",
   "crates/sorng-probes",
+  "crates/sorng-tls-trust",
 ]
 
 [workspace.dependencies]
@@ -541,3 +542,12 @@ ironrdp-dvc = { path = "patches/ironrdp-dvc" }
 # and underflowed for plaintexts shorter than SEGMENT_LENGTH. See the
 # PATCH comment in patches/office-crypto/src/crypto.rs.
 office-crypto = { path = "patches/office-crypto" }
+# Patched copy of h3 0.0.8 — adds a `Protocol::from_static(&'static str)`
+# constructor so the SSH3 client (sorng-ssh) can emit a custom
+# `:protocol = ssh3` extended-CONNECT pseudo-header. Upstream's `ext::Protocol`
+# is a CLOSED enum with no constructor for arbitrary tokens, which `ssh3`
+# servers require to route the conversation. The patch is minimal + additive
+# (one enum variant + constructor + as_str arm); see vendor/h3-ssh3/src/ext.rs
+# and `.orchestration/logs/t23-e7.md`. Version matches the locked 0.0.8 so it
+# applies cleanly and the whole workspace (incl. h3-quinn) uses the patched h3.
+h3 = { path = "vendor/h3-ssh3" }

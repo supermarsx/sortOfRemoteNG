@@ -94,7 +94,12 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let passkey_service = PasskeyService::new();
     app.manage(passkey_service.clone());
 
-    let ssh3_service: ssh3::Ssh3ServiceState = Arc::new(Mutex::new(Ssh3Service::new()));
+    // SSH3 (HTTP/3 over QUIC) service — wired with the real Tauri-backed event
+    // emitter so the interactive shell (t23-e4) can stream `ssh3-output` /
+    // `ssh3-error` / `ssh3-shell-closed` events to the terminal UI, mirroring
+    // the classic SSH service's `new_with_emitter` plumbing.
+    let ssh3_emitter = crate::event_bridge::from_app_handle(app.handle());
+    let ssh3_service: ssh3::Ssh3ServiceState = Ssh3Service::new_with_emitter(ssh3_emitter);
     app.manage(ssh3_service.clone());
 
     let backup_path = app_dir.join("backups");

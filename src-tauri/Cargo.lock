@@ -3602,6 +3602,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "h3"
+version = "0.0.8"
+dependencies = [
+ "bytes 1.11.1",
+ "fastrand",
+ "futures-util",
+ "http",
+ "pin-project-lite",
+ "tokio 1.52.1",
+]
+
+[[package]]
+name = "h3-quinn"
+version = "0.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4"
+dependencies = [
+ "bytes 1.11.1",
+ "futures 0.3.32",
+ "h3",
+ "quinn",
+ "tokio 1.52.1",
+ "tokio-util",
+]
+
+[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7088,6 +7114,7 @@ checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
 dependencies = [
  "bytes 1.11.1",
  "cfg_aliases",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -10451,10 +10478,13 @@ name = "sorng-hetzner"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dirs 6.0.0",
  "log 0.4.29",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-storage",
+ "sorng-tls-trust",
  "tokio 1.52.1",
  "uuid",
 ]
@@ -11146,10 +11176,13 @@ name = "sorng-oracle-cloud"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dirs 6.0.0",
  "log 0.4.29",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-storage",
+ "sorng-tls-trust",
  "tokio 1.52.1",
  "uuid",
 ]
@@ -11353,6 +11386,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "chrono",
+ "dirs 6.0.0",
  "futures 0.3.32",
  "hex 0.4.3",
  "hmac 0.12.1",
@@ -11367,6 +11401,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
+ "sorng-storage",
+ "sorng-tls-trust",
  "sspi",
  "tokio 1.52.1",
  "url",
@@ -11895,19 +11931,29 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
+ "bytes 1.11.1",
  "chrono",
  "data-encoding",
  "dirs 6.0.0",
  "futures 0.3.32",
+ "h3",
+ "h3-quinn",
  "hex 0.4.3",
+ "http",
+ "jsonwebtoken",
  "lazy_static",
  "log 0.4.29",
+ "quinn",
  "rand 0.8.6",
+ "rcgen",
  "regex",
  "rquickjs",
  "rsa 0.9.10",
  "russh",
  "russh-keys",
+ "rustls 0.23.40",
+ "rustls-native-certs 0.8.3",
+ "rustls-pemfile 2.2.0",
  "secrecy",
  "serde",
  "serde_json",
@@ -11922,6 +11968,7 @@ dependencies = [
  "totp-rs",
  "tracing",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -11983,12 +12030,16 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "chrono",
+ "dirs 6.0.0",
  "futures 0.3.32",
  "log 0.4.29",
  "reqwest 0.12.28",
+ "rustls 0.23.40",
  "serde",
  "serde_json",
  "sorng-bmc-common",
+ "sorng-storage",
+ "sorng-tls-trust",
  "tokio 1.52.1",
  "url",
  "uuid",
@@ -12151,6 +12202,23 @@ dependencies = [
  "tokio 1.52.1",
  "tokio-test",
  "uuid",
+]
+
+[[package]]
+name = "sorng-tls-trust"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "hex 0.4.3",
+ "log 0.4.29",
+ "reqwest 0.12.28",
+ "rustls 0.23.40",
+ "rustls-native-certs 0.8.3",
+ "sha2 0.10.9",
+ "sorng-storage",
+ "tempfile",
+ "x509-parser",
 ]
 
 [[package]]
@@ -12376,10 +12444,13 @@ name = "sorng-warpgate"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dirs 6.0.0",
  "log 0.4.29",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-storage",
+ "sorng-tls-trust",
  "tokio 1.52.1",
  "url",
  "uuid",
@@ -12419,6 +12490,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "chrono",
+ "dirs 6.0.0",
  "futures 0.3.32",
  "hex 0.4.3",
  "hmac 0.12.1",
@@ -12432,6 +12504,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
+ "sorng-storage",
+ "sorng-tls-trust",
  "tokio 1.52.1",
  "url",
  "uuid",

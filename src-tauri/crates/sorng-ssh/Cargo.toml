@@ -12,6 +12,10 @@ script-engine = ["dep:rquickjs"]
 # this off compiles the test binary to empty; `cargo test -- --ignored`
 # also skips it without the feature.
 docker-e2e = []
+# Opt-in marker for SSH3 e2e tests that talk to a live `ssh3` server (QUIC/H3).
+# Mirrors `docker-e2e`: leaving this off compiles the gated test binary to
+# empty. Later executors (t23-e3) add `tests/ssh3_golden_path.rs` behind it.
+ssh3-live-e2e = []
 
 [dependencies]
 sorng-core = { path = "../sorng-core" }
@@ -43,3 +47,37 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 tempfile = { workspace = true }
 secrecy = { version = "0.8", features = ["serde"] }
+# SSH3 pubkey auth (t23-e6): sign the SSH3 JWT bearer assertion (RS256 / EdDSA)
+# with the user's private key. Already in the workspace lock (used by
+# sorng-auth/cloud/gcp); ring-backed (matches the workspace ring mandate, no
+# aws-lc-rs crypto-provider clash). default `use_pem` feature gives the
+# from_rsa_pem / from_ed_der key loaders.
+jsonwebtoken = "9"
+
+# ── SSH3 transport: QUIC + HTTP/3 (native, not embedded upstream) ──────────
+# Matches the workspace quinn 0.11 / rustls 0.23 stack already used by
+# sorng-vpn (proxy.rs connect_quic_tunnel_static). h3 0.0.8 / h3-quinn 0.0.10
+# are the versions compatible with the locked quinn 0.11.9: older h3-quinn
+# (0.0.7) accessed quinn::StreamId's now-private `.0` field (E0616) — 0.0.10
+# uses the public `StreamId: Into<u64>` conversion and requires quinn ^0.11.7.
+# Pinned exactly per the plan (§7 risk 2); all h3 usage is isolated in
+# ssh3/transport.rs so a future bump touches one file.
+quinn = "0.11"
+rustls = { version = "0.23", features = ["ring"] }
+rustls-native-certs = "0.8"
+# mTLS client-cert auth (t23-e7): parse the client cert chain + private key
+# from a PEM bundle for `with_client_auth_cert`. 2.x API (`certs()` /
+# `private_key()` over rustls-pki-types). Already in the workspace lock.
+rustls-pemfile = "2"
+# Zeroize the raw PEM buffer that briefly holds the client private key.
+# Already in the workspace lock (pulled by secrecy et al.).
+zeroize = "1"
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+bytes = "1"
+http = "1"
+
+[dev-dependencies]
+# Generate a self-signed client cert + key PEM bundle to unit-test the SSH3
+# mTLS client-auth config build (t23-e7). Already in the workspace lock.
+rcgen = "0.12"

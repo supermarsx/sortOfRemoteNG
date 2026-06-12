@@ -24,7 +24,15 @@ pub async fn start_ssh3_shell(
     session_id: String,
 ) -> Result<String, String> {
     let mut service = state.lock().await;
-    let emitter: sorng_core::events::DynEventEmitter = std::sync::Arc::new(sorng_core::events::NoopEventEmitter);
+    // Pull the real emitter off the service (wired via `Ssh3Service::new_with_emitter`
+    // in state_registry, t23-e4), mirroring the classic SSH path
+    // (`ssh/commands_cmds.rs`). Falls back to a NoopEventEmitter only when no
+    // emitter is configured (e.g. tests / pre-e4 wiring) so behaviour stays
+    // honest rather than panicking.
+    let emitter: sorng_core::events::DynEventEmitter = service
+        .event_emitter
+        .clone()
+        .unwrap_or_else(|| std::sync::Arc::new(sorng_core::events::NoopEventEmitter));
     service.start_shell(&session_id, emitter).await
 }
 
@@ -114,21 +122,19 @@ pub async fn list_ssh3_sessions(
 
 #[tauri::command]
 pub async fn test_ssh3_connection(
-    _state: tauri::State<'_, Ssh3ServiceState>,
+    state: tauri::State<'_, Ssh3ServiceState>,
     config: Ssh3ConnectionConfig,
 ) -> Result<String, String> {
-    // Test connection without storing session
-    log::info!(
-        "SSH3: Testing connection to {}:{}",
-        config.host,
-        config.port
-    );
-
-    // In full implementation:
-    // 1. Establish QUIC connection
-    // 2. Authenticate
-    // 3. Disconnect immediately
-    // 4. Return result
-
+    // Real connect -> auth -> disconnect probe (no persisted session).
+    //
+    // Routes through the real `connect` seam (e2: real QUIC/H3 dial + HTTP
+    // `Authorization` auth), so this is a genuine round-trip: any transport or
+    // auth failure propagates as the real error (never the old hardcoded
+    // "SSH3 connection test successful"). On success we immediately disconnect
+    // (graceful QUIC close) and report success — no leaked session.
+    log::info!("SSH3: testing connection to {}:{}", config.host, config.port);
+    let mut service = state.lock().await;
+    let session_id = service.connect(config).await?;
+    let _ = service.disconnect(&session_id).await;
     Ok("SSH3 connection test successful".to_string())
 }
