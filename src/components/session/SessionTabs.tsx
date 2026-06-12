@@ -384,6 +384,13 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     return [...ungroupedIds, ...groupedIds];
   }, [orderedTabs]);
 
+  const contextMenuTargetSession = useMemo(() => {
+    if (!contextMenu) return null;
+    return sessions.find((session) => session.id === contextMenu.sessionId) ?? null;
+  }, [contextMenu, sessions]);
+
+  const isTabContextMenuOpen = contextMenu !== null && contextMenuTargetSession !== null;
+
   const focusTabById = (sessionId: string) => {
     requestAnimationFrame(() => {
       const tab = document.getElementById(`session-tab-${sessionId}`);
@@ -425,9 +432,18 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     setContextMenu(null);
     setGroupSubmenuOpen(false);
     setSendToSubmenuOpen(false);
+    setTileSubmenuOpen(false);
   };
 
   const closeGroupContextMenu = () => setGroupContextMenu(null);
+
+  useEffect(() => {
+    if (!contextMenu || contextMenuTargetSession) return;
+    setContextMenu(null);
+    setGroupSubmenuOpen(false);
+    setSendToSubmenuOpen(false);
+    setTileSubmenuOpen(false);
+  }, [contextMenu, contextMenuTargetSession]);
 
   const handleSubmenuTriggerKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -1140,17 +1156,17 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
       {/* Tab context menu */}
       <MenuSurface
-        isOpen={contextMenu !== null}
+        isOpen={isTabContextMenuOpen}
         onClose={closeContextMenu}
-        position={contextMenu}
+        position={isTabContextMenuOpen ? contextMenu : null}
         className="min-w-[180px]"
         dataTestId="session-tab-context-menu"
         ariaLabel="Session tab actions"
       >
-        {contextMenu && (() => {
+        {contextMenu && contextMenuTargetSession && (() => {
           const sessionId = contextMenu.sessionId;
           const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
-          const targetSession = sessions[sessionIndex];
+          const targetSession = contextMenuTargetSession;
           const isFirst = sessionIndex === 0;
           const isLast = sessionIndex === sessions.length - 1;
           const hasTabsToRight = sessionIndex < sessions.length - 1;
