@@ -8,6 +8,7 @@ import TerminalStatusBar from "./webTerminal/TerminalStatusBar";
 import TerminalBackgroundLayer from "./webTerminal/TerminalBackgroundLayer";
 import ScriptSelectorModal from "./webTerminal/ScriptSelectorModal";
 import SshTrustDialog from "./webTerminal/SshTrustDialog";
+import ProxyCommandConfirmDialog from "./webTerminal/ProxyCommandConfirmDialog";
 import SSHCommandHistoryPanel from "./commandHistory/SSHCommandHistoryPanel";
 
 const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
@@ -69,6 +70,7 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
 
       <ScriptSelectorModal mgr={mgr} />
       <SshTrustDialog mgr={mgr} />
+      <ProxyCommandConfirmDialog mgr={mgr} />
     </div>
   );
 };

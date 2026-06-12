@@ -71,7 +71,14 @@ mod x11 {
     pub use crate::ssh::x11::*;
 }
 // Shims for crate-root-level modules
-mod script {}
+mod script {
+    // E0425 shim: re-export crate::script so the included _cmds.rs files resolve
+    // ScriptResult/etc. when the `script-engine` feature is on. The glob is unused
+    // in feature configs that don't reference it through this path, so silence the
+    // unused-import warning without making the re-export conditional.
+    #[allow(unused_imports)]
+    pub use crate::script::*;
+}
 mod script_stub {
     pub use crate::script::*;
     pub const DISABLED_MESSAGE: &str =

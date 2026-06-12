@@ -26,11 +26,86 @@ use secrecy::ExposeSecret;
 
 use super::types::*;
 
+// ── Import-confirmation gate ──────────────────────────────────────────
+
+/// Stable, machine-detectable error code emitted when an unconfirmed
+/// (import/sync-origin) ProxyCommand is about to be executed.
+///
+/// The whole `spawn_proxy_command` / `connect_ssh` error surface is
+/// `Result<_, String>`, so this is returned as a string that BEGINS with this
+/// exact prefix. The Wave-2 frontend detects a confirmation-required failure by
+/// testing `error.startsWith("PROXY_COMMAND_CONFIRMATION_REQUIRED")` (and may
+/// strip the prefix to show the human-readable tail). Keep this literal stable.
+pub const PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE: &str =
+    "PROXY_COMMAND_CONFIRMATION_REQUIRED";
+
+/// Typed error for the ProxyCommand execution path. The crate's public API is
+/// stringly-typed (`Result<_, String>`); this enum exists so the gate and its
+/// tests have a single source of truth for the wire string via `Display`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyCommandError {
+    /// The ProxyCommand is configured but not yet confirmed by the user. It
+    /// arrived from an untrusted origin (import/sync) and must be reviewed and
+    /// confirmed once before it is allowed to execute.
+    ConfirmationRequired,
+}
+
+impl std::fmt::Display for ProxyCommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProxyCommandError::ConfirmationRequired => write!(
+                f,
+                "{}: This SSH connection's ProxyCommand has not been confirmed. \
+                 It may have been added via import or sync. Review the command \
+                 and confirm it once before connecting.",
+                PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE
+            ),
+        }
+    }
+}
+
+/// Compute a stable identity for an expanded ProxyCommand string. The backend
+/// confirmation registry is keyed by this so that confirming one specific
+/// command does not implicitly trust a *different* (e.g. edited or re-imported)
+/// command — any change re-arms the gate.
+fn command_fingerprint(expanded_cmd: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(expanded_cmd.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 // ── Global ProxyCommand state ─────────────────────────────────────────
 
 lazy_static::lazy_static! {
     /// Active ProxyCommand child processes indexed by SSH session id.
     pub static ref PROXY_COMMANDS: StdMutex<HashMap<String, ProxyCommandState>> = StdMutex::new(HashMap::new());
+
+    /// Fingerprints of ProxyCommand strings the user has explicitly confirmed
+    /// at runtime via [`confirm_proxy_command`]. This complements the
+    /// `command_confirmed` config flag: a confirmed flag (set by the in-app
+    /// editor for user-typed commands) bypasses the gate, and so does a runtime
+    /// confirmation recorded here (used by the Wave-2 review-and-confirm UI for
+    /// imported commands without rewriting persisted config).
+    static ref CONFIRMED_PROXY_COMMANDS: StdMutex<std::collections::HashSet<String>> =
+        StdMutex::new(std::collections::HashSet::new());
+}
+
+/// Record that the user has reviewed and confirmed a specific expanded
+/// ProxyCommand string. After this, [`spawn_proxy_command`] will execute that
+/// exact command even when its config carries `command_confirmed == false`.
+pub fn mark_proxy_command_confirmed(expanded_cmd: &str) {
+    if let Ok(mut set) = CONFIRMED_PROXY_COMMANDS.lock() {
+        set.insert(command_fingerprint(expanded_cmd));
+    }
+}
+
+/// Whether a given expanded ProxyCommand string has been confirmed at runtime.
+fn is_proxy_command_confirmed(expanded_cmd: &str) -> bool {
+    CONFIRMED_PROXY_COMMANDS
+        .lock()
+        .map(|set| set.contains(&command_fingerprint(expanded_cmd)))
+        .unwrap_or(false)
 }
 
 /// Runtime state for an active ProxyCommand process.
@@ -228,6 +303,23 @@ pub fn spawn_proxy_command(
     connect_timeout: u64,
 ) -> Result<TcpStream, String> {
     let cmd_string = build_command_string(config, host, port, username)?;
+
+    // ── Import-confirmation gate ──────────────────────────────────────
+    // ProxyCommand stays fully free-form, but a command from an untrusted
+    // origin (import/sync) must be confirmed once before it is ever spawned.
+    // It is allowed iff the config carries `command_confirmed == true` (set by
+    // the in-app editor for user-typed commands) OR the exact expanded command
+    // was confirmed at runtime via `confirm_proxy_command`. Otherwise we refuse
+    // — loudly and distinctly — rather than silently running or silently
+    // skipping it.
+    if !config.command_confirmed && !is_proxy_command_confirmed(&cmd_string) {
+        log::warn!(
+            "[{}] Refusing unconfirmed ProxyCommand (import/sync origin): {}",
+            session_id,
+            redact_proxy_credentials(&cmd_string)
+        );
+        return Err(ProxyCommandError::ConfirmationRequired.to_string());
+    }
 
     // Redact credentials from log output
     let redacted_cmd = redact_proxy_credentials(&cmd_string);
@@ -464,7 +556,125 @@ pub fn spawn_shell_command(cmd: &str) -> std::io::Result<Child> {
 
 #[cfg(test)]
 mod tests {
-    use super::redact_proxy_credentials;
+    use super::*;
+    use crate::ssh::types::ProxyCommandConfig;
+
+    fn free_form_config(command_confirmed: bool) -> ProxyCommandConfig {
+        ProxyCommandConfig {
+            command: Some("nc %h %p".to_string()),
+            template: None,
+            proxy_host: None,
+            proxy_port: None,
+            proxy_username: None,
+            proxy_password: None,
+            proxy_type: None,
+            timeout_secs: Some(5),
+            command_confirmed,
+        }
+    }
+
+    #[test]
+    fn unconfirmed_proxy_command_is_refused_with_confirmation_required() {
+        // An imported config defaults command_confirmed=false → must NOT spawn.
+        let cfg = free_form_config(false);
+        let err = spawn_proxy_command("sess-unconfirmed", &cfg, "host.example.com", 22, "user", 5)
+            .expect_err("unconfirmed ProxyCommand must be refused, not spawned");
+        assert!(
+            err.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE),
+            "error must carry the stable detection prefix, got: {err}"
+        );
+        // It must not have registered/spawned anything.
+        assert!(
+            get_proxy_command_status("sess-unconfirmed")
+                .unwrap()
+                .is_none(),
+            "refused ProxyCommand must not register a session"
+        );
+    }
+
+    #[test]
+    fn confirmed_flag_passes_the_gate() {
+        // command_confirmed=true (set by the in-app editor) bypasses the gate;
+        // we only need to prove it gets PAST the gate, so we hit a guaranteed
+        // failure AFTER the gate (a non-existent command still spawns the shell,
+        // so instead assert the error is NOT the confirmation-required one).
+        let cfg = free_form_config(true);
+        let result =
+            spawn_proxy_command("sess-confirmed-flag", &cfg, "host.example.com", 22, "user", 1);
+        // Regardless of whether the relay ultimately connects on this host, the
+        // gate must NOT be the thing that stopped it.
+        if let Err(e) = &result {
+            assert!(
+                !e.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE),
+                "confirmed-flag command must clear the gate, got: {e}"
+            );
+        }
+        let _ = stop_proxy_command("sess-confirmed-flag");
+    }
+
+    #[test]
+    fn runtime_confirmation_passes_the_gate() {
+        // An imported (unconfirmed) config is allowed once the EXACT expanded
+        // command is confirmed at runtime via mark_proxy_command_confirmed.
+        let cfg = free_form_config(false);
+        let expanded =
+            build_command_string(&cfg, "runtime.example.com", 2222, "alice").unwrap();
+        mark_proxy_command_confirmed(&expanded);
+
+        let result = spawn_proxy_command(
+            "sess-runtime-confirm",
+            &cfg,
+            "runtime.example.com",
+            2222,
+            "alice",
+            1,
+        );
+        if let Err(e) = &result {
+            assert!(
+                !e.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE),
+                "runtime-confirmed command must clear the gate, got: {e}"
+            );
+        }
+        let _ = stop_proxy_command("sess-runtime-confirm");
+    }
+
+    #[test]
+    fn runtime_confirmation_is_fingerprint_scoped() {
+        // Confirming one command must not implicitly trust a different one.
+        let cfg = free_form_config(false);
+        let expanded =
+            build_command_string(&cfg, "trusted.example.com", 22, "user").unwrap();
+        mark_proxy_command_confirmed(&expanded);
+
+        // A different host → different expansion → still gated.
+        let err =
+            spawn_proxy_command("sess-other", &cfg, "evil.example.com", 22, "user", 5)
+                .expect_err("a different command must remain gated");
+        assert!(err.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE));
+        let _ = stop_proxy_command("sess-trusted");
+    }
+
+    #[test]
+    fn confirmation_required_error_string_is_stable() {
+        let s = ProxyCommandError::ConfirmationRequired.to_string();
+        assert!(s.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE));
+    }
+
+    #[test]
+    fn no_proxy_command_configured_is_never_built_or_gated() {
+        // The connect path only reaches the gate when command OR template is
+        // set (service.rs: `proxy_cmd.command.is_some() || template.is_some()`).
+        // A config with neither is not a ProxyCommand connection at all — prove
+        // it doesn't even produce a command string to gate.
+        let mut cfg = free_form_config(false);
+        cfg.command = None;
+        cfg.template = None;
+        assert!(
+            build_command_string(&cfg, "host", 22, "user").is_err(),
+            "empty ProxyCommand config must not yield an executable command"
+        );
+    }
+
 
     #[test]
     fn redacts_inline_user_pass_at_host() {

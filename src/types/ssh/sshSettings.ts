@@ -714,6 +714,14 @@ export interface SSHConnectionConfig {
   proxyCommandPassword?: string;
   proxyCommandProxyType?: string;
   proxyCommandTimeout?: number;
+  /**
+   * Trust marker mirroring the Rust `ProxyCommandConfig.command_confirmed`.
+   * A ProxyCommand is only EXECUTED once the user has explicitly confirmed it.
+   * Imported/synced configs leave this `false`/undefined so the backend gate
+   * (`PROXY_COMMAND_CONFIRMATION_REQUIRED`) fires; the confirm flow persists
+   * `true` here after the user reviews the redacted command.
+   */
+  proxyCommandConfirmed?: boolean;
 
   // Mixed chain (SSH jumps + proxy hops)
   mixedChain?: MixedChainConfig;
@@ -795,6 +803,7 @@ export const defaultSSHConnectionConfig: SSHConnectionConfig = {
   proxyCommandPassword: undefined,
   proxyCommandProxyType: undefined,
   proxyCommandTimeout: undefined,
+  proxyCommandConfirmed: false,
 
   // Session settings
   requestPty: true,

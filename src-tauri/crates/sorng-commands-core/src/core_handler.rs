@@ -501,6 +501,7 @@ pub fn is_command(command: &str) -> bool {
             | "stop_proxy_command_cmd"
             | "test_proxy_command"
             | "expand_proxy_command"
+            | "confirm_proxy_command"
             | "http_fetch"
             | "http_get"
             | "http_post"
@@ -1759,6 +1760,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         ssh_commands::stop_proxy_command_cmd,
         ssh_commands::test_proxy_command,
         ssh_commands::expand_proxy_command,
+        ssh_commands::confirm_proxy_command,
         http_commands::http_fetch,
         http_commands::http_get,
         http_commands::http_post,

@@ -34,6 +34,12 @@ import { useSSHCommandHistory } from "./useSSHCommandHistory";
 
 /* ── Internal types ────────────────────────────────────────────── */
 
+/**
+ * Stable prefix the backend uses to refuse an unconfirmed (imported/synced)
+ * ProxyCommand. Mirrors Rust `PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE`.
+ */
+const PROXY_COMMAND_CONFIRMATION_REQUIRED = "PROXY_COMMAND_CONFIRMATION_REQUIRED";
+
 type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
 type SshOutputEvent = { session_id: string; data: string };
 type SshErrorEvent = { session_id: string; message: string };
@@ -116,6 +122,10 @@ export function useWebTerminal(
   const [hostKeyIdentity, setHostKeyIdentity] = useState<SshHostKeyIdentity | null>(null);
   const [sshTrustPrompt, setSshTrustPrompt] = useState<TrustVerifyResult | null>(null);
   const sshTrustResolveRef = useRef<((decision: HostKeyPromptDecision) => void) | null>(null);
+
+  /* ── ProxyCommand import-confirmation gate state ── */
+  const [proxyCommandPrompt, setProxyCommandPrompt] = useState<{ command: string } | null>(null);
+  const proxyCommandResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
   const keyPopupRef = useRef<HTMLDivElement>(null);
   const totpBtnRef = useRef<HTMLDivElement>(null);
   const [showTotpPanel, setShowTotpPanel] = useState(false);
@@ -509,6 +519,30 @@ export function useWebTerminal(
     let privateKeyPassphrase: string | null = null;
     let totpSecret: string | null = null;
     let proxyCommandPassword: string | null = null;
+
+    // ── ProxyCommand config (snake_case, mirrors Rust ProxyCommandConfig) ──
+    // Built once and reused for connect, expand, and confirm so the backend
+    // rebuilds the EXACT same expanded command (the confirmation fingerprint
+    // must match). Declared outside the try so the import-confirmation gate in
+    // the catch block can re-expand/confirm with identical inputs.
+    const hasProxyCommand = Boolean(
+      sshConnectionConfig.proxyCommand || sshConnectionConfig.proxyCommandTemplate,
+    );
+    const buildProxyCommandConfig = (confirmed: boolean): Record<string, unknown> | null =>
+      hasProxyCommand
+        ? {
+            command: sshConnectionConfig.proxyCommand || null,
+            template: sshConnectionConfig.proxyCommandTemplate || null,
+            proxy_host: sshConnectionConfig.proxyCommandHost || null,
+            proxy_port: sshConnectionConfig.proxyCommandPort || null,
+            proxy_username: sshConnectionConfig.proxyCommandUsername || null,
+            proxy_password: proxyCommandPassword,
+            proxy_type: sshConnectionConfig.proxyCommandProxyType || null,
+            timeout_secs: sshConnectionConfig.proxyCommandTimeout || null,
+            command_confirmed: confirmed,
+          }
+        : null;
+
     try {
       // Try reattaching to existing backend session
       if (currentSession.backendSessionId && !force) {
@@ -714,18 +748,10 @@ export function useWebTerminal(
           : null,
 
         // ── ProxyCommand ──
-        proxy_command: sshConnectionConfig.proxyCommand || sshConnectionConfig.proxyCommandTemplate
-          ? {
-              command: sshConnectionConfig.proxyCommand || null,
-              template: sshConnectionConfig.proxyCommandTemplate || null,
-              proxy_host: sshConnectionConfig.proxyCommandHost || null,
-              proxy_port: sshConnectionConfig.proxyCommandPort || null,
-              proxy_username: sshConnectionConfig.proxyCommandUsername || null,
-              proxy_password: proxyCommandPassword,
-              proxy_type: sshConnectionConfig.proxyCommandProxyType || null,
-              timeout_secs: sshConnectionConfig.proxyCommandTimeout || null,
-            }
-          : null,
+        // Seed command_confirmed from the persisted per-connection flag. An
+        // imported/synced config leaves it false → the backend gate fires and
+        // the catch block below runs the review-and-confirm flow.
+        proxy_command: buildProxyCommandConfig(sshConnectionConfig.proxyCommandConfirmed ?? false),
       };
 
       switch (authMethod) {
@@ -789,6 +815,72 @@ export function useWebTerminal(
         },
       }).catch(() => {});
     } catch (err: unknown) {
+      // ── ProxyCommand import-confirmation gate ──
+      // The backend refuses an unconfirmed (imported/synced) ProxyCommand with a
+      // distinct error. This is NOT a normal failure: show the user the exact
+      // (redacted) command, and on approval confirm + persist + retry.
+      const rawErr = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+      if (rawErr.startsWith(PROXY_COMMAND_CONFIRMATION_REQUIRED) && hasProxyCommand) {
+        try {
+          unlistenHostKeyPrompt?.();
+          unlistenHostKeyPrompt = null;
+          const proxyConfig = buildProxyCommandConfig(false);
+          const host = currentSession.hostname;
+          const port = currentConnection.port || 22;
+          const username = currentConnection.username || "";
+          // Fetch the exact redacted command for review.
+          const expanded = await invoke<string>("expand_proxy_command", {
+            config: proxyConfig,
+            host,
+            port,
+            username,
+          });
+          writeLine("\x1b[33mThis connection's ProxyCommand has not been confirmed (imported/synced).\x1b[0m");
+          const confirmed = await new Promise<boolean>((resolve) => {
+            proxyCommandResolveRef.current = resolve;
+            setProxyCommandPrompt({ command: expanded });
+          });
+          if (confirmed) {
+            // Record runtime confirmation (fingerprint-scoped) ...
+            await invoke<string>("confirm_proxy_command", {
+              config: proxyConfig,
+              host,
+              port,
+              username,
+            });
+            // ... and persist a durable flag on the stored connection so the
+            // backend's in-memory registry isn't required after a restart.
+            if (currentConnection) {
+              dispatch({
+                type: "UPDATE_CONNECTION",
+                payload: {
+                  ...currentConnection,
+                  sshConnectionConfigOverride: {
+                    ...(currentConnection.sshConnectionConfigOverride ?? {}),
+                    proxyCommandConfirmed: true,
+                  },
+                },
+              });
+            }
+            writeLine("\x1b[32mProxyCommand confirmed — retrying connection...\x1b[0m");
+            isConnecting.current = false;
+            // Retry; the gate is now cleared (runtime confirmation + persisted flag).
+            await initSshRef.current(true);
+            return;
+          }
+          // Declined: abort gracefully, do not execute the command.
+          writeLine("\x1b[31mProxyCommand not confirmed — connection aborted.\x1b[0m");
+          setStatusState("error");
+          setError("ProxyCommand not confirmed — connection aborted");
+          return;
+        } catch (gateErr) {
+          console.error("ProxyCommand confirmation flow failed:", gateErr);
+          // fall through to normal error handling below
+        } finally {
+          proxyCommandResolveRef.current = null;
+          setProxyCommandPrompt(null);
+        }
+      }
       const details = formatErrorDetails(err);
       const classification = classifySshError(details.message);
       console.error("SSH connection failed:", { kind: classification.kind, message: details.message, name: details.name, stack: details.stack });
@@ -809,6 +901,11 @@ export function useWebTerminal(
   },
   // eslint-disable-next-line react-hooks/exhaustive-deps -- all used functions are listed; refs read at call time
   [classifySshError, disconnectSsh, formatErrorDetails, isSsh, dispatch, restoreBuffer, setStatusState, writeLine]);
+
+  // Self-ref so the ProxyCommand confirm flow can retry the connection after
+  // the user approves the imported command (avoids a useCallback self-cycle).
+  const initSshRef = useRef(initSsh);
+  useEffect(() => { initSshRef.current = initSsh; }, [initSsh]);
 
   /* ── Input handling ── */
 
@@ -1308,6 +1405,10 @@ export function useWebTerminal(
     sshTrustPrompt,
     setSshTrustPrompt,
     sshTrustResolveRef,
+    /* ProxyCommand import-confirmation gate */
+    proxyCommandPrompt,
+    setProxyCommandPrompt,
+    proxyCommandResolveRef,
     /* TOTP */
     showTotpPanel,
     setShowTotpPanel,

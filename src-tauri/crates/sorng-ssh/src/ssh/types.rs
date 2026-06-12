@@ -1097,6 +1097,22 @@ pub struct ProxyCommandConfig {
     /// pipe (default: same as connect_timeout, or 15s).
     #[serde(default)]
     pub timeout_secs: Option<u64>,
+    /// Trust marker: a ProxyCommand is only EXECUTED when this is `true`.
+    ///
+    /// ProxyCommand stays fully free-form (OpenSSH parity) for the user's own
+    /// configs — there is no metacharacter validation or allowlist. The single
+    /// constraint added here is an anti-malicious-import gate: a ProxyCommand
+    /// that arrived via IMPORT/SYNC (untrusted origin) defaults `false` and is
+    /// refused at spawn time (`ProxyCommandError::ConfirmationRequired`) until
+    /// the user has explicitly reviewed and confirmed it ONCE.
+    ///
+    /// Rule: the in-app ProxyCommand editor (Wave-2 frontend) sets this `true`
+    /// for commands the user typed/edited themselves; importers/sync MUST leave
+    /// it at its `false` default so the gate fires. `#[serde(default)]` means
+    /// any config deserialised from an external source without this field is
+    /// treated as unconfirmed.
+    #[serde(default)]
+    pub command_confirmed: bool,
 }
 
 /// Built-in ProxyCommand templates.
@@ -1658,6 +1674,7 @@ mod tests {
                 proxy_password: Some(secret("proxy-command-pass")),
                 proxy_type: Some("socks5".to_string()),
                 timeout_secs: Some(15),
+                command_confirmed: true,
             }),
             pty_type: None,
             environment: HashMap::new(),
