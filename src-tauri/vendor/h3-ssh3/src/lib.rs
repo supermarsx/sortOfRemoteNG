@@ -1,4 +1,8 @@
 //! HTTP/3 client and server
+// Vendored third-party crate (hyperium/h3) — only the SSH3 `:protocol` patch is ours.
+// Suppress upstream cosmetic lints (elided-lifetime, unused, dead_code) so they don't
+// surface as warnings in our builds; we don't line-edit upstream code for lint hygiene.
+#![allow(warnings)]
 #![deny(missing_docs, clippy::self_named_module_files)]
 #![allow(clippy::derive_partial_eq_without_eq)]
 

@@ -12436,6 +12436,7 @@ dependencies = [
  "tun",
  "uuid",
  "which 7.0.3",
+ "windows-sys 0.59.0",
  "zeroize",
 ]
 

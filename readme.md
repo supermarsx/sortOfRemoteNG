@@ -145,6 +145,30 @@ npm run tauri:build
 
 Artifacts will be generated in `src-tauri/target/release/bundle/`.
 
+### 🔓 Releases are unsigned (open-source)
+
+sortOfRemoteNG is an open-source project and ships **unsigned** release
+artifacts — there is no paid Apple Developer ID or Windows Authenticode code-
+signing identity. Because of this, the OS will show an "unknown / unidentified
+publisher" warning the **first** time you launch a downloaded build. This is
+**normal and expected** for unsigned open-source desktop apps; it does not
+indicate the build is unsafe and does not affect functionality.
+
+How to run a release build:
+
+- **macOS (Gatekeeper):** right-click (or Control-click) the app and choose
+  **Open**, then confirm in the dialog. Alternatively, clear the quarantine
+  flag from a terminal: `xattr -dr com.apple.quarantine /path/to/sortOfRemoteNG.app`.
+- **Windows (SmartScreen):** on the "Windows protected your PC" prompt, click
+  **More info → Run anyway**.
+
+**Auto-updates are still integrity-verified.** Although the OS bundles are not
+code-signed, the auto-updater verifies every downloaded update against a free
+[minisign](https://jedisct1.github.io/minisign/) (Ed25519) signature whose
+public key is embedded in the app. This is a separate mechanism from OS code-
+signing: dropping paid code-signing does **not** weaken update integrity — a
+tampered or corrupted update is rejected before it is installed.
+
 ## ⚙️ Configuration & Auth
 
 The application supports local user authentication. By default, it looks for a `users.json` file.

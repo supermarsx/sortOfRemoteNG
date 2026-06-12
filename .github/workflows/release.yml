@@ -179,10 +179,10 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             message="macOS signing/notarization secrets missing: ${missing[*]}"
             if [ "$RELEASE_TIER" = "production" ]; then
-              echo "::error::$message"
-              exit 1
+              echo "::warning::$message - producing UNSIGNED macOS bundles (open-source unsigned release policy)."
+            else
+              echo "::warning::$message - producing unsigned macOS bundles for $RELEASE_TIER."
             fi
-            echo "::warning::$message - producing unsigned macOS bundles for $RELEASE_TIER."
           fi
 
       - name: Import Apple Developer ID certificate
@@ -220,10 +220,10 @@ jobs:
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             if [ "$RELEASE_TIER" = "production" ]; then
-              echo "::error::WINDOWS_CERT_THUMBPRINT is required for production Windows signing."
-              exit 1
+              echo "::warning::WINDOWS_CERT_THUMBPRINT missing - producing UNSIGNED Windows bundles (open-source unsigned release policy)."
+            else
+              echo "::warning::WINDOWS_CERT_THUMBPRINT missing - producing unsigned Windows bundles for $RELEASE_TIER."
             fi
-            echo "::warning::WINDOWS_CERT_THUMBPRINT missing - producing unsigned Windows bundles for $RELEASE_TIER."
           fi
 
       # ----------------------------------------------------------------------
