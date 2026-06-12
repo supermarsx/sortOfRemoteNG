@@ -19,6 +19,7 @@ interface SSHTunnelDialogProps {
     remotePort?: number;
     type: "local" | "remote" | "dynamic";
     autoConnect: boolean;
+    allowNonLoopbackBind?: boolean;
   } | null;
 }
 
@@ -30,6 +31,7 @@ const defaultForm: SSHTunnelCreateParams = {
   remotePort: 22,
   type: "local",
   autoConnect: false,
+  allowNonLoopbackBind: false,
 };
 
 export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
@@ -60,6 +62,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
           remotePort: editingTunnel.remotePort || 22,
           type: editingTunnel.type,
           autoConnect: editingTunnel.autoConnect,
+          allowNonLoopbackBind: editingTunnel.allowNonLoopbackBind ?? false,
         });
       } else {
         setForm(defaultForm);
@@ -180,6 +183,24 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
             >
               Auto-connect when associated connection starts
             </label>
+          </div>
+
+          <div className="pt-1">
+            <div className="flex items-center gap-2">
+              <Checkbox checked={form.allowNonLoopbackBind ?? false} onChange={(v: boolean) => setForm({ ...form, allowNonLoopbackBind: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary focus:ring-primary/50" />
+              <label
+                htmlFor="allowNonLoopbackBind"
+                className="text-sm text-[var(--color-text)]"
+              >
+                Allow binding to non-loopback (public) interface
+              </label>
+            </div>
+            <p className="text-xs text-[var(--color-textSecondary)] mt-1">
+              For security, the forward binds to 127.0.0.1 (loopback only) so the
+              tunnel is reachable from this machine only. Enable this to bind to
+              all interfaces (0.0.0.0) and deliberately expose the forward to
+              other hosts on the network.
+            </p>
           </div>
 
           </div>

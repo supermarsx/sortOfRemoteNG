@@ -20,6 +20,11 @@ export interface SSHTunnelConfig {
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   // Auto-connect when associated connection starts
   autoConnect: boolean;
+  // Allow the local forward to bind to a non-loopback (public/LAN) interface.
+  // Mirrors the Rust `PortForwardConfig.allow_non_loopback_bind` field.
+  // When false/undefined the forward binds to 127.0.0.1 (loopback only) and the
+  // backend rejects any non-loopback bind.
+  allowNonLoopbackBind?: boolean;
   // Error message if any
   error?: string;
   // Actual local port (may differ from requested if auto-assigned)
@@ -41,6 +46,9 @@ export interface SSHTunnelCreateParams {
   remotePort?: number;
   type?: 'local' | 'remote' | 'dynamic';
   autoConnect?: boolean;
+  // Opt in to binding the local forward to a non-loopback (public/LAN) interface.
+  // Default off = loopback-only (127.0.0.1).
+  allowNonLoopbackBind?: boolean;
 }
 
 interface PortForwardConfig {
@@ -49,6 +57,8 @@ interface PortForwardConfig {
   remote_host: string;
   remote_port: number;
   direction: 'Local' | 'Remote' | 'Dynamic';
+  // Mirrors Rust serde field `allow_non_loopback_bind` (#[serde(default)] = false).
+  allow_non_loopback_bind: boolean;
 }
 
 class SSHTunnelService {
@@ -135,6 +145,7 @@ class SSHTunnelService {
       type: params.type || 'local',
       status: 'disconnected',
       autoConnect: params.autoConnect ?? false,
+      allowNonLoopbackBind: params.allowNonLoopbackBind ?? false,
       createdAt: new Date(),
     };
 
@@ -163,6 +174,8 @@ class SSHTunnelService {
       remotePort: updates.remotePort ?? tunnel.remotePort,
       type: updates.type ?? tunnel.type,
       autoConnect: updates.autoConnect ?? tunnel.autoConnect,
+      allowNonLoopbackBind:
+        updates.allowNonLoopbackBind ?? tunnel.allowNonLoopbackBind,
     };
 
     this.tunnels.set(id, updated);
@@ -241,14 +254,20 @@ class SSHTunnelService {
         throw new Error('Remote host and port are required for non-dynamic tunnels');
       }
 
-      // Set up port forwarding
+      // Set up port forwarding.
+      // The local forward binds to loopback (127.0.0.1) by default. Binding to
+      // 0.0.0.0 (all interfaces) is only requested when the user has explicitly
+      // opted in via allowNonLoopbackBind; the backend rejects any non-loopback
+      // bind unless allow_non_loopback_bind is true.
+      const allowNonLoopback = tunnel.allowNonLoopbackBind ?? false;
       const portForwardConfig: PortForwardConfig = {
-        local_host: '127.0.0.1',
+        local_host: allowNonLoopback ? '0.0.0.0' : '127.0.0.1',
         local_port: localPort,
         remote_host: tunnel.type === 'dynamic' ? '127.0.0.1' : tunnel.remoteHost!,
         remote_port: tunnel.type === 'dynamic' ? 0 : tunnel.remotePort!,
-        direction: tunnel.type === 'local' ? 'Local' : 
+        direction: tunnel.type === 'local' ? 'Local' :
                    tunnel.type === 'remote' ? 'Remote' : 'Dynamic',
+        allow_non_loopback_bind: allowNonLoopback,
       };
 
       const portForwardId = await invoke<string>('setup_port_forward', {

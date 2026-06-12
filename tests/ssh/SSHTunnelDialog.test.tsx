@@ -115,4 +115,79 @@ describe("SSHTunnelDialog", () => {
       );
     });
   });
+
+  it("defaults the non-loopback bind toggle off and includes it in saved params", async () => {
+    const onSave = vi.fn();
+
+    renderWithProvider(
+      <SSHTunnelDialog
+        isOpen
+        onClose={() => {}}
+        onSave={onSave}
+        sshConnections={sshConnections}
+      />,
+    );
+
+    // The security hint and toggle are present.
+    expect(
+      screen.getByText(/Allow binding to non-loopback \(public\) interface/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/binds to 127\.0\.0\.1 \(loopback only\)/),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("My SSH Tunnel"), {
+      target: { value: "Loopback Tunnel" },
+    });
+    const sshSelectTrigger = screen.getAllByRole("combobox")[0];
+    fireEvent.click(sshSelectTrigger);
+    fireEvent.mouseDown(screen.getByText(/SSH Prod/));
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Tunnel" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Loopback Tunnel",
+          allowNonLoopbackBind: false,
+        }),
+      );
+    });
+  });
+
+  it("opts in to non-loopback bind when the toggle is enabled", async () => {
+    const onSave = vi.fn();
+
+    renderWithProvider(
+      <SSHTunnelDialog
+        isOpen
+        onClose={() => {}}
+        onSave={onSave}
+        sshConnections={sshConnections}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("My SSH Tunnel"), {
+      target: { value: "Public Tunnel" },
+    });
+    const sshSelectTrigger = screen.getAllByRole("combobox")[0];
+    fireEvent.click(sshSelectTrigger);
+    fireEvent.mouseDown(screen.getByText(/SSH Prod/));
+
+    // Toggle the non-loopback bind checkbox on. The auto-connect checkbox is
+    // the first checkbox; the non-loopback one is the last.
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[checkboxes.length - 1]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Tunnel" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Public Tunnel",
+          allowNonLoopbackBind: true,
+        }),
+      );
+    });
+  });
 });
