@@ -75,13 +75,19 @@ pub async fn diagnose_ssh_connection(
     private_key_passphrase: Option<String>,
     connect_timeout_secs: Option<u64>,
 ) -> Result<DiagnosticReport, String> {
+    // Wrap the incoming probe password in a `SecretString` at the command
+    // boundary (mirrors `commands_cmds.rs`/`service.rs` in the production SSH
+    // path) so it is zeroized on drop and never logged/`Debug`-printed while it
+    // is threaded into the blocking probe. The Tauri command signature still
+    // accepts a plain `Option<String>` so the IPC contract is unchanged.
     let h = host.clone();
+    let password: Option<secrecy::SecretString> = password.map(secrecy::SecretString::new);
     tokio::task::spawn_blocking(move || {
         run_ssh_diagnostics(
             &h,
             port,
             &username,
-            password.as_deref(),
+            password.as_ref(),
             private_key_path.as_deref(),
             private_key_passphrase.as_deref(),
             connect_timeout_secs.unwrap_or(10),

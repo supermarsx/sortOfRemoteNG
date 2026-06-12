@@ -1,3 +1,4 @@
+use secrecy::{ExposeSecret, SecretString};
 use ssh2::Session;
 use std::io::Read;
 use std::net::TcpStream;
@@ -6,11 +7,18 @@ use std::time::Duration;
 
 use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
+/// Run a deep SSH diagnostic probe.
+///
+/// The probe password is taken as a [`secrecy::SecretString`] (not a bare
+/// `&str`) so it is zeroized on drop and never logs/`Debug`-prints — matching
+/// the production SSH path (`ssh/service.rs`, which wraps every credential in
+/// `SecretString`). It is exposed only at the single `userauth_password` call
+/// site below.
 pub fn run_ssh_diagnostics(
     host: &str,
     port: u16,
     username: &str,
-    password: Option<&str>,
+    password: Option<&SecretString>,
     private_key_path: Option<&str>,
     private_key_passphrase: Option<&str>,
     timeout_secs: u64,
@@ -342,7 +350,7 @@ pub fn run_ssh_diagnostics(
 
     if !auth_ok {
         if let Some(pwd) = password {
-            match sess.userauth_password(username, pwd) {
+            match sess.userauth_password(username, pwd.expose_secret()) {
                 Ok(()) => {
                     auth_ok = true;
                     auth_detail = "Password authentication succeeded".into();

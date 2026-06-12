@@ -54,6 +54,20 @@ pub struct Ssh3ConnectionConfig {
     pub quic_config: Option<Ssh3QuicConfig>,
     /// Certificate for client authentication
     pub client_cert_path: Option<String>,
+    /// Optional **separate** private-key file for mTLS client authentication
+    /// (additive, t26-fuA).
+    ///
+    /// By default (`None`) the client certificate chain AND its private key are
+    /// expected in ONE PEM bundle at [`Self::client_cert_path`] (the original
+    /// t23-e7 behaviour). When this is `Some`, the certificate chain is read
+    /// from `client_cert_path` and the private key is read from this separate
+    /// file instead — the common deployment shape where the key lives in its own
+    /// (often more tightly permissioned) file. `#[serde(default)]` keeps the
+    /// field additive: existing callers that omit it get the bundle behaviour.
+    /// The key material is read into a buffer that is zeroized after parsing and
+    /// is never logged.
+    #[serde(default)]
+    pub client_key_path: Option<String>,
     /// Server certificate verification
     pub verify_server_cert: bool,
     /// Custom CA certificate path
@@ -98,6 +112,7 @@ impl Default for Ssh3ConnectionConfig {
             private_key_passphrase: None,
             quic_config: None,
             client_cert_path: None,
+            client_key_path: None,
             verify_server_cert: true,
             ca_cert_path: None,
             connect_timeout: Some(30),

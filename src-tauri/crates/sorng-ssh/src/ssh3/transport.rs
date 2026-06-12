@@ -119,21 +119,28 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
     }
 }
 
-/// Load a client-certificate chain + private key for mTLS from a PEM bundle.
+/// Load a client-certificate chain + private key for mTLS.
 ///
 /// SSH3 presents client certificates at the **TLS (mTLS) layer**, not via an
-/// HTTP `Authorization` header (see `auth.rs`). When the user configures
-/// [`Ssh3ConnectionConfig::client_cert_path`], it is a PEM file containing the
-/// client certificate chain (one or more `CERTIFICATE` blocks) and the matching
-/// private key (`PRIVATE KEY` / `RSA PRIVATE KEY` / `EC PRIVATE KEY`). The
-/// server then verifies the presented chain during the QUIC/TLS handshake.
+/// HTTP `Authorization` header (see `auth.rs`). The server then verifies the
+/// presented chain during the QUIC/TLS handshake.
+///
+/// Two layouts are supported:
+/// - **Single PEM bundle** (`key_path == None`): `cert_path` is a PEM file
+///   containing the client certificate chain (one or more `CERTIFICATE` blocks)
+///   AND the matching private key (`PRIVATE KEY` / `RSA PRIVATE KEY` /
+///   `EC PRIVATE KEY`). This is the original t23-e7 behaviour.
+/// - **Separate key file** (`key_path == Some`): the certificate chain is read
+///   from `cert_path` and the private key from `key_path` (t26-fuA). The cert
+///   file need not contain a key.
 ///
 /// ## Secrets
-/// The private-key bytes are read into a buffer that is **zeroized** before this
-/// function returns; the parsed `PrivateKeyDer` is moved into the rustls config
-/// and never logged. Only the cert count and key presence are logged.
+/// Any buffer that holds private-key bytes is **zeroized** before this function
+/// returns; the parsed `PrivateKeyDer` is moved into the rustls config and never
+/// logged. Only the cert count and key presence are logged.
 fn load_client_auth_material(
     cert_path: &str,
+    key_path: Option<&str>,
 ) -> Result<
     (
         Vec<rustls::pki_types::CertificateDer<'static>>,
@@ -143,40 +150,70 @@ fn load_client_auth_material(
 > {
     use zeroize::Zeroize;
 
-    let mut pem = std::fs::read(cert_path)
+    let mut cert_pem = std::fs::read(cert_path)
         .map_err(|e| format!("SSH3: could not read client certificate {cert_path}: {e}"))?;
 
-    // Parse the certificate chain.
+    // Parse the certificate chain from the cert file.
     let certs: Vec<rustls::pki_types::CertificateDer<'static>> =
-        rustls_pemfile::certs(&mut pem.as_slice())
+        rustls_pemfile::certs(&mut cert_pem.as_slice())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("SSH3: failed to parse client certificate PEM: {e}"))?;
     if certs.is_empty() {
-        pem.zeroize();
+        // The cert file may also have held a key (bundle layout); wipe it.
+        cert_pem.zeroize();
         return Err(format!(
             "SSH3: no CERTIFICATE block found in client certificate {cert_path}"
         ));
     }
 
-    // Parse the FIRST private key (PKCS#8 / PKCS#1 / SEC1) from the same bundle.
-    let key = rustls_pemfile::private_key(&mut pem.as_slice())
-        .map_err(|e| {
-            // The key never appears in the error; just the parse failure.
-            format!("SSH3: failed to parse client private key from {cert_path}: {e}")
-        })?
-        .ok_or_else(|| {
-            format!(
-                "SSH3: no PRIVATE KEY block found in client certificate bundle {cert_path} \
-                 (mTLS needs the cert chain AND its private key in the same PEM file)"
-            )
-        })?;
+    // Choose where the private key comes from: a separate file, or the same
+    // bundle as the cert chain.
+    let key = if let Some(key_path) = key_path {
+        // Separate key file: the cert PEM no longer needs to hold key material,
+        // so wipe it now and read the key from its own (often more tightly
+        // permissioned) file.
+        cert_pem.zeroize();
 
-    // Wipe the raw PEM (it held the key material) now that it's parsed.
-    pem.zeroize();
+        let mut key_pem = std::fs::read(key_path)
+            .map_err(|e| format!("SSH3: could not read client private key {key_path}: {e}"))?;
+        let key = rustls_pemfile::private_key(&mut key_pem.as_slice())
+            .map_err(|e| {
+                // The key never appears in the error; just the parse failure.
+                format!("SSH3: failed to parse client private key from {key_path}: {e}")
+            })?
+            .ok_or_else(|| {
+                format!("SSH3: no PRIVATE KEY block found in client key file {key_path}")
+            });
+        // Wipe the raw key PEM regardless of parse outcome.
+        key_pem.zeroize();
+        key?
+    } else {
+        // Single-bundle layout: parse the FIRST private key (PKCS#8 / PKCS#1 /
+        // SEC1) from the SAME file as the cert chain.
+        let key = rustls_pemfile::private_key(&mut cert_pem.as_slice())
+            .map_err(|e| {
+                format!("SSH3: failed to parse client private key from {cert_path}: {e}")
+            })?
+            .ok_or_else(|| {
+                format!(
+                    "SSH3: no PRIVATE KEY block found in client certificate bundle {cert_path} \
+                     (mTLS needs the cert chain AND its private key in the same PEM file, \
+                     or set client_key_path to a separate key file)"
+                )
+            });
+        // Wipe the raw bundle PEM (it held the key material) now that it's parsed.
+        cert_pem.zeroize();
+        key?
+    };
 
     log::debug!(
-        "SSH3: loaded client cert chain ({} cert(s)) + private key for mTLS",
-        certs.len()
+        "SSH3: loaded client cert chain ({} cert(s)) + private key for mTLS ({})",
+        certs.len(),
+        if key_path.is_some() {
+            "separate key file"
+        } else {
+            "single PEM bundle"
+        }
     );
     Ok((certs, key))
 }
@@ -191,8 +228,12 @@ fn load_client_auth_material(
 /// - When `config.client_cert_path` is set, configures **mTLS client auth**:
 ///   the client cert chain + key are presented in the QUIC/TLS handshake
 ///   ([`load_client_auth_material`]). This is SSH3's certificate auth method.
+///   When `config.client_key_path` is also set, the private key is loaded from
+///   that separate file (t26-fuA); otherwise the cert+key are read as one PEM
+///   bundle from `client_cert_path`.
 ///
-/// t23-e7 wired the mTLS client-auth path (`with_client_auth_cert`).
+/// t23-e7 wired the mTLS client-auth path (`with_client_auth_cert`); t26-fuA
+/// added the optional separate `client_key_path`.
 pub(crate) fn build_rustls_client_config(
     config: &Ssh3ConnectionConfig,
 ) -> Result<rustls::ClientConfig, String> {
@@ -249,7 +290,8 @@ pub(crate) fn build_rustls_client_config(
 
     // Choose client-auth: present an mTLS client cert if configured, else none.
     let mut tls = if let Some(cert_path) = config.client_cert_path.as_deref() {
-        let (chain, key) = load_client_auth_material(cert_path)?;
+        let (chain, key) =
+            load_client_auth_material(cert_path, config.client_key_path.as_deref())?;
         verified_builder
             .with_client_auth_cert(chain, key)
             .map_err(|e| format!("SSH3: failed to configure mTLS client certificate: {e}"))?
@@ -516,6 +558,56 @@ mod tests {
         let path = dir.path().join("client.pem");
         std::fs::write(&path, pem.as_bytes()).unwrap();
         (dir, path)
+    }
+
+    /// Write a self-signed client cert and its private key to SEPARATE temp PEM
+    /// files. Returns the tempdir guard plus the (cert_path, key_path) pair.
+    fn write_client_cert_and_key_files() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf)
+    {
+        let cert = rcgen::generate_simple_self_signed(vec!["ssh3-client".to_string()])
+            .expect("self-signed cert");
+        let dir = tempfile::tempdir().unwrap();
+        let cert_path = dir.path().join("client-cert.pem");
+        let key_path = dir.path().join("client-key.pem");
+        // Cert file: ONLY the certificate (no key) — the separate-key layout.
+        std::fs::write(&cert_path, cert.serialize_pem().expect("cert pem").as_bytes()).unwrap();
+        std::fs::write(&key_path, cert.serialize_private_key_pem().as_bytes()).unwrap();
+        (dir, cert_path, key_path)
+    }
+
+    #[test]
+    fn mtls_config_builds_from_separate_cert_and_key_files() {
+        // t26-fuA: when client_key_path points at a SEPARATE key file (and the
+        // cert file holds only the certificate chain), the rustls config still
+        // builds with mTLS client auth presented.
+        let (_dir, cert_path, key_path) = write_client_cert_and_key_files();
+        let mut config = Ssh3ConnectionConfig::default();
+        config.verify_server_cert = false; // independent of mTLS
+        config.client_cert_path = Some(cert_path.to_string_lossy().into_owned());
+        config.client_key_path = Some(key_path.to_string_lossy().into_owned());
+        let tls = build_rustls_client_config(&config)
+            .expect("mTLS client config builds from separate cert + key files");
+        assert_eq!(tls.alpn_protocols, vec![b"h3".to_vec()]);
+        // The config now carries a client-auth resolver (mTLS active).
+        assert!(
+            tls.client_auth_cert_resolver.has_certs(),
+            "mTLS config from separate files must carry a client certificate"
+        );
+    }
+
+    #[test]
+    fn mtls_separate_key_errors_on_missing_key_file() {
+        // When client_key_path is set but the key file is missing, fail cleanly
+        // (and the error references the key path, not the cert).
+        let (_dir, cert_path, _key_path) = write_client_cert_and_key_files();
+        let mut config = Ssh3ConnectionConfig::default();
+        config.client_cert_path = Some(cert_path.to_string_lossy().into_owned());
+        config.client_key_path = Some("/no/such/client-key.pem".to_string());
+        let err = build_rustls_client_config(&config).unwrap_err();
+        assert!(
+            err.contains("could not read client private key"),
+            "got: {err}"
+        );
     }
 
     #[test]
