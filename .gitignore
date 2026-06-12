@@ -89,3 +89,6 @@ e2e/screenshots/failure-*.png
 /target-t*
 /target-verify-*
 /src-tauri/target-t*
+# Catch-all for any out-of-tree cargo target dir (e.g. target-full-gate, target-*-gate).
+# Does NOT match the real `target/` build dir (the glob requires a trailing segment).
+/target-*
