@@ -41,6 +41,47 @@
 //! That behaviour IS SHA-0 and is what the SoftEther server expects.
 
 use super::pack::{Pack, PackError};
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+/// Length of each server-supplied RC4 key, in bytes. Cedar validates
+/// `PackGetDataSize(p, "rc4_key_*") == 16` (Protocol.c:6086-6092) and
+/// `GenerateRC4KeyPair` fills a fixed 16-byte buffer per direction
+/// (Protocol.c:8480-8490).
+pub const RC4_KEY_LEN: usize = 16;
+
+/// The 16-byte RC4 key pair that the SERVER ships in the post-auth
+/// Welcome PACK when Fast-RC4 is in effect.
+///
+/// This is the *real* SoftEther key model (the t4-e11b correction): the
+/// keys are random bytes generated server-side (`GenerateRC4KeyPair` →
+/// `Rand(16)` per direction, Cedar `Protocol.c:8480`) and transmitted to
+/// the client as two 16-byte `VALUE_DATA` elements
+/// (`rc4_key_client_to_server` / `rc4_key_server_to_client`,
+/// `Protocol.c:4127-4128` server write, `:6086-6092` client read). They
+/// are used **directly** to seed the per-direction RC4 streams — there
+/// is no client-side MD5/SHA-0 derivation. `session_key` /
+/// `session_key_32` remain session *identifiers* only, never cipher
+/// inputs.
+///
+/// Secret material: zeroized on drop; `Debug` redacts the bytes so a key
+/// can never leak into a log line.
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+pub struct ServerSuppliedKeys {
+    /// Seeds the RC4 stream that encrypts outbound (client→server) frames.
+    pub client_to_server: [u8; RC4_KEY_LEN],
+    /// Seeds the RC4 stream that decrypts inbound (server→client) frames.
+    pub server_to_client: [u8; RC4_KEY_LEN],
+}
+
+impl std::fmt::Debug for ServerSuppliedKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never print key bytes. Lengths only.
+        f.debug_struct("ServerSuppliedKeys")
+            .field("client_to_server", &"[redacted 16 bytes]")
+            .field("server_to_client", &"[redacted 16 bytes]")
+            .finish()
+    }
+}
 
 // ─── SHA-0 (inline, ~60 LOC) ─────────────────────────────────────────────
 
@@ -327,6 +368,23 @@ pub struct AuthResult {
     /// type lives in `udp_accel.rs` and this module re-exports it via
     /// the `softether` top-level `pub use`.
     pub udp_accel: Option<super::udp_accel::UdpAccelServerInfo>,
+    /// Whether the server negotiated link-layer encryption above TLS
+    /// (`use_encrypt`, Cedar `Protocol.c:6010`). When `false` the data
+    /// plane runs plaintext over TLS (TLS carries confidentiality).
+    pub use_encrypt: bool,
+    /// Whether the server selected the Fast-RC4 secondary cipher
+    /// (`use_fast_rc4`, Cedar `Protocol.c:6014` — only meaningful when
+    /// `use_encrypt`). When `true` the server ships the 16-byte RC4 key
+    /// pair in [`Self::server_supplied_keys`].
+    pub use_fast_rc4: bool,
+    /// The SERVER-supplied 16-byte RC4 key pair (the real key model).
+    /// `Some` only when Fast-RC4 was negotiated AND both
+    /// `rc4_key_client_to_server` and `rc4_key_server_to_client` were
+    /// present as 16-byte DATA fields (Cedar `Protocol.c:6086-6092`,
+    /// validated `PackGetDataSize == 16`). `None` is the TLS-only /
+    /// no-Fast-RC4 path — the data plane then runs without an app-layer
+    /// cipher. Never derive these client-side.
+    pub server_supplied_keys: Option<ServerSuppliedKeys>,
 }
 
 // ─── PACK construction ───────────────────────────────────────────────────
@@ -485,6 +543,36 @@ pub fn parse_auth_response(reply: &Pack) -> Result<AuthResult, AuthError> {
     // negotiated encryption). `None` means bridge/plaintext mode.
     let cipher_name = reply.get_str("cipher_name").map(|s| s.to_string());
 
+    // ── Server-supplied RC4 key model (t4-e11b correction) ──────────
+    //
+    // Cedar `Protocol.c:6010-6014`: read `use_encrypt`, and only when
+    // encryption is on read `use_fast_rc4`. Mirror that gating exactly —
+    // a hub that didn't negotiate encryption never ships rc4 keys, and a
+    // hub that uses the TLS bulk cipher (not Fast-RC4) doesn't either.
+    let use_encrypt = reply.get_int("use_encrypt").unwrap_or(0) != 0;
+    let use_fast_rc4 = use_encrypt && reply.get_int("use_fast_rc4").unwrap_or(0) != 0;
+
+    // Cedar `Protocol.c:6083-6093`: ONLY when UseFastRC4 does the client
+    // read the two 16-byte DATA keys, each validated to be exactly 16
+    // bytes (`PackGetDataSize == 16`). If Fast-RC4 was advertised but a
+    // key is missing/mis-sized we treat the keys as absent (TLS-only
+    // fallback) rather than fabricating anything — we NEVER derive keys
+    // locally.
+    let server_supplied_keys = if use_fast_rc4 {
+        match (
+            read_rc4_key(reply, "rc4_key_client_to_server"),
+            read_rc4_key(reply, "rc4_key_server_to_client"),
+        ) {
+            (Some(client_to_server), Some(server_to_client)) => Some(ServerSuppliedKeys {
+                client_to_server,
+                server_to_client,
+            }),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
     // SE-6/SE-7: parse the UDP-accel descriptor off the Welcome PACK
     // when the server advertises it. The free function lives at the
     // top-level module to keep Cedar PACK key names centralised; we
@@ -500,7 +588,24 @@ pub fn parse_auth_response(reply: &Pack) -> Result<AuthResult, AuthError> {
         policy_version,
         cipher_name,
         udp_accel,
+        use_encrypt,
+        use_fast_rc4,
+        server_supplied_keys,
     })
+}
+
+/// Read one 16-byte server-supplied RC4 key from a decoded Welcome PACK.
+///
+/// Returns `None` when the field is absent OR present but not exactly 16
+/// bytes — mirroring Cedar's `PackGetDataSize(p, name) == 16` guard
+/// (`Protocol.c:6086-6092`), which silently skips a mis-sized field. A
+/// `None` here means "no usable key for this direction", which the
+/// caller turns into the TLS-only path rather than a hard error (a
+/// non-Fast-RC4 / TLS-only hub legitimately omits these). The bytes are
+/// never logged.
+fn read_rc4_key(pack: &Pack, name: &str) -> Option<[u8; RC4_KEY_LEN]> {
+    let bytes = pack.get_data(name)?;
+    bytes.try_into().ok()
 }
 
 /// Best-effort human translation of SoftEther's `ERR_*` enum
@@ -743,6 +848,98 @@ mod tests {
         assert_eq!(r.session_key, key);
         assert_eq!(r.session_key_32, 0xDEAD_BEEF);
         assert_eq!(r.policy_version, 3);
+        // No use_encrypt/use_fast_rc4/rc4 keys in this PACK → TLS-only.
+        assert!(!r.use_encrypt);
+        assert!(!r.use_fast_rc4);
+        assert!(r.server_supplied_keys.is_none());
+    }
+
+    // ── Server-supplied RC4 key extraction (t4-e11b model) ─────────────
+
+    /// Reuse the P1 PACK builder to construct a Welcome PACK that carries
+    /// `use_encrypt` + `use_fast_rc4` + the two 16-byte rc4 keys, exactly
+    /// as Cedar's server writes them (`Protocol.c:4127-4128`,
+    /// `:6461-6462`). Asserts the client reads both keys as 16-byte
+    /// arrays with the right bytes per direction.
+    #[test]
+    fn parse_auth_response_reads_server_supplied_rc4_keys() {
+        let session_key = [0xABu8; 20];
+        let c2s: [u8; 16] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
+            0xEE, 0xFF,
+        ];
+        let s2c: [u8; 16] = [
+            0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22,
+            0x11, 0x00,
+        ];
+        let mut p = build_welcome_pack("SID-fast", "CID-fast", &session_key, 7, 1);
+        p.add_int("use_encrypt", 1).unwrap();
+        p.add_int("use_fast_rc4", 1).unwrap();
+        p.add_data("rc4_key_client_to_server", c2s.to_vec()).unwrap();
+        p.add_data("rc4_key_server_to_client", s2c.to_vec()).unwrap();
+
+        let r = parse_auth_response(&p).expect("welcome parses");
+        assert!(r.use_encrypt);
+        assert!(r.use_fast_rc4);
+        let keys = r
+            .server_supplied_keys
+            .expect("rc4 keys present when fast-rc4 negotiated");
+        assert_eq!(keys.client_to_server, c2s);
+        assert_eq!(keys.server_to_client, s2c);
+    }
+
+    /// use_encrypt=1 but use_fast_rc4=0 (TLS bulk-cipher path): NO rc4
+    /// keys read even if present. Cedar gates the read behind
+    /// `UseFastRC4` (`Protocol.c:6083`).
+    #[test]
+    fn parse_auth_response_tls_bulk_cipher_no_rc4_keys() {
+        let session_key = [0x01u8; 20];
+        let mut p = build_welcome_pack("SID-tls", "CID-tls", &session_key, 1, 1);
+        p.add_int("use_encrypt", 1).unwrap();
+        p.add_int("use_fast_rc4", 0).unwrap();
+        // Even if a stray key field were present, fast_rc4=0 ignores it.
+        p.add_data("rc4_key_client_to_server", vec![0xAAu8; 16])
+            .unwrap();
+        let r = parse_auth_response(&p).expect("parses");
+        assert!(r.use_encrypt);
+        assert!(!r.use_fast_rc4);
+        assert!(r.server_supplied_keys.is_none());
+    }
+
+    /// Fast-RC4 advertised but a key is mis-sized (not 16 bytes): treat
+    /// keys as absent (TLS-only fallback) rather than fabricating —
+    /// mirrors Cedar's `PackGetDataSize == 16` guard silently skipping.
+    #[test]
+    fn parse_auth_response_fast_rc4_wrong_key_size_falls_back() {
+        let session_key = [0x02u8; 20];
+        let mut p = build_welcome_pack("SID-bad", "CID-bad", &session_key, 1, 1);
+        p.add_int("use_encrypt", 1).unwrap();
+        p.add_int("use_fast_rc4", 1).unwrap();
+        p.add_data("rc4_key_client_to_server", vec![0xAAu8; 8])
+            .unwrap(); // wrong size
+        p.add_data("rc4_key_server_to_client", vec![0xBBu8; 16])
+            .unwrap();
+        let r = parse_auth_response(&p).expect("parses");
+        assert!(r.use_fast_rc4);
+        assert!(
+            r.server_supplied_keys.is_none(),
+            "mis-sized key must fall back to no keys, never fabricate"
+        );
+    }
+
+    #[test]
+    fn server_supplied_keys_debug_redacts_bytes() {
+        let keys = ServerSuppliedKeys {
+            client_to_server: [0xDEu8; 16],
+            server_to_client: [0xADu8; 16],
+        };
+        let s = format!("{:?}", keys);
+        assert!(s.contains("redacted"), "debug must redact: {}", s);
+        assert!(
+            !s.contains("dead") && !s.contains("DE, DE"),
+            "raw key bytes must not appear: {}",
+            s
+        );
     }
 
     #[test]

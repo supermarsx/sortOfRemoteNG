@@ -53,6 +53,26 @@ rand = { workspace = true }
 # common_key || iv — matches Cedar's UdpAccelCalcKey in UdpAccel.c).
 sha1 = "0.10"
 
+# t33-P4 (SoftEther Phase 4): real Windows L2 virtual adapter via the
+# TAP-Windows (OpenVPN tap-windows6) driver. We talk to the driver
+# directly through raw Win32 FFI — open `\\.\Global\<guid>.tap`,
+# `DeviceIoControl(TAP_IOCTL_SET_MEDIA_STATUS)` to bring the link up,
+# then overlapped `ReadFile`/`WriteFile` for L2 Ethernet frames. wintun
+# is deliberately NOT used: it is an L3 (IP) driver and cannot carry the
+# raw Ethernet frames SoftEther bridges at layer 2. `windows-sys` is the
+# lightweight raw-FFI surface (no COM wrappers) and is already present in
+# the workspace lockfile via numerous transitive deps.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_Security",
+] }
+
 [dev-dependencies]
 rcgen = { version = "0.12", features = ["pem"] }
 # t4-e12: property-based / fuzz tests for the SoftEther PACK codec.

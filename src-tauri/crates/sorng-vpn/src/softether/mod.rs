@@ -78,7 +78,8 @@ pub mod watermark;
 
 pub use auth::{
     build_client_auth_pack, hash_and_secure_password, hash_password, parse_auth_response,
-    secure_password, sha0, AuthError, AuthMethod, AuthResult, ClientAuthConfig, SHA0_SIZE,
+    secure_password, sha0, AuthError, AuthMethod, AuthResult, ClientAuthConfig, ServerSuppliedKeys,
+    SHA0_SIZE,
 };
 pub use pack::{Element, Pack, PackError, Value};
 pub use reconnect::{
@@ -86,8 +87,7 @@ pub use reconnect::{
     SessionDoneOutcome,
 };
 pub use session_key::{
-    decrypt_frame, derive_session_keys, encrypt_frame, expand_session_key_32, AesKey, CipherState,
-    KeyError, Rc4, SessionKeys,
+    build_v1_session_keys, decrypt_frame, encrypt_frame, CipherState, KeyError, Rc4, SessionKeys,
 };
 pub use udp_accel::{
     build_v1_packet, parse_v1_packet, run_udp_accel, udp_accel_calc_key, UdpAccelConfig,
@@ -103,8 +103,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex};
-use tokio::task::JoinHandle;
+use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
 use uuid::Uuid;
 
@@ -240,36 +239,18 @@ impl From<&ReconnectPolicyConfig> for ReconnectPolicy {
     }
 }
 
-/// Internal non-Serialize runtime state kept alongside each connection.
-///
-/// `JoinHandle` and `mpsc::Sender` are not Serde-able, so they live here
-/// keyed by `connection_id` rather than on [`SoftEtherConnection`].
-struct RuntimeHandle {
-    /// Supervises the spawned session loop. Dropping/aborting cancels it.
-    task_handle: JoinHandle<()>,
-    /// Issues control messages to the spawned task (e.g. graceful shutdown).
-    ctrl_tx: mpsc::Sender<ControlMessage>,
-}
-
-/// Messages sent from the service into the spawned session task.
-#[derive(Debug, Clone)]
-enum ControlMessage {
-    /// Request the task to shut down gracefully.
-    Shutdown,
-}
-
 // ─── Service ─────────────────────────────────────────────────────────────
 
 pub struct SoftEtherService {
     connections: HashMap<String, SoftEtherConnection>,
-    runtimes: HashMap<String, RuntimeHandle>,
     /// Server-issued 20-byte session key from the Welcome PACK. SE-4
     /// expands this into [`SessionKeys`] (see `derived_keys` below);
     /// the raw seed is retained for diagnostics and for any future
     /// re-derivation path. Not serialised — lives only in memory.
     session_keys: HashMap<String, [u8; SHA0_SIZE]>,
-    /// Per-connection derived cipher schedule produced by
-    /// [`session_key::derive_session_keys`] after a successful auth.
+    /// Per-connection cipher schedule produced by
+    /// [`session_key::build_v1_session_keys`] (seeded from the server's
+    /// rc4 keys, or Null for TLS-only) after a successful auth.
     /// SE-5's data-plane task takes ownership of this via
     /// [`SoftEtherService::take_session_keys`] before entering the
     /// packet loop — keep the service mutex hold-time bounded.
@@ -301,7 +282,6 @@ impl SoftEtherService {
     pub fn new() -> SoftEtherServiceState {
         Arc::new(Mutex::new(SoftEtherService {
             connections: HashMap::new(),
-            runtimes: HashMap::new(),
             session_keys: HashMap::new(),
             derived_keys: HashMap::new(),
             session_streams: HashMap::new(),
@@ -315,7 +295,6 @@ impl SoftEtherService {
     pub fn new_with_emitter(emitter: DynEventEmitter) -> SoftEtherServiceState {
         Arc::new(Mutex::new(SoftEtherService {
             connections: HashMap::new(),
-            runtimes: HashMap::new(),
             session_keys: HashMap::new(),
             derived_keys: HashMap::new(),
             session_streams: HashMap::new(),
@@ -414,38 +393,6 @@ impl SoftEtherService {
             }
         };
 
-        // Phase 2: spawn the session task. Today it immediately reports the
-        // PACK-layer stub and exits. Per threading requirement, protocol
-        // work lives here — NOT on the Tauri command thread.
-        let (ctrl_tx, ctrl_rx) = mpsc::channel::<ControlMessage>(8);
-        let emitter = self.emitter.clone();
-        let spawn_id = conn_id_owned.clone();
-        let spawn_config = config.clone();
-        let task_handle = tokio::task::spawn(async move {
-            softether_session_task(spawn_id, spawn_config, ctrl_rx, emitter).await;
-        });
-
-        self.runtimes.insert(
-            conn_id_owned.clone(),
-            RuntimeHandle {
-                task_handle,
-                ctrl_tx,
-            },
-        );
-
-        // At this point the watermark AND ClientAuth succeeded and we
-        // have derived both cipher directions. The live TLS stream is
-        // stashed on the service for SE-5's data-plane. Until SE-5
-        // lands, surface the state as Error (not Connected) so nothing
-        // downstream treats the tunnel as usable for packet forwarding.
-        let stub_msg = format!(
-            "connected (handshake+auth+keys done) — data-plane not yet implemented (SE-5). session='{}' conn='{}' policy_ver={} cipher='{}'",
-            auth_result.session_name,
-            auth_result.connection_name,
-            auth_result.policy_version,
-            session_keys.cipher_name,
-        );
-
         // Build a display string from the parsed PACK hello. Prefer the
         // hello banner; fall back to "<server_str> build <build>" when the
         // banner was empty.
@@ -463,18 +410,21 @@ impl SoftEtherService {
             ))
         };
 
+        // Record the server identity + remote endpoint regardless of the
+        // data-plane outcome below — these are useful diagnostics even if
+        // the TAP create fails (e.g. honest DriverMissing on Win/macOS).
         if let Some(c) = self.connections.get_mut(connection_id) {
             c.remote_ip = Some(config.server.clone());
             c.server_version = server_version.clone();
-            c.status = SoftEtherStatus::Error(stub_msg.clone());
         }
 
-        // Stash session material for SE-5. Kept off-struct (not
+        // Stash session material for the data-plane. Kept off-struct (not
         // serialised) to avoid leaking it into Tauri responses.
+        // `spawn_dataplane` consumes the stream + keys below.
         self.session_keys
             .insert(conn_id_owned.clone(), auth_result.session_key);
         self.derived_keys
-            .insert(conn_id_owned.clone(), session_keys);
+            .insert(conn_id_owned.clone(), session_keys.clone());
         self.session_streams
             .insert(conn_id_owned.clone(), tls_stream);
 
@@ -486,26 +436,110 @@ impl SoftEtherService {
             self.udp_accel_infos.insert(conn_id_owned.clone(), udp);
         }
 
-        self.emit_status(
-            connection_id,
-            "partial",
-            serde_json::json!({
-                "error": stub_msg,
-                "phase": "data_plane",
-                "server_version": server_version,
-                "server_build": server_info.build,
-                "server_protocol_version": server_info.version,
-                "session_name": auth_result.session_name,
-                "connection_name": auth_result.connection_name,
-                "policy_version": auth_result.policy_version,
-                "cipher_name": auth_result.cipher_name,
-            }),
-        );
+        // ── Phase 2: data-plane integration (SE-5 / t33-P3) ──────────
+        //
+        // The watermark + ClientAuth + key-derivation all succeeded and
+        // the live TLS stream + directional `SessionKeys` are stashed.
+        // We now (a) create the platform virtual adapter, then (b) spawn
+        // the data-plane supervisor bridging TAP <-> the SoftEther
+        // session. This is the path that makes the tunnel actually carry
+        // packets. The supervisor runs on its own tokio tasks (never on
+        // the Tauri command thread, per the global threading constraint).
+        //
+        // `start_dataplane == Some(false)` is an explicit handshake-only
+        // diagnostic opt-out (probe the server without bringing a tunnel
+        // up); it reports a non-fatal "partial" status. Any other value
+        // (the default) takes the production data-plane path.
+        let handshake_only = matches!(config.start_dataplane, Some(false));
+        if handshake_only {
+            let partial_msg = format!(
+                "handshake+auth+keys done (start_dataplane=false, diagnostic mode). \
+                 session='{}' conn='{}' policy_ver={} cipher='{}'",
+                auth_result.session_name,
+                auth_result.connection_name,
+                auth_result.policy_version,
+                session_keys.cipher_name,
+            );
+            if let Some(c) = self.connections.get_mut(connection_id) {
+                c.status = SoftEtherStatus::Error(partial_msg.clone());
+            }
+            self.emit_status(
+                connection_id,
+                "partial",
+                serde_json::json!({
+                    "note": partial_msg,
+                    "phase": "data_plane_skipped",
+                    "server_version": server_version,
+                    "session_name": auth_result.session_name,
+                    "connection_name": auth_result.connection_name,
+                    "policy_version": auth_result.policy_version,
+                    "cipher_name": auth_result.cipher_name,
+                }),
+            );
+            return Err(partial_msg);
+        }
 
-        // NOTE: When PACK auth lands, flip this to `SoftEtherStatus::Connected`
-        // and emit "connected" with local_ip populated from the virtual-hub
-        // IP assignment response.
-        Err(stub_msg)
+        // (a) Create the OS virtual adapter. On Linux this opens a real
+        // L2 `/dev/net/tun` TAP (requires CAP_NET_ADMIN). On Windows and
+        // macOS this currently returns `DeviceError::DriverMissing`
+        // (Phase 4 will add wintun/tap-windows6 + utun adapters) — we
+        // surface that error HONESTLY rather than faking a tunnel.
+        let device = match tap::TapDevice::create(config.tap_name.as_deref()).await {
+            Ok(dev) => dev,
+            Err(e) => {
+                // Clean up the stashed material — there is no tunnel.
+                self.session_keys.remove(&conn_id_owned);
+                self.derived_keys.remove(&conn_id_owned);
+                self.session_streams.remove(&conn_id_owned);
+                self.udp_accel_infos.remove(&conn_id_owned);
+                let msg = format!("TAP device create failed: {}", e);
+                if let Some(c) = self.connections.get_mut(connection_id) {
+                    c.status = SoftEtherStatus::Error(msg.clone());
+                }
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": msg, "phase": "tap_create" }),
+                );
+                return Err(msg);
+            }
+        };
+
+        // (b) Spawn the data-plane supervisor. This consumes the stashed
+        // TLS stream + keys, attaches the TAP, flips the connection
+        // status to `Connected`, and registers the `DataplaneHandle` for
+        // graceful teardown from `disconnect()`. TLS carries
+        // confidentiality, so the supervisor runs in `CipherMode::TlsOnly`
+        // (Fast-RC4 / Null directional ciphers are applied by the UDP
+        // path inside `udp_accel` when `enable_udp_accel` is set).
+        let dp_config = supervisor::DataplaneConfig::default();
+        match self
+            .spawn_dataplane(connection_id, device, dp_config)
+            .await
+        {
+            Ok(()) => {
+                // `spawn_dataplane` already set status=Connected and
+                // emitted the "connected" event. `local_ip` is assigned
+                // later by the hub at L2 (DHCP/static over the now-live
+                // tunnel) — out of scope for the connect() call itself.
+                Ok(())
+            }
+            Err(e) => {
+                // Supervisor spawn failed (UDP setup failure or missing
+                // stream). The stash is already consumed/cleared by
+                // `spawn_dataplane`; surface a real error.
+                let msg = format!("data-plane spawn failed: {}", e);
+                if let Some(c) = self.connections.get_mut(connection_id) {
+                    c.status = SoftEtherStatus::Error(msg.clone());
+                }
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": msg, "phase": "data_plane" }),
+                );
+                Err(msg)
+            }
+        }
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
@@ -547,13 +581,9 @@ impl SoftEtherService {
         }
         self.udp_accel_infos.remove(connection_id);
 
-        // Tear down the spawned task if any. Send Shutdown first for
-        // graceful cleanup; if the channel is closed or the task has
-        // already exited, abort() is a safe no-op.
-        if let Some(runtime) = self.runtimes.remove(connection_id) {
-            let _ = runtime.ctrl_tx.send(ControlMessage::Shutdown).await;
-            runtime.task_handle.abort();
-        }
+        // Drop any stashed session material that was never consumed by a
+        // data-plane spawn (e.g. handshake-only diagnostic mode, or a
+        // failed TAP create that left the stash behind).
         self.session_keys.remove(connection_id);
         self.derived_keys.remove(connection_id);
         self.session_streams.remove(connection_id);
@@ -588,10 +618,8 @@ impl SoftEtherService {
             }
         }
 
-        // Clean up any lingering runtime (covers Connecting / Error states).
-        if let Some(runtime) = self.runtimes.remove(connection_id) {
-            runtime.task_handle.abort();
-        }
+        // Clean up any lingering data-plane handle (covers Connecting /
+        // Error states where disconnect() was not called).
         if let Some(handle) = self.dataplane_handles.remove(connection_id) {
             handle.abort();
         }
@@ -1190,22 +1218,20 @@ async fn softether_handshake_and_auth(
     .await
     .map_err(|e| ("client_auth", e))?;
 
-    // ── Phase C: session-key derivation (pure compute, no I/O) ───────
+    // ── Phase C: cipher setup (pure compute, no I/O) ─────────────────
+    //
+    // Real Cedar key model (t4-e11b): the SERVER shipped the 16-byte RC4
+    // keys in the Welcome PACK (when Fast-RC4 was negotiated). We seed
+    // the cipher streams directly from those bytes — no client-side
+    // derivation. When Fast-RC4 is off (the common TLS-only case), the
+    // cipher is `Null` and TLS carries confidentiality.
     let cipher_name = auth_result.cipher_name.as_deref().unwrap_or("");
-    let session_key_32_bytes =
-        session_key::expand_session_key_32(&auth_result.session_key, auth_result.session_key_32);
-    let keys = session_key::derive_session_keys(
-        &server_info.random,
-        &auth_result.session_key,
-        &session_key_32_bytes,
+    let keys = session_key::build_v1_session_keys(
+        auth_result.server_supplied_keys.as_ref(),
+        auth_result.use_encrypt,
+        auth_result.use_fast_rc4,
         cipher_name,
-    )
-    .map_err(|e| {
-        (
-            "key_derivation",
-            format!("session-key derivation failed: {}", e),
-        )
-    })?;
+    );
 
     Ok((server_info, auth_result, keys, tls_stream))
 }
@@ -1683,46 +1709,12 @@ impl rustls::client::danger::ServerCertVerifier for DangerousNoVerify {
     }
 }
 
-/// Long-running per-connection task spawned on `connect()`. At present it
-/// immediately returns, marking the PACK layer as unimplemented; the
-/// scaffolding is in place so that when PACK lands we can run the auth
-/// exchange and enter the data-plane loop without touching the command
-/// handler or service CRUD.
-async fn softether_session_task(
-    connection_id: String,
-    _config: SoftEtherConfig,
-    mut ctrl_rx: mpsc::Receiver<ControlMessage>,
-    emitter: Option<DynEventEmitter>,
-) {
-    // Historical stub (superseded in SE-4..SE-7): the PACK codec,
-    // ClientAuth handshake, session-key derivation, dataplane packet
-    // loop, and UDP-acceleration cut-over are all implemented now —
-    // see `softether_handshake_and_auth`, `supervisor::spawn_dataplane`,
-    // and `udp_accel::run_udp_accel`. That path is driven from
-    // `SoftEtherService::connect` and `spawn_with_reconnect`. This
-    // per-connection task is retained as a compatibility shim for
-    // call-sites that still spawn it; its sole job is to drain control
-    // messages and exit promptly on `disconnect()`. Previously this
-    // block carried a TODO(e04 escalation) checklist; it has been
-    // resolved by SE-4..SE-7 and is preserved here as documentation.
-    if let Some(emitter) = &emitter {
-        let _ = emitter.emit_event(
-            "vpn::status-changed",
-            serde_json::json!({
-                "connection_id": connection_id,
-                "vpn_type": "softether",
-                "status": "session_task_stub",
-                "note": "PACK negotiation pending — see e04 escalation",
-            }),
-        );
-    }
-
-    while let Some(msg) = ctrl_rx.recv().await {
-        match msg {
-            ControlMessage::Shutdown => return,
-        }
-    }
-}
+// NOTE (t33-P3): the vestigial `softether_session_task` stub that
+// `connect()` used to spawn (a control-message drainer that immediately
+// reported the PACK layer as unimplemented) has been removed. `connect()`
+// now creates the platform TAP device and spawns the real data-plane
+// supervisor (see `SoftEtherService::connect` / `spawn_dataplane`), so the
+// shim no longer has any caller.
 
 // ─── Tests ───────────────────────────────────────────────────────────────
 
@@ -2345,19 +2337,23 @@ mod tests {
 
         assert_eq!(result.cipher_name.as_deref(), Some("AES256-SHA"));
 
-        // And the client can proceed to key derivation on the result.
-        let key32 = session_key::expand_session_key_32(&result.session_key, result.session_key_32);
-        let keys = session_key::derive_session_keys(
-            &info.random,
-            &result.session_key,
-            &key32,
+        // This Welcome PACK carries a cipher_name but NO use_encrypt /
+        // use_fast_rc4 / rc4_key_* fields — i.e. the TLS-only path. The
+        // server-supplied-key model therefore yields a passthrough Null
+        // cipher (TLS carries confidentiality); it does NOT fabricate any
+        // key from session_key/random.
+        assert!(!result.use_fast_rc4);
+        assert!(result.server_supplied_keys.is_none());
+        let keys = session_key::build_v1_session_keys(
+            result.server_supplied_keys.as_ref(),
+            result.use_encrypt,
+            result.use_fast_rc4,
             result.cipher_name.as_deref().unwrap_or(""),
-        )
-        .expect("derive");
+        );
         assert_eq!(keys.cipher_name, "AES256-SHA");
         match keys.client_to_server {
-            session_key::CipherState::AesCbc(_) => {}
-            _ => panic!("expected AES CBC for AES256-SHA"),
+            session_key::CipherState::Null => {}
+            _ => panic!("expected Null (TLS-only) when Fast-RC4 keys absent"),
         }
 
         let _ = task.await;
@@ -2577,6 +2573,159 @@ mod tests {
 
         svc.delete_connection(&id).await.expect("delete");
         assert!(svc.dataplane_handles.get(&id).is_none());
+    }
+
+    // ─── t33-P3: connect() → data-plane integration ─────────────────
+    //
+    // `connect()` runs a REAL TCP+TLS handshake (no in-process loopback
+    // transport exists in `softether_handshake_and_auth`), so a full
+    // handshake→auth→Connected drive is host-gated on a live hub (P5).
+    // The hermetic coverage below pins (a) the early-failure path leaves
+    // no stale session material, and (b) the teardown invariants the
+    // data-plane integration relies on. The Connected round-trip itself
+    // is exercised hermetically via `spawn_dataplane_over_stream` in
+    // `spawn_dataplane_flips_status_to_connected_and_rounds_trip_frames`.
+
+    /// Minimal config helper for the connect() transition tests.
+    fn connect_test_config(server: &str, port: u16) -> SoftEtherConfig {
+        SoftEtherConfig {
+            server: server.into(),
+            port: Some(port),
+            hub: "VPN".into(),
+            username: None,
+            password: None,
+            certificate: None,
+            private_key: None,
+            auth_type: None,
+            skip_verify: Some(true),
+            use_udp_acceleration: None,
+            max_reconnects: None,
+            custom_options: Vec::new(),
+            start_dataplane: None,
+            tap_name: None,
+            reconnect_policy: None,
+            enable_udp_accel: false,
+            reconnect: None,
+        }
+    }
+
+    /// connect() to an unreachable endpoint must fail at the TCP phase,
+    /// leave the connection in `Error(..)`, and stash NOTHING (no leaked
+    /// stream/keys for a tunnel that never came up).
+    #[tokio::test]
+    async fn connect_to_unreachable_server_errors_and_stashes_nothing() {
+        let state = SoftEtherService::new();
+        let mut svc = state.lock().await;
+
+        // Port 1 on loopback: nothing listens → fast connection refused.
+        let id = svc
+            .create_connection("unreach".into(), connect_test_config("127.0.0.1", 1))
+            .await
+            .expect("create");
+
+        let err = svc.connect(&id).await.expect_err("connect must fail");
+        assert!(
+            err.to_lowercase().contains("tcp connect"),
+            "expected a TCP-phase error, got: {}",
+            err
+        );
+
+        // Status reflects the failure, and no session material leaked.
+        match svc.get_status(&id).await.expect("status") {
+            SoftEtherStatus::Error(_) => {}
+            other => panic!("expected Error, got {:?}", other),
+        }
+        assert!(svc.session_streams.get(&id).is_none());
+        assert!(svc.derived_keys.get(&id).is_none());
+        assert!(svc.session_keys.get(&id).is_none());
+        assert!(svc.dataplane_handles.get(&id).is_none());
+    }
+
+    /// A live data-plane (modelled via `spawn_dataplane_over_stream`,
+    /// exactly what `connect()` ends in on success) must, on
+    /// `disconnect()`, tear down the supervisor AND clear every stash
+    /// map. This is the teardown coherence the connect() path depends
+    /// on.
+    #[tokio::test]
+    async fn disconnect_clears_all_session_material_and_handles() {
+        let state = SoftEtherService::new();
+        let mut svc = state.lock().await;
+
+        let id = svc
+            .create_connection("teardown".into(), connect_test_config("vpn.example.com", 443))
+            .await
+            .expect("create");
+
+        // Simulate the state `connect()` produces right before spawning
+        // the data plane: stashed keys + a live (duplex-backed) stream,
+        // then a real supervisor spawn over that stream.
+        let server_keys = auth::ServerSuppliedKeys {
+            client_to_server: [1u8; 16],
+            server_to_client: [2u8; 16],
+        };
+        let keys = session_key::build_v1_session_keys(Some(&server_keys), true, true, "RC4-MD5");
+        svc.session_keys.insert(id.clone(), [7u8; SHA0_SIZE]);
+        svc.derived_keys.insert(id.clone(), keys);
+
+        let (client_side, _server_side) = duplex(64 * 1024);
+        let (mpsc_dev, _h) = MpscDevice::new_pair(8, "teardown-tap");
+        svc.spawn_dataplane_over_stream(&id, client_side, mpsc_dev, make_dataplane_config())
+            .await
+            .expect("spawn");
+
+        match svc.get_status(&id).await.expect("status") {
+            SoftEtherStatus::Connected => {}
+            other => panic!("expected Connected, got {:?}", other),
+        }
+        assert!(svc.dataplane_handles.contains_key(&id));
+
+        svc.disconnect(&id).await.expect("disconnect");
+
+        match svc.get_status(&id).await.expect("status") {
+            SoftEtherStatus::Disconnected => {}
+            other => panic!("expected Disconnected, got {:?}", other),
+        }
+        assert!(svc.dataplane_handles.get(&id).is_none());
+        assert!(svc.session_streams.get(&id).is_none());
+        assert!(svc.derived_keys.get(&id).is_none());
+        assert!(svc.session_keys.get(&id).is_none());
+        assert!(svc.udp_accel_handles.get(&id).is_none());
+    }
+
+    /// HOST-GATED (P5): full connect() against a live `UseFastRC4`-capable
+    /// hub. Drives watermark → ClientAuth → key-build → TAP create →
+    /// data-plane supervisor and asserts `Connected`. Requires a reachable
+    /// SoftEther server AND a usable L2 TAP (Linux + CAP_NET_ADMIN; on
+    /// Windows/macOS this currently fails at TAP create with
+    /// `DriverMissing` until P4 lands the per-OS adapters). Env:
+    /// `SE_LIVE_HOST` / `SE_LIVE_PORT` / `SE_LIVE_HUB` /
+    /// `SE_LIVE_USER` / `SE_LIVE_PASS`.
+    #[tokio::test]
+    #[ignore = "host-gated: needs a live SoftEther hub + L2 TAP (P5)"]
+    async fn connect_establishes_tunnel_against_live_hub() {
+        let host = std::env::var("SE_LIVE_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+        let port: u16 = std::env::var("SE_LIVE_PORT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5555);
+        let hub = std::env::var("SE_LIVE_HUB").unwrap_or_else(|_| "DEFAULT".into());
+
+        let state = SoftEtherService::new();
+        let mut svc = state.lock().await;
+        let mut cfg = connect_test_config(&host, port);
+        cfg.hub = hub;
+        cfg.username = std::env::var("SE_LIVE_USER").ok();
+        cfg.password = std::env::var("SE_LIVE_PASS").ok();
+        cfg.auth_type = Some("Password".into());
+        cfg.start_dataplane = Some(true);
+
+        let id = svc.create_connection("live".into(), cfg).await.expect("create");
+        svc.connect(&id).await.expect("connect should establish a tunnel");
+        match svc.get_status(&id).await.expect("status") {
+            SoftEtherStatus::Connected => {}
+            other => panic!("expected Connected against live hub, got {:?}", other),
+        }
+        svc.disconnect(&id).await.expect("disconnect");
     }
 
     // ═══════════════ SE-6: UDP accel + reconnect ═══════════════════

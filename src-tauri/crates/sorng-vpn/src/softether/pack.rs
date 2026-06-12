@@ -1326,3 +1326,516 @@ mod tests {
         ));
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+//   t33-P1 — GOLDEN WIRE VECTORS (byte-exact vs Cedar/Mayaqua/Pack.c)
+// ═════════════════════════════════════════════════════════════════════════
+//
+// Phase 1 of the SoftEther full-port (`.orchestration/plans/t33-softether-
+// full-port.md`) locks the PACK codec down to the *real* SoftEther wire
+// format BEFORE the P2 server-supplied-RC4-key work builds on it. Every
+// expected-bytes blob below is hand-derived from the upstream C source
+// (`docs/cedar-reference/`), NOT captured from this Rust encoder — so these
+// tests are an *independent* oracle, not a self-regression snapshot.
+//
+// Derivation (the exact functions these bytes encode):
+//   WritePack    (Pack.c:212)  -> WriteBufInt(num_elements); per element WriteElement
+//   WriteElement (Pack.c:279)  -> WriteBufStr(name); WriteBufInt(type);
+//                                 WriteBufInt(num_value); per value WriteValue
+//   WriteValue   (Pack.c:399)  -> INT:   WriteBufInt(v)                 (BE u32)
+//                                 INT64: WriteBufInt64(v)               (BE u64)
+//                                 DATA:  WriteBufInt(size); body
+//                                 STR:   WriteBufInt(StrLen); body      (NO NUL)
+//                                 UNISTR:WriteBufInt(utf8len+1); body+0x00
+//   WriteBufStr  (Memory.c:3706)-> WriteBufInt(StrLen+1); body          (NO NUL)
+//   WriteBufInt  (Memory.c:3783)-> Endian32(v)  => 4-byte BIG-ENDIAN
+//   WriteBufInt64(Memory.c:3768)-> Endian64(v)  => 8-byte BIG-ENDIAN
+//   VALUE_TYPE tags (Pack.h:128): INT=0 DATA=1 STR=2 UNISTR=3 INT64=4
+//
+// Each vector asserts THREE directions:
+//   1. encode:        Pack(api) .to_bytes()             == GOLDEN
+//   2. decode:        from_bytes(GOLDEN)                == expected typed values
+//   3. raw round-trip:from_bytes(GOLDEN).to_bytes()     == GOLDEN
+// (1)+(3) together prove the encoder is byte-exact AND the decoder is its
+// exact inverse on the real wire bytes.
+#[cfg(test)]
+mod golden_vectors {
+    use super::*;
+
+    /// Assert all three directions for one hand-derived golden vector.
+    /// `build` constructs the Pack via the public API; `check` verifies the
+    /// decoded Pack carries the expected typed values.
+    fn assert_golden(golden: &[u8], build: impl Fn() -> Pack, check: impl Fn(&Pack)) {
+        // (1) encode is byte-exact vs the Cedar-derived golden bytes.
+        let p = build();
+        assert_eq!(
+            p.to_bytes().unwrap(),
+            golden,
+            "encoder bytes diverge from Cedar golden vector"
+        );
+        // (2) decode of the golden bytes yields the expected typed values.
+        let decoded = Pack::from_bytes(golden).unwrap();
+        check(&decoded);
+        // (3) raw bytes -> decode -> re-encode reproduces the golden bytes.
+        assert_eq!(
+            decoded.to_bytes().unwrap(),
+            golden,
+            "raw->decode->re-encode is not byte-identical to the golden vector"
+        );
+        // The Pack built by the API and the Pack decoded from the wire are
+        // structurally identical too.
+        assert_eq!(p, decoded, "API-built Pack != wire-decoded Pack");
+    }
+
+    // ── GV1: single INT element { "int_val": Int(0x01020304) } ────────────
+    //
+    // 00 00 00 01                num_elements = 1
+    //   00 00 00 08              WriteBufStr len = StrLen("int_val")+1 = 7+1 = 8
+    //   69 6E 74 5F 76 61 6C     "int_val" (no NUL in body)
+    //   00 00 00 00              type = VALUE_INT (0)
+    //   00 00 00 01              num_value = 1
+    //     01 02 03 04            Int(0x01020304), big-endian
+    #[test]
+    fn gv1_single_int() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x08, //
+            0x69, 0x6E, 0x74, 0x5F, 0x76, 0x61, 0x6C, //
+            0x00, 0x00, 0x00, 0x00, //
+            0x00, 0x00, 0x00, 0x01, //
+            0x01, 0x02, 0x03, 0x04,
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_int("int_val", 0x0102_0304).unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_int("int_val"), Some(0x0102_0304)),
+        );
+    }
+
+    // ── GV2: single DATA element { "blob": Data([DE AD BE EF]) } ──────────
+    //
+    // 00 00 00 01                num_elements = 1
+    //   00 00 00 05              name len = 4+1
+    //   62 6C 6F 62              "blob"
+    //   00 00 00 01              type = VALUE_DATA (1)
+    //   00 00 00 01              num_value = 1
+    //     00 00 00 04            data size = 4
+    //     DE AD BE EF            body
+    #[test]
+    fn gv2_single_data() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x05, //
+            0x62, 0x6C, 0x6F, 0x62, //
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x04, //
+            0xDE, 0xAD, 0xBE, 0xEF,
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_data("blob", vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_data("blob"), Some(&[0xDE, 0xAD, 0xBE, 0xEF][..])),
+        );
+    }
+
+    // ── GV3: 16-byte DATA element — the rc4_key shape P2 will read ────────
+    //
+    // This is the load-bearing vector for Phase 2: Cedar's Welcome PACK
+    // ships `rc4_key_client_to_server` / `rc4_key_server_to_client` as
+    // 16-byte VALUE_DATA elements (`Protocol.c:6086-6092`, validated by
+    // `PackGetDataSize(...) == 16`). We pin the exact wire layout of a
+    // 16-byte DATA value here so the P2 reader can trust `get_data().len()`.
+    //
+    // 00 00 00 01                          num_elements = 1
+    //   00 00 00 17                        name len = StrLen("rc4_key_client_to_server")? -> see below
+    //   ...name...                         "rc4_key_client_to_server"
+    //   00 00 00 01                        type = VALUE_DATA
+    //   00 00 00 01                        num_value = 1
+    //     00 00 00 10                      data size = 16
+    //     00 01 02 .. 0F                   16 bytes
+    #[test]
+    fn gv3_sixteen_byte_data_rc4_key_shape() {
+        let name = "rc4_key_client_to_server"; // 24 bytes
+        assert_eq!(name.len(), 24);
+        let key: [u8; 16] = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, //
+            0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+        ];
+        let mut golden = Vec::<u8>::new();
+        golden.extend_from_slice(&1u32.to_be_bytes()); // num_elements
+        golden.extend_from_slice(&((name.len() as u32) + 1).to_be_bytes()); // 0x19
+        golden.extend_from_slice(name.as_bytes());
+        golden.extend_from_slice(&1u32.to_be_bytes()); // VALUE_DATA
+        golden.extend_from_slice(&1u32.to_be_bytes()); // num_value
+        golden.extend_from_slice(&16u32.to_be_bytes()); // data size = 16
+        golden.extend_from_slice(&key);
+
+        // Sanity-pin the name-length byte the reader will see (24+1 = 25).
+        assert_eq!(golden[4..8], [0x00, 0x00, 0x00, 0x19]);
+        // Sanity-pin the data-size field that P2 validates == 16.
+        let size_off = 8 + 24 + 4 + 4;
+        assert_eq!(golden[size_off..size_off + 4], [0x00, 0x00, 0x00, 0x10]);
+
+        assert_golden(
+            &golden,
+            || {
+                let mut p = Pack::new();
+                p.add_data(name, key.to_vec()).unwrap();
+                p
+            },
+            |d| {
+                let got = d.get_data(name).expect("rc4 key present");
+                assert_eq!(got.len(), 16, "P2 relies on a 16-byte DATA payload");
+                assert_eq!(got, &key);
+            },
+        );
+    }
+
+    // ── GV4: empty DATA value { "empty": Data([]) } ───────────────────────
+    //
+    // Edge case P2 cares about: a present-but-zero-length DATA element must
+    // decode to an empty slice (NOT None / NOT an error). Cedar `ReadValue`
+    // VALUE_DATA reads size=0 cleanly.
+    //
+    // 00 00 00 01  / 00 00 00 06 "empty" / 00 00 00 01 DATA / 00 00 00 01 /
+    //   00 00 00 00   size = 0, no body
+    #[test]
+    fn gv4_empty_data_value() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x06, //
+            0x65, 0x6D, 0x70, 0x74, 0x79, //
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x00,
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_data("empty", Vec::<u8>::new()).unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_data("empty"), Some(&[][..])),
+        );
+    }
+
+    // ── GV5: STR value carries NO trailing NUL, length == StrLen ──────────
+    //
+    // Cedar STR: WriteBufInt(StrLen("VPN")=3); WriteBuf(body, 3). Contrast
+    // with the *element name* (WriteBufStr) which writes StrLen+1.
+    //
+    // 00 00 00 01 / 00 00 00 05 "proto" / 00 00 00 02 STR / 00 00 00 01 /
+    //   00 00 00 03  len = 3 (NO +1)
+    //   56 50 4E     "VPN"
+    #[test]
+    fn gv5_str_no_trailing_nul() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x06, // name len = StrLen("proto")+1 = 5+1
+            0x70, 0x72, 0x6F, 0x74, 0x6F, // "proto"
+            0x00, 0x00, 0x00, 0x02, // VALUE_STR
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x03, // len = 3 (STR: no +1)
+            0x56, 0x50, 0x4E, // "VPN"
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_str("proto", "VPN").unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_str("proto"), Some("VPN")),
+        );
+    }
+
+    // ── GV6: UNISTR value DOES carry a trailing NUL, length == utf8len+1 ──
+    //
+    // Cedar UNISTR: u_size = CalcUniToUtf8(s)+1; WriteBufInt(u_size);
+    // WriteBuf(utf8body + 0x00, u_size). "Hi" -> utf8 len 2 -> u_size 3.
+    //
+    // 00 00 00 01 / 00 00 00 05 "label" / 00 00 00 03 UNISTR / 00 00 00 01 /
+    //   00 00 00 03  u_size = 2+1
+    //   48 69 00     "Hi\0"
+    #[test]
+    fn gv6_unistr_trailing_nul() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x06, //
+            0x6C, 0x61, 0x62, 0x65, 0x6C, // "label"
+            0x00, 0x00, 0x00, 0x03, // VALUE_UNISTR
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x03, // u_size = 3
+            0x48, 0x69, 0x00, // "Hi\0"
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_unistr("label", "Hi").unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_unistr("label"), Some("Hi")),
+        );
+    }
+
+    // ── GV7: INT64 value is 8-byte big-endian (WriteBufInt64/Endian64) ────
+    //
+    // 00 00 00 01 / 00 00 00 04 "t64" / 00 00 00 04 INT64 / 00 00 00 01 /
+    //   01 23 45 67 89 AB CD EF   Int64(0x0123456789ABCDEF)
+    #[test]
+    fn gv7_int64_big_endian() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x04, //
+            0x74, 0x36, 0x34, // "t64"
+            0x00, 0x00, 0x00, 0x04, // VALUE_INT64
+            0x00, 0x00, 0x00, 0x01, //
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_int64("t64", 0x0123_4567_89AB_CDEF).unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_int64("t64"), Some(0x0123_4567_89AB_CDEF)),
+        );
+    }
+
+    // ── GV8: multi-value INT element { "ports": [1, 2, 3] } ───────────────
+    //
+    // One element, type INT, num_value = 3, three back-to-back u32 values.
+    // Proves the value-count framing (Cedar `for i in 0..num_value`).
+    //
+    // 00 00 00 01 / 00 00 00 06 "ports" / 00 00 00 00 INT / 00 00 00 03 /
+    //   00 00 00 01  00 00 00 02  00 00 00 03
+    #[test]
+    fn gv8_multi_value_int_array() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x06, //
+            0x70, 0x6F, 0x72, 0x74, 0x73, // "ports"
+            0x00, 0x00, 0x00, 0x00, // VALUE_INT
+            0x00, 0x00, 0x00, 0x03, // num_value = 3
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x02, //
+            0x00, 0x00, 0x00, 0x03,
+        ];
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_int("ports", 1).unwrap();
+                p.add_int("ports", 2).unwrap();
+                p.add_int("ports", 3).unwrap();
+                p
+            },
+            |d| {
+                let v = d.get_values("ports");
+                assert_eq!(v, &[Value::Int(1), Value::Int(2), Value::Int(3)]);
+            },
+        );
+    }
+
+    // ── GV9: multi-element ordering is preserved on the wire ──────────────
+    //
+    // { "a": Int(10), "b": Str("x"), "c": Int64(5) }  — three distinct
+    // elements written in insertion order (Cedar iterates the element LIST
+    // in order; order is meaningful for some RPCs).
+    //
+    // 00 00 00 03                     num_elements = 3
+    //   00 00 00 02 "a" 00 00 00 00 00 00 00 01  00 00 00 0A      a=Int(10)
+    //   00 00 00 02 "b" 00 00 00 02 00 00 00 01  00 00 00 01 78   b=Str("x")
+    //   00 00 00 02 "c" 00 00 00 04 00 00 00 01  00..05           c=Int64(5)
+    #[test]
+    fn gv9_multi_element_ordering() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x03, // num_elements = 3
+            // element "a" = Int(10)
+            0x00, 0x00, 0x00, 0x02, 0x61, //
+            0x00, 0x00, 0x00, 0x00, // INT
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x0A, //
+            // element "b" = Str("x")
+            0x00, 0x00, 0x00, 0x02, 0x62, //
+            0x00, 0x00, 0x00, 0x02, // STR
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x01, 0x78, // len=1 "x"
+            // element "c" = Int64(5)
+            0x00, 0x00, 0x00, 0x02, 0x63, //
+            0x00, 0x00, 0x00, 0x04, // INT64
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
+        ];
+        assert_golden(
+            &GOLDEN[..],
+            || {
+                let mut p = Pack::new();
+                p.add_int("a", 10).unwrap();
+                p.add_str("b", "x").unwrap();
+                p.add_int64("c", 5).unwrap();
+                p
+            },
+            |d| {
+                let names: Vec<&str> = d.elements().iter().map(|e| e.name.as_str()).collect();
+                assert_eq!(names, ["a", "b", "c"], "element order must be preserved");
+                assert_eq!(d.get_int("a"), Some(10));
+                assert_eq!(d.get_str("b"), Some("x"));
+                assert_eq!(d.get_int64("c"), Some(5));
+            },
+        );
+    }
+
+    // ── GV10: empty pack is exactly a 4-byte zero count ───────────────────
+    //
+    // WriteBufInt(LIST_NUM == 0) and nothing else.
+    #[test]
+    fn gv10_empty_pack() {
+        const GOLDEN: &[u8] = &[0x00, 0x00, 0x00, 0x00];
+        assert_golden(GOLDEN, Pack::new, |d| assert!(d.is_empty()));
+    }
+
+    // ── GV11: representative ClientAuth-like PACK (the real composite) ────
+    //
+    // Mirrors the shape of Cedar's `ClientUploadAuth` PACK (`Protocol.c`):
+    // a string method, a hashed-password DATA blob, a 20-byte secure-hash
+    // DATA blob, and an int auth-type — assembled into one PACK so we lock
+    // the *composite* framing (multiple heterogeneous elements + a 16/20-byte
+    // DATA value) end-to-end, not just isolated singletons.
+    //
+    // Built field-by-field so the expected bytes stay auditable.
+    #[test]
+    fn gv11_client_auth_like_composite() {
+        let method = "password"; // VALUE_STR
+        let secure_pw: [u8; 16] = [
+            0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, //
+            0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
+        ];
+        let random: [u8; 20] = [
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, //
+            0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23,
+        ];
+        let authtype: u32 = 1;
+
+        // Hand-assemble the golden bytes strictly per Cedar write order.
+        let mut g = Vec::<u8>::new();
+        g.extend_from_slice(&3u32.to_be_bytes()); // num_elements = 3
+
+        // 1) "method" : Str("password")
+        g.extend_from_slice(&(("method".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"method");
+        g.extend_from_slice(&VALUE_STR.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&(method.len() as u32).to_be_bytes()); // STR: no +1
+        g.extend_from_slice(method.as_bytes());
+
+        // 2) "secure_password" : Data(16)
+        g.extend_from_slice(&(("secure_password".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"secure_password");
+        g.extend_from_slice(&VALUE_DATA.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&(secure_pw.len() as u32).to_be_bytes());
+        g.extend_from_slice(&secure_pw);
+
+        // 3) "authtype" : Int(1)
+        g.extend_from_slice(&(("authtype".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"authtype");
+        g.extend_from_slice(&VALUE_INT.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&authtype.to_be_bytes());
+
+        // (We also stash `random` as a 4th element to exercise a 20-byte
+        // DATA — the session_key length P2/Welcome parsing also handles.)
+        // Re-do with 4 elements so the count field stays correct: rebuild.
+        let mut g = Vec::<u8>::new();
+        g.extend_from_slice(&4u32.to_be_bytes()); // num_elements = 4
+
+        g.extend_from_slice(&(("method".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"method");
+        g.extend_from_slice(&VALUE_STR.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&(method.len() as u32).to_be_bytes());
+        g.extend_from_slice(method.as_bytes());
+
+        g.extend_from_slice(&(("secure_password".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"secure_password");
+        g.extend_from_slice(&VALUE_DATA.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&(secure_pw.len() as u32).to_be_bytes());
+        g.extend_from_slice(&secure_pw);
+
+        g.extend_from_slice(&(("random".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"random");
+        g.extend_from_slice(&VALUE_DATA.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&(random.len() as u32).to_be_bytes());
+        g.extend_from_slice(&random);
+
+        g.extend_from_slice(&(("authtype".len() as u32) + 1).to_be_bytes());
+        g.extend_from_slice(b"authtype");
+        g.extend_from_slice(&VALUE_INT.to_be_bytes());
+        g.extend_from_slice(&1u32.to_be_bytes());
+        g.extend_from_slice(&authtype.to_be_bytes());
+
+        assert_golden(
+            &g,
+            || {
+                let mut p = Pack::new();
+                p.add_str("method", "password").unwrap();
+                p.add_data("secure_password", secure_pw.to_vec()).unwrap();
+                p.add_data("random", random.to_vec()).unwrap();
+                p.add_int("authtype", 1).unwrap();
+                p
+            },
+            |d| {
+                assert_eq!(d.get_str("method"), Some("password"));
+                assert_eq!(d.get_data("secure_password").map(<[u8]>::len), Some(16));
+                assert_eq!(d.get_data("secure_password"), Some(&secure_pw[..]));
+                assert_eq!(d.get_data("random").map(<[u8]>::len), Some(20));
+                assert_eq!(d.get_int("authtype"), Some(1));
+            },
+        );
+    }
+
+    // ── GV12: WriteBufStr name length is StrLen+1 (the "+1 virtual NUL") ──
+    //
+    // Pin the element-name framing asymmetry directly: a one-char name "x"
+    // encodes its length field as 0x00000002 (1+1), with NO NUL in the body
+    // — the exact `WriteBufStr` behaviour. This is the single most
+    // interop-critical and easy-to-miss detail in the whole codec.
+    #[test]
+    fn gv12_name_len_plus_one_no_body_nul() {
+        const GOLDEN: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x02, // name len = StrLen("x")+1 = 2
+            0x78, //                  "x"  (no NUL byte follows)
+            0x00, 0x00, 0x00, 0x00, // INT
+            0x00, 0x00, 0x00, 0x01, //
+            0x00, 0x00, 0x00, 0x2A, // Int(42)
+        ];
+        // Assert there is exactly one byte of name body and it is NOT NUL.
+        assert_eq!(GOLDEN[8], 0x78);
+        assert_ne!(GOLDEN[8], 0x00);
+        assert_golden(
+            GOLDEN,
+            || {
+                let mut p = Pack::new();
+                p.add_int("x", 42).unwrap();
+                p
+            },
+            |d| assert_eq!(d.get_int("x"), Some(42)),
+        );
+    }
+}

@@ -285,13 +285,26 @@ impl DataplaneDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::softether::session_key::{derive_session_keys, expand_session_key_32};
+    use crate::softether::auth::ServerSuppliedKeys;
+    use crate::softether::session_key::build_v1_session_keys;
 
-    const SERVER_RANDOM: [u8; 20] = [0x11; 20];
-    const SESSION_KEY: [u8; 20] = [0x22; 20];
+    // Two distinct server-supplied 16-byte RC4 keys (as if read from a
+    // Welcome PACK's rc4_key_client_to_server / rc4_key_server_to_client
+    // DATA fields).
+    const SRV_C2S: [u8; 16] = [
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
+        0x00,
+    ];
+    const SRV_S2C: [u8; 16] = [
+        0x00, 0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22,
+        0x11,
+    ];
 
-    fn key32() -> [u8; 32] {
-        expand_session_key_32(&SESSION_KEY, 0xDEAD_BEEF)
+    fn server_keys() -> ServerSuppliedKeys {
+        ServerSuppliedKeys {
+            client_to_server: SRV_C2S,
+            server_to_client: SRV_S2C,
+        }
     }
 
     fn eth(bytes: &[u8]) -> DataFrame {
@@ -473,18 +486,14 @@ mod tests {
 
     #[test]
     fn encoder_decoder_rc4_round_trip_direction_split() {
-        // Build a full key pair and peer the encoder with its matching
-        // decoder on the opposite side (the SERVER'S view of C→S is
-        // keyed with the same C→S cipher state).
-        let client_keys =
-            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").unwrap();
-        let server_keys =
-            derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").unwrap();
+        // The client encodes C→S traffic with its client_to_server
+        // (Fast-RC4) cipher; the server decodes the SAME direction with a
+        // stream seeded by the SAME server-supplied bytes.
+        let client_keys = build_v1_session_keys(Some(&server_keys()), true, true, "RC4-MD5");
+        let server_keys2 = build_v1_session_keys(Some(&server_keys()), true, true, "RC4-MD5");
 
         let mut client_enc = DataplaneEncoder::new(client_keys.client_to_server);
-        // Server decodes C→S traffic using the SERVER's client_to_server
-        // cipher (both sides derive the same key for that direction).
-        let mut server_dec = DataplaneDecoder::new(server_keys.client_to_server);
+        let mut server_dec = DataplaneDecoder::new(server_keys2.client_to_server);
 
         let frames = vec![eth(b"client to server 1"), eth(b"client to server 2")];
         let wire = client_enc.encode_batch(&frames).expect("encode");
@@ -494,8 +503,8 @@ mod tests {
 
     #[test]
     fn encoder_decoder_rc4_mixed_ka_and_ethernet() {
-        let ck = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").unwrap();
-        let sk = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").unwrap();
+        let ck = build_v1_session_keys(Some(&server_keys()), true, true, "RC4-MD5");
+        let sk = build_v1_session_keys(Some(&server_keys()), true, true, "RC4-MD5");
         let mut enc = DataplaneEncoder::new(ck.client_to_server);
         let mut dec = DataplaneDecoder::new(sk.client_to_server);
 
@@ -514,8 +523,8 @@ mod tests {
         // RC4 advances its state across calls; verify two back-to-back
         // batches still round-trip (regression guard for accidentally
         // re-initialising cipher state per batch).
-        let ck = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").unwrap();
-        let sk = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "RC4-MD5").unwrap();
+        let ck = build_v1_session_keys(Some(&server_keys()), true, true, "RC4-MD5");
+        let sk = build_v1_session_keys(Some(&server_keys()), true, true, "RC4-MD5");
         let mut enc = DataplaneEncoder::new(ck.client_to_server);
         let mut dec = DataplaneDecoder::new(sk.client_to_server);
 
@@ -528,14 +537,17 @@ mod tests {
     }
 
     #[test]
-    fn encoder_decoder_aes_round_trip() {
-        let ck = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "AES256-SHA").unwrap();
-        let sk = derive_session_keys(&SERVER_RANDOM, &SESSION_KEY, &key32(), "AES256-SHA").unwrap();
-        let mut enc = DataplaneEncoder::new(ck.client_to_server);
-        let mut dec = DataplaneDecoder::new(sk.client_to_server);
+    fn encoder_decoder_null_passthrough_round_trip() {
+        // TLS-only path: Null cipher → the codec is pure framing, the
+        // wire bytes equal the plaintext batch and still round-trip.
+        let keys = build_v1_session_keys(None, false, false, "");
+        let mut enc = DataplaneEncoder::new(keys.client_to_server);
+        let mut dec = DataplaneDecoder::new(keys.server_to_client);
 
-        let frames = vec![eth(b"aes-cbc frame payload here with some bytes")];
+        let frames = vec![eth(b"tls-only frame, no app cipher"), DataFrame::KeepAlive];
         let wire = enc.encode_batch(&frames).expect("encode");
+        // Null is passthrough → encoded wire equals the plain framing.
+        assert_eq!(wire, encode_plain(&frames).unwrap());
         let got = dec.decode_batch(&wire).expect("decode");
         assert_eq!(got, frames);
     }
