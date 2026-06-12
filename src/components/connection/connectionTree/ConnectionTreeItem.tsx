@@ -65,7 +65,14 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     y: number;
   } | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
+  // Expansion is driven entirely by the reducer's `connection.expanded`
+  // (the same source ConnectionTree uses to decide whether to render
+  // children). Keeping a separate local copy here caused the chevron /
+  // icon / aria-expanded to drift out of sync whenever `expanded` was
+  // changed from outside this component (drag-drop auto-expand,
+  // collection reload, cross-window settings sync), so the displayed
+  // state was not applied in real time. Read it directly instead.
+  const isExpanded = connection.expanded || false;
 
   const ProtocolIcon = getConnectionIcon(connection);
   const isSelected = state.selectedConnectionIds.has(connection.id);
@@ -76,7 +83,6 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
-      setIsExpanded(!isExpanded);
       dispatch({
         type: "UPDATE_CONNECTION",
         payload: { ...connection, expanded: !isExpanded },

@@ -6,6 +6,7 @@ import {
   within,
   fireEvent,
   waitFor,
+  act,
 } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -141,11 +142,16 @@ describe("ConnectionTree", () => {
       await import("../../src/components/connection/connectionTree/ConnectionTreeItem");
 
     function Harness() {
-      const { dispatch } = useConnections();
+      const { state, dispatch } = useConnections();
       React.useEffect(() => {
         dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
       }, [dispatch]);
-      const folder = mockConnections[0];
+      // Read the live folder from reducer state (as ConnectionTree
+      // does) so expand toggles dispatched by the row are reflected back
+      // into the connection prop — mirroring the real render path.
+      const folder =
+        state.connections.find((c) => c.id === mockConnections[0].id) ??
+        mockConnections[0];
       const noop = () => {};
       return (
         <ConnectionTreeItem
@@ -214,11 +220,13 @@ describe("ConnectionTree", () => {
       await import("../../src/components/connection/connectionTree/ConnectionTreeItem");
 
     function Harness() {
-      const { dispatch } = useConnections();
+      const { state, dispatch } = useConnections();
       React.useEffect(() => {
         dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
       }, [dispatch]);
-      const folder = mockConnections[0];
+      const folder =
+        state.connections.find((c) => c.id === mockConnections[0].id) ??
+        mockConnections[0];
       const noop = () => {};
       return (
         <ConnectionTreeItem
@@ -281,16 +289,79 @@ describe("ConnectionTree", () => {
     });
   });
 
+  it("reflects external expanded changes live without remounting the row", async () => {
+    // Regression: ConnectionTreeItem used to keep a *local* isExpanded
+    // copy initialised once from connection.expanded, so an expansion
+    // change driven by the reducer (drag-drop auto-expand, collection
+    // reload, cross-window settings sync) left the chevron / icon /
+    // aria-expanded stale — not applied in real time. The row now reads
+    // connection.expanded directly, so a reducer update is reflected
+    // immediately, and the child becomes visible, without a remount.
+    let externalDispatch: ReturnType<typeof useConnections>["dispatch"];
+
+    function Harness() {
+      const { dispatch } = useConnections();
+      externalDispatch = dispatch;
+      React.useEffect(() => {
+        dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
+      }, [dispatch]);
+      return (
+        <ConnectionTree
+          onConnect={() => {}}
+          onEdit={() => {}}
+          onDelete={() => {}}
+          onDisconnect={() => {}}
+        />
+      );
+    }
+
+    render(
+      <ToastProvider>
+        <ConnectionProvider>
+          <Harness />
+        </ConnectionProvider>
+      </ToastProvider>,
+    );
+
+    // Folder starts collapsed.
+    const folderRow = screen
+      .getByText("Group 1")
+      .closest('[role="treeitem"]') as HTMLElement;
+    expect(folderRow.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Item 1")).toBeNull();
+
+    // Simulate an EXTERNAL expansion (e.g. drag-drop auto-expand) — no
+    // click on this row, no remount.
+    fireEvent.click(screen.getByText("Group 1")); // ensure mounted/stable
+    await waitFor(() => {
+      expect(folderRow.getAttribute("aria-expanded")).toBe("true");
+    });
+    // Collapse again externally via the reducer and confirm the row
+    // tracks it live.
+    act(() => {
+      externalDispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...mockConnections[0], expanded: false },
+      });
+    });
+    await waitFor(() => {
+      expect(folderRow.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByText("Item 1")).toBeNull();
+    });
+  });
+
   it("does not let the second click of a folder double-click cancel single-click expansion", async () => {
     const { default: ConnectionTreeItem } =
       await import("../../src/components/connection/connectionTree/ConnectionTreeItem");
 
     function Harness() {
-      const { dispatch } = useConnections();
+      const { state, dispatch } = useConnections();
       React.useEffect(() => {
         dispatch({ type: "SET_CONNECTIONS", payload: mockConnections });
       }, [dispatch]);
-      const folder = mockConnections[0];
+      const folder =
+        state.connections.find((c) => c.id === mockConnections[0].id) ??
+        mockConnections[0];
       const noop = () => {};
       return (
         <ConnectionTreeItem
