@@ -19,6 +19,12 @@ pub enum RecordingError {
     JobError(String),
     InvalidParameter(String),
     CapacityExceeded(String),
+    /// Encrypt-at-rest is the active policy (the default) but no usable
+    /// master encryption key is available (locked or never configured),
+    /// so the recording cannot be persisted without silently writing
+    /// plaintext. The message is actionable — it tells the user to
+    /// unlock/set the encryption key, or to deliberately opt out.
+    EncryptionRequired(String),
     Cancelled,
     Internal(String),
 }
@@ -44,6 +50,7 @@ impl fmt::Display for RecordingError {
             Self::JobError(msg) => write!(f, "Job error: {}", msg),
             Self::InvalidParameter(msg) => write!(f, "Invalid parameter: {}", msg),
             Self::CapacityExceeded(msg) => write!(f, "Capacity exceeded: {}", msg),
+            Self::EncryptionRequired(msg) => write!(f, "Encryption required: {}", msg),
             Self::Cancelled => write!(f, "Operation cancelled"),
             Self::Internal(msg) => write!(f, "Internal error: {}", msg),
         }

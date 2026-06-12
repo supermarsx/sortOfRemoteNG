@@ -502,6 +502,31 @@ pub struct RecordingGlobalConfig {
     pub macro_default_step_delay_ms: u64,
     pub macro_confirm_before_replay: bool,
     pub macro_max_steps: usize,
+    /// Encrypt-at-rest policy for saved recordings + macros.
+    ///
+    /// When `true` (the default — user decision 2026-06-12), every
+    /// recording, macro, and media sidecar MUST be written through the
+    /// AEAD codec. If the master encryption key is locked or absent at
+    /// persist time, the save is REFUSED with an actionable error
+    /// (`EncryptionRequired`) rather than silently falling back to
+    /// plaintext JSON on disk.
+    ///
+    /// When `false`, this is an EXPLICIT, deliberate opt-out: recordings
+    /// may be written in plaintext when the key is unavailable. This is
+    /// only for users who knowingly want portable / unencrypted
+    /// recordings; it is never the default.
+    ///
+    /// `#[serde(default = …)]` defaults pre-existing configs (persisted
+    /// before this field existed) to encrypted-by-default on load.
+    #[serde(default = "default_encrypt_at_rest")]
+    pub encrypt_at_rest: bool,
+}
+
+/// Default for [`RecordingGlobalConfig::encrypt_at_rest`] — encrypted
+/// at rest by default (user decision 2026-06-12). Also used by serde to
+/// upgrade configs persisted before the field existed.
+pub fn default_encrypt_at_rest() -> bool {
+    true
 }
 
 impl Default for RecordingGlobalConfig {
@@ -533,6 +558,8 @@ impl Default for RecordingGlobalConfig {
             macro_default_step_delay_ms: 500,
             macro_confirm_before_replay: true,
             macro_max_steps: 500,
+            // Encrypted at rest by default — user decision 2026-06-12.
+            encrypt_at_rest: default_encrypt_at_rest(),
         }
     }
 }

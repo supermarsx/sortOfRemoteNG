@@ -40,6 +40,17 @@ pub struct RecordingService {
     migration_cancel: Arc<AtomicBool>,
 }
 
+/// How a single recording / macro / media payload should be written,
+/// as resolved from the `encrypt_at_rest` config policy and the live
+/// encryption state. Returned by [`RecordingService::resolve_persist_mode`].
+enum PersistMode {
+    /// Write through the AEAD codec under this (unlocked) key.
+    Encrypted(Arc<EncryptionState>),
+    /// Write plaintext — only ever produced when the user has
+    /// explicitly opted out of encrypt-at-rest.
+    Plaintext,
+}
+
 /// Tauri event name emitted as the recording migration walks each
 /// file. Payload shape is documented on
 /// [`RecordingMigrationProgressEvent`].
@@ -113,6 +124,53 @@ impl RecordingService {
         self.encryption_state.lock().await.clone()
     }
 
+    /// Resolve how a recording / macro / media payload must be
+    /// persisted, given the current encrypt-at-rest config policy and
+    /// the live encryption state.
+    ///
+    /// Default policy (`encrypt_at_rest = true`, user decision
+    /// 2026-06-12):
+    ///   - encryption state installed AND unlocked → encrypt.
+    ///   - otherwise → REFUSE with an actionable [`EncryptionRequired`]
+    ///     error. We never silently write plaintext under the default.
+    ///
+    /// Explicit opt-out (`encrypt_at_rest = false`): plaintext is
+    /// allowed when the key is unavailable, and encryption is still used
+    /// opportunistically when it happens to be unlocked. This is the
+    /// only path that may land plaintext on disk, and it is never the
+    /// default.
+    async fn resolve_persist_mode(&self) -> RecordingResult<PersistMode> {
+        let encrypt_at_rest = self.engine.lock().await.get_config().encrypt_at_rest;
+        let handle = self.enc_handle().await;
+        let unlocked = match &handle {
+            Some(enc) => enc.is_unlocked().await,
+            None => false,
+        };
+
+        if unlocked {
+            // A key is present and usable — always encrypt, regardless
+            // of the opt-out flag (the flag only relaxes the *fallback*).
+            return Ok(PersistMode::Encrypted(handle.unwrap()));
+        }
+
+        if encrypt_at_rest {
+            // Default policy: do NOT silently write plaintext. Surface
+            // an actionable error so the caller can unlock / configure
+            // the recording encryption key (or deliberately opt out).
+            Err(RecordingError::EncryptionRequired(
+                "session recordings are encrypted at rest by default but no \
+                 encryption key is available (vault is locked or not configured). \
+                 Unlock encryption before recording, or set the recording \
+                 'encrypt_at_rest' option to false to deliberately allow \
+                 plaintext recordings."
+                    .into(),
+            ))
+        } else {
+            // Explicit opt-out — plaintext is permitted.
+            Ok(PersistMode::Plaintext)
+        }
+    }
+
     /// Persist an envelope through the dispatched codec when an
     /// encryption state is installed; otherwise fall back to the
     /// legacy plaintext path.
@@ -136,6 +194,12 @@ impl RecordingService {
     ) -> RecordingResult<SavedRecordingEnvelope> {
         let mut env = envelope;
 
+        // Resolve the encrypt-vs-plaintext policy ONCE up front. Under
+        // the default (encrypt_at_rest = true) this refuses to proceed
+        // when no key is available, so neither the sidecar nor the
+        // metadata file can be silently written in plaintext.
+        let mode = self.resolve_persist_mode().await?;
+
         // Decide whether to peel the payload into a sidecar. Skip the
         // check entirely when the envelope already has one — that path
         // is taken by `update_library_tags` / `rename_in_library`,
@@ -147,30 +211,36 @@ impl RecordingService {
         {
             let basename = format!("{}.media", env.id);
             let bytes = std::mem::take(&mut env.data).into_bytes();
-            if let Some(enc) = self.enc_handle().await {
-                storage::save_media_blob_dispatched(&root, &basename, &bytes, &enc).await?;
-            } else {
-                // No master state — store the sidecar as plaintext so
-                // the layout stays consistent (the loader will not
-                // expect inline `data`).
-                let dir = root.join("recordings");
-                std::fs::create_dir_all(&dir).map_err(|e| {
-                    RecordingError::StorageError(format!("mkdir media: {}", e))
-                })?;
-                std::fs::write(dir.join(&basename), &bytes).map_err(|e| {
-                    RecordingError::StorageError(format!("write media: {}", e))
-                })?;
+            match &mode {
+                PersistMode::Encrypted(enc) => {
+                    storage::save_media_blob_dispatched(&root, &basename, &bytes, enc).await?;
+                }
+                PersistMode::Plaintext => {
+                    // Explicit opt-out — store the sidecar as plaintext so
+                    // the layout stays consistent (the loader will not
+                    // expect inline `data`).
+                    let dir = root.join("recordings");
+                    std::fs::create_dir_all(&dir).map_err(|e| {
+                        RecordingError::StorageError(format!("mkdir media: {}", e))
+                    })?;
+                    std::fs::write(dir.join(&basename), &bytes).map_err(|e| {
+                        RecordingError::StorageError(format!("write media: {}", e))
+                    })?;
+                }
             }
             env.media_blob_basename = Some(basename);
         }
 
-        if let Some(enc) = self.enc_handle().await {
-            storage::save_envelope_dispatched(&root, &env, &enc).await?;
-        } else {
-            let to_save = env.clone();
-            tokio::task::spawn_blocking(move || storage::save_envelope(&root, &to_save))
-                .await
-                .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        match mode {
+            PersistMode::Encrypted(enc) => {
+                storage::save_envelope_dispatched(&root, &env, &enc).await?;
+            }
+            PersistMode::Plaintext => {
+                let to_save = env.clone();
+                tokio::task::spawn_blocking(move || storage::save_envelope(&root, &to_save))
+                    .await
+                    .map_err(|e| RecordingError::Internal(e.to_string()))??;
+            }
         }
         Ok(env)
     }
@@ -249,12 +319,13 @@ impl RecordingService {
         root: PathBuf,
         m: MacroRecording,
     ) -> RecordingResult<()> {
-        if let Some(enc) = self.enc_handle().await {
-            storage::save_macro_dispatched(&root, &m, &enc).await
-        } else {
-            tokio::task::spawn_blocking(move || storage::save_macro(&root, &m))
-                .await
-                .map_err(|e| RecordingError::Internal(e.to_string()))?
+        match self.resolve_persist_mode().await? {
+            PersistMode::Encrypted(enc) => storage::save_macro_dispatched(&root, &m, &enc).await,
+            PersistMode::Plaintext => {
+                tokio::task::spawn_blocking(move || storage::save_macro(&root, &m))
+                    .await
+                    .map_err(|e| RecordingError::Internal(e.to_string()))?
+            }
         }
     }
 
@@ -1405,15 +1476,26 @@ mod phase_2c_split_tests {
         assert_eq!(s_bytes, b"sidecar-body");
     }
 
+    /// Helper: flip the config to the explicit plaintext opt-out so
+    /// the locked-state plaintext path is reachable. Under the default
+    /// (encrypt_at_rest = true) this same save would be REFUSED — that
+    /// is covered by `locked_state_refuses_plaintext_under_default`.
+    async fn set_plaintext_opt_out(svc: &RecordingService) {
+        let mut cfg = svc.get_config().await;
+        cfg.encrypt_at_rest = false;
+        svc.update_config(cfg).await.unwrap();
+    }
+
     #[tokio::test]
     async fn locked_state_writes_plaintext_sidecar() {
         let tmp = tempdir().unwrap();
-        // Encryption state installed but never unlocked → media falls
-        // back to plain `<basename>` per Phase 2b policy, mirroring
-        // the metadata side.
+        // Encryption state installed but never unlocked. With the
+        // EXPLICIT plaintext opt-out set, media falls back to plain
+        // `<basename>` per Phase 2b policy, mirroring the metadata side.
         let svc = RecordingService::new(tmp.path().to_string_lossy().as_ref());
         svc.set_encryption_state(std::sync::Arc::new(EncryptionState::new()))
             .await;
+        set_plaintext_opt_out(&svc).await;
         let env = fixture_envelope(
             "L1",
             ExportFormat::FrameSequence,
@@ -1425,6 +1507,117 @@ mod phase_2c_split_tests {
         let enc = tmp.path().join("recording/recordings/L1.media.enc");
         assert!(plain.exists());
         assert!(!enc.exists());
+    }
+
+    #[tokio::test]
+    async fn default_save_unlocked_produces_encrypted_output() {
+        // Default policy (encrypt_at_rest = true) + unlocked key →
+        // every artifact lands as `.enc`, never plaintext.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), true).await;
+        let env = fixture_envelope(
+            "ENC1",
+            ExportFormat::FrameSequence,
+            1024,
+            "secret-payload".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        let meta_enc = tmp.path().join("recording/recordings/ENC1.json.enc");
+        let meta_plain = tmp.path().join("recording/recordings/ENC1.json");
+        let media_enc = tmp.path().join("recording/recordings/ENC1.media.enc");
+        let media_plain = tmp.path().join("recording/recordings/ENC1.media");
+        assert!(meta_enc.exists(), "metadata must be encrypted by default");
+        assert!(!meta_plain.exists(), "no plaintext metadata under default");
+        assert!(media_enc.exists(), "media must be encrypted by default");
+        assert!(!media_plain.exists(), "no plaintext media under default");
+    }
+
+    #[tokio::test]
+    async fn locked_state_refuses_plaintext_under_default() {
+        // The core security guarantee: encrypt-at-rest is the DEFAULT,
+        // so a locked / absent key must NOT silently produce a plaintext
+        // recording — the save is refused with EncryptionRequired and
+        // nothing is written to disk.
+        let tmp = tempdir().unwrap();
+        // Case 1: encryption state installed but locked.
+        let svc = RecordingService::new(tmp.path().to_string_lossy().as_ref());
+        svc.set_encryption_state(std::sync::Arc::new(EncryptionState::new()))
+            .await;
+        let env = fixture_envelope(
+            "R1",
+            ExportFormat::FrameSequence,
+            1024,
+            "must-not-leak".to_string(),
+        );
+        let err = svc.save_to_library(env).await.unwrap_err();
+        assert!(
+            matches!(err, RecordingError::EncryptionRequired(_)),
+            "locked key under default must refuse, got: {err:?}"
+        );
+        // Absolutely nothing on disk for this id — no plaintext leak.
+        assert!(!tmp.path().join("recording/recordings/R1.json").exists());
+        assert!(!tmp.path().join("recording/recordings/R1.json.enc").exists());
+        assert!(!tmp.path().join("recording/recordings/R1.media").exists());
+        assert!(!tmp.path().join("recording/recordings/R1.media.enc").exists());
+
+        // Case 2: no encryption state installed at all (boot-order race
+        // or never configured) — same refusal under the default.
+        let tmp2 = tempdir().unwrap();
+        let svc2 = RecordingService::new(tmp2.path().to_string_lossy().as_ref());
+        let env2 = fixture_envelope(
+            "R2",
+            ExportFormat::Asciicast,
+            10,
+            "must-not-leak".to_string(),
+        );
+        let err2 = svc2.save_to_library(env2).await.unwrap_err();
+        assert!(
+            matches!(err2, RecordingError::EncryptionRequired(_)),
+            "absent key under default must refuse, got: {err2:?}"
+        );
+        assert!(!tmp2.path().join("recording/recordings/R2.json").exists());
+    }
+
+    #[tokio::test]
+    async fn explicit_opt_out_allows_plaintext_when_locked() {
+        // With the deliberate opt-out (encrypt_at_rest = false), a
+        // locked / absent key is permitted to write plaintext — proving
+        // the documented escape hatch still works.
+        let tmp = tempdir().unwrap();
+        let svc = fresh_service(tmp.path(), false).await; // no key installed
+        set_plaintext_opt_out(&svc).await;
+        let env = fixture_envelope(
+            "OO1",
+            ExportFormat::Asciicast,
+            10,
+            "opt-out-body".to_string(),
+        );
+        svc.save_to_library(env).await.unwrap();
+        let plain = tmp.path().join("recording/recordings/OO1.json");
+        assert!(plain.exists(), "opt-out must allow plaintext metadata");
+        let stored = svc.get_from_library("OO1").await.unwrap();
+        assert_eq!(stored.data, "opt-out-body");
+    }
+
+    #[tokio::test]
+    async fn macro_persist_refuses_plaintext_under_default_when_locked() {
+        // Macros take the same persistence policy as envelopes.
+        let tmp = tempdir().unwrap();
+        let svc = RecordingService::new(tmp.path().to_string_lossy().as_ref());
+        svc.set_encryption_state(std::sync::Arc::new(EncryptionState::new()))
+            .await;
+        svc.start_macro_recording("ms".to_string(), RecordingProtocol::Ssh)
+            .await
+            .unwrap();
+        svc.macro_record_input("ms", "echo hi\r").await;
+        let err = svc
+            .stop_macro_recording("ms", "m".to_string(), None, None, vec![])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, RecordingError::EncryptionRequired(_)),
+            "locked macro persist under default must refuse, got: {err:?}"
+        );
     }
 
     #[tokio::test]
