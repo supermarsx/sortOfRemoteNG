@@ -195,6 +195,29 @@ describe("SessionTabs accessibility", () => {
     expect(await screen.findByLabelText(/rename tab session one/i)).toBeInTheDocument();
   });
 
+  it("closes the tab context menu when its tab is removed", async () => {
+    const { rerender } = renderTabs();
+
+    const firstTab = screen.getByRole("tab", { name: /session one/i });
+    fireEvent.contextMenu(firstTab);
+
+    expect(await screen.findByTestId("session-tab-context-menu")).toBeInTheDocument();
+
+    mockSessions = mockSessions.filter((session) => session.id !== "s1");
+    rerender(
+      <SessionTabs
+        activeSessionId="s2"
+        onSessionSelect={onSessionSelect}
+        onSessionClose={onSessionClose}
+        onSessionDetach={onSessionDetach}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("session-tab-context-menu")).not.toBeInTheDocument();
+    });
+  });
+
   it("closes a tab from the overflow menu with middle click", async () => {
     forceTabOverflow();
     renderTabs();
