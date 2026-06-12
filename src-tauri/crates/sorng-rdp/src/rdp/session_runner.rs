@@ -209,6 +209,10 @@ struct EstablishedSession {
     active_render_backend: String,
     gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxOutput>>,
     clipboard_state: Option<SharedClipboardState>,
+    /// Live AUDIN channel summary shared out of the `AudinDvcProcessor` before it
+    /// was moved into DRDYNVC, letting the runner merge AUDIN's real
+    /// ready/fault/enabled state into the lifecycle channel summary.
+    audin_summary: Option<super::audin::SharedAudinSummary>,
 }
 
 // ---- Blocking RDP session runner ----
@@ -904,10 +908,18 @@ fn establish_rdp_connection(
         drdynvc = drdynvc.with_dynamic_channel(rdpdr_dvc);
     }
 
-    if settings.enable_audio_recording {
+    // Hold a clone of AUDIN's shared channel summary before the processor is
+    // moved into DRDYNVC, so the active-session loop can read its live
+    // ready/fault/enabled state (mirrors how `clipboard_state` is retained).
+    let audin_summary: Option<super::audin::SharedAudinSummary> = if settings.enable_audio_recording
+    {
         let audin = super::audin::AudinDvcProcessor::new(session_id.to_string(), true);
+        let summary = audin.shared_summary();
         drdynvc = drdynvc.with_dynamic_channel(audin);
-    }
+        Some(summary)
+    } else {
+        None
+    };
 
     connector.attach_static_channel(drdynvc);
     log::info!(
@@ -1291,6 +1303,7 @@ fn establish_rdp_connection(
         active_render_backend,
         gfx_frame_rx,
         clipboard_state,
+        audin_summary,
     })
 }
 
@@ -1883,15 +1896,14 @@ fn run_active_session_loop(
                 merge_channel_summary(&mut channel_summary, rdpsnd.channel_summary());
             }
             // AUDIN: the DVC processor is owned by DRDYNVC inside the active stage
-            // and is not retrievable here (no DVC accessor; audin.rs is outside this
-            // lock), so reflect its registered/enabled state from settings to ensure
-            // the AUDIN channel is accounted for in the summary. Live ready/fault
-            // counters would require a shared AUDIN diagnostics handle (audin.rs).
-            if settings.enable_audio_recording {
-                let audin_summary =
-                    super::audin::AudinDvcProcessor::new(session_id.to_string(), true)
-                        .channel_summary();
-                merge_channel_summary(&mut channel_summary, audin_summary);
+            // and is not directly retrievable here, but it publishes its live
+            // channel state into the runner-held shared summary handle on every
+            // transition. Merge that LIVE ready/fault/enabled state, mirroring the
+            // CLIPRDR/RDPDR/RDPSND merges above.
+            if let Some(ref audin_summary) = est.audin_summary {
+                if let Ok(summary) = audin_summary.lock() {
+                    merge_channel_summary(&mut channel_summary, summary.clone());
+                }
             }
             stats.set_channel_summary(channel_summary);
 

@@ -16,6 +16,13 @@ use super::virtual_channels::{
     VirtualChannelDescriptor, VirtualChannelKind, VirtualChannelPriority, VirtualChannelState,
 };
 
+/// Cloneable handle to the AUDIN channel summary, shared between the
+/// `AudinDvcProcessor` (which lives inside DRDYNVC after registration) and the
+/// session runner (which keeps a clone so it can read AUDIN's *live* ready/fault
+/// state for the lifecycle channel summary). Mirrors how CLIPRDR shares its
+/// `SharedClipboardState` so the runner can read `ClipboardState::channel_summary()`.
+pub type SharedAudinSummary = Arc<Mutex<ChannelSummary>>;
+
 // AUDIN message types (MS-RDPEAI 2.2)
 const MSG_SNDIN_VERSION: u8 = 0x01;
 const MSG_SNDIN_FORMATS: u8 = 0x02;
@@ -99,6 +106,11 @@ pub struct AudinDvcProcessor {
     last_error_class: Option<String>,
     server_version: Option<u32>,
     fallback_format_used: bool,
+    /// Shared, runner-readable snapshot of the AUDIN channel summary. Updated on
+    /// every channel-state transition so the session runner can merge AUDIN's
+    /// live ready/fault/enabled counts into the lifecycle channel summary even
+    /// though the processor itself is moved into DRDYNVC.
+    shared_summary: SharedAudinSummary,
 }
 
 impl std::fmt::Debug for AudinDvcProcessor {
@@ -116,6 +128,11 @@ impl_as_any!(AudinDvcProcessor);
 
 impl AudinDvcProcessor {
     pub fn new(session_id: String, enabled: bool) -> Self {
+        let channel_state = if enabled {
+            VirtualChannelState::Registered
+        } else {
+            VirtualChannelState::Disabled
+        };
         Self {
             session_id,
             enabled,
@@ -126,11 +143,7 @@ impl AudinDvcProcessor {
             capture_buffer: Arc::new(Mutex::new(VecDeque::new())),
             _capture_stream: Option::None,
             open: false,
-            channel_state: if enabled {
-                VirtualChannelState::Registered
-            } else {
-                VirtualChannelState::Disabled
-            },
+            channel_state,
             messages_received: 0,
             messages_sent: 0,
             ready_count: 0,
@@ -138,6 +151,23 @@ impl AudinDvcProcessor {
             last_error_class: None,
             server_version: None,
             fallback_format_used: false,
+            shared_summary: Arc::new(Mutex::new(channel_summary_for_state(channel_state))),
+        }
+    }
+
+    /// Returns a cloneable handle to the live AUDIN channel summary. The runner
+    /// holds this clone so it can read AUDIN's real ready/fault/enabled counts
+    /// after the processor has been moved into DRDYNVC (mirrors how CLIPRDR
+    /// shares its `SharedClipboardState`).
+    pub fn shared_summary(&self) -> SharedAudinSummary {
+        self.shared_summary.clone()
+    }
+
+    /// Push the current channel-state-derived summary into the shared handle so
+    /// the runner observes the live transition.
+    fn publish_summary(&self) {
+        if let Ok(mut summary) = self.shared_summary.lock() {
+            *summary = self.channel_summary();
         }
     }
 
@@ -156,15 +186,7 @@ impl AudinDvcProcessor {
     }
 
     pub fn channel_summary(&self) -> ChannelSummary {
-        ChannelSummary {
-            enabled_count: if self.channel_state.is_enabled() {
-                1
-            } else {
-                0
-            },
-            ready_count: if self.channel_state.is_ready() { 1 } else { 0 },
-            failed_count: if self.channel_state.is_failed() { 1 } else { 0 },
-        }
+        channel_summary_for_state(self.channel_state)
     }
 
     pub fn diagnostics(&self) -> AudinDiagnostics {
@@ -209,6 +231,7 @@ impl AudinDvcProcessor {
             self.last_error_class = None;
         }
         self.channel_state = state;
+        self.publish_summary();
     }
 
     fn set_enabled_channel_state(&mut self, state: VirtualChannelState) {
@@ -225,6 +248,7 @@ impl AudinDvcProcessor {
         }
         self.channel_state = VirtualChannelState::Faulted;
         self.last_error_class = Some(class.to_string());
+        self.publish_summary();
     }
 
     fn record_received(&mut self) {
@@ -466,6 +490,17 @@ impl AudinDvcProcessor {
             num_formats,
             self.formats.len()
         );
+    }
+}
+
+/// Derive a `ChannelSummary` from a single AUDIN channel state. Shared by the
+/// live `channel_summary()` accessor and the seed value placed into the shared
+/// runner-readable summary handle at construction time.
+fn channel_summary_for_state(state: VirtualChannelState) -> ChannelSummary {
+    ChannelSummary {
+        enabled_count: if state.is_enabled() { 1 } else { 0 },
+        ready_count: if state.is_ready() { 1 } else { 0 },
+        failed_count: if state.is_failed() { 1 } else { 0 },
     }
 }
 
@@ -765,6 +800,37 @@ mod tests {
             diagnostics.channel.last_error_class.as_deref(),
             Some("missing_active_format")
         );
+    }
+
+    #[test]
+    fn audin_shared_summary_reflects_live_ready_and_fault_transitions() {
+        let mut processor = AudinDvcProcessor::new("session-1".to_string(), true);
+        let handle = processor.shared_summary();
+
+        // Seeded at construction: enabled (Registered), not yet ready.
+        {
+            let summary = handle.lock().expect("summary lock");
+            assert_eq!(summary.enabled_count, 1);
+            assert_eq!(summary.ready_count, 0);
+            assert_eq!(summary.failed_count, 0);
+        }
+
+        // Live ready transition surfaces through the shared handle.
+        processor.set_channel_state(VirtualChannelState::Ready);
+        {
+            let summary = handle.lock().expect("summary lock");
+            assert_eq!(summary.enabled_count, 1);
+            assert_eq!(summary.ready_count, 1);
+            assert_eq!(summary.failed_count, 0);
+        }
+
+        // Live fault transition surfaces through the shared handle.
+        processor.mark_faulted("missing_active_format");
+        {
+            let summary = handle.lock().expect("summary lock");
+            assert_eq!(summary.ready_count, 0);
+            assert_eq!(summary.failed_count, 1);
+        }
     }
 
     #[test]
