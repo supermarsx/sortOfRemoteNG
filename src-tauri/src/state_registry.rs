@@ -337,6 +337,31 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
         TrustStoreService::new(trust_store_path.to_string_lossy().to_string());
     app.manage(trust_store_service);
 
+    // Trust Center TOFU wiring (t24): the management TLS clients that build
+    // their reqwest client deep inside their own crate (no access to Tauri
+    // app state) resolve the trust-store file path themselves. Give them the
+    // EXACT registered path here so they use it explicitly instead of their
+    // platform-dependent fallback. The file-backed sync verifier then shares
+    // one coherent `trust_store.json` with the async `TrustStoreService` and
+    // the Trust Center UI. These calls are additive and idempotent
+    // (OnceLock / env var); they must mirror `trust_store_path` above.
+    //
+    // `SORNG_TRUST_STORE_PATH` is honoured by sorng-warpgate (and any future
+    // env-aware client). Only set it when the path is valid UTF-8 so we never
+    // export a lossy/garbled value.
+    if let Some(trust_store_path_str) = trust_store_path.to_str() {
+        std::env::set_var("SORNG_TRUST_STORE_PATH", trust_store_path_str);
+    }
+    // supermicro exposes a process-global setter (feature `platform`).
+    // It takes the FULL path to `trust_store.json`.
+    #[cfg(feature = "platform")]
+    supermicro::trust::set_trust_store_path(trust_store_path.clone());
+    // hetzner exposes a process-global setter (feature `cloud`).
+    // NOTE: it takes the app-data DIRECTORY and joins `trust_store.json`
+    // itself, so pass `app_dir` here — NOT the full `trust_store_path`.
+    #[cfg(feature = "cloud")]
+    hetzner::client::init_trust_store_path(app_dir.clone());
+
     let emitter = crate::event_bridge::from_app_handle(app.handle());
     let ssh_service = SshService::new_with_emitter(emitter.clone());
     app.manage(ssh_service.clone());

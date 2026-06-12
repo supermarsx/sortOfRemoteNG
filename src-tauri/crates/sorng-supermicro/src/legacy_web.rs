@@ -13,9 +13,11 @@
 //! This client handles session cookies and CSRF tokens where needed.
 
 use crate::error::{SmcError, SmcResult};
+use crate::trust::trust_store_handle;
 use crate::types::*;
 use reqwest::Client;
 use serde_json;
+use sorng_tls_trust::TofuTlsContext;
 
 /// CGI web API client for older Supermicro BMCs.
 pub struct LegacyWebClient {
@@ -30,12 +32,40 @@ impl LegacyWebClient {
         let scheme = if use_ssl { "https" } else { "http" };
         let base_url = format!("{}://{}:{}", scheme, host, port);
 
-        let http = Client::builder()
-            .danger_accept_invalid_certs(true)
+        // Build the HTTP client. Previously this unconditionally called
+        // `.danger_accept_invalid_certs(true)` — a hard-coded, blind TLS skip
+        // that sent BMC credentials to a server whose certificate was never
+        // checked or memorized. We now route the certificate decision through
+        // the backend Trust Center with Trust-On-First-Use (TOFU) as the
+        // default: an unknown BMC's (typically self-signed) certificate is
+        // pinned on first connect and accepted; a *changed* certificate is
+        // rejected as a possible MITM. Real signature/chain cryptography is
+        // still enforced by the verifier — TOFU only governs identity pinning.
+        //
+        // The legacy skip was unconditional (no user opt-out flag), so there is
+        // no flag to honour: the secure TOFU default is the improvement, hence
+        // `policy_override: None` (defer to the store's effective/global policy,
+        // which defaults to TOFU). A user can still set a per-host AlwaysTrust
+        // override in the Trust Center for lab BMCs.
+        let builder = Client::builder()
             .cookie_store(true)
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| SmcError::legacy_web(format!("Failed to create HTTP client: {e}")))?;
+            .timeout(std::time::Duration::from_secs(30));
+
+        let http = if use_ssl {
+            let ctx = TofuTlsContext {
+                store: trust_store_handle(),
+                host: host.to_string(),
+                port,
+                policy_override: None,
+            };
+            sorng_tls_trust::build_tofu_client(builder, ctx)
+                .map_err(|e| SmcError::legacy_web(format!("Failed to create HTTP client: {e}")))?
+        } else {
+            // Plain HTTP — no TLS handshake, so no certificate decision to make.
+            builder
+                .build()
+                .map_err(|e| SmcError::legacy_web(format!("Failed to create HTTP client: {e}")))?
+        };
 
         Ok(Self {
             base_url,
@@ -344,5 +374,39 @@ impl LegacyWebClient {
     /// Get sensor readings (temperature, fans, voltages) via CGI API.
     pub async fn get_sensor_data(&self) -> SmcResult<serde_json::Value> {
         self.get_json("/cgi/ipmi.cgi?op=SENSOR_INFO").await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Building the client over TLS must install the TOFU verifier path and
+    /// succeed (no `danger_accept_invalid_certs`, no panic). This proves the
+    /// `build_tofu_client` wiring + ring crypto provider resolve at construction
+    /// time. No network is involved — the verifier only runs during a real
+    /// handshake.
+    /// Install the ring crypto provider once (sorng-app does this at startup;
+    /// under `cargo test` it is not present, and `rustls::ClientConfig::builder`
+    /// panics without a process-default provider).
+    fn ensure_crypto_provider() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
+    #[test]
+    fn ssl_client_builds_with_tofu_verifier() {
+        ensure_crypto_provider();
+        let client = LegacyWebClient::new("198.51.100.10", 443, true)
+            .expect("TLS client should build with the TOFU verifier installed");
+        assert_eq!(client.base_url, "https://198.51.100.10:443");
+        assert!(!client.is_connected());
+    }
+
+    /// The plain-HTTP path skips the TLS config entirely and still builds.
+    #[test]
+    fn plain_http_client_builds() {
+        let client = LegacyWebClient::new("198.51.100.10", 80, false)
+            .expect("plain HTTP client should build");
+        assert_eq!(client.base_url, "http://198.51.100.10:80");
     }
 }

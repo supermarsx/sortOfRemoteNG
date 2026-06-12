@@ -11,3 +11,6 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
+sorng-tls-trust = { path = "../sorng-tls-trust" }
+sorng-storage = { path = "../sorng-storage" }
+dirs = { workspace = true }

@@ -544,10 +544,12 @@ async fn test_winrm_endpoint(config: &PsRemotingConfig) -> DiagnosticCheck {
     let start = std::time::Instant::now();
     let endpoint_url = config.endpoint_uri();
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(config.skip_ca_check)
-        .timeout(std::time::Duration::from_secs(10))
-        .build();
+    // Route TLS through the Trust Center (TOFU default); the legacy skip flags
+    // map to an explicit AlwaysTrust override inside build_winrm_client.
+    let client = crate::tls::build_winrm_client(
+        reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)),
+        config,
+    );
 
     let client = match client {
         Ok(c) => c,
@@ -626,10 +628,12 @@ async fn test_wsman_identify(config: &PsRemotingConfig) -> DiagnosticCheck {
   </s:Body>
 </s:Envelope>"#;
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(config.skip_ca_check)
-        .timeout(std::time::Duration::from_secs(10))
-        .build();
+    // Route TLS through the Trust Center (TOFU default); the legacy skip flags
+    // map to an explicit AlwaysTrust override inside build_winrm_client.
+    let client = crate::tls::build_winrm_client(
+        reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)),
+        config,
+    );
 
     let client = match client {
         Ok(c) => c,

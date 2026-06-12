@@ -25,6 +25,12 @@ regex = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
+dirs = { workspace = true }
+
+# Route WinRM/PowerShell TLS certificate decisions through the backend Trust
+# Center with TOFU as the default (replaces blind danger_accept_invalid_certs).
+sorng-tls-trust = { path = "../sorng-tls-trust" }
+sorng-storage = { path = "../sorng-storage" }
 
 # sspi-rs for CredSSP / Negotiate / NTLM / Kerberos.
 # Default features pull in aws-lc-rs which installs the rustls default

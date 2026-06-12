@@ -1,0 +1,25 @@
+[package]
+name = "sorng-tls-trust"
+version = "0.1.0"
+edition = "2021"
+description = "Shared TOFU rustls verifier routing management-client TLS decisions through the backend Trust Center"
+
+[dependencies]
+# rustls 0.23 — must match the version reqwest 0.12 re-exports so the
+# ClientConfig handed to `use_preconfigured_tls` lines up. The RING crypto
+# provider is installed process-globally by sorng-app; building a ClientConfig
+# with a different provider panics at handshake, so we pin `ring`.
+rustls = { workspace = true, features = ["ring"] }
+rustls-native-certs = { workspace = true }
+reqwest = { workspace = true }
+sorng-storage = { path = "../sorng-storage" }
+
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+x509-parser = "0.15"
+base64 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

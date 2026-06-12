@@ -11,5 +11,6 @@ pub mod jea;
 pub mod serialization;
 pub mod service;
 pub mod session;
+pub mod tls;
 pub mod transport;
 pub mod types;

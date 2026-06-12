@@ -307,14 +307,7 @@ pub struct TrustStoreService {
 impl TrustStoreService {
     pub fn new(store_path: String) -> TrustStoreServiceState {
         let path = PathBuf::from(&store_path);
-        let data = if path.exists() {
-            fs::read_to_string(&path)
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default()
-        } else {
-            TrustStoreData::default()
-        };
+        let data = load_trust_store_data(&path);
         Arc::new(Mutex::new(TrustStoreService {
             data,
             store_path: path,
@@ -322,12 +315,7 @@ impl TrustStoreService {
     }
 
     fn persist(&self) -> Result<(), String> {
-        if let Some(parent) = self.store_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
-        }
-        let json =
-            serde_json::to_string_pretty(&self.data).map_err(|e| format!("serialize: {}", e))?;
-        fs::write(&self.store_path, json).map_err(|e| format!("write: {}", e))
+        persist_trust_store_data(&self.store_path, &self.data)
     }
 
     // -----------------------------------------------------------------------
@@ -390,107 +378,7 @@ impl TrustStoreService {
         record_type: &str,
         identity: Identity,
     ) -> TrustVerifyResult {
-        let key = Self::record_key(record_type, host);
-        let now_str = Utc::now().to_rfc3339();
-
-        if let Some(record) = self.data.records.get_mut(&key) {
-            // --- revoked ---
-            if record.revoked {
-                return TrustVerifyResult::Revoked {
-                    stored: record.identity.clone(),
-                };
-            }
-
-            let stored_fp = Self::identity_fingerprint(&record.identity).to_owned();
-            let presented_fp = Self::identity_fingerprint(&identity).to_owned();
-
-            // Update stats
-            record.stats.total_checks += 1;
-
-            if stored_fp == presented_fp {
-                record.stats.match_count += 1;
-                record.stats.last_verified = Some(now_str);
-                record.stats.trust_score = Self::compute_trust_score(&record.stats);
-
-                let policy = record
-                    .host_policy
-                    .clone()
-                    .unwrap_or_else(|| self.data.policy.clone());
-
-                // Policy-aware checks on a matching fingerprint
-                match policy {
-                    TrustPolicy::TofuWithExpiry => {
-                        if Self::is_trust_expired(record) {
-                            return TrustVerifyResult::Expired {
-                                stored: record.identity.clone(),
-                                presented: identity,
-                            };
-                        }
-                    }
-                    TrustPolicy::ThresholdTrust => {
-                        let required = record
-                            .host_policy_config
-                            .as_ref()
-                            .and_then(|c| c.threshold_count)
-                            .or(self.data.policy_config.threshold_count)
-                            .unwrap_or(3);
-                        if record.stats.match_count < required as u64 {
-                            return TrustVerifyResult::PendingThreshold {
-                                identity,
-                                current_count: record.stats.match_count,
-                                required_count: required,
-                            };
-                        }
-                    }
-                    TrustPolicy::TrustOnVerify => {
-                        if !record.user_approved {
-                            return TrustVerifyResult::PendingVerification { identity };
-                        }
-                    }
-                    _ => {}
-                }
-
-                TrustVerifyResult::Trusted
-            } else {
-                record.stats.mismatch_count += 1;
-                record.stats.last_mismatch = Some(now_str);
-                record.stats.trust_score = Self::compute_trust_score(&record.stats);
-
-                let policy = record
-                    .host_policy
-                    .clone()
-                    .unwrap_or_else(|| self.data.policy.clone());
-
-                match policy {
-                    TrustPolicy::KeyRotationGrace => {
-                        // If the last mismatch was recent (within grace), return
-                        // RotationGrace instead of hard Mismatch.
-                        let _grace_hours = record
-                            .host_policy_config
-                            .as_ref()
-                            .and_then(|c| c.rotation_grace_hours)
-                            .or(self.data.policy_config.rotation_grace_hours)
-                            .unwrap_or(24);
-                        // Simplified: just report as RotationGrace — the frontend
-                        // decides whether to auto-accept.
-                        TrustVerifyResult::RotationGrace {
-                            stored: record.identity.clone(),
-                            presented: identity,
-                        }
-                    }
-                    TrustPolicy::CertificatePinning => TrustVerifyResult::ChainMismatch {
-                        stored: record.identity.clone(),
-                        presented: identity,
-                    },
-                    _ => TrustVerifyResult::Mismatch {
-                        stored: record.identity.clone(),
-                        presented: identity,
-                    },
-                }
-            }
-        } else {
-            TrustVerifyResult::FirstUse { identity }
-        }
+        verify_identity_in_data(&mut self.data, host, record_type, identity)
     }
 
     /// Trust (memorize) an identity for a host with full metadata.
@@ -525,59 +413,16 @@ impl TrustStoreService {
         approved_by: Option<String>,
         note: Option<String>,
     ) -> Result<(), String> {
-        let key = Self::record_key(&record_type, &host);
-        let now_str = Utc::now().to_rfc3339();
-
-        // Compute trust expiry if using TofuWithExpiry
-        let trust_expires = if self.data.policy == TrustPolicy::TofuWithExpiry {
-            let days = self.data.policy_config.expiry_days.unwrap_or(90);
-            Some((Utc::now() + chrono::Duration::days(days as i64)).to_rfc3339())
-        } else {
-            None
-        };
-
-        if let Some(existing) = self.data.records.get_mut(&key) {
-            // Move old identity to history with metadata
-            let history_entry = IdentityHistoryEntry {
-                identity: existing.identity.clone(),
-                changed_at: now_str.clone(),
-                reason: if reason == IdentityChangeReason::Initial {
-                    IdentityChangeReason::UserAccepted
-                } else {
-                    reason
-                },
-                approved_by,
-                note,
-                verification_count: existing.stats.total_checks,
-                trust_score: existing.stats.trust_score,
-            };
-            existing.history.push(history_entry);
-            existing.identity = identity;
-            existing.user_approved = user_approved;
-            if trust_expires.is_some() {
-                existing.trust_expires = trust_expires;
-            }
-        } else {
-            self.data.records.insert(
-                key,
-                TrustRecord {
-                    host,
-                    record_type,
-                    identity,
-                    user_approved,
-                    nickname: None,
-                    history: vec![],
-                    host_policy: None,
-                    host_policy_config: None,
-                    stats: VerificationStats::default(),
-                    first_trusted: Some(now_str),
-                    trust_expires,
-                    revoked: false,
-                    tags: vec![],
-                },
-            );
-        }
-
+        trust_identity_in_data(
+            &mut self.data,
+            host,
+            record_type,
+            identity,
+            user_approved,
+            reason,
+            approved_by,
+            note,
+        );
         self.persist()
     }
 
@@ -800,6 +645,301 @@ pub struct TrustSummary {
     pub total_verifications: u64,
     pub total_mismatches: u64,
     pub average_trust_score: u8,
+}
+
+// ---------------------------------------------------------------------------
+// Shared data-level operations (used by both the async service and the
+// synchronous façade below). These are pure operations over `TrustStoreData`
+// and contain the canonical verify/trust decision logic; persistence is the
+// caller's responsibility.
+// ---------------------------------------------------------------------------
+
+/// Apply the verify-identity policy logic against the in-memory data and
+/// mutate per-record stats. Does NOT persist (the caller persists if needed).
+fn verify_identity_in_data(
+    data: &mut TrustStoreData,
+    host: &str,
+    record_type: &str,
+    identity: Identity,
+) -> TrustVerifyResult {
+    let key = TrustStoreService::record_key(record_type, host);
+    let now_str = Utc::now().to_rfc3339();
+
+    if let Some(record) = data.records.get_mut(&key) {
+        // --- revoked ---
+        if record.revoked {
+            return TrustVerifyResult::Revoked {
+                stored: record.identity.clone(),
+            };
+        }
+
+        let stored_fp = TrustStoreService::identity_fingerprint(&record.identity).to_owned();
+        let presented_fp = TrustStoreService::identity_fingerprint(&identity).to_owned();
+
+        // Update stats
+        record.stats.total_checks += 1;
+
+        if stored_fp == presented_fp {
+            record.stats.match_count += 1;
+            record.stats.last_verified = Some(now_str);
+            record.stats.trust_score = TrustStoreService::compute_trust_score(&record.stats);
+
+            let policy = record
+                .host_policy
+                .clone()
+                .unwrap_or_else(|| data.policy.clone());
+
+            // Policy-aware checks on a matching fingerprint
+            match policy {
+                TrustPolicy::TofuWithExpiry => {
+                    if TrustStoreService::is_trust_expired(record) {
+                        return TrustVerifyResult::Expired {
+                            stored: record.identity.clone(),
+                            presented: identity,
+                        };
+                    }
+                }
+                TrustPolicy::ThresholdTrust => {
+                    let required = record
+                        .host_policy_config
+                        .as_ref()
+                        .and_then(|c| c.threshold_count)
+                        .or(data.policy_config.threshold_count)
+                        .unwrap_or(3);
+                    if record.stats.match_count < required as u64 {
+                        return TrustVerifyResult::PendingThreshold {
+                            identity,
+                            current_count: record.stats.match_count,
+                            required_count: required,
+                        };
+                    }
+                }
+                TrustPolicy::TrustOnVerify => {
+                    if !record.user_approved {
+                        return TrustVerifyResult::PendingVerification { identity };
+                    }
+                }
+                _ => {}
+            }
+
+            TrustVerifyResult::Trusted
+        } else {
+            record.stats.mismatch_count += 1;
+            record.stats.last_mismatch = Some(now_str);
+            record.stats.trust_score = TrustStoreService::compute_trust_score(&record.stats);
+
+            let policy = record
+                .host_policy
+                .clone()
+                .unwrap_or_else(|| data.policy.clone());
+
+            match policy {
+                TrustPolicy::KeyRotationGrace => {
+                    let _grace_hours = record
+                        .host_policy_config
+                        .as_ref()
+                        .and_then(|c| c.rotation_grace_hours)
+                        .or(data.policy_config.rotation_grace_hours)
+                        .unwrap_or(24);
+                    TrustVerifyResult::RotationGrace {
+                        stored: record.identity.clone(),
+                        presented: identity,
+                    }
+                }
+                TrustPolicy::CertificatePinning => TrustVerifyResult::ChainMismatch {
+                    stored: record.identity.clone(),
+                    presented: identity,
+                },
+                _ => TrustVerifyResult::Mismatch {
+                    stored: record.identity.clone(),
+                    presented: identity,
+                },
+            }
+        }
+    } else {
+        TrustVerifyResult::FirstUse { identity }
+    }
+}
+
+/// Memorize / update an identity in the in-memory data. Does NOT persist.
+#[allow(clippy::too_many_arguments)]
+fn trust_identity_in_data(
+    data: &mut TrustStoreData,
+    host: String,
+    record_type: String,
+    identity: Identity,
+    user_approved: bool,
+    reason: IdentityChangeReason,
+    approved_by: Option<String>,
+    note: Option<String>,
+) {
+    let key = TrustStoreService::record_key(&record_type, &host);
+    let now_str = Utc::now().to_rfc3339();
+
+    // Compute trust expiry if using TofuWithExpiry
+    let trust_expires = if data.policy == TrustPolicy::TofuWithExpiry {
+        let days = data.policy_config.expiry_days.unwrap_or(90);
+        Some((Utc::now() + chrono::Duration::days(days as i64)).to_rfc3339())
+    } else {
+        None
+    };
+
+    if let Some(existing) = data.records.get_mut(&key) {
+        let history_entry = IdentityHistoryEntry {
+            identity: existing.identity.clone(),
+            changed_at: now_str.clone(),
+            reason: if reason == IdentityChangeReason::Initial {
+                IdentityChangeReason::UserAccepted
+            } else {
+                reason
+            },
+            approved_by,
+            note,
+            verification_count: existing.stats.total_checks,
+            trust_score: existing.stats.trust_score,
+        };
+        existing.history.push(history_entry);
+        existing.identity = identity;
+        existing.user_approved = user_approved;
+        if trust_expires.is_some() {
+            existing.trust_expires = trust_expires;
+        }
+    } else {
+        data.records.insert(
+            key,
+            TrustRecord {
+                host,
+                record_type,
+                identity,
+                user_approved,
+                nickname: None,
+                history: vec![],
+                host_policy: None,
+                host_policy_config: None,
+                stats: VerificationStats::default(),
+                first_trusted: Some(now_str),
+                trust_expires,
+                revoked: false,
+                tags: vec![],
+            },
+        );
+    }
+}
+
+/// Load `TrustStoreData` from a JSON file, defaulting on any error/absence.
+fn load_trust_store_data(path: &PathBuf) -> TrustStoreData {
+    if path.exists() {
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    } else {
+        TrustStoreData::default()
+    }
+}
+
+/// Persist `TrustStoreData` to a JSON file (pretty-printed).
+fn persist_trust_store_data(path: &PathBuf, data: &TrustStoreData) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
+    }
+    let json = serde_json::to_string_pretty(data).map_err(|e| format!("serialize: {}", e))?;
+    fs::write(path, json).map_err(|e| format!("write: {}", e))
+}
+
+// ---------------------------------------------------------------------------
+// Synchronous façade (t24 — TLS-trust plumbing)
+// ---------------------------------------------------------------------------
+//
+// `TrustStoreService` is `Arc<tokio::Mutex<…>>` with async methods. The rustls
+// `ServerCertVerifier` runs synchronously inside the TLS handshake on a reqwest
+// worker thread that lives *inside* the tokio runtime — calling `block_on`
+// there would panic ("Cannot block the current thread from within a runtime").
+//
+// `SyncTrustStore` is an additive, runtime-agnostic façade that operates on the
+// same `trust_store.json` file using a `std::sync::Mutex`. The JSON file is the
+// shared source of truth, so TOFU records pinned by the verifier are visible to
+// the async service (and the Trust Center UI), and vice-versa. To stay coherent
+// with concurrent writers it re-reads the file under the lock before each
+// operation and persists immediately after any mutation.
+//
+// This never touches the tokio runtime, so it is safe to call from the
+// synchronous rustls verifier without deadlocking or panicking.
+
+/// A blocking handle over the persistent trust store, sharing the same JSON
+/// file as the async `TrustStoreService`. Cheap to clone (`Arc`-backed).
+#[derive(Clone)]
+pub struct SyncTrustStore {
+    inner: Arc<std::sync::Mutex<PathBuf>>,
+}
+
+impl SyncTrustStore {
+    /// Open (or lazily create) the sync façade over the given store path.
+    /// This is the same path passed to `TrustStoreService::new`
+    /// (`app_dir/trust_store.json`).
+    pub fn new(store_path: impl Into<PathBuf>) -> Self {
+        Self {
+            inner: Arc::new(std::sync::Mutex::new(store_path.into())),
+        }
+    }
+
+    /// Blocking verify against the persistent store (re-reads the file under
+    /// the lock; updates per-record stats and persists them). Mirrors
+    /// `TrustStoreService::verify_identity`.
+    pub fn verify_identity_blocking(
+        &self,
+        host: &str,
+        record_type: &str,
+        identity: Identity,
+    ) -> Result<TrustVerifyResult, String> {
+        let path = self
+            .inner
+            .lock()
+            .map_err(|_| "trust store lock poisoned".to_string())?;
+        let mut data = load_trust_store_data(&path);
+        let result = verify_identity_in_data(&mut data, host, record_type, identity);
+        // Persist the updated stats. Best-effort: a stats-write failure must
+        // not change the verification outcome the caller already computed.
+        let _ = persist_trust_store_data(&path, &data);
+        Ok(result)
+    }
+
+    /// The current global trust policy (re-read from disk). The verifier uses
+    /// this when no per-connection override is supplied. Defaults to TOFU when
+    /// the store is empty/absent (matches `TrustPolicy::default()`).
+    pub fn global_policy(&self) -> TrustPolicy {
+        match self.inner.lock() {
+            Ok(path) => load_trust_store_data(&path).policy,
+            Err(_) => TrustPolicy::default(),
+        }
+    }
+
+    /// Blocking trust/memorize against the persistent store. Mirrors
+    /// `TrustStoreService::trust_identity`.
+    pub fn trust_identity_blocking(
+        &self,
+        host: String,
+        record_type: String,
+        identity: Identity,
+        user_approved: bool,
+    ) -> Result<(), String> {
+        let path = self
+            .inner
+            .lock()
+            .map_err(|_| "trust store lock poisoned".to_string())?;
+        let mut data = load_trust_store_data(&path);
+        trust_identity_in_data(
+            &mut data,
+            host,
+            record_type,
+            identity,
+            user_approved,
+            IdentityChangeReason::Initial,
+            None,
+            None,
+        );
+        persist_trust_store_data(&path, &data)
+    }
 }
 
 // ---------------------------------------------------------------------------

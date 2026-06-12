@@ -56,6 +56,7 @@ pub mod service;
 pub mod storage;
 pub mod system;
 pub mod thermal;
+pub mod trust;
 pub mod types;
 pub mod users;
 pub mod virtual_console;

@@ -52,16 +52,15 @@ impl WinRmTransport {
                 config.session_option.open_timeout_sec as u64,
             ));
 
-        if config.skip_ca_check || config.skip_cn_check {
-            client_builder = client_builder.danger_accept_invalid_certs(true);
-        }
-
         if config.session_option.no_compression {
             client_builder = client_builder.no_gzip().no_brotli().no_deflate();
         }
 
-        let client = client_builder
-            .build()
+        // TLS certificate decisions route through the Trust Center (TOFU by
+        // default). The legacy `skip_ca_check` / `skip_cn_check` flags now map
+        // to an explicit, revocable `AlwaysTrust` override rather than a blind
+        // `danger_accept_invalid_certs(true)`.
+        let client = crate::tls::build_winrm_client(client_builder, config)
             .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
         let operation_timeout = format!("PT{}S", config.session_option.operation_timeout_sec);

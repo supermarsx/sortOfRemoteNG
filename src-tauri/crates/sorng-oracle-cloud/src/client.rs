@@ -18,15 +18,45 @@ impl OciClient {
             builder = builder.timeout(std::time::Duration::from_secs(timeout));
         }
 
-        if config.tls_skip_verify == Some(true) {
-            builder = builder.danger_accept_invalid_certs(true);
-        }
-
-        let http = builder
-            .build()
+        // Route TLS certificate decisions through the backend Trust Center with
+        // TOFU as the default (replacing the old blind
+        // `danger_accept_invalid_certs(true)`). The legacy skip flag maps to an
+        // explicit, revocable `AlwaysTrust` override; otherwise the store's
+        // effective/global policy (default TOFU) governs.
+        //
+        // The t3 audit noted oracle-cloud "may skip via skip_ca_check ||
+        // skip_cn_check"; the actual config carries a single `tls_skip_verify`
+        // boolean, so that is the legacy opt-out we honour here.
+        let skip = config.tls_skip_verify == Some(true);
+        let ctx = sorng_tls_trust::TofuTlsContext {
+            store: Self::trust_store(),
+            host: Self::canonical_host(&config.region),
+            port: 443,
+            policy_override: sorng_tls_trust::skip_flag_to_override(skip),
+        };
+        let http = sorng_tls_trust::build_tofu_client(builder, ctx)
             .map_err(|e| OciError::connection(format!("Failed to create HTTP client: {e}")))?;
 
         Ok(Self { config, http })
+    }
+
+    /// Canonical host used to key the Trust Center record. OCI dials
+    /// `{service}.{region}.oraclecloud.com`; the region-anchored host gives one
+    /// stable `tls:host:443` identity per OCI region targeted by the connection.
+    fn canonical_host(region: &str) -> String {
+        format!("{region}.oraclecloud.com")
+    }
+
+    /// Blocking handle to the persistent Trust Center store, backed by the same
+    /// `<app_data_dir>/trust_store.json` the async `TrustStoreService` and the
+    /// Trust Center UI use (Tauri's `app_data_dir` = platform data dir +
+    /// bundle identifier). Coherent across the sync verifier and the async UI.
+    fn trust_store() -> std::sync::Arc<dyn sorng_tls_trust::BlockingTrustStore> {
+        let path = dirs::data_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("com.sortofremote.ng")
+            .join("trust_store.json");
+        std::sync::Arc::new(sorng_storage::trust_store::SyncTrustStore::new(path))
     }
 
     /// Build the full URL for an OCI service endpoint.

@@ -53,17 +53,14 @@ impl WmiTransport {
     pub fn new(config: &WmiConnectionConfig) -> Result<Self, String> {
         let endpoint = config.endpoint_uri();
 
-        let mut builder = reqwest::Client::builder()
+        let builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_sec as u64))
             .connect_timeout(std::time::Duration::from_secs(15));
 
-        if config.skip_ca_check || config.skip_cn_check {
-            builder = builder.danger_accept_invalid_certs(true);
-        }
-
-        let client = builder
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+        // Route TLS trust through the Trust Center (TOFU default). The legacy
+        // `skip_ca_check || skip_cn_check` flags map to an explicit, revocable
+        // `AlwaysTrust` override rather than a blind skip. See `crate::trust`.
+        let client = crate::trust::build_wmi_client(builder, config)?;
 
         Ok(Self {
             client,

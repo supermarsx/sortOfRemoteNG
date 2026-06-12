@@ -22,5 +22,6 @@ pub mod service;
 pub mod services;
 pub mod system_info;
 pub mod transport;
+pub mod trust;
 pub mod types;
 pub mod wql;

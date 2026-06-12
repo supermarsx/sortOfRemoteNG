@@ -15,3 +15,6 @@ chrono = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 url = { workspace = true }
+dirs = { workspace = true }
+sorng-tls-trust = { path = "../sorng-tls-trust" }
+sorng-storage = { path = "../sorng-storage" }
