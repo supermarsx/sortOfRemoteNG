@@ -82,18 +82,16 @@ lazy_static::lazy_static! {
     pub static ref PROXY_COMMANDS: StdMutex<HashMap<String, ProxyCommandState>> = StdMutex::new(HashMap::new());
 
     /// Fingerprints of ProxyCommand strings the user has explicitly confirmed
-    /// at runtime via [`confirm_proxy_command`]. This complements the
-    /// `command_confirmed` config flag: a confirmed flag (set by the in-app
-    /// editor for user-typed commands) bypasses the gate, and so does a runtime
-    /// confirmation recorded here (used by the Wave-2 review-and-confirm UI for
-    /// imported commands without rewriting persisted config).
+    /// at runtime via [`confirm_proxy_command`]. The gate is intentionally keyed
+    /// only by the expanded command fingerprint so imported or persisted boolean
+    /// flags cannot bless different command contents.
     static ref CONFIRMED_PROXY_COMMANDS: StdMutex<std::collections::HashSet<String>> =
         StdMutex::new(std::collections::HashSet::new());
 }
 
 /// Record that the user has reviewed and confirmed a specific expanded
 /// ProxyCommand string. After this, [`spawn_proxy_command`] will execute that
-/// exact command even when its config carries `command_confirmed == false`.
+/// exact command.
 pub fn mark_proxy_command_confirmed(expanded_cmd: &str) {
     if let Ok(mut set) = CONFIRMED_PROXY_COMMANDS.lock() {
         set.insert(command_fingerprint(expanded_cmd));
@@ -305,14 +303,11 @@ pub fn spawn_proxy_command(
     let cmd_string = build_command_string(config, host, port, username)?;
 
     // ── Import-confirmation gate ──────────────────────────────────────
-    // ProxyCommand stays fully free-form, but a command from an untrusted
-    // origin (import/sync) must be confirmed once before it is ever spawned.
-    // It is allowed iff the config carries `command_confirmed == true` (set by
-    // the in-app editor for user-typed commands) OR the exact expanded command
-    // was confirmed at runtime via `confirm_proxy_command`. Otherwise we refuse
-    // — loudly and distinctly — rather than silently running or silently
-    // skipping it.
-    if !config.command_confirmed && !is_proxy_command_confirmed(&cmd_string) {
+    // ProxyCommand stays fully free-form, but the exact expanded command must
+    // be confirmed once before it is ever spawned. Persisted/imported
+    // `command_confirmed` booleans are deliberately ignored here because they
+    // are not bound to the expanded command fingerprint.
+    if !is_proxy_command_confirmed(&cmd_string) {
         log::warn!(
             "[{}] Refusing unconfirmed ProxyCommand (import/sync origin): {}",
             session_id,
@@ -593,23 +588,16 @@ mod tests {
     }
 
     #[test]
-    fn confirmed_flag_passes_the_gate() {
-        // command_confirmed=true (set by the in-app editor) bypasses the gate;
-        // we only need to prove it gets PAST the gate, so we hit a guaranteed
-        // failure AFTER the gate (a non-existent command still spawns the shell,
-        // so instead assert the error is NOT the confirmation-required one).
+    fn confirmed_flag_does_not_bypass_fingerprint_gate() {
+        // command_confirmed may arrive from persisted/imported config, so it
+        // must not bypass the fingerprint-scoped runtime confirmation gate.
         let cfg = free_form_config(true);
-        let result =
-            spawn_proxy_command("sess-confirmed-flag", &cfg, "host.example.com", 22, "user", 1);
-        // Regardless of whether the relay ultimately connects on this host, the
-        // gate must NOT be the thing that stopped it.
-        if let Err(e) = &result {
-            assert!(
-                !e.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE),
-                "confirmed-flag command must clear the gate, got: {e}"
-            );
-        }
-        let _ = stop_proxy_command("sess-confirmed-flag");
+        let err = spawn_proxy_command("sess-confirmed-flag", &cfg, "host.example.com", 22, "user", 1)
+            .expect_err("confirmed flag alone must be refused, not spawned");
+        assert!(
+            err.starts_with(PROXY_COMMAND_CONFIRMATION_REQUIRED_CODE),
+            "confirmed flag alone must still require confirmation, got: {err}"
+        );
     }
 
     #[test]
