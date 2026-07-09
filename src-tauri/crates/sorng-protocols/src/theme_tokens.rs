@@ -23,14 +23,14 @@
 use serde::{Deserialize, Serialize};
 
 /// Snapshot of the frontend's `:root { --color-* }` variables. Hex
-/// fields are the literal CSS value (`#3b82f6` form); `_rgb` fields
-/// are space-separated triplets (`59 130 246`) for `rgba(..., a)`
-/// blending in the page's CSS.
+/// fields are strict hex CSS colors (`#3b82f6` form); `_rgb` fields
+/// are comma- or space-separated byte triplets (`59, 130, 246`) for
+/// alpha blending in the page's CSS.
 ///
 /// Every field is a `String` because we receive them as
-/// `getPropertyValue('--color-X')` output — trimmed but otherwise
-/// untouched. We don't parse them backend-side; the page CSS is the
-/// only consumer and CSS itself validates.
+/// `getPropertyValue('--color-X')` output. Treat those values as
+/// untrusted: imported themes can influence them, and they are later
+/// embedded in proxy-served `<style>` blocks.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeTokens {
@@ -78,12 +78,38 @@ impl ThemeTokens {
         }
     }
 
+    /// Return a copy where any malformed token is replaced by the
+    /// corresponding dark-default value. This keeps untrusted theme
+    /// snapshots from injecting arbitrary CSS/HTML into proxy pages.
+    pub fn sanitized(&self) -> Self {
+        let defaults = Self::dark_default();
+        Self {
+            background: sanitize_hex_color(&self.background, &defaults.background),
+            surface: sanitize_hex_color(&self.surface, &defaults.surface),
+            text: sanitize_hex_color(&self.text, &defaults.text),
+            text_secondary: sanitize_hex_color(&self.text_secondary, &defaults.text_secondary),
+            text_muted: sanitize_hex_color(&self.text_muted, &defaults.text_muted),
+            border: sanitize_hex_color(&self.border, &defaults.border),
+            primary: sanitize_hex_color(&self.primary, &defaults.primary),
+            primary_rgb: sanitize_rgb_triplet(&self.primary_rgb, &defaults.primary_rgb),
+            error: sanitize_hex_color(&self.error, &defaults.error),
+            error_rgb: sanitize_rgb_triplet(&self.error_rgb, &defaults.error_rgb),
+            warning: sanitize_hex_color(&self.warning, &defaults.warning),
+            warning_rgb: sanitize_rgb_triplet(&self.warning_rgb, &defaults.warning_rgb),
+            success: sanitize_hex_color(&self.success, &defaults.success),
+            success_rgb: sanitize_rgb_triplet(&self.success_rgb, &defaults.success_rgb),
+            info: sanitize_hex_color(&self.info, &defaults.info),
+            info_rgb: sanitize_rgb_triplet(&self.info_rgb, &defaults.info_rgb),
+        }
+    }
+
     /// Emit a `:root { --proxy-*: ... }` CSS block for inclusion at
     /// the top of a themed page's `<style>`. The prefix on every name
     /// (`--proxy-...`) is intentional: it keeps these variables
     /// distinct from the app's own `--color-*` so even if an iframe
     /// some day loads a page with both, names don't collide.
     pub fn css_block(&self) -> String {
+        let safe = self.sanitized();
         format!(
             r##":root {{
   --proxy-bg: {bg};
@@ -103,45 +129,123 @@ impl ThemeTokens {
   --proxy-info: {info};
   --proxy-info-rgb: {info_rgb};
 }}"##,
-            bg = self.background,
-            surface = self.surface,
-            text = self.text,
-            text2 = self.text_secondary,
-            muted = self.text_muted,
-            border = self.border,
-            primary = self.primary,
-            primary_rgb = self.primary_rgb,
-            error = self.error,
-            error_rgb = self.error_rgb,
-            warning = self.warning,
-            warning_rgb = self.warning_rgb,
-            success = self.success,
-            success_rgb = self.success_rgb,
-            info = self.info,
-            info_rgb = self.info_rgb,
+            bg = safe.background,
+            surface = safe.surface,
+            text = safe.text,
+            text2 = safe.text_secondary,
+            muted = safe.text_muted,
+            border = safe.border,
+            primary = safe.primary,
+            primary_rgb = safe.primary_rgb,
+            error = safe.error,
+            error_rgb = safe.error_rgb,
+            warning = safe.warning,
+            warning_rgb = safe.warning_rgb,
+            success = safe.success,
+            success_rgb = safe.success_rgb,
+            info = safe.info,
+            info_rgb = safe.info_rgb,
         )
     }
 
     /// Pick the (rgb, hex) pair for an error-tone accent (red).
     pub fn error_pair(&self) -> (&str, &str) {
-        (self.error_rgb.as_str(), self.error.as_str())
+        (
+            rgb_or_default(&self.error_rgb, DEFAULT_ERROR_RGB),
+            hex_or_default(&self.error, DEFAULT_ERROR),
+        )
     }
 
     /// Pick the (rgb, hex) pair for a warning-tone accent (yellow).
     pub fn warning_pair(&self) -> (&str, &str) {
-        (self.warning_rgb.as_str(), self.warning.as_str())
+        (
+            rgb_or_default(&self.warning_rgb, DEFAULT_WARNING_RGB),
+            hex_or_default(&self.warning, DEFAULT_WARNING),
+        )
     }
 
     /// Pick the (rgb, hex) pair for an info-tone accent (sky blue).
     pub fn info_pair(&self) -> (&str, &str) {
-        (self.info_rgb.as_str(), self.info.as_str())
+        (
+            rgb_or_default(&self.info_rgb, DEFAULT_INFO_RGB),
+            hex_or_default(&self.info, DEFAULT_INFO),
+        )
     }
 
     /// Pick the (rgb, hex) pair for the primary brand accent — used
     /// by the auth challenge form's button and focus rings.
     pub fn primary_pair(&self) -> (&str, &str) {
-        (self.primary_rgb.as_str(), self.primary.as_str())
+        (
+            rgb_or_default(&self.primary_rgb, DEFAULT_PRIMARY_RGB),
+            hex_or_default(&self.primary, DEFAULT_PRIMARY),
+        )
     }
+}
+
+const DEFAULT_PRIMARY: &str = "#3b82f6";
+const DEFAULT_PRIMARY_RGB: &str = "59, 130, 246";
+const DEFAULT_ERROR: &str = "#ef4444";
+const DEFAULT_ERROR_RGB: &str = "239, 68, 68";
+const DEFAULT_WARNING: &str = "#f59e0b";
+const DEFAULT_WARNING_RGB: &str = "245, 158, 11";
+const DEFAULT_INFO: &str = "#06b6d4";
+const DEFAULT_INFO_RGB: &str = "6, 182, 212";
+
+fn sanitize_hex_color(value: &str, fallback: &str) -> String {
+    let trimmed = value.trim();
+    if is_hex_color(trimmed) {
+        trimmed.to_string()
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn sanitize_rgb_triplet(value: &str, fallback: &str) -> String {
+    let trimmed = value.trim();
+    if is_rgb_triplet(trimmed) {
+        trimmed.to_string()
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn hex_or_default<'a>(value: &'a str, fallback: &'static str) -> &'a str {
+    let trimmed = value.trim();
+    if is_hex_color(trimmed) {
+        trimmed
+    } else {
+        fallback
+    }
+}
+
+fn rgb_or_default<'a>(value: &'a str, fallback: &'static str) -> &'a str {
+    let trimmed = value.trim();
+    if is_rgb_triplet(trimmed) {
+        trimmed
+    } else {
+        fallback
+    }
+}
+
+fn is_hex_color(value: &str) -> bool {
+    let hex = match value.strip_prefix('#') {
+        Some(hex) => hex,
+        None => return false,
+    };
+    matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_rgb_triplet(value: &str) -> bool {
+    let parts: Vec<&str> = if value.contains(',') {
+        value.split(',').collect()
+    } else {
+        value.split_whitespace().collect()
+    };
+    parts.len() == 3
+        && parts.iter().all(|part| {
+            let part = part.trim();
+            !part.is_empty() && part.parse::<u8>().is_ok()
+        })
 }
 
 impl Default for ThemeTokens {
@@ -174,6 +278,38 @@ mod tests {
         assert!(css.contains("--proxy-info: #06b6d4"));
         assert!(css.contains("--proxy-primary-rgb: 59, 130, 246"));
         assert!(css.contains("--proxy-error-rgb: 239, 68, 68"));
+    }
+
+    #[test]
+    fn css_block_replaces_malicious_tokens_with_defaults() {
+        let mut t = ThemeTokens::dark_default();
+        t.background = "</style><script>alert(1)</script><style>".into();
+        t.primary_rgb = "1, 2, 3);}</style><script>alert(1)</script><style>".into();
+        t.error = "red".into();
+
+        let css = t.css_block();
+
+        assert!(!css.contains("</style>"));
+        assert!(!css.contains("<script"));
+        assert!(css.contains("--proxy-bg: #111827"));
+        assert!(css.contains("--proxy-primary-rgb: 59, 130, 246"));
+        assert!(css.contains("--proxy-error: #ef4444"));
+    }
+
+    #[test]
+    fn sanitized_preserves_valid_hex_and_rgb_triplets() {
+        let mut t = ThemeTokens::dark_default();
+        t.background = " #abc ".into();
+        t.primary = "#abcdef".into();
+        t.primary_rgb = "1 2 3".into();
+        t.error_rgb = "4, 5, 6".into();
+
+        let safe = t.sanitized();
+
+        assert_eq!(safe.background, "#abc");
+        assert_eq!(safe.primary, "#abcdef");
+        assert_eq!(safe.primary_rgb, "1 2 3");
+        assert_eq!(safe.error_rgb, "4, 5, 6");
     }
 
     #[test]

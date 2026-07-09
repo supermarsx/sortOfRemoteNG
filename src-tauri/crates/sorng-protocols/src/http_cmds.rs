@@ -163,7 +163,8 @@ pub async fn start_basic_auth_proxy(
     // the user changes themes.
     let theme_tokens = config
         .theme_tokens
-        .clone()
+        .as_ref()
+        .map(crate::theme_tokens::ThemeTokens::sanitized)
         .unwrap_or_else(crate::theme_tokens::ThemeTokens::dark_default);
     let proxy_state = Arc::new(AxumProxyState {
         session_id: session_id.clone(),
@@ -1148,4 +1149,3 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
 
     serde_json::to_string_pretty(&har).map_err(|e| format!("JSON serialization failed: {}", e))
 }
-
