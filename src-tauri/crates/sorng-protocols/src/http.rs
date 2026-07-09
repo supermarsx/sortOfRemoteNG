@@ -138,6 +138,89 @@ impl ServerCertVerifier for NoCertificateVerification {
     }
 }
 
+#[derive(Debug)]
+pub struct PinnedCertificateVerification {
+    fingerprint: String,
+}
+
+impl PinnedCertificateVerification {
+    pub fn new(fingerprint: String) -> Self {
+        Self {
+            fingerprint: normalize_cert_fingerprint(&fingerprint),
+        }
+    }
+}
+
+impl ServerCertVerifier for PinnedCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        let mut hasher = Sha256::new();
+        hasher.update(end_entity.as_ref());
+        let presented = hex::encode(hasher.finalize());
+        if presented.eq_ignore_ascii_case(&self.fingerprint) {
+            Ok(ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General(format!(
+                "TLS certificate fingerprint mismatch: expected {}, got {}",
+                self.fingerprint, presented
+            )))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .signature_verification_algorithms
+            .verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .signature_verification_algorithms
+            .verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+pub fn normalize_cert_fingerprint(fingerprint: &str) -> String {
+    fingerprint
+        .trim()
+        .strip_prefix("SHA256:")
+        .unwrap_or_else(|| fingerprint.trim())
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+pub fn build_pinned_tls_config(fingerprint: String) -> Result<rustls::ClientConfig, String> {
+    rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PinnedCertificateVerification::new(fingerprint)))
+        .with_no_client_auth()
+        .pipe(Ok)
+}
+
 pub fn native_root_store() -> Result<rustls::RootCertStore, String> {
     let mut roots = rustls::RootCertStore::empty();
     let cert_result = rustls_native_certs::load_native_certs();
@@ -388,6 +471,11 @@ pub struct BasicAuthProxyConfig {
     /// Whether to verify SSL certificates
     #[serde(default = "default_verify_ssl")]
     pub verify_ssl: bool,
+    /// Optional SHA-256 certificate fingerprint accepted by the frontend trust prompt.
+    /// When present, the proxy pins outbound TLS to this exact leaf certificate
+    /// instead of disabling certificate verification for the whole session.
+    #[serde(default)]
+    pub accepted_cert_fingerprint: Option<String>,
     /// Minimum TLS version for outbound requests ("1.0", "1.1", "1.2", "1.3").
     /// Defaults to "1.2".  SSL 3.0 is NOT supported by the TLS backend.
     #[serde(default = "default_min_tls_version")]
@@ -476,6 +564,8 @@ pub struct ProxySessionEntry {
     pub min_tls_version: String,
     /// Whether SSL certificate verification is enabled.
     pub verify_ssl: bool,
+    /// Optional SHA-256 leaf certificate fingerprint pinned for this session.
+    pub accepted_cert_fingerprint: Option<String>,
     pub request_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
     pub last_error: Arc<std::sync::Mutex<Option<String>>>,
@@ -820,10 +910,7 @@ pub async fn axum_proxy_handler(
                 .filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
                 .collect();
             if matches!(
-                crate::themed_auth::intercept_basic_auth_challenge(
-                    status_u16,
-                    &www_auth_values,
-                ),
+                crate::themed_auth::intercept_basic_auth_challenge(status_u16, &www_auth_values,),
                 crate::themed_auth::ChallengeDecision::Challenge,
             ) {
                 let nonce = crate::themed_auth::fresh_nonce();
@@ -833,11 +920,7 @@ pub async fn axum_proxy_handler(
                 if let Ok(mut n) = state.pending_nonce.write() {
                     *n = Some(nonce.clone());
                 }
-                let existing_user = state
-                    .username
-                    .read()
-                    .map(|g| g.clone())
-                    .unwrap_or_default();
+                let existing_user = state.username.read().map(|g| g.clone()).unwrap_or_default();
                 // `path_and_query` is the path the user was trying
                 // to reach on the proxy; the POST handler will
                 // 303-redirect back to it after the credentials
@@ -853,11 +936,7 @@ pub async fn axum_proxy_handler(
                 // P7: pull live theme tokens out of the RwLock so the
                 // served form matches whatever theme the user has
                 // active right now.
-                let theme = state
-                    .theme
-                    .read()
-                    .map(|g| g.clone())
-                    .unwrap_or_default();
+                let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
                 return crate::themed_auth::themed_challenge_response(
                     &full_url,
                     &path_and_query,
@@ -912,13 +991,9 @@ pub async fn axum_proxy_handler(
                     // downstream is response-shaping that we skip
                     // by returning early.)
                     if let Ok(mut recordings) = active_web_recordings().lock() {
-                        if let Some(rec_state) =
-                            recordings.get_mut(&state.session_id)
-                        {
-                            let timestamp_ms =
-                                rec_state.start_time.elapsed().as_millis() as u64;
-                            let mut response_headers: HashMap<String, String> =
-                                HashMap::new();
+                        if let Some(rec_state) = recordings.get_mut(&state.session_id) {
+                            let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
+                            let mut response_headers: HashMap<String, String> = HashMap::new();
                             if rec_state.record_headers {
                                 for (k, v) in resp_hdrs.iter() {
                                     if let Ok(s) = v.to_str() {
@@ -950,16 +1025,9 @@ pub async fn axum_proxy_handler(
                         }
                     }
                     // P7: snapshot theme tokens for this render.
-                    let theme = state
-                        .theme
-                        .read()
-                        .map(|g| g.clone())
-                        .unwrap_or_default();
+                    let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
                     return crate::themed_status::themed_status_response(
-                        status_u16,
-                        &full_url,
-                        &raw_bytes,
-                        &theme,
+                        status_u16, &full_url, &raw_bytes, &theme,
                     );
                 }
                 // Non-HTML 4xx/5xx — pass through as-is so JSON/XML
@@ -1040,8 +1108,7 @@ pub async fn axum_proxy_handler(
                 // when not armed. The injected HTML carries ONLY a per-page
                 // nonce + non-secret selectors — never the credential.
                 let autologin_script =
-                    crate::themed_autologin::build_autologin_injection(&state)
-                        .unwrap_or_default();
+                    crate::themed_autologin::build_autologin_injection(&state).unwrap_or_default();
                 // e5 hardened client asset defines
                 // `window.__sorng_autologin.fetchCredsAndRun`, which the e3
                 // bootstrap checks for and defers to. It MUST appear BEFORE the
@@ -1057,8 +1124,8 @@ pub async fn axum_proxy_handler(
                     format!("{}{}{}", nav_script, autologin_asset, autologin_script);
                 let body_str = String::from_utf8_lossy(&final_body);
                 if body_str.contains("</body>") {
-                    let injected = body_str
-                        .replacen("</body>", &format!("{}</body>", injected_scripts), 1);
+                    let injected =
+                        body_str.replacen("</body>", &format!("{}</body>", injected_scripts), 1);
                     final_body = injected.into_bytes();
                 } else {
                     final_body.extend_from_slice(injected_scripts.as_bytes());
@@ -1159,11 +1226,7 @@ pub async fn axum_proxy_handler(
             }
 
             // P7: snapshot theme tokens for this render.
-            let theme = state
-                .theme
-                .read()
-                .map(|g| g.clone())
-                .unwrap_or_default();
+            let theme = state.theme.read().map(|g| g.clone()).unwrap_or_default();
             crate::themed_errors::themed_error_response(kind, &full_url, &err_msg, &theme)
         }
     }
@@ -1231,9 +1294,7 @@ pub async fn themed_auth_post_handler(
     // Defensive: refuse a `return_to` that isn't a same-origin path.
     // Anything starting with a scheme or `//` could be an open
     // redirect; force it to start with a single `/`.
-    let safe_return = if form.return_to.starts_with('/')
-        && !form.return_to.starts_with("//")
-    {
+    let safe_return = if form.return_to.starts_with('/') && !form.return_to.starts_with("//") {
         form.return_to.clone()
     } else {
         "/".to_string()
@@ -1389,7 +1450,10 @@ pub struct ParsedTlsCertificateDetails {
 }
 
 #[cfg(feature = "tls-cert-details")]
-fn extract_dn_attr(name: &x509_parser::x509::X509Name<'_>, oid: &x509_parser::oid_registry::Oid) -> Option<String> {
+fn extract_dn_attr(
+    name: &x509_parser::x509::X509Name<'_>,
+    oid: &x509_parser::oid_registry::Oid,
+) -> Option<String> {
     name.iter()
         .flat_map(|rdn| rdn.iter())
         .find(|attr| attr.attr_type() == oid)
@@ -1398,7 +1462,9 @@ fn extract_dn_attr(name: &x509_parser::x509::X509Name<'_>, oid: &x509_parser::oi
 }
 
 #[cfg(feature = "tls-cert-details")]
-fn resolve_key_algorithm_and_size(cert: &x509_parser::certificate::X509Certificate<'_>) -> (Option<String>, Option<u32>) {
+fn resolve_key_algorithm_and_size(
+    cert: &x509_parser::certificate::X509Certificate<'_>,
+) -> (Option<String>, Option<u32>) {
     let spki = cert.public_key();
     let algo_oid = spki.algorithm.algorithm.to_id_string();
 
@@ -1422,9 +1488,9 @@ fn resolve_key_algorithm_and_size(cert: &x509_parser::certificate::X509Certifica
                 params.as_oid().ok().map(|curve_oid| {
                     let curve_str = curve_oid.to_id_string();
                     match curve_str.as_str() {
-                        "1.2.840.10045.3.1.7" => ("ECDSA (P-256)".to_string(), 256u32),  // secp256r1 / prime256v1
-                        "1.3.132.0.34" => ("ECDSA (P-384)".to_string(), 384u32),          // secp384r1
-                        "1.3.132.0.35" => ("ECDSA (P-521)".to_string(), 521u32),          // secp521r1
+                        "1.2.840.10045.3.1.7" => ("ECDSA (P-256)".to_string(), 256u32), // secp256r1 / prime256v1
+                        "1.3.132.0.34" => ("ECDSA (P-384)".to_string(), 384u32),        // secp384r1
+                        "1.3.132.0.35" => ("ECDSA (P-521)".to_string(), 521u32),        // secp521r1
                         _ => (format!("ECDSA ({})", curve_str), 0u32),
                     }
                 })
@@ -1534,7 +1600,10 @@ pub fn parse_tls_certificate_details(der: &[u8], fingerprint: &str) -> ParsedTls
 }
 
 #[cfg(not(feature = "tls-cert-details"))]
-pub fn parse_tls_certificate_details(_der: &[u8], fingerprint: &str) -> ParsedTlsCertificateDetails {
+pub fn parse_tls_certificate_details(
+    _der: &[u8],
+    fingerprint: &str,
+) -> ParsedTlsCertificateDetails {
     ParsedTlsCertificateDetails {
         diagnostic_detail: Some(format!("Fingerprint: SHA256:{fingerprint}")),
         ..ParsedTlsCertificateDetails::default()
@@ -1555,4 +1624,3 @@ pub use sorng_core::diagnostics::{self as diagnostics, DiagnosticReport, Diagnos
 pub use crate::themed_autologin::{autologin_cred_handler, AUTOLOGIN_PATH};
 
 // ─── Web Session Recording Commands ──────────────────────────────
-

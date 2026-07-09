@@ -113,24 +113,12 @@ export function useWebBrowser(session: ConnectionSession) {
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navGenRef = useRef(0);
   /**
-   * P6c: set to `true` once `fetchAndVerifyCert` has resolved trust
-   * for this tab — either because the cert was already in the trust
-   * store, the user accepted the themed TrustWarningDialog, or the
-   * trust policy auto-trusted (always-trust / tofu). When true, the
-   * proxy reqwest client is built with `verify_ssl: false` so it
-   * doesn't re-reject the cert and undo the user's accept.
-   *
-   * Pre-P6c: the trust accept landed in localStorage but `verify_ssl`
-   * was still derived solely from `connection.httpVerifySsl` (default
-   * `true`). The proxy then failed TLS handshake and showed the P2
-   * "Secure connection failed" themed page — from the user's POV the
-   * trust prompt accomplished nothing.
-   *
-   * Scope: per-tab (i.e. per useWebBrowser instance). The proxy is
-   * started once at first navigation and bound to the connection's
-   * target URL, so a single trust decision covers the entire session.
+   * Set once `fetchAndVerifyCert` has resolved trust for this tab.
+   * The proxy receives this SHA-256 leaf certificate fingerprint and pins
+   * outbound TLS to that exact certificate instead of disabling TLS
+   * verification for the whole session.
    */
-  const tlsTrustAcceptedRef = useRef(false);
+  const acceptedCertFingerprintRef = useRef<string | null>(null);
   const LOAD_TIMEOUT_MS = 30_000;
 
   const sslVerifyDisabled =
@@ -210,13 +198,6 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.trustPolicy,
       connection?.tlsTrustPolicy ?? settings.tlsTrustPolicy ?? "always-ask",
     );
-    if (policy === "always-trust") {
-      // P6c: explicit "always-trust" — propagate to the proxy so it
-      // doesn't TLS-reject what the user said to trust.
-      tlsTrustAcceptedRef.current = true;
-      return true;
-    }
-
     // Capture the navigation generation BEFORE the async gap so we can
     // detect whether a newer navigation has superseded us after the
     // await completes (e.g. React StrictMode double-mount race).
@@ -295,6 +276,10 @@ export function useWebBrowser(session: ConnectionSession) {
         })),
       };
       setCertIdentity(identity);
+      if (policy === "always-trust") {
+        acceptedCertFingerprintRef.current = identity.fingerprint;
+        return true;
+      }
       const connId = connection?.id;
       const result = verifyIdentity(
         normalizedHostname,
@@ -304,9 +289,9 @@ export function useWebBrowser(session: ConnectionSession) {
         connId,
       );
       if (result.status === "trusted") {
-        // P6c: the cert was previously accepted (this session or a
-        // prior one). Tell the proxy not to second-guess us.
-        tlsTrustAcceptedRef.current = true;
+        // The cert was previously accepted (this session or a prior one).
+        // Pin the proxy to the same fingerprint.
+        acceptedCertFingerprintRef.current = identity.fingerprint;
         return true;
       }
       if (result.status === "first-use" && policy === "tofu") {
@@ -365,13 +350,10 @@ export function useWebBrowser(session: ConnectionSession) {
         connection?.id,
       );
     }
-    // P6c: persist the user's accept so the next `navigateToUrl`
-    // call passes `verify_ssl: false` to the proxy. Pre-P6c this was
-    // the missing wire — the dialog accept landed in localStorage but
-    // the proxy's reqwest client kept TLS verification on and
-    // rejected the cert, ending with a themed "Secure connection
-    // failed" page in the iframe and no recovery path.
-    tlsTrustAcceptedRef.current = true;
+    // Persist the user's accepted fingerprint so the next `navigateToUrl`
+    // can pass a cert pin to the proxy. The proxy must not disable TLS
+    // validation for arbitrary certificates after this trust decision.
+    acceptedCertFingerprintRef.current = certIdentity?.fingerprint ?? null;
     setTrustPrompt(null);
     trustResolveRef.current?.(true);
     trustResolveRef.current = null;
@@ -502,21 +484,19 @@ export function useWebBrowser(session: ConnectionSession) {
                 username: resolvedCreds?.username ?? "",
                 password: resolvedCreds?.password ?? "",
                 local_port: 0,
-                // P6c: the trust decision made by `fetchAndVerifyCert`
-                // (auto-trusted via policy, accepted via dialog, or
-                // looked up from a prior accept) wins. If the user
-                // trusted this cert we MUST disable verification in
-                // the proxy's reqwest client — otherwise it'd
-                // reject the cert again and serve a "Secure
-                // connection failed" themed page that the user
-                // can't recover from. The `httpVerifySsl` setting
-                // is still honoured as the gating policy: if the
-                // user explicitly turned verification off on the
-                // connection record (rare), we respect that too.
+                // Keep normal verification unless the connection record
+                // explicitly disables it. When the frontend trust flow accepted
+                // a self-signed/untrusted cert, send the accepted SHA-256 leaf
+                // fingerprint so the backend pins to that cert instead of
+                // accepting arbitrary certificates for the session.
                 verify_ssl:
-                  !tlsTrustAcceptedRef.current &&
                   ((connection as unknown as Record<string, unknown>)
                     ?.httpVerifySsl ?? true) !== false,
+                accepted_cert_fingerprint:
+                  ((connection as unknown as Record<string, unknown>)
+                    ?.httpVerifySsl ?? true) !== false
+                    ? acceptedCertFingerprintRef.current
+                    : null,
                 connection_id: connection?.id ?? "",
                 // t20: arm proxy-side web auto-login for this session
                 // when the connection opted in. Default off. The

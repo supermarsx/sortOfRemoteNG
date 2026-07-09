@@ -75,6 +75,36 @@ pub async fn http_post(
     service.fetch(config).await
 }
 
+
+fn proxy_client_builder(
+    verify_ssl: bool,
+    accepted_cert_fingerprint: Option<&str>,
+    min_tls: &str,
+) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .pool_idle_timeout(std::time::Duration::from_secs(20))
+        .pool_max_idle_per_host(4)
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .min_tls_version(resolve_min_tls_version(min_tls))
+        .cookie_store(true);
+
+    if let Some(fingerprint) = accepted_cert_fingerprint
+        .map(normalize_cert_fingerprint)
+        .filter(|fp| !fp.is_empty())
+    {
+        builder = builder.use_preconfigured_tls(build_pinned_tls_config(fingerprint)?);
+    } else {
+        builder = builder.danger_accept_invalid_certs(!verify_ssl);
+    }
+
+    builder
+        .build()
+        .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))
+}
+
 /// Start a basic auth proxy mediator.
 ///
 /// Spawns a local TCP server on `127.0.0.1:0` (OS auto-assigns a free port)
@@ -90,6 +120,7 @@ pub async fn start_basic_auth_proxy(
     let session_id = uuid::Uuid::new_v4().to_string();
     let target_url = config.target_url.clone();
     let verify_ssl = config.verify_ssl;
+    let accepted_cert_fingerprint = config.accepted_cert_fingerprint.clone();
     let min_tls = config.min_tls_version.clone();
     let connection_id = config.connection_id.clone();
 
@@ -128,18 +159,11 @@ pub async fn start_basic_auth_proxy(
 
     // Build an async reqwest client for this session with connection keep-alive
     // and reasonable timeouts to avoid stale-connection errors.
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .pool_idle_timeout(std::time::Duration::from_secs(20))
-        .pool_max_idle_per_host(4)
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .danger_accept_invalid_certs(!verify_ssl)
-        .min_tls_version(resolve_min_tls_version(&min_tls))
-        .cookie_store(true)
-        .build()
-        .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))?;
+    let client = proxy_client_builder(
+        verify_ssl,
+        accepted_cert_fingerprint.as_deref(),
+        &min_tls,
+    )?;
 
     // Bind to a random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -163,7 +187,8 @@ pub async fn start_basic_auth_proxy(
     // the user changes themes.
     let theme_tokens = config
         .theme_tokens
-        .clone()
+        .as_ref()
+        .map(crate::theme_tokens::ThemeTokens::sanitized)
         .unwrap_or_else(crate::theme_tokens::ThemeTokens::dark_default);
     let proxy_state = Arc::new(AxumProxyState {
         session_id: session_id.clone(),
@@ -420,7 +445,7 @@ pub async fn restart_proxy_session(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
     // Extract the config from the existing (dead) session entry.
-    let (target_url, username, password, target_origin, connection_id, verify_ssl, min_tls) = {
+    let (target_url, username, password, target_origin, connection_id, verify_ssl, accepted_cert_fingerprint, min_tls) = {
         let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         let entry = mgr
             .sessions
@@ -433,6 +458,7 @@ pub async fn restart_proxy_session(
             entry.target_origin.clone(),
             entry.connection_id.clone(),
             entry.verify_ssl,
+            entry.accepted_cert_fingerprint.clone(),
             entry.min_tls_version.clone(),
         )
     };
@@ -448,18 +474,11 @@ pub async fn restart_proxy_session(
     }
 
     // Build a fresh reqwest client.
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .pool_idle_timeout(std::time::Duration::from_secs(20))
-        .pool_max_idle_per_host(4)
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .danger_accept_invalid_certs(!verify_ssl)
-        .min_tls_version(resolve_min_tls_version(&min_tls))
-        .cookie_store(true)
-        .build()
-        .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))?;
+    let client = proxy_client_builder(
+        verify_ssl,
+        accepted_cert_fingerprint.as_deref(),
+        &min_tls,
+    )?;
 
     // Bind to a new random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1148,4 +1167,3 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
 
     serde_json::to_string_pretty(&har).map_err(|e| format!("JSON serialization failed: {}", e))
 }
-

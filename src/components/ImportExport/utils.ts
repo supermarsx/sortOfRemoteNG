@@ -1,9 +1,13 @@
-import { Connection, type TunnelChainLayer, type TunnelType } from '../../types/connection/connection';
-import { generateId } from '../../utils/core/id';
+import {
+  Connection,
+  type TunnelChainLayer,
+  type TunnelType,
+} from "../../types/connection/connection";
+import { generateId } from "../../utils/core/id";
 
 export const parseCSVLine = (line: string): string[] => {
   const values: string[] = [];
-  let current = '';
+  let current = "";
   let inQuotes = false;
 
   for (let i = 0; i < line.length; i++) {
@@ -16,15 +20,15 @@ export const parseCSVLine = (line: string): string[] => {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (char === ',' && !inQuotes) {
-      values.push(current.trim().replace(/\r$/, ''));
-      current = '';
+    } else if (char === "," && !inQuotes) {
+      values.push(current.trim().replace(/\r$/, ""));
+      current = "";
     } else {
       current += char;
     }
   }
 
-  values.push(current.trim().replace(/\r$/, ''));
+  values.push(current.trim().replace(/\r$/, ""));
   return values;
 };
 
@@ -47,13 +51,13 @@ const getDefaultPort = (protocol: string): number => {
 };
 
 const parsePortOrDefault = (portValue: unknown, protocol: string): number => {
-  if (typeof portValue === 'number') {
+  if (typeof portValue === "number") {
     return Number.isFinite(portValue) && portValue > 0
       ? portValue
       : getDefaultPort(protocol);
   }
 
-  const normalizedPort = String(portValue ?? '').trim();
+  const normalizedPort = String(portValue ?? "").trim();
   if (!normalizedPort) return getDefaultPort(protocol);
 
   const parsedPort = Number.parseInt(normalizedPort, 10);
@@ -63,10 +67,11 @@ const parsePortOrDefault = (portValue: unknown, protocol: string): number => {
 };
 
 export const importFromCSV = async (content: string): Promise<Connection[]> => {
-  const lines = content.split(/\r?\n/).filter(line => line.trim());
-  if (lines.length < 2) throw new Error('CSV file must have headers and at least one data row');
+  const lines = content.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2)
+    throw new Error("CSV file must have headers and at least one data row");
 
-  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+  const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
   const connections: Connection[] = [];
 
   for (let i = 1; i < lines.length; i++) {
@@ -78,22 +83,23 @@ export const importFromCSV = async (content: string): Promise<Connection[]> => {
       conn[header] = values[index];
     });
 
-    const protocol = (conn.Protocol?.toLowerCase() || 'rdp') as Connection['protocol'];
+    const protocol = (conn.Protocol?.toLowerCase() ||
+      "rdp") as Connection["protocol"];
 
     connections.push({
       id: conn.ID || generateId(),
-      name: conn.Name || 'Imported Connection',
+      name: conn.Name || "Imported Connection",
       protocol,
-      hostname: conn.Hostname || '',
+      hostname: conn.Hostname || "",
       port: parsePortOrDefault(conn.Port, protocol),
       username: conn.Username || undefined,
       domain: conn.Domain || undefined,
       description: conn.Description || undefined,
       parentId: conn.ParentId || undefined,
-      isGroup: conn.IsGroup === 'true',
-      tags: conn.Tags?.split(';').filter((t: string) => t.trim()) || [],
+      isGroup: conn.IsGroup === "true",
+      tags: conn.Tags?.split(";").filter((t: string) => t.trim()) || [],
       createdAt: new Date(conn.CreatedAt || Date.now()).toISOString(),
-      updatedAt: new Date(conn.UpdatedAt || Date.now()).toISOString()
+      updatedAt: new Date(conn.UpdatedAt || Date.now()).toISOString(),
     });
   }
 
@@ -101,7 +107,9 @@ export const importFromCSV = async (content: string): Promise<Connection[]> => {
 };
 
 const parseBooleanAttribute = (value: string | null): boolean =>
-  String(value ?? '').trim().toLowerCase() === 'true';
+  String(value ?? "")
+    .trim()
+    .toLowerCase() === "true";
 
 const parseIsoOrNow = (value: string | null): string => {
   const parsed = new Date(value || Date.now());
@@ -115,44 +123,49 @@ const parseIsoOrNow = (value: string | null): string => {
  */
 export const importFromXML = async (content: string): Promise<Connection[]> => {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'text/xml');
-  const parseError = doc.querySelector('parsererror');
+  const doc = parser.parseFromString(content, "text/xml");
+  const parseError = doc.querySelector("parsererror");
   if (parseError) {
-    throw new Error('Invalid XML format: ' + parseError.textContent);
+    throw new Error("Invalid XML format: " + parseError.textContent);
   }
 
   const root = doc.documentElement;
-  if (!root || root.tagName !== 'sortOfRemoteNG') {
-    throw new Error('Invalid sortOfRemoteNG XML: expected <sortOfRemoteNG> root');
+  if (!root || root.tagName !== "sortOfRemoteNG") {
+    throw new Error(
+      "Invalid sortOfRemoteNG XML: expected <sortOfRemoteNG> root",
+    );
   }
 
-  const nodes = Array.from(root.querySelectorAll('Connection'));
+  const nodes = Array.from(root.querySelectorAll("Connection"));
   if (nodes.length === 0) {
-    throw new Error('Invalid sortOfRemoteNG XML: no Connection nodes found');
+    throw new Error("Invalid sortOfRemoteNG XML: no Connection nodes found");
   }
 
   return nodes.map((node) => {
-    const protocol = (node.getAttribute('Type') || 'rdp').toLowerCase() as Connection['protocol'];
-    const isGroup = parseBooleanAttribute(node.getAttribute('IsGroup'));
-    const tags = (node.getAttribute('Tags') || '')
+    const protocol = (
+      node.getAttribute("Type") || "rdp"
+    ).toLowerCase() as Connection["protocol"];
+    const isGroup = parseBooleanAttribute(node.getAttribute("IsGroup"));
+    const tags = (node.getAttribute("Tags") || "")
       .split(/[;,]/)
       .map((tag) => tag.trim())
       .filter(Boolean);
 
     return {
-      id: node.getAttribute('Id') || generateId(),
-      name: node.getAttribute('Name') || 'Imported Connection',
+      id: node.getAttribute("Id") || generateId(),
+      name: node.getAttribute("Name") || "Imported Connection",
       protocol,
-      hostname: node.getAttribute('Server') || node.getAttribute('Hostname') || '',
-      port: parsePortOrDefault(node.getAttribute('Port'), protocol),
-      username: node.getAttribute('Username') || undefined,
-      domain: node.getAttribute('Domain') || undefined,
-      description: node.getAttribute('Description') || undefined,
-      parentId: node.getAttribute('ParentId') || undefined,
+      hostname:
+        node.getAttribute("Server") || node.getAttribute("Hostname") || "",
+      port: parsePortOrDefault(node.getAttribute("Port"), protocol),
+      username: node.getAttribute("Username") || undefined,
+      domain: node.getAttribute("Domain") || undefined,
+      description: node.getAttribute("Description") || undefined,
+      parentId: node.getAttribute("ParentId") || undefined,
       isGroup,
       tags,
-      createdAt: parseIsoOrNow(node.getAttribute('CreatedAt')),
-      updatedAt: parseIsoOrNow(node.getAttribute('UpdatedAt')),
+      createdAt: parseIsoOrNow(node.getAttribute("CreatedAt")),
+      updatedAt: parseIsoOrNow(node.getAttribute("UpdatedAt")),
     };
   });
 };
@@ -160,19 +173,19 @@ export const importFromXML = async (content: string): Promise<Connection[]> => {
 /**
  * Supported import formats
  */
-export type ImportFormat = 
-  | 'json'           // Native sortOfRemoteNG JSON
-  | 'xml'            // Native sortOfRemoteNG XML
-  | 'csv'            // Native sortOfRemoteNG CSV
-  | 'mremoteng'      // mRemoteNG XML format
-  | 'rdcman'         // Remote Desktop Connection Manager
-  | 'royalts'        // Royal TS/TSX JSON format
-  | 'mobaxterm'      // MobaXterm INI format
-  | 'putty'          // PuTTY registry export
-  | 'securecrt'      // SecureCRT XML sessions
-  | 'termius';       // Termius JSON export
+export type ImportFormat =
+  | "json" // Native sortOfRemoteNG JSON
+  | "xml" // Native sortOfRemoteNG XML
+  | "csv" // Native sortOfRemoteNG CSV
+  | "mremoteng" // mRemoteNG XML format
+  | "rdcman" // Remote Desktop Connection Manager
+  | "royalts" // Royal TS/TSX JSON format
+  | "mobaxterm" // MobaXterm INI format
+  | "putty" // PuTTY registry export
+  | "securecrt" // SecureCRT XML sessions
+  | "termius"; // Termius JSON export
 
-export type ImportFormatGroup = 'native' | 'vendor';
+export type ImportFormatGroup = "native" | "vendor";
 
 export interface ImportFormatCompatibility {
   value: ImportFormat;
@@ -181,125 +194,140 @@ export interface ImportFormatCompatibility {
   extensions: string[];
   signatures: string[];
   dataClasses: string[];
-  credentialSupport: 'full' | 'partial' | 'none';
+  credentialSupport: "full" | "partial" | "none";
   description: string;
   warning?: string;
 }
 
 export const IMPORT_FORMAT_ORDER: ImportFormat[] = [
-  'json',
-  'xml',
-  'csv',
-  'mremoteng',
-  'rdcman',
-  'termius',
-  'royalts',
-  'mobaxterm',
-  'putty',
-  'securecrt',
+  "json",
+  "xml",
+  "csv",
+  "mremoteng",
+  "rdcman",
+  "termius",
+  "royalts",
+  "mobaxterm",
+  "putty",
+  "securecrt",
 ];
 
-export const IMPORT_FORMAT_COMPATIBILITY: Record<ImportFormat, ImportFormatCompatibility> = {
+export const IMPORT_FORMAT_COMPATIBILITY: Record<
+  ImportFormat,
+  ImportFormatCompatibility
+> = {
   json: {
-    value: 'json',
-    label: 'JSON',
-    group: 'native',
-    extensions: ['.json', '.encrypted'],
-    signatures: ['{ "connections": [...] }', '{ "databases": [...] }', '[{ ... }]'],
-    dataClasses: ['connections', 'folders', 'settings sidecars', 'VPN', 'tunnel chains'],
-    credentialSupport: 'full',
-    description: 'Native sortOfRemoteNG JSON exports and connection arrays.',
+    value: "json",
+    label: "JSON",
+    group: "native",
+    extensions: [".json", ".encrypted"],
+    signatures: [
+      '{ "connections": [...] }',
+      '{ "databases": [...] }',
+      "[{ ... }]",
+    ],
+    dataClasses: [
+      "connections",
+      "folders",
+      "settings sidecars",
+      "VPN",
+      "tunnel chains",
+    ],
+    credentialSupport: "full",
+    description: "Native sortOfRemoteNG JSON exports and connection arrays.",
   },
   xml: {
-    value: 'xml',
-    label: 'XML',
-    group: 'native',
-    extensions: ['.xml', '.encrypted'],
-    signatures: ['<sortOfRemoteNG>', '<Connection ... />'],
-    dataClasses: ['connections', 'folders'],
-    credentialSupport: 'partial',
-    description: 'Native sortOfRemoteNG XML connection exports.',
+    value: "xml",
+    label: "XML",
+    group: "native",
+    extensions: [".xml", ".encrypted"],
+    signatures: ["<sortOfRemoteNG>", "<Connection ... />"],
+    dataClasses: ["connections", "folders"],
+    credentialSupport: "partial",
+    description: "Native sortOfRemoteNG XML connection exports.",
   },
   csv: {
-    value: 'csv',
-    label: 'CSV',
-    group: 'native',
-    extensions: ['.csv', '.encrypted'],
-    signatures: ['Name,Protocol,Hostname,Port', 'ID,Name,Protocol,Hostname'],
-    dataClasses: ['connections', 'folders'],
-    credentialSupport: 'partial',
-    description: 'Native sortOfRemoteNG CSV exports and templates.',
+    value: "csv",
+    label: "CSV",
+    group: "native",
+    extensions: [".csv", ".encrypted"],
+    signatures: ["Name,Protocol,Hostname,Port", "ID,Name,Protocol,Hostname"],
+    dataClasses: ["connections", "folders"],
+    credentialSupport: "partial",
+    description: "Native sortOfRemoteNG CSV exports and templates.",
   },
   mremoteng: {
-    value: 'mremoteng',
-    label: 'mRemoteNG',
-    group: 'vendor',
-    extensions: ['.xml'],
-    signatures: ['<Connections ConfVersion=...>', '<Node Protocol=...>'],
-    dataClasses: ['connections', 'folders', 'SSH tunnels'],
-    credentialSupport: 'partial',
-    description: 'mRemoteNG connection XML, including supported encrypted AES-GCM files.',
-    warning: 'Only common connection, folder, protocol, and credential fields can be mapped.',
+    value: "mremoteng",
+    label: "mRemoteNG",
+    group: "vendor",
+    extensions: [".xml"],
+    signatures: ["<Connections ConfVersion=...>", "<Node Protocol=...>"],
+    dataClasses: ["connections", "folders", "SSH tunnels"],
+    credentialSupport: "partial",
+    description:
+      "mRemoteNG connection XML, including supported encrypted AES-GCM files.",
+    warning:
+      "Only common connection, folder, protocol, and credential fields can be mapped.",
   },
   rdcman: {
-    value: 'rdcman',
-    label: 'RDCMan',
-    group: 'vendor',
-    extensions: ['.rdg', '.xml'],
-    signatures: ['<RDCMan>', '<file><group>'],
-    dataClasses: ['RDP connections', 'groups'],
-    credentialSupport: 'partial',
-    description: 'Remote Desktop Connection Manager server groups.',
+    value: "rdcman",
+    label: "RDCMan",
+    group: "vendor",
+    extensions: [".rdg", ".xml"],
+    signatures: ["<RDCMan>", "<file><group>"],
+    dataClasses: ["RDP connections", "groups"],
+    credentialSupport: "partial",
+    description: "Remote Desktop Connection Manager server groups.",
   },
   termius: {
-    value: 'termius',
-    label: 'Termius',
-    group: 'vendor',
-    extensions: ['.json'],
+    value: "termius",
+    label: "Termius",
+    group: "vendor",
+    extensions: [".json"],
     signatures: ['{ "hosts": [...] }'],
-    dataClasses: ['SSH hosts', 'groups'],
-    credentialSupport: 'partial',
-    description: 'Termius JSON host exports.',
+    dataClasses: ["SSH hosts", "groups"],
+    credentialSupport: "partial",
+    description: "Termius JSON host exports.",
   },
   royalts: {
-    value: 'royalts',
-    label: 'Royal TS/TSX',
-    group: 'vendor',
-    extensions: ['.rtsz', '.rtsx', '.json'],
-    signatures: ['{ "Objects": [...] }', 'RoyalFolder'],
-    dataClasses: ['connections', 'folders'],
-    credentialSupport: 'partial',
-    description: 'Royal TS/TSX object exports.',
+    value: "royalts",
+    label: "Royal TS/TSX",
+    group: "vendor",
+    extensions: [".rtsz", ".rtsx", ".json"],
+    signatures: ['{ "Objects": [...] }', "RoyalFolder"],
+    dataClasses: ["connections", "folders"],
+    credentialSupport: "partial",
+    description: "Royal TS/TSX object exports.",
   },
   mobaxterm: {
-    value: 'mobaxterm',
-    label: 'MobaXterm',
-    group: 'vendor',
-    extensions: ['.ini'],
-    signatures: ['[Bookmarks]', 'SubRep='],
-    dataClasses: ['sessions', 'folders'],
-    credentialSupport: 'none',
-    description: 'MobaXterm bookmark INI files.',
+    value: "mobaxterm",
+    label: "MobaXterm",
+    group: "vendor",
+    extensions: [".ini"],
+    signatures: ["[Bookmarks]", "SubRep="],
+    dataClasses: ["sessions", "folders"],
+    credentialSupport: "none",
+    description: "MobaXterm bookmark INI files.",
   },
   putty: {
-    value: 'putty',
-    label: 'PuTTY',
-    group: 'vendor',
-    extensions: ['.reg'],
-    signatures: ['REGEDIT4', 'SimonTatham\\PuTTY\\Sessions'],
-    dataClasses: ['sessions'],
-    credentialSupport: 'none',
-    description: 'PuTTY registry session exports.',
+    value: "putty",
+    label: "PuTTY",
+    group: "vendor",
+    extensions: [".reg"],
+    signatures: ["REGEDIT4", "SimonTatham\\PuTTY\\Sessions"],
+    dataClasses: ["sessions"],
+    credentialSupport: "none",
+    description: "PuTTY registry session exports.",
   },
   securecrt: {
-    value: 'securecrt',
-    label: 'SecureCRT',
-    group: 'vendor',
-    extensions: ['.xml'],
-    signatures: ['<VanDyke>', 'S:"Protocol Name"'],
-    dataClasses: ['sessions'],
-    credentialSupport: 'partial',
-    description: 'SecureCRT XML session exports.',
+    value: "securecrt",
+    label: "SecureCRT",
+    group: "vendor",
+    extensions: [".xml"],
+    signatures: ["<VanDyke>", 'S:"Protocol Name"'],
+    dataClasses: ["sessions"],
+    credentialSupport: "partial",
+    description: "SecureCRT XML session exports.",
   },
 };
 
@@ -310,117 +338,133 @@ export const getImportFormatCompatibility = (
 /**
  * Detect import format from file content
  */
-export const detectImportFormat = (content: string, filename?: string): ImportFormat => {
+export const detectImportFormat = (
+  content: string,
+  filename?: string,
+): ImportFormat => {
   // Strip BOM and whitespace.
-  const trimmed = content.replace(/^\uFEFF/, '').trim();
+  const trimmed = content.replace(/^\uFEFF/, "").trim();
   let extIsXml = false;
 
   // Check filename extension first when an extension is unambiguous.
   if (filename) {
     const lower = filename.toLowerCase();
-    const ext = lower.split('.').pop();
-    if (ext === 'csv') return 'csv';
-    if (ext === 'rtsz' || ext === 'rtsx' || lower.includes('royalts')) return 'royalts';
-    if (lower.includes('termius')) return 'termius';
-    if (ext === 'rdg') return 'rdcman';
-    if (ext === 'reg') return 'putty';
-    if (ext === 'ini' && lower.includes('moba')) return 'mobaxterm';
-    if (ext === 'xml') extIsXml = true;
+    const ext = lower.split(".").pop();
+    if (ext === "csv") return "csv";
+    if (ext === "rtsz" || ext === "rtsx" || lower.includes("royalts"))
+      return "royalts";
+    if (lower.includes("termius")) return "termius";
+    if (ext === "rdg") return "rdcman";
+    if (ext === "reg") return "putty";
+    if (ext === "ini" && lower.includes("moba")) return "mobaxterm";
+    if (ext === "xml") extIsXml = true;
   }
 
   // Native sortOfRemoteNG XML.
-  if (trimmed.includes('<sortOfRemoteNG') || trimmed.includes('<Connection ')) {
-    return 'xml';
+  if (trimmed.includes("<sortOfRemoteNG") || trimmed.includes("<Connection ")) {
+    return "xml";
   }
 
   // mRemoteNG detection - the <Connections> root tag is distinctive.
   // ConfVersion is usually present but absent in some encrypted exports,
   // so we accept either marker.
   if (
-    trimmed.includes('<Connections') &&
-    (trimmed.includes('ConfVersion') ||
-      trimmed.includes('FullFileEncryption') ||
-      trimmed.includes('Protected='))
+    trimmed.includes("<Connections") &&
+    (trimmed.includes("ConfVersion") ||
+      trimmed.includes("FullFileEncryption") ||
+      trimmed.includes("Protected="))
   ) {
-    return 'mremoteng';
+    return "mremoteng";
   }
-  
+
   // RDCMan detection
-  if (trimmed.includes('<RDCMan') || (trimmed.includes('<file') && trimmed.includes('<group'))) {
-    return 'rdcman';
+  if (
+    trimmed.includes("<RDCMan") ||
+    (trimmed.includes("<file") && trimmed.includes("<group"))
+  ) {
+    return "rdcman";
   }
-  
+
   // Royal TS JSON format
-  if (trimmed.startsWith('{') && (trimmed.includes('"Objects"') || trimmed.includes('"RoyalFolder"'))) {
-    return 'royalts';
+  if (
+    trimmed.startsWith("{") &&
+    (trimmed.includes('"Objects"') || trimmed.includes('"RoyalFolder"'))
+  ) {
+    return "royalts";
   }
-  
+
   // MobaXterm INI format
-  if (trimmed.includes('[Bookmarks') || trimmed.includes('SubRep=')) {
-    return 'mobaxterm';
+  if (trimmed.includes("[Bookmarks") || trimmed.includes("SubRep=")) {
+    return "mobaxterm";
   }
-  
+
   // PuTTY registry format
-  if (trimmed.includes('REGEDIT') || trimmed.includes('[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY')) {
-    return 'putty';
+  if (
+    trimmed.includes("REGEDIT") ||
+    trimmed.includes("[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY")
+  ) {
+    return "putty";
   }
-  
+
   // SecureCRT XML sessions
-  if (trimmed.includes('<VanDyke') || trimmed.includes('S:"Protocol Name"')) {
-    return 'securecrt';
+  if (trimmed.includes("<VanDyke") || trimmed.includes('S:"Protocol Name"')) {
+    return "securecrt";
   }
-  
+
   // Termius JSON
-  if (trimmed.startsWith('{') && trimmed.includes('"hosts"')) {
-    return 'termius';
+  if (trimmed.startsWith("{") && trimmed.includes('"hosts"')) {
+    return "termius";
   }
 
   // Generic XML check
-  if (trimmed.startsWith('<?xml') || trimmed.startsWith('<')) {
+  if (trimmed.startsWith("<?xml") || trimmed.startsWith("<")) {
     // Could be mRemoteNG without the standard header
-    if (trimmed.includes('Node') && (trimmed.includes('Protocol=') || trimmed.includes('Hostname='))) {
-      return 'mremoteng';
+    if (
+      trimmed.includes("Node") &&
+      (trimmed.includes("Protocol=") || trimmed.includes("Hostname="))
+    ) {
+      return "mremoteng";
     }
     // A bare <Connections>…</Connections> wrapper (e.g. fully-encrypted body
     // with no plaintext ConfVersion) is still mRemoteNG.
-    if (trimmed.includes('<Connections')) {
-      return 'mremoteng';
+    if (trimmed.includes("<Connections")) {
+      return "mremoteng";
     }
   }
 
   // Generic JSON check
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    return 'json';
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return "json";
   }
 
   // .xml filename without a matched signature: assume mRemoteNG rather than
   // falling through to CSV (which would otherwise eat encrypted XML blobs).
-  if (extIsXml) return 'mremoteng';
+  if (extIsXml) return "mremoteng";
 
   // Default to CSV
-  return 'csv';
+  return "csv";
 };
 
 /**
  * Map mRemoteNG protocol names to our format
  */
-const mapMRemoteNGProtocol = (protocol: string): Connection['protocol'] => {
-  const protocolMap: Record<string, Connection['protocol']> = {
-    'RDP': 'rdp',
-    'SSH1': 'ssh',
-    'SSH2': 'ssh',
-    'Telnet': 'telnet',
-    'Rlogin': 'rlogin',
-    'VNC': 'vnc',
-    'HTTP': 'http',
-    'HTTPS': 'https',
-    'ICA': 'rdp',           // Citrix ICA mapped to RDP
-    'RAW': 'telnet',
-    'IntApp': 'rdp',
-    'PowerShell': 'ssh',    // mRemoteNG PowerShell remoting → ssh
-    'Winbox': 'rdp',        // MikroTik Winbox → rdp
+const mapMRemoteNGProtocol = (protocol: string): Connection["protocol"] => {
+  const protocolMap: Record<string, Connection["protocol"]> = {
+    RDP: "rdp",
+    SSH1: "ssh",
+    SSH2: "ssh",
+    Telnet: "telnet",
+    Rlogin: "rlogin",
+    VNC: "vnc",
+    HTTP: "http",
+    HTTPS: "https",
+    ICA: "rdp", // Citrix ICA mapped to RDP
+    RAW: "telnet",
+    IntApp: "rdp",
+    PowerShell: "ssh", // mRemoteNG PowerShell remoting → ssh
+    Winbox: "rdp", // MikroTik Winbox → rdp
   };
-  return protocolMap[protocol] || 'rdp';
+  return protocolMap[protocol] || "rdp";
 };
 
 const getMRemoteNGAttribute = (
@@ -437,8 +481,8 @@ const getMRemoteNGAttribute = (
 const parseMRemoteNGBool = (value: string | undefined): boolean | undefined => {
   if (value === undefined) return undefined;
   const normalized = value.trim().toLowerCase();
-  if (['true', 'yes', '1'].includes(normalized)) return true;
-  if (['false', 'no', '0'].includes(normalized)) return false;
+  if (["true", "yes", "1"].includes(normalized)) return true;
+  if (["false", "no", "0"].includes(normalized)) return false;
   return undefined;
 };
 
@@ -446,7 +490,10 @@ const resolveMRemoteNGSshTunnelName = (
   node: Element,
   inheritedTunnelName?: string,
 ): string | undefined => {
-  const explicit = getMRemoteNGAttribute(node, 'SSHTunnelConnectionName')?.trim();
+  const explicit = getMRemoteNGAttribute(
+    node,
+    "SSHTunnelConnectionName",
+  )?.trim();
   if (explicit) return explicit;
 
   // mRemoteNG defaults every `Inherit*` flag to FALSE. Only inherit the
@@ -456,7 +503,7 @@ const resolveMRemoteNGSshTunnelName = (
   // `inheritedTunnelName`, attaching tunnels to connections that should not
   // have them, especially in trimmed/older confCons files).
   const inherit = parseMRemoteNGBool(
-    getMRemoteNGAttribute(node, 'InheritSSHTunnelConnectionName'),
+    getMRemoteNGAttribute(node, "InheritSSHTunnelConnectionName"),
   );
   if (inherit === true) return inheritedTunnelName;
   return undefined;
@@ -490,10 +537,16 @@ const resolveMRemoteNGInheritedProp = (
   inheritedValue: string | undefined,
 ): string | undefined => {
   const direct = node.getAttribute(attrName);
-  if (direct !== null && direct !== '') return direct;
+  if (direct !== null && direct !== "") return direct;
 
-  const inherit = parseMRemoteNGBool(getMRemoteNGAttribute(node, inheritFlagName));
-  if (inherit === true && inheritedValue !== undefined && inheritedValue !== '') {
+  const inherit = parseMRemoteNGBool(
+    getMRemoteNGAttribute(node, inheritFlagName),
+  );
+  if (
+    inherit === true &&
+    inheritedValue !== undefined &&
+    inheritedValue !== ""
+  ) {
     return inheritedValue;
   }
   // Preserve a present-but-empty direct attribute as empty (explicit clear).
@@ -518,14 +571,14 @@ export interface MRemoteNGEncryptionInfo {
 
 // mRemoteNG's hardcoded master password used when the user never sets one.
 // See upstream `Runtime.EncryptionKey` / cryptography provider.
-export const MREMOTENG_DEFAULT_MASTER_PASSWORD = 'mR3m';
+export const MREMOTENG_DEFAULT_MASTER_PASSWORD = "mR3m";
 
 // Plaintext stored in the `Protected` attribute. Decrypts to one of these
 // strings depending on whether a custom master password was set:
 //   - "ThisIsNotProtected"  → no master password set; default `mR3m` works
 //   - "ThisIsProtected"     → user set a custom master password
-const PROTECTED_PLAINTEXT_NO_PASSWORD = 'ThisIsNotProtected';
-const PROTECTED_PLAINTEXT_PASSWORD = 'ThisIsProtected';
+const PROTECTED_PLAINTEXT_NO_PASSWORD = "ThisIsNotProtected";
+const PROTECTED_PLAINTEXT_PASSWORD = "ThisIsProtected";
 
 // Wire format constants for AES-256-GCM (the only cipher implemented here).
 // Layout per upstream `AeadCryptographyProvider.cs`:
@@ -539,7 +592,7 @@ const asBufferSource = (bytes: Uint8Array): BufferSource =>
   bytes as Uint8Array<ArrayBuffer>;
 
 const decodeBase64 = (b64: string): Uint8Array => {
-  const clean = b64.replace(/\s+/g, '');
+  const clean = b64.replace(/\s+/g, "");
   const bin = atob(clean);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -547,7 +600,7 @@ const decodeBase64 = (b64: string): Uint8Array => {
 };
 
 const encodeBase64 = (bytes: Uint8Array): string => {
-  let bin = '';
+  let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 };
@@ -575,19 +628,19 @@ async function deriveMRemoteNGKey(
   password: string,
   salt: Uint8Array,
   iterations: number,
-  usages: KeyUsage[] = ['decrypt'],
+  usages: KeyUsage[] = ["decrypt"],
 ): Promise<CryptoKey> {
   const passKey = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     asBufferSource(pkcs5PasswordToBytes(password)),
-    { name: 'PBKDF2' },
+    { name: "PBKDF2" },
     false,
-    ['deriveKey'],
+    ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', hash: 'SHA-1', salt: asBufferSource(salt), iterations },
+    { name: "PBKDF2", hash: "SHA-1", salt: asBufferSource(salt), iterations },
     passKey,
-    { name: 'AES-GCM', length: 256 },
+    { name: "AES-GCM", length: 256 },
     false,
     usages,
   );
@@ -615,21 +668,29 @@ async function decryptMRemoteNGBlob(
   const ciphertext = data.slice(MRNG_SALT_SIZE + MRNG_NONCE_SIZE);
   const key = await deriveMRemoteNGKey(password, salt, iterations);
   const params: AesGcmParams = {
-    name: 'AES-GCM',
+    name: "AES-GCM",
     iv: asBufferSource(nonce),
     additionalData: asBufferSource(salt),
     tagLength: MRNG_TAG_SIZE * 8,
   };
   let plain: ArrayBuffer;
   try {
-    plain = await crypto.subtle.decrypt(params, key, asBufferSource(ciphertext));
+    plain = await crypto.subtle.decrypt(
+      params,
+      key,
+      asBufferSource(ciphertext),
+    );
   } catch (primaryError) {
     // sortOfRemoteNG builds before this interop fix wrote AES-GCM blobs with
     // empty AAD. Keep that recovery path so existing exports can still import,
     // but prefer the upstream mRemoteNG salt-AAD format above.
     try {
       plain = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: asBufferSource(nonce), tagLength: MRNG_TAG_SIZE * 8 },
+        {
+          name: "AES-GCM",
+          iv: asBufferSource(nonce),
+          tagLength: MRNG_TAG_SIZE * 8,
+        },
         key,
         asBufferSource(ciphertext),
       );
@@ -650,16 +711,16 @@ export async function encryptMRemoteNGBlob(
   iterations: number,
 ): Promise<string> {
   const bytes =
-    typeof plaintext === 'string'
+    typeof plaintext === "string"
       ? new TextEncoder().encode(plaintext)
       : plaintext;
   const salt = crypto.getRandomValues(new Uint8Array(MRNG_SALT_SIZE));
   const nonce = crypto.getRandomValues(new Uint8Array(MRNG_NONCE_SIZE));
-  const key = await deriveMRemoteNGKey(password, salt, iterations, ['encrypt']);
+  const key = await deriveMRemoteNGKey(password, salt, iterations, ["encrypt"]);
   const ct = new Uint8Array(
     await crypto.subtle.encrypt(
       {
-        name: 'AES-GCM',
+        name: "AES-GCM",
         iv: asBufferSource(nonce),
         additionalData: asBufferSource(salt),
         tagLength: MRNG_TAG_SIZE * 8,
@@ -683,10 +744,10 @@ export async function encryptMRemoteNGBlob(
  * Throws with a descriptive error on anything other than AES/GCM.
  */
 function assertSupportedMRemoteNGCipher(root: Element): void {
-  const engine = (root.getAttribute('EncryptionEngine') || 'AES').toUpperCase();
-  const mode = (root.getAttribute('BlockCipherMode') || 'GCM').toUpperCase();
-  if (engine === 'AES' && mode === 'GCM') return;
-  if (engine !== 'AES') {
+  const engine = (root.getAttribute("EncryptionEngine") || "AES").toUpperCase();
+  const mode = (root.getAttribute("BlockCipherMode") || "GCM").toUpperCase();
+  if (engine === "AES" && mode === "GCM") return;
+  if (engine !== "AES") {
     throw new Error(
       `Unsupported mRemoteNG block cipher "${engine}". Only AES is implemented in this build (Serpent and Twofish would require a JS polyfill).`,
     );
@@ -718,31 +779,60 @@ export async function verifyMRemoteNGPassword(
   content: string,
   password: string,
 ): Promise<MRemoteNGPasswordCheck> {
-  const doc = new DOMParser().parseFromString(content, 'text/xml');
-  const root = doc.querySelector('Connections');
-  if (!root) throw new Error('Not an mRemoteNG file (no <Connections> root)');
+  const doc = new DOMParser().parseFromString(content, "text/xml");
+  const root = doc.querySelector("Connections");
+  if (!root) throw new Error("Not an mRemoteNG file (no <Connections> root)");
   const iterations = Math.max(
     1,
-    parseInt(root.getAttribute('KdfIterations') || '1000', 10),
+    parseInt(root.getAttribute("KdfIterations") || "1000", 10),
   );
-  const protectedB64 = (root.getAttribute('Protected') || '').trim();
+  const protectedB64 = (root.getAttribute("Protected") || "").trim();
   if (!protectedB64) {
-    return { valid: true, isDefaultMaster: true, iterations, hasProtected: false };
+    return {
+      valid: true,
+      isDefaultMaster: true,
+      iterations,
+      hasProtected: false,
+    };
   }
   try {
-    const plain = await decryptMRemoteNGBlob(protectedB64, password, iterations);
+    const plain = await decryptMRemoteNGBlob(
+      protectedB64,
+      password,
+      iterations,
+    );
     const text = new TextDecoder().decode(plain);
     if (text === PROTECTED_PLAINTEXT_NO_PASSWORD) {
-      return { valid: true, isDefaultMaster: true, iterations, hasProtected: true };
+      return {
+        valid: true,
+        isDefaultMaster: true,
+        iterations,
+        hasProtected: true,
+      };
     }
     if (text === PROTECTED_PLAINTEXT_PASSWORD) {
-      return { valid: true, isDefaultMaster: false, iterations, hasProtected: true };
+      return {
+        valid: true,
+        isDefaultMaster: false,
+        iterations,
+        hasProtected: true,
+      };
     }
     // Decryption succeeded but plaintext is unrecognised — that's still a
     // wrong password unless the sentinel changes upstream.
-    return { valid: false, isDefaultMaster: false, iterations, hasProtected: true };
+    return {
+      valid: false,
+      isDefaultMaster: false,
+      iterations,
+      hasProtected: true,
+    };
   } catch {
-    return { valid: false, isDefaultMaster: false, iterations, hasProtected: true };
+    return {
+      valid: false,
+      isDefaultMaster: false,
+      iterations,
+      hasProtected: true,
+    };
   }
 }
 
@@ -752,9 +842,9 @@ export async function verifyMRemoteNGPassword(
 //   - `VNCProxyPassword`   — added in ConfVersion ≥ 1.7
 //   - `RDGatewayPassword`  — added in ConfVersion ≥ 2.2
 const MRNG_PER_FIELD_PASSWORD_ATTRS = [
-  'Password',
-  'VNCProxyPassword',
-  'RDGatewayPassword',
+  "Password",
+  "VNCProxyPassword",
+  "RDGatewayPassword",
 ];
 
 /**
@@ -768,7 +858,7 @@ async function decryptPerFieldPasswords(
   password: string,
   iterations: number,
 ): Promise<void> {
-  const nodes = Array.from(doc.querySelectorAll('Node'));
+  const nodes = Array.from(doc.querySelectorAll("Node"));
   for (const node of nodes) {
     for (const attr of MRNG_PER_FIELD_PASSWORD_ATTRS) {
       const enc = node.getAttribute(attr);
@@ -799,40 +889,42 @@ export async function decryptMRemoteNGXml(
   content: string,
   password: string,
 ): Promise<string> {
-  const doc = new DOMParser().parseFromString(content, 'text/xml');
-  const root = doc.querySelector('Connections');
-  if (!root) throw new Error('Not an mRemoteNG file (no <Connections> root)');
+  const doc = new DOMParser().parseFromString(content, "text/xml");
+  const root = doc.querySelector("Connections");
+  if (!root) throw new Error("Not an mRemoteNG file (no <Connections> root)");
 
   assertSupportedMRemoteNGCipher(root);
   const iterations = Math.max(
     1,
-    parseInt(root.getAttribute('KdfIterations') || '1000', 10),
+    parseInt(root.getAttribute("KdfIterations") || "1000", 10),
   );
-  const fullFileAttr = (root.getAttribute('FullFileEncryption') || '').toLowerCase();
-  const fullFileEncryption = fullFileAttr === 'true' || fullFileAttr === '1';
+  const fullFileAttr = (
+    root.getAttribute("FullFileEncryption") || ""
+  ).toLowerCase();
+  const fullFileEncryption = fullFileAttr === "true" || fullFileAttr === "1";
 
   // Validate password against the Protected sentinel before doing any work.
-  const protectedB64 = (root.getAttribute('Protected') || '').trim();
+  const protectedB64 = (root.getAttribute("Protected") || "").trim();
   if (protectedB64) {
     const check = await verifyMRemoteNGPassword(content, password);
     if (!check.valid) {
-      throw new Error('Incorrect master password');
+      throw new Error("Incorrect master password");
     }
   }
 
   if (fullFileEncryption) {
-    const body = (root.textContent || '').trim();
-    if (!body) throw new Error('FullFileEncryption is on but body is empty');
+    const body = (root.textContent || "").trim();
+    if (!body) throw new Error("FullFileEncryption is on but body is empty");
     const innerBytes = await decryptMRemoteNGBlob(body, password, iterations);
     const innerXml = new TextDecoder().decode(innerBytes);
     // Rebuild a parseable document, preserving the original root attributes
     // so any post-processing can still see them.
-    const wrapped = `<?xml version="1.0" encoding="utf-8"?><Connections ConfVersion="${root.getAttribute('ConfVersion') || '2.6'}">${innerXml}</Connections>`;
-    const innerDoc = new DOMParser().parseFromString(wrapped, 'text/xml');
-    const parseError = innerDoc.querySelector('parsererror');
+    const wrapped = `<?xml version="1.0" encoding="utf-8"?><Connections ConfVersion="${root.getAttribute("ConfVersion") || "2.6"}">${innerXml}</Connections>`;
+    const innerDoc = new DOMParser().parseFromString(wrapped, "text/xml");
+    const parseError = innerDoc.querySelector("parsererror");
     if (parseError) {
       throw new Error(
-        'Decrypted body is not valid XML — file may be from an unsupported mRemoteNG version',
+        "Decrypted body is not valid XML — file may be from an unsupported mRemoteNG version",
       );
     }
     await decryptPerFieldPasswords(innerDoc, password, iterations);
@@ -853,7 +945,7 @@ async function encryptPerFieldPasswords(
   password: string,
   iterations: number,
 ): Promise<void> {
-  const nodes = Array.from(doc.querySelectorAll('Node'));
+  const nodes = Array.from(doc.querySelectorAll("Node"));
   for (const node of nodes) {
     for (const attr of MRNG_PER_FIELD_PASSWORD_ATTRS) {
       const plain = node.getAttribute(attr);
@@ -896,14 +988,14 @@ export async function encryptMRemoteNGXml(
   opts: EncryptMRemoteNGOptions,
 ): Promise<string> {
   const password = opts.password;
-  if (!password) throw new Error('encryptMRemoteNGXml requires a password');
+  if (!password) throw new Error("encryptMRemoteNGXml requires a password");
   const iterations = Math.max(1000, opts.iterations ?? 1000);
 
-  const doc = new DOMParser().parseFromString(plainXml, 'text/xml');
-  const parseError = doc.querySelector('parsererror');
-  if (parseError) throw new Error('Input is not valid XML');
-  const root = doc.querySelector('Connections');
-  if (!root) throw new Error('Input must have a <Connections> root');
+  const doc = new DOMParser().parseFromString(plainXml, "text/xml");
+  const parseError = doc.querySelector("parsererror");
+  if (parseError) throw new Error("Input is not valid XML");
+  const root = doc.querySelector("Connections");
+  if (!root) throw new Error("Input must have a <Connections> root");
 
   // Preserve any caller-supplied root attributes, then overwrite the
   // encryption headers so the file is self-describing.
@@ -912,24 +1004,29 @@ export async function encryptMRemoteNGXml(
       root.setAttribute(k, v);
     }
   }
-  if (!root.hasAttribute('Name')) root.setAttribute('Name', 'Connections');
-  if (!root.hasAttribute('Export')) root.setAttribute('Export', 'false');
-  if (!root.hasAttribute('ConfVersion')) root.setAttribute('ConfVersion', '2.6');
-  root.setAttribute('EncryptionEngine', 'AES');
-  root.setAttribute('BlockCipherMode', 'GCM');
-  root.setAttribute('KdfIterations', String(iterations));
+  if (!root.hasAttribute("Name")) root.setAttribute("Name", "Connections");
+  if (!root.hasAttribute("Export")) root.setAttribute("Export", "false");
+  if (!root.hasAttribute("ConfVersion"))
+    root.setAttribute("ConfVersion", "2.6");
+  root.setAttribute("EncryptionEngine", "AES");
+  root.setAttribute("BlockCipherMode", "GCM");
+  root.setAttribute("KdfIterations", String(iterations));
   root.setAttribute(
-    'FullFileEncryption',
-    opts.fullFileEncryption ? 'true' : 'false',
+    "FullFileEncryption",
+    opts.fullFileEncryption ? "true" : "false",
   );
 
   // Generate the Protected sentinel for this master.
   const sentinel =
     password === MREMOTENG_DEFAULT_MASTER_PASSWORD
-      ? 'ThisIsNotProtected'
-      : 'ThisIsProtected';
-  const protectedB64 = await encryptMRemoteNGBlob(sentinel, password, iterations);
-  root.setAttribute('Protected', protectedB64);
+      ? "ThisIsNotProtected"
+      : "ThisIsProtected";
+  const protectedB64 = await encryptMRemoteNGBlob(
+    sentinel,
+    password,
+    iterations,
+  );
+  root.setAttribute("Protected", protectedB64);
 
   // Always encrypt per-field passwords, regardless of full-file mode (real
   // mRemoteNG files always do; the full-file mode just adds a wrapper on top).
@@ -940,7 +1037,7 @@ export async function encryptMRemoteNGXml(
     // with a single encrypted blob.
     const inner = Array.from(root.childNodes)
       .map((n) => new XMLSerializer().serializeToString(n))
-      .join('');
+      .join("");
     while (root.firstChild) root.removeChild(root.firstChild);
     const ct = await encryptMRemoteNGBlob(inner, password, iterations);
     root.appendChild(doc.createTextNode(ct));
@@ -958,14 +1055,16 @@ export const detectMRemoteNGEncryption = (
     requiresPassword: false,
   };
   try {
-    const doc = new DOMParser().parseFromString(content, 'text/xml');
-    const root = doc.querySelector('Connections');
+    const doc = new DOMParser().parseFromString(content, "text/xml");
+    const root = doc.querySelector("Connections");
     if (!root) return empty;
-    const fullFileAttr = (root.getAttribute('FullFileEncryption') || '').toLowerCase();
-    const fullFileEncryption = fullFileAttr === 'true' || fullFileAttr === '1';
-    const protectedAttr = (root.getAttribute('Protected') || '').trim();
+    const fullFileAttr = (
+      root.getAttribute("FullFileEncryption") || ""
+    ).toLowerCase();
+    const fullFileEncryption = fullFileAttr === "true" || fullFileAttr === "1";
+    const protectedAttr = (root.getAttribute("Protected") || "").trim();
     const hasProtected = protectedAttr.length > 0;
-    const childNodeCount = root.querySelectorAll(':scope > Node').length;
+    const childNodeCount = root.querySelectorAll(":scope > Node").length;
     // Full-file encryption: body is one encrypted blob, no <Node> children present
     // (or the file explicitly advertises FullFileEncryption="true").
     const requiresPassword =
@@ -984,14 +1083,16 @@ export const detectMRemoteNGEncryption = (
  * Parse mRemoteNG XML format
  * mRemoteNG uses a nested Node structure with attributes for connection properties
  */
-export const importFromMRemoteNG = async (content: string): Promise<Connection[]> => {
+export const importFromMRemoteNG = async (
+  content: string,
+): Promise<Connection[]> => {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'text/xml');
-  
+  const doc = parser.parseFromString(content, "text/xml");
+
   // Check for parse errors
-  const parseError = doc.querySelector('parsererror');
+  const parseError = doc.querySelector("parsererror");
   if (parseError) {
-    throw new Error('Invalid XML format: ' + parseError.textContent);
+    throw new Error("Invalid XML format: " + parseError.textContent);
   }
 
   const connections: Connection[] = [];
@@ -1010,29 +1111,30 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
     inheritedTunnelName?: string,
     inheritedProps?: MRemoteNGInheritableProps,
   ): void => {
-    const nodeType = node.getAttribute('Type') || 'Connection';
-    const name = node.getAttribute('Name') || 'Unnamed';
+    const nodeType = node.getAttribute("Type") || "Connection";
+    const name = node.getAttribute("Name") || "Unnamed";
     const sshTunnelConnectionName = resolveMRemoteNGSshTunnelName(
       node,
       inheritedTunnelName,
     );
 
-    if (nodeType === 'Container') {
+    if (nodeType === "Container") {
       // This is a folder
       const folderId = generateId();
-      const expanded = (node.getAttribute('Expanded') || '').toLowerCase() === 'true';
+      const expanded =
+        (node.getAttribute("Expanded") || "").toLowerCase() === "true";
       folderIdMap.set(node, folderId);
 
       connections.push({
         id: folderId,
         name: name,
-        protocol: 'rdp',
-        hostname: '',
+        protocol: "rdp",
+        hostname: "",
         port: 0,
         isGroup: true,
         expanded,
         parentId: parentId,
-        description: node.getAttribute('Descr') || undefined,
+        description: node.getAttribute("Descr") || undefined,
         tags: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1043,43 +1145,96 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
       // Resolve the values the container exposes to its children (R7), so a
       // multi-level folder hierarchy propagates credentials correctly.
       const containerProps: MRemoteNGInheritableProps = {
-        username: resolveMRemoteNGInheritedProp(node, 'Username', 'InheritUsername', inheritedProps?.username),
-        password: resolveMRemoteNGInheritedProp(node, 'Password', 'InheritPassword', inheritedProps?.password),
-        domain: resolveMRemoteNGInheritedProp(node, 'Domain', 'InheritDomain', inheritedProps?.domain),
-        hostname: resolveMRemoteNGInheritedProp(node, 'Hostname', 'InheritHostname', inheritedProps?.hostname),
-        port: resolveMRemoteNGInheritedProp(node, 'Port', 'InheritPort', inheritedProps?.port),
+        username: resolveMRemoteNGInheritedProp(
+          node,
+          "Username",
+          "InheritUsername",
+          inheritedProps?.username,
+        ),
+        password: resolveMRemoteNGInheritedProp(
+          node,
+          "Password",
+          "InheritPassword",
+          inheritedProps?.password,
+        ),
+        domain: resolveMRemoteNGInheritedProp(
+          node,
+          "Domain",
+          "InheritDomain",
+          inheritedProps?.domain,
+        ),
+        hostname: resolveMRemoteNGInheritedProp(
+          node,
+          "Hostname",
+          "InheritHostname",
+          inheritedProps?.hostname,
+        ),
+        port: resolveMRemoteNGInheritedProp(
+          node,
+          "Port",
+          "InheritPort",
+          inheritedProps?.port,
+        ),
       };
 
       // Parse child nodes
-      const children = node.querySelectorAll(':scope > Node');
-      children.forEach(child =>
+      const children = node.querySelectorAll(":scope > Node");
+      children.forEach((child) =>
         parseNode(child, folderId, sshTunnelConnectionName, containerProps),
       );
     } else {
       // This is a connection
-      const protocol = node.getAttribute('Protocol') || 'RDP';
+      const protocol = node.getAttribute("Protocol") || "RDP";
       // Resolve credential/host/port honouring container inheritance (R7).
       const hostname =
-        resolveMRemoteNGInheritedProp(node, 'Hostname', 'InheritHostname', inheritedProps?.hostname) || '';
+        resolveMRemoteNGInheritedProp(
+          node,
+          "Hostname",
+          "InheritHostname",
+          inheritedProps?.hostname,
+        ) || "";
       const port = parsePortOrDefault(
-        resolveMRemoteNGInheritedProp(node, 'Port', 'InheritPort', inheritedProps?.port),
+        resolveMRemoteNGInheritedProp(
+          node,
+          "Port",
+          "InheritPort",
+          inheritedProps?.port,
+        ),
         protocol,
       );
       const username =
-        resolveMRemoteNGInheritedProp(node, 'Username', 'InheritUsername', inheritedProps?.username) || undefined;
+        resolveMRemoteNGInheritedProp(
+          node,
+          "Username",
+          "InheritUsername",
+          inheritedProps?.username,
+        ) || undefined;
       const password =
-        resolveMRemoteNGInheritedProp(node, 'Password', 'InheritPassword', inheritedProps?.password) || undefined;
+        resolveMRemoteNGInheritedProp(
+          node,
+          "Password",
+          "InheritPassword",
+          inheritedProps?.password,
+        ) || undefined;
       const domain =
-        resolveMRemoteNGInheritedProp(node, 'Domain', 'InheritDomain', inheritedProps?.domain) || undefined;
-      const description = node.getAttribute('Descr') || node.getAttribute('Description') || undefined;
-      
+        resolveMRemoteNGInheritedProp(
+          node,
+          "Domain",
+          "InheritDomain",
+          inheritedProps?.domain,
+        ) || undefined;
+      const description =
+        node.getAttribute("Descr") ||
+        node.getAttribute("Description") ||
+        undefined;
+
       // mRemoteNG specific fields
-      const resolution = node.getAttribute('Resolution') || undefined;
-      const colors = node.getAttribute('Colors') || undefined;
-      const useCredSsp = node.getAttribute('UseCredSsp') === 'True';
-      const renderingEngine = node.getAttribute('RenderingEngine') || undefined;
+      const resolution = node.getAttribute("Resolution") || undefined;
+      const colors = node.getAttribute("Colors") || undefined;
+      const useCredSsp = node.getAttribute("UseCredSsp") === "True";
+      const renderingEngine = node.getAttribute("RenderingEngine") || undefined;
       const connectionId = generateId();
-      
+
       connections.push({
         id: connectionId,
         name: name,
@@ -1114,12 +1269,12 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
   };
 
   // Get the root Connections element or find Node elements directly
-  const rootConnections = doc.querySelector('Connections');
-  const rootNodes = rootConnections 
-    ? rootConnections.querySelectorAll(':scope > Node')
-    : doc.querySelectorAll('Node');
+  const rootConnections = doc.querySelector("Connections");
+  const rootNodes = rootConnections
+    ? rootConnections.querySelectorAll(":scope > Node")
+    : doc.querySelectorAll("Node");
 
-  rootNodes.forEach(node => parseNode(node));
+  rootNodes.forEach((node) => parseNode(node));
 
   // Jump/bastion hosts referenced by `SSHTunnelConnectionName` are SSH
   // connections. mRemoteNG resolves the tunnel target by NAME across the whole
@@ -1127,7 +1282,7 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
   // in tree order (R8). `connections` is populated in document order by the
   // recursive parse above, so a first-write-wins map yields that ordering.
   const sshConnections = connections.filter(
-    (connection) => !connection.isGroup && connection.protocol === 'ssh',
+    (connection) => !connection.isGroup && connection.protocol === "ssh",
   );
   const sshConnectionsByName = new Map<string, Connection>();
   const sshConnectionsByLowerName = new Map<string, Connection>();
@@ -1150,7 +1305,7 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
     const tunnelConnection =
       sshConnectionsByName.get(pending.tunnelConnectionName) ||
       sshConnectionsByLowerName.get(pending.tunnelConnectionName.toLowerCase());
-    const tunnelHost = tunnelConnection?.hostname?.trim() || '';
+    const tunnelHost = tunnelConnection?.hostname?.trim() || "";
     const tunnelPort =
       tunnelConnection && Number.isFinite(Number(tunnelConnection.port))
         ? Number(tunnelConnection.port)
@@ -1163,23 +1318,27 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
     // connection store) and inline host/port/creds are inlined whenever the
     // jump host resolves.
     const layerType: TunnelType =
-      targetConnection.protocol === 'ssh' ? 'ssh-jump' : 'ssh-tunnel';
+      targetConnection.protocol === "ssh" ? "ssh-jump" : "ssh-tunnel";
 
     const layer: TunnelChainLayer = {
       id: generateId(),
       type: layerType,
       enabled: Boolean(tunnelHost),
       name: `mRemoteNG SSH tunnel via ${pending.tunnelConnectionName}`,
-      localBindHost: '127.0.0.1',
+      localBindHost: "127.0.0.1",
       localBindPort: 0,
       sshTunnel: {
-        forwardType: 'local',
+        forwardType: "local",
         ...(tunnelConnection?.id && { connectionId: tunnelConnection.id }),
         ...(tunnelHost && { host: tunnelHost }),
         port: tunnelPort > 0 ? tunnelPort : 22,
-        ...(tunnelConnection?.username && { username: tunnelConnection.username }),
-        ...(tunnelConnection?.password && { password: tunnelConnection.password }),
-        remoteHost: pending.targetHost || 'localhost',
+        ...(tunnelConnection?.username && {
+          username: tunnelConnection.username,
+        }),
+        ...(tunnelConnection?.password && {
+          password: tunnelConnection.password,
+        }),
+        remoteHost: pending.targetHost || "localhost",
         remotePort: pending.targetPort,
       },
     };
@@ -1196,28 +1355,31 @@ export const importFromMRemoteNG = async (content: string): Promise<Connection[]
 /**
  * Parse Remote Desktop Connection Manager (RDCMan) XML format
  */
-export const importFromRDCMan = async (content: string): Promise<Connection[]> => {
+export const importFromRDCMan = async (
+  content: string,
+): Promise<Connection[]> => {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'text/xml');
-  
-  const parseError = doc.querySelector('parsererror');
+  const doc = parser.parseFromString(content, "text/xml");
+
+  const parseError = doc.querySelector("parsererror");
   if (parseError) {
-    throw new Error('Invalid XML format: ' + parseError.textContent);
+    throw new Error("Invalid XML format: " + parseError.textContent);
   }
 
   const connections: Connection[] = [];
 
   // Parse groups
   const parseGroup = (groupEl: Element, parentId?: string): void => {
-    const properties = groupEl.querySelector(':scope > properties');
-    const name = properties?.querySelector('name')?.textContent || 'Unnamed Group';
+    const properties = groupEl.querySelector(":scope > properties");
+    const name =
+      properties?.querySelector("name")?.textContent || "Unnamed Group";
     const groupId = generateId();
-    
+
     connections.push({
       id: groupId,
       name: name,
-      protocol: 'rdp',
-      hostname: '',
+      protocol: "rdp",
+      hostname: "",
       port: 0,
       isGroup: true,
       parentId: parentId,
@@ -1227,23 +1389,23 @@ export const importFromRDCMan = async (content: string): Promise<Connection[]> =
     });
 
     // Parse servers in this group
-    groupEl.querySelectorAll(':scope > server').forEach(serverEl => {
+    groupEl.querySelectorAll(":scope > server").forEach((serverEl) => {
       parseRDCManServer(serverEl, connections, groupId);
     });
 
     // Recursively parse subgroups
-    groupEl.querySelectorAll(':scope > group').forEach(subGroupEl => {
+    groupEl.querySelectorAll(":scope > group").forEach((subGroupEl) => {
       parseGroup(subGroupEl, groupId);
     });
   };
 
   // Start parsing from file > group elements
-  doc.querySelectorAll('file > group').forEach(groupEl => {
+  doc.querySelectorAll("file > group").forEach((groupEl) => {
     parseGroup(groupEl);
   });
 
   // Also check for servers at root level
-  doc.querySelectorAll('file > server').forEach(serverEl => {
+  doc.querySelectorAll("file > server").forEach((serverEl) => {
     parseRDCManServer(serverEl, connections);
   });
 
@@ -1256,26 +1418,28 @@ const parseRDCManServer = (
   connections: Connection[],
   parentId?: string,
 ): void => {
-  const props = serverEl.querySelector('properties');
-  const displayName = props?.querySelector('displayName')?.textContent;
-  const serverName = props?.querySelector('name')?.textContent || '';
+  const props = serverEl.querySelector("properties");
+  const displayName = props?.querySelector("displayName")?.textContent;
+  const serverName = props?.querySelector("name")?.textContent || "";
 
   // RDCMan stores credentials in <logonCredentials> (group or server level)
-  const creds = serverEl.querySelector('logonCredentials');
-  const username = creds?.querySelector('userName')?.textContent || undefined;
-  const domain = creds?.querySelector('domain')?.textContent || undefined;
+  const creds = serverEl.querySelector("logonCredentials");
+  const username = creds?.querySelector("userName")?.textContent || undefined;
+  const domain = creds?.querySelector("domain")?.textContent || undefined;
 
   // Port lives in <connectionSettings>
-  const connSettings = serverEl.querySelector('connectionSettings');
-  const port = parseInt(connSettings?.querySelector('port')?.textContent || '3389') || 3389;
+  const connSettings = serverEl.querySelector("connectionSettings");
+  const port =
+    parseInt(connSettings?.querySelector("port")?.textContent || "3389") ||
+    3389;
 
   // Comment/description
-  const comment = props?.querySelector('comment')?.textContent || undefined;
+  const comment = props?.querySelector("comment")?.textContent || undefined;
 
   connections.push({
     id: generateId(),
     name: displayName || serverName,
-    protocol: 'rdp',
+    protocol: "rdp",
     hostname: serverName,
     port,
     username,
@@ -1292,34 +1456,39 @@ const parseRDCManServer = (
 /**
  * Parse MobaXterm bookmarks INI format
  */
-export const importFromMobaXterm = async (content: string): Promise<Connection[]> => {
+export const importFromMobaXterm = async (
+  content: string,
+): Promise<Connection[]> => {
   const connections: Connection[] = [];
   const lines = content.split(/\r?\n/);
-  let currentSection = '';
-  let currentSubRep = '';
+  let currentSection = "";
+  let currentSubRep = "";
   const folderMap = new Map<string, string>();
 
   for (const line of lines) {
     const trimmed = line.trim();
-    
+
     // Section header
-    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
       currentSection = trimmed.slice(1, -1);
       continue;
     }
-    
-    if (currentSection === 'Bookmarks' || currentSection.startsWith('Bookmarks_')) {
+
+    if (
+      currentSection === "Bookmarks" ||
+      currentSection.startsWith("Bookmarks_")
+    ) {
       // Parse SubRep (folder path)
-      if (trimmed.startsWith('SubRep=')) {
+      if (trimmed.startsWith("SubRep=")) {
         currentSubRep = trimmed.slice(7);
         if (currentSubRep && !folderMap.has(currentSubRep)) {
           const folderId = generateId();
           folderMap.set(currentSubRep, folderId);
           connections.push({
             id: folderId,
-            name: currentSubRep.split('\\').pop() || currentSubRep,
-            protocol: 'ssh',
-            hostname: '',
+            name: currentSubRep.split("\\").pop() || currentSubRep,
+            protocol: "ssh",
+            hostname: "",
             port: 0,
             isGroup: true,
             tags: [],
@@ -1329,32 +1498,32 @@ export const importFromMobaXterm = async (content: string): Promise<Connection[]
         }
         continue;
       }
-      
+
       // Parse bookmark entry
       // Format: Name=#sessionType#hostname%port%username%...
       const match = trimmed.match(/^(.+?)=#(\d+)#(.+)/);
       if (match) {
         const [, name, typeNum, params] = match;
-        const parts = params.split('%');
-        const hostname = parts[0] || '';
+        const parts = params.split("%");
+        const hostname = parts[0] || "";
         // Map MobaXterm session types
-        const protocolMap: Record<string, Connection['protocol']> = {
-          '0': 'ssh',    // SSH
-          '1': 'telnet', // Telnet
-          '2': 'rlogin', // Rlogin
-          '4': 'rdp',    // RDP
-          '5': 'vnc',    // VNC
-          '3': 'rdp',    // XDMCP (remote display → rdp)
-          '6': 'ftp',    // FTP
-          '7': 'sftp',   // SFTP (map to SSH)
-          '8': 'ssh',    // Mosh (→ ssh)
-          '9': 'telnet', // Serial (→ telnet)
-          '10': 'ssh',   // WSL
+        const protocolMap: Record<string, Connection["protocol"]> = {
+          "0": "ssh", // SSH
+          "1": "telnet", // Telnet
+          "2": "rlogin", // Rlogin
+          "4": "rdp", // RDP
+          "5": "vnc", // VNC
+          "3": "rdp", // XDMCP (remote display → rdp)
+          "6": "ftp", // FTP
+          "7": "sftp", // SFTP (map to SSH)
+          "8": "ssh", // Mosh (→ ssh)
+          "9": "telnet", // Serial (→ telnet)
+          "10": "ssh", // WSL
         };
-        const protocol = protocolMap[typeNum] || 'ssh';
+        const protocol = protocolMap[typeNum] || "ssh";
         const port = parsePortOrDefault(parts[1], protocol);
         const username = parts[2] || undefined;
-        
+
         connections.push({
           id: generateId(),
           name: name,
@@ -1378,7 +1547,9 @@ export const importFromMobaXterm = async (content: string): Promise<Connection[]
 /**
  * Parse PuTTY registry export format
  */
-export const importFromPuTTY = async (content: string): Promise<Connection[]> => {
+export const importFromPuTTY = async (
+  content: string,
+): Promise<Connection[]> => {
   const connections: Connection[] = [];
   const lines = content.split(/\r?\n/);
   let currentSession: string | null = null;
@@ -1386,26 +1557,30 @@ export const importFromPuTTY = async (content: string): Promise<Connection[]> =>
 
   for (const line of lines) {
     const trimmed = line.trim();
-    
+
     // Session header
-    const sessionMatch = trimmed.match(/\[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\(.+)\]/);
+    const sessionMatch = trimmed.match(
+      /\[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\(.+)\]/,
+    );
     if (sessionMatch) {
       // Save previous session
       if (currentSession && currentProps.HostName) {
         connections.push(createPuTTYConnection(currentSession, currentProps));
       }
-      currentSession = decodeURIComponent(sessionMatch[1].replace(/%([0-9A-F]{2})/gi, (_, hex) => 
-        String.fromCharCode(parseInt(hex, 16))
-      ));
+      currentSession = decodeURIComponent(
+        sessionMatch[1].replace(/%([0-9A-F]{2})/gi, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16)),
+        ),
+      );
       currentProps = {};
       continue;
     }
-    
+
     // Property line
     const propMatch = trimmed.match(/"(.+?)"=(?:"(.*)"|dword:([0-9a-f]+))/);
     if (propMatch && currentSession) {
       const [, key, strValue, dwordValue] = propMatch;
-      currentProps[key] = strValue ?? String(parseInt(dwordValue || '0', 16));
+      currentProps[key] = strValue ?? String(parseInt(dwordValue || "0", 16));
     }
   }
 
@@ -1417,17 +1592,20 @@ export const importFromPuTTY = async (content: string): Promise<Connection[]> =>
   return connections;
 };
 
-const createPuTTYConnection = (name: string, props: Record<string, string>): Connection => {
-  const protocolMap: Record<string, Connection['protocol']> = {
-    'ssh': 'ssh',
-    'serial': 'telnet',
-    'telnet': 'telnet',
-    'rlogin': 'rlogin',
-    'raw': 'telnet',
+const createPuTTYConnection = (
+  name: string,
+  props: Record<string, string>,
+): Connection => {
+  const protocolMap: Record<string, Connection["protocol"]> = {
+    ssh: "ssh",
+    serial: "telnet",
+    telnet: "telnet",
+    rlogin: "rlogin",
+    raw: "telnet",
   };
 
-  const protocol = protocolMap[props.Protocol?.toLowerCase() || 'ssh'] || 'ssh';
-  
+  const protocol = protocolMap[props.Protocol?.toLowerCase() || "ssh"] || "ssh";
+
   return {
     id: generateId(),
     name: name,
@@ -1445,7 +1623,9 @@ const createPuTTYConnection = (name: string, props: Record<string, string>): Con
 /**
  * Parse Termius JSON export format
  */
-export const importFromTermius = async (content: string): Promise<Connection[]> => {
+export const importFromTermius = async (
+  content: string,
+): Promise<Connection[]> => {
   const data = JSON.parse(content);
   const connections: Connection[] = [];
   const groupMap = new Map<string, string>();
@@ -1457,9 +1637,9 @@ export const importFromTermius = async (content: string): Promise<Connection[]> 
       groupMap.set(group.id || group.label, groupId);
       connections.push({
         id: groupId,
-        name: group.label || 'Unnamed Group',
-        protocol: 'ssh',
-        hostname: '',
+        name: group.label || "Unnamed Group",
+        protocol: "ssh",
+        hostname: "",
         port: 0,
         isGroup: true,
         tags: [],
@@ -1473,16 +1653,14 @@ export const importFromTermius = async (content: string): Promise<Connection[]> 
   if (data.hosts) {
     for (const host of data.hosts) {
       // Termius stores username either at top-level or inside ssh_config
-      const username = host.username
-        || host.ssh_config?.username
-        || undefined;
+      const username = host.username || host.ssh_config?.username || undefined;
 
       connections.push({
         id: generateId(),
-        name: host.label || host.address || 'Unnamed',
-        protocol: 'ssh',
-        hostname: host.address || '',
-        port: parsePortOrDefault(host.port, 'ssh'),
+        name: host.label || host.address || "Unnamed",
+        protocol: "ssh",
+        hostname: host.address || "",
+        port: parsePortOrDefault(host.port, "ssh"),
         username,
         isGroup: false,
         parentId: host.group_id ? groupMap.get(host.group_id) : undefined,
@@ -1500,32 +1678,34 @@ export const importFromTermius = async (content: string): Promise<Connection[]> 
  * Parse Royal TS/TSX JSON export format.
  * Royal TS exports nested Objects arrays with Type indicating the object kind.
  */
-export const importFromRoyalTS = async (content: string): Promise<Connection[]> => {
+export const importFromRoyalTS = async (
+  content: string,
+): Promise<Connection[]> => {
   const data = JSON.parse(content);
   const connections: Connection[] = [];
 
-  const mapRoyalType = (type: string): Connection['protocol'] => {
-    const map: Record<string, Connection['protocol']> = {
-      'RoyalRDSConnection': 'rdp',
-      'RoyalSSHConnection': 'ssh',
-      'RoyalVNCConnection': 'vnc',
-      'RoyalSFTPConnection': 'ssh',
-      'RoyalFTPConnection': 'ftp',
-      'RoyalTelnetConnection': 'telnet',
-      'RoyalWebConnection': 'https',
+  const mapRoyalType = (type: string): Connection["protocol"] => {
+    const map: Record<string, Connection["protocol"]> = {
+      RoyalRDSConnection: "rdp",
+      RoyalSSHConnection: "ssh",
+      RoyalVNCConnection: "vnc",
+      RoyalSFTPConnection: "ssh",
+      RoyalFTPConnection: "ftp",
+      RoyalTelnetConnection: "telnet",
+      RoyalWebConnection: "https",
     };
-    return map[type] || 'rdp';
+    return map[type] || "rdp";
   };
 
   const parseObjects = (objects: any[], parentId?: string): void => {
     for (const obj of objects) {
-      if (obj.Type === 'RoyalFolder') {
+      if (obj.Type === "RoyalFolder") {
         const folderId = generateId();
         connections.push({
           id: folderId,
-          name: obj.Name || 'Unnamed Folder',
-          protocol: 'rdp',
-          hostname: '',
+          name: obj.Name || "Unnamed Folder",
+          protocol: "rdp",
+          hostname: "",
           port: 0,
           isGroup: true,
           parentId,
@@ -1538,12 +1718,12 @@ export const importFromRoyalTS = async (content: string): Promise<Connection[]> 
           parseObjects(obj.Objects, folderId);
         }
       } else {
-        const protocol = mapRoyalType(obj.Type || '');
+        const protocol = mapRoyalType(obj.Type || "");
         connections.push({
           id: generateId(),
-          name: obj.Name || obj.URI || 'Unnamed',
+          name: obj.Name || obj.URI || "Unnamed",
           protocol,
-          hostname: obj.URI || obj.ComputerName || '',
+          hostname: obj.URI || obj.ComputerName || "",
           port: parsePortOrDefault(obj.Port, protocol),
           username: obj.CredentialUsername || obj.Username || undefined,
           domain: obj.CredentialDomain || undefined,
@@ -1568,7 +1748,9 @@ export const importFromRoyalTS = async (content: string): Promise<Connection[]> 
  * SecureCRT uses non-standard XML tag names like <S:"Hostname"> which DOMParser
  * cannot handle, so we use regex-based parsing instead.
  */
-export const importFromSecureCRT = async (content: string): Promise<Connection[]> => {
+export const importFromSecureCRT = async (
+  content: string,
+): Promise<Connection[]> => {
   const connections: Connection[] = [];
 
   // Match each <Session Name="...">...</Session> block
@@ -1579,13 +1761,13 @@ export const importFromSecureCRT = async (content: string): Promise<Connection[]
     const nameAttr = match[1];
     const body = match[2];
 
-    const nameParts = nameAttr.split('/');
+    const nameParts = nameAttr.split("/");
     const name = nameParts[nameParts.length - 1] || nameAttr;
 
-    let hostname = '';
+    let hostname = "";
     let rawPort: string | undefined;
-    let username = '';
-    let protocol: Connection['protocol'] = 'ssh';
+    let username = "";
+    let protocol: Connection["protocol"] = "ssh";
 
     // Extract string values: <S:"Key">value</S:"Key">
     const strRegex = /<S:"([^"]+)">([^<]*)<\/S:"[^"]+">/g;
@@ -1593,13 +1775,13 @@ export const importFromSecureCRT = async (content: string): Promise<Connection[]
     while ((strMatch = strRegex.exec(body)) !== null) {
       const key = strMatch[1];
       const value = strMatch[2];
-      if (key === 'Hostname') hostname = value;
-      else if (key === 'Username') username = value;
-      else if (key === 'Protocol Name') {
+      if (key === "Hostname") hostname = value;
+      else if (key === "Username") username = value;
+      else if (key === "Protocol Name") {
         const lower = value.toLowerCase();
-        if (lower.includes('ssh')) protocol = 'ssh';
-        else if (lower.includes('telnet')) protocol = 'telnet';
-        else if (lower.includes('rlogin')) protocol = 'rlogin';
+        if (lower.includes("ssh")) protocol = "ssh";
+        else if (lower.includes("telnet")) protocol = "telnet";
+        else if (lower.includes("rlogin")) protocol = "rlogin";
       }
     }
 
@@ -1609,7 +1791,7 @@ export const importFromSecureCRT = async (content: string): Promise<Connection[]
     while ((intMatch = intRegex.exec(body)) !== null) {
       const key = intMatch[1];
       const value = intMatch[2];
-      if (key === '[SSH2] Port' || key === 'Port') {
+      if (key === "[SSH2] Port" || key === "Port") {
         rawPort = value;
       }
     }
@@ -1635,23 +1817,36 @@ export const importFromSecureCRT = async (content: string): Promise<Connection[]
   return connections;
 };
 
+const dropImportedProxyCommandConfirmation = (
+  override: Connection["sshConnectionConfigOverride"],
+): Connection["sshConnectionConfigOverride"] => {
+  if (!override) return override;
+
+  const { proxyCommandConfirmed: _proxyCommandConfirmed, ...safeOverride } =
+    override;
+  return safeOverride;
+};
+
 /**
  * Parse generic JSON format
  */
-export const importFromJSON = async (content: string): Promise<Connection[]> => {
+export const importFromJSON = async (
+  content: string,
+): Promise<Connection[]> => {
   const data = JSON.parse(content);
-  
+
   // Handle array format
   if (Array.isArray(data)) {
-    return data.map(conn => {
-      const protocol = (conn.protocol?.toLowerCase() || 'rdp') as Connection['protocol'];
+    return data.map((conn) => {
+      const protocol = (conn.protocol?.toLowerCase() ||
+        "rdp") as Connection["protocol"];
 
       return {
         ...conn,
         protocol,
         id: conn.id || generateId(),
-        name: conn.name || 'Imported Connection',
-        hostname: conn.hostname || conn.host || '',
+        name: conn.name || "Imported Connection",
+        hostname: conn.hostname || conn.host || "",
         port: parsePortOrDefault(conn.port, protocol),
         username: conn.username || undefined,
         password: conn.password || undefined,
@@ -1662,77 +1857,86 @@ export const importFromJSON = async (content: string): Promise<Connection[]> => 
         tags: conn.tags || [],
         createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
         updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
+        sshConnectionConfigOverride: dropImportedProxyCommandConfirmation(
+          conn.sshConnectionConfigOverride,
+        ),
       } as Connection;
     });
   }
 
   // Handle native multi-database export package format.
   if (Array.isArray(data?.databases)) {
-    return data.databases.flatMap((database: any) =>
-      Array.isArray(database?.connections)
-        ? database.connections
-        : [],
-    ).map((conn: any) => {
-      const protocol = (conn.protocol?.toLowerCase() || 'rdp') as Connection['protocol'];
+    return data.databases
+      .flatMap((database: any) =>
+        Array.isArray(database?.connections) ? database.connections : [],
+      )
+      .map((conn: any) => {
+        const protocol = (conn.protocol?.toLowerCase() ||
+          "rdp") as Connection["protocol"];
 
-      return {
-        ...conn,
-        protocol,
-        id: conn.id || generateId(),
-        name: conn.name || 'Imported Connection',
-        hostname: conn.hostname || conn.host || '',
-        port: parsePortOrDefault(conn.port, protocol),
-        username: conn.username || undefined,
-        password: conn.password || undefined,
-        domain: conn.domain || undefined,
-        description: conn.description || undefined,
-        parentId: conn.parentId || undefined,
-        isGroup: conn.isGroup || conn.isFolder || false,
-        tags: conn.tags || [],
-        createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
-        updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
-      } as Connection;
-    });
+        return {
+          ...conn,
+          protocol,
+          id: conn.id || generateId(),
+          name: conn.name || "Imported Connection",
+          hostname: conn.hostname || conn.host || "",
+          port: parsePortOrDefault(conn.port, protocol),
+          username: conn.username || undefined,
+          password: conn.password || undefined,
+          domain: conn.domain || undefined,
+          description: conn.description || undefined,
+          parentId: conn.parentId || undefined,
+          isGroup: conn.isGroup || conn.isFolder || false,
+          tags: conn.tags || [],
+          createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
+          updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
+          sshConnectionConfigOverride: dropImportedProxyCommandConfirmation(
+            conn.sshConnectionConfigOverride,
+          ),
+        } as Connection;
+      });
   }
-  
+
   // Handle object with connections array
   if (data.connections && Array.isArray(data.connections)) {
     return importFromJSON(JSON.stringify(data.connections));
   }
 
-  throw new Error('Invalid JSON format: expected array or object with connections array');
+  throw new Error(
+    "Invalid JSON format: expected array or object with connections array",
+  );
 };
 
 /**
  * Main import function that auto-detects format
  */
 export const importConnections = async (
-  content: string, 
+  content: string,
   filename?: string,
-  format?: ImportFormat
+  format?: ImportFormat,
 ): Promise<Connection[]> => {
   const detectedFormat = format || detectImportFormat(content, filename);
-  
+
   switch (detectedFormat) {
-    case 'xml':
+    case "xml":
       return importFromXML(content);
-    case 'mremoteng':
+    case "mremoteng":
       return importFromMRemoteNG(content);
-    case 'rdcman':
+    case "rdcman":
       return importFromRDCMan(content);
-    case 'mobaxterm':
+    case "mobaxterm":
       return importFromMobaXterm(content);
-    case 'putty':
+    case "putty":
       return importFromPuTTY(content);
-    case 'termius':
+    case "termius":
       return importFromTermius(content);
-    case 'royalts':
+    case "royalts":
       return importFromRoyalTS(content);
-    case 'securecrt':
+    case "securecrt":
       return importFromSecureCRT(content);
-    case 'json':
+    case "json":
       return importFromJSON(content);
-    case 'csv':
+    case "csv":
     default:
       return importFromCSV(content);
   }
@@ -1743,16 +1947,16 @@ export const importConnections = async (
  */
 export const getFormatName = (format: ImportFormat): string => {
   const names: Record<ImportFormat, string> = {
-    'json': 'JSON',
-    'xml': 'XML',
-    'csv': 'CSV',
-    'mremoteng': 'mRemoteNG',
-    'rdcman': 'Remote Desktop Connection Manager',
-    'royalts': 'Royal TS/TSX',
-    'mobaxterm': 'MobaXterm',
-    'putty': 'PuTTY',
-    'securecrt': 'SecureCRT',
-    'termius': 'Termius',
+    json: "JSON",
+    xml: "XML",
+    csv: "CSV",
+    mremoteng: "mRemoteNG",
+    rdcman: "Remote Desktop Connection Manager",
+    royalts: "Royal TS/TSX",
+    mobaxterm: "MobaXterm",
+    putty: "PuTTY",
+    securecrt: "SecureCRT",
+    termius: "Termius",
   };
   return names[format] || format;
 };
