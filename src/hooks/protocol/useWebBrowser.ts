@@ -45,6 +45,10 @@ export function useWebBrowser(session: ConnectionSession) {
   const connection = state.connections.find(
     (c) => c.id === session.connectionId,
   );
+  const normalizedHostname = useMemo(
+    () => stripSchemePrefix(session.hostname),
+    [session.hostname],
+  );
 
   // ── Derived auth ────────────────────────────────────────────
   const resolvedCreds = useMemo<{
@@ -81,9 +85,8 @@ export function useWebBrowser(session: ConnectionSession) {
     // editor also sanitises at input time (GeneralSection.tsx) so
     // new connections never reach this point un-cleaned — this
     // belt is for existing data + .mremoteng/.royal imports.
-    const cleanHost = stripSchemePrefix(session.hostname);
-    return `${protocol}://${cleanHost}${portSuffix}/`;
-  }, [connection, session.protocol, session.hostname]);
+    return `${protocol}://${normalizedHostname}${portSuffix}/`;
+  }, [connection, session.protocol, normalizedHostname]);
 
   // ── State ───────────────────────────────────────────────────
   const [currentUrl, setCurrentUrl] = useState(buildTargetUrl);
@@ -250,7 +253,7 @@ export function useWebBrowser(session: ConnectionSession) {
           valid_from: string;
           valid_to: string;
         }> | null;
-      }>("get_tls_certificate_info", { host: session.hostname, port });
+      }>("get_tls_certificate_info", { host: normalizedHostname, port });
 
       // If a newer navigation started while we were awaiting the cert,
       // this call is stale — bail out so we don't overwrite the ref
@@ -294,7 +297,7 @@ export function useWebBrowser(session: ConnectionSession) {
       setCertIdentity(identity);
       const connId = connection?.id;
       const result = verifyIdentity(
-        session.hostname,
+        normalizedHostname,
         port,
         "https",
         identity,
@@ -307,7 +310,14 @@ export function useWebBrowser(session: ConnectionSession) {
         return true;
       }
       if (result.status === "first-use" && policy === "tofu") {
-        trustIdentity(session.hostname, port, "https", identity, false, connId);
+        trustIdentity(
+          normalizedHostname,
+          port,
+          "https",
+          identity,
+          false,
+          connId,
+        );
         // P6c: TOFU auto-trusted on first contact — same as above.
         tlsTrustAcceptedRef.current = true;
         return true;
@@ -336,7 +346,7 @@ export function useWebBrowser(session: ConnectionSession) {
     }
   }, [
     session.protocol,
-    session.hostname,
+    normalizedHostname,
     connection,
     settings.httpsTrustPolicy,
     settings.trustPolicy,
@@ -347,7 +357,7 @@ export function useWebBrowser(session: ConnectionSession) {
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
       trustIdentity(
-        session.hostname,
+        normalizedHostname,
         port,
         "https",
         certIdentity,
@@ -365,7 +375,7 @@ export function useWebBrowser(session: ConnectionSession) {
     setTrustPrompt(null);
     trustResolveRef.current?.(true);
     trustResolveRef.current = null;
-  }, [trustPrompt, certIdentity, session.hostname, connection]);
+  }, [trustPrompt, certIdentity, normalizedHostname, connection]);
 
   const handleTrustReject = useCallback(() => {
     setTrustPrompt(null);
