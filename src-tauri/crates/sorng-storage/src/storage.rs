@@ -76,9 +76,9 @@ pub struct SecureStorage {
     store_path: String,
     /// Master encryption-at-rest handle. When `Some` and unlocked,
     /// writes go through the v2 envelope codec
-    /// (`sorng-v1::connections` sub-key); when `None` or locked,
-    /// writes land as plain JSON. Installed via
-    /// `set_encryption_state` after `app.manage(EncryptionState)`.
+    /// (`sorng-v1::connections` sub-key). A missing state is reserved
+    /// for tests and writes plain JSON; an installed-but-locked state
+    /// refuses writes rather than silently downgrading secrets.
     encryption_state:
         Option<Arc<sorng_encryption::EncryptionState>>,
 }
@@ -237,16 +237,20 @@ impl SecureStorage {
         // arg is retained on the Tauri-facing API for backward-compat
         // with the previous serde shape but no longer influences
         // anything; the master key is the single source of truth.
-        let used_v2 = self.encryption_state.is_some()
-            && self
-                .encryption_state
-                .as_ref()
-                .unwrap()
-                .is_unlocked()
-                .await;
+        let state = self.encryption_state.as_ref();
+        let used_v2 = match state {
+            Some(state) if state.is_unlocked().await => true,
+            Some(_) => {
+                return Err(
+                    "Connections database encryption state is locked; unlock before saving"
+                        .to_string(),
+                );
+            }
+            None => false,
+        };
 
         if used_v2 {
-            let state = self.encryption_state.as_ref().unwrap();
+            let state = state.unwrap();
             let value: serde_json::Value =
                 serde_json::from_str(&json).map_err(|e| e.to_string())?;
             let mode = sorng_encryption::envelope::MasterKeyStorage::Vault;
@@ -498,6 +502,25 @@ mod connections_dispatch_tests {
         svc.set_encryption_state(locked);
         let err = svc.load_data().await.unwrap_err();
         assert!(err.contains("encrypted") || err.contains("unlock"));
+    }
+
+    #[tokio::test]
+    async fn locked_state_refuses_plaintext_downgrade() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let mut svc = build_storage(path.clone());
+        let locked = Arc::new(EncryptionState::new());
+        svc.set_encryption_state(locked);
+
+        let err = svc.save_data(sample_data(), false).await.unwrap_err();
+        assert!(
+            err.contains("encryption state is locked"),
+            "expected locked-state downgrade refusal, got: {err}"
+        );
+        assert!(
+            !Path::new(&path).exists(),
+            "locked state must not write plaintext storage"
+        );
     }
 
     #[tokio::test]
