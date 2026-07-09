@@ -56,13 +56,19 @@ const mockTerminal = {
 };
 
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn(function () { return mockTerminal; }),
+  Terminal: vi.fn(function () {
+    return mockTerminal;
+  }),
 }));
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn(function () { return { fit: vi.fn() }; }),
+  FitAddon: vi.fn(function () {
+    return { fit: vi.fn() };
+  }),
 }));
 vi.mock("@xterm/addon-web-links", () => ({
-  WebLinksAddon: vi.fn(function () { return {}; }),
+  WebLinksAddon: vi.fn(function () {
+    return {};
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -135,34 +141,45 @@ describe("ProxyCommand import-confirmation gate (frontend)", () => {
     renderWithProviders(mockSession);
 
     // Dialog appears showing the exact redacted command.
-    const dialogCmd = await screen.findByTestId("proxy-command-confirm-command");
+    const dialogCmd = await screen.findByTestId(
+      "proxy-command-confirm-command",
+    );
     expect(dialogCmd).toHaveTextContent(REDACTED_CMD);
     expect(mockInvoke).toHaveBeenCalledWith(
       "expand_proxy_command",
-      expect.objectContaining({ host: "192.168.1.100", port: 22, username: "testuser" }),
+      expect.objectContaining({
+        host: "192.168.1.100",
+        port: 22,
+        username: "testuser",
+      }),
     );
 
-    // Accept → confirm_proxy_command called, flag persisted, connection retried.
+    // Accept → confirm_proxy_command called, connection retried without persisting a reusable flag.
     fireEvent.click(screen.getByTestId("proxy-command-confirm-accept"));
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith(
         "confirm_proxy_command",
-        expect.objectContaining({ host: "192.168.1.100", port: 22, username: "testuser" }),
-      );
-    });
-
-    // Durable flag persisted onto the stored connection.
-    await waitFor(() => {
-      expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "UPDATE_CONNECTION",
-          payload: expect.objectContaining({
-            sshConnectionConfigOverride: expect.objectContaining({ proxyCommandConfirmed: true }),
-          }),
+          host: "192.168.1.100",
+          port: 22,
+          username: "testuser",
         }),
       );
     });
+
+    // Confirmation is runtime/fingerprint-scoped and is not persisted as a
+    // reusable boolean that could bless later command contents.
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_CONNECTION",
+        payload: expect.objectContaining({
+          sshConnectionConfigOverride: expect.objectContaining({
+            proxyCommandConfirmed: true,
+          }),
+        }),
+      }),
+    );
 
     // Retry happened (connect_ssh called a second time) and succeeded.
     await waitFor(() => {
@@ -202,12 +219,17 @@ describe("ProxyCommand import-confirmation gate (frontend)", () => {
     });
 
     // Never confirmed, never retried, never persisted.
-    expect(mockInvoke).not.toHaveBeenCalledWith("confirm_proxy_command", expect.anything());
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "confirm_proxy_command",
+      expect.anything(),
+    );
     expect(connectAttempts).toBe(1);
     expect(mockDispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({
         payload: expect.objectContaining({
-          sshConnectionConfigOverride: expect.objectContaining({ proxyCommandConfirmed: true }),
+          sshConnectionConfigOverride: expect.objectContaining({
+            proxyCommandConfirmed: true,
+          }),
         }),
       }),
     );
