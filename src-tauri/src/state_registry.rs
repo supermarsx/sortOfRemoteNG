@@ -308,6 +308,51 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
 
     let app_dir = app.path().app_data_dir()?;
 
+    // Encryption-at-rest subsystem (Phase 0): managed state holds the
+    // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
+    //
+    // Boot-time silent vault unlock — when the OS vault is available
+    // we call `ensure_dek` rather than `read_dek` so a fresh install
+    // auto-initialises a vault-mode master DEK on first boot. P4
+    // requires every database write to go through an unlocked state
+    // (eager-encrypt, explicit-downgrade-refusal policy); without
+    // auto-init the database picker would be empty on fresh installs
+    // until the user manually visited Settings → Security.
+    //
+    // Password / hybrid modes still require explicit user input via
+    // the Settings → Security panel — `ensure_dek` only fires for the
+    // vault path here, so the user-driven setup flow is unchanged.
+    let enc_state = sorng_encryption::EncryptionState::new();
+    if sorng_vault::keychain::is_available() {
+        if let Ok(bytes) = tauri::async_runtime::block_on(sorng_vault::keychain::ensure_dek()) {
+            if let Some(dek) = sorng_encryption::MasterDek::from_bytes(&bytes) {
+                tauri::async_runtime::block_on(enc_state.install(dek));
+                println!("Encryption-at-rest: vault DEK ensured + installed at boot.");
+            }
+        }
+    }
+    // Snapshot the (cheaply cloneable Arc-backed) handle BEFORE
+    // `app.manage` consumes it — the logger drainer task owns its
+    // own clone so it survives independent of Tauri state lookups.
+    let enc_state_for_logger = enc_state.clone();
+    app.manage(enc_state);
+
+    // Install the encrypted log adapter once the encryption state
+    // exists. Gated on `debug_assertions` to preserve the prior
+    // tauri_plugin_log behaviour (no global logger in release until
+    // the rollout flips the gate). The state may be locked here —
+    // the sink buffers lines until unlock, so no records are lost.
+    if cfg!(debug_assertions) {
+        let logs_dir = app_dir.join("logs");
+        if let Err(e) = sorng_encryption::log_adapter::EncryptedLogAdapter::install(
+            std::sync::Arc::new(enc_state_for_logger),
+            logs_dir,
+            log::LevelFilter::Info,
+        ) {
+            eprintln!("Failed to install encrypted log adapter: {}", e);
+        }
+    }
+
     let updater_service = UpdaterService::new(env!("CARGO_PKG_VERSION"), &app_dir);
     app.manage(updater_service);
 
@@ -319,9 +364,9 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     let secure_storage = SecureStorage::new(storage_path.to_string_lossy().to_string());
     // Phase 8 — inject the master-key handle so subsequent saves use
     // the v2 connections envelope (`sorng-v1::connections`) when
-    // unlocked. Falls through silently when no encryption state is
-    // installed (the pre-encryption boot path remains valid for
-    // tests).
+    // unlocked. The encryption state is managed above before this
+    // service is created, so production writes cannot silently miss
+    // the handle and downgrade to plaintext.
     if let Some(enc_handle) = app.try_state::<sorng_encryption::EncryptionState>() {
         let enc_arc = std::sync::Arc::new(enc_handle.inner().clone());
         let svc = secure_storage.clone();
@@ -482,15 +527,13 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // readable here for vault-mode installs. Password / hybrid mode
     // installs surface "locked" and simply skip the priming step; the
     // capabilities load anyway as soon as the user unlocks.
-    if let Some(enc_state_handle) =
-        app.app_handle().try_state::<sorng_encryption::EncryptionState>()
+    if let Some(enc_state_handle) = app
+        .app_handle()
+        .try_state::<sorng_encryption::EncryptionState>()
     {
         if let Ok(dir) = app.app_handle().path().app_data_dir() {
             if let Ok(Some(value)) = tauri::async_runtime::block_on(
-                crate::app_settings_commands::read_app_settings_inner(
-                    &dir,
-                    &enc_state_handle,
-                ),
+                crate::app_settings_commands::read_app_settings_inner(&dir, &enc_state_handle),
             ) {
                 if let Some(list) = value
                     .get("restApi")

@@ -612,13 +612,16 @@ impl BackupService {
         // legacy SORNG1 paths. The migrator that converted SORNG1
         // files to v2 lived briefly between commits 57cf5505 and Z;
         // it's been removed now that the dev tree is fully migrated.
-        let used_v2 = self.encryption_state.is_some()
-            && self
-                .encryption_state
-                .as_ref()
-                .unwrap()
-                .is_unlocked()
-                .await;
+        let used_v2 = match self.encryption_state.as_ref() {
+            Some(state) if state.is_unlocked().await => true,
+            Some(_) => {
+                return Err(
+                    "Backup encryption state is locked; unlock before creating backups"
+                        .to_string(),
+                );
+            }
+            None => false,
+        };
         let encrypted_data = if used_v2 {
             self.encrypt_backup_v2(&final_data).await?
         } else {
@@ -2683,10 +2686,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn locked_state_falls_back_to_legacy_or_plaintext() {
-        // EncryptionState installed but never unlocked → v2 path is
-        // skipped without erroring; fall through to legacy / plaintext
-        // exactly like a no-encryption build.
+    async fn locked_state_refuses_plaintext_downgrade() {
+        // EncryptionState installed but never unlocked → refuse to write
+        // rather than silently downgrading secrets to plaintext.
         let tmp = fresh_temp_dir("v2_locked");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
@@ -2696,16 +2698,20 @@ mod tests {
         svc.set_encryption_state(locked);
 
         let data = serde_json::json!({ "connections": [] });
-        let _ = svc.perform_backup("manual", &data).await.unwrap();
-        let entry = std::fs::read_dir(&tmp).unwrap().find_map(|e| {
-            let e = e.ok()?;
-            let name = e.file_name().to_string_lossy().into_owned();
-            (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
-        }).unwrap();
-        let bytes = std::fs::read(&entry).unwrap();
-        // No password configured and locked state → plaintext on disk.
-        assert_ne!(&bytes[..6.min(bytes.len())], sorng_encryption::envelope::MAGIC);
-        assert_ne!(&bytes[..6.min(bytes.len())], b"SORNG1");
+        let err = svc.perform_backup("manual", &data).await.unwrap_err();
+        assert!(
+            err.contains("encryption state is locked"),
+            "expected locked-state downgrade refusal, got: {err}"
+        );
+        let backup_files: Vec<_> = std::fs::read_dir(&tmp)
+            .unwrap()
+            .filter_map(|e| {
+                let e = e.ok()?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
+            })
+            .collect();
+        assert!(backup_files.is_empty(), "locked state must not write plaintext backups");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
