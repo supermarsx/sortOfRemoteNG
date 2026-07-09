@@ -50,20 +50,36 @@ fn changed_rejects_under_every_policy_except_always_trust() {
 }
 
 #[test]
-fn unknown_under_tofu_persists() {
+fn unknown_under_tofu_persists_when_chain_is_valid() {
     assert_eq!(
-        decide_tls_trust(StoreVerdict::Unknown, &TrustPolicy::Tofu, false),
+        decide_tls_trust(StoreVerdict::Unknown, &TrustPolicy::Tofu, true),
         TlsTrustAction::AcceptAndPersist
     );
 }
 
 #[test]
-fn unknown_under_always_ask_degrades_to_tofu_persist() {
+fn unknown_under_tofu_rejects_when_chain_is_invalid() {
+    assert!(matches!(
+        decide_tls_trust(StoreVerdict::Unknown, &TrustPolicy::Tofu, false),
+        TlsTrustAction::Reject(_)
+    ));
+}
+
+#[test]
+fn unknown_under_always_ask_degrades_to_tofu_persist_when_chain_is_valid() {
     // Non-interactive backends cannot prompt; AlwaysAsk degrades to TOFU.
     assert_eq!(
         decide_tls_trust(StoreVerdict::Unknown, &TrustPolicy::AlwaysAsk, true),
         TlsTrustAction::AcceptAndPersist
     );
+}
+
+#[test]
+fn unknown_under_always_ask_rejects_when_chain_is_invalid() {
+    assert!(matches!(
+        decide_tls_trust(StoreVerdict::Unknown, &TrustPolicy::AlwaysAsk, false),
+        TlsTrustAction::Reject(_)
+    ));
 }
 
 #[test]
@@ -208,7 +224,12 @@ fn run_decision(store: &StubStore, host_key: &str, fp: &str) -> TlsTrustAction {
     let action = decide_tls_trust(verdict, &policy, true);
     if action == TlsTrustAction::AcceptAndPersist {
         store
-            .trust(host_key.to_string(), TLS_RECORD_TYPE.to_string(), identity, false)
+            .trust(
+                host_key.to_string(),
+                TLS_RECORD_TYPE.to_string(),
+                identity,
+                false,
+            )
             .unwrap();
     }
     action
@@ -300,5 +321,8 @@ fn sync_facade_round_trips_through_disk() {
     let r3 = store
         .verify_identity_blocking("h:443", TLS_RECORD_TYPE, tls_identity("feedface"))
         .unwrap();
-    assert!(matches!(r3, TrustVerifyResult::Mismatch { .. }), "got {r3:?}");
+    assert!(
+        matches!(r3, TrustVerifyResult::Mismatch { .. }),
+        "got {r3:?}"
+    );
 }

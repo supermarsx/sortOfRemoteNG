@@ -18,20 +18,22 @@
 //!
 //! 1. Fingerprints the leaf certificate (SHA-256 hex — same format the trust
 //!    store records) and parses subject/issuer/validity/SAN for the record.
-//! 2. Runs standard webpki chain validation against the native root store
-//!    (records `chain_valid` for diagnostics — TOFU pins *identity*, it does
-//!    **not** disable signature/chain checking).
+//! 2. Runs standard webpki chain validation against the native root store.
+//!    Unknown certificates are only pinned on first use when this validation
+//!    succeeds; the explicit `AlwaysTrust` override remains the escape hatch
+//!    for legacy self-signed endpoints.
 //! 3. Consults the persistent Trust Center store (via the blocking
 //!    [`sorng_storage::trust_store::SyncTrustStore`] façade) and applies a
 //!    **pure decision function** [`decide_tls_trust`]:
-//!    - `Tofu` (default): unknown → fingerprint + persist + accept; known &
-//!      matching → accept; **changed → reject** (MITM).
+//!    - `Tofu` (default): valid unknown → fingerprint + persist + accept;
+//!      invalid unknown → reject; known & matching → accept; **changed →
+//!      reject** (MITM).
 //!    - `AlwaysTrust`: accept without storing — the explicit replacement for
 //!      today's blind skip (the legacy skip flags map to this override).
 //!    - `Strict`: reject unknown; accept only a pre-approved match.
 //!    - `AlwaysAsk`: no prompt channel for these non-interactive backends, so
-//!      it degrades to TOFU-persist-on-unknown / reject-on-change (same as
-//!      SFTP's `Ask`).
+//!      it degrades to TOFU-persist-on-valid-unknown / reject-on-invalid-or-change
+//!      (same as SFTP's `Ask`).
 //!
 //! `verify_tls12_signature` / `verify_tls13_signature` /
 //! `supported_verify_schemes` delegate to rustls' default
@@ -122,11 +124,12 @@ impl StoreVerdict {
 /// * `Unknown`  → policy-dependent:
 ///   - `AlwaysTrust`        → accept, do not persist.
 ///   - `Strict`             → reject (manual pinning required).
-///   - `Tofu` / `AlwaysAsk` / others → accept and persist (TOFU).
+///   - `Tofu` / `AlwaysAsk` / others → accept and persist (TOFU), but only
+///     after normal WebPKI chain/hostname validation succeeds.
 pub fn decide_tls_trust(
     verdict: StoreVerdict,
     policy: &TrustPolicy,
-    _chain_valid: bool,
+    chain_valid: bool,
 ) -> TlsTrustAction {
     // AlwaysTrust short-circuits everything: it is the explicit replacement for
     // the old blind `danger_accept_invalid_certs(true)`. It accepts any
@@ -154,8 +157,19 @@ pub fn decide_tls_trust(
                     .to_string(),
             ),
             // Tofu (default), AlwaysAsk (degrades to TOFU — non-interactive),
-            // and all other policies trust-on-first-use: persist + accept.
-            _ => TlsTrustAction::AcceptAndPersist,
+            // and all other policies trust-on-first-use only after the normal
+            // CA/hostname checks have succeeded. This preserves default reqwest
+            // security for public APIs and prevents pinning a first-use MITM
+            // certificate; use the explicit AlwaysTrust override for legacy
+            // self-signed endpoints.
+            _ if chain_valid => TlsTrustAction::AcceptAndPersist,
+            _ => TlsTrustAction::Reject(
+                "the server's TLS certificate could not be validated by the \
+                 system trust store, so it was not pinned on first use. If this \
+                 is a trusted legacy self-signed endpoint, enable the explicit \
+                 TLS skip/AlwaysTrust override for this connection."
+                    .to_string(),
+            ),
         },
     }
 }
@@ -284,17 +298,13 @@ fn extract_leaf_details(der: &[u8]) -> LeafCertDetails {
 
     match x509_parser::parse_x509_certificate(der) {
         Ok((_rem, cert)) => {
-            let san = cert
-                .subject_alternative_name()
-                .ok()
-                .flatten()
-                .map(|ext| {
-                    ext.value
-                        .general_names
-                        .iter()
-                        .map(|name| format!("{name}"))
-                        .collect::<Vec<_>>()
-                });
+            let san = cert.subject_alternative_name().ok().flatten().map(|ext| {
+                ext.value
+                    .general_names
+                    .iter()
+                    .map(|name| format!("{name}"))
+                    .collect::<Vec<_>>()
+            });
             LeafCertDetails {
                 fingerprint,
                 subject: Some(cert.subject().to_string()),
@@ -407,8 +417,9 @@ impl ServerCertVerifier for TofuVerifier {
         let details = extract_leaf_details(end_entity.as_ref());
         let identity = details.into_identity();
 
-        // 2. Standard webpki chain validation (records chain_valid; does NOT
-        //    gate identity pinning — TOFU should still pin a self-signed cert).
+        // 2. Standard webpki chain/hostname validation. Unknown certificates
+        //    are only pinned when this succeeds; otherwise a first-use MITM
+        //    could become trusted before any prior identity exists.
         let chain_valid = self
             .inner
             .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
