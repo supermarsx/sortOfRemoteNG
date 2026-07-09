@@ -432,6 +432,54 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
 
     access::register(app);
 
+    // Encryption-at-rest subsystem (Phase 0): managed state holds the
+    // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
+    //
+    // Boot-time silent vault unlock — when the OS vault is available
+    // and no password wrapper is configured, `ensure_dek` lets a fresh
+    // vault-only install auto-initialise a master DEK on first boot.
+    //
+    // If `dek.enc` exists, password or hybrid mode is configured. In
+    // those modes boot must remain locked until the user supplies their
+    // password; calling `ensure_dek` here would create a different vault
+    // DEK on password-only installs and incorrectly mark the process as
+    // unlocked before `encryption_unlock` can unwrap the real DEK.
+    let enc_state = sorng_encryption::EncryptionState::new();
+    let password_wrap_present = app_dir.join("dek.enc").exists();
+    if !password_wrap_present && sorng_vault::keychain::is_available() {
+        if let Ok(bytes) = tauri::async_runtime::block_on(
+            sorng_vault::keychain::ensure_dek(),
+        ) {
+            if let Some(dek) = sorng_encryption::MasterDek::from_bytes(&bytes) {
+                tauri::async_runtime::block_on(enc_state.install(dek));
+                println!(
+                    "Encryption-at-rest: vault DEK ensured + installed at boot."
+                );
+            }
+        }
+    }
+    // Snapshot the (cheaply cloneable Arc-backed) handle BEFORE
+    // `app.manage` consumes it — the logger drainer task owns its
+    // own clone so it survives independent of Tauri state lookups.
+    let enc_state_for_logger = enc_state.clone();
+    app.manage(enc_state);
+
+    // Install the encrypted log adapter once the encryption state
+    // exists. Gated on `debug_assertions` to preserve the prior
+    // tauri_plugin_log behaviour (no global logger in release until
+    // the rollout flips the gate). The state may be locked here —
+    // the sink buffers lines until unlock, so no records are lost.
+    if cfg!(debug_assertions) {
+        let logs_dir = app_dir.join("logs");
+        if let Err(e) = sorng_encryption::log_adapter::EncryptedLogAdapter::install(
+            std::sync::Arc::new(enc_state_for_logger),
+            logs_dir,
+            log::LevelFilter::Info,
+        ) {
+            eprintln!("Failed to install encrypted log adapter: {}", e);
+        }
+    }
+
     #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
     platform::register(app);
     #[cfg(any(feature = "collab", feature = "platform"))]
