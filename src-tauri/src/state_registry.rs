@@ -391,18 +391,17 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
     //
     // Boot-time silent vault unlock — when the OS vault is available
-    // we call `ensure_dek` rather than `read_dek` so a fresh install
-    // auto-initialises a vault-mode master DEK on first boot. P4
-    // requires every database write to go through an unlocked state
-    // (eager-encrypt, explicit-downgrade-refusal policy); without
-    // auto-init the database picker would be empty on fresh installs
-    // until the user manually visited Settings → Security.
+    // and no password wrapper is configured, `ensure_dek` lets a fresh
+    // vault-only install auto-initialise a master DEK on first boot.
     //
-    // Password / hybrid modes still require explicit user input via
-    // the Settings → Security panel — `ensure_dek` only fires for the
-    // vault path here, so the user-driven setup flow is unchanged.
+    // If `dek.enc` exists, password or hybrid mode is configured. In
+    // those modes boot must remain locked until the user supplies their
+    // password; calling `ensure_dek` here would create a different vault
+    // DEK on password-only installs and incorrectly mark the process as
+    // unlocked before `encryption_unlock` can unwrap the real DEK.
     let enc_state = sorng_encryption::EncryptionState::new();
-    if sorng_vault::keychain::is_available() {
+    let password_wrap_present = app_dir.join("dek.enc").exists();
+    if !password_wrap_present && sorng_vault::keychain::is_available() {
         if let Ok(bytes) = tauri::async_runtime::block_on(
             sorng_vault::keychain::ensure_dek(),
         ) {
