@@ -30,7 +30,7 @@ mod encryption_rotation_commands;
 #[path = "../../../src/api_capability.rs"]
 mod api_capability;
 #[path = "../../../src/api_capability_commands.rs"]
-mod api_capability_commands;
+pub mod api_capability_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
 #[path = "../../../src/backup_commands.rs"]

@@ -512,7 +512,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // see api_capability_commands.rs.
     {
         let svc_for_setter = api_service.clone();
-        let setter = crate::api_capability_commands::DisabledCapsSetter(Arc::new(
+        let setter = sorng_commands_core::api_capability_commands::DisabledCapsSetter(Arc::new(
             move |ids: Vec<String>| {
                 svc_for_setter.set_disabled_capabilities(ids);
             },

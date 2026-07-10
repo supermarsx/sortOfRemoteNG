@@ -6,10 +6,11 @@
 //!
 //! `set_api_disabled_capabilities` reaches the running API server via
 //! a [`DisabledCapsSetter`] function-trait-object the main app crate
-//! registers in Tauri state at startup. That indirection avoids a
-//! circular dep between `sorng-commands-core` and the main app crate
-//! (the latter already depends on the former, so the former can't
-//! import `crate::api::ApiService` directly).
+//! registers in Tauri state at startup. This file is compiled as part
+//! of `sorng-commands-core`, so the main app must register that exact
+//! exported type in Tauri state. Tauri state is keyed by concrete type,
+//! and registering a same-named type from another crate would not be
+//! visible to this command.
 
 use crate::api_capability::{CapabilityGroup, CapabilityMeta, ALL_CAPABILITIES};
 use serde::Serialize;
@@ -77,18 +78,20 @@ pub fn get_api_capabilities() -> Vec<ApiCapabilityDto> {
 /// Mandatory capabilities passed in the list are silently filtered
 /// out by the underlying `ApiService::set_disabled_capabilities`.
 ///
-/// Returns `Ok(())` even if no `DisabledCapsSetter` has been
-/// registered — that happens in the unlikely event the API server
-/// failed to start, in which case the disabled-list is moot anyway.
+/// Returns an error if no `DisabledCapsSetter` has been registered so
+/// the frontend cannot silently believe a live access-control update
+/// succeeded when the running API gate was not actually changed.
 #[tauri::command]
 pub fn set_api_disabled_capabilities(
     app: tauri::AppHandle,
     disabled: Vec<String>,
 ) -> Result<(), String> {
     use tauri::Manager;
-    if let Some(setter) = app.try_state::<DisabledCapsSetter>() {
-        (setter.0)(disabled);
-    }
+    let setter = app.try_state::<DisabledCapsSetter>().ok_or_else(|| {
+        "REST API capability updater is unavailable; live capability changes were not applied"
+            .to_string()
+    })?;
+    (setter.0)(disabled);
     Ok(())
 }
 
