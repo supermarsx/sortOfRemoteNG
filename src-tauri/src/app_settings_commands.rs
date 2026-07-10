@@ -35,9 +35,7 @@ const DEK_ENC_FILENAME: &str = "dek.enc";
 /// Probe the live mode from disk + vault. Mirrors the logic in
 /// `encryption_status` so the writer below stamps the preamble with
 /// the same mode that the unlock screen will see at next boot.
-async fn current_master_key_storage(
-    dir: &std::path::Path,
-) -> MasterKeyStorage {
+async fn current_master_key_storage(dir: &std::path::Path) -> MasterKeyStorage {
     let vault_present = sorng_vault::keychain::read_dek().await.is_ok();
     let dek_enc_present = dir.join(DEK_ENC_FILENAME).exists();
     match (vault_present, dek_enc_present) {
@@ -64,13 +62,9 @@ pub async fn read_app_settings_inner(
     // attacker delete `settings.enc` and force a downgrade. Instead we
     // surface "locked" to the caller, who can render an explainer.
     if enc_path.exists() {
-        let bytes = std::fs::read(&enc_path)
-            .map_err(|e| format!("read settings.enc: {e}"))?;
+        let bytes = std::fs::read(&enc_path).map_err(|e| format!("read settings.enc: {e}"))?;
         if !enc_state.is_unlocked().await {
-            return Err(
-                "settings are encrypted; unlock first via Settings → Security"
-                    .into(),
-            );
+            return Err("settings are encrypted; unlock first via Settings → Security".into());
         }
         let value = artifact_settings::read(enc_state, &bytes)
             .await
@@ -80,9 +74,15 @@ pub async fn read_app_settings_inner(
 
     match std::fs::read_to_string(&plain_path) {
         Ok(s) => {
-            let value: Value = serde_json::from_str(&s)
-                .map_err(|e| format!("parse settings.json: {e}"))?;
-            Ok(Some(value))
+            let value: Value =
+                serde_json::from_str(&s).map_err(|e| format!("parse settings.json: {e}"))?;
+            let redacted = redact_plaintext_settings(value.clone());
+            if redacted != value {
+                let body = serde_json::to_string_pretty(&redacted)
+                    .map_err(|e| format!("serialize redacted settings.json: {e}"))?;
+                atomic_write(&plain_path, body.as_bytes())?;
+            }
+            Ok(Some(redacted))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.to_string()),
@@ -240,6 +240,62 @@ fn merge_root(mut existing: Value, patch: &Value) -> Result<Value, String> {
     Ok(existing)
 }
 
+fn remove_path(value: &mut Value, path: &[&str]) {
+    let Some((key, rest)) = path.split_first() else {
+        return;
+    };
+    let Some(obj) = value.as_object_mut() else {
+        return;
+    };
+    if rest.is_empty() {
+        obj.remove(*key);
+    } else if let Some(child) = obj.get_mut(*key) {
+        remove_path(child, rest);
+    }
+}
+
+fn redact_cloud_sync_secrets(value: &mut Value) {
+    let Some(targets) = value
+        .get_mut("cloudSync")
+        .and_then(|cloud_sync| cloud_sync.get_mut("syncTargets"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+
+    for target in targets {
+        for path in [
+            ["googleDrive", "accessToken"],
+            ["googleDrive", "refreshToken"],
+            ["oneDrive", "accessToken"],
+            ["oneDrive", "refreshToken"],
+            ["nextcloud", "password"],
+            ["nextcloud", "appPassword"],
+            ["webdav", "password"],
+            ["webdav", "bearerToken"],
+            ["sftp", "password"],
+            ["sftp", "privateKey"],
+            ["sftp", "passphrase"],
+        ] {
+            remove_path(target, &path);
+        }
+    }
+}
+
+/// Drop secret-bearing frontend settings before a blob is exposed from
+/// or persisted to plaintext `settings.json`.
+///
+/// The encrypted `settings.enc` path keeps the full settings object, but
+/// the locked/plaintext path must never leak credentials into a
+/// user-readable JSON file.
+fn redact_plaintext_settings(mut value: Value) -> Value {
+    remove_path(&mut value, &["exportPassword"]);
+    remove_path(&mut value, &["restApi", "apiKey"]);
+    remove_path(&mut value, &["backup", "encryptionPassword"]);
+    redact_cloud_sync_secrets(&mut value);
+    value
+}
+
 /// Pure-Rust write entry-point shared by the Tauri command and any
 /// future caller that already holds the encryption state by
 /// reference. Kept symmetric with `read_app_settings_inner`.
@@ -254,13 +310,9 @@ pub async fn write_app_settings_inner(
 
     let existing: Value = if enc_path.exists() {
         if !enc_state.is_unlocked().await {
-            return Err(
-                "settings are encrypted; unlock first via Settings → Security"
-                    .into(),
-            );
+            return Err("settings are encrypted; unlock first via Settings → Security".into());
         }
-        let bytes = std::fs::read(&enc_path)
-            .map_err(|e| format!("read settings.enc: {e}"))?;
+        let bytes = std::fs::read(&enc_path).map_err(|e| format!("read settings.enc: {e}"))?;
         artifact_settings::read(enc_state, &bytes)
             .await
             .map_err(|e| format!("decode settings.enc: {e}"))?
@@ -277,22 +329,17 @@ pub async fn write_app_settings_inner(
     if enc_state.is_unlocked().await {
         let mode = current_master_key_storage(dir).await;
         let salt = [0u8; SALT_LEN];
-        let blob = artifact_settings::write(
-            enc_state,
-            &merged,
-            mode,
-            Argon2Params::OWASP,
-            salt,
-        )
-        .await
-        .map_err(|e| format!("encode settings.enc: {e}"))?;
+        let blob = artifact_settings::write(enc_state, &merged, mode, Argon2Params::OWASP, salt)
+            .await
+            .map_err(|e| format!("encode settings.enc: {e}"))?;
         atomic_write(&enc_path, &blob)?;
         if plain_path.exists() && plain_path != dir.join("settings.json.v0.bak") {
             let _ = std::fs::remove_file(&plain_path);
         }
         Ok(())
     } else {
-        let body = serde_json::to_string_pretty(&merged)
+        let redacted = redact_plaintext_settings(merged);
+        let body = serde_json::to_string_pretty(&redacted)
             .map_err(|e| format!("serialize settings.json: {e}"))?;
         atomic_write(&plain_path, body.as_bytes())
     }
@@ -324,14 +371,89 @@ mod tests {
 
     #[test]
     fn coerces_non_object_root() {
-        let merged = merge_root(serde_json::json!("garbage"), &serde_json::json!({ "a": 1 }))
-            .unwrap();
+        let merged =
+            merge_root(serde_json::json!("garbage"), &serde_json::json!({ "a": 1 })).unwrap();
         assert_eq!(merged["a"], 1);
     }
 
     #[test]
     fn rejects_non_object_patch() {
         assert!(merge_root(serde_json::json!({}), &serde_json::json!([1, 2])).is_err());
+    }
+
+    #[test]
+    fn redacts_secret_bearing_settings_from_plaintext_blob() {
+        let redacted = redact_plaintext_settings(serde_json::json!({
+            "theme": "dark",
+            "exportPassword": "export-secret",
+            "restApi": {
+                "enabled": true,
+                "apiKey": "rest-secret"
+            },
+            "backup": {
+                "encryptBackups": true,
+                "encryptionPassword": "backup-secret"
+            },
+            "cloudSync": {
+                "syncTargets": [
+                    {
+                        "provider": "sftp",
+                        "sftp": {
+                            "host": "example.net",
+                            "username": "alice",
+                            "password": "sftp-secret",
+                            "privateKey": "key-secret",
+                            "passphrase": "passphrase-secret",
+                            "folderPath": "/sync"
+                        }
+                    },
+                    {
+                        "provider": "webdav",
+                        "webdav": {
+                            "serverUrl": "https://dav.example",
+                            "username": "bob",
+                            "password": "webdav-secret",
+                            "bearerToken": "bearer-secret",
+                            "folderPath": "/sync"
+                        }
+                    },
+                    {
+                        "provider": "googleDrive",
+                        "googleDrive": {
+                            "accessToken": "access-secret",
+                            "refreshToken": "refresh-secret",
+                            "folderPath": "/sync"
+                        }
+                    }
+                ]
+            }
+        }));
+
+        assert_eq!(redacted["theme"], "dark");
+        assert!(redacted.get("exportPassword").is_none());
+        assert!(redacted["restApi"].get("apiKey").is_none());
+        assert!(redacted["backup"].get("encryptionPassword").is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][0]["sftp"]
+            .get("password")
+            .is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][0]["sftp"]
+            .get("privateKey")
+            .is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][0]["sftp"]
+            .get("passphrase")
+            .is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][1]["webdav"]
+            .get("password")
+            .is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][1]["webdav"]
+            .get("bearerToken")
+            .is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][2]["googleDrive"]
+            .get("accessToken")
+            .is_none());
+        assert!(redacted["cloudSync"]["syncTargets"][2]["googleDrive"]
+            .get("refreshToken")
+            .is_none());
     }
 
     #[test]
@@ -408,13 +530,9 @@ mod tests {
         let app_data = tmp.path().join("app-data");
         let locked = EncryptionState::new();
 
-        write_app_settings_inner(
-            &app_data,
-            &locked,
-            serde_json::json!({ "theme": "dark" }),
-        )
-        .await
-        .unwrap();
+        write_app_settings_inner(&app_data, &locked, serde_json::json!({ "theme": "dark" }))
+            .await
+            .unwrap();
         assert!(app_data.join("settings.json").exists());
 
         // Simulate a cleanup tool / known-folder relocation wiping the
@@ -423,13 +541,9 @@ mod tests {
         assert!(!app_data.exists());
 
         // Next write must self-heal rather than fail with os error 2.
-        write_app_settings_inner(
-            &app_data,
-            &locked,
-            serde_json::json!({ "language": "fr" }),
-        )
-        .await
-        .unwrap();
+        write_app_settings_inner(&app_data, &locked, serde_json::json!({ "language": "fr" }))
+            .await
+            .unwrap();
         assert!(app_data.join("settings.json").exists());
 
         let value = read_app_settings_inner(&app_data, &locked)
@@ -454,29 +568,100 @@ mod tests {
     async fn write_while_locked_lands_in_plaintext_json() {
         let tmp = tempdir().unwrap();
         let state = EncryptionState::new(); // locked
-        write_app_settings_inner(
-            tmp.path(),
-            &state,
-            serde_json::json!({ "theme": "dark" }),
-        )
-        .await
-        .unwrap();
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
+            .await
+            .unwrap();
 
         assert!(tmp.path().join("settings.json").exists());
         assert!(!tmp.path().join("settings.enc").exists());
     }
 
     #[tokio::test]
-    async fn write_while_unlocked_lands_in_enc() {
+    async fn write_while_locked_redacts_plaintext_secrets() {
         let tmp = tempdir().unwrap();
-        let state = unlocked_state().await;
+        let state = EncryptionState::new(); // locked
         write_app_settings_inner(
             tmp.path(),
             &state,
-            serde_json::json!({ "theme": "dark" }),
+            serde_json::json!({
+                "theme": "dark",
+                "exportPassword": "export-secret",
+                "restApi": { "apiKey": "rest-secret" },
+                "backup": { "encryptionPassword": "backup-secret" },
+                "cloudSync": {
+                    "syncTargets": [{
+                        "provider": "sftp",
+                        "sftp": {
+                            "password": "sftp-secret",
+                            "privateKey": "key-secret",
+                            "passphrase": "passphrase-secret"
+                        }
+                    }]
+                }
+            }),
         )
         .await
         .unwrap();
+
+        let body = std::fs::read_to_string(tmp.path().join("settings.json")).unwrap();
+        assert!(body.contains("dark"));
+        for secret in [
+            "export-secret",
+            "rest-secret",
+            "backup-secret",
+            "sftp-secret",
+            "key-secret",
+            "passphrase-secret",
+        ] {
+            assert!(!body.contains(secret), "{secret} leaked into settings.json");
+        }
+    }
+
+    #[tokio::test]
+    async fn read_plaintext_redacts_legacy_secrets_on_disk() {
+        let tmp = tempdir().unwrap();
+        let state = EncryptionState::new();
+        std::fs::write(
+            tmp.path().join("settings.json"),
+            r#"{
+                "theme": "dark",
+                "restApi": { "apiKey": "legacy-rest-secret" },
+                "cloudSync": {
+                    "syncTargets": [{
+                        "provider": "oneDrive",
+                        "oneDrive": {
+                            "accessToken": "legacy-access-secret",
+                            "refreshToken": "legacy-refresh-secret"
+                        }
+                    }]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let value = read_app_settings_inner(tmp.path(), &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(value["theme"], "dark");
+        assert!(value["restApi"].get("apiKey").is_none());
+        assert!(value["cloudSync"]["syncTargets"][0]["oneDrive"]
+            .get("accessToken")
+            .is_none());
+
+        let body = std::fs::read_to_string(tmp.path().join("settings.json")).unwrap();
+        assert!(!body.contains("legacy-rest-secret"));
+        assert!(!body.contains("legacy-access-secret"));
+        assert!(!body.contains("legacy-refresh-secret"));
+    }
+
+    #[tokio::test]
+    async fn write_while_unlocked_lands_in_enc() {
+        let tmp = tempdir().unwrap();
+        let state = unlocked_state().await;
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
+            .await
+            .unwrap();
 
         assert!(tmp.path().join("settings.enc").exists());
         // No stale plaintext should have been left behind by this
@@ -488,19 +673,11 @@ mod tests {
     async fn read_prefers_enc_over_plaintext() {
         let tmp = tempdir().unwrap();
         // Plant a plaintext that we explicitly *don't* want to win.
-        std::fs::write(
-            tmp.path().join("settings.json"),
-            br#"{"theme":"stale"}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("settings.json"), br#"{"theme":"stale"}"#).unwrap();
         let state = unlocked_state().await;
-        write_app_settings_inner(
-            tmp.path(),
-            &state,
-            serde_json::json!({ "theme": "fresh" }),
-        )
-        .await
-        .unwrap();
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "fresh" }))
+            .await
+            .unwrap();
 
         // The `.enc` write should have removed the stale `.json` and
         // the next read should reflect the encrypted truth.
@@ -517,13 +694,9 @@ mod tests {
     async fn read_locked_enc_surfaces_lock_error() {
         let tmp = tempdir().unwrap();
         let state = unlocked_state().await;
-        write_app_settings_inner(
-            tmp.path(),
-            &state,
-            serde_json::json!({ "theme": "dark" }),
-        )
-        .await
-        .unwrap();
+        write_app_settings_inner(tmp.path(), &state, serde_json::json!({ "theme": "dark" }))
+            .await
+            .unwrap();
 
         // Drop to a locked state and re-read; the dispatcher must not
         // silently fall back to plaintext (it doesn't exist anyway, but
