@@ -15,8 +15,6 @@
 //! ```text
 //!   settings.json       v0 plaintext (legacy; read for migration only)
 //!   settings.enc        v2 envelope (current)
-//!   settings.json.v0.bak post-migration rollback copy (kept for one
-//!                       release as a safety net; manual delete after)
 //! ```
 
 use rand::rngs::OsRng;
@@ -32,9 +30,6 @@ use crate::state::EncryptionState;
 
 /// Filename for the encrypted settings blob inside the app-data dir.
 pub const SETTINGS_ENC_FILENAME: &str = "settings.enc";
-
-/// Filename for the post-migration plaintext backup.
-pub const SETTINGS_BACKUP_FILENAME: &str = "settings.json.v0.bak";
 
 /// Errors raised by the settings artifact codec.
 #[derive(Debug, thiserror::Error)]

@@ -63,7 +63,7 @@ export interface EncryptionStatus {
 export interface MigrationReport {
   sourcePath: string;
   destinationPath: string;
-  backupPath: string;
+  backupPath: string | null;
   bytesIn: number;
   bytesOut: number;
   masterKeyStorage: MasterKeyStorage;
