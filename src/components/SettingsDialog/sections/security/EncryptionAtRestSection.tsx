@@ -661,11 +661,8 @@ const EncryptionAtRestSection: React.FC = () => {
               A legacy <code>settings.json</code> was found alongside
               the new format. Running the migration encrypts it as
               <code>settings.enc</code> using the current master key,
-              archives the original as
-              <code>settings.json.v0.bak</code>, and updates the boot
-              path to read from the encrypted file going forward. The
-              backup stays on disk for one release cycle as a
-              rollback safety net.
+              removes the original plaintext file, and updates the boot
+              path to read from the encrypted file going forward.
             </p>
 
             {migrateError && (
@@ -694,10 +691,8 @@ const EncryptionAtRestSection: React.FC = () => {
                   <span className="text-[var(--color-text)]">
                     {describeStorage(migrateReport.masterKeyStorage)}
                   </span>
-                  <span>Backup path</span>
-                  <span className="text-[var(--color-text)] font-mono truncate">
-                    {migrateReport.backupPath}
-                  </span>
+                  <span>Plaintext source</span>
+                  <span className="text-[var(--color-text)]">Removed after encryption</span>
                 </div>
               </div>
             )}

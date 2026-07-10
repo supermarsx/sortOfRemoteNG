@@ -10,8 +10,7 @@
 //!   `settings.enc` when the state is unlocked; reads dispatch by
 //!   `looks_like_envelope`.
 //! - **`encryption_migrate_settings`** — read `settings.json` v0,
-//!   re-encrypt as v2, atomic-swap, archive the original to
-//!   `settings.json.v0.bak`.
+//!   re-encrypt as v2, then remove the plaintext `settings.json`.
 //!
 //! The file-IO portions of the unlock / setup flows accept a
 //! `tauri::AppHandle` so they can resolve `app_data_dir`; pure tests
@@ -119,7 +118,7 @@ impl From<&LockoutState> for LockoutSnapshot {
 pub struct MigrationReport {
     pub source_path: String,
     pub destination_path: String,
-    pub backup_path: String,
+    pub backup_path: Option<String>,
     pub bytes_in: usize,
     pub bytes_out: usize,
     pub master_key_storage: MasterKeyStorage,
@@ -456,9 +455,9 @@ pub async fn encryption_change_password(
 }
 
 /// Migrate `settings.json` (v0 plaintext) → `settings.enc` (v2
-/// envelope). Requires the state to be unlocked. On success archives
-/// the original at `settings.json.v0.bak` so the user has a one-step
-/// rollback for the rest of the release cycle.
+/// envelope). Requires the state to be unlocked. On success removes
+/// the original plaintext `settings.json` so secrets do not remain
+/// available outside the encrypted envelope.
 #[tauri::command]
 pub async fn encryption_migrate_settings(
     app: AppHandle,
@@ -470,8 +469,6 @@ pub async fn encryption_migrate_settings(
     let dir = ensure_app_data_dir(&app)?;
     let source = dir.join(SETTINGS_JSON_FILENAME);
     let destination = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
-    let backup = dir.join(artifact_settings::SETTINGS_BACKUP_FILENAME);
-
     let raw = std::fs::read(&source).map_err(|e| format!("read settings.json: {e}"))?;
     let bytes_in = raw.len();
 
@@ -505,9 +502,10 @@ pub async fn encryption_migrate_settings(
     let bytes_out = blob.len();
 
     atomic_write(&destination, &blob)?;
-    // Archive the original last — if the rename above fails we don't
-    // want a missing original.
-    std::fs::rename(&source, &backup).map_err(|e| format!("archive backup: {e}"))?;
+    // Remove the original only after the encrypted envelope has been
+    // durably written. Keeping a plaintext rollback copy would defeat
+    // the encryption-at-rest guarantee exposed in Settings.
+    std::fs::remove_file(&source).map_err(|e| format!("remove plaintext settings.json: {e}"))?;
 
     let _ = audit::record(
         &dir,
@@ -526,7 +524,7 @@ pub async fn encryption_migrate_settings(
     Ok(MigrationReport {
         source_path: source.to_string_lossy().into_owned(),
         destination_path: destination.to_string_lossy().into_owned(),
-        backup_path: backup.to_string_lossy().into_owned(),
+        backup_path: None,
         bytes_in,
         bytes_out,
         master_key_storage: mode,
@@ -914,7 +912,7 @@ mod tests {
         let r = MigrationReport {
             source_path: "a".into(),
             destination_path: "b".into(),
-            backup_path: "c".into(),
+            backup_path: None,
             bytes_in: 1,
             bytes_out: 2,
             master_key_storage: MasterKeyStorage::Vault,

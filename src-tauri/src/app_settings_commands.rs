@@ -115,9 +115,8 @@ pub async fn read_app_settings(
 ///
 /// - When [`EncryptionState`] is unlocked, the merged blob lands in
 ///   `settings.enc` (v2 envelope). Any pre-existing plaintext file is
-///   left untouched as a one-release rollback safety net; the post-
-///   migration commit renames it to `.v0.bak`, so callers won't see a
-///   stale file in normal operation.
+///   removed after the encrypted write succeeds so secrets do not
+///   remain available outside the envelope.
 /// - When locked, the merge writes plaintext `settings.json` — this
 ///   keeps the boot flow that loads window geometry before unlock
 ///   working unchanged. Sensitive keys are still in the user's hands
@@ -287,8 +286,9 @@ pub async fn write_app_settings_inner(
         .await
         .map_err(|e| format!("encode settings.enc: {e}"))?;
         atomic_write(&enc_path, &blob)?;
-        if plain_path.exists() && plain_path != dir.join("settings.json.v0.bak") {
-            let _ = std::fs::remove_file(&plain_path);
+        if plain_path.exists() {
+            std::fs::remove_file(&plain_path)
+                .map_err(|e| format!("remove plaintext settings.json: {e}"))?;
         }
         Ok(())
     } else {

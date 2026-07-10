@@ -55,7 +55,7 @@ const setupStatus: EncryptionStatus = {
 const migrationReport: MigrationReport = {
   sourcePath: "/x/settings.json",
   destinationPath: "/x/settings.enc",
-  backupPath: "/x/settings.json.v0.bak",
+  backupPath: null,
   bytesIn: 1024,
   bytesOut: 1124,
   masterKeyStorage: "vault",
