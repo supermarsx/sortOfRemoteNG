@@ -304,7 +304,7 @@ export function useWebBrowser(session: ConnectionSession) {
           connId,
         );
         // P6c: TOFU auto-trusted on first contact — same as above.
-        tlsTrustAcceptedRef.current = true;
+        acceptedCertFingerprintRef.current = identity.fingerprint;
         return true;
       }
       if (

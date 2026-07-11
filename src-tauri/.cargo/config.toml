@@ -4,9 +4,10 @@
 [build]
 # 200 GB RAM — no memory constraints, maximise parallelism.
 jobs = 28
-# Default Windows builds to the MSVC target (matches rust-toolchain.toml host
-# requirement and avoids MinGW-only deps such as openssl-sys needing pkg-config).
-target = "x86_64-pc-windows-msvc"
+# NOTE: do NOT pin `target` here. On Windows, rust-toolchain.toml + the host's
+# `rustup default-host msvc` already make MSVC the default target, so pinning
+# is redundant locally. Committing it forces Linux/macOS CI runners to
+# cross-compile to windows-msvc (no toolchain → openssl-sys/lib.exe failures).
 # `sccache` is installed on this machine, but wrapper-enabled builds were
 # failing nondeterministically in this workspace (`h2` / `tauri-utils`
 # exiting without a Rust diagnostic). Keep the default build path reliable.
@@ -20,11 +21,11 @@ t2 = "test -j 2"
 r2 = "run -j 2"
 
 # `openssl-src` (vendored OpenSSL) requires a full Perl distribution. Git Bash's
-# bundled Perl is stripped (missing Locale::Maketext::Simple). Point the build
-# at Strawberry Perl explicitly. `force = false` lets a CI runner or another
-# developer override via the same env var without editing this file.
-[env]
-OPENSSL_SRC_PERL = "C:/Strawberry/perl/bin/perl.exe"
+# bundled Perl is stripped (missing Locale::Maketext::Simple). On the Windows
+# dev box set this in your USER cargo config (~/.cargo/config.toml) or shell env:
+#   OPENSSL_SRC_PERL = "C:/Strawberry/perl/bin/perl.exe"
+# It is intentionally NOT committed here: a Windows path in the shared [env]
+# breaks the vendored-OpenSSL build on Linux/macOS CI runners.
 
 [net]
 # Retry failed downloads up to 3 times

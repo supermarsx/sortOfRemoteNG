@@ -1,0 +1,6 @@
+# Placeholder so `crates/sorng-opkssh-vendor/bundle/opkssh/` exists in a clean
+# checkout. tauri.conf.json declares this path in bundle.resources, and
+# tauri-build validates its existence during `cargo check` (before the real
+# `stage:opkssh-vendor --enable` step runs on `tauri build`). Without this the
+# rust check jobs fail: "resource path ... doesn't exist". The real build
+# overwrites this directory's contents via beforeBuildCommand.

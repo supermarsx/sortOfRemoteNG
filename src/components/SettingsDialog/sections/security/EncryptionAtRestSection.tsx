@@ -158,10 +158,7 @@ const EncryptionAtRestSection: React.FC = () => {
   const isUnavailable = !enc.loading && status === null;
 
   const needsSetup = useMemo(
-    () =>
-      !!status &&
-      !status.vaultHasMasterDek &&
-      !status.passwordWrapPresent,
+    () => !!status && !status.vaultHasMasterDek && !status.passwordWrapPresent,
     [status],
   );
 
@@ -183,7 +180,10 @@ const EncryptionAtRestSection: React.FC = () => {
         setSetupError(
           "Your OS doesn't expose a usable vault; switch to password mode.",
         );
-      } else if (result === "wrong-password" || result === "password-required") {
+      } else if (
+        result === "wrong-password" ||
+        result === "password-required"
+      ) {
         setSetupError("Setup returned an unexpected unlock-only outcome.");
       }
       setSetupPassword("");
@@ -377,8 +377,8 @@ const EncryptionAtRestSection: React.FC = () => {
         />
         <Card>
           <p className="text-xs text-[var(--color-textMuted)]">
-            Encryption subsystem not available in this build. Open the
-            desktop app to manage on-disk encryption.
+            Encryption subsystem not available in this build. Open the desktop
+            app to manage on-disk encryption.
           </p>
         </Card>
       </div>
@@ -401,8 +401,8 @@ const EncryptionAtRestSection: React.FC = () => {
         <Card>
           {enc.loading ? (
             <p className="text-xs text-[var(--color-textMuted)] flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" /> Probing
-              encryption state…
+              <Loader2 className="w-3 h-3 animate-spin" /> Probing encryption
+              state…
             </p>
           ) : status ? (
             <div className="grid grid-cols-2 gap-y-2 text-xs">
@@ -493,8 +493,8 @@ const EncryptionAtRestSection: React.FC = () => {
           />
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              Drops the master key from memory and returns to the unlock
-              screen. Keyboard shortcut:{" "}
+              Drops the master key from memory and returns to the unlock screen.
+              Keyboard shortcut:{" "}
               <kbd className="px-1.5 py-0.5 rounded bg-[var(--color-input)] border border-[var(--color-border)] font-mono text-[10px]">
                 Ctrl+L
               </kbd>{" "}
@@ -540,9 +540,9 @@ const EncryptionAtRestSection: React.FC = () => {
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
               No master key found. Choose how the application's master
-              data-encryption key should be stored. Both options can be
-              switched later via the change-password / migrate flows;
-              defaults are tuned for current OWASP guidance.
+              data-encryption key should be stored. Both options can be switched
+              later via the change-password / migrate flows; defaults are tuned
+              for current OWASP guidance.
             </p>
 
             <SettingsToggleRow
@@ -658,11 +658,11 @@ const EncryptionAtRestSection: React.FC = () => {
           />
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              A legacy <code>settings.json</code> was found alongside
-              the new format. Running the migration encrypts it as
-              <code>settings.enc</code> using the current master key,
-              removes the original plaintext file, and updates the boot
-              path to read from the encrypted file going forward.
+              A legacy <code>settings.json</code> was found alongside the new
+              format. Running the migration encrypts it as
+              <code>settings.enc</code> using the current master key, removes
+              the original plaintext file, and updates the boot path to read
+              from the encrypted file going forward.
             </p>
 
             {migrateError && (
@@ -692,7 +692,9 @@ const EncryptionAtRestSection: React.FC = () => {
                     {describeStorage(migrateReport.masterKeyStorage)}
                   </span>
                   <span>Plaintext source</span>
-                  <span className="text-[var(--color-text)]">Removed after encryption</span>
+                  <span className="text-[var(--color-text)]">
+                    Removed after encryption
+                  </span>
                 </div>
               </div>
             )}
@@ -717,12 +719,11 @@ const EncryptionAtRestSection: React.FC = () => {
           {/* ── Recordings + macros migration ─────────────────────── */}
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              Convert every plaintext{" "}
-              <code>&lt;id&gt;.json</code> recording envelope and macro
-              file under the recordings storage root to its{" "}
-              <code>&lt;id&gt;.json.enc</code> v2 form. Originals are
-              archived as <code>.json.v0.bak</code>; new captures will
-              land encrypted automatically once you migrate.
+              Convert every plaintext <code>&lt;id&gt;.json</code> recording
+              envelope and macro file under the recordings storage root to its{" "}
+              <code>&lt;id&gt;.json.enc</code> v2 form. Originals are archived
+              as <code>.json.v0.bak</code>; new captures will land encrypted
+              automatically once you migrate.
             </p>
 
             {migrateRecRanAt && migrateRecReport && (
@@ -770,9 +771,7 @@ const EncryptionAtRestSection: React.FC = () => {
                     </span>
                   </span>
                   {migrateRecCancelling && (
-                    <span className="text-warning text-xs">
-                      Cancelling…
-                    </span>
+                    <span className="text-warning text-xs">Cancelling…</span>
                   )}
                 </div>
                 <div className="h-1.5 rounded-full bg-[var(--color-input)] overflow-hidden">
@@ -833,10 +832,9 @@ const EncryptionAtRestSection: React.FC = () => {
           />
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              Rewrites <code>dek.enc</code> only — every encrypted
-              artifact keeps its existing ciphertext, so this completes
-              in milliseconds regardless of how much data you have on
-              disk.
+              Rewrites <code>dek.enc</code> only — every encrypted artifact
+              keeps its existing ciphertext, so this completes in milliseconds
+              regardless of how much data you have on disk.
             </p>
             <SettingsPasswordRow
               icon={<Lock size={16} />}
@@ -869,7 +867,9 @@ const EncryptionAtRestSection: React.FC = () => {
                 type="button"
                 onClick={handleChangePassword}
                 disabled={
-                  changeBusy || changeOldPw.length === 0 || changeNewPw.length < 8
+                  changeBusy ||
+                  changeOldPw.length === 0 ||
+                  changeNewPw.length < 8
                 }
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
               >
@@ -894,12 +894,11 @@ const EncryptionAtRestSection: React.FC = () => {
           />
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              Generates a fresh 32-byte master DEK, re-encrypts every
-              artifact on disk under freshly-derived sub-keys, then
-              swaps the vault entry and/or <code>dek.enc</code> to
-              match. Use after a suspected password or vault leak. The
-              old ciphertext is rendered unreadable on success — keep
-              a recent backup if you're nervous.
+              Generates a fresh 32-byte master DEK, re-encrypts every artifact
+              on disk under freshly-derived sub-keys, then swaps the vault entry
+              and/or <code>dek.enc</code> to match. Use after a suspected
+              password or vault leak. The old ciphertext is rendered unreadable
+              on success — keep a recent backup if you're nervous.
             </p>
             {passwordModeActive && (
               <SettingsPasswordRow
@@ -954,12 +953,11 @@ const EncryptionAtRestSection: React.FC = () => {
           />
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
-              Writes a password-wrapped copy of the master DEK to the
-              path you choose. Use this to migrate to a new machine
-              where the OS vault is different, or as a one-shot backup
-              you can store offline. Choose a strong, distinct
-              password — the file is portable, so anyone with both the
-              file and the password can decrypt your data.
+              Writes a password-wrapped copy of the master DEK to the path you
+              choose. Use this to migrate to a new machine where the OS vault is
+              different, or as a one-shot backup you can store offline. Choose a
+              strong, distinct password — the file is portable, so anyone with
+              both the file and the password can decrypt your data.
             </p>
             <SettingsTextRow
               icon={<Download size={16} />}
@@ -1024,8 +1022,7 @@ const EncryptionAtRestSection: React.FC = () => {
               Recover access on a new machine by pointing this at a
               <code>.dek</code> file you exported earlier. The key gets
               installed into the OS vault (if available) and saved as
-              <code>dek.enc</code> so the next start finds it
-              automatically.
+              <code>dek.enc</code> so the next start finds it automatically.
             </p>
             <SettingsTextRow
               icon={<Upload size={16} />}
@@ -1081,13 +1078,12 @@ const EncryptionAtRestSection: React.FC = () => {
           <Card>
             <p className="text-xs text-[var(--color-textMuted)]">
               Decrypts <code>settings.enc</code> back to plaintext
-              <code>settings.json</code> and deletes the encrypted
-              file. The master key stays alive so other artifacts
-              (recordings, backups, …) keep their encryption — this is
-              a per-artifact opt-out, not a full disable. To remove
-              encryption from the entire app, run this on every
-              artifact and then delete <code>dek.enc</code> + the
-              vault entry manually.
+              <code>settings.json</code> and deletes the encrypted file. The
+              master key stays alive so other artifacts (recordings, backups, …)
+              keep their encryption — this is a per-artifact opt-out, not a full
+              disable. To remove encryption from the entire app, run this on
+              every artifact and then delete <code>dek.enc</code> + the vault
+              entry manually.
             </p>
             {disableError && (
               <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
@@ -1128,12 +1124,11 @@ const EncryptionAtRestSection: React.FC = () => {
         />
         <Card>
           <p className="text-xs text-[var(--color-textMuted)]">
-            Each artifact derives its own AES-256-GCM sub-key from the
-            master key via HKDF-SHA256 with the label shown below.
-            Sub-keys are domain-separated: a settings ciphertext cannot
-            be decrypted with the recordings key, and vice versa.
-            Per-artifact migrate buttons land in a follow-up phase
-            alongside the recordings-encryption rollout.
+            Each artifact derives its own AES-256-GCM sub-key from the master
+            key via HKDF-SHA256 with the label shown below. Sub-keys are
+            domain-separated: a settings ciphertext cannot be decrypted with the
+            recordings key, and vice versa. Per-artifact migrate buttons land in
+            a follow-up phase alongside the recordings-encryption rollout.
           </p>
           <div className="text-xs">
             <table className="w-full">
@@ -1147,8 +1142,7 @@ const EncryptionAtRestSection: React.FC = () => {
               <tbody>
                 {(status?.artifactLabels ?? []).map((label) => {
                   const isSettings = label === "sorng-v1::settings";
-                  const isLive =
-                    isSettings && status?.settingsEncryptedOnDisk;
+                  const isLive = isSettings && status?.settingsEncryptedOnDisk;
                   return (
                     <tr
                       key={label}
@@ -1195,8 +1189,8 @@ const EncryptionAtRestSection: React.FC = () => {
         <Card>
           {enc.audit.length === 0 ? (
             <p className="text-xs text-[var(--color-textMuted)] italic">
-              No audit entries yet. Each successful or failed operation
-              records one line.
+              No audit entries yet. Each successful or failed operation records
+              one line.
             </p>
           ) : (
             <div className="text-xs">

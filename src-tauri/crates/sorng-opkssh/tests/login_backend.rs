@@ -77,6 +77,16 @@ fn env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Resolve a path to its canonical form so two strings that name the *same*
+/// file compare equal regardless of surface form. On Windows CI the process
+/// `%TEMP%` is often an 8.3 short path (`C:\Users\RUNNER~1\...`) while the
+/// status probe reports the resolved long form (`C:\Users\runneradmin\...`);
+/// canonicalizing both sides collapses that difference. Falls back to the
+/// original path if canonicalization fails (e.g. the file no longer exists).
+fn canonical_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn fake_cli_path() -> PathBuf {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
@@ -517,8 +527,12 @@ async fn service_status_prefers_cli_fallback_over_the_current_library_runtime_co
     assert!(status.binary.installed);
     assert_eq!(status.binary.backend.kind, OpksshBackendKind::Cli);
     assert_eq!(
-        status.binary.path.as_deref(),
-        Some(fake_cli_path().to_string_lossy().as_ref())
+        status
+            .binary
+            .path
+            .as_deref()
+            .map(|path| canonical_path(Path::new(path))),
+        Some(canonical_path(&fake_cli_path()))
     );
     if library_login_ready {
         assert!(status.runtime.message.is_none());

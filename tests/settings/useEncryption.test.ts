@@ -89,13 +89,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 // plugs into. Tests in the bottom describe block use the `emit`
 // helper to fire events; outer tests don't care and just let the
 // subscribers register without ever firing.
-const eventSubscribers: Map<string, Set<(e: { payload: unknown }) => void>> =
-  new Map();
+const eventSubscribers: Map<
+  string,
+  Set<(e: { payload: unknown }) => void>
+> = new Map();
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: async (
-    name: string,
-    cb: (e: { payload: unknown }) => void,
-  ) => {
+  listen: async (name: string, cb: (e: { payload: unknown }) => void) => {
     const set = eventSubscribers.get(name) ?? new Set();
     set.add(cb);
     eventSubscribers.set(name, set);
@@ -401,10 +400,7 @@ describe("useEncryption", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     let size: number | undefined;
     await act(async () => {
-      size = await result.current.exportPortableDek(
-        "/dest/key.dek",
-        "p",
-      );
+      size = await result.current.exportPortableDek("/dest/key.dek", "p");
     });
     expect(received).toEqual({
       destinationPath: "/dest/key.dek",
@@ -653,9 +649,7 @@ describe("useEncryption cross-window broadcast", () => {
   async function waitForSubscribers(name: string, count: number) {
     await waitFor(
       () => {
-        expect(subscribers.get(name)?.size ?? 0).toBeGreaterThanOrEqual(
-          count,
-        );
+        expect(subscribers.get(name)?.size ?? 0).toBeGreaterThanOrEqual(count);
       },
       { timeout: 3000, interval: 25 },
     );
