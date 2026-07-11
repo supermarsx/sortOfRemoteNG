@@ -18,6 +18,13 @@ use super::recording::{record_input, record_output, record_resize};
 use super::types::*;
 use super::{MAX_BUFFER_SIZE, PENDING_HOST_KEY_PROMPTS, TERMINAL_BUFFERS};
 
+/// Bounded capacity, in 32 KiB relay chunks, for each direction of an SSH
+/// port-forward / tunnel byte relay. 32 * 32 KiB = 1 MiB in flight per direction
+/// per forward: large enough to keep the SSH channel and TCP window busy, but a
+/// hard ceiling so a fast producer with a slow consumer applies backpressure
+/// instead of growing process memory without bound (see t40-e7 F1).
+const RELAY_CHANNEL_CAPACITY: usize = 32;
+
 fn host_key_type_label(host_key_type: ssh2::HostKeyType) -> &'static str {
     match host_key_type {
         ssh2::HostKeyType::Rsa => "ssh-rsa",
@@ -2596,14 +2603,17 @@ impl SshService {
 
         let (mut local_read, mut local_write) = local_stream.into_split();
 
-        let (tx_to_remote, mut rx_to_remote) = mpsc::unbounded_channel::<Vec<u8>>();
-        let (tx_to_local, mut rx_to_local) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_to_remote, mut rx_to_remote) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
+        let (tx_to_local, mut rx_to_local) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
 
         let ssh_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 32768];
 
             loop {
+                let mut progressed = false;
+
                 while let Ok(data) = rx_to_remote.try_recv() {
+                    progressed = true;
                     if let Err(e) = channel.write_all(&data) {
                         log::debug!("SSH channel write error: {}", e);
                         return;
@@ -2614,7 +2624,12 @@ impl SshService {
                 match channel.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx_to_local.send(buf[..n].to_vec()).is_err() {
+                        progressed = true;
+                        // blocking_send applies backpressure: if the local writer is
+                        // behind, this parks the relay thread (which stops draining the
+                        // SSH channel and closes the TCP window) rather than buffering
+                        // unboundedly.
+                        if tx_to_local.blocking_send(buf[..n].to_vec()).is_err() {
                             break;
                         }
                     }
@@ -2627,7 +2642,11 @@ impl SshService {
                     break;
                 }
 
-                std::thread::sleep(Duration::from_millis(5));
+                // Only idle-sleep when neither direction moved data this pass; under
+                // active load we loop immediately so the poll adds no latency.
+                if !progressed {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
             }
 
             let _ = channel.close();
@@ -2640,7 +2659,7 @@ impl SshService {
                 match local_read.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx_to_remote.send(buf[..n].to_vec()).is_err() {
+                        if tx_to_remote.send(buf[..n].to_vec()).await.is_err() {
                             break;
                         }
                     }
@@ -2767,14 +2786,17 @@ impl SshService {
 
         let (mut local_read, mut local_write) = local_stream.into_split();
 
-        let (tx_to_local, mut rx_to_local) = mpsc::unbounded_channel::<Vec<u8>>();
-        let (tx_to_remote, mut rx_to_remote) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_to_local, mut rx_to_local) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
+        let (tx_to_remote, mut rx_to_remote) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
 
         let ssh_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 32768];
 
             loop {
+                let mut progressed = false;
+
                 while let Ok(data) = rx_to_remote.try_recv() {
+                    progressed = true;
                     if let Err(e) = channel.write_all(&data) {
                         log::debug!("Remote forward SSH write error: {}", e);
                         return;
@@ -2785,7 +2807,12 @@ impl SshService {
                 match channel.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx_to_local.send(buf[..n].to_vec()).is_err() {
+                        progressed = true;
+                        // blocking_send applies backpressure: if the local writer is
+                        // behind, this parks the relay thread (which stops draining the
+                        // SSH channel and closes the TCP window) rather than buffering
+                        // unboundedly.
+                        if tx_to_local.blocking_send(buf[..n].to_vec()).is_err() {
                             break;
                         }
                     }
@@ -2798,7 +2825,11 @@ impl SshService {
                     break;
                 }
 
-                std::thread::sleep(Duration::from_millis(5));
+                // Only idle-sleep when neither direction moved data this pass; under
+                // active load we loop immediately so the poll adds no latency.
+                if !progressed {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
             }
 
             let _ = channel.close();
@@ -2811,7 +2842,7 @@ impl SshService {
                 match local_read.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx_to_remote.send(buf[..n].to_vec()).is_err() {
+                        if tx_to_remote.send(buf[..n].to_vec()).await.is_err() {
                             break;
                         }
                     }
@@ -3018,14 +3049,17 @@ impl SshService {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (mut client_read, mut client_write) = client_stream.into_split();
 
-        let (tx_to_client, mut rx_to_client) = mpsc::unbounded_channel::<Vec<u8>>();
-        let (tx_to_remote, mut rx_to_remote) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx_to_client, mut rx_to_client) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
+        let (tx_to_remote, mut rx_to_remote) = mpsc::channel::<Vec<u8>>(RELAY_CHANNEL_CAPACITY);
 
         let ssh_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 32768];
 
             loop {
+                let mut progressed = false;
+
                 while let Ok(data) = rx_to_remote.try_recv() {
+                    progressed = true;
                     if let Err(e) = channel.write_all(&data) {
                         log::debug!("SOCKS5 SSH write error: {}", e);
                         return;
@@ -3036,7 +3070,12 @@ impl SshService {
                 match channel.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx_to_client.send(buf[..n].to_vec()).is_err() {
+                        progressed = true;
+                        // blocking_send applies backpressure: if the client writer is
+                        // behind, this parks the relay thread (which stops draining the
+                        // SSH channel and closes the TCP window) rather than buffering
+                        // unboundedly.
+                        if tx_to_client.blocking_send(buf[..n].to_vec()).is_err() {
                             break;
                         }
                     }
@@ -3049,7 +3088,11 @@ impl SshService {
                     break;
                 }
 
-                std::thread::sleep(Duration::from_millis(5));
+                // Only idle-sleep when neither direction moved data this pass; under
+                // active load we loop immediately so the poll adds no latency.
+                if !progressed {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
             }
 
             let _ = channel.close();
@@ -3062,7 +3105,7 @@ impl SshService {
                 match client_read.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if tx_to_remote.send(buf[..n].to_vec()).is_err() {
+                        if tx_to_remote.send(buf[..n].to_vec()).await.is_err() {
                             break;
                         }
                     }

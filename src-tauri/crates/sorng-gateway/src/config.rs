@@ -14,6 +14,13 @@ pub struct GatewayConfig {
     pub name: String,
     /// Host to listen on (e.g., "0.0.0.0")
     pub listen_host: String,
+    /// Allow proxy-route listeners to bind a non-loopback / wildcard
+    /// `listen_host` (e.g. `0.0.0.0` or a LAN/public interface). Defaults to
+    /// `false` so routes only bind loopback and are reachable from this machine
+    /// only; set `true` to deliberately expose the gateway on the network
+    /// (t40-e7: secure-by-default bind, mirrors SSH `allow_non_loopback_bind`).
+    #[serde(default)]
+    pub allow_non_loopback_bind: bool,
     /// Primary port for the management/admin API
     pub listen_port: u16,
     /// Port range start for dynamic proxy listeners
@@ -62,6 +69,7 @@ impl GatewayConfig {
         Self {
             name: "SortOfRemote NG Gateway".to_string(),
             listen_host: "127.0.0.1".to_string(),
+            allow_non_loopback_bind: false,
             listen_port: 9080,
             proxy_port_range_start: 10000,
             proxy_port_range_end: 10999,

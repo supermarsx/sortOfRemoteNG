@@ -74,7 +74,9 @@ pub struct FtpConnectionConfig {
     /// UTF-8 encoding (OPTS UTF8 ON).
     #[serde(default = "default_true")]
     pub utf8: bool,
-    /// Local address to bind for active-mode data connections.
+    /// Local address to bind for active-mode data connections. When unset the
+    /// listener binds loopback (127.0.0.1); set an external-facing interface
+    /// address here to expose the data channel to a remote server (t40-e7).
     #[serde(default)]
     pub active_bind_address: Option<String>,
     /// Friendly label shown in the UI.

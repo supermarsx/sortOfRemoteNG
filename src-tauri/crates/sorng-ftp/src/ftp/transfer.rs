@@ -17,6 +17,15 @@ use std::net::{IpAddr, SocketAddr};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{timeout, Duration};
 
+/// Resolve the local bind host for an active-mode data listener.
+///
+/// Secure default (t40-e7): loopback (127.0.0.1) unless the user explicitly
+/// names an external-facing interface via `active_bind_address`. That explicit
+/// address is the opt-in for exposing the data channel to a remote server.
+fn active_bind_host(bind_addr: Option<&str>) -> &str {
+    bind_addr.unwrap_or("127.0.0.1")
+}
+
 /// Abstraction over a plain or TLS-wrapped data stream.
 #[allow(clippy::large_enum_variant)]
 pub enum DataStream {
@@ -125,7 +134,7 @@ async fn open_port(
     bind_addr: Option<&str>,
     data_timeout: Duration,
 ) -> FtpResult<TcpStream> {
-    let bind = bind_addr.unwrap_or("0.0.0.0");
+    let bind = active_bind_host(bind_addr);
     let listener = TcpListener::bind(format!("{}:0", bind))
         .await
         .map_err(|e| FtpError::data_channel(format!("PORT bind: {}", e)))?;
@@ -165,7 +174,7 @@ async fn open_eprt(
     bind_addr: Option<&str>,
     data_timeout: Duration,
 ) -> FtpResult<TcpStream> {
-    let bind = bind_addr.unwrap_or("0.0.0.0");
+    let bind = active_bind_host(bind_addr);
     let listener = TcpListener::bind(format!("{}:0", bind))
         .await
         .map_err(|e| FtpError::data_channel(format!("EPRT bind: {}", e)))?;
@@ -185,4 +194,22 @@ async fn open_eprt(
         .map_err(|_| FtpError::data_channel("EPRT accept timed out"))?
         .map_err(|e| FtpError::data_channel(format!("EPRT accept: {}", e)))?;
     Ok(tcp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::active_bind_host;
+
+    #[test]
+    fn active_bind_defaults_to_loopback() {
+        // No explicit address => secure-default loopback, not all-interfaces.
+        assert_eq!(active_bind_host(None), "127.0.0.1");
+    }
+
+    #[test]
+    fn active_bind_honors_explicit_address() {
+        // Explicit external-facing address is the opt-in and is used verbatim.
+        assert_eq!(active_bind_host(Some("192.168.1.10")), "192.168.1.10");
+        assert_eq!(active_bind_host(Some("0.0.0.0")), "0.0.0.0");
+    }
 }

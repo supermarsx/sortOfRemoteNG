@@ -19,6 +19,43 @@ use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Resolve and validate the bind host for the gateway's proxy-route listeners.
+///
+/// Secure-by-default policy (t40-e7, mirrors SSH `allow_non_loopback_bind`):
+/// a loopback `listen_host` (`127.0.0.1`, `::1`, `localhost`) is always allowed;
+/// a non-loopback / wildcard host (e.g. `0.0.0.0`, `::`, a LAN/public interface)
+/// is REJECTED unless `allow_non_loopback_bind` is explicitly set. This keeps the
+/// configured `listen_host` (default `127.0.0.1`) honored for the data listeners
+/// instead of silently binding every interface.
+pub(crate) fn resolve_listen_bind_host(
+    listen_host: &str,
+    allow_non_loopback_bind: bool,
+) -> Result<String, String> {
+    let requested = listen_host.trim();
+    let host = if requested.is_empty() {
+        "127.0.0.1"
+    } else {
+        requested
+    };
+
+    let is_loopback = match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        Err(_) => host.eq_ignore_ascii_case("localhost"),
+    };
+
+    if is_loopback || allow_non_loopback_bind {
+        Ok(host.to_string())
+    } else {
+        Err(format!(
+            "Refusing to bind gateway proxy listeners to non-loopback address '{}'. \
+             Listeners default to loopback (127.0.0.1) so the gateway is only reachable \
+             from this machine. To deliberately expose the gateway to other hosts on the \
+             network, set `allow_non_loopback_bind = true` in the gateway configuration.",
+            host
+        ))
+    }
+}
+
 /// The top-level gateway service that coordinates all gateway features.
 pub struct GatewayService {
     /// Gateway instance info
@@ -288,6 +325,19 @@ impl GatewayService {
             log::warn!("[GATEWAY] Let's Encrypt bridge init failed: {e}");
         }
 
+        // Resolve the bind host once for all proxy routes. Honors the configured
+        // `listen_host` (default 127.0.0.1); a non-loopback host requires the
+        // explicit `allow_non_loopback_bind` opt-in (t40-e7).
+        let bind_host =
+            match resolve_listen_bind_host(&self.config.listen_host, self.config.allow_non_loopback_bind) {
+                Ok(h) => h,
+                Err(e) => {
+                    self.server_running = false;
+                    log::error!("[GATEWAY] {}", e);
+                    return Err(e);
+                }
+            };
+
         // Start TCP/TLS listeners for each proxy route
         let routes = self
             .proxy
@@ -299,7 +349,7 @@ impl GatewayService {
             if !route.enabled {
                 continue;
             }
-            let listen_addr = format!("0.0.0.0:{}", route.listen_port);
+            let listen_addr = format!("{}:{}", bind_host, route.listen_port);
             let backend_addr = format!("{}:{}", route.target_host, route.target_port);
             let protocol = route.protocol;
             tokio::spawn(async move {
@@ -384,5 +434,46 @@ impl GatewayService {
         // Re-apply Let's Encrypt settings
         self.letsencrypt = LetsEncryptBridge::new(self.config.letsencrypt.clone());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_listen_bind_host;
+
+    #[test]
+    fn loopback_hosts_are_allowed_without_opt_in() {
+        for host in ["127.0.0.1", "::1", "localhost", "LOCALHOST"] {
+            assert_eq!(
+                resolve_listen_bind_host(host, false).as_deref(),
+                Ok(host),
+                "loopback host {host} should bind without opt-in"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_host_defaults_to_loopback() {
+        assert_eq!(
+            resolve_listen_bind_host("  ", false).as_deref(),
+            Ok("127.0.0.1")
+        );
+    }
+
+    #[test]
+    fn non_loopback_rejected_without_opt_in() {
+        for host in ["0.0.0.0", "::", "192.168.1.10"] {
+            let err = resolve_listen_bind_host(host, false)
+                .expect_err("non-loopback host must be rejected without opt-in");
+            assert!(err.contains("allow_non_loopback_bind"), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn non_loopback_allowed_with_opt_in() {
+        assert_eq!(
+            resolve_listen_bind_host("0.0.0.0", true).as_deref(),
+            Ok("0.0.0.0")
+        );
     }
 }
