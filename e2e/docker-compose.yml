@@ -27,7 +27,9 @@ services:
     environment:
       - TZ=UTC
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "3389"]
+      # danielguerra/ubuntu-xrdp ships no nc/ss/netstat; bash IS present and has
+      # /dev/tcp net-redirection support, so this proves 3389 is actually listening.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/3389"]
       interval: 10s
       timeout: 5s
       retries: 15
