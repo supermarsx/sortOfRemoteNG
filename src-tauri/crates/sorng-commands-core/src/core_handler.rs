@@ -2306,5 +2306,189 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         sorng_probes::commands::rdp_probe,
         sorng_probes::commands::check_all_connections,
         sorng_probes::commands::cancel_check_run,
+        // ── PowerShell Remoting (53) — t40-e3-F1 ──────────────────────
+        // Gated behind `ops` (module declared `#[cfg(feature = "ops")]`
+        // in lib.rs). Mirrors the `ps_*` arm in `is_command` exactly;
+        // keep the two in sync.
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_new_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_list_sessions,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_disconnect_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_reconnect_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_remove_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_remove_all_sessions,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_invoke_command,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_invoke_command_fanout,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_stop_command,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_enter_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_execute_interactive_line,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_tab_complete,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_exit_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_copy_to_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_copy_from_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_transfer_progress,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_cancel_transfer,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_list_transfers,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_new_cim_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_cim_instances,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_invoke_cim_method,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_remove_cim_session,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_test_dsc_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_dsc_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_start_dsc_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_dsc_resources,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_register_jea_endpoint,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_unregister_jea_endpoint,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_list_jea_endpoints,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_create_jea_role_capability,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_list_vms,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_invoke_command_vm,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_copy_to_vm,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_session_configurations,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_register_session_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_unregister_session_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_enable_session_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_disable_session_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_set_session_configuration,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_winrm_config,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_trusted_hosts,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_set_trusted_hosts,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_test_wsman,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_diagnose_connection,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_check_winrm_service,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_check_firewall_rules,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_measure_latency,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_certificate_info,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_stats,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_get_events,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_clear_events,
+        #[cfg(feature = "ops")]
+        powershell_commands::ps_cleanup,
+        // ── Backup Verify (35) — t40-e3-F1 ────────────────────────────
+        // Gated behind `ops` (module declared `#[cfg(feature = "ops")]`
+        // in lib.rs). Mirrors the `backup_verify_*` arm in `is_command`
+        // exactly; keep the two in sync.
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_overview,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_list_policies,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_policy,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_create_policy,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_update_policy,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_delete_policy,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_list_catalog,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_catalog_entry,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_add_catalog_entry,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_delete_catalog_entry,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_verify_backup,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_trigger_backup,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_cancel_job,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_list_running_jobs,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_list_queued_jobs,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_job_history,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_compute_sha256,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_generate_manifest,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_run_dr_drill,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_drill_history,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_generate_compliance_report,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_compliance_history,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_list_replicas,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_add_replica,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_remove_replica,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_start_replication,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_replication_status,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_replication_overview,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_enforce_retention,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_get_retention_forecast,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_set_immutability_lock,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_check_immutability,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_configure_notifications,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_send_test_notification,
+        #[cfg(feature = "ops")]
+        backup_verify_commands::backup_verify_test_channel,
     ]
 }
