@@ -20,12 +20,27 @@ pub struct VmRestClient {
 
 impl VmRestClient {
     /// Create a new vmrest client.
-    pub fn new(host: &str, port: u16, username: &str, password: &str) -> VmwResult<Self> {
-        let http = HttpClient::builder()
-            .danger_accept_invalid_certs(true) // vmrest uses self-signed by default
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .map_err(VmwError::http)?;
+    ///
+    /// `skip_tls_verify` gates certificate verification. It defaults to
+    /// verification-**on** (the caller passes `false` unless the user
+    /// explicitly opts in), matching the posture of the other management
+    /// clients (docker/ceph/k8s/…). vmrest is reached over plain HTTP by
+    /// default (see `base_url` below), so the flag only takes effect if the
+    /// endpoint is ever served over HTTPS — but wiring it here removes the
+    /// previous *unconditional* `danger_accept_invalid_certs(true)`.
+    pub fn new(
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        skip_tls_verify: bool,
+    ) -> VmwResult<Self> {
+        let mut builder = HttpClient::builder().timeout(std::time::Duration::from_secs(60));
+        if skip_tls_verify {
+            // Opt-in only: vmrest ships a self-signed cert when run over HTTPS.
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        let http = builder.build().map_err(VmwError::http)?;
         Ok(Self {
             http,
             base_url: format!("http://{}:{}/api", host, port),

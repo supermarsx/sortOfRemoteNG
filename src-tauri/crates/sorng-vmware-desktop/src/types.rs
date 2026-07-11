@@ -47,6 +47,11 @@ pub struct VmwDesktopConfig {
     pub vmrest_username: Option<String>,
     /// vmrest basic-auth password.
     pub vmrest_password: Option<String>,
+    /// Skip TLS certificate verification for the vmrest endpoint. Only
+    /// relevant when vmrest is reached over HTTPS; defaults to `false`
+    /// (verification on), consistent with the other management clients.
+    #[serde(default)]
+    pub vmrest_skip_tls_verify: bool,
     /// Whether to also launch vmrest if not already running.
     #[serde(default)]
     pub auto_start_vmrest: bool,
@@ -67,6 +72,7 @@ impl Default for VmwDesktopConfig {
             vmrest_port: None,
             vmrest_username: None,
             vmrest_password: None,
+            vmrest_skip_tls_verify: false,
             auto_start_vmrest: false,
             timeout_secs: default_timeout(),
         }

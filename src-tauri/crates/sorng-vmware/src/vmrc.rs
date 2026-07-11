@@ -374,22 +374,59 @@ impl VmrcManager {
         })?;
 
         let mut cmd = Command::new(&exe);
-        cmd.arg("-serverURL").arg(&config.host);
 
-        if let Some(ref desktop) = config.desktop_name {
-            cmd.arg("-desktopName").arg(desktop);
-        }
-        if let Some(ref user) = config.username {
-            cmd.arg("-userName").arg(user);
-        }
-        if let Some(ref domain) = config.domain {
-            cmd.arg("-domainName").arg(domain);
-        }
+        // The password must never appear on the child's argv — a command line
+        // is readable by any same-user process (Windows `Win32_Process`,
+        // `ps`/Process Explorer) for the lifetime of the process. Horizon
+        // Client reads all of its options, including `-password`, from a
+        // `-file` configuration file, so when a password is present we write
+        // every option to a short-lived, owner-only temp file and pass that
+        // instead. Non-password launches keep using argv (nothing sensitive).
+        let mut cred_file: Option<std::path::PathBuf> = None;
         if let Some(ref pw) = config.password {
-            cmd.arg("-password").arg(pw);
+            let mut opts = String::new();
+            opts.push_str(&format!("-serverURL {}\n", config.host));
+            if let Some(ref desktop) = config.desktop_name {
+                opts.push_str(&format!("-desktopName {}\n", desktop));
+            }
+            if let Some(ref user) = config.username {
+                opts.push_str(&format!("-userName {}\n", user));
+            }
+            if let Some(ref domain) = config.domain {
+                opts.push_str(&format!("-domainName {}\n", domain));
+            }
+            opts.push_str(&format!("-password {}\n", pw));
+
+            let path = write_secure_temp_file(opts.as_bytes())
+                .map_err(|e| VmwareError::vmrc(format!("Failed to stage Horizon options: {e}")))?;
+            cmd.arg("-file").arg(&path);
+            cred_file = Some(path);
+        } else {
+            cmd.arg("-serverURL").arg(&config.host);
+            if let Some(ref desktop) = config.desktop_name {
+                cmd.arg("-desktopName").arg(desktop);
+            }
+            if let Some(ref user) = config.username {
+                cmd.arg("-userName").arg(user);
+            }
+            if let Some(ref domain) = config.domain {
+                cmd.arg("-domainName").arg(domain);
+            }
         }
 
-        self.spawn_and_track(cmd, config, true).await
+        let result = self.spawn_and_track(cmd, config, true).await;
+
+        // The client reads (and closes) the `-file` config file during
+        // startup; delete it shortly after so the plaintext password does not
+        // linger on disk. Best-effort — a leftover temp file is not fatal.
+        if let Some(path) = cred_file {
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                let _ = tokio::fs::remove_file(&path).await;
+            });
+        }
+
+        result
     }
 
     async fn spawn_and_track(
@@ -572,6 +609,31 @@ impl VmrcManager {
             format!("vmrc://{}:{}/?moid={}", host, port, moid)
         }
     }
+}
+
+/// Write `contents` to a fresh temp file that only the current user can
+/// read, returning its path. Used to hand a launched client its credentials
+/// off the command line. On Unix the file is created with `0600`; on Windows
+/// it inherits the (already user-scoped) temp-directory ACL. The caller is
+/// responsible for deleting the file once the child has consumed it.
+fn write_secure_temp_file(contents: &[u8]) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+
+    let mut path = std::env::temp_dir();
+    path.push(format!("sorng-vmrc-{}.cfg", uuid::Uuid::new_v4()));
+
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+
+    let mut file = opts.open(&path)?;
+    file.write_all(contents)?;
+    file.flush()?;
+    Ok(path)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

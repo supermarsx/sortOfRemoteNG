@@ -12,11 +12,19 @@
 //! write.
 //!
 //! We solve it the usual way: `log()` formats the record into a
-//! `String` and shoves it down an `unbounded_channel`; a single
+//! `String` and shoves it down a **bounded** channel; a single
 //! background task drains the channel, calls `sink.submit()`, and
 //! awaits `sink.flush()` when either the sink signals threshold or a
 //! 2-second timer fires. The format step is the only work done on
 //! the log thread.
+//!
+//! The channel is bounded ([`LOG_CHANNEL_CAPACITY`]) so a log storm
+//! (tight error loop, chatty subsystem) can never grow memory without
+//! limit while the drain task is busy inside a flush. `log()` uses a
+//! non-blocking `try_send`: when the buffer is full the newest record
+//! is **dropped** (and counted) rather than blocking the caller or
+//! allocating unbounded — logging must never OOM or stall crypto. The
+//! drain task surfaces the dropped count on the next periodic flush.
 //!
 //! ## Locked-state behaviour
 //!
@@ -36,11 +44,13 @@
 //! state.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use log::{LevelFilter, Log, Metadata, Record};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::log_sink::EncryptedLogSink;
 use crate::state::EncryptionState;
@@ -50,12 +60,23 @@ use crate::state::EncryptionState;
 /// user expects log lines to land on disk after a crash.
 const PERIODIC_FLUSH: Duration = Duration::from_secs(2);
 
+/// Bound on the number of formatted log lines buffered between the
+/// `log()` call site and the drain task. At a few hundred bytes per
+/// line this caps the channel's memory in the low single-digit MiB
+/// even while the drain task is stalled inside a flush. Records beyond
+/// this are dropped (newest-first) and counted rather than growing
+/// memory or blocking the logging thread.
+const LOG_CHANNEL_CAPACITY: usize = 8192;
+
 /// `log::Log` implementation that hands every record off to the
 /// encrypted log sink via an async channel. Cheap to install once
 /// per process at boot; never re-installed.
 pub struct EncryptedLogAdapter {
-    tx: UnboundedSender<String>,
+    tx: Sender<String>,
     level: LevelFilter,
+    /// Count of records shed because the bounded channel was full.
+    /// Shared with the drain task, which reports and clears it.
+    dropped: Arc<AtomicUsize>,
 }
 
 impl EncryptedLogAdapter {
@@ -70,7 +91,7 @@ impl EncryptedLogAdapter {
     ) -> Result<(), InstallError> {
         let sink = EncryptedLogSink::new(state, dir, true);
         let (adapter, rx) = Self::new(level);
-        Self::spawn_drainer(sink, rx);
+        Self::spawn_drainer(sink, rx, adapter.dropped.clone());
         log::set_boxed_logger(Box::new(adapter))
             .map_err(|e| InstallError::SetLogger(e.to_string()))?;
         log::set_max_level(level);
@@ -80,14 +101,21 @@ impl EncryptedLogAdapter {
     /// Build adapter + receiver without spawning a drainer or
     /// registering as the global logger. Tests use this to drive the
     /// channel deterministically; production goes through `install`.
-    fn new(level: LevelFilter) -> (Self, UnboundedReceiver<String>) {
-        let (tx, rx) = unbounded_channel();
-        (Self { tx, level }, rx)
+    fn new(level: LevelFilter) -> (Self, Receiver<String>) {
+        let (tx, rx) = channel(LOG_CHANNEL_CAPACITY);
+        (
+            Self {
+                tx,
+                level,
+                dropped: Arc::new(AtomicUsize::new(0)),
+            },
+            rx,
+        )
     }
 
     /// Spawn the single drain task that owns the sink. One task →
     /// no cross-task contention on the buffer mutex.
-    fn spawn_drainer(sink: EncryptedLogSink, mut rx: UnboundedReceiver<String>) {
+    fn spawn_drainer(sink: EncryptedLogSink, mut rx: Receiver<String>, dropped: Arc<AtomicUsize>) {
         tauri::async_runtime::spawn(async move {
             let mut interval = tokio::time::interval(PERIODIC_FLUSH);
             // Skip the immediate first tick; we'd rather not flush
@@ -114,6 +142,16 @@ impl EncryptedLogAdapter {
                         }
                     }
                     _ = interval.tick() => {
+                        // Surface any records shed under log pressure so the
+                        // loss isn't silent, then reset the counter.
+                        let n = dropped.swap(0, Ordering::Relaxed);
+                        if n > 0 {
+                            sink.submit(&format!(
+                                "[{}][WARN][sorng-encryption::log] dropped {} log record(s) under pressure (channel full)",
+                                now_iso_8601(),
+                                n
+                            ));
+                        }
                         if let Err(e) = sink.flush().await {
                             eprintln!("encrypted log flush failed: {}", e);
                         }
@@ -138,10 +176,18 @@ impl Log for EncryptedLogAdapter {
             return;
         }
         let line = format_record(record);
-        // Drop silently on send failure — the only way this fails
-        // is if the drainer task has been torn down, which only
-        // happens during shutdown.
-        let _ = self.tx.send(line);
+        // Non-blocking send: logging must never block the call site or
+        // grow memory without bound.
+        //   - Full   → shed the newest record and count it; the drain
+        //              task reports the tally on its next flush.
+        //   - Closed → the drainer was torn down (shutdown); drop silently.
+        match self.tx.try_send(line) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(TrySendError::Closed(_)) => {}
+        }
     }
 
     fn flush(&self) {
@@ -225,7 +271,7 @@ mod tests {
         state: Arc<EncryptionState>,
         dir: PathBuf,
         level: LevelFilter,
-    ) -> (EncryptedLogAdapter, EncryptedLogSink, UnboundedReceiver<String>) {
+    ) -> (EncryptedLogAdapter, EncryptedLogSink, Receiver<String>) {
         let sink = EncryptedLogSink::new(state, dir, false);
         let (adapter, rx) = EncryptedLogAdapter::new(level);
         (adapter, sink, rx)
@@ -234,7 +280,7 @@ mod tests {
     /// Manually pump everything currently in the channel through the
     /// sink. Mirrors the drainer's submit step without the flush /
     /// interval logic.
-    fn drain_into(sink: &EncryptedLogSink, rx: &mut UnboundedReceiver<String>) -> usize {
+    fn drain_into(sink: &EncryptedLogSink, rx: &mut Receiver<String>) -> usize {
         let mut n = 0;
         while let Ok(line) = rx.try_recv() {
             sink.submit(&line);
@@ -373,5 +419,25 @@ mod tests {
         let drained_err = drain_into(&sink, &mut rx);
         assert_eq!(drained_err, 1);
         assert!(sink.buffered_bytes() > 0);
+    }
+
+    #[tokio::test]
+    async fn full_channel_sheds_and_counts_rather_than_growing() {
+        // With no drainer draining the receiver, the bounded channel fills at
+        // LOG_CHANNEL_CAPACITY; every record past that is dropped and counted.
+        let tmp = tempdir().unwrap();
+        let state = unlocked_state(9).await;
+        let (adapter, sink, mut rx) =
+            build_for_test(state, tmp.path().to_path_buf(), LevelFilter::Info);
+
+        let overflow = 100;
+        for i in 0..(LOG_CHANNEL_CAPACITY + overflow) {
+            log_at!(adapter, log::Level::Info, format!("line {}", i));
+        }
+
+        // The channel held exactly its capacity; the rest were shed.
+        let drained = drain_into(&sink, &mut rx);
+        assert_eq!(drained, LOG_CHANNEL_CAPACITY);
+        assert_eq!(adapter.dropped.load(Ordering::Relaxed), overflow);
     }
 }
