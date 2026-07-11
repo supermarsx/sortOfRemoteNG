@@ -527,6 +527,12 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // readable here for vault-mode installs. Password / hybrid mode
     // installs surface "locked" and simply skip the priming step; the
     // capabilities load anyway as soon as the user unlocks.
+    //
+    // t41-stopgap: in the same read, capture `restApi.enabled` — the
+    // persisted opt-in flag that governs whether the REST API server may
+    // auto-start below. Defaults false and stays false whenever the
+    // setting is absent or the store is locked (fail closed).
+    let mut rest_api_enabled = false;
     if let Some(enc_state_handle) = app
         .app_handle()
         .try_state::<sorng_encryption::EncryptionState>()
@@ -548,9 +554,52 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
                         api_service.set_disabled_capabilities(ids);
                     }
                 }
+
+                // t41-stopgap: only honor an explicit `true`.
+                rest_api_enabled = value
+                    .get("restApi")
+                    .and_then(|r| r.get("enabled"))
+                    .and_then(|e| e.as_bool())
+                    .unwrap_or(false);
             }
         }
     }
+
+    // t41-stopgap: temporary safety gate pending full API hardening
+    // (auth/TLS/rate-limit — tracked in .orchestration/plans/t41.md).
+    // The ~110-route axum REST API on 127.0.0.1:3001 has NO
+    // authentication yet, so it must NOT auto-start by default: any local
+    // process could otherwise drive it to open connections, run commands,
+    // or scan networks. It now starts ONLY when the user has explicitly
+    // set `restApi.enabled = true` in Settings → API, or when the
+    // `SORNG_ENABLE_REST_API` env var is truthy (headless/automation
+    // escape hatch). The full t41 wave replaces this with config-driven
+    // start/stop + authentication.
+    let env_force_enable = std::env::var("SORNG_ENABLE_REST_API")
+        .map(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            v == "1" || v == "true" || v == "yes" || v == "on"
+        })
+        .unwrap_or(false);
+
+    if !rest_api_enabled && !env_force_enable {
+        log::warn!(
+            "REST API server is DISABLED by default (unauthenticated; t41 stopgap). \
+             Enable it in Settings → API (restApi.enabled = true) or set \
+             SORNG_ENABLE_REST_API=1 to auto-start it on launch."
+        );
+        return Ok(());
+    }
+
+    log::info!(
+        "REST API server auto-start enabled ({}). NOTE: no authentication yet — \
+         keep it bound to localhost until t41 hardening lands.",
+        if env_force_enable {
+            "SORNG_ENABLE_REST_API env override"
+        } else {
+            "restApi.enabled setting"
+        }
+    );
 
     let api_service_clone = api_service.clone();
     let app_handle_for_api = app.app_handle().clone();
