@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::clipboard::{self, SharedClipboardState};
-use super::frame_channel::{frame_delivery_snapshot, DynFrameChannel};
+use super::frame_channel::{
+    send_accounted_frame, DynFrameChannel, FrameDeliveryAccounting, FramePayloadKind,
+};
+use super::frame_flow_control::{FrameFlowBudget, FrameFlowController};
 use crate::ironrdp::connector::connection_activation::ConnectionActivationState;
 use crate::ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
 use crate::ironrdp::core::WriteBuf;
@@ -1428,6 +1431,18 @@ fn run_active_session_loop(
     let mut dirty_regions: Vec<(u16, u16, u16, u16)> = Vec::new();
     let mut last_frame_emit = Instant::now();
 
+    // Per-session frame-delivery accounting (lock-free atomics, dropped with the
+    // session — replaces the old process-global mutex-guarded map).
+    let frame_accounting = FrameDeliveryAccounting::new();
+
+    // Real backpressure / coalescing governor for the frame path. Every frame
+    // that lands on a non-empty batch backlog is coalesced into the pending
+    // batch instead of being sent on its own; the controller counts those and
+    // tracks queue-depth-driven pressure. This is the same logic the
+    // `frame_flow_control` tests assert (observe_queue_depth /
+    // disposition_for_supersedable_frame / record_* / snapshot), now driven live.
+    let mut frame_flow = FrameFlowController::new(FrameFlowBudget::default());
+
     // Reusable buffers
     let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
     let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
@@ -1512,7 +1527,14 @@ fn run_active_session_loop(
                         payload.extend_from_slice(&w.to_le_bytes());
                         payload.extend_from_slice(&h.to_le_bytes());
                         payload.extend_from_slice(img_data);
-                        let _ = new_channel.send_raw(payload);
+                        // Route the reattach snapshot through accounting too so
+                        // the full-frame sync is not missed by telemetry.
+                        let _ = send_accounted_frame(
+                            &frame_accounting,
+                            &new_channel,
+                            FramePayloadKind::FullFrame,
+                            payload,
+                        );
                         // Also sync the frame_store with the live image
                         // so future reattaches use fresh data too.
                         let slots = frame_store.slots.read().expect("lock poisoned");
@@ -1865,6 +1887,7 @@ fn run_active_session_loop(
                             full_frame_sync_interval,
                             frame_store,
                             active_ch,
+                            &frame_accounting,
                         ) {
                             let err_str = format!("{e}");
                             if is_network_error_str(&err_str) {
@@ -1924,18 +1947,20 @@ fn run_active_session_loop(
 
         // - Emit periodic stats -
         if last_stats_emit.elapsed() >= stats_interval {
-            let active_ch = if !viewer_detached {
-                attached_channel.as_ref().unwrap_or(frame_channel)
-            } else {
-                frame_channel
-            };
-
-            let delivery_snapshot = frame_delivery_snapshot(active_ch);
+            // Per-session accounting is channel-agnostic, so read it directly
+            // (no need to resolve the active viewer channel here).
+            let delivery_snapshot = frame_accounting.snapshot();
+            let flow_snapshot = frame_flow.snapshot();
+            // Preserve the render latency the frontend reported via
+            // `rdp_report_frame_telemetry` — it is the one field the backend
+            // does not measure — while the backend owns the pipeline counters.
+            let average_render_ms = stats.frame_flow_summary().average_render_ms;
             stats.set_frame_flow_summary(FrameFlowSummary {
                 queued_frames: dirty_regions.len().min(u16::MAX as usize) as u16,
                 delivered_frames: stats.frame_count.load(Ordering::Relaxed),
                 dropped_frames: delivery_snapshot.failed_frames,
-                ..Default::default()
+                coalesced_frames: flow_snapshot.coalesced_frames,
+                average_render_ms,
             });
 
             let mut channel_summary = ChannelSummary::default();
@@ -2035,7 +2060,7 @@ fn run_active_session_loop(
                         }
                     }
                     if let Some(frame) = comp.flush() {
-                        push_compositor_frame_via_channel(frame, active_ch);
+                        push_compositor_frame_via_channel(frame, active_ch, &frame_accounting);
                     }
                 } else {
                     push_multi_rect_via_channel(
@@ -2043,8 +2068,11 @@ fn run_active_session_loop(
                         est.desktop_width,
                         &dirty_regions,
                         active_ch,
+                        &frame_accounting,
                     );
                 }
+                // The whole coalesced backlog was just sent as one frame.
+                frame_flow.record_delivered();
             }
             dirty_regions.clear();
             last_frame_emit = Instant::now();
@@ -2099,10 +2127,17 @@ fn run_active_session_loop(
                         payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
                         payload[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
                         payload[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
-                        let _ = active_ch.send_raw(payload);
+                        // Route GFX RGBA (the primary H.264 pixel path) through
+                        // delivery accounting so telemetry is not blind to it.
+                        let _ = send_accounted_frame(
+                            &frame_accounting,
+                            active_ch,
+                            FramePayloadKind::RgbaRect,
+                            payload,
+                        );
                     }
                     crate::gfx::processor::GfxOutput::Nal(nal_frame) => {
-                        push_nal_via_channel(&nal_frame, active_ch);
+                        push_nal_via_channel(&nal_frame, active_ch, &frame_accounting);
                     }
                 }
             }
@@ -2128,12 +2163,18 @@ fn run_active_session_loop(
                     stats.record_successful_pdu();
                     let payload_len = payload.len() as u64;
 
-                    // Log X224 PDUs with channel ID to trace SVC dispatch
-                    if matches!(action, crate::ironrdp::pdu::Action::X224) && payload_len > 7 {
+                    // Trace X224 PDUs (SVC dispatch). Gated behind trace-level
+                    // AND `log_enabled!` so neither the per-PDU heap allocation
+                    // nor the hex formatting happens on the read hot path unless
+                    // trace logging is actually on.
+                    if matches!(action, crate::ironrdp::pdu::Action::X224)
+                        && payload_len > 7
+                        && log::log_enabled!(log::Level::Trace)
+                    {
                         // MCS SendDataIndication: the channel_id is at offset 6 (after TPKT+X224+MCS headers)
                         // For X224 data, try to extract channel ID from the MCS envelope
-                        let first_bytes: Vec<u8> = payload.iter().take(20).cloned().collect();
-                        log::info!("RDP session {session_id}: X224 PDU ({payload_len}B) first_bytes={first_bytes:02x?}");
+                        let first_bytes = &payload[..payload.len().min(20)];
+                        log::trace!("RDP session {session_id}: X224 PDU ({payload_len}B) first_bytes={first_bytes:02x?}");
                     }
 
                     // Zero-byte PDU detection — catches broken connections
@@ -2185,6 +2226,17 @@ fn run_active_session_loop(
                                         let rw = region.right.saturating_sub(region.left) + 1;
                                         let rh = region.bottom.saturating_sub(region.top) + 1;
                                         if frame_batching {
+                                            // A graphics update landing on a
+                                            // non-empty backlog is coalesced into
+                                            // the pending batch; the controller
+                                            // observes queue depth (pressure) and
+                                            // counts the coalesced frame.
+                                            let pending_before = dirty_regions
+                                                .len()
+                                                .min(u16::MAX as usize)
+                                                as u16;
+                                            let _ = frame_flow
+                                                .account_batched_update(pending_before);
                                             dirty_regions.push((region.left, region.top, rw, rh));
                                         } else if let Some(ref mut comp) = est.compositor {
                                             comp.update_region(
@@ -2539,7 +2591,7 @@ fn run_active_session_loop(
                 if !viewer_detached {
                     if let Some(frame) = comp.flush() {
                         let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                        push_compositor_frame_via_channel(frame, active_ch);
+                        push_compositor_frame_via_channel(frame, active_ch, &frame_accounting);
                     }
                 }
             } else if !batch_dirty_rects.is_empty() && !viewer_detached {
@@ -2550,6 +2602,7 @@ fn run_active_session_loop(
                     est.desktop_width,
                     &batch_dirty_rects,
                     active_ch,
+                    &frame_accounting,
                 );
             }
 
@@ -3019,4 +3072,120 @@ fn is_network_error_str(s: &str) -> bool {
         || s.contains("Failed to send response frame")
         || s.contains("InternalError")   // TLS fatal alert (transient)
         || s.contains("received fatal alert")
+}
+
+#[cfg(test)]
+mod runner_tests {
+    use super::*;
+    use crate::rdp::frame_flow_control::{FrameDisposition, FramePressureState};
+    use sorng_core::events::{AppEventEmitter, DynEventEmitter};
+
+    #[derive(Default)]
+    struct RecordingEmitter {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl AppEventEmitter for RecordingEmitter {
+        fn emit_event(&self, event: &str, payload: serde_json::Value) -> Result<(), String> {
+            self.events
+                .lock()
+                .expect("recording emitter lock poisoned")
+                .push((event.to_string(), payload));
+            Ok(())
+        }
+    }
+
+    /// The runner-private `merge_channel_summary` accumulates per-channel
+    /// enabled/ready/failed counts. This drives the REAL merge the stats emitter
+    /// uses (session_runner.rs), not a reimplemented helper.
+    #[test]
+    fn merge_channel_summary_accumulates_across_channels() {
+        let mut acc = ChannelSummary::default();
+        merge_channel_summary(
+            &mut acc,
+            ChannelSummary {
+                enabled_count: 2,
+                ready_count: 1,
+                failed_count: 0,
+            },
+        );
+        merge_channel_summary(
+            &mut acc,
+            ChannelSummary {
+                enabled_count: 1,
+                ready_count: 1,
+                failed_count: 1,
+            },
+        );
+        assert_eq!(acc.enabled_count, 3);
+        assert_eq!(acc.ready_count, 2);
+        assert_eq!(acc.failed_count, 1);
+    }
+
+    /// classify-then-stamp ordering (plan R1): `set_phase("error")` first stamps
+    /// the default `ProtocolViolation`, then `set_failure_class` must correct it
+    /// to the real class BEFORE the snapshot is emitted. This drives the real
+    /// runner call site `set_failure_and_emit_lifecycle`, so an ordering
+    /// regression there is caught (not just in a helper reproduction).
+    #[test]
+    fn classify_then_stamp_emits_real_failure_class() {
+        let stats = RdpSessionStats::new();
+        let emitter: DynEventEmitter = Arc::new(RecordingEmitter::default());
+
+        // "access denied" classifies to AuthRejected, distinct from the default
+        // ProtocolViolation the error-phase projection would otherwise stamp.
+        set_failure_and_emit_lifecycle(&stats, &emitter, "session-x", "access denied by server");
+
+        let snapshot = stats.lifecycle_snapshot("session-x");
+        // The `error` phase projects to the terminal state (R1 contract).
+        assert_eq!(snapshot.state, "terminated");
+        assert_eq!(
+            snapshot.last_failure_class.as_deref(),
+            Some("auth_rejected"),
+            "the classified auth failure must win over the default protocol-violation clobber",
+        );
+    }
+
+    /// Reproduces the exact per-frame accounting sequence the active session
+    /// loop runs on the batched RGBA path: N graphics updates arrive during a
+    /// batch window (each via `account_batched_update`), then one flush
+    /// (`record_delivered`). Proves the wired controller reports a real,
+    /// non-zero coalesced count — the previously hard-wired-0 field.
+    #[test]
+    fn runner_batched_frame_path_reports_real_coalesced_count() {
+        let mut frame_flow = FrameFlowController::new(FrameFlowBudget::default());
+
+        // Two batch windows, 4 then 3 updates, each collapsing to one frame.
+        for burst in [4u16, 3u16] {
+            for pending_before in 0..burst {
+                let disposition = frame_flow.account_batched_update(pending_before);
+                if pending_before == 0 {
+                    assert_eq!(disposition, FrameDisposition::Deliver);
+                } else {
+                    assert_eq!(disposition, FrameDisposition::Coalesce);
+                }
+            }
+            frame_flow.record_delivered();
+        }
+
+        let summary = frame_flow.snapshot().summary();
+        // (4-1) + (3-1) = 5 frames coalesced into the two delivered batches.
+        assert_eq!(summary.coalesced_frames, 5);
+        assert_eq!(summary.delivered_frames, 2);
+        // Neither burst crossed the default high watermark (6), so healthy.
+        assert_eq!(frame_flow.pressure_state(), FramePressureState::Healthy);
+    }
+
+    /// A sustained backlog beyond the high watermark flips the controller into
+    /// backpressure — the same `observe_queue_depth` signal the runner feeds it
+    /// per graphics update.
+    #[test]
+    fn runner_frame_path_enters_backpressure_under_sustained_backlog() {
+        let mut frame_flow = FrameFlowController::new(FrameFlowBudget::default());
+        // Default budget high watermark is 6.
+        for pending_before in 0..8 {
+            frame_flow.account_batched_update(pending_before);
+        }
+        assert_eq!(frame_flow.pressure_state(), FramePressureState::Backpressured);
+    }
 }

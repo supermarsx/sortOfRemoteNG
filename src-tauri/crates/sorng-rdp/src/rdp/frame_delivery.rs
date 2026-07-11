@@ -1,7 +1,9 @@
 use std::io;
 use std::time::Duration;
 
-use super::frame_channel::{send_accounted_frame, DynFrameChannel, FramePayloadKind};
+use super::frame_channel::{
+    send_accounted_frame, DynFrameChannel, FrameDeliveryAccounting, FramePayloadKind,
+};
 use super::types::RdpPointerEvent;
 use crate::ironrdp::session::image::DecodedImage;
 use crate::ironrdp::session::ActiveStageOutput;
@@ -29,6 +31,7 @@ pub fn process_outputs(
     full_frame_sync_interval: u64,
     frame_store: &SharedFrameStore,
     frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for output in outputs {
         match output {
@@ -58,9 +61,16 @@ pub fn process_outputs(
                         desktop_height,
                         frame_channel,
                         frame_store,
+                        accounting,
                     );
                 } else {
-                    push_frame_via_channel(image.data(), desktop_width, region, frame_channel);
+                    push_frame_via_channel(
+                        image.data(),
+                        desktop_width,
+                        region,
+                        frame_channel,
+                        accounting,
+                    );
                 }
             }
             ActiveStageOutput::PointerDefault => {
@@ -202,6 +212,7 @@ pub fn push_multi_rect_via_channel(
     fb_width: u16,
     rects: &[(u16, u16, u16, u16)],
     frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
 ) {
     if rects.is_empty() {
         return;
@@ -267,7 +278,7 @@ pub fn push_multi_rect_via_channel(
         }
     }
 
-    let _ = send_accounted_frame(frame_channel, FramePayloadKind::RgbaRects, payload);
+    let _ = send_accounted_frame(accounting, frame_channel, FramePayloadKind::RgbaRects, payload);
 }
 
 /// Push a dirty region's pixel data directly through the frame channel.
@@ -281,6 +292,7 @@ pub fn push_frame_via_channel(
     fb_width: u16,
     region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
     frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
 ) {
     push_frame_payload_via_channel(
         image_data,
@@ -288,6 +300,7 @@ pub fn push_frame_via_channel(
         region,
         frame_channel,
         FramePayloadKind::RgbaRect,
+        accounting,
     );
 }
 
@@ -298,6 +311,7 @@ fn push_frame_payload_via_channel(
     region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
     frame_channel: &DynFrameChannel,
     payload_kind: FramePayloadKind,
+    accounting: &FrameDeliveryAccounting,
 ) {
     let bpp = 4usize;
     let stride = fb_width as usize * bpp;
@@ -349,7 +363,7 @@ fn push_frame_payload_via_channel(
         }
     }
 
-    let _ = send_accounted_frame(frame_channel, payload_kind, payload);
+    let _ = send_accounted_frame(accounting, frame_channel, payload_kind, payload);
 }
 
 /// Push a composed frame from the compositor through the Channel.
@@ -358,6 +372,7 @@ fn push_frame_payload_via_channel(
 pub fn push_compositor_frame_via_channel(
     frame: native_renderer::CompositorFrame,
     frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
 ) {
     // The compositor's flush() pre-reserves 8 leading bytes (zeroed) in
     // frame.rgba.  Write the header in-place -- zero extra allocation,
@@ -372,7 +387,7 @@ pub fn push_compositor_frame_via_channel(
     payload[4..6].copy_from_slice(&frame.width.to_le_bytes());
     payload[6..8].copy_from_slice(&frame.height.to_le_bytes());
 
-    let _ = send_accounted_frame(frame_channel, FramePayloadKind::Compositor, payload);
+    let _ = send_accounted_frame(accounting, frame_channel, FramePayloadKind::Compositor, payload);
 }
 
 /// NAL header magic prefix — `0x4E414C48` ("NALH" in ASCII).
@@ -392,6 +407,7 @@ pub const NAL_MAGIC: u32 = 0x4E41_4C48;
 pub fn push_nal_via_channel(
     nal: &crate::gfx::processor::GfxNalFrame,
     frame_channel: &DynFrameChannel,
+    accounting: &FrameDeliveryAccounting,
 ) {
     let hdr_len = 16usize;
     let total = hdr_len + nal.nal_data.len();
@@ -407,7 +423,7 @@ pub fn push_nal_via_channel(
     payload.extend_from_slice(&0u16.to_le_bytes()); // [14..16] reserved
     payload.extend_from_slice(&nal.nal_data); // [16..]  NAL data
 
-    let _ = send_accounted_frame(frame_channel, FramePayloadKind::Nal, payload);
+    let _ = send_accounted_frame(accounting, frame_channel, FramePayloadKind::Nal, payload);
 }
 
 /// Push the entire desktop as a single full-frame through the channel
@@ -419,6 +435,7 @@ pub fn send_full_frame_via_channel(
     height: u16,
     frame_channel: &DynFrameChannel,
     frame_store: &SharedFrameStore,
+    accounting: &FrameDeliveryAccounting,
 ) {
     let region = crate::ironrdp::pdu::geometry::InclusiveRectangle {
         left: 0,
@@ -435,6 +452,7 @@ pub fn send_full_frame_via_channel(
         &region,
         frame_channel,
         FramePayloadKind::FullFrame,
+        accounting,
     );
 }
 

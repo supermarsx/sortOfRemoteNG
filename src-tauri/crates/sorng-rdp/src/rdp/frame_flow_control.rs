@@ -126,6 +126,29 @@ impl FrameFlowController {
         self.coalesced_frames = self.coalesced_frames.saturating_add(1);
     }
 
+    /// Account for one graphics update arriving on the batched RGBA path.
+    ///
+    /// `pending_before` is the batch backlog depth *before* this update is
+    /// enqueued. The controller observes the queue depth (driving the
+    /// high/low-watermark pressure state) and classifies the update:
+    /// - a fresh batch (`pending_before == 0`) is `Deliver` — it will be sent
+    ///   when the batch flushes;
+    /// - an update landing on a non-empty backlog is `Coalesce` — it merges
+    ///   into the pending batch and supersedes an individual send, so it is
+    ///   counted as a coalesced frame.
+    ///
+    /// This is the exact per-update decision the active session loop makes, so
+    /// the controller logic exercised in tests is the logic the runner runs.
+    pub fn account_batched_update(&mut self, pending_before: u16) -> FrameDisposition {
+        self.observe_queue_depth(pending_before);
+        if pending_before > 0 {
+            self.record_coalesced();
+            FrameDisposition::Coalesce
+        } else {
+            FrameDisposition::Deliver
+        }
+    }
+
     pub fn snapshot(&self) -> FrameFlowSnapshot {
         FrameFlowSnapshot {
             pressure_state: self.pressure_state,

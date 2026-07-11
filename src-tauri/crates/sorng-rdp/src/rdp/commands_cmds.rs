@@ -653,7 +653,9 @@ pub async fn rdp_report_frame_telemetry(
         .frame_flow_summary;
     frame_flow_summary.queued_frames = payload.queued_frames;
     frame_flow_summary.dropped_frames = payload.dropped_frames;
-    frame_flow_summary.coalesced_frames = payload.coalesced_frames;
+    // `coalesced_frames` is now owned by the backend `FrameFlowController`
+    // (which actually measures coalescing on the frame path); the frontend does
+    // not, so do not let its report clobber the authoritative backend count.
     frame_flow_summary.average_render_ms = payload.average_render_ms;
     stats.set_frame_flow_summary(frame_flow_summary);
 

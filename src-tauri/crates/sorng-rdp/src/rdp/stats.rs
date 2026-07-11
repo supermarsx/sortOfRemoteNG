@@ -241,6 +241,17 @@ impl RdpSessionStats {
         }
     }
 
+    /// Read the current frame-flow summary (e.g. to preserve the
+    /// frontend-reported `average_render_ms` across the runner's periodic
+    /// backend-owned overwrite). Returns the default summary if the lock is
+    /// poisoned.
+    pub fn frame_flow_summary(&self) -> FrameFlowSummary {
+        self.lifecycle
+            .lock()
+            .map(|lifecycle| lifecycle.frame_flow_summary())
+            .unwrap_or_default()
+    }
+
     /// Record a frame.  Lock-free: just an atomic increment.
     #[inline]
     pub fn record_frame(&self) {

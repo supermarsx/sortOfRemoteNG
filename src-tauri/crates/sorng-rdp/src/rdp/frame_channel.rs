@@ -1,8 +1,7 @@
 //! Framework-agnostic frame delivery channel.
 
-use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,96 +44,106 @@ pub struct FrameDeliverySnapshot {
     pub multi_rect_batches: u64,
 }
 
-static FRAME_DELIVERY_ACCOUNTING: OnceLock<Mutex<HashMap<usize, FrameDeliverySnapshot>>> =
-    OnceLock::new();
-
-fn delivery_accounting() -> &'static Mutex<HashMap<usize, FrameDeliverySnapshot>> {
-    FRAME_DELIVERY_ACCOUNTING.get_or_init(|| Mutex::new(HashMap::new()))
+/// Per-session frame-delivery accounting.
+///
+/// One instance is owned by the active-session loop and passed by reference to
+/// the frame-send helpers. Unlike the previous process-global
+/// `HashMap<Arc-ptr, snapshot>`, this carries no cross-session lock (the frame
+/// hot path no longer serializes all sessions through one mutex), leaks no
+/// per-session entry (it drops with the session), and cannot suffer
+/// Arc-pointer key reuse (there is no pointer key). All counters are lock-free
+/// atomics.
+#[derive(Debug, Default)]
+pub struct FrameDeliveryAccounting {
+    attempted_frames: AtomicU64,
+    delivered_frames: AtomicU64,
+    failed_frames: AtomicU64,
+    attempted_bytes: AtomicU64,
+    delivered_bytes: AtomicU64,
+    failed_bytes: AtomicU64,
+    rgba_frames: AtomicU64,
+    nal_frames: AtomicU64,
+    full_frame_syncs: AtomicU64,
+    compositor_frames: AtomicU64,
+    multi_rect_batches: AtomicU64,
 }
 
-fn accounting_key(frame_channel: &DynFrameChannel) -> usize {
-    Arc::as_ptr(frame_channel) as *const () as usize
-}
+impl FrameDeliveryAccounting {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-fn record_delivery_attempt(
-    snapshot: &mut FrameDeliverySnapshot,
-    kind: FramePayloadKind,
-    bytes: u64,
-) {
-    snapshot.attempted_frames = snapshot.attempted_frames.saturating_add(1);
-    snapshot.attempted_bytes = snapshot.attempted_bytes.saturating_add(bytes);
-    match kind {
-        FramePayloadKind::Nal => {
-            snapshot.nal_frames = snapshot.nal_frames.saturating_add(1);
-        }
-        FramePayloadKind::FullFrame => {
-            snapshot.rgba_frames = snapshot.rgba_frames.saturating_add(1);
-            snapshot.full_frame_syncs = snapshot.full_frame_syncs.saturating_add(1);
-        }
-        FramePayloadKind::Compositor => {
-            snapshot.rgba_frames = snapshot.rgba_frames.saturating_add(1);
-            snapshot.compositor_frames = snapshot.compositor_frames.saturating_add(1);
-        }
-        FramePayloadKind::RgbaRects => {
-            snapshot.rgba_frames = snapshot.rgba_frames.saturating_add(1);
-            snapshot.multi_rect_batches = snapshot.multi_rect_batches.saturating_add(1);
-        }
-        FramePayloadKind::RgbaRect => {
-            snapshot.rgba_frames = snapshot.rgba_frames.saturating_add(1);
+    fn record_attempt(&self, kind: FramePayloadKind, bytes: u64) {
+        self.attempted_frames.fetch_add(1, Ordering::Relaxed);
+        self.attempted_bytes.fetch_add(bytes, Ordering::Relaxed);
+        match kind {
+            FramePayloadKind::Nal => {
+                self.nal_frames.fetch_add(1, Ordering::Relaxed);
+            }
+            FramePayloadKind::FullFrame => {
+                self.rgba_frames.fetch_add(1, Ordering::Relaxed);
+                self.full_frame_syncs.fetch_add(1, Ordering::Relaxed);
+            }
+            FramePayloadKind::Compositor => {
+                self.rgba_frames.fetch_add(1, Ordering::Relaxed);
+                self.compositor_frames.fetch_add(1, Ordering::Relaxed);
+            }
+            FramePayloadKind::RgbaRects => {
+                self.rgba_frames.fetch_add(1, Ordering::Relaxed);
+                self.multi_rect_batches.fetch_add(1, Ordering::Relaxed);
+            }
+            FramePayloadKind::RgbaRect => {
+                self.rgba_frames.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
-}
 
-fn with_delivery_snapshot(
-    frame_channel: &DynFrameChannel,
-    update: impl FnOnce(&mut FrameDeliverySnapshot),
-) {
-    if let Ok(mut accounting) = delivery_accounting().lock() {
-        let snapshot = accounting.entry(accounting_key(frame_channel)).or_default();
-        update(snapshot);
+    fn record_success(&self, bytes: u64) {
+        self.delivered_frames.fetch_add(1, Ordering::Relaxed);
+        self.delivered_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn record_failure(&self, bytes: u64) {
+        self.failed_frames.fetch_add(1, Ordering::Relaxed);
+        self.failed_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    /// Snapshot the current counters into the serializable summary.
+    pub fn snapshot(&self) -> FrameDeliverySnapshot {
+        FrameDeliverySnapshot {
+            attempted_frames: self.attempted_frames.load(Ordering::Relaxed),
+            delivered_frames: self.delivered_frames.load(Ordering::Relaxed),
+            failed_frames: self.failed_frames.load(Ordering::Relaxed),
+            attempted_bytes: self.attempted_bytes.load(Ordering::Relaxed),
+            delivered_bytes: self.delivered_bytes.load(Ordering::Relaxed),
+            failed_bytes: self.failed_bytes.load(Ordering::Relaxed),
+            rgba_frames: self.rgba_frames.load(Ordering::Relaxed),
+            nal_frames: self.nal_frames.load(Ordering::Relaxed),
+            full_frame_syncs: self.full_frame_syncs.load(Ordering::Relaxed),
+            compositor_frames: self.compositor_frames.load(Ordering::Relaxed),
+            multi_rect_batches: self.multi_rect_batches.load(Ordering::Relaxed),
+        }
     }
 }
 
 pub fn send_accounted_frame(
+    accounting: &FrameDeliveryAccounting,
     frame_channel: &DynFrameChannel,
     kind: FramePayloadKind,
     data: Vec<u8>,
 ) -> Result<(), String> {
     let bytes = data.len() as u64;
-    with_delivery_snapshot(frame_channel, |snapshot| {
-        record_delivery_attempt(snapshot, kind, bytes);
-    });
+    accounting.record_attempt(kind, bytes);
 
     match frame_channel.send_raw(data) {
         Ok(()) => {
-            with_delivery_snapshot(frame_channel, |snapshot| {
-                snapshot.delivered_frames = snapshot.delivered_frames.saturating_add(1);
-                snapshot.delivered_bytes = snapshot.delivered_bytes.saturating_add(bytes);
-            });
+            accounting.record_success(bytes);
             Ok(())
         }
         Err(error) => {
-            with_delivery_snapshot(frame_channel, |snapshot| {
-                snapshot.failed_frames = snapshot.failed_frames.saturating_add(1);
-                snapshot.failed_bytes = snapshot.failed_bytes.saturating_add(bytes);
-            });
+            accounting.record_failure(bytes);
             Err(error)
         }
-    }
-}
-
-pub fn frame_delivery_snapshot(frame_channel: &DynFrameChannel) -> FrameDeliverySnapshot {
-    delivery_accounting()
-        .lock()
-        .ok()
-        .and_then(|accounting| accounting.get(&accounting_key(frame_channel)).cloned())
-        .unwrap_or_default()
-}
-
-#[allow(dead_code)]
-pub fn reset_frame_delivery_accounting(frame_channel: &DynFrameChannel) {
-    if let Ok(mut accounting) = delivery_accounting().lock() {
-        accounting.remove(&accounting_key(frame_channel));
     }
 }
 
@@ -162,16 +171,17 @@ mod tests {
     #[test]
     fn frame_channel_accounting_records_delivery_success() {
         let frame_channel: DynFrameChannel = Arc::new(NoopFrameChannel);
-        reset_frame_delivery_accounting(&frame_channel);
+        let accounting = FrameDeliveryAccounting::new();
 
         send_accounted_frame(
+            &accounting,
             &frame_channel,
             FramePayloadKind::FullFrame,
             vec![1, 2, 3, 4],
         )
         .expect("noop channel should accept payloads");
 
-        let snapshot = frame_delivery_snapshot(&frame_channel);
+        let snapshot = accounting.snapshot();
         assert_eq!(snapshot.attempted_frames, 1);
         assert_eq!(snapshot.delivered_frames, 1);
         assert_eq!(snapshot.failed_frames, 0);
@@ -184,16 +194,33 @@ mod tests {
     #[test]
     fn frame_channel_accounting_records_delivery_failure() {
         let frame_channel: DynFrameChannel = Arc::new(FailingFrameChannel);
-        reset_frame_delivery_accounting(&frame_channel);
+        let accounting = FrameDeliveryAccounting::new();
 
-        let result = send_accounted_frame(&frame_channel, FramePayloadKind::Nal, vec![0; 16]);
+        let result =
+            send_accounted_frame(&accounting, &frame_channel, FramePayloadKind::Nal, vec![0; 16]);
 
         assert!(result.is_err());
-        let snapshot = frame_delivery_snapshot(&frame_channel);
+        let snapshot = accounting.snapshot();
         assert_eq!(snapshot.attempted_frames, 1);
         assert_eq!(snapshot.delivered_frames, 0);
         assert_eq!(snapshot.failed_frames, 1);
         assert_eq!(snapshot.failed_bytes, 16);
         assert_eq!(snapshot.nal_frames, 1);
+    }
+
+    #[test]
+    fn frame_channel_accounting_is_independent_per_session() {
+        // Two sessions with their own accounting never share counters — the old
+        // global map keyed by Arc pointer could alias reused addresses; this
+        // per-session design cannot.
+        let ch: DynFrameChannel = Arc::new(NoopFrameChannel);
+        let session_a = FrameDeliveryAccounting::new();
+        let session_b = FrameDeliveryAccounting::new();
+
+        send_accounted_frame(&session_a, &ch, FramePayloadKind::RgbaRect, vec![0; 8])
+            .expect("noop channel accepts payloads");
+
+        assert_eq!(session_a.snapshot().attempted_frames, 1);
+        assert_eq!(session_b.snapshot().attempted_frames, 0);
     }
 }
