@@ -15,9 +15,9 @@ This project aims to provide a unified interface for all your remote management 
 
 ### 🔌 Multi-Protocol Connectivity
 
-- **Remote Desktop**: RDP, VNC, and RustDesk integration (RustDesk backend wired; final invoke-handler registration lands with the wiring aggregator).
+- **Remote Desktop**: RDP, VNC, and RustDesk integration (all wired end-to-end, including invoke-handler registration).
 - **Shell & Terminal**: Full-featured SSH client and Web Terminal.
-- **File Transfer**: FTP and SFTP (backend implemented; invoke-handler registration in progress). SMB/CIFS support is transitioning from a placeholder UI to a real `pavao`-backed Rust crate — treat as beta until the aggregator lands.
+- **File Transfer**: FTP and SFTP (backend and invoke-handler registration shipped). SMB/CIFS support is provided by the native `sorng-smb` crate, which uses platform-native backends (Windows UNC / `net use`, Unix `smbclient`).
 - **Web**: Integrated browser for HTTP/HTTPS management interfaces.
 - **Databases**: Built-in MySQL client.
 
@@ -32,13 +32,13 @@ This project aims to provide a unified interface for all your remote management 
 - **Secure Storage**: AES-256 encryption for all stored credentials.
 - **TOTP Manager**: Integrated Time-based One-Time Password generator for 2FA.
 - **SSH Key Management**: Manage and use SSH keys effortlessly.
-- **Access Control**: User authentication system with bcrypt password hashing.
+- **Access Control**: User authentication system with Argon2id password hashing (bcrypt hashes from older builds are verified and transparently upgraded).
 
 ### 🚀 Advanced Capabilities
 
-- **Script Engine**: Automate tasks using a sandboxed TypeScript/JavaScript engine powered by `rquickjs` (frontend wiring is being re-enabled; track via `sorng-ssh`'s `script-engine` feature).
-- **VPN Management**: Integrations for OpenVPN, WireGuard, ZeroTier, and Tailscale. IKEv2, IPsec, SSTP, L2TP, and PPTP ship behind a native Rust VPN crate; SoftEther support is in progress.
-- **AI Agent**: Chat, agentic workflows, and code-assist dispatch through real LLM providers (OpenAI, Anthropic, Google, Ollama, local). Provider wiring is being finalised — configure providers in-app before use.
+- **Script Engine**: Automate tasks using a sandboxed TypeScript/JavaScript engine powered by `rquickjs`, enabled via `sorng-ssh`'s `script-engine` feature flag.
+- **VPN Management**: Integrations for OpenVPN, WireGuard, ZeroTier, and Tailscale. IKEv2, IPsec, SSTP, L2TP, and PPTP ship behind a native Rust VPN crate; SoftEther is fully ported behind the `vpn-softether` feature flag (live-tunnel validation is host-gated).
+- **AI Agent**: Chat, agentic workflows, and code-assist dispatch through real LLM providers (OpenAI, Anthropic, Google, Ollama, local). Providers are wired end-to-end — configure them in-app or via environment variables before use.
 - **Connection Chaining**: Route connections through proxies or other hosts.
 - **Customization**: Themed interface with flexible tab layouts and tagging.
 

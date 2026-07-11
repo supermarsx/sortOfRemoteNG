@@ -94,7 +94,7 @@ the following rules (see epic `t3-e15`):
 ## 5. Secret-at-Rest Model
 
 Secrets (connection passwords, private keys, SoftEther credentials,
-etc.) are sealed by the `sorng-auth` and `sorng-secure-storage` crates
+etc.) are sealed by the `sorng-auth` and `sorng-encryption` crates
 in `src-tauri/crates/`.
 
 - **KDF:** Argon2id with conservative OWASP parameters (memory cost
@@ -124,12 +124,15 @@ in `src-tauri/crates/`.
 
 The Tauri updater verifies every update bundle against a public key
 **embedded at build time** in `src-tauri/tauri.conf.json` (`pubkey`
-field), delivered via epic `t3-e21`.
+field), delivered via epic `t3-e21`. The signing key is a free
+[minisign](https://jedisct1.github.io/minisign/) (Ed25519) keypair.
 
 - The public key is pinned; the updater will refuse artifacts signed by
   any other key, even if TLS succeeds.
-- The private key is held offline by the release team in an HSM-backed
-  store. It never touches CI runners.
+- The private key is supplied to the release workflow via the
+  `TAURI_SIGNING_PRIVATE_KEY` CI secret (see `.github/workflows/release.yml`),
+  scoped to the release job. Treat the CI secret store as the trust
+  boundary for update integrity.
 - **Rotation procedure:**
   1. Generate a new keypair offline (`tauri signer generate`).
   2. Ship a transition release that embeds **both** the old and new
@@ -144,21 +147,29 @@ field), delivered via epic `t3-e21`.
 
 ## 7. Code Signing
 
-Release binaries are signed on both supported desktop platforms:
+As an open-source project, sortOfRemoteNG ships **unsigned** OS release
+bundles by default (the t29 policy decision) — there is no paid Windows
+Authenticode / DigiCert EV certificate and no Apple Developer ID identity.
+Consequently the OS shows an "unknown / unidentified publisher" warning on
+first launch of a downloaded build; this is expected and does not indicate
+tampering. See the "Releases are unsigned (open-source)" section in
+`readme.md` for the per-OS steps to run a bundle (macOS Gatekeeper,
+Windows SmartScreen).
 
-- **Windows (epic `t3-e36`)**: signed with a DigiCert **EV Code Signing**
-  certificate held in DigiCert KeyLocker (cloud HSM). Signing runs in a
-  hardened CI job whose credentials are restricted to the release
-  workflow and audited. EV provides instant SmartScreen reputation.
-- **macOS (epic `t3-e37`)**: signed with an Apple **Developer ID
-  Application** certificate, hardened-runtime enabled, and **notarized**
-  via `notarytool`. Notarization tickets are stapled to the `.dmg` and
-  `.app` before publication so Gatekeeper succeeds offline.
-- Signatures are verified as part of the release smoke test before
-  artifacts are promoted to the public update feed.
+- **Optional OS signing.** The release workflow will sign bundles when a
+  maintainer supplies the platform signing secrets, but it **gracefully
+  degrades to unsigned** artifacts when those secrets are absent
+  (`.github/workflows/release.yml`), which is the default for public
+  releases. OS signing is therefore best-effort, not a guarantee.
+- **Update integrity is independent of OS signing.** Tamper-protection
+  for updates comes from the minisign (Ed25519) updater signature
+  described in §6, not from OS code-signing. Every downloaded update is
+  verified against the pinned public key before it is installed, so
+  dropping paid code-signing does not weaken update integrity.
 
-Users can verify signatures manually: `signtool verify /pa` on Windows,
-`codesign --verify --deep --strict` and `spctl -a -vvv` on macOS.
+When a signed bundle is produced, users can verify it manually with
+`signtool verify /pa` on Windows or `codesign --verify --deep --strict`
+and `spctl -a -vvv` on macOS.
 
 ## 8. Capability Scoping & Tauri Sandbox Posture
 
