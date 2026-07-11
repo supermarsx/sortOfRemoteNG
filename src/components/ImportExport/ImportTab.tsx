@@ -1514,7 +1514,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
                 updateOptions={updateImportOptions}
               />
 
-              <div className="sticky bottom-0 z-10 -mx-2 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 shadow-[0_-4px_12px_-6px_rgba(0,0,0,0.25)]">
+              <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur px-3 py-2 shadow-[0_-6px_16px_-8px_rgba(0,0,0,0.35)]">
                 <div className="text-xs text-[var(--color-textMuted)]">
                   {previewItemCount > 0
                     ? `${selectedRows} of ${previewItemCount} selected`
@@ -1567,19 +1567,11 @@ const ImportTab: React.FC<ImportTabProps> = ({
 
               <button
                 onClick={cancelImport}
-                className="w-full rounded-lg bg-primary py-2 text-[var(--color-text)] transition-colors hover:bg-primary/90"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:border-primary/50 hover:text-[var(--color-text)]"
               >
+                <Upload size={14} />
                 Try Again
               </button>
-
-              <TargetDatabaseSection
-                options={importDatabaseOptions}
-                targetMode={importTargetMode}
-                onSelectMode={setImportTargetMode}
-                selectedDatabaseId={selectedImportDatabaseId}
-                onSelect={setSelectedImportDatabaseId}
-                onUnlockDatabase={onUnlockDatabase}
-              />
 
               <FormatSelectionSection
                 selection={importFormatSelection}
@@ -1594,6 +1586,8 @@ const ImportTab: React.FC<ImportTabProps> = ({
               >
                 {dropZone}
               </ImportSection>
+
+              {templatesRow}
             </>
           )}
         </div>

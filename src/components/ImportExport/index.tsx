@@ -62,65 +62,48 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
     }
   };
 
+  const tabs: Array<{
+    value: typeof TAB_ORDER[number];
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    testId: string;
+  }> = [
+    { value: "export", label: "Export", icon: Download, testId: "export-tab" },
+    { value: "import", label: "Import", icon: Upload, testId: "import-tab" },
+    { value: "clone", label: "Clone", icon: Copy, testId: "clone-tab" },
+  ];
+
   return (
-    <div className="flex space-x-1 mb-6 bg-[var(--color-border)] rounded-lg p-1" role="tablist" aria-label="Import and export tabs">
-      <button
-        id="import-export-tab-export"
-        type="button"
-        role="tab"
-        data-testid="export-tab"
-        aria-selected={mgr.activeTab === "export"}
-        aria-controls="import-export-panel-export"
-        tabIndex={mgr.activeTab === "export" ? 0 : -1}
-        onClick={() => selectTab("export")}
-        onKeyDown={(event) => handleKeyDown(event, "export")}
-        className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-          mgr.activeTab === "export"
-            ? "bg-primary text-[var(--color-text)]"
-            : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-        }`}
-      >
-        <Download size={16} className="inline mr-2" />
-        Export
-      </button>
-      <button
-        id="import-export-tab-import"
-        type="button"
-        role="tab"
-        data-testid="import-tab"
-        aria-selected={mgr.activeTab === "import"}
-        aria-controls="import-export-panel-import"
-        tabIndex={mgr.activeTab === "import" ? 0 : -1}
-        onClick={() => selectTab("import")}
-        onKeyDown={(event) => handleKeyDown(event, "import")}
-        className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-          mgr.activeTab === "import"
-            ? "bg-primary text-[var(--color-text)]"
-            : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-        }`}
-      >
-        <Upload size={16} className="inline mr-2" />
-        Import
-      </button>
-      <button
-        id="import-export-tab-clone"
-        type="button"
-        role="tab"
-        data-testid="clone-tab"
-        aria-selected={mgr.activeTab === "clone"}
-        aria-controls="import-export-panel-clone"
-        tabIndex={mgr.activeTab === "clone" ? 0 : -1}
-        onClick={() => selectTab("clone")}
-        onKeyDown={(event) => handleKeyDown(event, "clone")}
-        className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-          mgr.activeTab === "clone"
-            ? "bg-primary text-[var(--color-text)]"
-            : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-        }`}
-      >
-        <Copy size={16} className="inline mr-2" />
-        Clone
-      </button>
+    <div
+      className="flex space-x-1 mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/40 p-1"
+      role="tablist"
+      aria-label="Import and export tabs"
+    >
+      {tabs.map(({ value, label, icon: Icon, testId }) => {
+        const active = mgr.activeTab === value;
+        return (
+          <button
+            key={value}
+            id={`import-export-tab-${value}`}
+            type="button"
+            role="tab"
+            data-testid={testId}
+            aria-selected={active}
+            aria-controls={`import-export-panel-${value}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => selectTab(value)}
+            onKeyDown={(event) => handleKeyDown(event, value)}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              active
+                ? "bg-primary text-[var(--color-text)] shadow-sm"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+            }`}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 };
