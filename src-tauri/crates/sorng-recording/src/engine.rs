@@ -35,6 +35,12 @@ pub(crate) struct LiveTerminalRecording {
     pub entries: Vec<TerminalRecordingEntry>,
     pub status: RecordingStatus,
     pub tags: Vec<String>,
+    /// Count of entries already written to the crash-recovery journal
+    /// snapshot. The incremental-flush logic snapshots the session once
+    /// `entries.len() - journaled_entries` crosses the flush threshold,
+    /// bounding crash loss to the last interval rather than the whole
+    /// session.
+    pub journaled_entries: usize,
 }
 
 #[derive(Debug)]
@@ -213,6 +219,7 @@ impl RecordingEngine {
                 entries: Vec::new(),
                 status: RecordingStatus::Recording,
                 tags,
+                journaled_entries: 0,
             },
         );
         log::info!("Started terminal recording {}", recording_id);
@@ -296,6 +303,49 @@ impl RecordingEngine {
             duration_ms
         );
         Ok(recording)
+    }
+
+    /// If at least `threshold` terminal entries have accumulated since the
+    /// last crash-recovery flush, advance the flush watermark and return a
+    /// full `TerminalRecording` snapshot for the service to persist. The
+    /// session keeps recording — this does NOT stop or drain it. Returns
+    /// `None` when the session is unknown or still below the threshold.
+    pub fn take_terminal_snapshot_if_due(
+        &mut self,
+        session_id: &str,
+        threshold: usize,
+    ) -> Option<TerminalRecording> {
+        let rec = self.terminal_recordings.get_mut(session_id)?;
+        if rec.entries.len().saturating_sub(rec.journaled_entries) < threshold {
+            return None;
+        }
+        rec.journaled_entries = rec.entries.len();
+        Some(Self::build_terminal_snapshot(rec))
+    }
+
+    /// Clone the live session state into a `TerminalRecording` without
+    /// stopping it. `end_time` is left `None` (the session is still open)
+    /// and `duration_ms` reflects elapsed time at the snapshot instant.
+    fn build_terminal_snapshot(rec: &LiveTerminalRecording) -> TerminalRecording {
+        let duration_ms = rec.start_instant.elapsed().as_millis() as u64;
+        TerminalRecording {
+            metadata: TerminalRecordingMetadata {
+                recording_id: rec.recording_id.clone(),
+                session_id: rec.session_id.clone(),
+                protocol: rec.protocol.clone(),
+                start_time: rec.start_utc,
+                end_time: None,
+                host: rec.host.clone(),
+                username: rec.username.clone(),
+                cols: rec.cols,
+                rows: rec.rows,
+                duration_ms,
+                entry_count: rec.entries.len(),
+                record_input: rec.record_input,
+                tags: rec.tags.clone(),
+            },
+            entries: rec.entries.clone(),
+        }
     }
 
     pub fn get_terminal_recording_status(

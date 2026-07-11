@@ -274,11 +274,16 @@ impl SecureStorage {
     }
 
     /// Atomic-write helper shared by every encoding path.
+    ///
+    /// Routes through [`crate::durable::durable_write`], which fsyncs the
+    /// temp file before the rename and the parent dir after it (crash
+    /// durability), and folds in the t21 resilience — bounded retry plus a
+    /// per-attempt `create_dir_all` self-heal — that previously protected
+    /// only the settings writer. The connections store is crown-jewel user
+    /// data (every host, tunnel, and credential) and now gets the same
+    /// guarantees.
     fn atomic_write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
-        let tmp_path = format!("{}.tmp", path);
-        fs::write(&tmp_path, bytes).map_err(|e| format!("Failed to write temp file: {}", e))?;
-        fs::rename(&tmp_path, path)
-            .map_err(|e| format!("Failed to rename temp file: {}", e))
+        crate::durable::durable_write(Path::new(path), bytes)
     }
 
     /// Detect the v2 connections envelope by its binary magic prefix.
@@ -555,28 +560,21 @@ mod connections_dispatch_tests {
     }
 
     #[tokio::test]
-    async fn missing_parent_dir_creates_or_errors_cleanly() {
-        // `atomic_write_bytes` does NOT auto-mkdir (see storage.rs:273).
-        // Pointing at a non-existent multi-level parent surfaces a clean
-        // OS-level error instead of a panic. Document: this layer does
-        // NOT pre-create the parent.
+    async fn missing_parent_dir_self_heals_via_create_dir_all() {
+        // The connections writer now routes through the durable writer,
+        // which self-heals a missing parent (t21 resilience, previously
+        // settings-only). Pointing at a non-existent multi-level parent
+        // must create the tree and land the write rather than erroring —
+        // this closes the "app-data dir relocated mid-session → write
+        // lost" class for the crown-jewel connections store.
         let tmp = tempdir().unwrap();
         let nested = tmp.path().join("nonexistent/deep/path/data.json");
         let path = nested.to_string_lossy().to_string();
         let svc = build_storage(path.clone());
-        let result = svc.save_data(sample_data(), false).await;
-        assert!(result.is_err(), "missing parent must error, not auto-mkdir");
-        let err = result.unwrap_err();
-        // Should mention the temp file write failure (no panic).
-        assert!(
-            err.to_lowercase().contains("failed to write")
-                || err.to_lowercase().contains("temp")
-                || err.to_lowercase().contains("system cannot")
-                || err.to_lowercase().contains("no such"),
-            "expected a clean fs error, got: {err}"
-        );
-        // The parent was NOT created — confirming non-mkdir behaviour.
-        assert!(!nested.parent().unwrap().exists());
+        svc.save_data(sample_data(), false).await.unwrap();
+        assert!(nested.exists(), "durable writer must create the parent tree");
+        let loaded = svc.load_data().await.unwrap().unwrap();
+        assert_eq!(loaded.connections[0]["id"], "c1");
     }
 
     #[tokio::test]

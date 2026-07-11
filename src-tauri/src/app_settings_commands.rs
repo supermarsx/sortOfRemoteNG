@@ -173,6 +173,38 @@ fn temp_path_for(path: &std::path::Path) -> std::path::PathBuf {
 /// On final failure the error is **path-prefixed**
 /// (`write <path>: <e>`) so a future failure is diagnosable instead of
 /// a context-free OS error.
+/// Write `bytes` to `tmp` and `sync_all()` the handle before returning,
+/// so the data + file metadata are flushed to stable storage BEFORE the
+/// caller renames the temp into place. Without this barrier a crash after
+/// the rename can leave the target as a durably-committed directory entry
+/// pointing at un-flushed (zero-length / garbage) data, with the previous
+/// good settings already gone.
+fn write_and_sync(tmp: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::File::create(tmp)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    Ok(())
+}
+
+/// fsync the directory holding `path` so the rename itself is durable.
+/// POSIX-only — on Windows the NTFS journal covers directory metadata as
+/// part of the rename and directories can't be opened for fsync, so this
+/// is a graceful no-op.
+#[cfg(unix)]
+fn sync_parent_dir(path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent_dir(_path: &std::path::Path) {}
+
 fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = temp_path_for(path);
     let mut last_err: Option<String> = None;
@@ -191,8 +223,9 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
             }
         }
 
-        if let Err(e) = std::fs::write(&tmp, bytes) {
+        if let Err(e) = write_and_sync(&tmp, bytes) {
             last_err = Some(format!("{e}"));
+            let _ = std::fs::remove_file(&tmp);
             if attempt + 1 < ATOMIC_WRITE_MAX_ATTEMPTS {
                 std::thread::sleep(ATOMIC_WRITE_BACKOFF * (attempt + 1));
             }
@@ -200,7 +233,10 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
         }
 
         match std::fs::rename(&tmp, path) {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                sync_parent_dir(path);
+                return Ok(());
+            }
             Err(e) => {
                 last_err = Some(format!("{e}"));
                 // Don't leak the temp on a failed rename; ignore the
@@ -285,16 +321,62 @@ pub async fn write_app_settings_inner(
         )
         .await
         .map_err(|e| format!("encode settings.enc: {e}"))?;
-        atomic_write(&enc_path, &blob)?;
+
+        // Write the encrypted blob off the async worker — `atomic_write`
+        // is blocking (it may `std::thread::sleep` between retries and it
+        // fsyncs), so running it inline would stall a runtime thread.
+        {
+            let enc_path = enc_path.clone();
+            let blob = blob.clone();
+            tokio::task::spawn_blocking(move || atomic_write(&enc_path, &blob))
+                .await
+                .map_err(|e| format!("settings.enc write task join: {e}"))??;
+        }
+
+        // Verify-before-delete. Re-read `settings.enc` from disk and
+        // decrypt it back, confirming the envelope is both durable and
+        // decryptable, BEFORE destroying the plaintext fallback. If the
+        // blob were short/corrupt, or written under a key/mode the next
+        // boot can't reproduce, deleting the plaintext here would leave
+        // the user with an unreadable `settings.enc` and nothing to fall
+        // back to ("unlock first" forever). On any verify failure we keep
+        // the plaintext and surface an error — nothing is lost.
+        let readback = std::fs::read(&enc_path)
+            .map_err(|e| format!("verify settings.enc (read-back): {e}"))?;
+        let decoded = artifact_settings::read(enc_state, &readback)
+            .await
+            .map_err(|e| format!("verify settings.enc (decrypt): {e}"))?
+            .unwrap_or_else(|| serde_json::json!({}));
+        if decoded != merged {
+            return Err(
+                "settings.enc failed read-back verification; kept plaintext settings.json"
+                    .to_string(),
+            );
+        }
+
+        // Verified — now it is safe to remove the plaintext shadow.
+        // Best-effort: a failed removal must NOT abort after the `.enc`
+        // is already committed and verified (that would surface a
+        // spurious error and a confusing half-migrated state). The read
+        // path prefers `.enc` over `.json` regardless, so a lingering
+        // plaintext can't shadow the encrypted truth — it will be swept
+        // on the next successful write.
         if plain_path.exists() {
-            std::fs::remove_file(&plain_path)
-                .map_err(|e| format!("remove plaintext settings.json: {e}"))?;
+            if let Err(e) = std::fs::remove_file(&plain_path) {
+                log::warn!(
+                    "settings.enc written and verified but plaintext removal failed \
+                     (will retry on next write): {e}"
+                );
+            }
         }
         Ok(())
     } else {
         let body = serde_json::to_string_pretty(&merged)
             .map_err(|e| format!("serialize settings.json: {e}"))?;
-        atomic_write(&plain_path, body.as_bytes())
+        let plain_path = plain_path.clone();
+        tokio::task::spawn_blocking(move || atomic_write(&plain_path, body.as_bytes()))
+            .await
+            .map_err(|e| format!("settings.json write task join: {e}"))?
     }
 }
 

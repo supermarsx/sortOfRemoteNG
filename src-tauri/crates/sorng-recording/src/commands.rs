@@ -89,6 +89,21 @@ pub async fn rec_is_terminal_recording(
     Ok(svc.is_terminal_recording(&session_id).await)
 }
 
+/// Recover terminal recordings orphaned by a crash / power-loss during an
+/// active session (incremental-flush durability). Returns how many were
+/// recovered into the library. Should be invoked on app-ready and again
+/// after the encryption key is unlocked — encrypted in-flight snapshots
+/// can only be recovered once the key is available. Idempotent.
+#[tauri::command]
+pub async fn rec_recover_crashed(
+    state: tauri::State<'_, RecordingServiceState>,
+) -> Result<usize, String> {
+    let svc = state.lock().await;
+    svc.recover_crashed_terminal_recordings()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn rec_append_terminal_output(
     state: tauri::State<'_, RecordingServiceState>,

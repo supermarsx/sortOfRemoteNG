@@ -51,6 +51,14 @@ enum PersistMode {
     Plaintext,
 }
 
+/// Flush an in-flight terminal-recording crash-recovery snapshot to disk
+/// every this many newly-buffered entries. Bounds worst-case crash loss
+/// to the last interval while keeping the O(n) snapshot-rewrite frequency
+/// low on chatty sessions. A snapshot rewrites the whole buffer (the
+/// deliberately-simple scheme — see `storage::write_terminal_snapshot`),
+/// so the threshold trades rewrite cost against the loss window.
+const TERMINAL_SNAPSHOT_EVERY_N_ENTRIES: usize = 48;
+
 /// Tauri event name emitted as the recording migration walks each
 /// file. Payload shape is documented on
 /// [`RecordingMigrationProgressEvent`].
@@ -476,26 +484,127 @@ impl RecordingService {
     }
 
     pub async fn append_terminal_output(&self, session_id: &str, data: &str) {
-        let mut eng = self.engine.lock().await;
-        eng.append_terminal_output(session_id, data);
+        let snapshot = {
+            let mut eng = self.engine.lock().await;
+            eng.append_terminal_output(session_id, data);
+            eng.take_terminal_snapshot_if_due(session_id, TERMINAL_SNAPSHOT_EVERY_N_ENTRIES)
+        };
+        if let Some(rec) = snapshot {
+            self.flush_terminal_snapshot(rec).await;
+        }
     }
 
     pub async fn append_terminal_input(&self, session_id: &str, data: &str) {
-        let mut eng = self.engine.lock().await;
-        eng.append_terminal_input(session_id, data);
+        let snapshot = {
+            let mut eng = self.engine.lock().await;
+            eng.append_terminal_input(session_id, data);
+            eng.take_terminal_snapshot_if_due(session_id, TERMINAL_SNAPSHOT_EVERY_N_ENTRIES)
+        };
+        if let Some(rec) = snapshot {
+            self.flush_terminal_snapshot(rec).await;
+        }
     }
 
     pub async fn append_terminal_resize(&self, session_id: &str, cols: u32, rows: u32) {
-        let mut eng = self.engine.lock().await;
-        eng.append_terminal_resize(session_id, cols, rows);
+        let snapshot = {
+            let mut eng = self.engine.lock().await;
+            eng.append_terminal_resize(session_id, cols, rows);
+            eng.take_terminal_snapshot_if_due(session_id, TERMINAL_SNAPSHOT_EVERY_N_ENTRIES)
+        };
+        if let Some(rec) = snapshot {
+            self.flush_terminal_snapshot(rec).await;
+        }
     }
 
     pub async fn stop_terminal_recording(
         &self,
         session_id: &str,
     ) -> RecordingResult<TerminalRecording> {
-        let mut eng = self.engine.lock().await;
-        eng.stop_terminal_recording(session_id)
+        let recording = {
+            let mut eng = self.engine.lock().await;
+            eng.stop_terminal_recording(session_id)
+        }?;
+        // The full recording is now in hand and the caller persists it to
+        // the library; drop the crash-recovery snapshot so it isn't
+        // resurrected on the next boot. Best-effort — a lingering snapshot
+        // only risks a duplicate "Recovered" entry, never data loss.
+        let root = self.storage_root.lock().await.clone();
+        let _ = storage::clear_terminal_snapshot(&root, &recording.metadata.recording_id);
+        Ok(recording)
+    }
+
+    /// Best-effort durable snapshot of an in-progress terminal recording
+    /// for crash recovery. Uses the same encrypt-vs-plaintext policy as
+    /// final persistence: under the default (`encrypt_at_rest = true`) a
+    /// locked/absent key means the recording can't be saved at stop
+    /// anyway, so we skip the snapshot rather than fail the hot append
+    /// path. A write failure is logged, never propagated — losing a
+    /// snapshot must not disrupt live capture.
+    async fn flush_terminal_snapshot(&self, recording: TerminalRecording) {
+        let id = recording.metadata.recording_id.clone();
+        let enc = match self.resolve_persist_mode().await {
+            Ok(PersistMode::Encrypted(e)) => Some(e),
+            Ok(PersistMode::Plaintext) => None,
+            Err(_) => return, // locked + default policy: nothing to protect yet
+        };
+        let root = self.storage_root.lock().await.clone();
+        if let Err(e) =
+            storage::write_terminal_snapshot(&root, &recording, enc.as_deref()).await
+        {
+            log::warn!("terminal recording snapshot flush failed for {id}: {e}");
+        }
+    }
+
+    /// Recover terminal recordings whose session crashed before a clean
+    /// stop. Each orphaned in-flight snapshot is decoded and saved into
+    /// the library (tagged `recovered`), then its snapshot cleared.
+    /// Encrypted snapshots are skipped while the key is unavailable and
+    /// retried on a later unlocked invocation. Returns the count
+    /// recovered. Idempotent — cleared snapshots are never reprocessed,
+    /// so this is safe to call on every boot and again after unlock.
+    pub async fn recover_crashed_terminal_recordings(&self) -> RecordingResult<usize> {
+        let root = self.storage_root.lock().await.clone();
+        let enc = self.enc_handle().await;
+        let ids = storage::list_terminal_snapshots(&root);
+        let mut recovered = 0usize;
+        for id in ids {
+            let rec = match storage::read_terminal_snapshot(&root, &id, enc.as_deref()).await {
+                Ok(Some(r)) => r,
+                Ok(None) => continue,
+                Err(e) => {
+                    log::warn!("skip unreadable/locked in-flight snapshot {id}: {e}");
+                    continue;
+                }
+            };
+            if rec.entries.is_empty() {
+                let _ = storage::clear_terminal_snapshot(&root, &id);
+                continue;
+            }
+            let name = format!(
+                "Recovered {} {}",
+                rec.metadata.host,
+                rec.metadata.start_time.format("%Y-%m-%d %H:%M")
+            );
+            match self
+                .encode_compress_save_terminal(
+                    rec,
+                    name,
+                    Some("Recovered after an unexpected shutdown".to_string()),
+                    ExportFormat::Asciicast,
+                    CompressionAlgorithm::None,
+                    None,
+                    vec!["recovered".to_string()],
+                )
+                .await
+            {
+                Ok(_) => {
+                    let _ = storage::clear_terminal_snapshot(&root, &id);
+                    recovered += 1;
+                }
+                Err(e) => log::warn!("recover in-flight terminal snapshot {id}: {e}"),
+            }
+        }
+        Ok(recovered)
     }
 
     pub async fn get_terminal_recording_status(
@@ -1750,6 +1859,114 @@ mod phase_2c_engine_e2e_tests {
                 entry_type: TerminalEntryType::Output,
             }],
         }
+    }
+
+    #[tokio::test]
+    async fn terminal_recording_snapshots_and_recovers_after_crash() {
+        // Incremental-flush durability (e4-F4): a long recorded session
+        // that never reaches a clean stop (hard-kill / power-loss) must be
+        // recoverable up to the last flush, instead of losing 100% of the
+        // recording.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        let sid = "sess-crash";
+
+        // Session 1: record, cross the flush threshold, then "crash" (drop
+        // the service without ever calling stop).
+        let rec_id = {
+            let svc = fresh_service(root, true).await;
+            let id = svc
+                .start_terminal_recording(
+                    sid.to_string(),
+                    RecordingProtocol::Ssh,
+                    "host.example".to_string(),
+                    "user".to_string(),
+                    80,
+                    24,
+                    true,
+                    vec![],
+                )
+                .await
+                .unwrap();
+            // > TERMINAL_SNAPSHOT_EVERY_N_ENTRIES appends → at least one flush.
+            for i in 0..(TERMINAL_SNAPSHOT_EVERY_N_ENTRIES + 12) {
+                svc.append_terminal_output(sid, &format!("line {i}\n")).await;
+            }
+            id
+        };
+
+        // The flush must have left an ENCRYPTED snapshot on disk.
+        let snap = root
+            .join("recording")
+            .join("inflight")
+            .join(format!("{rec_id}.snapshot"));
+        assert!(
+            snap.exists(),
+            "expected an in-flight snapshot after crossing the flush threshold"
+        );
+        let bytes = std::fs::read(&snap).unwrap();
+        assert_eq!(
+            &bytes[..6],
+            sorng_encryption::envelope::MAGIC,
+            "in-flight snapshot must be an AEAD envelope, not plaintext"
+        );
+
+        // Session 2: a fresh service on the same root + same key recovers it.
+        let svc2 = fresh_service(root, true).await;
+        let recovered = svc2.recover_crashed_terminal_recordings().await.unwrap();
+        assert_eq!(recovered, 1, "the orphaned recording must be recovered");
+        let lib = svc2.list_library().await;
+        assert_eq!(lib.len(), 1, "recovered recording must land in the library");
+        assert!(
+            lib[0].tags.iter().any(|t| t == "recovered"),
+            "recovered recording must be tagged"
+        );
+        // Snapshot cleared → a second pass is an idempotent no-op.
+        assert!(!snap.exists(), "snapshot must be cleared after recovery");
+        assert_eq!(
+            svc2.recover_crashed_terminal_recordings().await.unwrap(),
+            0,
+            "recovery must be idempotent"
+        );
+    }
+
+    #[tokio::test]
+    async fn clean_stop_leaves_no_orphan_snapshot_to_recover() {
+        // A cleanly-stopped recording must NOT be resurrected on the next
+        // boot — stop clears the in-flight snapshot.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        let sid = "sess-clean";
+        let svc = fresh_service(root, true).await;
+        let rec_id = svc
+            .start_terminal_recording(
+                sid.to_string(),
+                RecordingProtocol::Ssh,
+                "host.example".to_string(),
+                "user".to_string(),
+                80,
+                24,
+                true,
+                vec![],
+            )
+            .await
+            .unwrap();
+        for i in 0..(TERMINAL_SNAPSHOT_EVERY_N_ENTRIES + 4) {
+            svc.append_terminal_output(sid, &format!("line {i}\n")).await;
+        }
+        let snap = root
+            .join("recording")
+            .join("inflight")
+            .join(format!("{rec_id}.snapshot"));
+        assert!(snap.exists(), "snapshot expected before stop");
+        // Clean stop must sweep the snapshot.
+        svc.stop_terminal_recording(sid).await.unwrap();
+        assert!(!snap.exists(), "clean stop must clear the in-flight snapshot");
+        assert_eq!(
+            svc.recover_crashed_terminal_recordings().await.unwrap(),
+            0,
+            "nothing to recover after a clean stop"
+        );
     }
 
     #[tokio::test]

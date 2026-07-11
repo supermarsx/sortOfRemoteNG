@@ -14,6 +14,87 @@ use std::path::{Path, PathBuf};
 use crate::error::{RecordingError, RecordingResult};
 use crate::types::*;
 
+// ═══════════════════════════════════════════════════════════════════════
+//  Durable atomic write
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Recording envelopes, macros, and media sidecars are the recording
+// subsystem's crown-jewel data. A bare `std::fs::write` is neither atomic
+// (a crash mid-write truncates the file) nor durable (a crash after a
+// rename can leave a committed directory entry pointing at un-flushed
+// bytes). `durable_write` gives both: write to a per-target temp,
+// `sync_all()` the handle, rename, then fsync the parent dir (POSIX; a
+// no-op on Windows, where NTFS journals the directory metadata with the
+// rename). This mirrors `sorng-storage::durable` and `database_files.rs`;
+// it's re-implemented here because `sorng-recording` depends only on
+// `sorng-encryption`, not `sorng-storage`.
+
+fn durable_temp_sibling(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "sorng-recording".to_string());
+    let tmp_name = format!(".{file_name}.tmp");
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.join(tmp_name),
+        _ => PathBuf::from(tmp_name),
+    }
+}
+
+#[cfg(unix)]
+fn durable_sync_parent_dir(path: &Path) {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn durable_sync_parent_dir(_path: &Path) {}
+
+/// Atomic + durable write. Ensures the parent dir exists, writes to a
+/// temp sibling, fsyncs it, renames into place, then fsyncs the parent
+/// dir (POSIX). Returns a `StorageError` on any failure with the temp
+/// cleaned up.
+pub fn durable_write(path: &Path, bytes: &[u8]) -> RecordingResult<()> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| RecordingError::StorageError(format!("mkdir {}: {}", parent.display(), e)))?;
+        }
+    }
+    let tmp = durable_temp_sibling(path);
+    let write_res = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(RecordingError::StorageError(format!(
+            "write {}: {}",
+            tmp.display(),
+            e
+        )));
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(RecordingError::StorageError(format!(
+            "rename {} -> {}: {}",
+            tmp.display(),
+            path.display(),
+            e
+        )));
+    }
+    durable_sync_parent_dir(path);
+    Ok(())
+}
+
 /// Resolve the storage root.  If the config has a custom dir use it,
 /// otherwise fall back to `<app_data>/recording`.
 pub fn storage_root(config_dir: Option<&str>, app_data_dir: &str) -> PathBuf {
@@ -55,8 +136,7 @@ pub fn save_envelope(root: &Path, envelope: &SavedRecordingEnvelope) -> Recordin
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
     let path = dir.join(format!("{}.json", envelope.id));
     let json = serde_json::to_string_pretty(envelope)?;
-    std::fs::write(&path, json)
-        .map_err(|e| RecordingError::StorageError(format!("write {}: {}", path.display(), e)))?;
+    durable_write(&path, json.as_bytes())?;
     Ok(())
 }
 
@@ -159,8 +239,7 @@ pub fn save_macro(root: &Path, macro_rec: &MacroRecording) -> RecordingResult<()
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
     let path = dir.join(format!("{}.json", macro_rec.id));
     let json = serde_json::to_string_pretty(macro_rec)?;
-    std::fs::write(&path, json)
-        .map_err(|e| RecordingError::StorageError(format!("write: {}", e)))?;
+    durable_write(&path, json.as_bytes())?;
     Ok(())
 }
 
@@ -212,8 +291,7 @@ pub fn save_config(root: &Path, config: &RecordingGlobalConfig) -> RecordingResu
         .map_err(|e| RecordingError::StorageError(format!("mkdir: {}", e)))?;
     let path = config_path(root);
     let json = serde_json::to_string_pretty(config)?;
-    std::fs::write(&path, json)
-        .map_err(|e| RecordingError::StorageError(format!("write config: {}", e)))?;
+    durable_write(&path, json.as_bytes())?;
     Ok(())
 }
 
@@ -380,9 +458,7 @@ pub async fn save_envelope_dispatched(
         .await
         .map_err(|e| RecordingError::StorageError(format!("encrypt envelope: {}", e)))?;
         let enc_path = envelope_enc_path(root, &envelope.id);
-        std::fs::write(&enc_path, &blob).map_err(|e| {
-            RecordingError::StorageError(format!("write {}: {}", enc_path.display(), e))
-        })?;
+        durable_write(&enc_path, &blob)?;
         // Sweep the stale plaintext shadow if it exists.
         let plain = envelope_plain_path(root, &envelope.id);
         if plain.exists() {
@@ -548,9 +624,7 @@ pub async fn save_macro_dispatched(
         .await
         .map_err(|e| RecordingError::StorageError(format!("encrypt macro: {}", e)))?;
         let enc_path = macro_enc_path(root, &macro_rec.id);
-        std::fs::write(&enc_path, &blob).map_err(|e| {
-            RecordingError::StorageError(format!("write {}: {}", enc_path.display(), e))
-        })?;
+        durable_write(&enc_path, &blob)?;
         let plain = macro_plain_path(root, &macro_rec.id);
         if plain.exists() {
             let _ = std::fs::remove_file(&plain);
@@ -718,9 +792,7 @@ pub async fn save_media_blob_dispatched(
         .await
         .map_err(|e| RecordingError::StorageError(format!("encrypt media: {}", e)))?;
         let enc_path = media_enc_path(root, basename);
-        std::fs::write(&enc_path, &blob).map_err(|e| {
-            RecordingError::StorageError(format!("write {}: {}", enc_path.display(), e))
-        })?;
+        durable_write(&enc_path, &blob)?;
         let plain = media_plain_path(root, basename);
         if plain.exists() {
             let _ = std::fs::remove_file(&plain);
@@ -728,9 +800,7 @@ pub async fn save_media_blob_dispatched(
         Ok(())
     } else {
         let plain = media_plain_path(root, basename);
-        std::fs::write(&plain, bytes).map_err(|e| {
-            RecordingError::StorageError(format!("write {}: {}", plain.display(), e))
-        })?;
+        durable_write(&plain, bytes)?;
         Ok(())
     }
 }
@@ -949,15 +1019,10 @@ pub async fn rewrite_media_with(
 }
 
 fn atomic_write_path(path: &Path, bytes: &[u8]) -> RecordingResult<()> {
-    let tmp = path.with_extension(format!(
-        "{}.rotating",
-        path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
-    ));
-    std::fs::write(&tmp, bytes)
-        .map_err(|e| RecordingError::StorageError(format!("write tmp: {}", e)))?;
-    std::fs::rename(&tmp, path)
-        .map_err(|e| RecordingError::StorageError(format!("rename: {}", e)))?;
-    Ok(())
+    // Key-rotation rewrites the encrypted file in place; use the durable
+    // writer so a crash mid-rotation can't leave a committed-but-unflushed
+    // (truncated / garbage) envelope that the new DEK can't decrypt.
+    durable_write(path, bytes)
 }
 
 /// Delete both encrypted + plaintext variants of a media blob.
@@ -1032,6 +1097,140 @@ pub async fn read_exported_media(
             .map_err(|e| RecordingError::StorageError(format!("decrypt export: {}", e)));
     }
     Ok(bytes)
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  In-flight crash-recovery snapshots (incremental durability)
+// ──────────────────────────────────────────────────────────────────────
+//  A live terminal recording buffers its entries in RAM and only persists
+//  at stop (see `service.rs`). A crash / power-loss / hard-kill mid-session
+//  would otherwise lose the ENTIRE recording, not just a truncated tail.
+//
+//  To bound that loss, the service periodically writes a full snapshot of
+//  the in-progress recording here. Each snapshot is an INDEPENDENT AEAD
+//  envelope produced by `meta_codec::write`, which uses a fresh random
+//  nonce + salt per call — so overwriting the previous snapshot on each
+//  flush never reuses a nonce and needs no manual nonce/chunk bookkeeping
+//  (this is the deliberate scheme choice over appending to a shared-key
+//  stream, which would require careful nonce sequencing). On the next boot
+//  the service recovers any orphaned snapshot (a session that never
+//  reached a clean stop) into the library, then clears it.
+//
+//  Snapshots live in `<root>/inflight/`, OUTSIDE `recordings/`, so the
+//  library scanners (`load_all_envelopes*`) never pick them up.
+// ══════════════════════════════════════════════════════════════════════
+
+fn inflight_dir(root: &Path) -> PathBuf {
+    root.join("inflight")
+}
+
+fn terminal_snapshot_path(root: &Path, id: &str) -> PathBuf {
+    inflight_dir(root).join(format!("{}.snapshot", id))
+}
+
+/// Durably write a crash-recovery snapshot of an in-progress terminal
+/// recording. `enc = Some(state)` writes an AEAD envelope (the state must
+/// be unlocked); `enc = None` writes plaintext JSON and is only ever used
+/// under the caller's explicit encrypt-at-rest opt-out, mirroring the
+/// persist policy for every other artifact in this module.
+pub async fn write_terminal_snapshot(
+    root: &Path,
+    recording: &TerminalRecording,
+    enc: Option<&EncryptionState>,
+) -> RecordingResult<()> {
+    let dir = inflight_dir(root);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| RecordingError::StorageError(format!("mkdir inflight: {}", e)))?;
+    let path = terminal_snapshot_path(root, &recording.metadata.recording_id);
+
+    let bytes = if let Some(state) = enc {
+        let value = serde_json::to_value(recording)?;
+        meta_codec::write(
+            state,
+            &value,
+            MasterKeyStorage::Vault,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .map_err(|e| RecordingError::StorageError(format!("encrypt snapshot: {}", e)))?
+    } else {
+        serde_json::to_vec(recording)?
+    };
+    durable_write(&path, &bytes)
+}
+
+/// Read + decode a terminal snapshot. Returns `Ok(None)` when the file is
+/// absent. An encrypted snapshot with `enc = None` (or a locked state)
+/// surfaces an error so the caller can skip it and retry on a later
+/// unlocked boot rather than dropping the data.
+pub async fn read_terminal_snapshot(
+    root: &Path,
+    id: &str,
+    enc: Option<&EncryptionState>,
+) -> RecordingResult<Option<TerminalRecording>> {
+    let path = terminal_snapshot_path(root, id);
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(RecordingError::StorageError(format!(
+                "read snapshot {}: {}",
+                path.display(),
+                e
+            )))
+        }
+    };
+
+    let is_envelope =
+        bytes.len() >= 6 && &bytes[..6] == sorng_encryption::envelope::MAGIC;
+    let value: serde_json::Value = if is_envelope {
+        let state = enc.ok_or_else(|| {
+            RecordingError::StorageError(
+                "in-flight snapshot is encrypted; unlock first to recover it".into(),
+            )
+        })?;
+        meta_codec::read(state, &bytes)
+            .await
+            .map_err(|e| RecordingError::StorageError(format!("decrypt snapshot: {}", e)))?
+            .ok_or_else(|| RecordingError::StorageError("empty snapshot payload".into()))?
+    } else {
+        serde_json::from_slice(&bytes)?
+    };
+    let recording: TerminalRecording = serde_json::from_value(value)?;
+    Ok(Some(recording))
+}
+
+/// List the recording ids that have an orphaned in-flight snapshot on
+/// disk. An id here means a session that never reached a clean stop.
+pub fn list_terminal_snapshots(root: &Path) -> Vec<String> {
+    let dir = inflight_dir(root);
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if let Some(id) = name.strip_suffix(".snapshot") {
+                    out.push(id.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Remove a terminal snapshot. A missing file is not an error — the
+/// caller treats clearing as best-effort.
+pub fn clear_terminal_snapshot(root: &Path, id: &str) -> RecordingResult<()> {
+    let path = terminal_snapshot_path(root, id);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(RecordingError::StorageError(format!(
+            "clear snapshot {}: {}",
+            path.display(),
+            e
+        ))),
+    }
 }
 
 // ── Migration helpers ──────────────────────────────────────────────────
@@ -1964,14 +2163,12 @@ mod enc_dispatch_tests {
 
     #[tokio::test]
     async fn leftover_tmp_file_does_not_block_next_write_recording() {
-        // save_envelope_dispatched uses std::fs::write directly (no
-        // .tmp slot on the normal write path; .rotating only exists
-        // for the rotation orchestrator's atomic_write_path helper).
-        // Plant a stale `<id>.json.enc.tmp` + `<id>.json.enc.rotating`
-        // alongside and verify a normal write still succeeds.
-        //
-        // Observed implementation behaviour: normal recording writes
-        // are NOT atomic-with-temp; the leftovers are simply untouched.
+        // save_envelope_dispatched now routes through `durable_write`,
+        // which uses its OWN dot-prefixed temp (`.<id>.json.enc.tmp`).
+        // Plant stale non-dot leftovers (`<id>.json.enc.tmp` +
+        // `<id>.json.enc.rotating`) from a pretend prior crash and verify
+        // a normal write still succeeds and round-trips — the durable
+        // writer neither collides with nor is blocked by them.
         let tmp = tempdir().unwrap();
         ensure_dirs(tmp.path()).unwrap();
         let enc = unlocked().await;
