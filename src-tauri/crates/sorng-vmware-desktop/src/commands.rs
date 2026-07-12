@@ -27,6 +27,7 @@ pub async fn vmwd_connect(
         vmrest_port,
         vmrest_username,
         vmrest_password,
+        vmrest_skip_tls_verify: false,
         auto_start_vmrest: auto_start_vmrest.unwrap_or(false),
         timeout_secs: timeout_secs.unwrap_or(60),
     };
