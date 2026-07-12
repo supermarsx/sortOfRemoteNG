@@ -55,17 +55,23 @@ beforeEach(() => {
 });
 
 describe("IntegrationsHub", () => {
-  it("renders the empty state when no integrations are registered", async () => {
-    // Wave-0 scaffold ships an empty registry; downstream waves populate it.
-    expect(integrationRegistry).toHaveLength(0);
+  it("renders registered integrations from the registry", async () => {
+    // Wave-0 shipped an empty registry; Wave 1+ populates it. This asserts the
+    // hub renders whatever is registered (generic — not coupled to any one
+    // integration) rather than the empty state.
+    expect(integrationRegistry.length).toBeGreaterThan(0);
     invokeMock.mockResolvedValue(null); // read_app_data -> no instances
 
     render(<IntegrationsHub isOpen onClose={() => {}} />);
 
-    expect(await screen.findByTestId("integrations-empty")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("integrations-empty"),
+      ).not.toBeInTheDocument(),
+    );
     expect(
-      screen.getByText("No integrations available yet"),
-    ).toBeInTheDocument();
+      screen.getAllByTestId(/^integration-card-/).length,
+    ).toBeGreaterThan(0);
   });
 
   it("is wired as a Tool-surface tab", () => {
