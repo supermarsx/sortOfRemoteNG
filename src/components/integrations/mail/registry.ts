@@ -13,7 +13,16 @@
 
 import type { ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
-import { FileSignature, Filter, Shield, ShieldCheck } from "lucide-react";
+import {
+  FileSignature,
+  Filter,
+  Inbox,
+  KeyRound,
+  Mailbox,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 
 /** Props every mail sub-tab receives from the shell. Each mail sub-tab manages
  *  its OWN service connection and persistence, so nothing is required. `active`
@@ -73,5 +82,33 @@ export const mailSubTabs: MailSubTab[] = [
     label: "ClamAV",
     icon: ShieldCheck,
     importTab: () => import("./ClamavSubTab"),
+  },
+  {
+    subTabKey: "postfix",
+    crate: "sorng-postfix",
+    label: "Postfix",
+    icon: Mailbox,
+    importTab: () => import("./PostfixSubTab"),
+  },
+  {
+    subTabKey: "dovecot",
+    crate: "sorng-dovecot",
+    label: "Dovecot",
+    icon: Inbox,
+    importTab: () => import("./DovecotSubTab"),
+  },
+  {
+    subTabKey: "amavis",
+    crate: "sorng-amavis",
+    label: "Amavis",
+    icon: ShieldAlert,
+    importTab: () => import("./AmavisSubTab"),
+  },
+  {
+    subTabKey: "cyrusSasl",
+    crate: "sorng-cyrus-sasl",
+    label: "Cyrus SASL",
+    icon: KeyRound,
+    importTab: () => import("./CyrusSaslSubTab"),
   },
 ];

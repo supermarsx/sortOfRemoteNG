@@ -43,3 +43,14 @@ export * from "./opendkim";
 export * from "./procmail";
 export * from "./rspamd";
 export * from "./clamav";
+export * from "./postfix";
+export * from "./dovecot";
+export * from "./amavis";
+export * from "./cyrusSasl";
+
+// `ConfigTestResult` (opendkim/postfix/dovecot) and `SshOutput` (postfix/amavis)
+// are declared per-crate with crate-specific shapes, so a plain star re-export is
+// ambiguous (TS2308). Disambiguate the barrel to the Postfix variant; a consumer
+// needing another crate's shape should import it from that crate's own module
+// (e.g. `import type { ConfigTestResult } from "../../types/mail/dovecot"`).
+export type { ConfigTestResult, SshOutput } from "./postfix";
