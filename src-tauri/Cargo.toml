@@ -353,6 +353,11 @@ dirs = { workspace = true }
 # build graph — declaring them direct adds zero new artifacts.
 hex = { workspace = true }
 rand = { workspace = true }
+# anyhow: return type of api.rs::start_server per the t41 shared-interface
+# contract (start_server -> anyhow::Result<()>). Already present in Cargo.lock
+# transitively, so declaring it direct adds zero new artifacts. Owned by the
+# deps executor (t41-e3); added by t41-e4 to unblock the api.rs signature.
+anyhow = "1"
 tauri-plugin-window-state = "=2.4.1"
 axum = "0.7"
 secrecy = "0.8"
