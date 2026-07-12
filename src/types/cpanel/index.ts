@@ -52,5 +52,5 @@ export interface CpanelConnectionSummary {
 }
 
 // ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./server";
-// export * from "./account";
+export * from "./server";
+export * from "./account";

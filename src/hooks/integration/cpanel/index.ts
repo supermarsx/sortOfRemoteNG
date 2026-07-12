@@ -9,5 +9,5 @@
 export * from "./useCpanelConnection";
 
 // ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./useCpanelServer";
-// export * from "./useCpanelAccount";
+export * from "./useCpanelServer";
+export * from "./useCpanelAccount";

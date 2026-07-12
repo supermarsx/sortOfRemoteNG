@@ -33,4 +33,15 @@ export interface CpanelCategoryTab {
 /** Registered cPanel/WHM sub-tabs. EMPTY at lead time; the per-crate integrator
  *  appends `{ categoryKey, label, importTab }` for each category exec
  *  (`server` = WHM / Server Administration, `account` = cPanel Account Services). */
-export const cpanelCategoryTabs: CpanelCategoryTab[] = [];
+export const cpanelCategoryTabs: CpanelCategoryTab[] = [
+  {
+    categoryKey: "server",
+    label: "WHM / Server Administration",
+    importTab: () => import("./CpanelServerTab"),
+  },
+  {
+    categoryKey: "account",
+    label: "cPanel Account Services",
+    importTab: () => import("./CpanelAccountTab"),
+  },
+];
