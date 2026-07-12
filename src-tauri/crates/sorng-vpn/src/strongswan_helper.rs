@@ -1,6 +1,9 @@
 //! Linux strongSwan helper for IPsec-based VPN protocols.
 //! Provides shared functions for IKEv2, IPsec, and L2TP/IPsec connections.
 
+#[cfg(not(windows))]
+use crate::platform;
+
 /// Write an ipsec.conf connection block.
 #[cfg(not(windows))]
 pub async fn write_ipsec_conf(

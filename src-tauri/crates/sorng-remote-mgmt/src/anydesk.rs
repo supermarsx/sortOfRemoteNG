@@ -104,7 +104,7 @@ impl AnyDeskService {
         #[cfg(target_os = "linux")]
         {
             // On Linux, try various methods
-            let result = Command::new("anydesk").arg(anydesk_id).spawn();
+            let result = Command::new("anydesk").arg(&anydesk_id).spawn();
 
             match result {
                 Ok(_) => {

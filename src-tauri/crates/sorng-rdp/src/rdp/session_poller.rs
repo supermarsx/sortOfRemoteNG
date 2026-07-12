@@ -56,7 +56,6 @@ impl SessionPoller {
             let tcp_fd = tcp_socket.as_raw_fd();
             let wake_fd = wake_socket.as_raw_fd();
             unsafe {
-                use polling::os::iocp_or_io as raw;
                 poller.add(tcp_fd, Event::readable(KEY_TCP))?;
                 poller.add(wake_fd, Event::readable(KEY_WAKE))?;
             }
