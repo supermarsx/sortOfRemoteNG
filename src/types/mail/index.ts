@@ -38,15 +38,21 @@ export interface MailSshConnectionFields {
   timeout_secs?: number;
 }
 
-// ── per-crate type re-exports (appended by the per-crate integrator) ─────────
-export * from "./opendkim";
-export * from "./procmail";
-export * from "./rspamd";
-export * from "./clamav";
-export * from "./postfix";
-export * from "./dovecot";
-export * from "./amavis";
-export * from "./cyrusSasl";
+// ── per-crate type namespaces (appended by the per-crate integrator) ─────────
+// NAMESPACED, not flat `export * from`: these 8 crates were authored
+// independently and a few generic helper types collide by name across them
+// (e.g. `ConfigTestResult`, `SshOutput`), which a flat re-export cannot merge
+// (TS2308). Each crate is exposed under its own namespace instead. Consume a
+// crate's types either as `mail.postfix.PostfixConnectionConfig` (via this
+// barrel) or, as every sub-tab does, by importing directly from `./postfix`.
+export * as postfix from "./postfix";
+export * as dovecot from "./dovecot";
+export * as amavis from "./amavis";
+export * as opendkim from "./opendkim";
+export * as cyrusSasl from "./cyrusSasl";
+export * as procmail from "./procmail";
+export * as rspamd from "./rspamd";
+export * as clamav from "./clamav";
 
 // `ConfigTestResult` (opendkim/postfix/dovecot) and `SshOutput` (postfix/amavis)
 // are declared per-crate with crate-specific shapes, so a plain star re-export is
