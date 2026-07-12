@@ -412,10 +412,39 @@ async fn rewrite_connections(
 }
 
 fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
     let tmp = path.with_extension(format!(
         "{}.rotating",
         path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
     ));
-    std::fs::write(&tmp, bytes).map_err(|e| format!("write tmp: {e}"))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))
+
+    // Write the temp file and flush it to stable storage BEFORE the rename.
+    // Without this barrier a crash after the rename can leave the target as a
+    // durably-committed directory entry pointing at unflushed (empty/partial)
+    // data — the rotated key material would be lost. Mirrors the durability
+    // barrier the other encrypted writers use.
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| format!("write tmp: {e}"))?;
+        f.write_all(bytes).map_err(|e| format!("write tmp: {e}"))?;
+        f.sync_all().map_err(|e| format!("sync tmp: {e}"))?;
+    }
+
+    std::fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))?;
+
+    // fsync the directory holding `path` so the rename itself is durable.
+    // POSIX-only — on Windows the NTFS journal covers directory metadata as
+    // part of the rename and directories can't be opened for fsync.
+    #[cfg(unix)]
+    {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                if let Ok(dir) = std::fs::File::open(parent) {
+                    let _ = dir.sync_all();
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
