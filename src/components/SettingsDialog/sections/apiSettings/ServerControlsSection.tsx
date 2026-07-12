@@ -64,6 +64,39 @@ export const ServerControlsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
         </div>
 
+        {(mgr.serverStatus === "running" ||
+          mgr.authRequired ||
+          mgr.authForcedByRemote) && (
+          <div className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
+            {mgr.serverStatus === "running" && mgr.bindAddr && (
+              <div className="flex items-center justify-between">
+                <span>{mgr.t("settings.api.bindAddress", "Bind address")}</span>
+                <span className="font-mono text-[var(--color-text)]">
+                  {mgr.bindAddr}
+                </span>
+              </div>
+            )}
+            {(mgr.authRequired || mgr.authForcedByRemote) && (
+              <div className="flex items-center justify-between">
+                <span>
+                  {mgr.t("settings.api.authentication", "Authentication")}
+                </span>
+                <span className="text-success">
+                  {mgr.t("settings.api.authEnforced", "Enforced")}
+                </span>
+              </div>
+            )}
+            {mgr.authForcedByRemote && (
+              <p className="text-[10px] text-warning">
+                {mgr.t(
+                  "settings.api.authForcedRemoteNote",
+                  "Authentication is enforced because remote connections are enabled.",
+                )}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2">
           <button
             type="button"

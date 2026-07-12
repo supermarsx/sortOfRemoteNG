@@ -360,6 +360,11 @@
     "level": "Stufe"
   },
   "settings": {
+    "api": {
+      "bindAddress": "Bind address",
+      "authEnforced": "Enforced",
+      "authForcedRemoteNote": "Authentication is enforced because remote connections are enabled."
+    },
     "title": "Einstellungen",
     "general": "Allgemein",
     "security": "Sicherheit",

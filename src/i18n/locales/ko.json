@@ -360,6 +360,11 @@
     "level": "수준"
   },
   "settings": {
+    "api": {
+      "bindAddress": "Bind address",
+      "authEnforced": "Enforced",
+      "authForcedRemoteNote": "Authentication is enforced because remote connections are enabled."
+    },
     "title": "설정",
     "general": "일반",
     "security": "보안",

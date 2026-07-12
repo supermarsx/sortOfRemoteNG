@@ -360,6 +360,11 @@
     "level": "级别"
   },
   "settings": {
+    "api": {
+      "bindAddress": "Bind address",
+      "authEnforced": "Enforced",
+      "authForcedRemoteNote": "Authentication is enforced because remote connections are enabled."
+    },
     "title": "设置",
     "general": "常规",
     "security": "安全",
