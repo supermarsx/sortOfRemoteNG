@@ -3262,6 +3262,75 @@
         "emptyCertificates": "Keine Zertifikate.",
         "renamePrompt": "Neuer Name"
       },
+      "networking": {
+        "notConnected": "Mit einem LXD-Server verbinden, um das Netzwerk zu verwalten.",
+        "refresh": "Aktualisieren",
+        "create": "Erstellen",
+        "cancel": "Abbrechen",
+        "save": "Speichern",
+        "yes": "Ja",
+        "no": "Nein",
+        "selectNetwork": "Netzwerk auswählen…",
+        "pickNetwork": "Netzwerk auswählen, um die Ressourcen anzuzeigen.",
+        "invalidJson": "Ungültiges JSON.",
+        "sections": {
+          "networks": "Netzwerke",
+          "acls": "ACLs",
+          "forwards": "Weiterleitungen",
+          "zones": "Zonen",
+          "loadBalancers": "Load Balancer",
+          "peers": "Peers"
+        },
+        "fields": {
+          "name": "Name",
+          "type": "Typ",
+          "managed": "Verwaltet",
+          "status": "Status",
+          "usedBy": "Verwendet von",
+          "description": "Beschreibung",
+          "rules": "Regeln",
+          "listenAddress": "Listen-Adresse",
+          "ports": "Ports",
+          "backends": "Backends",
+          "targetProject": "Zielprojekt",
+          "targetNetwork": "Zielnetzwerk"
+        },
+        "actions": {
+          "state": "Status",
+          "rename": "Umbenennen",
+          "delete": "Löschen",
+          "edit": "Bearbeiten"
+        },
+        "prompt": {
+          "rename": "Neuer Name"
+        },
+        "confirm": {
+          "deleteNetwork": "Netzwerk {{name}} löschen?",
+          "deleteAcl": "ACL {{name}} löschen?",
+          "deleteForward": "Weiterleitung {{addr}} löschen?",
+          "deleteZone": "Zone {{name}} löschen?",
+          "deleteLoadBalancer": "Load Balancer {{addr}} löschen?"
+        },
+        "empty": {
+          "networks": "Keine Netzwerke.",
+          "acls": "Keine ACLs.",
+          "forwards": "Keine Weiterleitungen.",
+          "zones": "Keine Zonen.",
+          "loadBalancers": "Keine Load Balancer.",
+          "peers": "Keine Peers."
+        },
+        "acl": {
+          "ingress": "ein",
+          "egress": "aus",
+          "editBody": "ACL-Body (JSON)"
+        },
+        "detail": {
+          "state": "Status",
+          "leases": "DHCP-Leases",
+          "patch": "Konfiguration patchen (JSON)",
+          "applyPatch": "Patch anwenden"
+        }
+      },
       "title": "LXD / Incus",
       "subtitle": "LXD- und Incus-Container, VMs und Infrastruktur verwalten",
       "connect": "Verbinden",

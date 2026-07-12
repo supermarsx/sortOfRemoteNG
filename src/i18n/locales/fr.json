@@ -3262,6 +3262,75 @@
         "emptyCertificates": "Aucun certificat.",
         "renamePrompt": "Nouveau nom"
       },
+      "networking": {
+        "notConnected": "Connectez-vous à un serveur LXD pour gérer le réseau.",
+        "refresh": "Actualiser",
+        "create": "Créer",
+        "cancel": "Annuler",
+        "save": "Enregistrer",
+        "yes": "Oui",
+        "no": "Non",
+        "selectNetwork": "Sélectionner un réseau…",
+        "pickNetwork": "Choisissez un réseau pour afficher ses ressources.",
+        "invalidJson": "JSON non valide.",
+        "sections": {
+          "networks": "Réseaux",
+          "acls": "ACL",
+          "forwards": "Redirections",
+          "zones": "Zones",
+          "loadBalancers": "Répartiteurs de charge",
+          "peers": "Pairs"
+        },
+        "fields": {
+          "name": "Nom",
+          "type": "Type",
+          "managed": "Géré",
+          "status": "État",
+          "usedBy": "Utilisé par",
+          "description": "Description",
+          "rules": "Règles",
+          "listenAddress": "Adresse d'écoute",
+          "ports": "Ports",
+          "backends": "Backends",
+          "targetProject": "Projet cible",
+          "targetNetwork": "Réseau cible"
+        },
+        "actions": {
+          "state": "État",
+          "rename": "Renommer",
+          "delete": "Supprimer",
+          "edit": "Modifier"
+        },
+        "prompt": {
+          "rename": "Nouveau nom"
+        },
+        "confirm": {
+          "deleteNetwork": "Supprimer le réseau {{name}} ?",
+          "deleteAcl": "Supprimer l'ACL {{name}} ?",
+          "deleteForward": "Supprimer la redirection {{addr}} ?",
+          "deleteZone": "Supprimer la zone {{name}} ?",
+          "deleteLoadBalancer": "Supprimer le répartiteur {{addr}} ?"
+        },
+        "empty": {
+          "networks": "Aucun réseau.",
+          "acls": "Aucune ACL.",
+          "forwards": "Aucune redirection.",
+          "zones": "Aucune zone.",
+          "loadBalancers": "Aucun répartiteur de charge.",
+          "peers": "Aucun pair."
+        },
+        "acl": {
+          "ingress": "entr.",
+          "egress": "sort.",
+          "editBody": "Corps de l'ACL (JSON)"
+        },
+        "detail": {
+          "state": "État",
+          "leases": "Baux DHCP",
+          "patch": "Corriger la config (JSON)",
+          "applyPatch": "Appliquer le patch"
+        }
+      },
       "title": "LXD / Incus",
       "subtitle": "Gérer les conteneurs, VM et l'infrastructure LXD et Incus",
       "connect": "Se connecter",

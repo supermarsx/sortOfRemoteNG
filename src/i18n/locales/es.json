@@ -3262,6 +3262,75 @@
         "emptyCertificates": "No hay certificados.",
         "renamePrompt": "Nuevo nombre"
       },
+      "networking": {
+        "notConnected": "Conéctate a un servidor LXD para gestionar la red.",
+        "refresh": "Actualizar",
+        "create": "Crear",
+        "cancel": "Cancelar",
+        "save": "Guardar",
+        "yes": "Sí",
+        "no": "No",
+        "selectNetwork": "Selecciona una red…",
+        "pickNetwork": "Elige una red para ver sus recursos.",
+        "invalidJson": "JSON no válido.",
+        "sections": {
+          "networks": "Redes",
+          "acls": "ACL",
+          "forwards": "Reenvíos",
+          "zones": "Zonas",
+          "loadBalancers": "Balanceadores de carga",
+          "peers": "Pares"
+        },
+        "fields": {
+          "name": "Nombre",
+          "type": "Tipo",
+          "managed": "Gestionada",
+          "status": "Estado",
+          "usedBy": "Usada por",
+          "description": "Descripción",
+          "rules": "Reglas",
+          "listenAddress": "Dirección de escucha",
+          "ports": "Puertos",
+          "backends": "Backends",
+          "targetProject": "Proyecto destino",
+          "targetNetwork": "Red destino"
+        },
+        "actions": {
+          "state": "Estado",
+          "rename": "Renombrar",
+          "delete": "Eliminar",
+          "edit": "Editar"
+        },
+        "prompt": {
+          "rename": "Nuevo nombre"
+        },
+        "confirm": {
+          "deleteNetwork": "¿Eliminar la red {{name}}?",
+          "deleteAcl": "¿Eliminar la ACL {{name}}?",
+          "deleteForward": "¿Eliminar el reenvío {{addr}}?",
+          "deleteZone": "¿Eliminar la zona {{name}}?",
+          "deleteLoadBalancer": "¿Eliminar el balanceador {{addr}}?"
+        },
+        "empty": {
+          "networks": "Sin redes.",
+          "acls": "Sin ACL.",
+          "forwards": "Sin reenvíos.",
+          "zones": "Sin zonas.",
+          "loadBalancers": "Sin balanceadores de carga.",
+          "peers": "Sin pares."
+        },
+        "acl": {
+          "ingress": "entr.",
+          "egress": "sal.",
+          "editBody": "Cuerpo de la ACL (JSON)"
+        },
+        "detail": {
+          "state": "Estado",
+          "leases": "Concesiones DHCP",
+          "patch": "Aplicar patch a la config (JSON)",
+          "applyPatch": "Aplicar patch"
+        }
+      },
       "title": "LXD / Incus",
       "subtitle": "Gestiona contenedores, VMs e infraestructura de LXD e Incus",
       "connect": "Conectar",

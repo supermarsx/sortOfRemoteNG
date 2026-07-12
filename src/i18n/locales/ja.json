@@ -3544,6 +3544,78 @@
         "hostRequired": "ホストは必須です",
         "tokenRequired": "API トークンは必須です"
       },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}} 件",
+        "empty": "レコードがありません。",
+        "groups": {
+          "sites": "サイト",
+          "racks": "ラック",
+          "devices": "デバイス",
+          "interfaces": "インターフェース",
+          "cables": "ケーブル"
+        },
+        "refs": {
+          "types": "デバイスタイプ",
+          "manufacturers": "製造元",
+          "platforms": "プラットフォーム",
+          "roles": "デバイスロール"
+        },
+        "actions": {
+          "refresh": "更新",
+          "new": "新規",
+          "edit": "編集",
+          "delete": "削除",
+          "close": "閉じる",
+          "cancel": "キャンセル",
+          "create": "作成",
+          "update": "保存",
+          "updateHint": "完全更新 (PUT)",
+          "patch": "パッチ",
+          "patchHint": "部分更新 (PATCH)",
+          "apply": "適用",
+          "elevation": "エレベーション",
+          "reservations": "予約",
+          "renderConfig": "構成",
+          "connections": "接続",
+          "trace": "トレース"
+        },
+        "filters": {
+          "region": "リージョン",
+          "group": "グループ",
+          "siteId": "サイトID",
+          "deviceId": "デバイスID",
+          "search": "検索",
+          "bySite": "サイトIDで",
+          "byRack": "ラックIDで"
+        },
+        "fields": {
+          "name": "名前",
+          "status": "ステータス",
+          "region": "リージョン",
+          "devices": "デバイス",
+          "site": "サイト",
+          "type": "タイプ",
+          "slug": "スラッグ",
+          "device": "デバイス",
+          "enabled": "有効",
+          "label": "ラベル",
+          "length": "長さ"
+        },
+        "editor": {
+          "hint": "NetBox に送信される JSON ペイロードを編集します。",
+          "newSite": "新規サイト",
+          "editSite": "サイトを編集",
+          "newRack": "新規ラック",
+          "editRack": "ラックを編集",
+          "newDevice": "新規デバイス",
+          "editDevice": "デバイスを編集",
+          "newInterface": "新規インターフェース",
+          "editInterface": "インターフェースを編集",
+          "newCable": "新規ケーブル",
+          "editCable": "ケーブルを編集"
+        }
+      },
       "tenancy": {
         "title": "テナント",
         "tenants": "テナント",

@@ -3544,6 +3544,78 @@
         "hostRequired": "호스트가 필요합니다",
         "tokenRequired": "API 토큰이 필요합니다"
       },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}}개 항목",
+        "empty": "레코드가 없습니다.",
+        "groups": {
+          "sites": "사이트",
+          "racks": "랙",
+          "devices": "장치",
+          "interfaces": "인터페이스",
+          "cables": "케이블"
+        },
+        "refs": {
+          "types": "장치 유형",
+          "manufacturers": "제조사",
+          "platforms": "플랫폼",
+          "roles": "장치 역할"
+        },
+        "actions": {
+          "refresh": "새로고침",
+          "new": "새로 만들기",
+          "edit": "편집",
+          "delete": "삭제",
+          "close": "닫기",
+          "cancel": "취소",
+          "create": "생성",
+          "update": "저장",
+          "updateHint": "전체 업데이트 (PUT)",
+          "patch": "패치",
+          "patchHint": "부분 업데이트 (PATCH)",
+          "apply": "적용",
+          "elevation": "엘리베이션",
+          "reservations": "예약",
+          "renderConfig": "구성",
+          "connections": "연결",
+          "trace": "추적"
+        },
+        "filters": {
+          "region": "리전",
+          "group": "그룹",
+          "siteId": "사이트 ID",
+          "deviceId": "장치 ID",
+          "search": "검색",
+          "bySite": "사이트 ID로",
+          "byRack": "랙 ID로"
+        },
+        "fields": {
+          "name": "이름",
+          "status": "상태",
+          "region": "리전",
+          "devices": "장치",
+          "site": "사이트",
+          "type": "유형",
+          "slug": "슬러그",
+          "device": "장치",
+          "enabled": "활성화",
+          "label": "레이블",
+          "length": "길이"
+        },
+        "editor": {
+          "hint": "NetBox로 전송되는 JSON 페이로드를 편집합니다.",
+          "newSite": "새 사이트",
+          "editSite": "사이트 편집",
+          "newRack": "새 랙",
+          "editRack": "랙 편집",
+          "newDevice": "새 장치",
+          "editDevice": "장치 편집",
+          "newInterface": "새 인터페이스",
+          "editInterface": "인터페이스 편집",
+          "newCable": "새 케이블",
+          "editCable": "케이블 편집"
+        }
+      },
       "tenancy": {
         "title": "테넌트",
         "tenants": "테넌트",

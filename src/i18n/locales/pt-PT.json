@@ -3544,6 +3544,78 @@
         "hostRequired": "O anfitrião é obrigatório",
         "tokenRequired": "O token de API é obrigatório"
       },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}} itens",
+        "empty": "Sem registos.",
+        "groups": {
+          "sites": "Sites",
+          "racks": "Racks",
+          "devices": "Dispositivos",
+          "interfaces": "Interfaces",
+          "cables": "Cabos"
+        },
+        "refs": {
+          "types": "Tipos de dispositivo",
+          "manufacturers": "Fabricantes",
+          "platforms": "Plataformas",
+          "roles": "Funções de dispositivo"
+        },
+        "actions": {
+          "refresh": "Atualizar",
+          "new": "Novo",
+          "edit": "Editar",
+          "delete": "Eliminar",
+          "close": "Fechar",
+          "cancel": "Cancelar",
+          "create": "Criar",
+          "update": "Guardar",
+          "updateHint": "Atualização completa (PUT)",
+          "patch": "Patch",
+          "patchHint": "Atualização parcial (PATCH)",
+          "apply": "Aplicar",
+          "elevation": "Elevação",
+          "reservations": "Reservas",
+          "renderConfig": "Configuração",
+          "connections": "Ligações",
+          "trace": "Rastreio"
+        },
+        "filters": {
+          "region": "Região",
+          "group": "Grupo",
+          "siteId": "ID do site",
+          "deviceId": "ID do dispositivo",
+          "search": "Pesquisar",
+          "bySite": "Por ID do site",
+          "byRack": "Por ID do rack"
+        },
+        "fields": {
+          "name": "Nome",
+          "status": "Estado",
+          "region": "Região",
+          "devices": "Dispositivos",
+          "site": "Site",
+          "type": "Tipo",
+          "slug": "Slug",
+          "device": "Dispositivo",
+          "enabled": "Ativado",
+          "label": "Etiqueta",
+          "length": "Comprimento"
+        },
+        "editor": {
+          "hint": "Edite o payload JSON enviado para o NetBox.",
+          "newSite": "Novo site",
+          "editSite": "Editar site",
+          "newRack": "Novo rack",
+          "editRack": "Editar rack",
+          "newDevice": "Novo dispositivo",
+          "editDevice": "Editar dispositivo",
+          "newInterface": "Nova interface",
+          "editInterface": "Editar interface",
+          "newCable": "Novo cabo",
+          "editCable": "Editar cabo"
+        }
+      },
       "tenancy": {
         "title": "Inquilinos",
         "tenants": "Inquilinos",
