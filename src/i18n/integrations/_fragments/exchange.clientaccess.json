@@ -1,0 +1,93 @@
+{
+  "clientaccess": {
+    "title": "Client Access & Protocols",
+    "common": {
+      "mailbox": "Mailbox",
+      "load": "Load",
+      "name": "Name",
+      "create": "Create",
+      "save": "Save",
+      "view": "View",
+      "apply": "Apply",
+      "enabled": "Enabled",
+      "enable": "Enable",
+      "disable": "Disable",
+      "server": "Server",
+      "resultSize": "Result size",
+      "cancel": "Cancel"
+    },
+    "calendar": {
+      "title": "Calendar",
+      "loadPerms": "Permissions",
+      "loadBooking": "Booking config",
+      "permissions": "Calendar permissions",
+      "user": "User",
+      "accessRights": "Access rights",
+      "booking": "Resource booking",
+      "autoAccept": "Auto-accept",
+      "allowConflicts": "Allow conflicts",
+      "allowRecurring": "Allow recurring"
+    },
+    "pf": {
+      "title": "Public Folders",
+      "root": "Root path",
+      "recurse": "Recurse",
+      "create": "New folder",
+      "parentPath": "Parent path",
+      "mailEnabled": "Mail-enabled",
+      "mailEnable": "Mail-enable",
+      "mailDisable": "Mail-disable",
+      "stats": "Statistics",
+      "detail": "Folder detail",
+      "items": "items"
+    },
+    "mobile": {
+      "title": "Mobile Devices",
+      "forMailbox": "For mailbox",
+      "all": "All devices",
+      "device": "Device",
+      "model": "Model",
+      "state": "State",
+      "allow": "Allow",
+      "block": "Block",
+      "wipe": "Wipe",
+      "statistics": "Device statistics",
+      "foldersSynced": "folders synced"
+    },
+    "inbox": {
+      "title": "Inbox Rules",
+      "create": "New rule",
+      "moveTo": "Move to folder",
+      "priority": "Priority",
+      "rename": "Rename",
+      "renamePrompt": "New rule name",
+      "detail": "Rule detail"
+    },
+    "policies": {
+      "title": "Client-Access Policies",
+      "owa": "OWA policies",
+      "mdm": "Mobile device policies",
+      "throttling": "Throttling policies",
+      "default": "Default",
+      "toggleRules": "Toggle rules",
+      "togglePassword": "Toggle password"
+    },
+    "vdir": {
+      "title": "Virtual Directories & Outlook Anywhere",
+      "owa": "OWA",
+      "ecp": "ECP",
+      "activesync": "ActiveSync",
+      "ews": "EWS",
+      "mapi": "MAPI",
+      "autodiscover": "Autodiscover",
+      "powershell": "PowerShell",
+      "oab": "OAB",
+      "outlookAnywhere": "Outlook Anywhere",
+      "kind": "Type",
+      "allServers": "All servers",
+      "internalUrl": "Internal URL",
+      "externalUrl": "External URL",
+      "editUrls": "Edit URLs"
+    }
+  }
+}
