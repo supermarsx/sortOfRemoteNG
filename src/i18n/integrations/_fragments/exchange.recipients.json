@@ -1,0 +1,99 @@
+{
+  "integrations": {
+    "exchange": {
+      "recipients": {
+        "title": "Recipients & Mailboxes",
+        "refresh": "Refresh",
+        "new": "New",
+        "save": "Save",
+        "apply": "Apply",
+        "cancel": "Cancel",
+        "view": "View",
+        "edit": "Edit",
+        "stats": "Stats",
+        "perms": "Perms",
+        "forwarding": "Fwd",
+        "ooo": "OOO",
+        "members": "Members",
+        "empty": "No records.",
+        "count": "{{n}} items",
+        "resultSize": "Limit",
+        "filterPlaceholder": "OPATH filter…",
+        "confirmDelete": "Delete {{item}}?",
+        "invalidJson": "Request body is not valid JSON.",
+        "sections": {
+          "mailboxes": "Mailboxes",
+          "groups": "Groups",
+          "contacts": "Mail Contacts",
+          "users": "Mail Users",
+          "shared": "Shared & Resource",
+          "archive": "Archive"
+        },
+        "groups": {
+          "all": "All groups",
+          "dynamic": "Dynamic"
+        },
+        "shared": {
+          "shared": "Shared",
+          "room": "Rooms",
+          "equipment": "Equipment",
+          "roomLists": "Room lists"
+        },
+        "col": {
+          "displayName": "Display name",
+          "primarySmtpAddress": "Primary SMTP",
+          "alias": "Alias",
+          "mailboxType": "Type",
+          "isEnabled": "Enabled",
+          "database": "Database",
+          "groupType": "Type",
+          "memberCount": "Members",
+          "externalEmailAddress": "External address",
+          "userPrincipalName": "UPN",
+          "actions": "Actions"
+        },
+        "editor": {
+          "createMailbox": "Create mailbox",
+          "createGroup": "Create group",
+          "createContact": "Create mail contact",
+          "createUser": "Create mail user",
+          "updateMailbox": "Update mailbox {{id}}",
+          "updateGroup": "Update group {{id}}",
+          "updateContact": "Update contact {{id}}",
+          "setOoo": "Set Out-of-Office {{id}}",
+          "hint": "Raw request body. Fields map 1:1 to the command's camelCase params.",
+          "paramsHint": "Raw Set-MailContact parameters (PascalCase Exchange property names)."
+        },
+        "prompt": {
+          "addPerm": "Add mailbox permission — {{id}}",
+          "removePerm": "Remove mailbox permission — {{id}}",
+          "user": "User",
+          "accessRights": "Access rights",
+          "addMember": "Add group member — {{id}}",
+          "removeMember": "Remove group member — {{id}}",
+          "member": "Member",
+          "trustee": "{{kind}} — {{id}}",
+          "who": "User / trustee",
+          "enable": "Enable mailbox — {{id}}",
+          "database": "Database (optional)",
+          "convert": "Convert mailbox — {{id}}",
+          "targetType": "Target type"
+        },
+        "archive": {
+          "identity": "Mailbox identity",
+          "info": "Archive info",
+          "stats": "Archive stats",
+          "enable": "Enable archive — {{id}}",
+          "enableBtn": "Enable",
+          "disableBtn": "Disable",
+          "autoExpand": "Auto-expanding",
+          "setQuota": "Set archive quota — {{id}}",
+          "quota": "Quota",
+          "warningQuota": "Warning quota",
+          "quotaBtn": "Set quota",
+          "hint": "Archive operations act on the mailbox identity above. Results open in the inspector."
+        }
+      }
+    }
+  }
+}
