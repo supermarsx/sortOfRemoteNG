@@ -87,9 +87,15 @@ describe("mailcowDescriptor", () => {
     expect(mod.default).toBeTypeOf("function");
   });
 
-  it("ships an EMPTY category registry at lead time", () => {
+  it("registers both category sub-tabs in display order", () => {
     expect(Array.isArray(mailcowCategoryTabs)).toBe(true);
-    expect(mailcowCategoryTabs).toHaveLength(0);
+    expect(mailcowCategoryTabs.map((tab) => tab.categoryKey)).toEqual([
+      "objects",
+      "operations",
+    ]);
+    for (const tab of mailcowCategoryTabs) {
+      expect(typeof tab.importTab).toBe("function");
+    }
   });
 });
 

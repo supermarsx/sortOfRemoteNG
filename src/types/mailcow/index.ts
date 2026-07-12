@@ -38,5 +38,5 @@ export interface MailcowConnectionSummary {
 }
 
 // ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./objects";
-// export * from "./operations";
+export * from "./objects";
+export * from "./operations";

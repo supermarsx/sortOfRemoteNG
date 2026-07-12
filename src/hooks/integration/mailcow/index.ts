@@ -9,5 +9,5 @@
 export * from "./useMailcowConnection";
 
 // ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./useMailcowObjects";
-// export * from "./useMailcowOperations";
+export * from "./useMailcowObjects";
+export * from "./useMailcowOperations";

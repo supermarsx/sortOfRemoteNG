@@ -31,8 +31,18 @@ export interface MailcowCategoryTab {
   importTab: () => Promise<{ default: ComponentType<MailcowTabProps> }>;
 }
 
-/** Registered mailcow sub-tabs. EMPTY at lead time; the per-crate integrator
- *  appends `{ categoryKey, label, importTab }` for each category exec
- *  (`objects` = Domains, Mailboxes & Aliases, `operations` = Queue, Quarantine &
- *  Server). */
-export const mailcowCategoryTabs: MailcowCategoryTab[] = [];
+/** Registered mailcow sub-tabs. Wired by the per-crate integrator (t42-mailcow-L)
+ *  after the category execs landed: `objects` = Domains, Mailboxes & Aliases
+ *  (t42-mailcow-c1), `operations` = Queue, Quarantine & Server (t42-mailcow-c2). */
+export const mailcowCategoryTabs: MailcowCategoryTab[] = [
+  {
+    categoryKey: "objects",
+    label: "Domains, Mailboxes & Aliases",
+    importTab: () => import("./MailcowObjectsTab"),
+  },
+  {
+    categoryKey: "operations",
+    label: "Queue, Quarantine & Server",
+    importTab: () => import("./MailcowOperationsTab"),
+  },
+];
