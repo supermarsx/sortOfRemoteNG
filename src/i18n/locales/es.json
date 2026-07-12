@@ -4229,6 +4229,113 @@
         "skipTlsVerify": "Omitir verificación TLS (vmrest HTTPS)",
         "autoStart": "Iniciar vmrest automáticamente si no está en ejecución",
         "timeout": "Tiempo de espera (s)"
+      },
+      "host": {
+        "notConnected": "Conéctate a un host de VMware Workstation para gestionar redes, almacenamiento y configuración.",
+        "working": "Procesando…",
+        "vmxPath": "VM objetivo (ruta .vmx)",
+        "browse": "Examinar",
+        "notice": {
+          "loaded": "Cargado.",
+          "count": "{{n}} elemento(s).",
+          "done": "Hecho."
+        },
+        "col": {
+          "name": "Nombre",
+          "hostPath": "Ruta del host",
+          "writable": "Escribible",
+          "enabled": "Habilitado",
+          "type": "Tipo",
+          "subnet": "Subred",
+          "mask": "Máscara",
+          "network": "Red",
+          "protocol": "Prot.",
+          "hostPort": "Puerto host",
+          "guest": "Invitado",
+          "guestIp": "IP invitado",
+          "guestPort": "Puerto invitado",
+          "desc": "Descripción",
+          "hostname": "Nombre de host",
+          "expires": "Expira",
+          "file": "Archivo",
+          "controller": "Controlador"
+        },
+        "sharedFolders": {
+          "title": "Carpetas compartidas",
+          "enable": "Habilitar",
+          "disable": "Deshabilitar",
+          "list": "Listar",
+          "add": "Añadir carpeta",
+          "setState": "Establecer estado"
+        },
+        "networking": {
+          "title": "Red virtual",
+          "list": "Listar redes",
+          "readConfig": "Leer networking.conf",
+          "create": "Crear",
+          "update": "Actualizar",
+          "get": "Obtener detalles",
+          "portForwards": "Reenvío de puertos NAT",
+          "listForwards": "Listar",
+          "dhcpLeases": "Concesiones DHCP",
+          "setForward": "Establecer reenvío"
+        },
+        "vmdk": {
+          "title": "VMDK / discos",
+          "path": "Ruta VMDK",
+          "sizeMb": "Tamaño (MB)",
+          "diskType": "Tipo de disco",
+          "adapter": "Adaptador",
+          "create": "Crear",
+          "info": "Info",
+          "defragment": "Desfragmentar",
+          "shrink": "Compactar",
+          "expandTo": "Expandir a (MB)",
+          "convertType": "Convertir a tipo",
+          "convertDest": "Destino de conversión (opcional)",
+          "expand": "Expandir",
+          "convert": "Convertir",
+          "renameDest": "Renombrar a",
+          "rename": "Renombrar",
+          "vmDisks": "Discos de la VM objetivo",
+          "listDisks": "Listar discos",
+          "attachPath": "VMDK a conectar",
+          "mode": "Modo (opcional)",
+          "addDisk": "Añadir disco",
+          "bus": "Bus",
+          "unit": "Unidad",
+          "removeDisk": "Quitar disco"
+        },
+        "ovf": {
+          "title": "Importar y exportar OVF / OVA",
+          "import": "Importar",
+          "source": "Origen (.ovf/.ova)",
+          "destDir": "Directorio destino",
+          "name": "Nombre (opcional)",
+          "doImport": "Importar",
+          "imported": "Importado: {{path}}",
+          "export": "Exportar (usa la VM objetivo de arriba)",
+          "exportDest": "Exportar a",
+          "format": "Formato",
+          "doExport": "Exportar"
+        },
+        "vmx": {
+          "title": "Editor de archivo VMX",
+          "dir": "Buscar en directorio",
+          "discover": "Buscar",
+          "parse": "Analizar VMX objetivo",
+          "key": "Clave",
+          "value": "Valor",
+          "setKey": "Establecer clave",
+          "removeKeys": "Quitar claves (separadas por comas)",
+          "doRemoveKeys": "Quitar"
+        },
+        "prefs": {
+          "title": "Preferencias",
+          "read": "Leer preferencias",
+          "defaultDir": "Directorio VM predeterminado",
+          "set": "Establecer preferencia"
+        }
       }
     },
     "vmware": {

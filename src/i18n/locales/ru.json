@@ -4232,6 +4232,113 @@
         "skipTlsVerify": "Пропустить проверку TLS (vmrest HTTPS)",
         "autoStart": "Автозапуск vmrest, если не запущен",
         "timeout": "Тайм-аут (с)"
+      },
+      "host": {
+        "notConnected": "Подключитесь к хосту VMware Workstation для управления сетью, хранилищем и конфигурацией.",
+        "working": "Выполняется…",
+        "vmxPath": "Целевая ВМ (путь .vmx)",
+        "browse": "Обзор",
+        "notice": {
+          "loaded": "Загружено.",
+          "count": "{{n}} элем.",
+          "done": "Готово."
+        },
+        "col": {
+          "name": "Имя",
+          "hostPath": "Путь на хосте",
+          "writable": "Запись",
+          "enabled": "Включено",
+          "type": "Тип",
+          "subnet": "Подсеть",
+          "mask": "Маска",
+          "network": "Сеть",
+          "protocol": "Прот.",
+          "hostPort": "Порт хоста",
+          "guest": "Гость",
+          "guestIp": "IP гостя",
+          "guestPort": "Порт гостя",
+          "desc": "Описание",
+          "hostname": "Имя хоста",
+          "expires": "Истекает",
+          "file": "Файл",
+          "controller": "Контроллер"
+        },
+        "sharedFolders": {
+          "title": "Общие папки",
+          "enable": "Включить",
+          "disable": "Отключить",
+          "list": "Список",
+          "add": "Добавить папку",
+          "setState": "Задать состояние"
+        },
+        "networking": {
+          "title": "Виртуальная сеть",
+          "list": "Список сетей",
+          "readConfig": "Прочитать networking.conf",
+          "create": "Создать",
+          "update": "Обновить",
+          "get": "Получить сведения",
+          "portForwards": "Проброс портов NAT",
+          "listForwards": "Список",
+          "dhcpLeases": "Аренды DHCP",
+          "setForward": "Задать проброс"
+        },
+        "vmdk": {
+          "title": "VMDK / диски",
+          "path": "Путь VMDK",
+          "sizeMb": "Размер (МБ)",
+          "diskType": "Тип диска",
+          "adapter": "Адаптер",
+          "create": "Создать",
+          "info": "Сведения",
+          "defragment": "Дефрагментация",
+          "shrink": "Сжать",
+          "expandTo": "Расширить до (МБ)",
+          "convertType": "Преобразовать в тип",
+          "convertDest": "Назначение преобразования (необязательно)",
+          "expand": "Расширить",
+          "convert": "Преобразовать",
+          "renameDest": "Переименовать в",
+          "rename": "Переименовать",
+          "vmDisks": "Диски целевой ВМ",
+          "listDisks": "Список дисков",
+          "attachPath": "VMDK для подключения",
+          "mode": "Режим (необязательно)",
+          "addDisk": "Добавить диск",
+          "bus": "Шина",
+          "unit": "Устройство",
+          "removeDisk": "Удалить диск"
+        },
+        "ovf": {
+          "title": "Импорт и экспорт OVF / OVA",
+          "import": "Импорт",
+          "source": "Источник (.ovf/.ova)",
+          "destDir": "Целевой каталог",
+          "name": "Имя (необязательно)",
+          "doImport": "Импортировать",
+          "imported": "Импортировано: {{path}}",
+          "export": "Экспорт (использует целевую ВМ выше)",
+          "exportDest": "Экспортировать в",
+          "format": "Формат",
+          "doExport": "Экспортировать"
+        },
+        "vmx": {
+          "title": "Редактор файла VMX",
+          "dir": "Искать в каталоге",
+          "discover": "Искать",
+          "parse": "Разобрать целевой VMX",
+          "key": "Ключ",
+          "value": "Значение",
+          "setKey": "Задать ключ",
+          "removeKeys": "Удалить ключи (через запятую)",
+          "doRemoveKeys": "Удалить"
+        },
+        "prefs": {
+          "title": "Настройки",
+          "read": "Прочитать настройки",
+          "defaultDir": "Каталог ВМ по умолчанию",
+          "set": "Задать настройку"
+        }
       }
     },
     "vmware": {

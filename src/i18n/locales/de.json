@@ -3613,6 +3613,78 @@
         "hostRequired": "Host ist erforderlich",
         "tokenRequired": "API-Token ist erforderlich"
       },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}} Einträge",
+        "empty": "Keine Datensätze.",
+        "groups": {
+          "sites": "Standorte",
+          "racks": "Racks",
+          "devices": "Geräte",
+          "interfaces": "Schnittstellen",
+          "cables": "Kabel"
+        },
+        "refs": {
+          "types": "Gerätetypen",
+          "manufacturers": "Hersteller",
+          "platforms": "Plattformen",
+          "roles": "Geräterollen"
+        },
+        "actions": {
+          "refresh": "Aktualisieren",
+          "new": "Neu",
+          "edit": "Bearbeiten",
+          "delete": "Löschen",
+          "close": "Schließen",
+          "cancel": "Abbrechen",
+          "create": "Erstellen",
+          "update": "Speichern",
+          "updateHint": "Vollständige Aktualisierung (PUT)",
+          "patch": "Patch",
+          "patchHint": "Teilaktualisierung (PATCH)",
+          "apply": "Anwenden",
+          "elevation": "Elevation",
+          "reservations": "Reservierungen",
+          "renderConfig": "Konfiguration",
+          "connections": "Verbindungen",
+          "trace": "Trace"
+        },
+        "filters": {
+          "region": "Region",
+          "group": "Gruppe",
+          "siteId": "Standort-ID",
+          "deviceId": "Geräte-ID",
+          "search": "Suche",
+          "bySite": "Nach Standort-ID",
+          "byRack": "Nach Rack-ID"
+        },
+        "fields": {
+          "name": "Name",
+          "status": "Status",
+          "region": "Region",
+          "devices": "Geräte",
+          "site": "Standort",
+          "type": "Typ",
+          "slug": "Slug",
+          "device": "Gerät",
+          "enabled": "Aktiviert",
+          "label": "Bezeichnung",
+          "length": "Länge"
+        },
+        "editor": {
+          "hint": "Bearbeiten Sie die an NetBox gesendete JSON-Nutzlast.",
+          "newSite": "Neuer Standort",
+          "editSite": "Standort bearbeiten",
+          "newRack": "Neues Rack",
+          "editRack": "Rack bearbeiten",
+          "newDevice": "Neues Gerät",
+          "editDevice": "Gerät bearbeiten",
+          "newInterface": "Neue Schnittstelle",
+          "editInterface": "Schnittstelle bearbeiten",
+          "newCable": "Neues Kabel",
+          "editCable": "Kabel bearbeiten"
+        }
+      },
       "tenancy": {
         "title": "Mandanten",
         "tenants": "Mandanten",
@@ -4229,6 +4301,113 @@
         "skipTlsVerify": "TLS-Überprüfung überspringen (vmrest HTTPS)",
         "autoStart": "vmrest automatisch starten, falls nicht aktiv",
         "timeout": "Zeitlimit (s)"
+      },
+      "host": {
+        "notConnected": "Mit einem VMware Workstation-Host verbinden, um Netzwerk, Speicher und Konfiguration zu verwalten.",
+        "working": "Wird ausgeführt…",
+        "vmxPath": "Ziel-VM (.vmx-Pfad)",
+        "browse": "Durchsuchen",
+        "notice": {
+          "loaded": "Geladen.",
+          "count": "{{n}} Element(e).",
+          "done": "Fertig."
+        },
+        "col": {
+          "name": "Name",
+          "hostPath": "Host-Pfad",
+          "writable": "Schreibbar",
+          "enabled": "Aktiviert",
+          "type": "Typ",
+          "subnet": "Subnetz",
+          "mask": "Maske",
+          "network": "Netzwerk",
+          "protocol": "Prot.",
+          "hostPort": "Host-Port",
+          "guest": "Gast",
+          "guestIp": "Gast-IP",
+          "guestPort": "Gast-Port",
+          "desc": "Beschreibung",
+          "hostname": "Hostname",
+          "expires": "Läuft ab",
+          "file": "Datei",
+          "controller": "Controller"
+        },
+        "sharedFolders": {
+          "title": "Freigegebene Ordner",
+          "enable": "Aktivieren",
+          "disable": "Deaktivieren",
+          "list": "Auflisten",
+          "add": "Ordner hinzufügen",
+          "setState": "Status setzen"
+        },
+        "networking": {
+          "title": "Virtuelles Netzwerk",
+          "list": "Netzwerke auflisten",
+          "readConfig": "networking.conf lesen",
+          "create": "Erstellen",
+          "update": "Aktualisieren",
+          "get": "Details abrufen",
+          "portForwards": "NAT-Portweiterleitung",
+          "listForwards": "Auflisten",
+          "dhcpLeases": "DHCP-Leases",
+          "setForward": "Weiterleitung setzen"
+        },
+        "vmdk": {
+          "title": "VMDK / Datenträger",
+          "path": "VMDK-Pfad",
+          "sizeMb": "Größe (MB)",
+          "diskType": "Datenträgertyp",
+          "adapter": "Adapter",
+          "create": "Erstellen",
+          "info": "Info",
+          "defragment": "Defragmentieren",
+          "shrink": "Verkleinern",
+          "expandTo": "Erweitern auf (MB)",
+          "convertType": "Konvertieren zu Typ",
+          "convertDest": "Konvertierungsziel (optional)",
+          "expand": "Erweitern",
+          "convert": "Konvertieren",
+          "renameDest": "Umbenennen in",
+          "rename": "Umbenennen",
+          "vmDisks": "Datenträger der Ziel-VM",
+          "listDisks": "Datenträger auflisten",
+          "attachPath": "Anzuhängende VMDK",
+          "mode": "Modus (optional)",
+          "addDisk": "Datenträger hinzufügen",
+          "bus": "Bus",
+          "unit": "Einheit",
+          "removeDisk": "Datenträger entfernen"
+        },
+        "ovf": {
+          "title": "OVF / OVA Import & Export",
+          "import": "Import",
+          "source": "Quelle (.ovf/.ova)",
+          "destDir": "Zielverzeichnis",
+          "name": "Name (optional)",
+          "doImport": "Importieren",
+          "imported": "Importiert: {{path}}",
+          "export": "Export (verwendet Ziel-VM oben)",
+          "exportDest": "Exportieren nach",
+          "format": "Format",
+          "doExport": "Exportieren"
+        },
+        "vmx": {
+          "title": "VMX-Datei-Editor",
+          "dir": "In Verzeichnis suchen",
+          "discover": "Suchen",
+          "parse": "Ziel-VMX parsen",
+          "key": "Schlüssel",
+          "value": "Wert",
+          "setKey": "Schlüssel setzen",
+          "removeKeys": "Schlüssel entfernen (kommagetrennt)",
+          "doRemoveKeys": "Entfernen"
+        },
+        "prefs": {
+          "title": "Einstellungen",
+          "read": "Einstellungen lesen",
+          "defaultDir": "Standard-VM-Verzeichnis",
+          "set": "Einstellung setzen"
+        }
       }
     },
     "vmware": {

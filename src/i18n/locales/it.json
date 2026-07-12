@@ -4301,6 +4301,113 @@
         "skipTlsVerify": "Ignora verifica TLS (vmrest HTTPS)",
         "autoStart": "Avvia vmrest automaticamente se non in esecuzione",
         "timeout": "Timeout (s)"
+      },
+      "host": {
+        "notConnected": "Connettiti a un host VMware Workstation per gestire rete, archiviazione e configurazione.",
+        "working": "In corso…",
+        "vmxPath": "VM di destinazione (percorso .vmx)",
+        "browse": "Sfoglia",
+        "notice": {
+          "loaded": "Caricato.",
+          "count": "{{n}} elemento/i.",
+          "done": "Fatto."
+        },
+        "col": {
+          "name": "Nome",
+          "hostPath": "Percorso host",
+          "writable": "Scrivibile",
+          "enabled": "Abilitato",
+          "type": "Tipo",
+          "subnet": "Sottorete",
+          "mask": "Maschera",
+          "network": "Rete",
+          "protocol": "Prot.",
+          "hostPort": "Porta host",
+          "guest": "Guest",
+          "guestIp": "IP guest",
+          "guestPort": "Porta guest",
+          "desc": "Descrizione",
+          "hostname": "Nome host",
+          "expires": "Scade",
+          "file": "File",
+          "controller": "Controller"
+        },
+        "sharedFolders": {
+          "title": "Cartelle condivise",
+          "enable": "Abilita",
+          "disable": "Disabilita",
+          "list": "Elenca",
+          "add": "Aggiungi cartella",
+          "setState": "Imposta stato"
+        },
+        "networking": {
+          "title": "Rete virtuale",
+          "list": "Elenca reti",
+          "readConfig": "Leggi networking.conf",
+          "create": "Crea",
+          "update": "Aggiorna",
+          "get": "Ottieni dettagli",
+          "portForwards": "Port forwarding NAT",
+          "listForwards": "Elenca",
+          "dhcpLeases": "Lease DHCP",
+          "setForward": "Imposta forwarding"
+        },
+        "vmdk": {
+          "title": "VMDK / dischi",
+          "path": "Percorso VMDK",
+          "sizeMb": "Dimensione (MB)",
+          "diskType": "Tipo di disco",
+          "adapter": "Adattatore",
+          "create": "Crea",
+          "info": "Info",
+          "defragment": "Deframmenta",
+          "shrink": "Riduci",
+          "expandTo": "Espandi a (MB)",
+          "convertType": "Converti in tipo",
+          "convertDest": "Destinazione conversione (opzionale)",
+          "expand": "Espandi",
+          "convert": "Converti",
+          "renameDest": "Rinomina in",
+          "rename": "Rinomina",
+          "vmDisks": "Dischi della VM di destinazione",
+          "listDisks": "Elenca dischi",
+          "attachPath": "VMDK da collegare",
+          "mode": "Modalità (opzionale)",
+          "addDisk": "Aggiungi disco",
+          "bus": "Bus",
+          "unit": "Unità",
+          "removeDisk": "Rimuovi disco"
+        },
+        "ovf": {
+          "title": "Importazione ed esportazione OVF / OVA",
+          "import": "Importa",
+          "source": "Origine (.ovf/.ova)",
+          "destDir": "Directory di destinazione",
+          "name": "Nome (opzionale)",
+          "doImport": "Importa",
+          "imported": "Importato: {{path}}",
+          "export": "Esporta (usa la VM di destinazione sopra)",
+          "exportDest": "Esporta in",
+          "format": "Formato",
+          "doExport": "Esporta"
+        },
+        "vmx": {
+          "title": "Editor file VMX",
+          "dir": "Cerca nella directory",
+          "discover": "Cerca",
+          "parse": "Analizza VMX di destinazione",
+          "key": "Chiave",
+          "value": "Valore",
+          "setKey": "Imposta chiave",
+          "removeKeys": "Rimuovi chiavi (separate da virgole)",
+          "doRemoveKeys": "Rimuovi"
+        },
+        "prefs": {
+          "title": "Preferenze",
+          "read": "Leggi preferenze",
+          "defaultDir": "Directory VM predefinita",
+          "set": "Imposta preferenza"
+        }
       }
     },
     "vmware": {

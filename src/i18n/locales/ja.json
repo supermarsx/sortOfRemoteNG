@@ -4301,6 +4301,113 @@
         "skipTlsVerify": "TLS 検証をスキップ（vmrest HTTPS）",
         "autoStart": "vmrest が実行されていない場合は自動起動",
         "timeout": "タイムアウト（秒）"
+      },
+      "host": {
+        "notConnected": "ネットワーク、ストレージ、構成を管理するには VMware Workstation ホストに接続してください。",
+        "working": "処理中…",
+        "vmxPath": "対象 VM（.vmx パス）",
+        "browse": "参照",
+        "notice": {
+          "loaded": "読み込みました。",
+          "count": "{{n}} 件。",
+          "done": "完了しました。"
+        },
+        "col": {
+          "name": "名前",
+          "hostPath": "ホストパス",
+          "writable": "書き込み可能",
+          "enabled": "有効",
+          "type": "種類",
+          "subnet": "サブネット",
+          "mask": "マスク",
+          "network": "ネットワーク",
+          "protocol": "プロト",
+          "hostPort": "ホストポート",
+          "guest": "ゲスト",
+          "guestIp": "ゲスト IP",
+          "guestPort": "ゲストポート",
+          "desc": "説明",
+          "hostname": "ホスト名",
+          "expires": "有効期限",
+          "file": "ファイル",
+          "controller": "コントローラー"
+        },
+        "sharedFolders": {
+          "title": "共有フォルダー",
+          "enable": "有効化",
+          "disable": "無効化",
+          "list": "一覧",
+          "add": "フォルダーを追加",
+          "setState": "状態を設定"
+        },
+        "networking": {
+          "title": "仮想ネットワーク",
+          "list": "ネットワーク一覧",
+          "readConfig": "networking.conf を読む",
+          "create": "作成",
+          "update": "更新",
+          "get": "詳細を取得",
+          "portForwards": "NAT ポート転送",
+          "listForwards": "一覧",
+          "dhcpLeases": "DHCP リース",
+          "setForward": "転送を設定"
+        },
+        "vmdk": {
+          "title": "VMDK / ディスク",
+          "path": "VMDK パス",
+          "sizeMb": "サイズ (MB)",
+          "diskType": "ディスクの種類",
+          "adapter": "アダプター",
+          "create": "作成",
+          "info": "情報",
+          "defragment": "デフラグ",
+          "shrink": "圧縮",
+          "expandTo": "拡張先 (MB)",
+          "convertType": "変換先の種類",
+          "convertDest": "変換先 (任意)",
+          "expand": "拡張",
+          "convert": "変換",
+          "renameDest": "名前変更先",
+          "rename": "名前変更",
+          "vmDisks": "対象 VM のディスク",
+          "listDisks": "ディスク一覧",
+          "attachPath": "接続する VMDK",
+          "mode": "モード (任意)",
+          "addDisk": "ディスクを追加",
+          "bus": "バス",
+          "unit": "ユニット",
+          "removeDisk": "ディスクを削除"
+        },
+        "ovf": {
+          "title": "OVF / OVA のインポートとエクスポート",
+          "import": "インポート",
+          "source": "ソース (.ovf/.ova)",
+          "destDir": "宛先ディレクトリ",
+          "name": "名前 (任意)",
+          "doImport": "インポート",
+          "imported": "インポートしました: {{path}}",
+          "export": "エクスポート (上記の対象 VM を使用)",
+          "exportDest": "エクスポート先",
+          "format": "形式",
+          "doExport": "エクスポート"
+        },
+        "vmx": {
+          "title": "VMX ファイルエディター",
+          "dir": "ディレクトリ内を検索",
+          "discover": "検索",
+          "parse": "対象 VMX を解析",
+          "key": "キー",
+          "value": "値",
+          "setKey": "キーを設定",
+          "removeKeys": "キーを削除 (カンマ区切り)",
+          "doRemoveKeys": "削除"
+        },
+        "prefs": {
+          "title": "環境設定",
+          "read": "環境設定を読む",
+          "defaultDir": "既定の VM ディレクトリ",
+          "set": "環境設定を設定"
+        }
       }
     },
     "vmware": {

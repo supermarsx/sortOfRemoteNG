@@ -4232,6 +4232,113 @@
         "skipTlsVerify": "跳过 TLS 验证（vmrest HTTPS）",
         "autoStart": "如果 vmrest 未运行则自动启动",
         "timeout": "超时（秒）"
+      },
+      "host": {
+        "notConnected": "连接到 VMware Workstation 主机以管理网络、存储和配置。",
+        "working": "处理中…",
+        "vmxPath": "目标虚拟机（.vmx 路径）",
+        "browse": "浏览",
+        "notice": {
+          "loaded": "已加载。",
+          "count": "{{n}} 项。",
+          "done": "完成。"
+        },
+        "col": {
+          "name": "名称",
+          "hostPath": "主机路径",
+          "writable": "可写",
+          "enabled": "已启用",
+          "type": "类型",
+          "subnet": "子网",
+          "mask": "掩码",
+          "network": "网络",
+          "protocol": "协议",
+          "hostPort": "主机端口",
+          "guest": "客户机",
+          "guestIp": "客户机 IP",
+          "guestPort": "客户机端口",
+          "desc": "描述",
+          "hostname": "主机名",
+          "expires": "到期",
+          "file": "文件",
+          "controller": "控制器"
+        },
+        "sharedFolders": {
+          "title": "共享文件夹",
+          "enable": "启用",
+          "disable": "禁用",
+          "list": "列出",
+          "add": "添加文件夹",
+          "setState": "设置状态"
+        },
+        "networking": {
+          "title": "虚拟网络",
+          "list": "列出网络",
+          "readConfig": "读取 networking.conf",
+          "create": "创建",
+          "update": "更新",
+          "get": "获取详情",
+          "portForwards": "NAT 端口转发",
+          "listForwards": "列出",
+          "dhcpLeases": "DHCP 租约",
+          "setForward": "设置转发"
+        },
+        "vmdk": {
+          "title": "VMDK / 磁盘",
+          "path": "VMDK 路径",
+          "sizeMb": "大小 (MB)",
+          "diskType": "磁盘类型",
+          "adapter": "适配器",
+          "create": "创建",
+          "info": "信息",
+          "defragment": "碎片整理",
+          "shrink": "压缩",
+          "expandTo": "扩展到 (MB)",
+          "convertType": "转换为类型",
+          "convertDest": "转换目标（可选）",
+          "expand": "扩展",
+          "convert": "转换",
+          "renameDest": "重命名为",
+          "rename": "重命名",
+          "vmDisks": "目标虚拟机的磁盘",
+          "listDisks": "列出磁盘",
+          "attachPath": "要附加的 VMDK",
+          "mode": "模式（可选）",
+          "addDisk": "添加磁盘",
+          "bus": "总线",
+          "unit": "单元",
+          "removeDisk": "移除磁盘"
+        },
+        "ovf": {
+          "title": "OVF / OVA 导入和导出",
+          "import": "导入",
+          "source": "源 (.ovf/.ova)",
+          "destDir": "目标目录",
+          "name": "名称（可选）",
+          "doImport": "导入",
+          "imported": "已导入：{{path}}",
+          "export": "导出（使用上面的目标虚拟机）",
+          "exportDest": "导出到",
+          "format": "格式",
+          "doExport": "导出"
+        },
+        "vmx": {
+          "title": "VMX 文件编辑器",
+          "dir": "在目录中发现",
+          "discover": "发现",
+          "parse": "解析目标 VMX",
+          "key": "键",
+          "value": "值",
+          "setKey": "设置键",
+          "removeKeys": "移除键（逗号分隔）",
+          "doRemoveKeys": "移除"
+        },
+        "prefs": {
+          "title": "首选项",
+          "read": "读取首选项",
+          "defaultDir": "默认虚拟机目录",
+          "set": "设置首选项"
+        }
       }
     },
     "vmware": {

@@ -4232,6 +4232,113 @@
         "skipTlsVerify": "Ignorar verificação TLS (vmrest HTTPS)",
         "autoStart": "Iniciar o vmrest automaticamente se não estiver em execução",
         "timeout": "Tempo limite (s)"
+      },
+      "host": {
+        "notConnected": "Ligue-se a um anfitrião VMware Workstation para gerir rede, armazenamento e configuração.",
+        "working": "A processar…",
+        "vmxPath": "VM de destino (caminho .vmx)",
+        "browse": "Procurar",
+        "notice": {
+          "loaded": "Carregado.",
+          "count": "{{n}} item(ns).",
+          "done": "Concluído."
+        },
+        "col": {
+          "name": "Nome",
+          "hostPath": "Caminho do anfitrião",
+          "writable": "Gravável",
+          "enabled": "Ativado",
+          "type": "Tipo",
+          "subnet": "Sub-rede",
+          "mask": "Máscara",
+          "network": "Rede",
+          "protocol": "Prot.",
+          "hostPort": "Porta do anfitrião",
+          "guest": "Convidado",
+          "guestIp": "IP do convidado",
+          "guestPort": "Porta do convidado",
+          "desc": "Descrição",
+          "hostname": "Nome do anfitrião",
+          "expires": "Expira",
+          "file": "Ficheiro",
+          "controller": "Controlador"
+        },
+        "sharedFolders": {
+          "title": "Pastas partilhadas",
+          "enable": "Ativar",
+          "disable": "Desativar",
+          "list": "Listar",
+          "add": "Adicionar pasta",
+          "setState": "Definir estado"
+        },
+        "networking": {
+          "title": "Rede virtual",
+          "list": "Listar redes",
+          "readConfig": "Ler networking.conf",
+          "create": "Criar",
+          "update": "Atualizar",
+          "get": "Obter detalhes",
+          "portForwards": "Encaminhamento de portas NAT",
+          "listForwards": "Listar",
+          "dhcpLeases": "Concessões DHCP",
+          "setForward": "Definir encaminhamento"
+        },
+        "vmdk": {
+          "title": "VMDK / discos",
+          "path": "Caminho VMDK",
+          "sizeMb": "Tamanho (MB)",
+          "diskType": "Tipo de disco",
+          "adapter": "Adaptador",
+          "create": "Criar",
+          "info": "Info",
+          "defragment": "Desfragmentar",
+          "shrink": "Compactar",
+          "expandTo": "Expandir para (MB)",
+          "convertType": "Converter para tipo",
+          "convertDest": "Destino da conversão (opcional)",
+          "expand": "Expandir",
+          "convert": "Converter",
+          "renameDest": "Renomear para",
+          "rename": "Renomear",
+          "vmDisks": "Discos da VM de destino",
+          "listDisks": "Listar discos",
+          "attachPath": "VMDK a anexar",
+          "mode": "Modo (opcional)",
+          "addDisk": "Adicionar disco",
+          "bus": "Bus",
+          "unit": "Unidade",
+          "removeDisk": "Remover disco"
+        },
+        "ovf": {
+          "title": "Importação e exportação OVF / OVA",
+          "import": "Importar",
+          "source": "Origem (.ovf/.ova)",
+          "destDir": "Diretório de destino",
+          "name": "Nome (opcional)",
+          "doImport": "Importar",
+          "imported": "Importado: {{path}}",
+          "export": "Exportar (usa a VM de destino acima)",
+          "exportDest": "Exportar para",
+          "format": "Formato",
+          "doExport": "Exportar"
+        },
+        "vmx": {
+          "title": "Editor de ficheiro VMX",
+          "dir": "Procurar no diretório",
+          "discover": "Procurar",
+          "parse": "Analisar VMX de destino",
+          "key": "Chave",
+          "value": "Valor",
+          "setKey": "Definir chave",
+          "removeKeys": "Remover chaves (separadas por vírgulas)",
+          "doRemoveKeys": "Remover"
+        },
+        "prefs": {
+          "title": "Preferências",
+          "read": "Ler preferências",
+          "defaultDir": "Diretório VM predefinido",
+          "set": "Definir preferência"
+        }
       }
     },
     "vmware": {
