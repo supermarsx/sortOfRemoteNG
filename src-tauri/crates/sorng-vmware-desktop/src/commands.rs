@@ -18,6 +18,7 @@ pub async fn vmwd_connect(
     vmrest_port: Option<u16>,
     vmrest_username: Option<String>,
     vmrest_password: Option<String>,
+    vmrest_skip_tls_verify: Option<bool>,
     auto_start_vmrest: Option<bool>,
     timeout_secs: Option<u64>,
 ) -> Result<VmwConnectionSummary, String> {
@@ -27,7 +28,7 @@ pub async fn vmwd_connect(
         vmrest_port,
         vmrest_username,
         vmrest_password,
-        vmrest_skip_tls_verify: false,
+        vmrest_skip_tls_verify: vmrest_skip_tls_verify.unwrap_or(false),
         auto_start_vmrest: auto_start_vmrest.unwrap_or(false),
         timeout_secs: timeout_secs.unwrap_or(60),
     };
