@@ -1,0 +1,19 @@
+{
+  "osticket": {
+    "title": "osTicket",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "connectHint": "Connect to an osTicket helpdesk via its API. Create an API key in Admin Panel → Manage → API Keys.",
+    "noTabs": "Connected. Management sections load here once registered.",
+    "fields": {
+      "name": "Name",
+      "host": "Host",
+      "apiKey": "API key",
+      "skipTlsVerify": "Skip TLS certificate verification"
+    },
+    "tabs": {
+      "ticketing": "Ticketing",
+      "admin": "Administration"
+    }
+  }
+}
