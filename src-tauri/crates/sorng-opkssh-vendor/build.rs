@@ -300,6 +300,14 @@ fn emit_platform_link_libs() {
         ] {
             println!("cargo:rustc-link-lib={library}");
         }
+    } else if target_os == "macos" {
+        // Go's crypto/x509 + net stack call into the macOS Security and
+        // CoreFoundation frameworks (e.g. `SecTrustEvaluateWithError`). The
+        // embedded bridge's static archive references those symbols, so link
+        // the frameworks or the final binary fails with undefined symbols.
+        for framework in ["Security", "CoreFoundation"] {
+            println!("cargo:rustc-link-lib=framework={framework}");
+        }
     }
 }
 

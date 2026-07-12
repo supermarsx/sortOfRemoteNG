@@ -105,7 +105,9 @@ function defaultInvoke(cmd: string): Promise<unknown> {
 import { useApiSettings } from "../../src/hooks/settings/useApiSettings";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 
-function makeSettings(overrides: Partial<GlobalSettings["restApi"]> = {}): GlobalSettings {
+function makeSettings(
+  overrides: Partial<GlobalSettings["restApi"]> = {},
+): GlobalSettings {
   return {
     restApi: {
       enabled: false,
@@ -135,13 +137,16 @@ describe("useApiSettings", () => {
     // Route the runtime bridge that the real module calls into (core.js reads
     // `window.__TAURI_INTERNALS__.invoke`) so the command layer is intercepted
     // deterministically regardless of module-mock resolution order.
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+    (
+      window as unknown as { __TAURI_INTERNALS__?: unknown }
+    ).__TAURI_INTERNALS__ = {
       invoke: (...args: unknown[]) => invokeMock(...args),
     };
   });
 
   afterEach(() => {
-    delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
   });
 
   it("returns initial stopped status", () => {
@@ -267,7 +272,9 @@ describe("useApiSettings", () => {
       const { result } = renderHook(() =>
         useApiSettings(makeSettings(), update),
       );
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
 
       act(() => {
         result.current.toggleCapability("ssh", false);
@@ -284,7 +291,9 @@ describe("useApiSettings", () => {
       const { result } = renderHook(() =>
         useApiSettings(makeSettings(), update),
       );
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
       update.mockClear();
 
       act(() => {
@@ -299,7 +308,9 @@ describe("useApiSettings", () => {
       const { result } = renderHook(() =>
         useApiSettings(makeSettings(), update),
       );
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
       update.mockClear();
 
       act(() => {
@@ -314,9 +325,13 @@ describe("useApiSettings", () => {
 
     it("setCapabilityGroup with enabled=true removes group IDs from the disabled list", async () => {
       const update = vi.fn();
-      const settings = makeSettings({ disabledCapabilities: ["ssh", "db", "aws"] });
+      const settings = makeSettings({
+        disabledCapabilities: ["ssh", "db", "aws"],
+      });
       const { result } = renderHook(() => useApiSettings(settings, update));
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
       update.mockClear();
 
       act(() => {
@@ -333,7 +348,9 @@ describe("useApiSettings", () => {
       const update = vi.fn();
       const settings = makeSettings({ disabledCapabilities: ["ssh", "aws"] });
       const { result } = renderHook(() => useApiSettings(settings, update));
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
       update.mockClear();
 
       act(() => {
@@ -351,7 +368,9 @@ describe("useApiSettings", () => {
       const { result } = renderHook(() =>
         useApiSettings(makeSettings(), update),
       );
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
       update.mockClear();
 
       act(() => {
@@ -369,7 +388,9 @@ describe("useApiSettings", () => {
       const update = vi.fn();
       const settings = makeSettings({ disabledCapabilities: ["ssh", "db"] });
       const { result } = renderHook(() => useApiSettings(settings, update));
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
 
       expect(result.current.isGroupFullyDisabled("protocols")).toBe(true);
       expect(result.current.isGroupFullyEnabled("protocols")).toBe(false);
@@ -384,7 +405,9 @@ describe("useApiSettings", () => {
         disabledCapabilities: ["ssh", "health", "auth"],
       });
       const { result } = renderHook(() => useApiSettings(settings, update));
-      await waitFor(() => { expect(result.current.capabilitiesLoaded).toBe(true); });
+      await waitFor(() => {
+        expect(result.current.capabilitiesLoaded).toBe(true);
+      });
 
       expect(result.current.disabledCount).toBe(1);
     });

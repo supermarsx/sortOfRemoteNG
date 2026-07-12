@@ -60,6 +60,8 @@ fn check_availability_sync() -> BiometricResult<BiometricStatus> {
         enrolled,
         kinds,
         platform_label: label.into(),
+        // `BiometryType` enumerates Apple biometry only; always `None` off Apple.
+        biometry_type: BiometryType::None,
         unavailable_reason: if !hardware_available {
             Some("Neither fprintd nor polkit found".into())
         } else if !enrolled {
