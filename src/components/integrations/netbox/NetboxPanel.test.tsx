@@ -97,9 +97,18 @@ describe("netboxDescriptor", () => {
     expect(mod.default).toBeTypeOf("function");
   });
 
-  it("starts with an empty per-crate tab registry (lead stage)", () => {
+  it("registers the category sub-tabs appended by the category execs", () => {
     expect(Array.isArray(netboxTabs)).toBe(true);
-    expect(netboxTabs.length).toBe(0);
+    expect(netboxTabs.map((t) => t.categoryKey)).toEqual([
+      "dcim",
+      "ipam",
+      "virtualization",
+      "tenancy",
+    ]);
+    for (const tab of netboxTabs) {
+      expect(tab.labelKey).toMatch(/^integrations\.netbox\./);
+      expect(typeof tab.importTab).toBe("function");
+    }
   });
 });
 
