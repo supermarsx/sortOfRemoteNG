@@ -1,0 +1,75 @@
+{
+  "integrations": {
+    "ansible": {
+      "content": {
+        "inspector": "Inspector",
+        "close": "Close",
+        "activity": "Activity",
+        "roles": {
+          "title": "Roles",
+          "rolesPath": "Roles directory",
+          "list": "List",
+          "installDeps": "Deps",
+          "rolePath": "Single role path (inspect)",
+          "inspect": "Inspect",
+          "depRoleName": "Role name (dependencies)",
+          "dependencies": "Dependencies",
+          "initTitle": "Scaffold new role",
+          "initName": "Role name",
+          "initPath": "Target path (optional)",
+          "init": "Init"
+        },
+        "vault": {
+          "title": "Vault",
+          "file": "Vault file path",
+          "pwFile": "Password file (optional)",
+          "vaultId": "Vault id (optional)",
+          "encrypt": "Encrypt",
+          "decrypt": "Decrypt",
+          "view": "View",
+          "isEncrypted": "Is encrypted?",
+          "rekeyNewPw": "New password file",
+          "rekey": "Rekey",
+          "encStrVar": "Variable name",
+          "encStrPlain": "Plaintext value",
+          "encryptString": "Encrypt string"
+        },
+        "galaxy": {
+          "title": "Galaxy",
+          "rolesTitle": "Galaxy roles",
+          "roleName": "Role (namespace.name)",
+          "version": "Version (optional)",
+          "install": "Install",
+          "rolesPath": "Roles path (optional)",
+          "listRoles": "List",
+          "roleInfo": "Info",
+          "remove": "Remove",
+          "collectionsTitle": "Galaxy collections",
+          "collName": "Collection (namespace.name)",
+          "collPath": "Collections path (optional)",
+          "listColl": "List",
+          "search": "Search query",
+          "searchBtn": "Search",
+          "reqPath": "requirements.yml path",
+          "force": "Force",
+          "installReq": "Install requirements"
+        },
+        "config": {
+          "title": "Configuration & Modules",
+          "dump": "Dump config",
+          "detectPath": "Detect path",
+          "listModules": "List modules",
+          "key": "Config key (e.g. DEFAULT_ROLES_PATH)",
+          "get": "Get",
+          "filePath": "ansible.cfg path (parse)",
+          "parseFile": "Parse file",
+          "moduleName": "Module name",
+          "moduleDoc": "Doc",
+          "moduleExamples": "Examples",
+          "pluginType": "Plugin type (callback/connection/…)",
+          "listPlugins": "List plugins"
+        }
+      }
+    }
+  }
+}
