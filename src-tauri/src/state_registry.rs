@@ -308,6 +308,15 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
 
     let app_dir = app.path().app_data_dir()?;
 
+    // Belt-and-suspenders: make sure the app-data directory exists before
+    // any subsystem resolves a child path under it. The durable recording
+    // writer self-heals per-write (creates <root>/inflight/ on demand), but
+    // several services below build file paths under `app_dir` (users.json,
+    // storage.json, trust_store.json, logs/) and expect the parent to be
+    // present. Ignore an AlreadyExists result; a real failure surfaces when
+    // those services first write.
+    let _ = std::fs::create_dir_all(&app_dir);
+
     // Encryption-at-rest subsystem (Phase 0): managed state holds the
     // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
     //
@@ -486,6 +495,33 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     collab::register(app, &app_dir);
     #[cfg(feature = "ops")]
     ops::register(app, &app_dir);
+
+    // t40-f2: recover crash-orphaned in-flight terminal recordings. f2's
+    // incremental-flush writer persists a crash snapshot under
+    // `<root>/inflight/` on every append; a power-loss or hard-kill during
+    // an active session leaves that snapshot un-finalised. Run recovery once
+    // here (the recording state was just managed in `collab::register`, with
+    // its encryption handle already injected) so orphaned snapshots are
+    // decoded and saved into the library. Best-effort and self-healing: the
+    // service SKIPS encrypted snapshots while the key is locked and they are
+    // retried when the frontend re-invokes the `rec_recover_crashed` command
+    // after unlock — the same fail-open pattern as the capability priming
+    // below. Vault-mode installs are already unlocked at this point, so their
+    // snapshots recover on this pass.
+    #[cfg(any(feature = "collab", feature = "platform"))]
+    if let Some(rec_state) = app.try_state::<recording::RecordingServiceState>() {
+        let rec = rec_state.inner().clone();
+        tauri::async_runtime::block_on(async move {
+            let svc = rec.lock().await;
+            match svc.recover_crashed_terminal_recordings().await {
+                Ok(n) if n > 0 => log::info!(
+                    "Recording crash-recovery: finalised {n} orphaned in-flight terminal recording(s)."
+                ),
+                Ok(_) => {}
+                Err(e) => log::warn!("Recording crash-recovery failed at startup: {e}"),
+            }
+        });
+    }
 
     let api_service = ApiService::new(
         auth_service.clone(),

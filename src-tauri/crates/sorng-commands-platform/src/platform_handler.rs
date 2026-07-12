@@ -9,6 +9,7 @@ pub fn is_command(command: &str) -> bool {
             | "rec_stop_terminal"
             | "rec_terminal_status"
             | "rec_is_terminal_recording"
+            | "rec_recover_crashed"
             | "rec_append_terminal_output"
             | "rec_append_terminal_input"
             | "rec_append_terminal_resize"
@@ -618,6 +619,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         recording_commands::rec_stop_terminal,
         recording_commands::rec_terminal_status,
         recording_commands::rec_is_terminal_recording,
+        recording_commands::rec_recover_crashed,
         recording_commands::rec_append_terminal_output,
         recording_commands::rec_append_terminal_input,
         recording_commands::rec_append_terminal_resize,

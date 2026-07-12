@@ -709,7 +709,13 @@ async fn live_rdpdr_docker_harness() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires `docker compose -f e2e/docker-compose.yml up -d test-rdp`; run with --features docker-e2e -- --ignored --test-threads=1"]
+#[ignore = "xrdp-image limitation, NOT a product bug: stock danielguerra/ubuntu-xrdp does \
+not reliably open the Microsoft::Windows::RDS::DisplayControl DVC nor drive a \
+DeactivateAll->reactivation for a client-initiated RDPEDISP resize, so the connected+new-dims \
+signal this test waits on never arrives. Our SetDesktopSize/DISPLAYCONTROL_MONITOR_LAYOUT \
+encoding is correct and unit-tested (see multimon.rs + .orchestration/logs/t40-e6-dynresize.md). \
+Needs a Windows/CredSSP RDP server (or an xrdp build with working RDPEDISP). Run with \
+`docker compose -f e2e/docker-compose.yml up -d test-rdp` then --features docker-e2e -- --ignored --test-threads=1"]
 async fn live_dynamic_resize_docker_harness() {
     let container_id = ensure_test_rdp_available()
         .await
