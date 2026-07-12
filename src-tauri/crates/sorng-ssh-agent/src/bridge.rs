@@ -8,9 +8,6 @@
 use crate::protocol::{self, AgentMessage, ProtocolIdentity};
 use log::{info, warn};
 
-#[cfg(unix)]
-use std::path::PathBuf;
-
 /// The bridge to the operating system's SSH agent.
 pub struct SystemAgentBridge {
     /// Whether the bridge is connected.
@@ -75,6 +72,7 @@ impl SystemAgentBridge {
                     return Some(path);
                 }
             }
+            None
         }
 
         // Windows: OpenSSH Authentication Agent pipe

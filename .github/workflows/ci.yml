@@ -260,8 +260,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo check (--workspace --all-features --exclude sorng-kafka)
-        run: cargo check --workspace --all-features --exclude sorng-kafka
+      # `--all-features` is INVALID for this workspace: it simultaneously
+      # enables the mutually-exclusive kafka linking modes (`kafka`/
+      # `kafka-dynamic` = dynamic-link vs `kafka-static` = cmake-build), which
+      # collide at the rdkafka-sys layer, plus other "losing-fork" feature
+      # combinations the app is not designed to build together. The canonical
+      # shipping set is `--features full` (see release.yml). We check that set
+      # here, substituting `kafka-static` for the default dynamic `kafka` so
+      # librdkafka is built from source via cmake — version-independent and
+      # self-contained on CI (the runner's system librdkafka is too old for the
+      # dynamic version probe). Keep this list in sync with the `full` feature
+      # in src-tauri/Cargo.toml (only `kafka` -> `kafka-static` differs).
+      - name: cargo check (shipping feature set — full, static Kafka)
+        run: >-
+          cargo check -p app --no-default-features
+          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
 
   rust-lint:
     runs-on: ubuntu-latest
@@ -281,5 +294,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo clippy (--workspace --all-targets --all-features -D warnings)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # See rust-check-all-features-linux above: `--all-features` is invalid
+      # (mutually-exclusive kafka linking modes + losing-fork combos). Lint the
+      # canonical shipping `full` set instead, with `kafka-static` substituted
+      # for the dynamic `kafka` so librdkafka builds from source on CI. `-p app`
+      # still lints every workspace crate app pulls in under `full`. Keep the
+      # feature list in sync with `full` in src-tauri/Cargo.toml.
+      - name: cargo clippy (shipping feature set — full, static Kafka)
+        run: >-
+          cargo clippy -p app --no-default-features
+          --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+          --all-targets -- -D warnings

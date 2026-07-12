@@ -1630,6 +1630,9 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         assert!(status.success(), "failed to compile fake vendor wrapper");
     }
 
+    // Asserts the "wrapper not linked" contract, which only holds when the
+    // app was built without the vendored wrapper compiled into the graph.
+    #[cfg(not(feature = "vendored-wrapper"))]
     #[test]
     fn bundle_contract_reports_expected_paths_when_artifact_is_missing() {
         let _override_guard = VendorOverrideEnvGuard::clear();
@@ -1665,6 +1668,9 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {{
         let _ = std::fs::remove_dir_all(root);
     }
 
+    // "Not linked" contract: excluded when the vendored wrapper is linked in,
+    // where a staged artifact reports as the linked runtime instead.
+    #[cfg(not(feature = "vendored-wrapper"))]
     #[test]
     fn staged_vendor_artifact_reports_truthful_contract_when_wrapper_is_not_linked() {
         let _override_guard = VendorOverrideEnvGuard::clear();

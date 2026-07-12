@@ -161,6 +161,11 @@ pub extern "C" fn sorng_opkssh_vendor_login_supported() -> u32 {
     u32::from(cfg!(sorng_opkssh_vendor_bridge))
 }
 
+// C ABI entry point resolved only via `libloading` symbol lookup, never
+// called by name from Rust. The raw-pointer contract is the FFI boundary
+// itself (pointers are null-checked before deref), so keep the exported
+// signature non-`unsafe` for the C caller and silence the Rust-side lint.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn sorng_opkssh_vendor_login_json(request_json: *const c_char) -> *mut c_char {
     let request_json = if request_json.is_null() {
@@ -179,6 +184,7 @@ pub extern "C" fn sorng_opkssh_vendor_login_json(request_json: *const c_char) ->
     string_into_raw(json)
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn sorng_opkssh_vendor_load_client_config_json(
     config_path: *const c_char,
@@ -201,6 +207,7 @@ pub extern "C" fn sorng_opkssh_vendor_load_client_config_json(
     string_into_raw(json)
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn sorng_opkssh_vendor_free_string(value: *mut c_char) {
     if value.is_null() {

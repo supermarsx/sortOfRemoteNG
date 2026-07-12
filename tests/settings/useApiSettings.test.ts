@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
@@ -7,6 +7,16 @@ vi.mock("react-i18next", () => ({
 
 // Stub @tauri-apps/api/core so the capability-catalog effect resolves
 // to a deterministic catalog in tests (no real Tauri runtime in jsdom).
+// The hook resolves `invoke` via a dynamic import, so route the mock
+// through a module-scoped spy (the pattern used across the suite, e.g.
+// tests/hooks/useBulkConnectionCheck.test.ts) that each test can retune.
+const invokeMock = vi.fn();
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
+  isTauri: () => true,
+}));
+
 const fakeCatalog = [
   {
     id: "health",
@@ -55,13 +65,42 @@ const fakeCatalog = [
   },
 ];
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn((cmd: string) => {
-    if (cmd === "get_api_capabilities") return Promise.resolve(fakeCatalog);
-    if (cmd === "set_api_disabled_capabilities") return Promise.resolve();
-    return Promise.reject(new Error(`unknown command ${cmd}`));
-  }),
-}));
+const stoppedStatus = {
+  running: false,
+  bindAddr: "",
+  port: 0,
+  authRequired: false,
+};
+
+const runningStatus = {
+  running: true,
+  bindAddr: "127.0.0.1:9876",
+  port: 9876,
+  authRequired: false,
+};
+
+// Default backend behaviour: catalog resolves, server reports stopped,
+// start/restart bring it up on the configured 9876, key regenerates to a
+// deterministic 64-char hex. Individual tests override via invokeMock.
+function defaultInvoke(cmd: string): Promise<unknown> {
+  switch (cmd) {
+    case "get_api_capabilities":
+      return Promise.resolve(fakeCatalog);
+    case "set_api_disabled_capabilities":
+      return Promise.resolve();
+    case "api_server_status":
+      return Promise.resolve(stoppedStatus);
+    case "api_server_start":
+    case "api_server_restart":
+      return Promise.resolve(runningStatus);
+    case "api_server_stop":
+      return Promise.resolve();
+    case "api_regenerate_key":
+      return Promise.resolve("a".repeat(64));
+    default:
+      return Promise.reject(new Error(`unknown command ${cmd}`));
+  }
+}
 
 import { useApiSettings } from "../../src/hooks/settings/useApiSettings";
 import type { GlobalSettings } from "../../src/types/settings/settings";
@@ -89,6 +128,22 @@ function makeSettings(overrides: Partial<GlobalSettings["restApi"]> = {}): Globa
 }
 
 describe("useApiSettings", () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation((cmd: string) => defaultInvoke(cmd));
+    // The hook resolves `invoke` via a dynamic `import('@tauri-apps/api/core')`.
+    // Route the runtime bridge that the real module calls into (core.js reads
+    // `window.__TAURI_INTERNALS__.invoke`) so the command layer is intercepted
+    // deterministically regardless of module-mock resolution order.
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+      invoke: (...args: unknown[]) => invokeMock(...args),
+    };
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
   it("returns initial stopped status", () => {
     const update = vi.fn();
     const { result } = renderHook(() => useApiSettings(makeSettings(), update));
@@ -111,12 +166,13 @@ describe("useApiSettings", () => {
     });
   });
 
-  it("generateApiKey produces a 64-char hex key", () => {
+  it("generateApiKey produces a 64-char hex key", async () => {
     const update = vi.fn();
     const { result } = renderHook(() => useApiSettings(makeSettings(), update));
 
-    act(() => {
-      result.current.generateApiKey();
+    update.mockClear();
+    await act(async () => {
+      await result.current.generateApiKey();
     });
 
     expect(update).toHaveBeenCalledTimes(1);
@@ -169,6 +225,19 @@ describe("useApiSettings", () => {
   it("handleStartServer with useRandomPort assigns random port", async () => {
     const update = vi.fn();
     const settings = makeSettings({ useRandomPort: true });
+    // The backend resolves the ephemeral port and reports it back in the
+    // status; the hook surfaces whatever it returns.
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "api_server_start") {
+        return Promise.resolve({
+          running: true,
+          bindAddr: "127.0.0.1:54321",
+          port: 54321,
+          authRequired: false,
+        });
+      }
+      return defaultInvoke(cmd);
+    });
     const { result } = renderHook(() => useApiSettings(settings, update));
 
     await act(async () => {

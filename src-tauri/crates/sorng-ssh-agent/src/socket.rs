@@ -218,7 +218,7 @@ pub async fn start_unix_listener(
 }
 
 /// Generate a unique socket path for the agent.
-pub fn generate_socket_path(_base_dir: &str) -> String {
+pub fn generate_socket_path(base_dir: &str) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     #[cfg(unix)]
     {
@@ -226,6 +226,8 @@ pub fn generate_socket_path(_base_dir: &str) -> String {
     }
     #[cfg(windows)]
     {
+        // Named pipes are namespaced by the OS, not by `base_dir`.
+        let _ = base_dir;
         format!(r"\\.\pipe\sorng-ssh-agent-{}", &id[..8])
     }
     #[cfg(not(any(unix, windows)))]

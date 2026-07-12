@@ -104,6 +104,9 @@ function collectRegisteredCommands(): Set<string> {
 }
 
 describe("frontend invoke registrations", () => {
+  // Parses every frontend .ts/.tsx with the TypeScript compiler and scans the
+  // Rust handler files; runtime scales with repo size, so allow generous
+  // headroom over vitest's 5s default (slower CI runners were timing out).
   it("uses only Rust commands registered by the aggregate handlers", () => {
     const registered = collectRegisteredCommands();
     const missing = collectFrontendInvokes().filter(
@@ -113,5 +116,5 @@ describe("frontend invoke registrations", () => {
     expect(
       missing.map((call) => `${call.name} at ${call.file}:${call.line}`),
     ).toEqual([]);
-  });
+  }, 30000);
 });
