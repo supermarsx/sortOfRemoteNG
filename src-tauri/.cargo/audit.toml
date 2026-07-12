@@ -1,0 +1,38 @@
+# cargo-audit configuration — documented, accepted RUSTSEC exceptions.
+#
+# The CI "Audit" job (.github/workflows/audit.yml) runs `cargo audit --json`
+# and fails only on advisories with a CVSS v3 base score >= 7.0 (see
+# scripts/ci/audit_filter.py). Advisories listed here are removed from the
+# audit output entirely, so they neither fail CI nor mask new ones.
+#
+# Every entry MUST carry a rationale. Revisit when the blocking upstream
+# constraint is lifted.
+
+[advisories]
+ignore = [
+    # ── russh / russh-cryptovec: client-side memory-exhaustion DoS ──────
+    # RUSTSEC-2026-0154 (russh, CVSS 7.5) "Unbounded 32-bit allocation"
+    # RUSTSEC-2026-0153 (russh-cryptovec, CVSS 7.5) "Unchecked CryptoVec
+    #   allocation and growth handling"
+    #
+    # Fixed only in russh >= 0.60.3, which migrated to the new RustCrypto
+    # generation: it requires `hmac ^0.13` (stable 0.13.0) plus pre-release
+    # `rsa =0.10.0-rc.18`, `ssh-key =0.7.0-rc.10`, `p256 =0.14.0-rc.10`.
+    # That hard-conflicts with `sspi 0.18` (sorng-powershell WinRM/NTLM
+    # auth), which pins `hmac =0.13.0-rc.2`. No russh version in the fixed
+    # range coexists with the current sspi, and bumping sspi (0.19.x) pulls
+    # its own conflicting curve25519-dalek — cascading into a workspace-wide
+    # pre-release-crypto migration of security-sensitive auth code, well
+    # beyond a dependency-security bump.
+    #
+    # Exposure is bounded: russh is used ONLY by sorng-vpn's SSH
+    # port-forward tunnel (crates/sorng-vpn/src/proxy.rs), an OUTBOUND
+    # client connecting to user-configured SSH servers. Both advisories are
+    # client-side DoS triggered by a malicious SSH *server*; exploitation
+    # requires the user to route a tunnel through an attacker-controlled
+    # server. Not a default-path or remote-unauthenticated exposure.
+    # Revisit once sspi drops the hmac 0.13.0-rc.2 pin (sspi >= 0.19 line
+    # stabilizes) so russh can be bumped without a crypto-stack cascade.
+    "RUSTSEC-2026-0154",
+    "RUSTSEC-2026-0153",
+]
