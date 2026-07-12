@@ -3245,6 +3245,41 @@
         "credRequired": "Provide a client certificate/key or an OIDC token"
       }
     },
+    "netbox": {
+      "title": "NetBox",
+      "subtitle": "DCIM & IPAM management",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "refresh": "Refresh",
+      "save": "Save",
+      "cancel": "Cancel",
+      "noTabs": "Connected. Management sections will appear here.",
+      "form": {
+        "instanceName": "Instance name",
+        "instanceNamePlaceholder": "Production NetBox",
+        "host": "Host",
+        "hostPlaceholder": "netbox.example.com",
+        "port": "Port",
+        "timeoutSecs": "Timeout (s)",
+        "apiToken": "API Token",
+        "apiTokenPlaceholder": "Your NetBox API token",
+        "useTls": "Use TLS (HTTPS)",
+        "acceptInvalidCerts": "Accept invalid certificates"
+      },
+      "status": {
+        "host": "Host",
+        "version": "Version",
+        "sites": "Sites",
+        "devices": "Devices",
+        "prefixes": "Prefixes"
+      },
+      "errors": {
+        "hostRequired": "Host is required",
+        "tokenRequired": "API token is required"
+      }
+    },
     "keepass": {
       "openTitle": "Open KeePass database",
       "openSubtitle": "Open a local .kdbx file with its master password.",

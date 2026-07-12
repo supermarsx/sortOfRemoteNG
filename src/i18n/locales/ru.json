@@ -3214,6 +3214,72 @@
       "mail": "Почта",
       "vault": "Хранилища"
     },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "Управление контейнерами, ВМ и инфраструктурой LXD и Incus",
+      "connect": "Подключить",
+      "disconnect": "Отключить",
+      "connected": "Подключено",
+      "disconnected": "Не подключено",
+      "noTabs": "Представления управления загрузятся здесь после подключения.",
+      "form": {
+        "name": "Имя экземпляра",
+        "namePlaceholder": "Мой сервер LXD",
+        "url": "URL сервера",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Аутентификация",
+        "authTls": "Клиентский сертификат (mTLS)",
+        "authOidc": "Токен OIDC",
+        "clientCertPem": "Клиентский сертификат (PEM)",
+        "clientKeyPem": "Клиентский ключ (PEM)",
+        "trustPassword": "Доверенный токен / пароль",
+        "oidcToken": "Токен доступа OIDC",
+        "project": "Проект",
+        "timeoutSecs": "Тайм-аут (секунды)",
+        "skipTlsVerify": "Пропустить проверку TLS",
+        "save": "Сохранить",
+        "saved": "Сохранено"
+      },
+      "errors": {
+        "urlRequired": "URL сервера обязателен",
+        "credRequired": "Укажите клиентский сертификат/ключ или токен OIDC"
+      }
+    },
+    "netbox": {
+      "title": "NetBox",
+      "subtitle": "Управление DCIM и IPAM",
+      "connect": "Подключить",
+      "disconnect": "Отключить",
+      "connected": "Подключено",
+      "disconnected": "Отключено",
+      "refresh": "Обновить",
+      "save": "Сохранить",
+      "cancel": "Отмена",
+      "noTabs": "Подключено. Разделы управления появятся здесь.",
+      "form": {
+        "instanceName": "Имя экземпляра",
+        "instanceNamePlaceholder": "Рабочий NetBox",
+        "host": "Хост",
+        "hostPlaceholder": "netbox.example.com",
+        "port": "Порт",
+        "timeoutSecs": "Тайм-аут (с)",
+        "apiToken": "API-токен",
+        "apiTokenPlaceholder": "Ваш API-токен NetBox",
+        "useTls": "Использовать TLS (HTTPS)",
+        "acceptInvalidCerts": "Принимать недействительные сертификаты"
+      },
+      "status": {
+        "host": "Хост",
+        "version": "Версия",
+        "sites": "Сайты",
+        "devices": "Устройства",
+        "prefixes": "Префиксы"
+      },
+      "errors": {
+        "hostRequired": "Требуется хост",
+        "tokenRequired": "Требуется API-токен"
+      }
+    },
     "keepass": {
       "openTitle": "Открыть базу данных KeePass",
       "openSubtitle": "Откройте локальный файл .kdbx с его мастер-паролем.",

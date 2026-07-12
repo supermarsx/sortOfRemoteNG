@@ -3214,6 +3214,72 @@
       "mail": "Correio",
       "vault": "Cofres"
     },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "Gerir contentores, VMs e infraestrutura LXD e Incus",
+      "connect": "Ligar",
+      "disconnect": "Desligar",
+      "connected": "Ligado",
+      "disconnected": "Não ligado",
+      "noTabs": "As vistas de gestão são carregadas aqui após a ligação.",
+      "form": {
+        "name": "Nome da instância",
+        "namePlaceholder": "O meu servidor LXD",
+        "url": "URL do servidor",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Autenticação",
+        "authTls": "Certificado de cliente (mTLS)",
+        "authOidc": "Token OIDC",
+        "clientCertPem": "Certificado de cliente (PEM)",
+        "clientKeyPem": "Chave de cliente (PEM)",
+        "trustPassword": "Token de confiança / palavra-passe",
+        "oidcToken": "Token de acesso OIDC",
+        "project": "Projeto",
+        "timeoutSecs": "Tempo limite (segundos)",
+        "skipTlsVerify": "Ignorar verificação TLS",
+        "save": "Guardar",
+        "saved": "Guardado"
+      },
+      "errors": {
+        "urlRequired": "O URL do servidor é obrigatório",
+        "credRequired": "Forneça um certificado/chave de cliente ou um token OIDC"
+      }
+    },
+    "netbox": {
+      "title": "NetBox",
+      "subtitle": "Gestão de DCIM e IPAM",
+      "connect": "Ligar",
+      "disconnect": "Desligar",
+      "connected": "Ligado",
+      "disconnected": "Desligado",
+      "refresh": "Atualizar",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "noTabs": "Ligado. As secções de gestão aparecerão aqui.",
+      "form": {
+        "instanceName": "Nome da instância",
+        "instanceNamePlaceholder": "NetBox de produção",
+        "host": "Anfitrião",
+        "hostPlaceholder": "netbox.example.com",
+        "port": "Porta",
+        "timeoutSecs": "Tempo limite (s)",
+        "apiToken": "Token de API",
+        "apiTokenPlaceholder": "O seu token de API do NetBox",
+        "useTls": "Usar TLS (HTTPS)",
+        "acceptInvalidCerts": "Aceitar certificados inválidos"
+      },
+      "status": {
+        "host": "Anfitrião",
+        "version": "Versão",
+        "sites": "Locais",
+        "devices": "Dispositivos",
+        "prefixes": "Prefixos"
+      },
+      "errors": {
+        "hostRequired": "O anfitrião é obrigatório",
+        "tokenRequired": "O token de API é obrigatório"
+      }
+    },
     "keepass": {
       "openTitle": "Abrir base de dados KeePass",
       "openSubtitle": "Abra um ficheiro .kdbx local com a sua palavra-passe mestra.",

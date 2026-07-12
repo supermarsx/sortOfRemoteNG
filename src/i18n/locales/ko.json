@@ -3214,6 +3214,72 @@
       "mail": "메일",
       "vault": "볼트"
     },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "LXD 및 Incus 컨테이너, VM, 인프라 관리",
+      "connect": "연결",
+      "disconnect": "연결 해제",
+      "connected": "연결됨",
+      "disconnected": "연결 안 됨",
+      "noTabs": "연결하면 관리 보기가 여기에 로드됩니다.",
+      "form": {
+        "name": "인스턴스 이름",
+        "namePlaceholder": "내 LXD 서버",
+        "url": "서버 URL",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "인증",
+        "authTls": "클라이언트 인증서 (mTLS)",
+        "authOidc": "OIDC 토큰",
+        "clientCertPem": "클라이언트 인증서 (PEM)",
+        "clientKeyPem": "클라이언트 키 (PEM)",
+        "trustPassword": "신뢰 토큰 / 비밀번호",
+        "oidcToken": "OIDC 액세스 토큰",
+        "project": "프로젝트",
+        "timeoutSecs": "시간 제한 (초)",
+        "skipTlsVerify": "TLS 검증 건너뛰기",
+        "save": "저장",
+        "saved": "저장됨"
+      },
+      "errors": {
+        "urlRequired": "서버 URL이 필요합니다",
+        "credRequired": "클라이언트 인증서/키 또는 OIDC 토큰을 입력하세요"
+      }
+    },
+    "netbox": {
+      "title": "NetBox",
+      "subtitle": "DCIM 및 IPAM 관리",
+      "connect": "연결",
+      "disconnect": "연결 해제",
+      "connected": "연결됨",
+      "disconnected": "연결 안 됨",
+      "refresh": "새로 고침",
+      "save": "저장",
+      "cancel": "취소",
+      "noTabs": "연결되었습니다. 관리 섹션이 여기에 표시됩니다.",
+      "form": {
+        "instanceName": "인스턴스 이름",
+        "instanceNamePlaceholder": "프로덕션 NetBox",
+        "host": "호스트",
+        "hostPlaceholder": "netbox.example.com",
+        "port": "포트",
+        "timeoutSecs": "시간 초과 (초)",
+        "apiToken": "API 토큰",
+        "apiTokenPlaceholder": "NetBox API 토큰",
+        "useTls": "TLS 사용 (HTTPS)",
+        "acceptInvalidCerts": "잘못된 인증서 허용"
+      },
+      "status": {
+        "host": "호스트",
+        "version": "버전",
+        "sites": "사이트",
+        "devices": "장치",
+        "prefixes": "접두사"
+      },
+      "errors": {
+        "hostRequired": "호스트가 필요합니다",
+        "tokenRequired": "API 토큰이 필요합니다"
+      }
+    },
     "keepass": {
       "openTitle": "KeePass 데이터베이스 열기",
       "openSubtitle": "마스터 비밀번호로 로컬 .kdbx 파일을 엽니다.",

@@ -3245,6 +3245,41 @@
         "credRequired": "Fornisci un certificato/chiave client o un token OIDC"
       }
     },
+    "netbox": {
+      "title": "NetBox",
+      "subtitle": "Gestione DCIM e IPAM",
+      "connect": "Connetti",
+      "disconnect": "Disconnetti",
+      "connected": "Connesso",
+      "disconnected": "Disconnesso",
+      "refresh": "Aggiorna",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "noTabs": "Connesso. Le sezioni di gestione appariranno qui.",
+      "form": {
+        "instanceName": "Nome istanza",
+        "instanceNamePlaceholder": "NetBox di produzione",
+        "host": "Host",
+        "hostPlaceholder": "netbox.example.com",
+        "port": "Porta",
+        "timeoutSecs": "Timeout (s)",
+        "apiToken": "Token API",
+        "apiTokenPlaceholder": "Il tuo token API NetBox",
+        "useTls": "Usa TLS (HTTPS)",
+        "acceptInvalidCerts": "Accetta certificati non validi"
+      },
+      "status": {
+        "host": "Host",
+        "version": "Versione",
+        "sites": "Siti",
+        "devices": "Dispositivi",
+        "prefixes": "Prefissi"
+      },
+      "errors": {
+        "hostRequired": "L'host è obbligatorio",
+        "tokenRequired": "Il token API è obbligatorio"
+      }
+    },
     "keepass": {
       "openTitle": "Apri database KeePass",
       "openSubtitle": "Apri un file .kdbx locale con la sua password principale.",

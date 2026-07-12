@@ -3245,6 +3245,41 @@
         "credRequired": "Client-Zertifikat/-Schlüssel oder OIDC-Token angeben"
       }
     },
+    "netbox": {
+      "title": "NetBox",
+      "subtitle": "DCIM- & IPAM-Verwaltung",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "connected": "Verbunden",
+      "disconnected": "Getrennt",
+      "refresh": "Aktualisieren",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "noTabs": "Verbunden. Verwaltungsbereiche werden hier angezeigt.",
+      "form": {
+        "instanceName": "Instanzname",
+        "instanceNamePlaceholder": "Produktions-NetBox",
+        "host": "Host",
+        "hostPlaceholder": "netbox.example.com",
+        "port": "Port",
+        "timeoutSecs": "Timeout (s)",
+        "apiToken": "API-Token",
+        "apiTokenPlaceholder": "Ihr NetBox-API-Token",
+        "useTls": "TLS verwenden (HTTPS)",
+        "acceptInvalidCerts": "Ungültige Zertifikate akzeptieren"
+      },
+      "status": {
+        "host": "Host",
+        "version": "Version",
+        "sites": "Standorte",
+        "devices": "Geräte",
+        "prefixes": "Präfixe"
+      },
+      "errors": {
+        "hostRequired": "Host ist erforderlich",
+        "tokenRequired": "API-Token ist erforderlich"
+      }
+    },
     "keepass": {
       "openTitle": "KeePass-Datenbank öffnen",
       "openSubtitle": "Öffnen Sie eine lokale .kdbx-Datei mit ihrem Master-Passwort.",
