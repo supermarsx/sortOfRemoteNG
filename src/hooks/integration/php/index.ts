@@ -9,5 +9,5 @@
 export * from "./usePhpConnection";
 
 // ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./usePhpRuntime";
-// export * from "./usePhpConfig";
+export * from "./usePhpRuntime";
+export * from "./usePhpConfig";

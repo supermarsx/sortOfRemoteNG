@@ -57,5 +57,5 @@ export interface PhpConnectionSummary {
 }
 
 // ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./runtime";
-// export * from "./config";
+export * from "./runtime";
+export * from "./config";

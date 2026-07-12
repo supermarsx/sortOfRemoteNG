@@ -34,4 +34,15 @@ export interface PhpCategoryTab {
 /** Registered PHP-FPM sub-tabs. EMPTY at lead time; the per-crate integrator
  *  appends `{ categoryKey, label, importTab }` for each category exec
  *  (`runtime` = Runtime & FPM, `config` = Configuration, Extensions & Composer). */
-export const phpCategoryTabs: PhpCategoryTab[] = [];
+export const phpCategoryTabs: PhpCategoryTab[] = [
+  {
+    categoryKey: "runtime",
+    label: "Runtime & FPM",
+    importTab: () => import("./PhpRuntimeTab"),
+  },
+  {
+    categoryKey: "config",
+    label: "Configuration",
+    importTab: () => import("./PhpConfigTab"),
+  },
+];
