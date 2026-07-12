@@ -4492,6 +4492,7 @@
         "timeout": "Tempo limite (s)"
       },
       "host": {
+        "tabLabel": "Anfitrião, rede e armazenamento",
         "notConnected": "Ligue-se a um anfitrião VMware Workstation para gerir rede, armazenamento e configuração.",
         "working": "A processar…",
         "vmxPath": "VM de destino (caminho .vmx)",

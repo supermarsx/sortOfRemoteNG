@@ -4492,6 +4492,7 @@
         "timeout": "Zeitlimit (s)"
       },
       "host": {
+        "tabLabel": "Host, Netzwerk & Speicher",
         "notConnected": "Mit einem VMware Workstation-Host verbinden, um Netzwerk, Speicher und Konfiguration zu verwalten.",
         "working": "Wird ausgeführt…",
         "vmxPath": "Ziel-VM (.vmx-Pfad)",

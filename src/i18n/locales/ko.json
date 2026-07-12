@@ -4492,6 +4492,7 @@
         "timeout": "시간 초과 (초)"
       },
       "host": {
+        "tabLabel": "호스트, 네트워크 및 스토리지",
         "notConnected": "네트워크, 스토리지 및 구성을 관리하려면 VMware Workstation 호스트에 연결하세요.",
         "working": "처리 중…",
         "vmxPath": "대상 VM (.vmx 경로)",

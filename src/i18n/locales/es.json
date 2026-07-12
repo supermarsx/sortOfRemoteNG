@@ -4492,6 +4492,7 @@
         "timeout": "Tiempo de espera (s)"
       },
       "host": {
+        "tabLabel": "Host, red y almacenamiento",
         "notConnected": "Conéctate a un host de VMware Workstation para gestionar redes, almacenamiento y configuración.",
         "working": "Procesando…",
         "vmxPath": "VM objetivo (ruta .vmx)",

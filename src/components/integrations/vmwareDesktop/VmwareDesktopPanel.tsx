@@ -363,7 +363,7 @@ const VmwareDesktopPanel: React.FC<IntegrationPanelProps> = ({
           {summary?.productVersion && (
             <span className="text-xs text-[var(--color-textSecondary)]">
               {summary.product} {summary.productVersion} · {summary.vmCount}{" "}
-              {t("integrations.vmwareDesktop.vms", "VMs")}
+              {t("integrations.vmwareDesktop.vms.countLabel", "VMs")}
             </span>
           )}
         </div>

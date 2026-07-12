@@ -4492,6 +4492,7 @@
         "timeout": "Timeout (s)"
       },
       "host": {
+        "tabLabel": "Host, Network & Storage",
         "notConnected": "Connect to a VMware Workstation host to manage networking, storage, and configuration.",
         "working": "Working…",
         "vmxPath": "Target VM (.vmx path)",

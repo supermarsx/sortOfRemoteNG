@@ -4492,6 +4492,7 @@
         "timeout": "Délai (s)"
       },
       "host": {
+        "tabLabel": "Hôte, réseau et stockage",
         "notConnected": "Connectez-vous à un hôte VMware Workstation pour gérer le réseau, le stockage et la configuration.",
         "working": "En cours…",
         "vmxPath": "VM cible (chemin .vmx)",

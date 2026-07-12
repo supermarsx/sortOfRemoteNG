@@ -4492,6 +4492,7 @@
         "timeout": "超时（秒）"
       },
       "host": {
+        "tabLabel": "主机、网络和存储",
         "notConnected": "连接到 VMware Workstation 主机以管理网络、存储和配置。",
         "working": "处理中…",
         "vmxPath": "目标虚拟机（.vmx 路径）",

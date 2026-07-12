@@ -8,4 +8,17 @@
 // this file directly. Keep it append-only; do not reorder existing entries.
 import type { VmwDesktopTabDescriptor } from "../../../types/vmwareDesktop";
 
-export const vmwDesktopTabs: VmwDesktopTabDescriptor[] = [];
+export const vmwDesktopTabs: VmwDesktopTabDescriptor[] = [
+  {
+    categoryKey: "vms",
+    labelKey: "integrations.vmwareDesktop.vms.tabLabel",
+    labelDefault: "VMs & Guest",
+    importTab: () => import("./VmwDesktopVmsTab"),
+  },
+  {
+    categoryKey: "host",
+    labelKey: "integrations.vmwareDesktop.host.tabLabel",
+    labelDefault: "Host, Network & Storage",
+    importTab: () => import("./VmwDesktopHostTab"),
+  },
+];

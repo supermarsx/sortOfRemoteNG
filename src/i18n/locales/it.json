@@ -4492,6 +4492,7 @@
         "timeout": "Timeout (s)"
       },
       "host": {
+        "tabLabel": "Host, rete e archiviazione",
         "notConnected": "Connettiti a un host VMware Workstation per gestire rete, archiviazione e configurazione.",
         "working": "In corso…",
         "vmxPath": "VM di destinazione (percorso .vmx)",

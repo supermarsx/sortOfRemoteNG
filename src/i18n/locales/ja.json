@@ -4492,6 +4492,7 @@
         "timeout": "タイムアウト（秒）"
       },
       "host": {
+        "tabLabel": "ホスト・ネットワーク・ストレージ",
         "notConnected": "ネットワーク、ストレージ、構成を管理するには VMware Workstation ホストに接続してください。",
         "working": "処理中…",
         "vmxPath": "対象 VM（.vmx パス）",
