@@ -13,6 +13,7 @@
 
 import type { ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
+import { FileSignature } from "lucide-react";
 
 /** Props every mail sub-tab receives from the shell. Each mail sub-tab manages
  *  its OWN service connection and persistence, so nothing is required. `active`
@@ -44,4 +45,12 @@ export interface MailSubTab {
  *  filter chain → auth). EMPTY at lead time; the per-crate integrator appends a
  *  `{ subTabKey, crate, label, icon, importTab }` for each of the 8 crate execs
  *  (postfix, dovecot, amavis, opendkim, cyrusSasl, procmail, rspamd, clamav). */
-export const mailSubTabs: MailSubTab[] = [];
+export const mailSubTabs: MailSubTab[] = [
+  {
+    subTabKey: "opendkim",
+    crate: "sorng-opendkim",
+    label: "OpenDKIM",
+    icon: FileSignature,
+    importTab: () => import("./OpendkimSubTab"),
+  },
+];

@@ -7,4 +7,4 @@
 // the per-crate integrator.
 
 // ── per-crate hook re-exports (appended by the per-crate integrator) ─────────
-export {};
+export * from "./useOpendkim";

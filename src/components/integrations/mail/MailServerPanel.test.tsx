@@ -23,13 +23,21 @@ describe("MailServerPanel", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("shows the empty state while the sub-tab registry is unpopulated", () => {
-    // Lead ships the registry EMPTY; the 8 crate execs append their sub-tabs.
-    expect(mailSubTabs).toHaveLength(0);
+  it("renders the sub-tab bar for whatever crates are registered", () => {
+    // The registry grows as the 8 crate execs append their sub-tabs; the shell
+    // routes from it. Empty → empty state; non-empty → a button per sub-tab.
     render(<MailServerPanel isOpen onClose={() => {}} />);
-    expect(
-      screen.getByText("Mail services load here once registered."),
-    ).toBeInTheDocument();
+    if (mailSubTabs.length === 0) {
+      expect(
+        screen.getByText("Mail services load here once registered."),
+      ).toBeInTheDocument();
+    } else {
+      for (const tab of mailSubTabs) {
+        expect(
+          screen.getByRole("button", { name: new RegExp(tab.label, "i") }),
+        ).toBeInTheDocument();
+      }
+    }
   });
 
   it("exposes a well-formed mail descriptor", () => {
