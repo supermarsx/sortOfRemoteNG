@@ -19,7 +19,3 @@ url = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 dirs = { workspace = true }
-
-[target.'cfg(unix)'.dependencies]
-hyperlocal = "0.4"
-http-body-util = "0.1"

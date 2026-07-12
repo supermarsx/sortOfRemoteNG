@@ -610,7 +610,7 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
     use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut resources: Vec<DavResource> = Vec::new();
     let mut current: Option<DavResource> = None;
@@ -652,7 +652,15 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
             Ok(Event::Text(ref e)) => {
                 if let Some(ref tag) = current_tag {
                     if let Some(ref mut res) = current {
-                        let text = e.unescape().unwrap_or_default().to_string();
+                        // quick-xml 0.41 removed BytesText::unescape(); reproduce
+                        // decode + entity-unescape, keeping the lenient fallback.
+                        let text = e
+                            .decode()
+                            .ok()
+                            .and_then(|d| {
+                                quick_xml::escape::unescape(&d).ok().map(|c| c.into_owned())
+                            })
+                            .unwrap_or_default();
                         match tag.as_str() {
                             "href" => res.href = text,
                             "displayname" => res.display_name = text,

@@ -17,4 +17,4 @@ base64 = { workspace = true }
 url = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
-quick-xml = { version = "0.31", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }

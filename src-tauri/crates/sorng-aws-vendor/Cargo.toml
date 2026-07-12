@@ -8,7 +8,7 @@ description = "Dynamically linked vendor dependencies for the AWS stack"
 crate-type = ["dylib", "rlib"]
 
 [dependencies]
-quick-xml = { version = "0.31", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 percent-encoding = "2.3"
 hmac = "0.12"
 sha2 = "0.10"

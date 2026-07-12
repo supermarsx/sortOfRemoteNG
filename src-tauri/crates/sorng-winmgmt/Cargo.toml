@@ -17,7 +17,7 @@ sorng-tls-trust = { path = "../sorng-tls-trust" }
 sorng-storage = { path = "../sorng-storage" }
 dirs = { workspace = true }
 base64 = { workspace = true }
-quick-xml = { version = "0.31", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 url = { workspace = true }
 regex = { workspace = true }
 async-trait = { workspace = true }
