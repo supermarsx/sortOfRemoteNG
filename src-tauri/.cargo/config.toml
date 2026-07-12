@@ -110,9 +110,15 @@ rustflags = [
 ]
 
 [target.x86_64-unknown-linux-gnu]
-linker = "clang"
+# NOTE: do NOT commit `linker = "clang"` + `-fuse-ld=mold` here. mold (and a
+# clang that knows `-fuse-ld=mold`) is a local-dev speed optimisation that is
+# NOT present on the CI runners, so committing it fails every Linux job with
+# `clang: error: invalid linker name in argument '-fuse-ld=mold'`. Set these in
+# your USER cargo config (~/.cargo/config.toml) on a box that has mold instead:
+#   linker = "clang"
+#   rustflags = ["-C", "link-arg=-fuse-ld=mold", ...]
+# The portable target-feature flags below are safe to commit (default linker).
 rustflags = [
-  "-C", "link-arg=-fuse-ld=mold",
   "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
 ]
 
