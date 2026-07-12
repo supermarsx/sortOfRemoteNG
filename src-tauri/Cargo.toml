@@ -348,6 +348,11 @@ tauri-plugin-fs = "=2.5.1"
 tauri-plugin-updater = "2"
 tokio = { workspace = true }
 dirs = { workspace = true }
+# Direct deps for api_config.rs (t41): OsRng/RngCore for api-key/secret
+# generation, hex for encoding. Both are workspace deps already in the
+# build graph — declaring them direct adds zero new artifacts.
+hex = { workspace = true }
+rand = { workspace = true }
 tauri-plugin-window-state = "=2.4.1"
 axum = "0.7"
 secrecy = "0.8"
