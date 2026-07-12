@@ -54,11 +54,14 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: src-tauri/Cargo.toml
-          command: check
-          # Skip advisories here — cargo-audit job owns severity-gated
-          # advisory enforcement. deny.toml still configures the section
-          # so local `cargo deny check` runs remain useful.
-          arguments: --all-features bans licenses sources
+          # The `which` checks belong on the `command` so the action emits a
+          # valid `cargo deny check bans licenses sources` (a bare `--all-features`
+          # in `arguments` lands before the `check` subcommand and current
+          # cargo-deny rejects it as an unrecognized subcommand). Advisories are
+          # omitted here — the cargo-audit job owns severity-gated advisory
+          # enforcement. All-features graph resolution comes from deny.toml
+          # (`[graph] all-features = true`), so no CLI flag is needed.
+          command: check bans licenses sources
 
   # ── npm audit (frontend dep graph), gated at high+ severity ─────────
   npm-audit:
