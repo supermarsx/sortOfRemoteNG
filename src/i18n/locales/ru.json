@@ -3544,6 +3544,78 @@
         "hostRequired": "Требуется хост",
         "tokenRequired": "Требуется API-токен"
       },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}} записей",
+        "empty": "Нет записей.",
+        "groups": {
+          "sites": "Сайты",
+          "racks": "Стойки",
+          "devices": "Устройства",
+          "interfaces": "Интерфейсы",
+          "cables": "Кабели"
+        },
+        "refs": {
+          "types": "Типы устройств",
+          "manufacturers": "Производители",
+          "platforms": "Платформы",
+          "roles": "Роли устройств"
+        },
+        "actions": {
+          "refresh": "Обновить",
+          "new": "Создать",
+          "edit": "Изменить",
+          "delete": "Удалить",
+          "close": "Закрыть",
+          "cancel": "Отмена",
+          "create": "Создать",
+          "update": "Сохранить",
+          "updateHint": "Полное обновление (PUT)",
+          "patch": "Патч",
+          "patchHint": "Частичное обновление (PATCH)",
+          "apply": "Применить",
+          "elevation": "Элевация",
+          "reservations": "Резервирования",
+          "renderConfig": "Конфигурация",
+          "connections": "Подключения",
+          "trace": "Трассировка"
+        },
+        "filters": {
+          "region": "Регион",
+          "group": "Группа",
+          "siteId": "ID сайта",
+          "deviceId": "ID устройства",
+          "search": "Поиск",
+          "bySite": "По ID сайта",
+          "byRack": "По ID стойки"
+        },
+        "fields": {
+          "name": "Имя",
+          "status": "Статус",
+          "region": "Регион",
+          "devices": "Устройства",
+          "site": "Сайт",
+          "type": "Тип",
+          "slug": "Slug",
+          "device": "Устройство",
+          "enabled": "Включено",
+          "label": "Метка",
+          "length": "Длина"
+        },
+        "editor": {
+          "hint": "Отредактируйте JSON-данные, отправляемые в NetBox.",
+          "newSite": "Новый сайт",
+          "editSite": "Изменить сайт",
+          "newRack": "Новая стойка",
+          "editRack": "Изменить стойку",
+          "newDevice": "Новое устройство",
+          "editDevice": "Изменить устройство",
+          "newInterface": "Новый интерфейс",
+          "editInterface": "Изменить интерфейс",
+          "newCable": "Новый кабель",
+          "editCable": "Изменить кабель"
+        }
+      },
       "tenancy": {
         "title": "Арендаторы",
         "tenants": "Арендаторы",

@@ -6,3 +6,4 @@ export * from "./useNetboxConnection";
 
 // ─── Per-category hook modules (append-only; owned by category execs) ─────────
 // e.g. `export * from "./useNetboxDcim";`
+export * from "./useNetboxIpam";
