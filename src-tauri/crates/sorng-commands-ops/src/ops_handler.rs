@@ -448,6 +448,10 @@ fn is_command_a(command: &str) -> bool {
             | "pfsense_update_interface"
             | "pfsense_apply_interface_changes"
             | "pfsense_get_interface_stats"
+            | "pfsense_create_interface"
+            | "pfsense_delete_interface"
+            | "pfsense_apply_interfaces"
+            | "pfsense_list_interface_stats"
             | "pfsense_list_firewall_rules"
             | "pfsense_get_firewall_rule"
             | "pfsense_create_firewall_rule"
@@ -460,6 +464,7 @@ fn is_command_a(command: &str) -> bool {
             | "pfsense_delete_firewall_alias"
             | "pfsense_get_firewall_states"
             | "pfsense_flush_firewall_states"
+            | "pfsense_apply_firewall_rules"
             | "pfsense_list_nat_port_forwards"
             | "pfsense_create_nat_port_forward"
             | "pfsense_update_nat_port_forward"
@@ -472,6 +477,7 @@ fn is_command_a(command: &str) -> bool {
             | "pfsense_create_nat_1to1"
             | "pfsense_update_nat_1to1"
             | "pfsense_delete_nat_1to1"
+            | "pfsense_apply_nat"
             | "pfsense_get_dhcp_config"
             | "pfsense_update_dhcp_config"
             | "pfsense_list_dhcp_leases"
@@ -526,6 +532,7 @@ fn is_command_a(command: &str) -> bool {
             | "pfsense_get_ndp_table"
             | "pfsense_dns_lookup"
             | "pfsense_ping"
+            | "pfsense_diag_ping"
             | "pfsense_traceroute"
             | "pfsense_get_pfinfo"
             | "pfsense_get_system_log"
@@ -1676,6 +1683,10 @@ fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         pfsense_commands::pfsense_update_interface,
         pfsense_commands::pfsense_apply_interface_changes,
         pfsense_commands::pfsense_get_interface_stats,
+        pfsense_commands::pfsense_create_interface,
+        pfsense_commands::pfsense_delete_interface,
+        pfsense_commands::pfsense_apply_interfaces,
+        pfsense_commands::pfsense_list_interface_stats,
         pfsense_commands::pfsense_list_firewall_rules,
         pfsense_commands::pfsense_get_firewall_rule,
         pfsense_commands::pfsense_create_firewall_rule,
@@ -1688,6 +1699,7 @@ fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         pfsense_commands::pfsense_delete_firewall_alias,
         pfsense_commands::pfsense_get_firewall_states,
         pfsense_commands::pfsense_flush_firewall_states,
+        pfsense_commands::pfsense_apply_firewall_rules,
         pfsense_commands::pfsense_list_nat_port_forwards,
         pfsense_commands::pfsense_create_nat_port_forward,
         pfsense_commands::pfsense_update_nat_port_forward,
@@ -1700,6 +1712,7 @@ fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         pfsense_commands::pfsense_create_nat_1to1,
         pfsense_commands::pfsense_update_nat_1to1,
         pfsense_commands::pfsense_delete_nat_1to1,
+        pfsense_commands::pfsense_apply_nat,
         pfsense_commands::pfsense_get_dhcp_config,
         pfsense_commands::pfsense_update_dhcp_config,
         pfsense_commands::pfsense_list_dhcp_leases,
@@ -1754,6 +1767,7 @@ fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 
         pfsense_commands::pfsense_get_ndp_table,
         pfsense_commands::pfsense_dns_lookup,
         pfsense_commands::pfsense_ping,
+        pfsense_commands::pfsense_diag_ping,
         pfsense_commands::pfsense_traceroute,
         pfsense_commands::pfsense_get_pfinfo,
         pfsense_commands::pfsense_get_system_log,

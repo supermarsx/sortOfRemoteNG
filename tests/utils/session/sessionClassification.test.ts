@@ -148,7 +148,12 @@ describe('performance', () => {
     const start = performance.now();
     const out = partitionSessions(sessions);
     const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(10);
+    // Guards against a pathological (e.g. O(n^2)) regression, which would take
+    // seconds for 10k items. The bound is generous rather than tight because
+    // this runs under v8 coverage instrumentation in CI (`test:coverage`),
+    // which ~doubles wall-clock time, and CI runners vary; a linear partition
+    // stays well under this even instrumented.
+    expect(elapsed).toBeLessThan(100);
     // Sanity: 2 of every 5 are tools/winmgmt
     expect(out.connections).toHaveLength(6000);
     expect(out.tools).toHaveLength(2000);
