@@ -158,7 +158,28 @@ vi.mock("../../src/i18n", () => ({
     language: "en",
     changeLanguage: vi.fn(),
     addResourceBundle: vi.fn(),
-    t: (key: string) => key,
+    // Mirror i18next's real `i18n.t(key, { defaultValue, ...vars })` contract:
+    // return the defaultValue when the key is unresolved and interpolate
+    // `{{var}}` placeholders. The previous `key => key` stub returned raw keys,
+    // so consumers that read the i18n instance directly (e.g. ErrorBoundary)
+    // rendered "errorBoundary.title" instead of the translated text.
+    t: (key: string, options?: Record<string, unknown>) => {
+      const defaultValue =
+        options && typeof options.defaultValue === "string"
+          ? options.defaultValue
+          : key;
+      let result = defaultValue;
+      if (options) {
+        for (const [name, value] of Object.entries(options)) {
+          if (name === "defaultValue") continue;
+          result = result.replace(
+            new RegExp(`{{\\s*${name}\\s*}}`, "g"),
+            String(value),
+          );
+        }
+      }
+      return result;
+    },
     use: vi.fn().mockReturnThis(),
     init: vi.fn(),
   },

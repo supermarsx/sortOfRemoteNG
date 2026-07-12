@@ -1,6 +1,27 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+
+// The real i18n instance is not initialized under vitest, so react-i18next's
+// fallback `t` returns the defaultValue without interpolating `{{count}}`.
+// Mock it to mirror the `t(key, defaultValue, { count })` contract the editor
+// uses so "{{count}} selected" renders as "2 selected".
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, defaultValue?: string, options?: Record<string, unknown>) => {
+      let result = defaultValue ?? key;
+      if (options) {
+        for (const [name, value] of Object.entries(options)) {
+          result = result.replace(
+            new RegExp(`{{\\s*${name}\\s*}}`, "g"),
+            String(value),
+          );
+        }
+      }
+      return result;
+    },
+  }),
+}));
 import { BulkConnectionEditor } from "../../src/components/connection/BulkConnectionEditor";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { useAppLifecycle } from "../../src/hooks/window/useAppLifecycle";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
@@ -102,15 +102,16 @@ describe("useAppLifecycle", () => {
       }),
     );
 
-    // Wait for automatic initialization
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    // Initialization is async (dynamic imports + Promise.all over settings,
+    // theme, and DB tasks); a fixed sleep races that chain. Poll until the hook
+    // reports it finished instead.
+    await waitFor(() => {
+      expect(result.current.isInitialized).toBe(true);
     });
 
     expect(mockSettingsManager.initialize).toHaveBeenCalled();
     expect(mockThemeManager.loadSavedTheme).toHaveBeenCalled();
     expect(mockThemeManager.injectThemeCSS).toHaveBeenCalled();
-    expect(result.current.isInitialized).toBe(true);
   });
 
   it("should change language when settings language differs", async () => {

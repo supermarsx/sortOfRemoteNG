@@ -57,7 +57,13 @@ describe("usePerformanceMonitor", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({}));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Tests that open the monitor (isOpen=true) kick off an async
+    // updateCurrentMetrics() whose fetch can resolve after the hook unmounts and
+    // then call the shared recordPerformanceMetric mock. Let that in-flight work
+    // settle here so it fires (and gets cleared by the next beforeEach) instead
+    // of leaking a phantom call into the following test.
+    await new Promise((r) => setTimeout(r, 0));
     vi.unstubAllGlobals();
   });
 

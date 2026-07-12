@@ -172,14 +172,17 @@ describe("AppToolbar", () => {
     expect(svg?.classList.contains("rotate-45")).toBe(false);
   });
 
-  it("shows RDP sessions button when showRdpSessionsIcon is enabled", () => {
+  it("shows the Session Manager button when showRdpSessionsIcon is enabled", () => {
     const props = makeProps({
       databaseManager: {
         getCurrentDatabase: () => ({ id: "col-1", name: "Test" }),
       } as any,
     });
     render(<AppToolbar {...(props as any)} />);
-    const btn = screen.getByTitle("RDP Sessions");
+    // The old "RDP Sessions" button was folded into the unified Session Manager
+    // (commit 82f056df); `showRdpSessionsIcon` still gates it and it still opens
+    // the RDP panel via setRdpPanelOpen.
+    const btn = screen.getByTitle("Session Manager");
     expect(btn).toBeTruthy();
     fireEvent.click(btn);
     expect(props.setRdpPanelOpen).toHaveBeenCalledWith(true);
