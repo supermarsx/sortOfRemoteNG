@@ -1,0 +1,126 @@
+{
+  "integrations": {
+    "exchange": {
+      "orgsecurity": {
+        "title": "Org Config, Security & Compliance",
+        "count": "{{count}} items",
+        "empty": "No records.",
+        "actions": {
+          "close": "Close",
+          "cancel": "Cancel",
+          "refresh": "Refresh",
+          "new": "New",
+          "edit": "Edit",
+          "delete": "Delete",
+          "enable": "Enable",
+          "disable": "Disable",
+          "add": "Add",
+          "remove": "Remove",
+          "create": "Create",
+          "save": "Save",
+          "apply": "Apply",
+          "search": "Search",
+          "lookup": "Look up"
+        },
+        "editor": {
+          "hint": "Edit the JSON payload sent to Exchange."
+        },
+        "groups": {
+          "retention": "Retention & Holds",
+          "journal": "Journal Rules",
+          "rbac": "RBAC & Audit",
+          "organization": "Organization",
+          "hygiene": "Hygiene & Quarantine",
+          "certificates": "Certificates"
+        },
+        "fields": {
+          "name": "Name",
+          "type": "Type",
+          "ageDays": "Age (days)",
+          "action": "Action",
+          "enabled": "Enabled",
+          "state": "State",
+          "mode": "Mode",
+          "default": "Default",
+          "tagLinks": "Tag links",
+          "journalEmail": "Journal to",
+          "scope": "Scope",
+          "members": "Members",
+          "roles": "Roles",
+          "roleType": "Type",
+          "parent": "Parent",
+          "role": "Role",
+          "assignee": "Assignee",
+          "cmdlet": "Cmdlet",
+          "object": "Object",
+          "caller": "Caller",
+          "succeeded": "OK",
+          "operation": "Operation",
+          "owner": "Owner",
+          "loggedBy": "Logged by",
+          "subject": "Subject",
+          "sender": "Sender",
+          "reason": "Reason",
+          "direction": "Direction",
+          "thumbprint": "Thumbprint",
+          "services": "Services",
+          "valid": "Valid"
+        },
+        "retention": {
+          "policies": "Retention policies",
+          "tags": "Retention tags",
+          "dlp": "DLP policies",
+          "holds": "Holds",
+          "mailboxIdentity": "Mailbox identity",
+          "enableLitigation": "Enable litigation hold",
+          "disableLitigation": "Disable litigation hold",
+          "litigationHint": "Set identity; duration (e.g. 2555.00:00:00) and owner are optional.",
+          "holdsHint": "Enter a mailbox identity and look up its hold state."
+        },
+        "journal": {
+          "new": "New journal rule"
+        },
+        "rbac": {
+          "roleGroups": "Role groups",
+          "roles": "Roles",
+          "assignments": "Assignments",
+          "adminAudit": "Admin audit",
+          "mailboxAudit": "Mailbox audit",
+          "addMember": "Add role-group member",
+          "removeMember": "Remove role-group member",
+          "searchAdminAudit": "Search admin audit log",
+          "adminAuditConfig": "Admin audit log config",
+          "roleFilter": "Role",
+          "assigneeFilter": "Assignee",
+          "mailbox": "Mailbox",
+          "enableAudit": "Enable audit",
+          "disableAudit": "Disable audit"
+        },
+        "org": {
+          "edit": "Set organization config",
+          "editHint": "Provide only the parameters to change (camelCase keys)."
+        },
+        "hygiene": {
+          "content": "Content filter",
+          "connection": "Connection filter",
+          "sender": "Sender filter",
+          "quarantine": "Quarantine",
+          "setFilter": "Set filter config",
+          "setFilterHint": "Provide only the parameters to change (camelCase keys).",
+          "release": "Release quarantine message",
+          "pageSize": "Page size",
+          "type": "Type"
+        },
+        "certs": {
+          "server": "Server",
+          "enable": "Enable certificate",
+          "enableHint": "Services is a comma-separated list, e.g. IIS,SMTP.",
+          "import": "Import certificate",
+          "newRequest": "New certificate request",
+          "newRequestHint": "domainNames is an array of subject-alternative names.",
+          "csr": "Certificate request"
+        }
+      }
+    }
+  }
+}
