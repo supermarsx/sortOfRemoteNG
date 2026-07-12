@@ -81,5 +81,7 @@ export interface NetboxTabProps {
 export type NetboxTabComponent = ComponentType<NetboxTabProps>;
 
 // ─── Per-category type modules (append-only; owned by category execs) ─────────
-// e.g. `export * from "./dcim";`
+export * from "./dcim";
 export * from "./ipam";
+export * from "./virtualization";
+export * from "./tenancy";

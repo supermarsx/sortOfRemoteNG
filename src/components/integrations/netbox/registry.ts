@@ -27,4 +27,29 @@ export interface NetboxTabDescriptor {
 
 /** Registered NetBox category tabs, in display order. EMPTY at lead stage;
  *  category execs append via the per-crate integrator. */
-export const netboxTabs: NetboxTabDescriptor[] = [];
+export const netboxTabs: NetboxTabDescriptor[] = [
+  {
+    categoryKey: "dcim",
+    labelKey: "integrations.netbox.dcim.title",
+    labelDefault: "DCIM",
+    importTab: () => import("./NetboxDcimTab"),
+  },
+  {
+    categoryKey: "ipam",
+    labelKey: "integrations.netbox.ipam.title",
+    labelDefault: "IPAM",
+    importTab: () => import("./NetboxIpamTab"),
+  },
+  {
+    categoryKey: "virtualization",
+    labelKey: "integrations.netbox.virtualization.title",
+    labelDefault: "Virtualization & Circuits",
+    importTab: () => import("./NetboxVirtualizationTab"),
+  },
+  {
+    categoryKey: "tenancy",
+    labelKey: "integrations.netbox.tenancy.title",
+    labelDefault: "Tenancy & Contacts",
+    importTab: () => import("./NetboxTenancyTab"),
+  },
+];

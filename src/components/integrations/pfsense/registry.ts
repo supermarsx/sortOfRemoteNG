@@ -31,4 +31,15 @@ export interface PfsenseCategoryTab {
 
 /** Registered pfSense sub-tabs. EMPTY at lead time; the per-crate integrator
  *  appends `{ categoryKey, label, importTab }` for each category exec. */
-export const pfsenseCategoryTabs: PfsenseCategoryTab[] = [];
+export const pfsenseCategoryTabs: PfsenseCategoryTab[] = [
+  {
+    categoryKey: "network",
+    label: "Network & Firewall",
+    importTab: () => import("./PfsenseNetworkTab"),
+  },
+  {
+    categoryKey: "services",
+    label: "Services & System",
+    importTab: () => import("./PfsenseServicesTab"),
+  },
+];

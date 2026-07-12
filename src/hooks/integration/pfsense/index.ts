@@ -6,8 +6,6 @@
 // category executors; their re-exports are appended to the marked region below
 // by the per-crate integrator.
 
-export {};
-
 // ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./usePfsenseNetwork";
-// export * from "./usePfsenseServices";
+export * from "./usePfsenseNetwork";
+export * from "./usePfsenseServices";

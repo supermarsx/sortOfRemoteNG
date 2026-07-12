@@ -33,5 +33,5 @@ export interface PfsenseConnectionSummary {
 }
 
 // ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./network";
-// export * from "./services";
+export * from "./network";
+export * from "./services";
