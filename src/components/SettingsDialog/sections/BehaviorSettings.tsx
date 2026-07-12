@@ -16,6 +16,7 @@ import ClipboardSection from "./behavior/ClipboardSection";
 import IdleTimeout from "./behavior/IdleTimeout";
 import ReconnectionSection from "./behavior/ReconnectionSection";
 import NotificationsSection from "./behavior/NotificationsSection";
+import TelegramSettingsSection from "./behavior/TelegramSettingsSection";
 import ConfirmationDialogs from "./behavior/ConfirmationDialogs";
 import DragDropSection from "./behavior/DragDropSection";
 import ScrollInputSection from "./behavior/ScrollInputSection";
@@ -38,6 +39,7 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
       <IdleTimeout s={settings} u={updateSettings} />
       <ReconnectionSection s={settings} u={updateSettings} />
       <NotificationsSection s={settings} u={updateSettings} />
+      <TelegramSettingsSection s={settings} u={updateSettings} />
       <ConfirmationDialogs s={settings} u={updateSettings} />
       <DragDropSection s={settings} u={updateSettings} />
       <ScrollInputSection s={settings} u={updateSettings} />
