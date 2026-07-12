@@ -44,5 +44,5 @@ export interface OsticketConnectionStatus {
 }
 
 // ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./ticketing";
-// export * from "./admin";
+export * from "./ticketing";
+export * from "./admin";

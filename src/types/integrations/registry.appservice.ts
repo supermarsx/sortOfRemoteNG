@@ -5,9 +5,19 @@ import type { IntegrationDescriptor } from "./registry";
 import { exchangeDescriptor } from "../../components/integrations/exchange/descriptor";
 import { prometheusDescriptor } from "../../components/integrations/PrometheusPanel";
 import { gdriveDescriptor } from "../../components/integrations/GdrivePanel";
+import { grafanaDescriptor } from "../../components/integrations/GrafanaPanel";
+import { budibaseDescriptor } from "../../components/integrations/BudibasePanel";
+import { jiraDescriptor } from "../../components/integrations/jira/descriptor";
+import { osticketDescriptor } from "../../components/integrations/osticket/descriptor";
+import { mailcowDescriptor } from "../../components/integrations/mailcow/descriptor";
 
 export const appServiceIntegrations: IntegrationDescriptor[] = [
   exchangeDescriptor,
   prometheusDescriptor,
   gdriveDescriptor,
+  grafanaDescriptor,
+  budibaseDescriptor,
+  jiraDescriptor,
+  osticketDescriptor,
+  mailcowDescriptor,
 ];

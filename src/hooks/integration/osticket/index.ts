@@ -9,5 +9,5 @@
 export * from "./useOsticketConnection";
 
 // ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./useOsticketTicketing";
-// export * from "./useOsticketAdmin";
+export * from "./useOsticketTicketing";
+export * from "./useOsticketAdmin";

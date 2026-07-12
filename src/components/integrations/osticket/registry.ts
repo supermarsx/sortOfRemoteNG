@@ -33,4 +33,15 @@ export interface OsticketCategoryTab {
 /** Registered osTicket sub-tabs. EMPTY at lead time; the per-crate integrator
  *  appends `{ categoryKey, label, importTab }` for each category exec
  *  (`ticketing` = Ticketing, `admin` = Administration). */
-export const osticketCategoryTabs: OsticketCategoryTab[] = [];
+export const osticketCategoryTabs: OsticketCategoryTab[] = [
+  {
+    categoryKey: "ticketing",
+    label: "Ticketing",
+    importTab: () => import("./OsticketTicketingTab"),
+  },
+  {
+    categoryKey: "admin",
+    label: "Admin",
+    importTab: () => import("./OsticketAdminTab"),
+  },
+];

@@ -33,4 +33,15 @@ export interface JiraCategoryTab {
 /** Registered Jira sub-tabs. EMPTY at lead time; the per-crate integrator
  *  appends `{ categoryKey, label, importTab }` for each category exec
  *  (`issues` = Issues, `agile` = Projects & Agile). */
-export const jiraCategoryTabs: JiraCategoryTab[] = [];
+export const jiraCategoryTabs: JiraCategoryTab[] = [
+  {
+    categoryKey: "issues",
+    label: "Issues, Users & Fields",
+    importTab: () => import("./JiraIssuesTab"),
+  },
+  {
+    categoryKey: "agile",
+    label: "Projects & Agile",
+    importTab: () => import("./JiraAgileTab"),
+  },
+];

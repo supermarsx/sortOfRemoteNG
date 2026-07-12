@@ -9,5 +9,5 @@
 export * from "./useJiraConnection";
 
 // ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./useJiraIssues";
-// export * from "./useJiraAgile";
+export * from "./useJiraIssues";
+export * from "./useJiraAgile";

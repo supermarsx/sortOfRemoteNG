@@ -179,5 +179,5 @@ export interface JiraSearchResponse {
 }
 
 // ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./issues";
-// export * from "./agile";
+export * from "./issues";
+export * from "./agile";
