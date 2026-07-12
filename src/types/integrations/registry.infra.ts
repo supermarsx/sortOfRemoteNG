@@ -7,6 +7,7 @@ import { pfsenseDescriptor } from "../../components/integrations/pfsense/Pfsense
 import { netboxDescriptor } from "../../components/integrations/netbox/descriptor";
 import { vmwareDesktopDescriptor } from "../../components/integrations/vmwareDesktop/VmwareDesktopPanel";
 import { vmwareDescriptor } from "../../components/integrations/VmwarePanel";
+import { cpanelDescriptor } from "../../components/integrations/cpanel/descriptor";
 
 export const infraIntegrations: IntegrationDescriptor[] = [
   lxdDescriptor,
@@ -14,4 +15,5 @@ export const infraIntegrations: IntegrationDescriptor[] = [
   netboxDescriptor,
   vmwareDesktopDescriptor,
   vmwareDescriptor,
+  cpanelDescriptor,
 ];

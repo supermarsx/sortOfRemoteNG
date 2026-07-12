@@ -1,0 +1,28 @@
+{
+  "title": "cPanel/WHM",
+  "connect": "Connect",
+  "disconnect": "Disconnect",
+  "connectHint": "Connect to a cPanel/WHM server via its WHM & UAPI endpoints.",
+  "noTabs": "Connected. Management sections load here once registered.",
+  "fields": {
+    "name": "Name",
+    "host": "Host",
+    "whmPort": "WHM port",
+    "cpanelPort": "cPanel port",
+    "authMode": "Authentication",
+    "username": "Username",
+    "password": "Password",
+    "apiToken": "API token",
+    "useTls": "Use TLS (HTTPS)",
+    "acceptInvalidCerts": "Accept self-signed certificates"
+  },
+  "authModes": {
+    "password": "Username + password",
+    "apiToken": "WHM API token",
+    "userApiToken": "cPanel user API token"
+  },
+  "tabs": {
+    "server": "WHM / Server Administration",
+    "account": "cPanel Account Services"
+  }
+}
