@@ -67,6 +67,7 @@ pub use domains::*;
 pub mod api;
 pub mod api_capability;
 pub mod api_capability_commands;
+pub mod api_config;
 pub mod app_settings_commands;
 // Master-key rotation orchestrator. Path-included from
 // `sorng-commands-core` for the Tauri command registration; also

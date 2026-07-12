@@ -194,6 +194,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "axum-server",
  "chrono",
  "dirs 6.0.0",
  "log 0.4.29",
@@ -226,6 +227,7 @@ dependencies = [
  "sorng-recording",
  "sorng-storage",
  "sorng-vault",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -237,6 +239,8 @@ dependencies = [
  "tempfile",
  "tokio 1.52.1",
  "tokio-test",
+ "tower",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -743,6 +747,28 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "axum-server"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ab4a3ec9ea8a657c72d99a03a824af695bd0fb5ec639ccbd9cd3543b41a5f9"
+dependencies = [
+ "arc-swap",
+ "bytes 1.11.1",
+ "fs-err 3.3.1",
+ "http",
+ "http-body",
+ "hyper 1.9.0",
+ "hyper-util",
+ "pin-project-lite",
+ "rustls 0.23.40",
+ "rustls-pemfile 2.2.0",
+ "rustls-pki-types",
+ "tokio 1.52.1",
+ "tokio-rustls 0.26.4",
+ "tower-service",
 ]
 
 [[package]]
@@ -3033,6 +3059,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-err"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b91aa448ca50d7e79433bdf3ee8d99215430d2ec02ade5aefab2a073a1822e8a"
+dependencies = [
+ "autocfg",
+ "tokio 1.52.1",
+]
+
+[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3602,6 +3638,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "h2"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+dependencies = [
+ "atomic-waker",
+ "bytes 1.11.1",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http",
+ "indexmap 2.14.0",
+ "slab 0.4.12",
+ "tokio 1.52.1",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "h3"
 version = "0.0.8"
 dependencies = [
@@ -3896,6 +3951,7 @@ dependencies = [
  "bytes 1.11.1",
  "futures-channel",
  "futures-core",
+ "h2",
  "http",
  "http-body",
  "httparse",
@@ -14315,6 +14371,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -14698,7 +14755,7 @@ dependencies = [
  "askama",
  "camino",
  "cargo_metadata",
- "fs-err",
+ "fs-err 2.11.0",
  "glob",
  "goblin",
  "heck 0.5.0",
@@ -14757,7 +14814,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9273ec45330d8fe9a3701b7b983cea7a4e218503359831967cb95d26b873561"
 dependencies = [
  "camino",
- "fs-err",
+ "fs-err 2.11.0",
  "once_cell",
  "proc-macro2 1.0.106",
  "quote 1.0.45",
