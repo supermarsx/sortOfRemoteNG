@@ -35,6 +35,11 @@ pub fn is_command(command: &str) -> bool {
             | "get_cpu_aes_capabilities"
             | "get_api_capabilities"
             | "set_api_disabled_capabilities"
+            | "api_server_start"
+            | "api_server_stop"
+            | "api_server_restart"
+            | "api_server_status"
+            | "api_regenerate_key"
             | "encryption_status"
             | "encryption_setup"
             | "encryption_unlock"
@@ -1231,6 +1236,11 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         cpu_commands::get_cpu_aes_capabilities,
         api_capability_commands::get_api_capabilities,
         api_capability_commands::set_api_disabled_capabilities,
+        api_server_commands::api_server_start,
+        api_server_commands::api_server_stop,
+        api_server_commands::api_server_restart,
+        api_server_commands::api_server_status,
+        api_server_commands::api_regenerate_key,
         sorng_encryption::commands::encryption_status,
         sorng_encryption::commands::encryption_setup,
         sorng_encryption::commands::encryption_unlock,

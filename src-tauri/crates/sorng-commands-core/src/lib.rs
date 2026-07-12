@@ -31,6 +31,13 @@ mod encryption_rotation_commands;
 mod api_capability;
 #[path = "../../../src/api_capability_commands.rs"]
 pub mod api_capability_commands;
+// t41-e6: REST API server lifecycle controller + commands. `pub` so the main
+// app crate (`state_registry`) can register the *same concrete*
+// `ApiServerController` / `ApiServerLauncher` type these commands read from
+// Tauri state — state is keyed by `TypeId`, so a same-named type from the app
+// crate would be invisible here (same reason as `DisabledCapsSetter`).
+#[path = "../../../src/api_server_commands.rs"]
+pub mod api_server_commands;
 #[path = "../../../src/aws_commands.rs"]
 mod aws_commands;
 #[path = "../../../src/backup_commands.rs"]
