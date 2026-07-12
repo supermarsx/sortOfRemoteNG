@@ -1,0 +1,112 @@
+{
+  "integrations": {
+    "exchange": {
+      "mailflow": {
+        "title": "Transport & Mail Flow",
+        "count": "{{count}} items",
+        "refresh": "Refresh",
+        "empty": "No records.",
+        "new": "New",
+        "view": "View",
+        "editParams": "Edit (params)",
+        "enable": "Enable",
+        "disable": "Disable",
+        "delete": "Delete",
+        "create": "Create",
+        "apply": "Apply",
+        "cancel": "Cancel",
+        "paramsHint": "JSON object of properties to set.",
+        "serverFilter": "Server (optional)",
+        "resultSize": "Result size",
+        "field": {
+          "name": "Name",
+          "priority": "Priority",
+          "state": "State",
+          "description": "Description",
+          "enabled": "Enabled",
+          "type": "Type",
+          "identity": "Identity",
+          "status": "Status"
+        },
+        "ruleState": {
+          "enabled": "Enabled",
+          "disabled": "Disabled"
+        },
+        "deliveryStatus": {
+          "delivered": "Delivered",
+          "failed": "Failed",
+          "pending": "Pending",
+          "expanded": "Expanded",
+          "quarantined": "Quarantined",
+          "filteredAsSpam": "Filtered as spam",
+          "none": "None"
+        },
+        "acceptedDomainType": {
+          "authoritative": "Authoritative",
+          "internalRelay": "Internal relay",
+          "externalRelay": "External relay"
+        },
+        "transportRules": {
+          "title": "Transport Rules",
+          "nameRequired": "Name is required",
+          "createTitle": "Create transport rule",
+          "updateTitle": "Update rule",
+          "prependSubject": "Prepend subject",
+          "rejectReason": "Reject reason"
+        },
+        "connectors": {
+          "title": "Connectors",
+          "send": "Send",
+          "receive": "Receive",
+          "inbound": "Inbound",
+          "outbound": "Outbound",
+          "smartHosts": "Smart hosts"
+        },
+        "messageFlow": {
+          "title": "Message Trace & Queues",
+          "traceTab": "Message trace",
+          "trackingTab": "Tracking log",
+          "sender": "Sender",
+          "recipient": "Recipient",
+          "messageId": "Message ID",
+          "subject": "Subject",
+          "received": "Received",
+          "search": "Search",
+          "results": "Results",
+          "queues": "Queues",
+          "messageCount": "Messages",
+          "nextHop": "Next hop",
+          "retry": "Retry",
+          "suspend": "Suspend",
+          "resume": "Resume",
+          "summary": "Summary"
+        },
+        "addressing": {
+          "title": "Address Policies & Lists",
+          "policies": "Email address policies",
+          "apply": "Apply",
+          "acceptedDomains": "Accepted domains",
+          "domainName": "Domain",
+          "domainType": "Type",
+          "default": "Default",
+          "addressLists": "Address lists",
+          "path": "Path",
+          "recipientFilter": "Recipient filter"
+        },
+        "remoteDomains": {
+          "title": "Remote Domains",
+          "required": "Name and domain are required",
+          "createTitle": "Create remote domain",
+          "updateTitle": "Update remote domain",
+          "autoReply": "Auto-reply",
+          "autoForward": "Auto-forward",
+          "tnef": "TNEF"
+        },
+        "transportConfig": {
+          "title": "Transport Config",
+          "edit": "Edit"
+        }
+      }
+    }
+  }
+}
