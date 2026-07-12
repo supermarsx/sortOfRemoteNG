@@ -392,6 +392,11 @@ mockall = "0.11"
 serial_test = "2.0"
 chrono = { workspace = true }
 uuid = { workspace = true }
+# reqwest: real HTTP client for the live-server e2e API suite (tests/api_test.rs,
+# t41-e8). Already in the build graph transitively (sorng-auth etc.); declared
+# here so the integration test can `use reqwest` directly. Uses the workspace
+# feature set (json + rustls), which is all the loopback-HTTP tests need.
+reqwest = { workspace = true }
 
 [features]
 default = ["lean"]
