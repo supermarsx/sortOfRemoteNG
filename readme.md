@@ -171,7 +171,10 @@ tampered or corrupted update is rejected before it is installed.
 
 ## ⚙️ Configuration & Auth
 
-The application supports local user authentication. By default, it looks for a `users.json` file.
+The application supports local user authentication backed by a file-based user
+store (`users.json`). Passwords are hashed with **Argon2id**; legacy bcrypt
+hashes from older builds are still verified and transparently re-hashed to
+Argon2id on the next successful login.
 
 **Example `users.json` structure:**
 
@@ -179,18 +182,94 @@ The application supports local user authentication. By default, it looks for a `
 [
   {
     "username": "admin",
-    "passwordHash": "$2a$10$..."
+    "passwordHash": "$argon2id$v=19$m=19456,t=2,p=1$...",
+    "role": "admin"
   }
 ]
 ```
 
-_Note: Passwords must be bcrypt hashes._
+By default the store lives at `users.json` under the app-data directory; set
+`USER_STORE_PATH` (see below) to relocate it.
 
-Environment variables for advanced configuration:
+## 🌐 REST API (opt-in, off by default)
 
-- `API_KEY`: Optional API key for external access.
-- `JWT_SECRET`: Secret for signing internal tokens.
-- `USER_STORE_PATH`: Custom path to `users.json`.
+sortOfRemoteNG ships an embedded REST API for **remote control and automation**
+of the connection manager (open/list sessions, run curated operations, query
+status). It is a control surface for your own devices, so it is treated
+accordingly:
+
+- **Off by default.** The API server does **not** run until you enable it in
+  **Settings → API** (or via the environment, below). Nothing is exposed on a
+  fresh install.
+- **Loopback-only unless you opt in.** When enabled it binds `127.0.0.1` only.
+  It binds a routable address (`0.0.0.0`) **only** when you explicitly turn on
+  *Allow remote connections*.
+- **Authentication is forced when remote.** With *Allow remote connections* on,
+  authentication cannot be turned off — the server refuses to start without a
+  resolvable API key (fail-closed).
+
+### Authentication
+
+Every route requires authentication **except** `GET /health` (liveness probe)
+and `POST /auth/login`. A request authenticates with **either**:
+
+- `X-API-Key: <key>` — a static key for external callers / automation, or
+- `Authorization: Bearer <jwt>` — a short-lived token from an interactive login.
+
+`POST /auth/login` takes a username/password from the user store and returns a
+short-lived **HS256 JWT**:
+
+```json
+{ "token": "<jwt>", "expires_at": "2026-07-12T14:30:00Z", "role": "admin" }
+```
+
+- `POST /auth/logout` revokes the presented token.
+- `GET  /auth/whoami` echoes the authenticated principal and role (diagnostics).
+
+**Roles:** `admin` has full access; `readonly` may call read/status routes but
+mutating requests are rejected. The role is carried as a claim in the JWT.
+
+### Configuration & environment variables
+
+Settings you configure in **Settings → API** are the source of truth. The
+following environment variables **override** the stored settings when present —
+useful for headless/automation deployments and first-run bootstrap:
+
+- `API_KEY` — static bearer key accepted via `X-API-Key` for external callers.
+- `JWT_SECRET` — HS256 signing secret for issued tokens (must be ≥ 256-bit /
+  32 bytes). **Auto-generated on first enable if unset.**
+- `USER_STORE_PATH` — path to the `users.json` auth store (default:
+  `users.json` under the app-data directory).
+
+**Precedence:** stored Settings JSON is the baseline; a present environment
+variable overrides it; if neither supplies a secret, the API key and
+`JWT_SECRET` are **auto-generated on first enable** so the server never comes up
+with an empty credential.
+
+### TLS
+
+TLS is governed by the SSL settings in **Settings → API**:
+
+- **Manual** — supply certificate and private-key file paths.
+- **Self-signed** — a certificate is auto-generated (clearly labeled as
+  self-signed; browsers/clients will warn on the untrusted chain).
+- **Let's Encrypt** — scaffolded but host-gated and currently **deferred**; live
+  ACME issuance is not enabled in this release. Use manual or self-signed for
+  now.
+
+### Rate limiting & CORS
+
+Request rate limiting (per client, `0` = off) and CORS are configurable in
+**Settings → API**. Rate limiting plus account lockout also defend
+`POST /auth/login` against brute force.
+
+### Security note
+
+The API never returns stored credentials, private keys, or secrets from any
+endpoint — there is no credential-read or export route by design. Audit logs
+record request metadata (method, path, principal, client IP, status, latency)
+with secrets and credential-bearing bodies redacted; the API key and JWTs are
+never logged.
 
 ## 🤝 Contributing
 
