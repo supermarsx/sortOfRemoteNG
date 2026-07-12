@@ -1,5 +1,7 @@
 use crate::platform;
 use crate::ras_helper;
+#[cfg(not(windows))]
+use crate::strongswan_helper;
 use chrono::{DateTime, Utc};
 use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
