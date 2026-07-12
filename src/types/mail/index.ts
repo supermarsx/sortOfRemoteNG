@@ -40,3 +40,6 @@ export interface MailSshConnectionFields {
 
 // ── per-crate type re-exports (appended by the per-crate integrator) ─────────
 export * from "./opendkim";
+export * from "./procmail";
+export * from "./rspamd";
+export * from "./clamav";

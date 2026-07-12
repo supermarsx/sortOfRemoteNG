@@ -8,3 +8,6 @@
 
 // ── per-crate hook re-exports (appended by the per-crate integrator) ─────────
 export * from "./useOpendkim";
+export * from "./useProcmail";
+export * from "./useRspamd";
+export * from "./useClamav";

@@ -13,7 +13,7 @@
 
 import type { ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
-import { FileSignature } from "lucide-react";
+import { FileSignature, Filter, Shield, ShieldCheck } from "lucide-react";
 
 /** Props every mail sub-tab receives from the shell. Each mail sub-tab manages
  *  its OWN service connection and persistence, so nothing is required. `active`
@@ -52,5 +52,26 @@ export const mailSubTabs: MailSubTab[] = [
     label: "OpenDKIM",
     icon: FileSignature,
     importTab: () => import("./OpendkimSubTab"),
+  },
+  {
+    subTabKey: "procmail",
+    crate: "sorng-procmail",
+    label: "Procmail",
+    icon: Filter,
+    importTab: () => import("./ProcmailSubTab"),
+  },
+  {
+    subTabKey: "rspamd",
+    crate: "sorng-rspamd",
+    label: "Rspamd",
+    icon: Shield,
+    importTab: () => import("./RspamdSubTab"),
+  },
+  {
+    subTabKey: "clamav",
+    crate: "sorng-clamav",
+    label: "ClamAV",
+    icon: ShieldCheck,
+    importTab: () => import("./ClamavSubTab"),
   },
 ];
