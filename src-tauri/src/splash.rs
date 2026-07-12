@@ -69,15 +69,19 @@ pub fn show(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         "data:text/html;charset=utf-8,{}",
         percent_encode(SPLASH_HTML)
     );
-    WebviewWindowBuilder::new(app, "splash", WebviewUrl::External(data_uri.parse()?))
+    let builder = WebviewWindowBuilder::new(app, "splash", WebviewUrl::External(data_uri.parse()?))
         .title("sortOfRemoteNG")
         .inner_size(340.0, 200.0)
         .resizable(false)
         .decorations(false)
-        .transparent(true)
         .center()
-        .always_on_top(true)
-        .build()?;
+        .always_on_top(true);
+    // `transparent` on macOS requires Tauri's `macos-private-api` feature,
+    // which the app deliberately does not enable. Keep the transparent splash
+    // on every other platform; macOS falls back to an opaque window.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(true);
+    builder.build()?;
     Ok(())
 }
 

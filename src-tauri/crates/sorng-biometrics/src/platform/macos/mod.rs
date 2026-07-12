@@ -121,12 +121,17 @@ pub(crate) async fn verify_and_derive_key(reason: &str) -> BiometricResult<Biome
 }
 
 /// Check if the legacy shell-command-based biometric setup needs migration.
-pub(crate) fn needs_migration() -> bool {
+///
+/// `pub` so the app-crate biometric command shims (which live in a different
+/// crate, `include!`d via `biometrics_commands.rs`) can reach it.
+pub fn needs_migration() -> bool {
     migration::needs_migration()
 }
 
 /// Clean up legacy Keychain items after successful migration.
-pub(crate) fn cleanup_legacy() -> BiometricResult<()> {
+///
+/// `pub` for the same cross-crate command-shim reason as [`needs_migration`].
+pub fn cleanup_legacy() -> BiometricResult<()> {
     migration::cleanup_legacy_items()
 }
 
