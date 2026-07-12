@@ -3281,6 +3281,125 @@
       }
     },
     "keepass": {
+      "database": {
+        "done": "완료.",
+        "refresh": "새로 고침",
+        "update": "업데이트",
+        "section": {
+          "overview": "개요",
+          "groups": "그룹",
+          "entries": "항목",
+          "history": "기록",
+          "icons": "사용자 지정 아이콘"
+        },
+        "overview": {
+          "statistics": "통계",
+          "loadStats": "통계 불러오기",
+          "lifecycle": "수명 주기",
+          "save": "저장",
+          "lock": "잠금",
+          "unlock": "잠금 해제",
+          "listBackups": "백업 목록",
+          "backup": "백업",
+          "listDatabases": "열린 DB 목록",
+          "close": "저장 후 닫기",
+          "closeAll": "모두 닫기",
+          "unlockPassword": "잠금 해제 비밀번호",
+          "metadata": "메타데이터 업데이트",
+          "updateMetadata": "메타데이터 업데이트",
+          "changeKey": "마스터 키 변경",
+          "merge": "병합",
+          "fileInfo": "파일 정보(디스크)",
+          "inspect": "검사"
+        },
+        "stat": {
+          "entries": "항목",
+          "groups": "그룹",
+          "attachments": "첨부 파일",
+          "customIcons": "사용자 지정 아이콘",
+          "expired": "만료됨",
+          "weak": "약한 비밀번호",
+          "reused": "재사용됨",
+          "otp": "OTP 있음"
+        },
+        "field": {
+          "name": "이름",
+          "description": "설명",
+          "defaultUsername": "기본 사용자 이름",
+          "color": "색상",
+          "recycleBin": "휴지통 사용",
+          "currentPassword": "현재 비밀번호",
+          "currentKeyFile": "현재 키 파일",
+          "newPassword": "새 비밀번호",
+          "newKeyFile": "새 키 파일",
+          "remotePath": "원격 .kdbx 경로",
+          "remotePassword": "원격 비밀번호",
+          "conflict": "충돌 해결",
+          "filePath": "/경로/파일.kdbx",
+          "notes": "메모"
+        },
+        "groups": {
+          "list": "그룹 목록",
+          "tree": "그룹 트리",
+          "treeRoot": "루트",
+          "create": "그룹 생성",
+          "parent": "상위 UUID(비우면 루트)",
+          "selected": "선택한 그룹 작업",
+          "uuid": "그룹 UUID",
+          "get": "가져오기",
+          "path": "경로",
+          "children": "하위 그룹",
+          "sort": "하위 정렬",
+          "count": "항목 수",
+          "tags": "태그",
+          "recycle": "휴지통으로",
+          "deletePermanent": "영구 삭제",
+          "newParent": "새 상위 UUID",
+          "move": "이동"
+        },
+        "entries": {
+          "list": "항목 목록",
+          "all": "모든 항목",
+          "inGroup": "그룹 내",
+          "recursive": "재귀적",
+          "emptyRecycle": "휴지통 비우기",
+          "groupFilter": "그룹 UUID 필터",
+          "create": "항목 생성",
+          "group": "그룹 UUID",
+          "title": "제목",
+          "username": "사용자 이름",
+          "password": "비밀번호",
+          "url": "URL",
+          "selected": "선택한 항목 작업",
+          "uuid": "항목 UUID",
+          "get": "가져오기",
+          "recycle": "휴지통으로",
+          "deletePermanent": "영구 삭제",
+          "restore": "복원",
+          "targetGroup": "대상 그룹 UUID",
+          "copy": "복사"
+        },
+        "history": {
+          "title": "항목 기록",
+          "load": "기록 불러오기",
+          "deleteAll": "모든 기록 삭제",
+          "snapshot": "스냅샷 작업",
+          "index": "기록 인덱스",
+          "getItem": "스냅샷 가져오기",
+          "restore": "스냅샷 복원",
+          "diff": "현재와 비교",
+          "changedFields": "변경된 필드"
+        },
+        "icons": {
+          "list": "사용자 지정 아이콘",
+          "manage": "추가 / 관리",
+          "base64": "아이콘 데이터(base64 PNG)",
+          "add": "아이콘 추가",
+          "uuid": "아이콘 UUID",
+          "get": "데이터 가져오기",
+          "delete": "삭제"
+        }
+      },
       "openTitle": "KeePass 데이터베이스 열기",
       "openSubtitle": "마스터 비밀번호로 로컬 .kdbx 파일을 엽니다.",
       "databaseFile": "데이터베이스 파일 (.kdbx)",
@@ -3296,7 +3415,107 @@
       "entries": "항목",
       "closeDatabase": "데이터베이스 닫기",
       "tabCrashed": "패널이 충돌했습니다",
-      "noTabs": "데이터베이스가 열렸습니다. 관리 탭은 추가되면 여기에 로드됩니다."
+      "noTabs": "데이터베이스가 열렸습니다. 관리 탭은 추가되면 여기에 로드됩니다.",
+      "tools": {
+        "subtitle": "검색, 첨부 파일, 비밀번호 상태, OTP, 자동 입력, 가져오기/내보내기 및 유지 관리.",
+        "search": {
+          "title": "검색 및 필터",
+          "quickPlaceholder": "빠른 검색…",
+          "go": "검색",
+          "advancedPlaceholder": "고급 검색 텍스트…",
+          "regex": "정규식",
+          "caseSensitive": "대소문자",
+          "advanced": "고급",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "URL로",
+          "tagPlaceholder": "태그",
+          "byTag": "태그로",
+          "allTags": "모든 태그",
+          "expiringIn": "만료까지",
+          "days": "일",
+          "findExpiring": "찾기",
+          "weak": "약함 ≤",
+          "noPassword": "비밀번호 없음",
+          "duplicates": "중복",
+          "matches": "일치"
+        },
+        "attachments": {
+          "title": "첨부 파일",
+          "entryUuid": "항목 UUID",
+          "list": "목록",
+          "importFile": "파일 가져오기",
+          "textBody": "인라인 텍스트 내용…",
+          "addText": "텍스트 추가",
+          "read": "읽기",
+          "save": "저장",
+          "newName": "새 파일 이름",
+          "rename": "이름 변경",
+          "remove": "제거",
+          "poolSize": "풀 크기",
+          "compact": "풀 압축",
+          "verify": "무결성 검증"
+        },
+        "password": {
+          "title": "비밀번호 도구",
+          "length": "길이",
+          "count": "개수",
+          "excludeLookalikes": "유사 문자 제외",
+          "patternPlaceholder": "예: Aaaa-9999",
+          "generate": "생성",
+          "generateMany": "×N 생성",
+          "analyzePlaceholder": "분석할 비밀번호…",
+          "analyze": "분석",
+          "health": "상태 보고서",
+          "profiles": "프로필",
+          "profileName": "프로필 이름",
+          "saveProfile": "프로필 저장",
+          "builtin": "기본 제공",
+          "remove": "제거"
+        },
+        "otp": {
+          "title": "일회용 비밀번호",
+          "entryUuid": "항목 UUID",
+          "get": "코드 가져오기"
+        },
+        "autotype": {
+          "title": "자동 입력",
+          "parse": "파싱",
+          "validate": "검증",
+          "default": "기본값",
+          "entryUuid": "항목 UUID",
+          "resolve": "확인",
+          "windowTitle": "창 제목",
+          "match": "창 매칭",
+          "associations": "연결",
+          "valid": "유효한 시퀀스"
+        },
+        "keyfile": {
+          "title": "키 파일",
+          "create": "생성",
+          "verify": "검증"
+        },
+        "io": {
+          "title": "가져오기 / 내보내기",
+          "import": "가져오기…",
+          "export": "내보내기…"
+        },
+        "recent": {
+          "title": "최근 데이터베이스",
+          "list": "목록",
+          "add": "추가",
+          "clear": "모두 지우기",
+          "missing": "없음",
+          "remove": "제거"
+        },
+        "maintenance": {
+          "title": "변경 로그 · 설정 · 서비스",
+          "limit": "제한",
+          "changeLog": "변경 로그",
+          "getSettings": "설정 가져오기",
+          "updateSettings": "설정 업데이트",
+          "shutdown": "서비스 종료"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3535,112 @@
       "tabs": {
         "network": "네트워크 및 방화벽",
         "services": "서비스 및 시스템"
+      },
+      "services": {
+        "common": {
+          "save": "저장",
+          "update": "업데이트",
+          "add": "추가",
+          "edit": "편집",
+          "view": "보기",
+          "refresh": "새로고침",
+          "name": "이름",
+          "description": "설명",
+          "status": "상태"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "인터페이스",
+          "loadConfig": "설정 불러오기",
+          "loadMappings": "매핑",
+          "config": "범위 구성",
+          "enabled": "사용",
+          "disabled": "사용 안 함",
+          "rangeFrom": "범위 시작",
+          "rangeTo": "범위 끝",
+          "domain": "도메인",
+          "gateway": "게이트웨이",
+          "mappings": "정적 매핑",
+          "hostname": "호스트 이름",
+          "loadLeases": "리스 불러오기",
+          "loadRelay": "DHCP 릴레이",
+          "online": "온라인"
+        },
+        "dns": {
+          "title": "DNS 리졸버",
+          "loadResolver": "리졸버 설정",
+          "hostOverrides": "호스트 재정의",
+          "domainOverrides": "도메인 재정의",
+          "cacheStats": "캐시 통계",
+          "flush": "캐시 비우기",
+          "forwarding": "전달",
+          "host": "호스트",
+          "totalEntries": "전체 항목"
+        },
+        "services": {
+          "title": "서비스",
+          "running": "실행 중",
+          "stopped": "중지됨",
+          "start": "시작",
+          "stop": "중지",
+          "restart": "재시작"
+        },
+        "system": {
+          "title": "시스템",
+          "info": "시스템 정보",
+          "updates": "업데이트",
+          "general": "일반 설정",
+          "reboot": "재부팅",
+          "halt": "종료",
+          "confirmReboot": "지금 방화벽을 재부팅하시겠습니까?",
+          "confirmHalt": "지금 방화벽을 종료(전원 끄기)하시겠습니까?",
+          "hostname": "호스트 이름",
+          "version": "버전",
+          "uptime": "가동 시간",
+          "memory": "메모리",
+          "load": "부하",
+          "timezone": "시간대",
+          "updateAvailable": "업데이트 있음",
+          "upToDate": "최신"
+        },
+        "certs": {
+          "title": "인증서",
+          "cas": "인증 기관",
+          "certs": "인증서",
+          "issuer": "발급자",
+          "validTo": "만료일",
+          "commonName": "일반 이름",
+          "create": "생성"
+        },
+        "users": {
+          "title": "사용자 및 그룹",
+          "users": "사용자",
+          "groups": "그룹",
+          "fullName": "전체 이름",
+          "email": "이메일",
+          "members": "구성원"
+        },
+        "diag": {
+          "title": "진단",
+          "arp": "ARP 테이블",
+          "ndp": "NDP 테이블",
+          "pfinfo": "pfInfo",
+          "lookup": "DNS 조회",
+          "ping": "Ping",
+          "traceroute": "트레이스라우트",
+          "run": "실행",
+          "hops": "홉",
+          "log": "시스템 로그",
+          "iface": "인터페이스"
+        },
+        "backups": {
+          "title": "백업",
+          "encrypt": "암호화",
+          "password": "비밀번호",
+          "create": "백업 생성",
+          "filename": "파일 이름",
+          "timestamp": "타임스탬프"
+        }
       }
     },
     "vmwareDesktop": {

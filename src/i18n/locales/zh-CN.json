@@ -3281,6 +3281,125 @@
       }
     },
     "keepass": {
+      "database": {
+        "done": "完成。",
+        "refresh": "刷新",
+        "update": "更新",
+        "section": {
+          "overview": "概览",
+          "groups": "组",
+          "entries": "条目",
+          "history": "历史",
+          "icons": "自定义图标"
+        },
+        "overview": {
+          "statistics": "统计",
+          "loadStats": "加载统计",
+          "lifecycle": "生命周期",
+          "save": "保存",
+          "lock": "锁定",
+          "unlock": "解锁",
+          "listBackups": "列出备份",
+          "backup": "备份",
+          "listDatabases": "列出已打开的数据库",
+          "close": "保存并关闭",
+          "closeAll": "全部关闭",
+          "unlockPassword": "解锁密码",
+          "metadata": "更新元数据",
+          "updateMetadata": "更新元数据",
+          "changeKey": "更改主密钥",
+          "merge": "合并",
+          "fileInfo": "文件信息（磁盘）",
+          "inspect": "检查"
+        },
+        "stat": {
+          "entries": "条目",
+          "groups": "组",
+          "attachments": "附件",
+          "customIcons": "自定义图标",
+          "expired": "已过期",
+          "weak": "弱密码",
+          "reused": "重复使用",
+          "otp": "含 OTP"
+        },
+        "field": {
+          "name": "名称",
+          "description": "描述",
+          "defaultUsername": "默认用户名",
+          "color": "颜色",
+          "recycleBin": "启用回收站",
+          "currentPassword": "当前密码",
+          "currentKeyFile": "当前密钥文件",
+          "newPassword": "新密码",
+          "newKeyFile": "新密钥文件",
+          "remotePath": "远程 .kdbx 路径",
+          "remotePassword": "远程密码",
+          "conflict": "冲突解决",
+          "filePath": "/路径/文件.kdbx",
+          "notes": "备注"
+        },
+        "groups": {
+          "list": "组列表",
+          "tree": "组树",
+          "treeRoot": "根",
+          "create": "创建组",
+          "parent": "父级 UUID（留空=根）",
+          "selected": "所选组操作",
+          "uuid": "组 UUID",
+          "get": "获取",
+          "path": "路径",
+          "children": "子组",
+          "sort": "排序子组",
+          "count": "条目数",
+          "tags": "标签",
+          "recycle": "移到回收站",
+          "deletePermanent": "永久删除",
+          "newParent": "新父级 UUID",
+          "move": "移动"
+        },
+        "entries": {
+          "list": "条目列表",
+          "all": "所有条目",
+          "inGroup": "组内",
+          "recursive": "递归",
+          "emptyRecycle": "清空回收站",
+          "groupFilter": "组 UUID 过滤",
+          "create": "创建条目",
+          "group": "组 UUID",
+          "title": "标题",
+          "username": "用户名",
+          "password": "密码",
+          "url": "网址",
+          "selected": "所选条目操作",
+          "uuid": "条目 UUID",
+          "get": "获取",
+          "recycle": "移到回收站",
+          "deletePermanent": "永久删除",
+          "restore": "恢复",
+          "targetGroup": "目标组 UUID",
+          "copy": "复制"
+        },
+        "history": {
+          "title": "条目历史",
+          "load": "加载历史",
+          "deleteAll": "删除所有历史",
+          "snapshot": "快照操作",
+          "index": "历史索引",
+          "getItem": "获取快照",
+          "restore": "恢复快照",
+          "diff": "与当前对比",
+          "changedFields": "已更改字段"
+        },
+        "icons": {
+          "list": "自定义图标",
+          "manage": "添加 / 管理",
+          "base64": "图标数据（base64 PNG）",
+          "add": "添加图标",
+          "uuid": "图标 UUID",
+          "get": "获取数据",
+          "delete": "删除"
+        }
+      },
       "openTitle": "打开 KeePass 数据库",
       "openSubtitle": "使用主密码打开本地 .kdbx 文件。",
       "databaseFile": "数据库文件 (.kdbx)",
@@ -3296,7 +3415,107 @@
       "entries": "条目",
       "closeDatabase": "关闭数据库",
       "tabCrashed": "面板崩溃",
-      "noTabs": "数据库已打开。管理选项卡会在添加时加载到此处。"
+      "noTabs": "数据库已打开。管理选项卡会在添加时加载到此处。",
+      "tools": {
+        "subtitle": "搜索、附件、密码健康度、OTP、自动输入、导入/导出和维护。",
+        "search": {
+          "title": "搜索与筛选",
+          "quickPlaceholder": "快速搜索…",
+          "go": "搜索",
+          "advancedPlaceholder": "高级搜索文本…",
+          "regex": "正则",
+          "caseSensitive": "区分大小写",
+          "advanced": "高级",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "按 URL",
+          "tagPlaceholder": "标签",
+          "byTag": "按标签",
+          "allTags": "所有标签",
+          "expiringIn": "到期于",
+          "days": "天",
+          "findExpiring": "查找",
+          "weak": "弱 ≤",
+          "noPassword": "无密码",
+          "duplicates": "重复项",
+          "matches": "项匹配"
+        },
+        "attachments": {
+          "title": "附件",
+          "entryUuid": "条目 UUID",
+          "list": "列出",
+          "importFile": "导入文件",
+          "textBody": "内联文本内容…",
+          "addText": "添加文本",
+          "read": "读取",
+          "save": "保存",
+          "newName": "新文件名",
+          "rename": "重命名",
+          "remove": "移除",
+          "poolSize": "池大小",
+          "compact": "压缩池",
+          "verify": "验证完整性"
+        },
+        "password": {
+          "title": "密码工具",
+          "length": "长度",
+          "count": "数量",
+          "excludeLookalikes": "排除相似字符",
+          "patternPlaceholder": "例如 Aaaa-9999",
+          "generate": "生成",
+          "generateMany": "生成 ×N",
+          "analyzePlaceholder": "要分析的密码…",
+          "analyze": "分析",
+          "health": "健康报告",
+          "profiles": "配置文件",
+          "profileName": "配置文件名称",
+          "saveProfile": "保存配置文件",
+          "builtin": "内置",
+          "remove": "移除"
+        },
+        "otp": {
+          "title": "一次性密码",
+          "entryUuid": "条目 UUID",
+          "get": "获取验证码"
+        },
+        "autotype": {
+          "title": "自动输入",
+          "parse": "解析",
+          "validate": "验证",
+          "default": "默认",
+          "entryUuid": "条目 UUID",
+          "resolve": "解析",
+          "windowTitle": "窗口标题",
+          "match": "匹配窗口",
+          "associations": "关联",
+          "valid": "有效序列"
+        },
+        "keyfile": {
+          "title": "密钥文件",
+          "create": "创建",
+          "verify": "验证"
+        },
+        "io": {
+          "title": "导入 / 导出",
+          "import": "导入…",
+          "export": "导出…"
+        },
+        "recent": {
+          "title": "最近的数据库",
+          "list": "列出",
+          "add": "添加",
+          "clear": "全部清除",
+          "missing": "缺失",
+          "remove": "移除"
+        },
+        "maintenance": {
+          "title": "变更日志 · 设置 · 服务",
+          "limit": "限制",
+          "changeLog": "变更日志",
+          "getSettings": "获取设置",
+          "updateSettings": "更新设置",
+          "shutdown": "关闭服务"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3535,112 @@
       "tabs": {
         "network": "网络与防火墙",
         "services": "服务与系统"
+      },
+      "services": {
+        "common": {
+          "save": "保存",
+          "update": "更新",
+          "add": "添加",
+          "edit": "编辑",
+          "view": "查看",
+          "refresh": "刷新",
+          "name": "名称",
+          "description": "描述",
+          "status": "状态"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "接口",
+          "loadConfig": "加载配置",
+          "loadMappings": "映射",
+          "config": "作用域配置",
+          "enabled": "已启用",
+          "disabled": "已禁用",
+          "rangeFrom": "范围起始",
+          "rangeTo": "范围结束",
+          "domain": "域",
+          "gateway": "网关",
+          "mappings": "静态映射",
+          "hostname": "主机名",
+          "loadLeases": "加载租约",
+          "loadRelay": "DHCP 中继",
+          "online": "在线"
+        },
+        "dns": {
+          "title": "DNS 解析器",
+          "loadResolver": "解析器配置",
+          "hostOverrides": "主机覆盖",
+          "domainOverrides": "域覆盖",
+          "cacheStats": "缓存统计",
+          "flush": "清空缓存",
+          "forwarding": "转发",
+          "host": "主机",
+          "totalEntries": "条目总数"
+        },
+        "services": {
+          "title": "服务",
+          "running": "运行中",
+          "stopped": "已停止",
+          "start": "启动",
+          "stop": "停止",
+          "restart": "重启"
+        },
+        "system": {
+          "title": "系统",
+          "info": "系统信息",
+          "updates": "更新",
+          "general": "常规配置",
+          "reboot": "重启",
+          "halt": "关机",
+          "confirmReboot": "现在重启防火墙？",
+          "confirmHalt": "现在关闭（断电）防火墙？",
+          "hostname": "主机名",
+          "version": "版本",
+          "uptime": "运行时间",
+          "memory": "内存",
+          "load": "负载",
+          "timezone": "时区",
+          "updateAvailable": "有可用更新",
+          "upToDate": "已是最新"
+        },
+        "certs": {
+          "title": "证书",
+          "cas": "证书颁发机构",
+          "certs": "证书",
+          "issuer": "颁发者",
+          "validTo": "有效期至",
+          "commonName": "通用名称",
+          "create": "创建"
+        },
+        "users": {
+          "title": "用户和组",
+          "users": "用户",
+          "groups": "组",
+          "fullName": "全名",
+          "email": "电子邮件",
+          "members": "成员"
+        },
+        "diag": {
+          "title": "诊断",
+          "arp": "ARP 表",
+          "ndp": "NDP 表",
+          "pfinfo": "pfInfo",
+          "lookup": "DNS 查询",
+          "ping": "Ping",
+          "traceroute": "路由跟踪",
+          "run": "运行",
+          "hops": "跳",
+          "log": "系统日志",
+          "iface": "接口"
+        },
+        "backups": {
+          "title": "备份",
+          "encrypt": "加密",
+          "password": "密码",
+          "create": "创建备份",
+          "filename": "文件名",
+          "timestamp": "时间戳"
+        }
       }
     },
     "vmwareDesktop": {

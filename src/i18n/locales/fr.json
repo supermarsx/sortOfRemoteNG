@@ -3281,6 +3281,125 @@
       }
     },
     "keepass": {
+      "database": {
+        "done": "Terminé.",
+        "refresh": "Actualiser",
+        "update": "Mettre à jour",
+        "section": {
+          "overview": "Aperçu",
+          "groups": "Groupes",
+          "entries": "Entrées",
+          "history": "Historique",
+          "icons": "Icônes personnalisées"
+        },
+        "overview": {
+          "statistics": "Statistiques",
+          "loadStats": "Charger les statistiques",
+          "lifecycle": "Cycle de vie",
+          "save": "Enregistrer",
+          "lock": "Verrouiller",
+          "unlock": "Déverrouiller",
+          "listBackups": "Lister les sauvegardes",
+          "backup": "Sauvegarde",
+          "listDatabases": "Lister les BD ouvertes",
+          "close": "Enregistrer et fermer",
+          "closeAll": "Tout fermer",
+          "unlockPassword": "Mot de passe de déverrouillage",
+          "metadata": "Mettre à jour les métadonnées",
+          "updateMetadata": "Mettre à jour les métadonnées",
+          "changeKey": "Changer la clé maître",
+          "merge": "Fusionner",
+          "fileInfo": "Infos fichier (sur disque)",
+          "inspect": "Inspecter"
+        },
+        "stat": {
+          "entries": "Entrées",
+          "groups": "Groupes",
+          "attachments": "Pièces jointes",
+          "customIcons": "Icônes personnalisées",
+          "expired": "Expirées",
+          "weak": "Mots de passe faibles",
+          "reused": "Réutilisés",
+          "otp": "Avec OTP"
+        },
+        "field": {
+          "name": "Nom",
+          "description": "Description",
+          "defaultUsername": "Nom d'utilisateur par défaut",
+          "color": "Couleur",
+          "recycleBin": "Corbeille activée",
+          "currentPassword": "Mot de passe actuel",
+          "currentKeyFile": "Fichier-clé actuel",
+          "newPassword": "Nouveau mot de passe",
+          "newKeyFile": "Nouveau fichier-clé",
+          "remotePath": "Chemin .kdbx distant",
+          "remotePassword": "Mot de passe distant",
+          "conflict": "Résolution des conflits",
+          "filePath": "/chemin/vers/fichier.kdbx",
+          "notes": "Notes"
+        },
+        "groups": {
+          "list": "Liste des groupes",
+          "tree": "Arborescence des groupes",
+          "treeRoot": "Racine",
+          "create": "Créer un groupe",
+          "parent": "UUID parent (vide = racine)",
+          "selected": "Actions du groupe sélectionné",
+          "uuid": "UUID du groupe",
+          "get": "Obtenir",
+          "path": "Chemin",
+          "children": "Sous-groupes",
+          "sort": "Trier les sous-groupes",
+          "count": "Nombre d'entrées",
+          "tags": "Étiquettes",
+          "recycle": "Mettre à la corbeille",
+          "deletePermanent": "Supprimer définitivement",
+          "newParent": "Nouvel UUID parent",
+          "move": "Déplacer"
+        },
+        "entries": {
+          "list": "Liste des entrées",
+          "all": "Toutes les entrées",
+          "inGroup": "Dans le groupe",
+          "recursive": "Récursif",
+          "emptyRecycle": "Vider la corbeille",
+          "groupFilter": "Filtre UUID de groupe",
+          "create": "Créer une entrée",
+          "group": "UUID du groupe",
+          "title": "Titre",
+          "username": "Nom d'utilisateur",
+          "password": "Mot de passe",
+          "url": "URL",
+          "selected": "Actions de l'entrée sélectionnée",
+          "uuid": "UUID de l'entrée",
+          "get": "Obtenir",
+          "recycle": "Mettre à la corbeille",
+          "deletePermanent": "Supprimer définitivement",
+          "restore": "Restaurer",
+          "targetGroup": "UUID du groupe cible",
+          "copy": "Copier"
+        },
+        "history": {
+          "title": "Historique de l'entrée",
+          "load": "Charger l'historique",
+          "deleteAll": "Supprimer tout l'historique",
+          "snapshot": "Actions sur l'instantané",
+          "index": "Index d'historique",
+          "getItem": "Obtenir l'instantané",
+          "restore": "Restaurer l'instantané",
+          "diff": "Comparer à l'actuel",
+          "changedFields": "Champs modifiés"
+        },
+        "icons": {
+          "list": "Icônes personnalisées",
+          "manage": "Ajouter / gérer",
+          "base64": "Données de l'icône (PNG base64)",
+          "add": "Ajouter une icône",
+          "uuid": "UUID de l'icône",
+          "get": "Obtenir les données",
+          "delete": "Supprimer"
+        }
+      },
       "openTitle": "Ouvrir la base de données KeePass",
       "openSubtitle": "Ouvrez un fichier .kdbx local avec son mot de passe maître.",
       "databaseFile": "Fichier de base de données (.kdbx)",
@@ -3296,7 +3415,107 @@
       "entries": "entrées",
       "closeDatabase": "Fermer la base de données",
       "tabCrashed": "Le panneau a planté",
-      "noTabs": "Base de données ouverte. Les onglets de gestion se chargent ici au fur et à mesure de leur ajout."
+      "noTabs": "Base de données ouverte. Les onglets de gestion se chargent ici au fur et à mesure de leur ajout.",
+      "tools": {
+        "subtitle": "Recherche, pièces jointes, état des mots de passe, OTP, saisie auto, import/export et maintenance.",
+        "search": {
+          "title": "Rechercher et filtrer",
+          "quickPlaceholder": "Recherche rapide…",
+          "go": "Rechercher",
+          "advancedPlaceholder": "Texte de recherche avancée…",
+          "regex": "Regex",
+          "caseSensitive": "Casse",
+          "advanced": "Avancée",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "Par URL",
+          "tagPlaceholder": "étiquette",
+          "byTag": "Par étiquette",
+          "allTags": "Toutes les étiquettes",
+          "expiringIn": "Expire dans",
+          "days": "jours",
+          "findExpiring": "Rechercher",
+          "weak": "Faible ≤",
+          "noPassword": "Sans mot de passe",
+          "duplicates": "Doublons",
+          "matches": "résultats"
+        },
+        "attachments": {
+          "title": "Pièces jointes",
+          "entryUuid": "UUID de l'entrée",
+          "list": "Lister",
+          "importFile": "Importer un fichier",
+          "textBody": "Contenu texte en ligne…",
+          "addText": "Ajouter du texte",
+          "read": "Lire",
+          "save": "Enregistrer",
+          "newName": "Nouveau nom de fichier",
+          "rename": "Renommer",
+          "remove": "Supprimer",
+          "poolSize": "Taille du pool",
+          "compact": "Compacter le pool",
+          "verify": "Vérifier l'intégrité"
+        },
+        "password": {
+          "title": "Boîte à outils de mots de passe",
+          "length": "Longueur",
+          "count": "Nombre",
+          "excludeLookalikes": "Pas de caractères ambigus",
+          "patternPlaceholder": "ex. Aaaa-9999",
+          "generate": "Générer",
+          "generateMany": "Générer ×N",
+          "analyzePlaceholder": "Mot de passe à analyser…",
+          "analyze": "Analyser",
+          "health": "Rapport d'état",
+          "profiles": "Profils",
+          "profileName": "Nom du profil",
+          "saveProfile": "Enregistrer le profil",
+          "builtin": "intégré",
+          "remove": "Supprimer"
+        },
+        "otp": {
+          "title": "Mots de passe à usage unique",
+          "entryUuid": "UUID de l'entrée",
+          "get": "Obtenir le code"
+        },
+        "autotype": {
+          "title": "Saisie automatique",
+          "parse": "Analyser",
+          "validate": "Valider",
+          "default": "Par défaut",
+          "entryUuid": "UUID de l'entrée",
+          "resolve": "Résoudre",
+          "windowTitle": "Titre de la fenêtre",
+          "match": "Associer la fenêtre",
+          "associations": "Associations",
+          "valid": "Séquence valide"
+        },
+        "keyfile": {
+          "title": "Fichiers de clé",
+          "create": "Créer",
+          "verify": "Vérifier"
+        },
+        "io": {
+          "title": "Import / Export",
+          "import": "Importer…",
+          "export": "Exporter…"
+        },
+        "recent": {
+          "title": "Bases de données récentes",
+          "list": "Lister",
+          "add": "Ajouter",
+          "clear": "Tout effacer",
+          "missing": "manquant",
+          "remove": "Supprimer"
+        },
+        "maintenance": {
+          "title": "Journal des modifications · Paramètres · Service",
+          "limit": "Limite",
+          "changeLog": "Journal des modifications",
+          "getSettings": "Obtenir les paramètres",
+          "updateSettings": "Mettre à jour les paramètres",
+          "shutdown": "Arrêter le service"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3535,112 @@
       "tabs": {
         "network": "Réseau et pare-feu",
         "services": "Services et système"
+      },
+      "services": {
+        "common": {
+          "save": "Enregistrer",
+          "update": "Mettre à jour",
+          "add": "Ajouter",
+          "edit": "Modifier",
+          "view": "Voir",
+          "refresh": "Actualiser",
+          "name": "Nom",
+          "description": "Description",
+          "status": "État"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "Interface",
+          "loadConfig": "Charger config",
+          "loadMappings": "Mappages",
+          "config": "Configuration de la plage",
+          "enabled": "Activé",
+          "disabled": "Désactivé",
+          "rangeFrom": "Plage de",
+          "rangeTo": "Plage à",
+          "domain": "Domaine",
+          "gateway": "Passerelle",
+          "mappings": "Mappages statiques",
+          "hostname": "Nom d'hôte",
+          "loadLeases": "Charger les baux",
+          "loadRelay": "Relais DHCP",
+          "online": "en ligne"
+        },
+        "dns": {
+          "title": "Résolveur DNS",
+          "loadResolver": "Config du résolveur",
+          "hostOverrides": "Substitutions d'hôte",
+          "domainOverrides": "Substitutions de domaine",
+          "cacheStats": "Stats du cache",
+          "flush": "Vider le cache",
+          "forwarding": "Transfert",
+          "host": "Hôte",
+          "totalEntries": "Entrées totales"
+        },
+        "services": {
+          "title": "Services",
+          "running": "en cours",
+          "stopped": "arrêté",
+          "start": "Démarrer",
+          "stop": "Arrêter",
+          "restart": "Redémarrer"
+        },
+        "system": {
+          "title": "Système",
+          "info": "Infos système",
+          "updates": "Mises à jour",
+          "general": "Config générale",
+          "reboot": "Redémarrer",
+          "halt": "Arrêter",
+          "confirmReboot": "Redémarrer le pare-feu maintenant ?",
+          "confirmHalt": "Arrêter (éteindre) le pare-feu maintenant ?",
+          "hostname": "Nom d'hôte",
+          "version": "Version",
+          "uptime": "Disponibilité",
+          "memory": "Mémoire",
+          "load": "Charge",
+          "timezone": "Fuseau horaire",
+          "updateAvailable": "Mise à jour disponible",
+          "upToDate": "À jour"
+        },
+        "certs": {
+          "title": "Certificats",
+          "cas": "Autorités de certification",
+          "certs": "Certificats",
+          "issuer": "Émetteur",
+          "validTo": "Valide jusqu'au",
+          "commonName": "Nom commun",
+          "create": "Créer"
+        },
+        "users": {
+          "title": "Utilisateurs et groupes",
+          "users": "Utilisateurs",
+          "groups": "Groupes",
+          "fullName": "Nom complet",
+          "email": "E-mail",
+          "members": "Membres"
+        },
+        "diag": {
+          "title": "Diagnostics",
+          "arp": "Table ARP",
+          "ndp": "Table NDP",
+          "pfinfo": "pfInfo",
+          "lookup": "Recherche DNS",
+          "ping": "Ping",
+          "traceroute": "Traceroute",
+          "run": "Exécuter",
+          "hops": "sauts",
+          "log": "Journal système",
+          "iface": "Interface"
+        },
+        "backups": {
+          "title": "Sauvegardes",
+          "encrypt": "Chiffrer",
+          "password": "Mot de passe",
+          "create": "Créer une sauvegarde",
+          "filename": "Nom de fichier",
+          "timestamp": "Horodatage"
+        }
       }
     },
     "vmwareDesktop": {

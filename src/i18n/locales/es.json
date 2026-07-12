@@ -3281,6 +3281,125 @@
       }
     },
     "keepass": {
+      "database": {
+        "done": "Listo.",
+        "refresh": "Actualizar",
+        "update": "Actualizar",
+        "section": {
+          "overview": "Resumen",
+          "groups": "Grupos",
+          "entries": "Entradas",
+          "history": "Historial",
+          "icons": "Iconos personalizados"
+        },
+        "overview": {
+          "statistics": "Estadísticas",
+          "loadStats": "Cargar estadísticas",
+          "lifecycle": "Ciclo de vida",
+          "save": "Guardar",
+          "lock": "Bloquear",
+          "unlock": "Desbloquear",
+          "listBackups": "Listar copias",
+          "backup": "Copia de seguridad",
+          "listDatabases": "Listar BD abiertas",
+          "close": "Guardar y cerrar",
+          "closeAll": "Cerrar todo",
+          "unlockPassword": "Contraseña de desbloqueo",
+          "metadata": "Actualizar metadatos",
+          "updateMetadata": "Actualizar metadatos",
+          "changeKey": "Cambiar clave maestra",
+          "merge": "Combinar",
+          "fileInfo": "Info del archivo (en disco)",
+          "inspect": "Inspeccionar"
+        },
+        "stat": {
+          "entries": "Entradas",
+          "groups": "Grupos",
+          "attachments": "Adjuntos",
+          "customIcons": "Iconos personalizados",
+          "expired": "Caducadas",
+          "weak": "Contraseñas débiles",
+          "reused": "Reutilizadas",
+          "otp": "Con OTP"
+        },
+        "field": {
+          "name": "Nombre",
+          "description": "Descripción",
+          "defaultUsername": "Usuario predeterminado",
+          "color": "Color",
+          "recycleBin": "Papelera habilitada",
+          "currentPassword": "Contraseña actual",
+          "currentKeyFile": "Archivo de clave actual",
+          "newPassword": "Nueva contraseña",
+          "newKeyFile": "Nuevo archivo de clave",
+          "remotePath": "Ruta .kdbx remota",
+          "remotePassword": "Contraseña remota",
+          "conflict": "Resolución de conflictos",
+          "filePath": "/ruta/al/archivo.kdbx",
+          "notes": "Notas"
+        },
+        "groups": {
+          "list": "Lista de grupos",
+          "tree": "Árbol de grupos",
+          "treeRoot": "Raíz",
+          "create": "Crear grupo",
+          "parent": "UUID del padre (vacío = raíz)",
+          "selected": "Acciones del grupo seleccionado",
+          "uuid": "UUID del grupo",
+          "get": "Obtener",
+          "path": "Ruta",
+          "children": "Subgrupos",
+          "sort": "Ordenar subgrupos",
+          "count": "Nº de entradas",
+          "tags": "Etiquetas",
+          "recycle": "A la papelera",
+          "deletePermanent": "Eliminar permanentemente",
+          "newParent": "Nuevo UUID del padre",
+          "move": "Mover"
+        },
+        "entries": {
+          "list": "Lista de entradas",
+          "all": "Todas las entradas",
+          "inGroup": "En grupo",
+          "recursive": "Recursivo",
+          "emptyRecycle": "Vaciar papelera",
+          "groupFilter": "Filtro por UUID de grupo",
+          "create": "Crear entrada",
+          "group": "UUID del grupo",
+          "title": "Título",
+          "username": "Usuario",
+          "password": "Contraseña",
+          "url": "URL",
+          "selected": "Acciones de la entrada seleccionada",
+          "uuid": "UUID de la entrada",
+          "get": "Obtener",
+          "recycle": "A la papelera",
+          "deletePermanent": "Eliminar permanentemente",
+          "restore": "Restaurar",
+          "targetGroup": "UUID del grupo destino",
+          "copy": "Copiar"
+        },
+        "history": {
+          "title": "Historial de la entrada",
+          "load": "Cargar historial",
+          "deleteAll": "Eliminar todo el historial",
+          "snapshot": "Acciones de instantánea",
+          "index": "Índice del historial",
+          "getItem": "Obtener instantánea",
+          "restore": "Restaurar instantánea",
+          "diff": "Comparar con actual",
+          "changedFields": "Campos modificados"
+        },
+        "icons": {
+          "list": "Iconos personalizados",
+          "manage": "Añadir / gestionar",
+          "base64": "Datos del icono (PNG base64)",
+          "add": "Añadir icono",
+          "uuid": "UUID del icono",
+          "get": "Obtener datos",
+          "delete": "Eliminar"
+        }
+      },
       "openTitle": "Abrir base de datos KeePass",
       "openSubtitle": "Abra un archivo .kdbx local con su contraseña maestra.",
       "databaseFile": "Archivo de base de datos (.kdbx)",
@@ -3296,7 +3415,107 @@
       "entries": "entradas",
       "closeDatabase": "Cerrar base de datos",
       "tabCrashed": "El panel falló",
-      "noTabs": "Base de datos abierta. Las pestañas de gestión se cargan aquí a medida que se agregan."
+      "noTabs": "Base de datos abierta. Las pestañas de gestión se cargan aquí a medida que se agregan.",
+      "tools": {
+        "subtitle": "Búsqueda, adjuntos, estado de contraseñas, OTP, autoescritura, importar/exportar y mantenimiento.",
+        "search": {
+          "title": "Buscar y filtrar",
+          "quickPlaceholder": "Búsqueda rápida…",
+          "go": "Buscar",
+          "advancedPlaceholder": "Texto de búsqueda avanzada…",
+          "regex": "Regex",
+          "caseSensitive": "May/Min",
+          "advanced": "Avanzada",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "Por URL",
+          "tagPlaceholder": "etiqueta",
+          "byTag": "Por etiqueta",
+          "allTags": "Todas las etiquetas",
+          "expiringIn": "Caduca en",
+          "days": "días",
+          "findExpiring": "Buscar",
+          "weak": "Débil ≤",
+          "noPassword": "Sin contraseña",
+          "duplicates": "Duplicados",
+          "matches": "coincidencias"
+        },
+        "attachments": {
+          "title": "Adjuntos",
+          "entryUuid": "UUID de entrada",
+          "list": "Listar",
+          "importFile": "Importar archivo",
+          "textBody": "Contenido de texto en línea…",
+          "addText": "Añadir texto",
+          "read": "Leer",
+          "save": "Guardar",
+          "newName": "Nuevo nombre de archivo",
+          "rename": "Renombrar",
+          "remove": "Eliminar",
+          "poolSize": "Tamaño del pool",
+          "compact": "Compactar pool",
+          "verify": "Verificar integridad"
+        },
+        "password": {
+          "title": "Herramientas de contraseña",
+          "length": "Longitud",
+          "count": "Cantidad",
+          "excludeLookalikes": "Sin caracteres similares",
+          "patternPlaceholder": "p. ej. Aaaa-9999",
+          "generate": "Generar",
+          "generateMany": "Generar ×N",
+          "analyzePlaceholder": "Contraseña a analizar…",
+          "analyze": "Analizar",
+          "health": "Informe de estado",
+          "profiles": "Perfiles",
+          "profileName": "Nombre del perfil",
+          "saveProfile": "Guardar perfil",
+          "builtin": "integrado",
+          "remove": "Eliminar"
+        },
+        "otp": {
+          "title": "Contraseñas de un solo uso",
+          "entryUuid": "UUID de entrada",
+          "get": "Obtener código"
+        },
+        "autotype": {
+          "title": "Autoescritura",
+          "parse": "Analizar",
+          "validate": "Validar",
+          "default": "Predeterminada",
+          "entryUuid": "UUID de entrada",
+          "resolve": "Resolver",
+          "windowTitle": "Título de ventana",
+          "match": "Coincidir ventana",
+          "associations": "Asociaciones",
+          "valid": "Secuencia válida"
+        },
+        "keyfile": {
+          "title": "Archivos de clave",
+          "create": "Crear",
+          "verify": "Verificar"
+        },
+        "io": {
+          "title": "Importar / Exportar",
+          "import": "Importar…",
+          "export": "Exportar…"
+        },
+        "recent": {
+          "title": "Bases de datos recientes",
+          "list": "Listar",
+          "add": "Añadir",
+          "clear": "Borrar todo",
+          "missing": "falta",
+          "remove": "Eliminar"
+        },
+        "maintenance": {
+          "title": "Registro de cambios · Ajustes · Servicio",
+          "limit": "Límite",
+          "changeLog": "Registro de cambios",
+          "getSettings": "Obtener ajustes",
+          "updateSettings": "Actualizar ajustes",
+          "shutdown": "Detener servicio"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3535,112 @@
       "tabs": {
         "network": "Red y cortafuegos",
         "services": "Servicios y sistema"
+      },
+      "services": {
+        "common": {
+          "save": "Guardar",
+          "update": "Actualizar",
+          "add": "Añadir",
+          "edit": "Editar",
+          "view": "Ver",
+          "refresh": "Actualizar",
+          "name": "Nombre",
+          "description": "Descripción",
+          "status": "Estado"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "Interfaz",
+          "loadConfig": "Cargar config",
+          "loadMappings": "Asignaciones",
+          "config": "Configuración del ámbito",
+          "enabled": "Habilitado",
+          "disabled": "Deshabilitado",
+          "rangeFrom": "Rango desde",
+          "rangeTo": "Rango hasta",
+          "domain": "Dominio",
+          "gateway": "Puerta de enlace",
+          "mappings": "Asignaciones estáticas",
+          "hostname": "Nombre de host",
+          "loadLeases": "Cargar concesiones",
+          "loadRelay": "Relé DHCP",
+          "online": "en línea"
+        },
+        "dns": {
+          "title": "Resolutor DNS",
+          "loadResolver": "Config del resolutor",
+          "hostOverrides": "Anulaciones de host",
+          "domainOverrides": "Anulaciones de dominio",
+          "cacheStats": "Estadísticas de caché",
+          "flush": "Vaciar caché",
+          "forwarding": "Reenvío",
+          "host": "Host",
+          "totalEntries": "Entradas totales"
+        },
+        "services": {
+          "title": "Servicios",
+          "running": "en ejecución",
+          "stopped": "detenido",
+          "start": "Iniciar",
+          "stop": "Detener",
+          "restart": "Reiniciar"
+        },
+        "system": {
+          "title": "Sistema",
+          "info": "Info del sistema",
+          "updates": "Actualizaciones",
+          "general": "Config general",
+          "reboot": "Reiniciar",
+          "halt": "Apagar",
+          "confirmReboot": "¿Reiniciar el firewall ahora?",
+          "confirmHalt": "¿Apagar el firewall ahora?",
+          "hostname": "Nombre de host",
+          "version": "Versión",
+          "uptime": "Tiempo activo",
+          "memory": "Memoria",
+          "load": "Carga",
+          "timezone": "Zona horaria",
+          "updateAvailable": "Actualización disponible",
+          "upToDate": "Actualizado"
+        },
+        "certs": {
+          "title": "Certificados",
+          "cas": "Autoridades de certificación",
+          "certs": "Certificados",
+          "issuer": "Emisor",
+          "validTo": "Válido hasta",
+          "commonName": "Nombre común",
+          "create": "Crear"
+        },
+        "users": {
+          "title": "Usuarios y grupos",
+          "users": "Usuarios",
+          "groups": "Grupos",
+          "fullName": "Nombre completo",
+          "email": "Correo electrónico",
+          "members": "Miembros"
+        },
+        "diag": {
+          "title": "Diagnóstico",
+          "arp": "Tabla ARP",
+          "ndp": "Tabla NDP",
+          "pfinfo": "pfInfo",
+          "lookup": "Consulta DNS",
+          "ping": "Ping",
+          "traceroute": "Traceroute",
+          "run": "Ejecutar",
+          "hops": "saltos",
+          "log": "Registro del sistema",
+          "iface": "Interfaz"
+        },
+        "backups": {
+          "title": "Copias de seguridad",
+          "encrypt": "Cifrar",
+          "password": "Contraseña",
+          "create": "Crear copia",
+          "filename": "Nombre de archivo",
+          "timestamp": "Marca de tiempo"
+        }
       }
     },
     "vmwareDesktop": {

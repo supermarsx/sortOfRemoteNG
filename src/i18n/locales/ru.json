@@ -3281,6 +3281,125 @@
       }
     },
     "keepass": {
+      "database": {
+        "done": "Готово.",
+        "refresh": "Обновить",
+        "update": "Обновить",
+        "section": {
+          "overview": "Обзор",
+          "groups": "Группы",
+          "entries": "Записи",
+          "history": "История",
+          "icons": "Свои значки"
+        },
+        "overview": {
+          "statistics": "Статистика",
+          "loadStats": "Загрузить статистику",
+          "lifecycle": "Жизненный цикл",
+          "save": "Сохранить",
+          "lock": "Заблокировать",
+          "unlock": "Разблокировать",
+          "listBackups": "Список резервных копий",
+          "backup": "Резервная копия",
+          "listDatabases": "Список открытых БД",
+          "close": "Сохранить и закрыть",
+          "closeAll": "Закрыть все",
+          "unlockPassword": "Пароль разблокировки",
+          "metadata": "Обновить метаданные",
+          "updateMetadata": "Обновить метаданные",
+          "changeKey": "Сменить мастер-ключ",
+          "merge": "Объединить",
+          "fileInfo": "Сведения о файле (на диске)",
+          "inspect": "Проверить"
+        },
+        "stat": {
+          "entries": "Записи",
+          "groups": "Группы",
+          "attachments": "Вложения",
+          "customIcons": "Свои значки",
+          "expired": "Истекшие",
+          "weak": "Слабые пароли",
+          "reused": "Повторные",
+          "otp": "С OTP"
+        },
+        "field": {
+          "name": "Имя",
+          "description": "Описание",
+          "defaultUsername": "Имя пользователя по умолчанию",
+          "color": "Цвет",
+          "recycleBin": "Корзина включена",
+          "currentPassword": "Текущий пароль",
+          "currentKeyFile": "Текущий файл-ключ",
+          "newPassword": "Новый пароль",
+          "newKeyFile": "Новый файл-ключ",
+          "remotePath": "Путь к удалённому .kdbx",
+          "remotePassword": "Удалённый пароль",
+          "conflict": "Разрешение конфликтов",
+          "filePath": "/путь/к/файлу.kdbx",
+          "notes": "Заметки"
+        },
+        "groups": {
+          "list": "Список групп",
+          "tree": "Дерево групп",
+          "treeRoot": "Корень",
+          "create": "Создать группу",
+          "parent": "UUID родителя (пусто = корень)",
+          "selected": "Действия с выбранной группой",
+          "uuid": "UUID группы",
+          "get": "Получить",
+          "path": "Путь",
+          "children": "Дочерние группы",
+          "sort": "Сортировать дочерние",
+          "count": "Число записей",
+          "tags": "Теги",
+          "recycle": "В корзину",
+          "deletePermanent": "Удалить навсегда",
+          "newParent": "Новый UUID родителя",
+          "move": "Переместить"
+        },
+        "entries": {
+          "list": "Список записей",
+          "all": "Все записи",
+          "inGroup": "В группе",
+          "recursive": "Рекурсивно",
+          "emptyRecycle": "Очистить корзину",
+          "groupFilter": "Фильтр по UUID группы",
+          "create": "Создать запись",
+          "group": "UUID группы",
+          "title": "Название",
+          "username": "Имя пользователя",
+          "password": "Пароль",
+          "url": "URL",
+          "selected": "Действия с выбранной записью",
+          "uuid": "UUID записи",
+          "get": "Получить",
+          "recycle": "В корзину",
+          "deletePermanent": "Удалить навсегда",
+          "restore": "Восстановить",
+          "targetGroup": "UUID целевой группы",
+          "copy": "Копировать"
+        },
+        "history": {
+          "title": "История записи",
+          "load": "Загрузить историю",
+          "deleteAll": "Удалить всю историю",
+          "snapshot": "Действия со снимком",
+          "index": "Индекс истории",
+          "getItem": "Получить снимок",
+          "restore": "Восстановить снимок",
+          "diff": "Сравнить с текущей",
+          "changedFields": "Изменённые поля"
+        },
+        "icons": {
+          "list": "Свои значки",
+          "manage": "Добавить / управлять",
+          "base64": "Данные значка (base64 PNG)",
+          "add": "Добавить значок",
+          "uuid": "UUID значка",
+          "get": "Получить данные",
+          "delete": "Удалить"
+        }
+      },
       "openTitle": "Открыть базу данных KeePass",
       "openSubtitle": "Откройте локальный файл .kdbx с его мастер-паролем.",
       "databaseFile": "Файл базы данных (.kdbx)",
@@ -3296,7 +3415,107 @@
       "entries": "записей",
       "closeDatabase": "Закрыть базу данных",
       "tabCrashed": "Панель аварийно завершилась",
-      "noTabs": "База данных открыта. Вкладки управления загружаются здесь по мере их добавления."
+      "noTabs": "База данных открыта. Вкладки управления загружаются здесь по мере их добавления.",
+      "tools": {
+        "subtitle": "Поиск, вложения, состояние паролей, OTP, автоввод, импорт/экспорт и обслуживание.",
+        "search": {
+          "title": "Поиск и фильтр",
+          "quickPlaceholder": "Быстрый поиск…",
+          "go": "Искать",
+          "advancedPlaceholder": "Текст расширенного поиска…",
+          "regex": "Regex",
+          "caseSensitive": "Регистр",
+          "advanced": "Расширенный",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "По URL",
+          "tagPlaceholder": "тег",
+          "byTag": "По тегу",
+          "allTags": "Все теги",
+          "expiringIn": "Истекает через",
+          "days": "дней",
+          "findExpiring": "Найти",
+          "weak": "Слабый ≤",
+          "noPassword": "Без пароля",
+          "duplicates": "Дубликаты",
+          "matches": "совпадений"
+        },
+        "attachments": {
+          "title": "Вложения",
+          "entryUuid": "UUID записи",
+          "list": "Список",
+          "importFile": "Импорт файла",
+          "textBody": "Встроенное текстовое содержимое…",
+          "addText": "Добавить текст",
+          "read": "Читать",
+          "save": "Сохранить",
+          "newName": "Новое имя файла",
+          "rename": "Переименовать",
+          "remove": "Удалить",
+          "poolSize": "Размер пула",
+          "compact": "Сжать пул",
+          "verify": "Проверить целостность"
+        },
+        "password": {
+          "title": "Инструменты паролей",
+          "length": "Длина",
+          "count": "Количество",
+          "excludeLookalikes": "Без похожих символов",
+          "patternPlaceholder": "напр. Aaaa-9999",
+          "generate": "Создать",
+          "generateMany": "Создать ×N",
+          "analyzePlaceholder": "Пароль для анализа…",
+          "analyze": "Анализ",
+          "health": "Отчёт о состоянии",
+          "profiles": "Профили",
+          "profileName": "Имя профиля",
+          "saveProfile": "Сохранить профиль",
+          "builtin": "встроенный",
+          "remove": "Удалить"
+        },
+        "otp": {
+          "title": "Одноразовые пароли",
+          "entryUuid": "UUID записи",
+          "get": "Получить код"
+        },
+        "autotype": {
+          "title": "Автоввод",
+          "parse": "Разобрать",
+          "validate": "Проверить",
+          "default": "По умолчанию",
+          "entryUuid": "UUID записи",
+          "resolve": "Разрешить",
+          "windowTitle": "Заголовок окна",
+          "match": "Сопоставить окно",
+          "associations": "Ассоциации",
+          "valid": "Корректная последовательность"
+        },
+        "keyfile": {
+          "title": "Файлы ключей",
+          "create": "Создать",
+          "verify": "Проверить"
+        },
+        "io": {
+          "title": "Импорт / Экспорт",
+          "import": "Импорт…",
+          "export": "Экспорт…"
+        },
+        "recent": {
+          "title": "Недавние базы данных",
+          "list": "Список",
+          "add": "Добавить",
+          "clear": "Очистить всё",
+          "missing": "отсутствует",
+          "remove": "Удалить"
+        },
+        "maintenance": {
+          "title": "Журнал изменений · Настройки · Служба",
+          "limit": "Лимит",
+          "changeLog": "Журнал изменений",
+          "getSettings": "Получить настройки",
+          "updateSettings": "Обновить настройки",
+          "shutdown": "Остановить службу"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3535,112 @@
       "tabs": {
         "network": "Сеть и брандмауэр",
         "services": "Службы и система"
+      },
+      "services": {
+        "common": {
+          "save": "Сохранить",
+          "update": "Обновить",
+          "add": "Добавить",
+          "edit": "Изменить",
+          "view": "Просмотр",
+          "refresh": "Обновить",
+          "name": "Имя",
+          "description": "Описание",
+          "status": "Статус"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "Интерфейс",
+          "loadConfig": "Загрузить конфиг",
+          "loadMappings": "Привязки",
+          "config": "Конфигурация пула",
+          "enabled": "Включено",
+          "disabled": "Отключено",
+          "rangeFrom": "Диапазон от",
+          "rangeTo": "Диапазон до",
+          "domain": "Домен",
+          "gateway": "Шлюз",
+          "mappings": "Статические привязки",
+          "hostname": "Имя хоста",
+          "loadLeases": "Загрузить аренды",
+          "loadRelay": "DHCP-ретранслятор",
+          "online": "онлайн"
+        },
+        "dns": {
+          "title": "DNS-резолвер",
+          "loadResolver": "Конфиг резолвера",
+          "hostOverrides": "Переопределения хостов",
+          "domainOverrides": "Переопределения доменов",
+          "cacheStats": "Статистика кэша",
+          "flush": "Очистить кэш",
+          "forwarding": "Пересылка",
+          "host": "Хост",
+          "totalEntries": "Всего записей"
+        },
+        "services": {
+          "title": "Службы",
+          "running": "работает",
+          "stopped": "остановлено",
+          "start": "Запустить",
+          "stop": "Остановить",
+          "restart": "Перезапустить"
+        },
+        "system": {
+          "title": "Система",
+          "info": "Сведения о системе",
+          "updates": "Обновления",
+          "general": "Общие настройки",
+          "reboot": "Перезагрузка",
+          "halt": "Выключение",
+          "confirmReboot": "Перезагрузить межсетевой экран сейчас?",
+          "confirmHalt": "Выключить межсетевой экран сейчас?",
+          "hostname": "Имя хоста",
+          "version": "Версия",
+          "uptime": "Время работы",
+          "memory": "Память",
+          "load": "Нагрузка",
+          "timezone": "Часовой пояс",
+          "updateAvailable": "Доступно обновление",
+          "upToDate": "Актуально"
+        },
+        "certs": {
+          "title": "Сертификаты",
+          "cas": "Центры сертификации",
+          "certs": "Сертификаты",
+          "issuer": "Издатель",
+          "validTo": "Действует до",
+          "commonName": "Общее имя",
+          "create": "Создать"
+        },
+        "users": {
+          "title": "Пользователи и группы",
+          "users": "Пользователи",
+          "groups": "Группы",
+          "fullName": "Полное имя",
+          "email": "Эл. почта",
+          "members": "Участники"
+        },
+        "diag": {
+          "title": "Диагностика",
+          "arp": "Таблица ARP",
+          "ndp": "Таблица NDP",
+          "pfinfo": "pfInfo",
+          "lookup": "DNS-запрос",
+          "ping": "Ping",
+          "traceroute": "Traceroute",
+          "run": "Выполнить",
+          "hops": "переходов",
+          "log": "Системный журнал",
+          "iface": "Интерфейс"
+        },
+        "backups": {
+          "title": "Резервные копии",
+          "encrypt": "Шифровать",
+          "password": "Пароль",
+          "create": "Создать копию",
+          "filename": "Имя файла",
+          "timestamp": "Метка времени"
+        }
       }
     },
     "vmwareDesktop": {

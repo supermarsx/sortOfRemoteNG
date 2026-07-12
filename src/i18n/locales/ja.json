@@ -3281,6 +3281,125 @@
       }
     },
     "keepass": {
+      "database": {
+        "done": "完了。",
+        "refresh": "更新",
+        "update": "更新",
+        "section": {
+          "overview": "概要",
+          "groups": "グループ",
+          "entries": "エントリ",
+          "history": "履歴",
+          "icons": "カスタムアイコン"
+        },
+        "overview": {
+          "statistics": "統計",
+          "loadStats": "統計を読み込む",
+          "lifecycle": "ライフサイクル",
+          "save": "保存",
+          "lock": "ロック",
+          "unlock": "ロック解除",
+          "listBackups": "バックアップ一覧",
+          "backup": "バックアップ",
+          "listDatabases": "開いているDB一覧",
+          "close": "保存して閉じる",
+          "closeAll": "すべて閉じる",
+          "unlockPassword": "ロック解除パスワード",
+          "metadata": "メタデータを更新",
+          "updateMetadata": "メタデータを更新",
+          "changeKey": "マスターキーを変更",
+          "merge": "マージ",
+          "fileInfo": "ファイル情報（ディスク上）",
+          "inspect": "検査"
+        },
+        "stat": {
+          "entries": "エントリ",
+          "groups": "グループ",
+          "attachments": "添付ファイル",
+          "customIcons": "カスタムアイコン",
+          "expired": "期限切れ",
+          "weak": "弱いパスワード",
+          "reused": "使い回し",
+          "otp": "OTPあり"
+        },
+        "field": {
+          "name": "名前",
+          "description": "説明",
+          "defaultUsername": "既定のユーザー名",
+          "color": "色",
+          "recycleBin": "ごみ箱を有効化",
+          "currentPassword": "現在のパスワード",
+          "currentKeyFile": "現在のキーファイル",
+          "newPassword": "新しいパスワード",
+          "newKeyFile": "新しいキーファイル",
+          "remotePath": "リモート.kdbxパス",
+          "remotePassword": "リモートパスワード",
+          "conflict": "競合の解決",
+          "filePath": "/path/to/file.kdbx",
+          "notes": "メモ"
+        },
+        "groups": {
+          "list": "グループ一覧",
+          "tree": "グループツリー",
+          "treeRoot": "ルート",
+          "create": "グループを作成",
+          "parent": "親UUID（空欄=ルート）",
+          "selected": "選択したグループの操作",
+          "uuid": "グループUUID",
+          "get": "取得",
+          "path": "パス",
+          "children": "子グループ",
+          "sort": "子を並べ替え",
+          "count": "エントリ数",
+          "tags": "タグ",
+          "recycle": "ごみ箱へ",
+          "deletePermanent": "完全に削除",
+          "newParent": "新しい親UUID",
+          "move": "移動"
+        },
+        "entries": {
+          "list": "エントリ一覧",
+          "all": "すべてのエントリ",
+          "inGroup": "グループ内",
+          "recursive": "再帰的",
+          "emptyRecycle": "ごみ箱を空にする",
+          "groupFilter": "グループUUIDフィルター",
+          "create": "エントリを作成",
+          "group": "グループUUID",
+          "title": "タイトル",
+          "username": "ユーザー名",
+          "password": "パスワード",
+          "url": "URL",
+          "selected": "選択したエントリの操作",
+          "uuid": "エントリUUID",
+          "get": "取得",
+          "recycle": "ごみ箱へ",
+          "deletePermanent": "完全に削除",
+          "restore": "復元",
+          "targetGroup": "移動先グループUUID",
+          "copy": "コピー"
+        },
+        "history": {
+          "title": "エントリ履歴",
+          "load": "履歴を読み込む",
+          "deleteAll": "すべての履歴を削除",
+          "snapshot": "スナップショット操作",
+          "index": "履歴インデックス",
+          "getItem": "スナップショットを取得",
+          "restore": "スナップショットを復元",
+          "diff": "現在と比較",
+          "changedFields": "変更されたフィールド"
+        },
+        "icons": {
+          "list": "カスタムアイコン",
+          "manage": "追加／管理",
+          "base64": "アイコンデータ（base64 PNG）",
+          "add": "アイコンを追加",
+          "uuid": "アイコンUUID",
+          "get": "データを取得",
+          "delete": "削除"
+        }
+      },
       "openTitle": "KeePassデータベースを開く",
       "openSubtitle": "ローカルの.kdbxファイルをマスターパスワードで開きます。",
       "databaseFile": "データベースファイル (.kdbx)",
@@ -3296,7 +3415,107 @@
       "entries": "エントリ",
       "closeDatabase": "データベースを閉じる",
       "tabCrashed": "パネルがクラッシュしました",
-      "noTabs": "データベースを開きました。管理タブは追加されるとここに読み込まれます。"
+      "noTabs": "データベースを開きました。管理タブは追加されるとここに読み込まれます。",
+      "tools": {
+        "subtitle": "検索、添付ファイル、パスワード健全性、OTP、オートタイプ、インポート/エクスポート、メンテナンス。",
+        "search": {
+          "title": "検索とフィルター",
+          "quickPlaceholder": "クイック検索…",
+          "go": "検索",
+          "advancedPlaceholder": "詳細検索テキスト…",
+          "regex": "正規表現",
+          "caseSensitive": "大小区別",
+          "advanced": "詳細",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "URLで検索",
+          "tagPlaceholder": "タグ",
+          "byTag": "タグで検索",
+          "allTags": "すべてのタグ",
+          "expiringIn": "有効期限",
+          "days": "日以内",
+          "findExpiring": "検索",
+          "weak": "脆弱 ≤",
+          "noPassword": "パスワードなし",
+          "duplicates": "重複",
+          "matches": "件"
+        },
+        "attachments": {
+          "title": "添付ファイル",
+          "entryUuid": "エントリUUID",
+          "list": "一覧",
+          "importFile": "ファイルをインポート",
+          "textBody": "インラインテキスト内容…",
+          "addText": "テキストを追加",
+          "read": "読み取り",
+          "save": "保存",
+          "newName": "新しいファイル名",
+          "rename": "名前変更",
+          "remove": "削除",
+          "poolSize": "プールサイズ",
+          "compact": "プールを圧縮",
+          "verify": "整合性を検証"
+        },
+        "password": {
+          "title": "パスワードツール",
+          "length": "長さ",
+          "count": "個数",
+          "excludeLookalikes": "類似文字を除外",
+          "patternPlaceholder": "例: Aaaa-9999",
+          "generate": "生成",
+          "generateMany": "×N 生成",
+          "analyzePlaceholder": "分析するパスワード…",
+          "analyze": "分析",
+          "health": "健全性レポート",
+          "profiles": "プロファイル",
+          "profileName": "プロファイル名",
+          "saveProfile": "プロファイルを保存",
+          "builtin": "組み込み",
+          "remove": "削除"
+        },
+        "otp": {
+          "title": "ワンタイムパスワード",
+          "entryUuid": "エントリUUID",
+          "get": "コード取得"
+        },
+        "autotype": {
+          "title": "オートタイプ",
+          "parse": "解析",
+          "validate": "検証",
+          "default": "デフォルト",
+          "entryUuid": "エントリUUID",
+          "resolve": "解決",
+          "windowTitle": "ウィンドウタイトル",
+          "match": "ウィンドウ照合",
+          "associations": "関連付け",
+          "valid": "有効なシーケンス"
+        },
+        "keyfile": {
+          "title": "キーファイル",
+          "create": "作成",
+          "verify": "検証"
+        },
+        "io": {
+          "title": "インポート / エクスポート",
+          "import": "インポート…",
+          "export": "エクスポート…"
+        },
+        "recent": {
+          "title": "最近のデータベース",
+          "list": "一覧",
+          "add": "追加",
+          "clear": "すべてクリア",
+          "missing": "見つかりません",
+          "remove": "削除"
+        },
+        "maintenance": {
+          "title": "変更ログ · 設定 · サービス",
+          "limit": "上限",
+          "changeLog": "変更ログ",
+          "getSettings": "設定を取得",
+          "updateSettings": "設定を更新",
+          "shutdown": "サービスを停止"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3535,112 @@
       "tabs": {
         "network": "ネットワークとファイアウォール",
         "services": "サービスとシステム"
+      },
+      "services": {
+        "common": {
+          "save": "保存",
+          "update": "更新",
+          "add": "追加",
+          "edit": "編集",
+          "view": "表示",
+          "refresh": "更新",
+          "name": "名前",
+          "description": "説明",
+          "status": "ステータス"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "インターフェース",
+          "loadConfig": "設定を読込",
+          "loadMappings": "マッピング",
+          "config": "スコープ設定",
+          "enabled": "有効",
+          "disabled": "無効",
+          "rangeFrom": "範囲 開始",
+          "rangeTo": "範囲 終了",
+          "domain": "ドメイン",
+          "gateway": "ゲートウェイ",
+          "mappings": "静的マッピング",
+          "hostname": "ホスト名",
+          "loadLeases": "リースを読込",
+          "loadRelay": "DHCPリレー",
+          "online": "オンライン"
+        },
+        "dns": {
+          "title": "DNSリゾルバ",
+          "loadResolver": "リゾルバ設定",
+          "hostOverrides": "ホストオーバーライド",
+          "domainOverrides": "ドメインオーバーライド",
+          "cacheStats": "キャッシュ統計",
+          "flush": "キャッシュをクリア",
+          "forwarding": "転送",
+          "host": "ホスト",
+          "totalEntries": "総エントリ数"
+        },
+        "services": {
+          "title": "サービス",
+          "running": "実行中",
+          "stopped": "停止",
+          "start": "開始",
+          "stop": "停止",
+          "restart": "再起動"
+        },
+        "system": {
+          "title": "システム",
+          "info": "システム情報",
+          "updates": "アップデート",
+          "general": "一般設定",
+          "reboot": "再起動",
+          "halt": "停止",
+          "confirmReboot": "ファイアウォールを今すぐ再起動しますか？",
+          "confirmHalt": "ファイアウォールを今すぐ停止（電源オフ）しますか？",
+          "hostname": "ホスト名",
+          "version": "バージョン",
+          "uptime": "稼働時間",
+          "memory": "メモリ",
+          "load": "負荷",
+          "timezone": "タイムゾーン",
+          "updateAvailable": "アップデートあり",
+          "upToDate": "最新"
+        },
+        "certs": {
+          "title": "証明書",
+          "cas": "認証局",
+          "certs": "証明書",
+          "issuer": "発行者",
+          "validTo": "有効期限",
+          "commonName": "コモンネーム",
+          "create": "作成"
+        },
+        "users": {
+          "title": "ユーザーとグループ",
+          "users": "ユーザー",
+          "groups": "グループ",
+          "fullName": "フルネーム",
+          "email": "メール",
+          "members": "メンバー"
+        },
+        "diag": {
+          "title": "診断",
+          "arp": "ARPテーブル",
+          "ndp": "NDPテーブル",
+          "pfinfo": "pfInfo",
+          "lookup": "DNSルックアップ",
+          "ping": "Ping",
+          "traceroute": "トレースルート",
+          "run": "実行",
+          "hops": "ホップ",
+          "log": "システムログ",
+          "iface": "インターフェース"
+        },
+        "backups": {
+          "title": "バックアップ",
+          "encrypt": "暗号化",
+          "password": "パスワード",
+          "create": "バックアップを作成",
+          "filename": "ファイル名",
+          "timestamp": "タイムスタンプ"
+        }
       }
     },
     "vmwareDesktop": {

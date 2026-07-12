@@ -3278,9 +3278,200 @@
       "errors": {
         "hostRequired": "Host is required",
         "tokenRequired": "API token is required"
+      },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}} items",
+        "empty": "No records.",
+        "groups": {
+          "sites": "Sites",
+          "racks": "Racks",
+          "devices": "Devices",
+          "interfaces": "Interfaces",
+          "cables": "Cables"
+        },
+        "refs": {
+          "types": "Device types",
+          "manufacturers": "Manufacturers",
+          "platforms": "Platforms",
+          "roles": "Device roles"
+        },
+        "actions": {
+          "refresh": "Refresh",
+          "new": "New",
+          "edit": "Edit",
+          "delete": "Delete",
+          "close": "Close",
+          "cancel": "Cancel",
+          "create": "Create",
+          "update": "Save",
+          "updateHint": "Full update (PUT)",
+          "patch": "Patch",
+          "patchHint": "Partial update (PATCH)",
+          "apply": "Apply",
+          "elevation": "Elevation",
+          "reservations": "Reservations",
+          "renderConfig": "Rendered config",
+          "connections": "Connections",
+          "trace": "Trace"
+        },
+        "filters": {
+          "region": "Region",
+          "group": "Group",
+          "siteId": "Site ID",
+          "deviceId": "Device ID",
+          "search": "Search",
+          "bySite": "By site ID",
+          "byRack": "By rack ID"
+        },
+        "fields": {
+          "name": "Name",
+          "status": "Status",
+          "region": "Region",
+          "devices": "Devices",
+          "site": "Site",
+          "type": "Type",
+          "slug": "Slug",
+          "device": "Device",
+          "enabled": "Enabled",
+          "label": "Label",
+          "length": "Length"
+        },
+        "editor": {
+          "hint": "Edit the JSON payload sent to NetBox.",
+          "newSite": "New site",
+          "editSite": "Edit site",
+          "newRack": "New rack",
+          "editRack": "Edit rack",
+          "newDevice": "New device",
+          "editDevice": "Edit device",
+          "newInterface": "New interface",
+          "editInterface": "Edit interface",
+          "newCable": "New cable",
+          "editCable": "Edit cable"
+        }
       }
     },
     "keepass": {
+      "database": {
+        "done": "Done.",
+        "refresh": "Refresh",
+        "update": "Update",
+        "section": {
+          "overview": "Overview",
+          "groups": "Groups",
+          "entries": "Entries",
+          "history": "History",
+          "icons": "Custom icons"
+        },
+        "overview": {
+          "statistics": "Statistics",
+          "loadStats": "Load statistics",
+          "lifecycle": "Lifecycle",
+          "save": "Save",
+          "lock": "Lock",
+          "unlock": "Unlock",
+          "listBackups": "List backups",
+          "backup": "Backup",
+          "listDatabases": "List open DBs",
+          "close": "Save & close",
+          "closeAll": "Close all",
+          "unlockPassword": "Unlock password",
+          "metadata": "Update metadata",
+          "updateMetadata": "Update metadata",
+          "changeKey": "Change master key",
+          "merge": "Merge",
+          "fileInfo": "File info (on disk)",
+          "inspect": "Inspect"
+        },
+        "stat": {
+          "entries": "Entries",
+          "groups": "Groups",
+          "attachments": "Attachments",
+          "customIcons": "Custom icons",
+          "expired": "Expired",
+          "weak": "Weak passwords",
+          "reused": "Reused",
+          "otp": "With OTP"
+        },
+        "field": {
+          "name": "Name",
+          "description": "Description",
+          "defaultUsername": "Default username",
+          "color": "Color",
+          "recycleBin": "Recycle bin enabled",
+          "currentPassword": "Current password",
+          "currentKeyFile": "Current key file",
+          "newPassword": "New password",
+          "newKeyFile": "New key file",
+          "remotePath": "Remote .kdbx path",
+          "remotePassword": "Remote password",
+          "conflict": "Conflict resolution",
+          "filePath": "/path/to/file.kdbx",
+          "notes": "Notes"
+        },
+        "groups": {
+          "list": "Group list",
+          "tree": "Group tree",
+          "treeRoot": "Root",
+          "create": "Create group",
+          "parent": "Parent UUID (blank = root)",
+          "selected": "Selected group actions",
+          "uuid": "Group UUID",
+          "get": "Get",
+          "path": "Path",
+          "children": "Child groups",
+          "sort": "Sort children",
+          "count": "Entry count",
+          "tags": "Tags",
+          "recycle": "Recycle",
+          "deletePermanent": "Delete permanently",
+          "newParent": "New parent UUID",
+          "move": "Move"
+        },
+        "entries": {
+          "list": "Entry list",
+          "all": "All entries",
+          "inGroup": "In group",
+          "recursive": "Recursive",
+          "emptyRecycle": "Empty recycle bin",
+          "groupFilter": "Group UUID filter",
+          "create": "Create entry",
+          "group": "Group UUID",
+          "title": "Title",
+          "username": "Username",
+          "password": "Password",
+          "url": "URL",
+          "selected": "Selected entry actions",
+          "uuid": "Entry UUID",
+          "get": "Get",
+          "recycle": "Recycle",
+          "deletePermanent": "Delete permanently",
+          "restore": "Restore",
+          "targetGroup": "Target group UUID",
+          "copy": "Copy"
+        },
+        "history": {
+          "title": "Entry history",
+          "load": "Load history",
+          "deleteAll": "Delete all history",
+          "snapshot": "Snapshot actions",
+          "index": "History index",
+          "getItem": "Get snapshot",
+          "restore": "Restore snapshot",
+          "diff": "Diff vs current",
+          "changedFields": "Changed fields"
+        },
+        "icons": {
+          "list": "Custom icons",
+          "manage": "Add / manage",
+          "base64": "Icon data (base64 PNG)",
+          "add": "Add icon",
+          "uuid": "Icon UUID",
+          "get": "Get data",
+          "delete": "Delete"
+        }
+      },
       "openTitle": "Open KeePass database",
       "openSubtitle": "Open a local .kdbx file with its master password.",
       "databaseFile": "Database file (.kdbx)",
@@ -3296,7 +3487,107 @@
       "entries": "entries",
       "closeDatabase": "Close database",
       "tabCrashed": "Panel crashed",
-      "noTabs": "Database open. Management tabs load here as they are added."
+      "noTabs": "Database open. Management tabs load here as they are added.",
+      "tools": {
+        "subtitle": "Search, attachments, password health, OTP, auto-type, import/export and maintenance.",
+        "search": {
+          "title": "Search & Filter",
+          "quickPlaceholder": "Quick search…",
+          "go": "Search",
+          "advancedPlaceholder": "Advanced search text…",
+          "regex": "Regex",
+          "caseSensitive": "Case",
+          "advanced": "Advanced",
+          "urlPlaceholder": "https://example.com",
+          "byUrl": "By URL",
+          "tagPlaceholder": "tag",
+          "byTag": "By tag",
+          "allTags": "All tags",
+          "expiringIn": "Expiring in",
+          "days": "days",
+          "findExpiring": "Find",
+          "weak": "Weak ≤",
+          "noPassword": "No password",
+          "duplicates": "Duplicates",
+          "matches": "matches"
+        },
+        "attachments": {
+          "title": "Attachments",
+          "entryUuid": "Entry UUID",
+          "list": "List",
+          "importFile": "Import file",
+          "textBody": "Inline text content…",
+          "addText": "Add text",
+          "read": "Read",
+          "save": "Save",
+          "newName": "New filename",
+          "rename": "Rename",
+          "remove": "Remove",
+          "poolSize": "Pool size",
+          "compact": "Compact pool",
+          "verify": "Verify integrity"
+        },
+        "password": {
+          "title": "Password Toolkit",
+          "length": "Length",
+          "count": "Count",
+          "excludeLookalikes": "No look-alikes",
+          "patternPlaceholder": "e.g. Aaaa-9999",
+          "generate": "Generate",
+          "generateMany": "Generate ×N",
+          "analyzePlaceholder": "Password to analyze…",
+          "analyze": "Analyze",
+          "health": "Health report",
+          "profiles": "Profiles",
+          "profileName": "Profile name",
+          "saveProfile": "Save profile",
+          "builtin": "built-in",
+          "remove": "Remove"
+        },
+        "otp": {
+          "title": "One-Time Passwords",
+          "entryUuid": "Entry UUID",
+          "get": "Get code"
+        },
+        "autotype": {
+          "title": "Auto-Type",
+          "parse": "Parse",
+          "validate": "Validate",
+          "default": "Default",
+          "entryUuid": "Entry UUID",
+          "resolve": "Resolve",
+          "windowTitle": "Window title",
+          "match": "Match window",
+          "associations": "Associations",
+          "valid": "Valid sequence"
+        },
+        "keyfile": {
+          "title": "Key Files",
+          "create": "Create",
+          "verify": "Verify"
+        },
+        "io": {
+          "title": "Import / Export",
+          "import": "Import…",
+          "export": "Export…"
+        },
+        "recent": {
+          "title": "Recent Databases",
+          "list": "List",
+          "add": "Add",
+          "clear": "Clear all",
+          "missing": "missing",
+          "remove": "Remove"
+        },
+        "maintenance": {
+          "title": "Change Log · Settings · Service",
+          "limit": "Limit",
+          "changeLog": "Change log",
+          "getSettings": "Get settings",
+          "updateSettings": "Update settings",
+          "shutdown": "Shutdown service"
+        }
+      }
     },
     "pfsense": {
       "title": "pfSense",
@@ -3316,6 +3607,112 @@
       "tabs": {
         "network": "Network & Firewall",
         "services": "Services & System"
+      },
+      "services": {
+        "common": {
+          "save": "Save",
+          "update": "Update",
+          "add": "Add",
+          "edit": "Edit",
+          "view": "View",
+          "refresh": "Refresh",
+          "name": "Name",
+          "description": "Description",
+          "status": "Status"
+        },
+        "dhcp": {
+          "title": "DHCP",
+          "interface": "Interface",
+          "loadConfig": "Load config",
+          "loadMappings": "Mappings",
+          "config": "Scope configuration",
+          "enabled": "Enabled",
+          "disabled": "Disabled",
+          "rangeFrom": "Range from",
+          "rangeTo": "Range to",
+          "domain": "Domain",
+          "gateway": "Gateway",
+          "mappings": "Static mappings",
+          "hostname": "Hostname",
+          "loadLeases": "Load leases",
+          "loadRelay": "DHCP relay",
+          "online": "online"
+        },
+        "dns": {
+          "title": "DNS Resolver",
+          "loadResolver": "Resolver config",
+          "hostOverrides": "Host overrides",
+          "domainOverrides": "Domain overrides",
+          "cacheStats": "Cache stats",
+          "flush": "Flush cache",
+          "forwarding": "Forwarding",
+          "host": "Host",
+          "totalEntries": "Total entries"
+        },
+        "services": {
+          "title": "Services",
+          "running": "running",
+          "stopped": "stopped",
+          "start": "Start",
+          "stop": "Stop",
+          "restart": "Restart"
+        },
+        "system": {
+          "title": "System",
+          "info": "System info",
+          "updates": "Updates",
+          "general": "General config",
+          "reboot": "Reboot",
+          "halt": "Halt",
+          "confirmReboot": "Reboot the firewall now?",
+          "confirmHalt": "Halt (power off) the firewall now?",
+          "hostname": "Hostname",
+          "version": "Version",
+          "uptime": "Uptime",
+          "memory": "Memory",
+          "load": "Load",
+          "timezone": "Timezone",
+          "updateAvailable": "Update available",
+          "upToDate": "Up to date"
+        },
+        "certs": {
+          "title": "Certificates",
+          "cas": "Certificate authorities",
+          "certs": "Certificates",
+          "issuer": "Issuer",
+          "validTo": "Valid to",
+          "commonName": "Common name",
+          "create": "Create"
+        },
+        "users": {
+          "title": "Users & Groups",
+          "users": "Users",
+          "groups": "Groups",
+          "fullName": "Full name",
+          "email": "Email",
+          "members": "Members"
+        },
+        "diag": {
+          "title": "Diagnostics",
+          "arp": "ARP table",
+          "ndp": "NDP table",
+          "pfinfo": "pfInfo",
+          "lookup": "DNS lookup",
+          "ping": "Ping",
+          "traceroute": "Traceroute",
+          "run": "Run",
+          "hops": "hops",
+          "log": "System log",
+          "iface": "Interface"
+        },
+        "backups": {
+          "title": "Backups",
+          "encrypt": "Encrypt",
+          "password": "Password",
+          "create": "Create backup",
+          "filename": "Filename",
+          "timestamp": "Timestamp"
+        }
       }
     },
     "vmwareDesktop": {
@@ -3339,6 +3736,113 @@
         "skipTlsVerify": "Skip TLS verification (vmrest HTTPS)",
         "autoStart": "Auto-start vmrest if not running",
         "timeout": "Timeout (s)"
+      },
+      "host": {
+        "notConnected": "Connect to a VMware Workstation host to manage networking, storage, and configuration.",
+        "working": "Working…",
+        "vmxPath": "Target VM (.vmx path)",
+        "browse": "Browse",
+        "notice": {
+          "loaded": "Loaded.",
+          "count": "{{n}} item(s).",
+          "done": "Done."
+        },
+        "col": {
+          "name": "Name",
+          "hostPath": "Host path",
+          "writable": "Writable",
+          "enabled": "Enabled",
+          "type": "Type",
+          "subnet": "Subnet",
+          "mask": "Mask",
+          "network": "Network",
+          "protocol": "Proto",
+          "hostPort": "Host port",
+          "guest": "Guest",
+          "guestIp": "Guest IP",
+          "guestPort": "Guest port",
+          "desc": "Description",
+          "hostname": "Hostname",
+          "expires": "Expires",
+          "file": "File",
+          "controller": "Controller"
+        },
+        "sharedFolders": {
+          "title": "Shared folders",
+          "enable": "Enable",
+          "disable": "Disable",
+          "list": "List",
+          "add": "Add folder",
+          "setState": "Set state"
+        },
+        "networking": {
+          "title": "Virtual networking",
+          "list": "List networks",
+          "readConfig": "Read networking.conf",
+          "create": "Create",
+          "update": "Update",
+          "get": "Get details",
+          "portForwards": "NAT port forwarding",
+          "listForwards": "List",
+          "dhcpLeases": "DHCP leases",
+          "setForward": "Set forward"
+        },
+        "vmdk": {
+          "title": "VMDK / disks",
+          "path": "VMDK path",
+          "sizeMb": "Size (MB)",
+          "diskType": "Disk type",
+          "adapter": "Adapter",
+          "create": "Create",
+          "info": "Info",
+          "defragment": "Defragment",
+          "shrink": "Shrink",
+          "expandTo": "Expand to (MB)",
+          "convertType": "Convert to type",
+          "convertDest": "Convert dest (optional)",
+          "expand": "Expand",
+          "convert": "Convert",
+          "renameDest": "Rename to",
+          "rename": "Rename",
+          "vmDisks": "Disks on target VM",
+          "listDisks": "List disks",
+          "attachPath": "VMDK to attach",
+          "mode": "Mode (optional)",
+          "addDisk": "Add disk",
+          "bus": "Bus",
+          "unit": "Unit",
+          "removeDisk": "Remove disk"
+        },
+        "ovf": {
+          "title": "OVF / OVA import & export",
+          "import": "Import",
+          "source": "Source (.ovf/.ova)",
+          "destDir": "Destination dir",
+          "name": "Name (optional)",
+          "doImport": "Import",
+          "imported": "Imported: {{path}}",
+          "export": "Export (uses target VM above)",
+          "exportDest": "Export to",
+          "format": "Format",
+          "doExport": "Export"
+        },
+        "vmx": {
+          "title": "VMX file editor",
+          "dir": "Discover in directory",
+          "discover": "Discover",
+          "parse": "Parse target VMX",
+          "key": "Key",
+          "value": "Value",
+          "setKey": "Set key",
+          "removeKeys": "Remove keys (comma-separated)",
+          "doRemoveKeys": "Remove"
+        },
+        "prefs": {
+          "title": "Preferences",
+          "read": "Read preferences",
+          "defaultDir": "Default VM dir",
+          "set": "Set preference"
+        }
       }
     },
     "vmware": {
