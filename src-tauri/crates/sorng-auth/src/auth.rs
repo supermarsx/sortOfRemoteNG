@@ -90,6 +90,15 @@ impl AuthService {
         Arc::new(Mutex::new(service))
     }
 
+    /// Returns the filesystem path this service persists users to.
+    ///
+    /// Exposed so the API layer can resolve `USER_STORE_PATH` (env → settings →
+    /// default) into `AuthService::new(path)` and then report/verify which
+    /// store is actually active in status/diagnostics.
+    pub fn store_path(&self) -> &str {
+        &self.store_path
+    }
+
     /// Loads user data from the persistent store file.
     ///
     /// Reads the JSON file containing user credentials and populates the in-memory user cache.
