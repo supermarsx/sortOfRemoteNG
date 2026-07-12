@@ -2,8 +2,8 @@ use crate::aws::AwsConnectionConfig;
 use crate::cloudflare::CloudflareConnectionConfig;
 use crate::vercel::VercelConnectionConfig;
 use axum::{
-    extract::{Path, Query, Request, State},
-    http::StatusCode,
+    extract::{ConnectInfo, FromRef, Path, Query, Request, State},
+    http::{header, HeaderMap, Method, StatusCode},
     middleware::{from_fn_with_state, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -12,10 +12,16 @@ use axum::{
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use tokio::sync::Mutex;
+use std::time::Instant;
+use subtle::ConstantTimeEq;
+use tokio::sync::{oneshot, Mutex};
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::api_capability::{capability_for_path, capability_id};
+use crate::api_config::{ApiRuntimeConfig, SslMode, TlsConfig};
+use crate::bearer_auth::{BearerAuthService, BearerAuthServiceState, Role};
 
 use crate::{
     auth::AuthService,
@@ -122,28 +128,393 @@ impl ApiService {
         }
     }
 
-    pub async fn start_server(
-        self: Arc<Self>,
-        port: u16,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let app = self.create_router();
+}
 
-        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-        println!("Starting REST API server on http://{}", addr);
+/// Composite router state for the hardened REST API (t41).
+///
+/// Handlers written before t41 keep extracting `State<Arc<ApiService>>`
+/// unchanged — the inner [`Arc<ApiService>`] is pulled out of this struct via
+/// the [`FromRef`] impl below. The auth/rate-limit/audit middleware and the
+/// `/auth/*` handlers extract the whole `ApiState` so they can reach the
+/// resolved [`ApiRuntimeConfig`], the shared [`BearerAuthService`] (which owns
+/// the JWT revoke list — login issues, logout revokes, the gate verifies, all
+/// against the same instance), and the rate-limit buckets.
+#[derive(Clone)]
+pub struct ApiState {
+    /// The backend service registry (SSH/DB/… handlers).
+    pub services: Arc<ApiService>,
+    /// Resolved runtime config (bind addr, api key, jwt secret, limits, TLS).
+    pub config: Arc<ApiRuntimeConfig>,
+    /// Shared bearer-token service (issue / verify / revoke session JWTs).
+    pub bearer: BearerAuthServiceState,
+    /// Fixed-window per-caller rate-limit buckets.
+    pub rate_limiter: Arc<RateLimiter>,
+}
 
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        println!("REST API server listening on {}", addr);
-        axum::serve(listener, app).await?;
+impl FromRef<ApiState> for Arc<ApiService> {
+    fn from_ref(state: &ApiState) -> Self {
+        state.services.clone()
+    }
+}
 
-        Ok(())
+/// Identified principal for a request, stashed into the response extensions by
+/// [`api_key_gate`] so [`audit_mw`] can log *who* made the call without the
+/// audit layer re-verifying. Never contains secret material — only a stable
+/// label (`api-key`, `user:<name>`, `anonymous`, `unauthenticated`).
+#[derive(Clone)]
+struct Principal(String);
+
+/// Hand-rolled fixed-window rate limiter (Decision D3 — no new crate).
+///
+/// One counter per `(client-ip, credential-fingerprint)` per one-minute window.
+/// The fingerprint is a non-cryptographic hash of the presented credential
+/// header, so two callers sharing an IP get independent budgets **without** the
+/// limiter ever storing the raw key/token. `limit == 0` disables limiting.
+pub struct RateLimiter {
+    limit: u32,
+    windows: std::sync::Mutex<HashMap<String, (u64, u32)>>,
+}
+
+impl RateLimiter {
+    fn new(limit: u32) -> Self {
+        RateLimiter {
+            limit,
+            windows: std::sync::Mutex::new(HashMap::new()),
+        }
     }
 
-    pub fn create_router(self: Arc<Self>) -> Router {
-        let gate_state = self.clone();
-        Router::new()
+    /// Record one hit for `key`; return `true` if it is within budget.
+    fn check(&self, key: &str) -> bool {
+        if self.limit == 0 {
+            return true;
+        }
+        let now_min = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() / 60)
+            .unwrap_or(0);
+        let mut windows = match self.windows.lock() {
+            Ok(g) => g,
+            // A poisoned lock fails closed rather than panicking the request.
+            Err(_) => return false,
+        };
+        // Bound memory: drop stale windows when the map grows large.
+        if windows.len() > 4096 {
+            windows.retain(|_, (min, _)| *min == now_min);
+        }
+        let entry = windows.entry(key.to_string()).or_insert((now_min, 0));
+        if entry.0 != now_min {
+            *entry = (now_min, 0);
+        }
+        entry.1 = entry.1.saturating_add(1);
+        entry.1 <= self.limit
+    }
+}
+
+/// Whether an HTTP method mutates server state. Readonly-role tokens are
+/// rejected on any mutating method.
+fn is_mutating(method: &Method) -> bool {
+    !matches!(
+        *method,
+        Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE
+    )
+}
+
+/// Constant-time byte-equality for the API key (`subtle`). Length is compared
+/// first (an unavoidable, non-secret leak for a fixed-width key); the content
+/// comparison itself is constant-time.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.ct_eq(b).into()
+}
+
+/// Outcome of the authentication decision made by [`api_key_gate`].
+enum AuthDecision {
+    /// Allowed; carries the principal label for the audit log.
+    Allow(Principal),
+    /// Missing/invalid credential where one is required.
+    Unauthorized,
+    /// Valid readonly token used against a mutating route.
+    ForbiddenReadonly,
+}
+
+/// Pure authentication/authorization decision — no I/O beyond the in-memory
+/// bearer verify, so it is unit-testable without constructing an [`ApiService`].
+///
+/// Order: `/health` and `/auth/login` are always exempt (login is itself an
+/// authentication endpoint, guarded by `AuthService`'s per-user lockout). When
+/// auth is not required, everything passes. Otherwise a constant-time
+/// `X-API-Key` match grants full (admin-equivalent) access; failing that, a
+/// valid `Authorization: Bearer <jwt>` is accepted, with readonly tokens
+/// rejected on mutating methods.
+fn decide_auth(
+    config: &ApiRuntimeConfig,
+    bearer: &BearerAuthService,
+    path: &str,
+    method: &Method,
+    headers: &HeaderMap,
+) -> AuthDecision {
+    if path == "/health" || path == "/auth/login" {
+        return AuthDecision::Allow(Principal("anonymous".to_string()));
+    }
+    if !config.auth_required {
+        return AuthDecision::Allow(Principal("unauthenticated".to_string()));
+    }
+
+    // Static API key (external callers) — constant-time compare.
+    if let Some(key) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
+        if constant_time_eq(key.as_bytes(), config.api_key.as_bytes()) {
+            return AuthDecision::Allow(Principal("api-key".to_string()));
+        }
+    }
+
+    // Internal short-lived JWT (logged-in sessions).
+    if let Some(token) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim)
+    {
+        if let Ok(claims) = bearer.verify_session_token(config.jwt_secret.as_bytes(), token) {
+            if claims.role == Role::Readonly && is_mutating(method) {
+                return AuthDecision::ForbiddenReadonly;
+            }
+            return AuthDecision::Allow(Principal(format!("user:{}", claims.sub)));
+        }
+    }
+
+    AuthDecision::Unauthorized
+}
+
+/// Best-effort client IP for logging / rate-limit keys. Falls back to
+/// `"unknown"` when connection info isn't present (e.g. unit tests calling the
+/// router directly). Deliberately does NOT trust `X-Forwarded-For`: this server
+/// terminates connections directly, so a spoofed header must not let a caller
+/// escape their rate-limit bucket.
+fn client_ip(req: &Request) -> String {
+    req.extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Rate-limit bucket key: client IP plus a non-cryptographic fingerprint of the
+/// presented credential header (so the raw key/token is never stored).
+fn rate_limit_key(req: &Request) -> String {
+    use std::hash::{Hash, Hasher};
+    let cred = req
+        .headers()
+        .get("x-api-key")
+        .or_else(|| req.headers().get(header::AUTHORIZATION))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    cred.hash(&mut hasher);
+    format!("{}|{:x}", client_ip(req), hasher.finish())
+}
+
+fn unauthorized_response() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({
+            "error": "unauthorized",
+            "message": "Missing or invalid credentials. Provide a valid X-API-Key header or Authorization: Bearer <token>.",
+        })),
+    )
+        .into_response()
+}
+
+fn forbidden_readonly_response() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({
+            "error": "readonly",
+            "message": "This token has the readonly role and cannot perform mutating requests.",
+        })),
+    )
+        .into_response()
+}
+
+fn too_many_requests_response() -> Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(serde_json::json!({
+            "error": "rate_limited",
+            "message": "Request rate limit exceeded. Slow down and retry.",
+        })),
+    )
+        .into_response()
+}
+
+/// Build the CORS layer. When `corsEnabled` is off we install a bare
+/// [`CorsLayer`] that adds no `Access-Control-Allow-*` headers, so browsers
+/// enforce same-origin. When on, permit any origin/method/header (v1 — a
+/// tighter allow-list is a future refinement).
+fn cors_layer(config: &ApiRuntimeConfig) -> CorsLayer {
+    if config.cors_enabled {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        CorsLayer::new()
+    }
+}
+
+/// Start the REST API server (t41 shared-interface entry point).
+///
+/// Binds `config.bind_addr()`, serves the hardened router with graceful
+/// shutdown on `shutdown_rx`, and uses TLS (axum-server + rustls) when
+/// `config.tls.enabled`, else plain HTTP. The [`BearerAuthService`] and
+/// rate-limit buckets are created per server run and live for its lifetime.
+pub async fn start_server(
+    config: ApiRuntimeConfig,
+    services: Arc<ApiService>,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
+    let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit_per_minute));
+    let bearer = BearerAuthService::new();
+    let bind = config.bind_addr();
+    let tls = config.tls.clone();
+
+    let state = ApiState {
+        services,
+        config: Arc::new(config),
+        bearer,
+        rate_limiter,
+    };
+    let app = create_router(state);
+
+    if tls.enabled {
+        serve_tls(bind, tls, app, shutdown_rx).await
+    } else {
+        tracing::info!(target: "api", %bind, tls = false, "starting REST API server");
+        let listener = tokio::net::TcpListener::bind(bind)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to bind {bind}: {e}"))?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.await;
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("REST API server error: {e}"))?;
+        Ok(())
+    }
+}
+
+/// Serve the router over TLS via `axum-server`. Graceful shutdown is driven by
+/// `shutdown_rx` through an `axum_server::Handle`.
+async fn serve_tls(
+    bind: SocketAddr,
+    tls: TlsConfig,
+    app: Router,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
+    let rustls_config = build_rustls_config(&tls).await?;
+    let handle = axum_server::Handle::new();
+    let shutdown_handle = handle.clone();
+    tokio::spawn(async move {
+        let _ = shutdown_rx.await;
+        shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
+    });
+    tracing::info!(target: "api", %bind, tls = true, mode = ?tls.mode, "starting REST API server");
+    axum_server::bind_rustls(bind, rustls_config)
+        .handle(handle)
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+        .await
+        .map_err(|e| anyhow::anyhow!("REST API TLS server error: {e}"))?;
+    Ok(())
+}
+
+/// Resolve an `axum_server` rustls config from the resolved [`TlsConfig`].
+/// Reuses the process-default crypto provider (ring, installed in `run()`), so
+/// no provider is forced here. The private key is loaded straight into rustls
+/// and is never logged.
+async fn build_rustls_config(
+    tls: &TlsConfig,
+) -> anyhow::Result<axum_server::tls_rustls::RustlsConfig> {
+    use axum_server::tls_rustls::RustlsConfig;
+    match tls.mode {
+        SslMode::Manual => {
+            let cert = tls
+                .cert_path
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("manual TLS requires an sslCertPath"))?;
+            let key = tls
+                .key_path
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("manual TLS requires an sslKeyPath"))?;
+            RustlsConfig::from_pem_file(cert, key)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to load TLS cert/key: {e}"))
+        }
+        SslMode::SelfSigned => {
+            use crate::cert_gen::{
+                CertGenParams, CertGenService, CertProfile, KeyAlgorithm, SignatureHash,
+            };
+            let cn = tls
+                .domain
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "localhost".to_string());
+            let params = CertGenParams {
+                common_name: cn.clone(),
+                organization: Some("sortOfRemoteNG (self-signed API)".to_string()),
+                organizational_unit: None,
+                country: None,
+                state: None,
+                locality: None,
+                san_dns: vec![cn],
+                san_ips: vec![],
+                san_emails: vec![],
+                algorithm: KeyAlgorithm::EcdsaP256,
+                signature_hash: SignatureHash::Sha256,
+                profile: CertProfile::TlsServer,
+                validity_days: 365,
+                path_length: None,
+            };
+            let store_path = std::env::temp_dir()
+                .join("sorng-api-selfsigned-certs.json")
+                .to_string_lossy()
+                .to_string();
+            let svc = CertGenService::new(store_path);
+            let mut guard = svc.lock().await;
+            let generated = guard
+                .generate_self_signed(params)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to generate self-signed cert: {e}"))?;
+            RustlsConfig::from_pem(
+                generated.cert_pem.into_bytes(),
+                generated.key_pem.into_bytes(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to load self-signed cert: {e}"))
+        }
+        SslMode::LetsEncrypt => {
+            // Live ACME issuance is host-gated (needs a public domain + port-80
+            // reachability). Wiring `sorng-letsencrypt` into the serve path is
+            // deferred; fail closed rather than silently downgrade to plain HTTP.
+            anyhow::bail!(
+                "Let's Encrypt TLS is not yet wired at runtime; use sslMode \"manual\" or \"self-signed\""
+            )
+        }
+    }
+}
+
+/// Build the hardened REST API router.
+///
+/// Middleware order (outer → inner): audit-log → CORS → rate-limit →
+/// `api_key_gate` (auth) → `capability_gate` → route. `/health` short-circuits
+/// auth/capability/rate-limit; `/auth/login` is exempt from the key gate (it is
+/// the credential-exchange endpoint, guarded by `AuthService` lockout).
+pub fn create_router(state: ApiState) -> Router {
+    Router::new()
             .route("/health", get(health_check))
-            // Authentication
+            // Authentication / session tokens
             .route("/auth/login", post(login))
+            .route("/auth/logout", post(logout))
+            .route("/auth/whoami", get(whoami))
             .route("/auth/users", get(list_users))
             // SSH
             .route("/ssh/connect", post(connect_ssh))
@@ -429,11 +800,88 @@ impl ApiService {
                 "/cloudflare/analytics/:session_id/:zone_id",
                 get(get_cloudflare_analytics_api),
             )
-            // Capability gate: rejects requests for capabilities in the
-            // user's disabled-set with 403. Layered last so it wraps
-            // every route declared above.
-            .layer(from_fn_with_state(gate_state, capability_gate))
-            .with_state(self)
+            // Middleware stack, applied outer → inner as:
+            //   audit-log → CORS → rate-limit → api_key_gate → capability_gate.
+            // (`.layer` wraps bottom-up, so the LAST `.layer` call is the
+            // outermost. capability_gate — the existing 403-on-disabled gate —
+            // stays innermost so it wraps every route above.)
+            .layer(from_fn_with_state(state.clone(), capability_gate))
+            .layer(from_fn_with_state(state.clone(), api_key_gate))
+            .layer(from_fn_with_state(state.clone(), rate_limit_mw))
+            .layer(cors_layer(&state.config))
+            .layer(from_fn_with_state(state.clone(), audit_mw))
+            .with_state(state)
+}
+
+/// Outermost middleware: structured audit log of every request (method, path,
+/// client IP, status, latency, principal). Redacts by construction — it never
+/// touches request/response *bodies* or credential headers, and the principal
+/// label carries no secret. `/health` is skipped to avoid probe spam.
+async fn audit_mw(State(_state): State<ApiState>, req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
+    if path == "/health" {
+        return next.run(req).await;
+    }
+    let method = req.method().clone();
+    let ip = client_ip(&req);
+    let started = Instant::now();
+    let response = next.run(req).await;
+    let status = response.status().as_u16();
+    let principal = response
+        .extensions()
+        .get::<Principal>()
+        .map(|p| p.0.clone())
+        .unwrap_or_else(|| "-".to_string());
+    tracing::info!(
+        target: "api::audit",
+        method = %method,
+        path = %path,
+        ip = %ip,
+        status,
+        principal = %principal,
+        latency_ms = started.elapsed().as_millis() as u64,
+        "api request",
+    );
+    response
+}
+
+/// Rate-limit middleware (D3). Skips `/health` and is a no-op when the limit is
+/// 0. Keyed by client IP + credential fingerprint so one caller can't exhaust
+/// another's budget.
+async fn rate_limit_mw(State(state): State<ApiState>, req: Request, next: Next) -> Response {
+    if state.config.rate_limit_per_minute == 0 || req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+    let key = rate_limit_key(&req);
+    if state.rate_limiter.check(&key) {
+        next.run(req).await
+    } else {
+        too_many_requests_response()
+    }
+}
+
+/// Authentication gate. Enforces [`decide_auth`] and, on success, records the
+/// resolved principal into the response extensions for [`audit_mw`]. Never logs
+/// the key or token.
+async fn api_key_gate(State(state): State<ApiState>, req: Request, next: Next) -> Response {
+    let decision = {
+        let bearer = state.bearer.lock().await;
+        decide_auth(
+            &state.config,
+            &bearer,
+            req.uri().path(),
+            req.method(),
+            req.headers(),
+        )
+    };
+    match decision {
+        AuthDecision::Allow(principal) => {
+            let mut response = next.run(req).await;
+            response.extensions_mut().insert(principal);
+            response
+        }
+        AuthDecision::Unauthorized => unauthorized_response(),
+        AuthDecision::ForbiddenReadonly => forbidden_readonly_response(),
     }
 }
 
@@ -486,22 +934,105 @@ struct LoginRequest {
     password: String,
 }
 
+/// TTL for issued session tokens (1 hour — the policy ceiling enforced in
+/// `sorng-auth`, so anything longer is clamped there anyway).
+const SESSION_TTL_SECS: i64 = 3600;
+
+/// `POST /auth/login` — verify user/pass against the file-backed store and, on
+/// success, mint a short-lived HS256 session token. Returns `{ token,
+/// expires_at, role }`. Never logs the password or the issued token.
 async fn login(
-    State(services): State<Arc<ApiService>>,
+    State(state): State<ApiState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let mut auth = services.auth_service.lock().await;
-    match auth.verify_user(&req.username, &req.password).await {
-        Ok(true) => Ok(Json(serde_json::json!({
-            "success": true,
-            "message": "Login successful"
-        }))),
-        Ok(false) => Err(StatusCode::UNAUTHORIZED),
-        Err(e) => {
-            eprintln!("Login error: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+    // AuthService applies argon2/bcrypt verification plus per-user lockout.
+    let verified = {
+        let mut auth = state.services.auth_service.lock().await;
+        match auth.verify_user(&req.username, &req.password).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(target: "api", "login verification error: {e}");
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    };
+    if !verified {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // v1 role model: authenticated users receive the Admin role. A dedicated
+    // role store (readonly principals) is a future refinement — the middleware
+    // already enforces readonly restrictions, so only the claim source changes.
+    let issued = {
+        let bearer = state.bearer.lock().await;
+        bearer
+            .issue_session_token(
+                state.config.jwt_secret.as_bytes(),
+                &req.username,
+                Role::Admin,
+                SESSION_TTL_SECS,
+            )
+            .map_err(|e| {
+                tracing::error!(target: "api", "failed to issue session token: {e}");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+    };
+
+    // `SessionToken` serializes to exactly `{ token, expires_at, role }`.
+    serde_json::to_value(&issued)
+        .map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// Extract a `Bearer <jwt>` token from the Authorization header, if present.
+fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|t| t.trim().to_string())
+}
+
+/// `POST /auth/logout` — revoke the caller's current session token. Idempotent:
+/// revoking an unknown/expired token still succeeds so clients can always log
+/// out.
+async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Response {
+    match bearer_token(&headers) {
+        Some(token) => {
+            state.bearer.lock().await.revoke_session_token(&token);
+            (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response()
+        }
+        None => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "no_token",
+                "message": "No Authorization: Bearer token to revoke.",
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// `GET /auth/whoami` — echo the authenticated principal + role (diagnostics).
+/// Reached only after `api_key_gate`, so the caller is already authenticated; a
+/// valid Bearer yields its subject/role, otherwise the caller used the static
+/// API key.
+async fn whoami(State(state): State<ApiState>, headers: HeaderMap) -> Json<serde_json::Value> {
+    if let Some(token) = bearer_token(&headers) {
+        let bearer = state.bearer.lock().await;
+        if let Ok(claims) = bearer.verify_session_token(state.config.jwt_secret.as_bytes(), &token) {
+            return Json(serde_json::json!({
+                "principal": claims.sub,
+                "role": claims.role,
+                "auth": "bearer",
+            }));
         }
     }
+    Json(serde_json::json!({
+        "principal": "api-key",
+        "role": Role::Admin,
+        "auth": "api-key",
+    }))
 }
 
 async fn list_users(
@@ -2374,6 +2905,205 @@ async fn get_cloudflare_analytics_api(
         Err(e) => {
             eprintln!("Failed to get Cloudflare analytics: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[cfg(test)]
+mod middleware_tests {
+    //! Unit tests for the security-critical decision logic that lives in
+    //! `api.rs`: the auth gate (`decide_auth`), the hand-rolled rate limiter,
+    //! constant-time key compare, and the mutating-method classifier. These
+    //! deliberately avoid constructing an `ApiService` (which needs every
+    //! backend service) — full HTTP end-to-end coverage is the integration
+    //! suite's job (t41-e8).
+
+    use super::*;
+    use serde_json::json;
+    use std::path::Path;
+
+    // 32-byte (256-bit) secret — the HS256 minimum enforced by sorng-auth.
+    const SECRET: &str = "0123456789abcdef0123456789abcdef";
+    const KEY: &str = "test-api-key-abcdef0123456789";
+
+    /// Resolve a config with known api key + jwt secret (env empty).
+    fn cfg(auth_required: bool, rate: u32) -> ApiRuntimeConfig {
+        let settings = json!({
+            "restApi": {
+                "authentication": auth_required,
+                "apiKey": KEY,
+                "jwtSecret": SECRET,
+                "rateLimiting": rate > 0,
+                "maxRequestsPerMinute": rate,
+            }
+        });
+        ApiRuntimeConfig::resolve_with_env(&settings, Path::new("/tmp"), |_| None)
+    }
+
+    fn header_map(name: &'static str, value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(name, value.parse().unwrap());
+        h
+    }
+
+    #[test]
+    fn is_mutating_classifies_methods() {
+        assert!(!is_mutating(&Method::GET));
+        assert!(!is_mutating(&Method::HEAD));
+        assert!(!is_mutating(&Method::OPTIONS));
+        assert!(is_mutating(&Method::POST));
+        assert!(is_mutating(&Method::PUT));
+        assert!(is_mutating(&Method::DELETE));
+        assert!(is_mutating(&Method::PATCH));
+    }
+
+    #[test]
+    fn constant_time_eq_matches_only_equal_bytes() {
+        assert!(constant_time_eq(b"abc", b"abc"));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+        assert!(!constant_time_eq(b"abc", b"abcd"));
+        assert!(!constant_time_eq(b"", b"x"));
+    }
+
+    #[tokio::test]
+    async fn missing_credential_is_unauthorized() {
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let h = HeaderMap::new();
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/connect", &Method::POST, &h),
+            AuthDecision::Unauthorized
+        ));
+    }
+
+    #[tokio::test]
+    async fn wrong_api_key_is_unauthorized() {
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let h = header_map("x-api-key", "not-the-key");
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/sessions", &Method::GET, &h),
+            AuthDecision::Unauthorized
+        ));
+    }
+
+    #[tokio::test]
+    async fn valid_api_key_allows() {
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let h = header_map("x-api-key", KEY);
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/connect", &Method::POST, &h),
+            AuthDecision::Allow(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn health_and_login_are_exempt() {
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let h = HeaderMap::new();
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/health", &Method::GET, &h),
+            AuthDecision::Allow(_)
+        ));
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/auth/login", &Method::POST, &h),
+            AuthDecision::Allow(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn no_auth_required_passes_everything() {
+        let c = cfg(false, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let h = HeaderMap::new();
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/connect", &Method::POST, &h),
+            AuthDecision::Allow(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn bearer_admin_token_accepted() {
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let issued = bearer
+            .issue_session_token(SECRET.as_bytes(), "root", Role::Admin, 600)
+            .unwrap();
+        let h = header_map("authorization", &format!("Bearer {}", issued.token));
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/connect", &Method::POST, &h),
+            AuthDecision::Allow(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn readonly_token_rejected_on_mutation_allowed_on_read() {
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let bearer = bs.lock().await;
+        let issued = bearer
+            .issue_session_token(SECRET.as_bytes(), "guest", Role::Readonly, 600)
+            .unwrap();
+        let h = header_map("authorization", &format!("Bearer {}", issued.token));
+        // Mutating method → 403 readonly.
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/connect", &Method::POST, &h),
+            AuthDecision::ForbiddenReadonly
+        ));
+        // Safe method → allowed.
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/sessions", &Method::GET, &h),
+            AuthDecision::Allow(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn revoked_token_rejected_by_gate() {
+        // Exercises the /auth/logout revoke path through the same shared
+        // BearerAuthService the gate verifies against.
+        let c = cfg(true, 0);
+        let bs = BearerAuthService::new();
+        let issued = {
+            let bearer = bs.lock().await;
+            bearer
+                .issue_session_token(SECRET.as_bytes(), "u", Role::Admin, 600)
+                .unwrap()
+        };
+        {
+            let mut bearer = bs.lock().await;
+            bearer.revoke_session_token(&issued.token);
+        }
+        let bearer = bs.lock().await;
+        let h = header_map("authorization", &format!("Bearer {}", issued.token));
+        assert!(matches!(
+            decide_auth(&c, &bearer, "/ssh/sessions", &Method::GET, &h),
+            AuthDecision::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rate_limiter_enforces_within_window() {
+        let rl = RateLimiter::new(2);
+        assert!(rl.check("caller-a"));
+        assert!(rl.check("caller-a"));
+        assert!(!rl.check("caller-a"), "third request in-window must be denied");
+        // A different key has an independent budget.
+        assert!(rl.check("caller-b"));
+    }
+
+    #[test]
+    fn rate_limiter_zero_is_unlimited() {
+        let rl = RateLimiter::new(0);
+        for _ in 0..1000 {
+            assert!(rl.check("caller"));
         }
     }
 }
