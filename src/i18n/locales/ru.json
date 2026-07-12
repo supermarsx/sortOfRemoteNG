@@ -3251,6 +3251,29 @@
         "network": "Сеть и брандмауэр",
         "services": "Службы и система"
       }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Управление локальными ВМ VMware Workstation / Player через vmrest",
+      "connected": "Подключено",
+      "disconnected": "Отключено",
+      "close": "Закрыть",
+      "connect": "Подключиться",
+      "disconnect": "Отключиться",
+      "vms": "ВМ",
+      "noTabs": "Подключено. Представления управления добавляются.",
+      "notConnected": "Подключитесь к хосту VMware Workstation для управления ВМ.",
+      "form": {
+        "name": "Имя экземпляра",
+        "host": "Хост vmrest",
+        "port": "Порт vmrest",
+        "username": "Имя пользователя",
+        "password": "Пароль",
+        "vmrunPath": "Путь к vmrun (необязательно)",
+        "skipTlsVerify": "Пропустить проверку TLS (vmrest HTTPS)",
+        "autoStart": "Автозапуск vmrest, если не запущен",
+        "timeout": "Тайм-аут (с)"
+      }
     }
   }
 }

@@ -3251,6 +3251,29 @@
         "network": "Rede e firewall",
         "services": "Serviços e sistema"
       }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Gerir VMs locais do VMware Workstation / Player através do vmrest",
+      "connected": "Ligado",
+      "disconnected": "Desligado",
+      "close": "Fechar",
+      "connect": "Ligar",
+      "disconnect": "Desligar",
+      "vms": "VMs",
+      "noTabs": "Ligado. As vistas de gestão estão a ser adicionadas.",
+      "notConnected": "Ligue-se a um anfitrião VMware Workstation para gerir VMs.",
+      "form": {
+        "name": "Nome da instância",
+        "host": "Anfitrião vmrest",
+        "port": "Porta vmrest",
+        "username": "Nome de utilizador",
+        "password": "Palavra-passe",
+        "vmrunPath": "Caminho do vmrun (opcional)",
+        "skipTlsVerify": "Ignorar verificação TLS (vmrest HTTPS)",
+        "autoStart": "Iniciar o vmrest automaticamente se não estiver em execução",
+        "timeout": "Tempo limite (s)"
+      }
     }
   }
 }

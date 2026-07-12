@@ -3214,6 +3214,37 @@
       "mail": "Messagerie",
       "vault": "Coffres-forts"
     },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "Gérer les conteneurs, VM et l'infrastructure LXD et Incus",
+      "connect": "Se connecter",
+      "disconnect": "Se déconnecter",
+      "connected": "Connecté",
+      "disconnected": "Non connecté",
+      "noTabs": "Les vues de gestion se chargent ici une fois connecté.",
+      "form": {
+        "name": "Nom de l'instance",
+        "namePlaceholder": "Mon serveur LXD",
+        "url": "URL du serveur",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Authentification",
+        "authTls": "Certificat client (mTLS)",
+        "authOidc": "Jeton OIDC",
+        "clientCertPem": "Certificat client (PEM)",
+        "clientKeyPem": "Clé client (PEM)",
+        "trustPassword": "Jeton de confiance / mot de passe",
+        "oidcToken": "Jeton d'accès OIDC",
+        "project": "Projet",
+        "timeoutSecs": "Délai d'expiration (secondes)",
+        "skipTlsVerify": "Ignorer la vérification TLS",
+        "save": "Enregistrer",
+        "saved": "Enregistré"
+      },
+      "errors": {
+        "urlRequired": "L'URL du serveur est requise",
+        "credRequired": "Fournissez un certificat/clé client ou un jeton OIDC"
+      }
+    },
     "keepass": {
       "openTitle": "Ouvrir la base de données KeePass",
       "openSubtitle": "Ouvrez un fichier .kdbx local avec son mot de passe maître.",
@@ -3250,6 +3281,29 @@
       "tabs": {
         "network": "Réseau et pare-feu",
         "services": "Services et système"
+      }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Gérer les VM VMware Workstation / Player locales via vmrest",
+      "connected": "Connecté",
+      "disconnected": "Déconnecté",
+      "close": "Fermer",
+      "connect": "Se connecter",
+      "disconnect": "Se déconnecter",
+      "vms": "VM",
+      "noTabs": "Connecté. Les vues de gestion sont en cours d'ajout.",
+      "notConnected": "Connectez-vous à un hôte VMware Workstation pour gérer les VM.",
+      "form": {
+        "name": "Nom de l'instance",
+        "host": "Hôte vmrest",
+        "port": "Port vmrest",
+        "username": "Nom d'utilisateur",
+        "password": "Mot de passe",
+        "vmrunPath": "Chemin vmrun (facultatif)",
+        "skipTlsVerify": "Ignorer la vérification TLS (vmrest HTTPS)",
+        "autoStart": "Démarrer vmrest automatiquement s'il n'est pas actif",
+        "timeout": "Délai (s)"
       }
     }
   }

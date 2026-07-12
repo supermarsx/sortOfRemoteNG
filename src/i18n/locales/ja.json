@@ -3214,6 +3214,37 @@
       "mail": "メール",
       "vault": "ボルト"
     },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "LXD および Incus のコンテナ、VM、インフラを管理",
+      "connect": "接続",
+      "disconnect": "切断",
+      "connected": "接続済み",
+      "disconnected": "未接続",
+      "noTabs": "接続すると管理ビューがここに読み込まれます。",
+      "form": {
+        "name": "インスタンス名",
+        "namePlaceholder": "My LXD server",
+        "url": "サーバー URL",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "認証",
+        "authTls": "クライアント証明書 (mTLS)",
+        "authOidc": "OIDC トークン",
+        "clientCertPem": "クライアント証明書 (PEM)",
+        "clientKeyPem": "クライアントキー (PEM)",
+        "trustPassword": "トラストトークン / パスワード",
+        "oidcToken": "OIDC アクセストークン",
+        "project": "プロジェクト",
+        "timeoutSecs": "タイムアウト (秒)",
+        "skipTlsVerify": "TLS 検証をスキップ",
+        "save": "保存",
+        "saved": "保存しました"
+      },
+      "errors": {
+        "urlRequired": "サーバー URL は必須です",
+        "credRequired": "クライアント証明書/キーまたは OIDC トークンを指定してください"
+      }
+    },
     "keepass": {
       "openTitle": "KeePassデータベースを開く",
       "openSubtitle": "ローカルの.kdbxファイルをマスターパスワードで開きます。",
@@ -3250,6 +3281,29 @@
       "tabs": {
         "network": "ネットワークとファイアウォール",
         "services": "サービスとシステム"
+      }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "vmrest 経由でローカルの VMware Workstation / Player VM を管理",
+      "connected": "接続済み",
+      "disconnected": "切断",
+      "close": "閉じる",
+      "connect": "接続",
+      "disconnect": "切断",
+      "vms": "VM",
+      "noTabs": "接続しました。管理ビューを追加中です。",
+      "notConnected": "VM を管理するには VMware Workstation ホストに接続してください。",
+      "form": {
+        "name": "インスタンス名",
+        "host": "vmrest ホスト",
+        "port": "vmrest ポート",
+        "username": "ユーザー名",
+        "password": "パスワード",
+        "vmrunPath": "vmrun パス（任意）",
+        "skipTlsVerify": "TLS 検証をスキップ（vmrest HTTPS）",
+        "autoStart": "vmrest が実行されていない場合は自動起動",
+        "timeout": "タイムアウト（秒）"
       }
     }
   }

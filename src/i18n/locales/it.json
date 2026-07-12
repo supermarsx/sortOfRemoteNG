@@ -3214,6 +3214,37 @@
       "mail": "Posta",
       "vault": "Cassaforti"
     },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "Gestisci container, VM e infrastruttura LXD e Incus",
+      "connect": "Connetti",
+      "disconnect": "Disconnetti",
+      "connected": "Connesso",
+      "disconnected": "Non connesso",
+      "noTabs": "Le viste di gestione vengono caricate qui una volta connesso.",
+      "form": {
+        "name": "Nome istanza",
+        "namePlaceholder": "Il mio server LXD",
+        "url": "URL del server",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Autenticazione",
+        "authTls": "Certificato client (mTLS)",
+        "authOidc": "Token OIDC",
+        "clientCertPem": "Certificato client (PEM)",
+        "clientKeyPem": "Chiave client (PEM)",
+        "trustPassword": "Token di trust / password",
+        "oidcToken": "Token di accesso OIDC",
+        "project": "Progetto",
+        "timeoutSecs": "Timeout (secondi)",
+        "skipTlsVerify": "Salta verifica TLS",
+        "save": "Salva",
+        "saved": "Salvato"
+      },
+      "errors": {
+        "urlRequired": "L'URL del server è obbligatorio",
+        "credRequired": "Fornisci un certificato/chiave client o un token OIDC"
+      }
+    },
     "keepass": {
       "openTitle": "Apri database KeePass",
       "openSubtitle": "Apri un file .kdbx locale con la sua password principale.",
@@ -3250,6 +3281,29 @@
       "tabs": {
         "network": "Rete e firewall",
         "services": "Servizi e sistema"
+      }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Gestisci le VM locali di VMware Workstation / Player tramite vmrest",
+      "connected": "Connesso",
+      "disconnected": "Disconnesso",
+      "close": "Chiudi",
+      "connect": "Connetti",
+      "disconnect": "Disconnetti",
+      "vms": "VM",
+      "noTabs": "Connesso. Le viste di gestione sono in fase di aggiunta.",
+      "notConnected": "Connettiti a un host VMware Workstation per gestire le VM.",
+      "form": {
+        "name": "Nome istanza",
+        "host": "Host vmrest",
+        "port": "Porta vmrest",
+        "username": "Nome utente",
+        "password": "Password",
+        "vmrunPath": "Percorso vmrun (opzionale)",
+        "skipTlsVerify": "Ignora verifica TLS (vmrest HTTPS)",
+        "autoStart": "Avvia vmrest automaticamente se non in esecuzione",
+        "timeout": "Timeout (s)"
       }
     }
   }

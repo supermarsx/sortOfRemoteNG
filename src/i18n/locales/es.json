@@ -3282,6 +3282,29 @@
         "network": "Red y cortafuegos",
         "services": "Servicios y sistema"
       }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Gestionar VMs locales de VMware Workstation / Player mediante vmrest",
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "close": "Cerrar",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "vms": "VMs",
+      "noTabs": "Conectado. Se están añadiendo las vistas de gestión.",
+      "notConnected": "Conéctate a un host de VMware Workstation para gestionar VMs.",
+      "form": {
+        "name": "Nombre de instancia",
+        "host": "Host de vmrest",
+        "port": "Puerto de vmrest",
+        "username": "Usuario",
+        "password": "Contraseña",
+        "vmrunPath": "Ruta de vmrun (opcional)",
+        "skipTlsVerify": "Omitir verificación TLS (vmrest HTTPS)",
+        "autoStart": "Iniciar vmrest automáticamente si no está en ejecución",
+        "timeout": "Tiempo de espera (s)"
+      }
     }
   }
 }

@@ -3282,6 +3282,29 @@
         "network": "Network & Firewall",
         "services": "Services & System"
       }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Manage local VMware Workstation / Player VMs via vmrest",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "close": "Close",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "vms": "VMs",
+      "noTabs": "Connected. Management views are being added.",
+      "notConnected": "Connect to a VMware Workstation host to manage VMs.",
+      "form": {
+        "name": "Instance name",
+        "host": "vmrest host",
+        "port": "vmrest port",
+        "username": "Username",
+        "password": "Password",
+        "vmrunPath": "vmrun path (optional)",
+        "skipTlsVerify": "Skip TLS verification (vmrest HTTPS)",
+        "autoStart": "Auto-start vmrest if not running",
+        "timeout": "Timeout (s)"
+      }
     }
   }
 }

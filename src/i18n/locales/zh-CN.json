@@ -3251,6 +3251,29 @@
         "network": "网络与防火墙",
         "services": "服务与系统"
       }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "通过 vmrest 管理本地 VMware Workstation / Player 虚拟机",
+      "connected": "已连接",
+      "disconnected": "已断开",
+      "close": "关闭",
+      "connect": "连接",
+      "disconnect": "断开连接",
+      "vms": "虚拟机",
+      "noTabs": "已连接。正在添加管理视图。",
+      "notConnected": "连接到 VMware Workstation 主机以管理虚拟机。",
+      "form": {
+        "name": "实例名称",
+        "host": "vmrest 主机",
+        "port": "vmrest 端口",
+        "username": "用户名",
+        "password": "密码",
+        "vmrunPath": "vmrun 路径（可选）",
+        "skipTlsVerify": "跳过 TLS 验证（vmrest HTTPS）",
+        "autoStart": "如果 vmrest 未运行则自动启动",
+        "timeout": "超时（秒）"
+      }
     }
   }
 }

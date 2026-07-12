@@ -3282,6 +3282,29 @@
         "network": "Netzwerk & Firewall",
         "services": "Dienste & System"
       }
+    },
+    "vmwareDesktop": {
+      "title": "VMware Workstation",
+      "subtitle": "Lokale VMware Workstation / Player VMs über vmrest verwalten",
+      "connected": "Verbunden",
+      "disconnected": "Getrennt",
+      "close": "Schließen",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "vms": "VMs",
+      "noTabs": "Verbunden. Verwaltungsansichten werden hinzugefügt.",
+      "notConnected": "Mit einem VMware Workstation-Host verbinden, um VMs zu verwalten.",
+      "form": {
+        "name": "Instanzname",
+        "host": "vmrest-Host",
+        "port": "vmrest-Port",
+        "username": "Benutzername",
+        "password": "Passwort",
+        "vmrunPath": "vmrun-Pfad (optional)",
+        "skipTlsVerify": "TLS-Überprüfung überspringen (vmrest HTTPS)",
+        "autoStart": "vmrest automatisch starten, falls nicht aktiv",
+        "timeout": "Zeitlimit (s)"
+      }
     }
   }
 }
