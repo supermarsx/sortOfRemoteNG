@@ -23,6 +23,7 @@ import {
   Activity,
   Info,
   Bot,
+  BrainCircuit,
   RefreshCw,
   LucideIcon,
 } from "lucide-react";
@@ -103,6 +104,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     labelKey: "mcpServer.title",
     fallback: "MCP Server",
     icon: Bot,
+  },
+  {
+    id: "ai",
+    labelKey: "integrations.llm.tabTitle",
+    fallback: "AI / LLM Router",
+    icon: BrainCircuit,
   },
 
   // ── System & diagnostics ──

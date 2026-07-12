@@ -21,6 +21,7 @@ import StartupSettings from "./sections/StartupSettings";
 import UpdaterSettings from "./sections/UpdaterSettings";
 import ApiSettings from "./sections/ApiSettings";
 import McpSettings from "./sections/McpSettings";
+import AiSettings from "./sections/AiSettings";
 import RecoverySettings from "./sections/RecoverySettings";
 import BehaviorSettings from "./sections/BehaviorSettings";
 import SSHTerminalSettings from "./sections/SSHTerminalSettings";
@@ -241,6 +242,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         {mgr.activeTab === "mcpServer" && (
           <McpSettings settings={s} updateSettings={u} />
         )}
+        {mgr.activeTab === "ai" && <AiSettings />}
         {mgr.activeTab === "diagnostics" && (
           <DiagnosticsSettings settings={s} updateSettings={u} />
         )}
