@@ -3213,6 +3213,44 @@
       "appService": "Servizi applicativi",
       "mail": "Posta",
       "vault": "Cassaforti"
+    },
+    "keepass": {
+      "openTitle": "Apri database KeePass",
+      "openSubtitle": "Apri un file .kdbx locale con la sua password principale.",
+      "databaseFile": "File di database (.kdbx)",
+      "databaseFilePlaceholder": "/percorso/a/cassaforte.kdbx",
+      "masterPassword": "Password principale",
+      "keyFile": "File chiave (opzionale)",
+      "keyFilePlaceholder": "/percorso/a/key.keyx",
+      "readOnly": "Apri in sola lettura",
+      "open": "Apri",
+      "cancel": "Annulla",
+      "browse": "Sfoglia",
+      "errorNoPath": "Seleziona un file .kdbx",
+      "entries": "voci",
+      "closeDatabase": "Chiudi database",
+      "tabCrashed": "Il pannello si è arrestato",
+      "noTabs": "Database aperto. Le schede di gestione vengono caricate qui man mano che vengono aggiunte."
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "Connetti",
+      "disconnect": "Disconnetti",
+      "connectHint": "Connettiti a un dispositivo pfSense tramite la sua API REST.",
+      "noTabs": "Connesso. Le sezioni di gestione vengono caricate qui una volta registrate.",
+      "fields": {
+        "name": "Nome",
+        "host": "Host",
+        "port": "Porta",
+        "apiKey": "Chiave API",
+        "apiSecret": "Segreto API",
+        "useTls": "Usa TLS (HTTPS)",
+        "acceptInvalidCerts": "Accetta certificati autofirmati"
+      },
+      "tabs": {
+        "network": "Rete e firewall",
+        "services": "Servizi e sistema"
+      }
     }
   }
 }

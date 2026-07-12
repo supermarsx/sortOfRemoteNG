@@ -3213,6 +3213,44 @@
       "appService": "应用服务",
       "mail": "邮件",
       "vault": "保险库"
+    },
+    "keepass": {
+      "openTitle": "打开 KeePass 数据库",
+      "openSubtitle": "使用主密码打开本地 .kdbx 文件。",
+      "databaseFile": "数据库文件 (.kdbx)",
+      "databaseFilePlaceholder": "/path/to/vault.kdbx",
+      "masterPassword": "主密码",
+      "keyFile": "密钥文件（可选）",
+      "keyFilePlaceholder": "/path/to/key.keyx",
+      "readOnly": "以只读方式打开",
+      "open": "打开",
+      "cancel": "取消",
+      "browse": "浏览",
+      "errorNoPath": "请选择一个 .kdbx 文件",
+      "entries": "条目",
+      "closeDatabase": "关闭数据库",
+      "tabCrashed": "面板崩溃",
+      "noTabs": "数据库已打开。管理选项卡会在添加时加载到此处。"
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "连接",
+      "disconnect": "断开连接",
+      "connectHint": "通过 REST API 连接到 pfSense 设备。",
+      "noTabs": "已连接。管理部分将在注册后加载到此处。",
+      "fields": {
+        "name": "名称",
+        "host": "主机",
+        "port": "端口",
+        "apiKey": "API 密钥",
+        "apiSecret": "API 密钥（Secret）",
+        "useTls": "使用 TLS (HTTPS)",
+        "acceptInvalidCerts": "接受自签名证书"
+      },
+      "tabs": {
+        "network": "网络与防火墙",
+        "services": "服务与系统"
+      }
     }
   }
 }

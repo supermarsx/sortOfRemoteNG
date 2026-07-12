@@ -3213,6 +3213,75 @@
       "appService": "App-Dienste",
       "mail": "E-Mail",
       "vault": "Tresore"
+    },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "LXD- und Incus-Container, VMs und Infrastruktur verwalten",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "connected": "Verbunden",
+      "disconnected": "Nicht verbunden",
+      "noTabs": "Verwaltungsansichten werden hier nach dem Verbinden geladen.",
+      "form": {
+        "name": "Instanzname",
+        "namePlaceholder": "Mein LXD-Server",
+        "url": "Server-URL",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Authentifizierung",
+        "authTls": "Client-Zertifikat (mTLS)",
+        "authOidc": "OIDC-Token",
+        "clientCertPem": "Client-Zertifikat (PEM)",
+        "clientKeyPem": "Client-Schlüssel (PEM)",
+        "trustPassword": "Trust-Token / Passwort",
+        "oidcToken": "OIDC-Zugriffstoken",
+        "project": "Projekt",
+        "timeoutSecs": "Zeitüberschreitung (Sekunden)",
+        "skipTlsVerify": "TLS-Prüfung überspringen",
+        "save": "Speichern",
+        "saved": "Gespeichert"
+      },
+      "errors": {
+        "urlRequired": "Server-URL ist erforderlich",
+        "credRequired": "Client-Zertifikat/-Schlüssel oder OIDC-Token angeben"
+      }
+    },
+    "keepass": {
+      "openTitle": "KeePass-Datenbank öffnen",
+      "openSubtitle": "Öffnen Sie eine lokale .kdbx-Datei mit ihrem Master-Passwort.",
+      "databaseFile": "Datenbankdatei (.kdbx)",
+      "databaseFilePlaceholder": "/pfad/zu/tresor.kdbx",
+      "masterPassword": "Master-Passwort",
+      "keyFile": "Schlüsseldatei (optional)",
+      "keyFilePlaceholder": "/pfad/zu/key.keyx",
+      "readOnly": "Schreibgeschützt öffnen",
+      "open": "Öffnen",
+      "cancel": "Abbrechen",
+      "browse": "Durchsuchen",
+      "errorNoPath": "Wählen Sie eine .kdbx-Datei",
+      "entries": "Einträge",
+      "closeDatabase": "Datenbank schließen",
+      "tabCrashed": "Panel abgestürzt",
+      "noTabs": "Datenbank geöffnet. Verwaltungs-Tabs werden hier geladen, sobald sie hinzugefügt werden."
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "connectHint": "Mit einer pfSense-Appliance über deren REST-API verbinden.",
+      "noTabs": "Verbunden. Verwaltungsbereiche werden hier geladen, sobald sie registriert sind.",
+      "fields": {
+        "name": "Name",
+        "host": "Host",
+        "port": "Port",
+        "apiKey": "API-Schlüssel",
+        "apiSecret": "API-Geheimnis",
+        "useTls": "TLS verwenden (HTTPS)",
+        "acceptInvalidCerts": "Selbstsignierte Zertifikate akzeptieren"
+      },
+      "tabs": {
+        "network": "Netzwerk & Firewall",
+        "services": "Dienste & System"
+      }
     }
   }
 }

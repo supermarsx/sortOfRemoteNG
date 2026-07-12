@@ -3213,6 +3213,44 @@
       "appService": "Services d'application",
       "mail": "Messagerie",
       "vault": "Coffres-forts"
+    },
+    "keepass": {
+      "openTitle": "Ouvrir la base de données KeePass",
+      "openSubtitle": "Ouvrez un fichier .kdbx local avec son mot de passe maître.",
+      "databaseFile": "Fichier de base de données (.kdbx)",
+      "databaseFilePlaceholder": "/chemin/vers/coffre.kdbx",
+      "masterPassword": "Mot de passe maître",
+      "keyFile": "Fichier clé (facultatif)",
+      "keyFilePlaceholder": "/chemin/vers/key.keyx",
+      "readOnly": "Ouvrir en lecture seule",
+      "open": "Ouvrir",
+      "cancel": "Annuler",
+      "browse": "Parcourir",
+      "errorNoPath": "Sélectionnez un fichier .kdbx",
+      "entries": "entrées",
+      "closeDatabase": "Fermer la base de données",
+      "tabCrashed": "Le panneau a planté",
+      "noTabs": "Base de données ouverte. Les onglets de gestion se chargent ici au fur et à mesure de leur ajout."
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "Connecter",
+      "disconnect": "Déconnecter",
+      "connectHint": "Connectez-vous à un équipement pfSense via son API REST.",
+      "noTabs": "Connecté. Les sections de gestion se chargent ici une fois enregistrées.",
+      "fields": {
+        "name": "Nom",
+        "host": "Hôte",
+        "port": "Port",
+        "apiKey": "Clé API",
+        "apiSecret": "Secret API",
+        "useTls": "Utiliser TLS (HTTPS)",
+        "acceptInvalidCerts": "Accepter les certificats auto-signés"
+      },
+      "tabs": {
+        "network": "Réseau et pare-feu",
+        "services": "Services et système"
+      }
     }
   }
 }

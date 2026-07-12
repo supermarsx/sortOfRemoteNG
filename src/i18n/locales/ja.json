@@ -3213,6 +3213,44 @@
       "appService": "アプリサービス",
       "mail": "メール",
       "vault": "ボルト"
+    },
+    "keepass": {
+      "openTitle": "KeePassデータベースを開く",
+      "openSubtitle": "ローカルの.kdbxファイルをマスターパスワードで開きます。",
+      "databaseFile": "データベースファイル (.kdbx)",
+      "databaseFilePlaceholder": "/path/to/vault.kdbx",
+      "masterPassword": "マスターパスワード",
+      "keyFile": "キーファイル (任意)",
+      "keyFilePlaceholder": "/path/to/key.keyx",
+      "readOnly": "読み取り専用で開く",
+      "open": "開く",
+      "cancel": "キャンセル",
+      "browse": "参照",
+      "errorNoPath": ".kdbxファイルを選択してください",
+      "entries": "エントリ",
+      "closeDatabase": "データベースを閉じる",
+      "tabCrashed": "パネルがクラッシュしました",
+      "noTabs": "データベースを開きました。管理タブは追加されるとここに読み込まれます。"
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "接続",
+      "disconnect": "切断",
+      "connectHint": "REST API を介して pfSense アプライアンスに接続します。",
+      "noTabs": "接続済み。管理セクションは登録されるとここに読み込まれます。",
+      "fields": {
+        "name": "名前",
+        "host": "ホスト",
+        "port": "ポート",
+        "apiKey": "API キー",
+        "apiSecret": "API シークレット",
+        "useTls": "TLS を使用 (HTTPS)",
+        "acceptInvalidCerts": "自己署名証明書を許可"
+      },
+      "tabs": {
+        "network": "ネットワークとファイアウォール",
+        "services": "サービスとシステム"
+      }
     }
   }
 }

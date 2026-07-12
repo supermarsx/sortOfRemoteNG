@@ -3213,6 +3213,75 @@
       "appService": "App Services",
       "mail": "Mail",
       "vault": "Vaults"
+    },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "Manage LXD and Incus containers, VMs, and infrastructure",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "connected": "Connected",
+      "disconnected": "Not connected",
+      "noTabs": "Management views load here once connected.",
+      "form": {
+        "name": "Instance name",
+        "namePlaceholder": "My LXD server",
+        "url": "Server URL",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Authentication",
+        "authTls": "Client certificate (mTLS)",
+        "authOidc": "OIDC token",
+        "clientCertPem": "Client certificate (PEM)",
+        "clientKeyPem": "Client key (PEM)",
+        "trustPassword": "Trust token / password",
+        "oidcToken": "OIDC access token",
+        "project": "Project",
+        "timeoutSecs": "Timeout (seconds)",
+        "skipTlsVerify": "Skip TLS verification",
+        "save": "Save",
+        "saved": "Saved"
+      },
+      "errors": {
+        "urlRequired": "Server URL is required",
+        "credRequired": "Provide a client certificate/key or an OIDC token"
+      }
+    },
+    "keepass": {
+      "openTitle": "Open KeePass database",
+      "openSubtitle": "Open a local .kdbx file with its master password.",
+      "databaseFile": "Database file (.kdbx)",
+      "databaseFilePlaceholder": "/path/to/vault.kdbx",
+      "masterPassword": "Master password",
+      "keyFile": "Key file (optional)",
+      "keyFilePlaceholder": "/path/to/key.keyx",
+      "readOnly": "Open read-only",
+      "open": "Open",
+      "cancel": "Cancel",
+      "browse": "Browse",
+      "errorNoPath": "Select a .kdbx file",
+      "entries": "entries",
+      "closeDatabase": "Close database",
+      "tabCrashed": "Panel crashed",
+      "noTabs": "Database open. Management tabs load here as they are added."
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "connectHint": "Connect to a pfSense appliance via its REST API.",
+      "noTabs": "Connected. Management sections load here once registered.",
+      "fields": {
+        "name": "Name",
+        "host": "Host",
+        "port": "Port",
+        "apiKey": "API key",
+        "apiSecret": "API secret",
+        "useTls": "Use TLS (HTTPS)",
+        "acceptInvalidCerts": "Accept self-signed certificates"
+      },
+      "tabs": {
+        "network": "Network & Firewall",
+        "services": "Services & System"
+      }
     }
   }
 }

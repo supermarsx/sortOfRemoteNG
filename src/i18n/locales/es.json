@@ -3213,6 +3213,75 @@
       "appService": "Servicios de aplicaciones",
       "mail": "Correo",
       "vault": "Bóvedas"
+    },
+    "lxd": {
+      "title": "LXD / Incus",
+      "subtitle": "Gestiona contenedores, VMs e infraestructura de LXD e Incus",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "connected": "Conectado",
+      "disconnected": "No conectado",
+      "noTabs": "Las vistas de gestión se cargan aquí una vez conectado.",
+      "form": {
+        "name": "Nombre de instancia",
+        "namePlaceholder": "Mi servidor LXD",
+        "url": "URL del servidor",
+        "urlPlaceholder": "https://10.0.0.1:8443",
+        "authMethod": "Autenticación",
+        "authTls": "Certificado de cliente (mTLS)",
+        "authOidc": "Token OIDC",
+        "clientCertPem": "Certificado de cliente (PEM)",
+        "clientKeyPem": "Clave de cliente (PEM)",
+        "trustPassword": "Token de confianza / contraseña",
+        "oidcToken": "Token de acceso OIDC",
+        "project": "Proyecto",
+        "timeoutSecs": "Tiempo de espera (segundos)",
+        "skipTlsVerify": "Omitir verificación TLS",
+        "save": "Guardar",
+        "saved": "Guardado"
+      },
+      "errors": {
+        "urlRequired": "La URL del servidor es obligatoria",
+        "credRequired": "Proporciona un certificado/clave de cliente o un token OIDC"
+      }
+    },
+    "keepass": {
+      "openTitle": "Abrir base de datos KeePass",
+      "openSubtitle": "Abra un archivo .kdbx local con su contraseña maestra.",
+      "databaseFile": "Archivo de base de datos (.kdbx)",
+      "databaseFilePlaceholder": "/ruta/a/boveda.kdbx",
+      "masterPassword": "Contraseña maestra",
+      "keyFile": "Archivo de clave (opcional)",
+      "keyFilePlaceholder": "/ruta/a/key.keyx",
+      "readOnly": "Abrir en solo lectura",
+      "open": "Abrir",
+      "cancel": "Cancelar",
+      "browse": "Examinar",
+      "errorNoPath": "Seleccione un archivo .kdbx",
+      "entries": "entradas",
+      "closeDatabase": "Cerrar base de datos",
+      "tabCrashed": "El panel falló",
+      "noTabs": "Base de datos abierta. Las pestañas de gestión se cargan aquí a medida que se agregan."
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "connectHint": "Conéctate a un dispositivo pfSense mediante su API REST.",
+      "noTabs": "Conectado. Las secciones de administración se cargan aquí una vez registradas.",
+      "fields": {
+        "name": "Nombre",
+        "host": "Host",
+        "port": "Puerto",
+        "apiKey": "Clave de API",
+        "apiSecret": "Secreto de API",
+        "useTls": "Usar TLS (HTTPS)",
+        "acceptInvalidCerts": "Aceptar certificados autofirmados"
+      },
+      "tabs": {
+        "network": "Red y cortafuegos",
+        "services": "Servicios y sistema"
+      }
     }
   }
 }

@@ -3213,6 +3213,44 @@
       "appService": "Сервисы приложений",
       "mail": "Почта",
       "vault": "Хранилища"
+    },
+    "keepass": {
+      "openTitle": "Открыть базу данных KeePass",
+      "openSubtitle": "Откройте локальный файл .kdbx с его мастер-паролем.",
+      "databaseFile": "Файл базы данных (.kdbx)",
+      "databaseFilePlaceholder": "/путь/к/vault.kdbx",
+      "masterPassword": "Мастер-пароль",
+      "keyFile": "Файл ключа (необязательно)",
+      "keyFilePlaceholder": "/путь/к/key.keyx",
+      "readOnly": "Открыть только для чтения",
+      "open": "Открыть",
+      "cancel": "Отмена",
+      "browse": "Обзор",
+      "errorNoPath": "Выберите файл .kdbx",
+      "entries": "записей",
+      "closeDatabase": "Закрыть базу данных",
+      "tabCrashed": "Панель аварийно завершилась",
+      "noTabs": "База данных открыта. Вкладки управления загружаются здесь по мере их добавления."
+    },
+    "pfsense": {
+      "title": "pfSense",
+      "connect": "Подключиться",
+      "disconnect": "Отключиться",
+      "connectHint": "Подключитесь к устройству pfSense через его REST API.",
+      "noTabs": "Подключено. Разделы управления загрузятся здесь после регистрации.",
+      "fields": {
+        "name": "Имя",
+        "host": "Хост",
+        "port": "Порт",
+        "apiKey": "Ключ API",
+        "apiSecret": "Секрет API",
+        "useTls": "Использовать TLS (HTTPS)",
+        "acceptInvalidCerts": "Принимать самоподписанные сертификаты"
+      },
+      "tabs": {
+        "network": "Сеть и брандмауэр",
+        "services": "Службы и система"
+      }
     }
   }
 }
