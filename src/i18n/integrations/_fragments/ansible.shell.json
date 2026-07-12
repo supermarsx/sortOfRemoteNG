@@ -1,0 +1,21 @@
+{
+  "integrations": {
+    "ansible": {
+      "title": "Ansible",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "connectHint": "Point at an Ansible control node. Binary paths auto-detect on PATH when left blank.",
+      "noTabs": "Connected. Management sections load here once registered.",
+      "fields": {
+        "name": "Name",
+        "ansibleBinPath": "ansible binary path",
+        "ansiblePlaybookBinPath": "ansible-playbook binary path",
+        "ansibleVaultBinPath": "ansible-vault path",
+        "ansibleGalaxyBinPath": "ansible-galaxy path",
+        "workingDirectory": "Working directory",
+        "configPath": "ansible.cfg path",
+        "defaultInventory": "Default inventory"
+      }
+    }
+  }
+}
