@@ -3723,6 +3723,104 @@
           "newCable": "Nouveau câble",
           "editCable": "Modifier le câble"
         }
+      },
+      "virtualization": {
+        "title": "Virtualisation",
+        "empty": "Aucun enregistrement.",
+        "sections": {
+          "vms": "Machines virtuelles",
+          "clusters": "Clusters",
+          "circuits": "Circuits"
+        },
+        "actions": {
+          "refresh": "Actualiser",
+          "create": "Créer",
+          "edit": "Modifier",
+          "delete": "Supprimer",
+          "view": "Afficher",
+          "save": "Enregistrer",
+          "cancel": "Annuler",
+          "back": "Retour"
+        },
+        "editor": {
+          "jsonLabel": "Corps JSON",
+          "invalidJson": "JSON invalide"
+        },
+        "confirm": {
+          "delete": "Supprimer cet élément ?"
+        },
+        "ref": {
+          "name": "Nom",
+          "slug": "Slug"
+        },
+        "vm": {
+          "detail": "Machine virtuelle",
+          "create": "Créer une machine virtuelle",
+          "edit": "Modifier la machine virtuelle",
+          "addInterface": "Ajouter une interface",
+          "editInterface": "Modifier l'interface",
+          "interfaces": "Interfaces",
+          "columns": {
+            "name": "Nom",
+            "status": "Statut",
+            "cluster": "Cluster",
+            "vcpus": "vCPU",
+            "memory": "Mémoire",
+            "disk": "Disque",
+            "primaryIp": "IP principale"
+          },
+          "iface": {
+            "name": "Nom",
+            "enabled": "Activé",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "Cluster",
+          "create": "Créer un cluster",
+          "edit": "Modifier le cluster",
+          "types": "Types de cluster",
+          "groups": "Groupes de cluster",
+          "addType": "Ajouter un type de cluster",
+          "columns": {
+            "name": "Nom",
+            "type": "Type",
+            "group": "Groupe",
+            "site": "Site",
+            "status": "Statut",
+            "devices": "Appareils",
+            "vms": "VM",
+            "clusters": "Clusters"
+          }
+        },
+        "circuit": {
+          "detail": "Circuit",
+          "create": "Créer un circuit",
+          "edit": "Modifier le circuit",
+          "providers": "Fournisseurs",
+          "types": "Types de circuit",
+          "terminations": "Terminaisons",
+          "addProvider": "Ajouter un fournisseur",
+          "editProvider": "Modifier le fournisseur",
+          "columns": {
+            "cid": "ID de circuit",
+            "provider": "Fournisseur",
+            "type": "Type",
+            "status": "Statut",
+            "commitRate": "Débit garanti",
+            "circuits": "Circuits"
+          },
+          "prov": {
+            "name": "Nom",
+            "account": "Compte"
+          },
+          "term": {
+            "side": "Côté",
+            "site": "Site",
+            "portSpeed": "Débit du port"
+          }
+        }
       }
     },
     "keepass": {

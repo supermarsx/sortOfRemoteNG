@@ -8,4 +8,6 @@
 // `useSFTPClient`. The shell's open/create flow is inline in `KeepassPanel.tsx`
 // and does NOT depend on this barrel (keeps the lead shell compilable standalone).
 
-export {};
+// Appended by the per-crate integrator (t42-keepass-L) once each slice landed.
+export * from "./useKeepassDatabase"; // t42-keepass-c1
+export * from "./useKeepassTools"; // t42-keepass-c2

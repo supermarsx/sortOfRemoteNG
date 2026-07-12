@@ -3544,6 +3544,78 @@
         "hostRequired": "主机为必填项",
         "tokenRequired": "API 令牌为必填项"
       },
+      "dcim": {
+        "title": "DCIM",
+        "count": "{{count}} 项",
+        "empty": "无记录。",
+        "groups": {
+          "sites": "站点",
+          "racks": "机架",
+          "devices": "设备",
+          "interfaces": "接口",
+          "cables": "线缆"
+        },
+        "refs": {
+          "types": "设备类型",
+          "manufacturers": "制造商",
+          "platforms": "平台",
+          "roles": "设备角色"
+        },
+        "actions": {
+          "refresh": "刷新",
+          "new": "新建",
+          "edit": "编辑",
+          "delete": "删除",
+          "close": "关闭",
+          "cancel": "取消",
+          "create": "创建",
+          "update": "保存",
+          "updateHint": "完整更新 (PUT)",
+          "patch": "补丁",
+          "patchHint": "部分更新 (PATCH)",
+          "apply": "应用",
+          "elevation": "立面视图",
+          "reservations": "预留",
+          "renderConfig": "配置",
+          "connections": "连接",
+          "trace": "追踪"
+        },
+        "filters": {
+          "region": "区域",
+          "group": "组",
+          "siteId": "站点 ID",
+          "deviceId": "设备 ID",
+          "search": "搜索",
+          "bySite": "按站点 ID",
+          "byRack": "按机架 ID"
+        },
+        "fields": {
+          "name": "名称",
+          "status": "状态",
+          "region": "区域",
+          "devices": "设备",
+          "site": "站点",
+          "type": "类型",
+          "slug": "别名",
+          "device": "设备",
+          "enabled": "已启用",
+          "label": "标签",
+          "length": "长度"
+        },
+        "editor": {
+          "hint": "编辑发送到 NetBox 的 JSON 负载。",
+          "newSite": "新建站点",
+          "editSite": "编辑站点",
+          "newRack": "新建机架",
+          "editRack": "编辑机架",
+          "newDevice": "新建设备",
+          "editDevice": "编辑设备",
+          "newInterface": "新建接口",
+          "editInterface": "编辑接口",
+          "newCable": "新建线缆",
+          "editCable": "编辑线缆"
+        }
+      },
       "tenancy": {
         "title": "租户",
         "tenants": "租户",
@@ -3581,6 +3653,104 @@
           "role": "角色",
           "objectType": "对象类型",
           "priority": "优先级"
+        }
+      },
+      "virtualization": {
+        "title": "虚拟化",
+        "empty": "无记录。",
+        "sections": {
+          "vms": "虚拟机",
+          "clusters": "集群",
+          "circuits": "线路"
+        },
+        "actions": {
+          "refresh": "刷新",
+          "create": "创建",
+          "edit": "编辑",
+          "delete": "删除",
+          "view": "查看",
+          "save": "保存",
+          "cancel": "取消",
+          "back": "返回"
+        },
+        "editor": {
+          "jsonLabel": "JSON 内容",
+          "invalidJson": "无效的 JSON"
+        },
+        "confirm": {
+          "delete": "删除此项？"
+        },
+        "ref": {
+          "name": "名称",
+          "slug": "标识"
+        },
+        "vm": {
+          "detail": "虚拟机",
+          "create": "创建虚拟机",
+          "edit": "编辑虚拟机",
+          "addInterface": "添加接口",
+          "editInterface": "编辑接口",
+          "interfaces": "接口",
+          "columns": {
+            "name": "名称",
+            "status": "状态",
+            "cluster": "集群",
+            "vcpus": "vCPU",
+            "memory": "内存",
+            "disk": "磁盘",
+            "primaryIp": "主 IP"
+          },
+          "iface": {
+            "name": "名称",
+            "enabled": "已启用",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "集群",
+          "create": "创建集群",
+          "edit": "编辑集群",
+          "types": "集群类型",
+          "groups": "集群组",
+          "addType": "添加集群类型",
+          "columns": {
+            "name": "名称",
+            "type": "类型",
+            "group": "组",
+            "site": "站点",
+            "status": "状态",
+            "devices": "设备",
+            "vms": "虚拟机",
+            "clusters": "集群"
+          }
+        },
+        "circuit": {
+          "detail": "线路",
+          "create": "创建线路",
+          "edit": "编辑线路",
+          "providers": "提供商",
+          "types": "线路类型",
+          "terminations": "终端",
+          "addProvider": "添加提供商",
+          "editProvider": "编辑提供商",
+          "columns": {
+            "cid": "线路 ID",
+            "provider": "提供商",
+            "type": "类型",
+            "status": "状态",
+            "commitRate": "承诺速率",
+            "circuits": "线路"
+          },
+          "prov": {
+            "name": "名称",
+            "account": "账户"
+          },
+          "term": {
+            "side": "端",
+            "site": "站点",
+            "portSpeed": "端口速率"
+          }
         }
       }
     },

@@ -3262,6 +3262,75 @@
         "emptyCertificates": "証明書がありません。",
         "renamePrompt": "新しい名前"
       },
+      "networking": {
+        "notConnected": "ネットワークを管理するには LXD サーバーに接続してください。",
+        "refresh": "更新",
+        "create": "作成",
+        "cancel": "キャンセル",
+        "save": "保存",
+        "yes": "はい",
+        "no": "いいえ",
+        "selectNetwork": "ネットワークを選択…",
+        "pickNetwork": "リソースを表示するネットワークを選択してください。",
+        "invalidJson": "無効な JSON です。",
+        "sections": {
+          "networks": "ネットワーク",
+          "acls": "ACL",
+          "forwards": "フォワード",
+          "zones": "ゾーン",
+          "loadBalancers": "ロードバランサー",
+          "peers": "ピア"
+        },
+        "fields": {
+          "name": "名前",
+          "type": "タイプ",
+          "managed": "管理対象",
+          "status": "ステータス",
+          "usedBy": "使用元",
+          "description": "説明",
+          "rules": "ルール",
+          "listenAddress": "リッスンアドレス",
+          "ports": "ポート",
+          "backends": "バックエンド",
+          "targetProject": "対象プロジェクト",
+          "targetNetwork": "対象ネットワーク"
+        },
+        "actions": {
+          "state": "状態",
+          "rename": "名前を変更",
+          "delete": "削除",
+          "edit": "編集"
+        },
+        "prompt": {
+          "rename": "新しい名前"
+        },
+        "confirm": {
+          "deleteNetwork": "ネットワーク {{name}} を削除しますか？",
+          "deleteAcl": "ACL {{name}} を削除しますか？",
+          "deleteForward": "フォワード {{addr}} を削除しますか？",
+          "deleteZone": "ゾーン {{name}} を削除しますか？",
+          "deleteLoadBalancer": "ロードバランサー {{addr}} を削除しますか？"
+        },
+        "empty": {
+          "networks": "ネットワークがありません。",
+          "acls": "ACL がありません。",
+          "forwards": "フォワードがありません。",
+          "zones": "ゾーンがありません。",
+          "loadBalancers": "ロードバランサーがありません。",
+          "peers": "ピアがありません。"
+        },
+        "acl": {
+          "ingress": "受信",
+          "egress": "送信",
+          "editBody": "ACL 本文 (JSON)"
+        },
+        "detail": {
+          "state": "状態",
+          "leases": "DHCP リース",
+          "patch": "設定をパッチ (JSON)",
+          "applyPatch": "パッチを適用"
+        }
+      },
       "title": "LXD / Incus",
       "subtitle": "LXD および Incus のコンテナ、VM、インフラを管理",
       "connect": "接続",
@@ -3653,6 +3722,104 @@
           "role": "ロール",
           "objectType": "オブジェクトタイプ",
           "priority": "優先度"
+        }
+      },
+      "virtualization": {
+        "title": "仮想化",
+        "empty": "レコードがありません。",
+        "sections": {
+          "vms": "仮想マシン",
+          "clusters": "クラスター",
+          "circuits": "回線"
+        },
+        "actions": {
+          "refresh": "更新",
+          "create": "作成",
+          "edit": "編集",
+          "delete": "削除",
+          "view": "表示",
+          "save": "保存",
+          "cancel": "キャンセル",
+          "back": "戻る"
+        },
+        "editor": {
+          "jsonLabel": "JSON本文",
+          "invalidJson": "無効なJSON"
+        },
+        "confirm": {
+          "delete": "この項目を削除しますか？"
+        },
+        "ref": {
+          "name": "名前",
+          "slug": "スラッグ"
+        },
+        "vm": {
+          "detail": "仮想マシン",
+          "create": "仮想マシンを作成",
+          "edit": "仮想マシンを編集",
+          "addInterface": "インターフェースを追加",
+          "editInterface": "インターフェースを編集",
+          "interfaces": "インターフェース",
+          "columns": {
+            "name": "名前",
+            "status": "ステータス",
+            "cluster": "クラスター",
+            "vcpus": "vCPU",
+            "memory": "メモリ",
+            "disk": "ディスク",
+            "primaryIp": "プライマリIP"
+          },
+          "iface": {
+            "name": "名前",
+            "enabled": "有効",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "クラスター",
+          "create": "クラスターを作成",
+          "edit": "クラスターを編集",
+          "types": "クラスタータイプ",
+          "groups": "クラスターグループ",
+          "addType": "クラスタータイプを追加",
+          "columns": {
+            "name": "名前",
+            "type": "タイプ",
+            "group": "グループ",
+            "site": "サイト",
+            "status": "ステータス",
+            "devices": "デバイス",
+            "vms": "VM",
+            "clusters": "クラスター"
+          }
+        },
+        "circuit": {
+          "detail": "回線",
+          "create": "回線を作成",
+          "edit": "回線を編集",
+          "providers": "プロバイダ",
+          "types": "回線タイプ",
+          "terminations": "終端",
+          "addProvider": "プロバイダを追加",
+          "editProvider": "プロバイダを編集",
+          "columns": {
+            "cid": "回線ID",
+            "provider": "プロバイダ",
+            "type": "タイプ",
+            "status": "ステータス",
+            "commitRate": "コミットレート",
+            "circuits": "回線"
+          },
+          "prov": {
+            "name": "名前",
+            "account": "アカウント"
+          },
+          "term": {
+            "side": "側",
+            "site": "サイト",
+            "portSpeed": "ポート速度"
+          }
         }
       }
     },

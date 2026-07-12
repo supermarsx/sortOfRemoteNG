@@ -31,6 +31,19 @@ export interface KeepassTabDescriptor {
   importTab: () => Promise<{ default: ComponentType<KeepassTabProps> }>;
 }
 
-/** The registered sub-tabs, in tab-bar order. EMPTY at the shell stage — category
- *  execs append their descriptor via the per-crate integrator. */
-export const keepassTabs: KeepassTabDescriptor[] = [];
+/** The registered sub-tabs, in tab-bar order. Appended by the per-crate
+ *  integrator (t42-keepass-L) once each category exec lands its tab. */
+export const keepassTabs: KeepassTabDescriptor[] = [
+  {
+    categoryKey: "database",
+    labelKey: "integrations.keepass.database.tabLabel",
+    labelDefault: "Database & Data Model",
+    importTab: () => import("./KeepassDatabaseTab"),
+  },
+  {
+    categoryKey: "tools",
+    labelKey: "integrations.keepass.tools.tabLabel",
+    labelDefault: "Tools & Security",
+    importTab: () => import("./KeepassToolsTab"),
+  },
+];

@@ -3654,6 +3654,104 @@
           "objectType": "객체 유형",
           "priority": "우선순위"
         }
+      },
+      "virtualization": {
+        "title": "가상화",
+        "empty": "레코드가 없습니다.",
+        "sections": {
+          "vms": "가상 머신",
+          "clusters": "클러스터",
+          "circuits": "회선"
+        },
+        "actions": {
+          "refresh": "새로 고침",
+          "create": "만들기",
+          "edit": "편집",
+          "delete": "삭제",
+          "view": "보기",
+          "save": "저장",
+          "cancel": "취소",
+          "back": "뒤로"
+        },
+        "editor": {
+          "jsonLabel": "JSON 본문",
+          "invalidJson": "잘못된 JSON"
+        },
+        "confirm": {
+          "delete": "이 항목을 삭제하시겠습니까?"
+        },
+        "ref": {
+          "name": "이름",
+          "slug": "슬러그"
+        },
+        "vm": {
+          "detail": "가상 머신",
+          "create": "가상 머신 만들기",
+          "edit": "가상 머신 편집",
+          "addInterface": "인터페이스 추가",
+          "editInterface": "인터페이스 편집",
+          "interfaces": "인터페이스",
+          "columns": {
+            "name": "이름",
+            "status": "상태",
+            "cluster": "클러스터",
+            "vcpus": "vCPU",
+            "memory": "메모리",
+            "disk": "디스크",
+            "primaryIp": "기본 IP"
+          },
+          "iface": {
+            "name": "이름",
+            "enabled": "사용",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "클러스터",
+          "create": "클러스터 만들기",
+          "edit": "클러스터 편집",
+          "types": "클러스터 유형",
+          "groups": "클러스터 그룹",
+          "addType": "클러스터 유형 추가",
+          "columns": {
+            "name": "이름",
+            "type": "유형",
+            "group": "그룹",
+            "site": "사이트",
+            "status": "상태",
+            "devices": "장치",
+            "vms": "VM",
+            "clusters": "클러스터"
+          }
+        },
+        "circuit": {
+          "detail": "회선",
+          "create": "회선 만들기",
+          "edit": "회선 편집",
+          "providers": "공급자",
+          "types": "회선 유형",
+          "terminations": "종단",
+          "addProvider": "공급자 추가",
+          "editProvider": "공급자 편집",
+          "columns": {
+            "cid": "회선 ID",
+            "provider": "공급자",
+            "type": "유형",
+            "status": "상태",
+            "commitRate": "약정 속도",
+            "circuits": "회선"
+          },
+          "prov": {
+            "name": "이름",
+            "account": "계정"
+          },
+          "term": {
+            "side": "측",
+            "site": "사이트",
+            "portSpeed": "포트 속도"
+          }
+        }
       }
     },
     "keepass": {

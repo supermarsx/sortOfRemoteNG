@@ -3723,6 +3723,104 @@
           "newCable": "New cable",
           "editCable": "Edit cable"
         }
+      },
+      "virtualization": {
+        "title": "Virtualization",
+        "empty": "No records.",
+        "sections": {
+          "vms": "Virtual Machines",
+          "clusters": "Clusters",
+          "circuits": "Circuits"
+        },
+        "actions": {
+          "refresh": "Refresh",
+          "create": "Create",
+          "edit": "Edit",
+          "delete": "Delete",
+          "view": "View",
+          "save": "Save",
+          "cancel": "Cancel",
+          "back": "Back"
+        },
+        "editor": {
+          "jsonLabel": "JSON body",
+          "invalidJson": "Invalid JSON"
+        },
+        "confirm": {
+          "delete": "Delete this item?"
+        },
+        "ref": {
+          "name": "Name",
+          "slug": "Slug"
+        },
+        "vm": {
+          "detail": "Virtual machine",
+          "create": "Create virtual machine",
+          "edit": "Edit virtual machine",
+          "addInterface": "Add interface",
+          "editInterface": "Edit interface",
+          "interfaces": "Interfaces",
+          "columns": {
+            "name": "Name",
+            "status": "Status",
+            "cluster": "Cluster",
+            "vcpus": "vCPUs",
+            "memory": "Memory",
+            "disk": "Disk",
+            "primaryIp": "Primary IP"
+          },
+          "iface": {
+            "name": "Name",
+            "enabled": "Enabled",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "Cluster",
+          "create": "Create cluster",
+          "edit": "Edit cluster",
+          "types": "Cluster types",
+          "groups": "Cluster groups",
+          "addType": "Add cluster type",
+          "columns": {
+            "name": "Name",
+            "type": "Type",
+            "group": "Group",
+            "site": "Site",
+            "status": "Status",
+            "devices": "Devices",
+            "vms": "VMs",
+            "clusters": "Clusters"
+          }
+        },
+        "circuit": {
+          "detail": "Circuit",
+          "create": "Create circuit",
+          "edit": "Edit circuit",
+          "providers": "Providers",
+          "types": "Circuit types",
+          "terminations": "Terminations",
+          "addProvider": "Add provider",
+          "editProvider": "Edit provider",
+          "columns": {
+            "cid": "Circuit ID",
+            "provider": "Provider",
+            "type": "Type",
+            "status": "Status",
+            "commitRate": "Commit rate",
+            "circuits": "Circuits"
+          },
+          "prov": {
+            "name": "Name",
+            "account": "Account"
+          },
+          "term": {
+            "side": "Side",
+            "site": "Site",
+            "portSpeed": "Port speed"
+          }
+        }
       }
     },
     "keepass": {

@@ -3651,6 +3651,104 @@
           "objectType": "Objekttyp",
           "priority": "Priorität"
         }
+      },
+      "virtualization": {
+        "title": "Virtualisierung",
+        "empty": "Keine Einträge.",
+        "sections": {
+          "vms": "Virtuelle Maschinen",
+          "clusters": "Cluster",
+          "circuits": "Verbindungen"
+        },
+        "actions": {
+          "refresh": "Aktualisieren",
+          "create": "Erstellen",
+          "edit": "Bearbeiten",
+          "delete": "Löschen",
+          "view": "Anzeigen",
+          "save": "Speichern",
+          "cancel": "Abbrechen",
+          "back": "Zurück"
+        },
+        "editor": {
+          "jsonLabel": "JSON-Text",
+          "invalidJson": "Ungültiges JSON"
+        },
+        "confirm": {
+          "delete": "Dieses Element löschen?"
+        },
+        "ref": {
+          "name": "Name",
+          "slug": "Slug"
+        },
+        "vm": {
+          "detail": "Virtuelle Maschine",
+          "create": "Virtuelle Maschine erstellen",
+          "edit": "Virtuelle Maschine bearbeiten",
+          "addInterface": "Schnittstelle hinzufügen",
+          "editInterface": "Schnittstelle bearbeiten",
+          "interfaces": "Schnittstellen",
+          "columns": {
+            "name": "Name",
+            "status": "Status",
+            "cluster": "Cluster",
+            "vcpus": "vCPUs",
+            "memory": "Arbeitsspeicher",
+            "disk": "Festplatte",
+            "primaryIp": "Primäre IP"
+          },
+          "iface": {
+            "name": "Name",
+            "enabled": "Aktiviert",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "Cluster",
+          "create": "Cluster erstellen",
+          "edit": "Cluster bearbeiten",
+          "types": "Cluster-Typen",
+          "groups": "Cluster-Gruppen",
+          "addType": "Cluster-Typ hinzufügen",
+          "columns": {
+            "name": "Name",
+            "type": "Typ",
+            "group": "Gruppe",
+            "site": "Standort",
+            "status": "Status",
+            "devices": "Geräte",
+            "vms": "VMs",
+            "clusters": "Cluster"
+          }
+        },
+        "circuit": {
+          "detail": "Verbindung",
+          "create": "Verbindung erstellen",
+          "edit": "Verbindung bearbeiten",
+          "providers": "Anbieter",
+          "types": "Verbindungstypen",
+          "terminations": "Abschlüsse",
+          "addProvider": "Anbieter hinzufügen",
+          "editProvider": "Anbieter bearbeiten",
+          "columns": {
+            "cid": "Verbindungs-ID",
+            "provider": "Anbieter",
+            "type": "Typ",
+            "status": "Status",
+            "commitRate": "Commit-Rate",
+            "circuits": "Verbindungen"
+          },
+          "prov": {
+            "name": "Name",
+            "account": "Konto"
+          },
+          "term": {
+            "side": "Seite",
+            "site": "Standort",
+            "portSpeed": "Portgeschwindigkeit"
+          }
+        }
       }
     },
     "keepass": {

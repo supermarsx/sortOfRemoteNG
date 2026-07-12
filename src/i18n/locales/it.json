@@ -3262,6 +3262,75 @@
         "emptyCertificates": "Nessun certificato.",
         "renamePrompt": "Nuovo nome"
       },
+      "networking": {
+        "notConnected": "Connettiti a un server LXD per gestire la rete.",
+        "refresh": "Aggiorna",
+        "create": "Crea",
+        "cancel": "Annulla",
+        "save": "Salva",
+        "yes": "Sì",
+        "no": "No",
+        "selectNetwork": "Seleziona una rete…",
+        "pickNetwork": "Scegli una rete per visualizzarne le risorse.",
+        "invalidJson": "JSON non valido.",
+        "sections": {
+          "networks": "Reti",
+          "acls": "ACL",
+          "forwards": "Inoltri",
+          "zones": "Zone",
+          "loadBalancers": "Bilanciatori di carico",
+          "peers": "Peer"
+        },
+        "fields": {
+          "name": "Nome",
+          "type": "Tipo",
+          "managed": "Gestita",
+          "status": "Stato",
+          "usedBy": "Usata da",
+          "description": "Descrizione",
+          "rules": "Regole",
+          "listenAddress": "Indirizzo di ascolto",
+          "ports": "Porte",
+          "backends": "Backend",
+          "targetProject": "Progetto di destinazione",
+          "targetNetwork": "Rete di destinazione"
+        },
+        "actions": {
+          "state": "Stato",
+          "rename": "Rinomina",
+          "delete": "Elimina",
+          "edit": "Modifica"
+        },
+        "prompt": {
+          "rename": "Nuovo nome"
+        },
+        "confirm": {
+          "deleteNetwork": "Eliminare la rete {{name}}?",
+          "deleteAcl": "Eliminare l'ACL {{name}}?",
+          "deleteForward": "Eliminare l'inoltro {{addr}}?",
+          "deleteZone": "Eliminare la zona {{name}}?",
+          "deleteLoadBalancer": "Eliminare il bilanciatore {{addr}}?"
+        },
+        "empty": {
+          "networks": "Nessuna rete.",
+          "acls": "Nessuna ACL.",
+          "forwards": "Nessun inoltro.",
+          "zones": "Nessuna zona.",
+          "loadBalancers": "Nessun bilanciatore di carico.",
+          "peers": "Nessun peer."
+        },
+        "acl": {
+          "ingress": "in",
+          "egress": "out",
+          "editBody": "Corpo ACL (JSON)"
+        },
+        "detail": {
+          "state": "Stato",
+          "leases": "Lease DHCP",
+          "patch": "Applica patch alla config (JSON)",
+          "applyPatch": "Applica patch"
+        }
+      },
       "title": "LXD / Incus",
       "subtitle": "Gestisci container, VM e infrastruttura LXD e Incus",
       "connect": "Connetti",
@@ -3653,6 +3722,104 @@
           "role": "Ruolo",
           "objectType": "Tipo di oggetto",
           "priority": "Priorità"
+        }
+      },
+      "virtualization": {
+        "title": "Virtualizzazione",
+        "empty": "Nessun record.",
+        "sections": {
+          "vms": "Macchine virtuali",
+          "clusters": "Cluster",
+          "circuits": "Circuiti"
+        },
+        "actions": {
+          "refresh": "Aggiorna",
+          "create": "Crea",
+          "edit": "Modifica",
+          "delete": "Elimina",
+          "view": "Visualizza",
+          "save": "Salva",
+          "cancel": "Annulla",
+          "back": "Indietro"
+        },
+        "editor": {
+          "jsonLabel": "Corpo JSON",
+          "invalidJson": "JSON non valido"
+        },
+        "confirm": {
+          "delete": "Eliminare questo elemento?"
+        },
+        "ref": {
+          "name": "Nome",
+          "slug": "Slug"
+        },
+        "vm": {
+          "detail": "Macchina virtuale",
+          "create": "Crea macchina virtuale",
+          "edit": "Modifica macchina virtuale",
+          "addInterface": "Aggiungi interfaccia",
+          "editInterface": "Modifica interfaccia",
+          "interfaces": "Interfacce",
+          "columns": {
+            "name": "Nome",
+            "status": "Stato",
+            "cluster": "Cluster",
+            "vcpus": "vCPU",
+            "memory": "Memoria",
+            "disk": "Disco",
+            "primaryIp": "IP primario"
+          },
+          "iface": {
+            "name": "Nome",
+            "enabled": "Abilitato",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "Cluster",
+          "create": "Crea cluster",
+          "edit": "Modifica cluster",
+          "types": "Tipi di cluster",
+          "groups": "Gruppi di cluster",
+          "addType": "Aggiungi tipo di cluster",
+          "columns": {
+            "name": "Nome",
+            "type": "Tipo",
+            "group": "Gruppo",
+            "site": "Sito",
+            "status": "Stato",
+            "devices": "Dispositivi",
+            "vms": "VM",
+            "clusters": "Cluster"
+          }
+        },
+        "circuit": {
+          "detail": "Circuito",
+          "create": "Crea circuito",
+          "edit": "Modifica circuito",
+          "providers": "Provider",
+          "types": "Tipi di circuito",
+          "terminations": "Terminazioni",
+          "addProvider": "Aggiungi provider",
+          "editProvider": "Modifica provider",
+          "columns": {
+            "cid": "ID circuito",
+            "provider": "Provider",
+            "type": "Tipo",
+            "status": "Stato",
+            "commitRate": "Commit rate",
+            "circuits": "Circuiti"
+          },
+          "prov": {
+            "name": "Nome",
+            "account": "Account"
+          },
+          "term": {
+            "side": "Lato",
+            "site": "Sito",
+            "portSpeed": "Velocità porta"
+          }
         }
       }
     },

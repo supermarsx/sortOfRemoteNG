@@ -252,7 +252,12 @@ export interface TagCount {
   count: number;
 }
 
-// ─── Category re-exports (populated by c1 / c2) ───────────────────────────────
-// Category execs add: `export * from "./database";` (c1) and
-// `export * from "./tools";` (c2). Kept as explicit lines the execs own so the
-// barrel is the single import surface without the lead pre-creating empty files.
+// ─── Category re-exports ──────────────────────────────────────────────────────
+// Appended by the per-crate integrator (t42-keepass-L) once c1/c2 landed, so
+// `@/types/keepass` is the single import surface. Shared names above win over any
+// `export *` collision (TS drops ambiguous star re-exports silently).
+export * from "./database"; // t42-keepass-c1
+export * from "./tools"; // t42-keepass-c2
+// `OldPasswordInfo` is defined identically in both slices (c1 stats, c2 health);
+// re-export it explicitly to resolve the star-import ambiguity (TS2308).
+export type { OldPasswordInfo } from "./database";

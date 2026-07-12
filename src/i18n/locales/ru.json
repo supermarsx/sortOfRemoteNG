@@ -3654,6 +3654,104 @@
           "objectType": "Тип объекта",
           "priority": "Приоритет"
         }
+      },
+      "virtualization": {
+        "title": "Виртуализация",
+        "empty": "Нет записей.",
+        "sections": {
+          "vms": "Виртуальные машины",
+          "clusters": "Кластеры",
+          "circuits": "Каналы"
+        },
+        "actions": {
+          "refresh": "Обновить",
+          "create": "Создать",
+          "edit": "Изменить",
+          "delete": "Удалить",
+          "view": "Просмотр",
+          "save": "Сохранить",
+          "cancel": "Отмена",
+          "back": "Назад"
+        },
+        "editor": {
+          "jsonLabel": "Тело JSON",
+          "invalidJson": "Неверный JSON"
+        },
+        "confirm": {
+          "delete": "Удалить этот элемент?"
+        },
+        "ref": {
+          "name": "Имя",
+          "slug": "Slug"
+        },
+        "vm": {
+          "detail": "Виртуальная машина",
+          "create": "Создать виртуальную машину",
+          "edit": "Изменить виртуальную машину",
+          "addInterface": "Добавить интерфейс",
+          "editInterface": "Изменить интерфейс",
+          "interfaces": "Интерфейсы",
+          "columns": {
+            "name": "Имя",
+            "status": "Статус",
+            "cluster": "Кластер",
+            "vcpus": "vCPU",
+            "memory": "Память",
+            "disk": "Диск",
+            "primaryIp": "Основной IP"
+          },
+          "iface": {
+            "name": "Имя",
+            "enabled": "Включено",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "Кластер",
+          "create": "Создать кластер",
+          "edit": "Изменить кластер",
+          "types": "Типы кластеров",
+          "groups": "Группы кластеров",
+          "addType": "Добавить тип кластера",
+          "columns": {
+            "name": "Имя",
+            "type": "Тип",
+            "group": "Группа",
+            "site": "Сайт",
+            "status": "Статус",
+            "devices": "Устройства",
+            "vms": "ВМ",
+            "clusters": "Кластеры"
+          }
+        },
+        "circuit": {
+          "detail": "Канал",
+          "create": "Создать канал",
+          "edit": "Изменить канал",
+          "providers": "Провайдеры",
+          "types": "Типы каналов",
+          "terminations": "Окончания",
+          "addProvider": "Добавить провайдера",
+          "editProvider": "Изменить провайдера",
+          "columns": {
+            "cid": "ID канала",
+            "provider": "Провайдер",
+            "type": "Тип",
+            "status": "Статус",
+            "commitRate": "Гарант. скорость",
+            "circuits": "Каналы"
+          },
+          "prov": {
+            "name": "Имя",
+            "account": "Аккаунт"
+          },
+          "term": {
+            "side": "Сторона",
+            "site": "Сайт",
+            "portSpeed": "Скорость порта"
+          }
+        }
       }
     },
     "keepass": {

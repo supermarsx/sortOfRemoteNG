@@ -3651,6 +3651,104 @@
           "objectType": "Tipo de objeto",
           "priority": "Prioridad"
         }
+      },
+      "virtualization": {
+        "title": "Virtualización",
+        "empty": "Sin registros.",
+        "sections": {
+          "vms": "Máquinas virtuales",
+          "clusters": "Clústeres",
+          "circuits": "Circuitos"
+        },
+        "actions": {
+          "refresh": "Actualizar",
+          "create": "Crear",
+          "edit": "Editar",
+          "delete": "Eliminar",
+          "view": "Ver",
+          "save": "Guardar",
+          "cancel": "Cancelar",
+          "back": "Volver"
+        },
+        "editor": {
+          "jsonLabel": "Cuerpo JSON",
+          "invalidJson": "JSON no válido"
+        },
+        "confirm": {
+          "delete": "¿Eliminar este elemento?"
+        },
+        "ref": {
+          "name": "Nombre",
+          "slug": "Slug"
+        },
+        "vm": {
+          "detail": "Máquina virtual",
+          "create": "Crear máquina virtual",
+          "edit": "Editar máquina virtual",
+          "addInterface": "Añadir interfaz",
+          "editInterface": "Editar interfaz",
+          "interfaces": "Interfaces",
+          "columns": {
+            "name": "Nombre",
+            "status": "Estado",
+            "cluster": "Clúster",
+            "vcpus": "vCPU",
+            "memory": "Memoria",
+            "disk": "Disco",
+            "primaryIp": "IP principal"
+          },
+          "iface": {
+            "name": "Nombre",
+            "enabled": "Habilitado",
+            "mac": "MAC",
+            "mtu": "MTU"
+          }
+        },
+        "cluster": {
+          "detail": "Clúster",
+          "create": "Crear clúster",
+          "edit": "Editar clúster",
+          "types": "Tipos de clúster",
+          "groups": "Grupos de clúster",
+          "addType": "Añadir tipo de clúster",
+          "columns": {
+            "name": "Nombre",
+            "type": "Tipo",
+            "group": "Grupo",
+            "site": "Sitio",
+            "status": "Estado",
+            "devices": "Dispositivos",
+            "vms": "VM",
+            "clusters": "Clústeres"
+          }
+        },
+        "circuit": {
+          "detail": "Circuito",
+          "create": "Crear circuito",
+          "edit": "Editar circuito",
+          "providers": "Proveedores",
+          "types": "Tipos de circuito",
+          "terminations": "Terminaciones",
+          "addProvider": "Añadir proveedor",
+          "editProvider": "Editar proveedor",
+          "columns": {
+            "cid": "ID de circuito",
+            "provider": "Proveedor",
+            "type": "Tipo",
+            "status": "Estado",
+            "commitRate": "Tasa comprometida",
+            "circuits": "Circuitos"
+          },
+          "prov": {
+            "name": "Nombre",
+            "account": "Cuenta"
+          },
+          "term": {
+            "side": "Lado",
+            "site": "Sitio",
+            "portSpeed": "Velocidad de puerto"
+          }
+        }
       }
     },
     "keepass": {
