@@ -3195,5 +3195,24 @@
     "exportAllCustom": "Exporter tout personnalisé",
     "importFromFile": "Importer à partir d'un fichier",
     "importExportDescription": "Exportez vos thèmes personnalisés et vos jeux de couleurs pour les partager ou les sauvegarder. L'importation ignorera les éléments existants, sauf si vous les supprimez au préalable."
+  },
+  "integrations": {
+    "title": "Intégrations",
+    "subtitle": "Connectez et gérez des services externes",
+    "empty": "Aucune intégration disponible pour l'instant",
+    "emptyHint": "Les intégrations apparaîtront ici au fur et à mesure de leur ajout.",
+    "addInstance": "Ajouter une instance",
+    "back": "Retour aux intégrations",
+    "notFound": "Cette intégration n'est plus disponible.",
+    "panelCrashed": "Le panneau d'intégration a planté",
+    "panelCrashedDescription": "Ce panneau d'intégration a rencontré une erreur de rendu. Vous pouvez réessayer sans redémarrer l'application.",
+    "category": {
+      "infra": "Infrastructure",
+      "web": "Serveurs web",
+      "database": "Bases de données",
+      "appService": "Services d'application",
+      "mail": "Messagerie",
+      "vault": "Coffres-forts"
+    }
   }
 }

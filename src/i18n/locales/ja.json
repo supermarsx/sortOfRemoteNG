@@ -3195,5 +3195,24 @@
     "exportAllCustom": "すべてのカスタムをエクスポート",
     "importFromFile": "ファイルからインポート",
     "importExportDescription": "カスタム テーマと配色をエクスポートして、共有またはバックアップします。最初に既存の項目を削除しない限り、インポートは既存の項目をスキ��プします。"
+  },
+  "integrations": {
+    "title": "統合",
+    "subtitle": "外部サービスの接続と管理",
+    "empty": "利用可能な統合はまだありません",
+    "emptyHint": "統合が追加されるとここに表示されます。",
+    "addInstance": "インスタンスを追加",
+    "back": "統合に戻る",
+    "notFound": "この統合は利用できなくなりました。",
+    "panelCrashed": "統合パネルがクラッシュしました",
+    "panelCrashedDescription": "この統合パネルでレンダリングエラーが発生しました。アプリを再起動せずに再試行できます。",
+    "category": {
+      "infra": "インフラ",
+      "web": "Webサーバー",
+      "database": "データベース",
+      "appService": "アプリサービス",
+      "mail": "メール",
+      "vault": "ボルト"
+    }
   }
 }

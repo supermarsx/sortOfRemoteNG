@@ -3195,5 +3195,24 @@
     "exportAllCustom": "Exportar tudo personalizado",
     "importFromFile": "Importar do arquivo",
     "importExportDescription": "Exporte seus temas e esquemas de cores personalizados para compartilhar ou fazer backup. A importação ignorará os itens existentes, a menos que você os exclua primeiro."
+  },
+  "integrations": {
+    "title": "Integrações",
+    "subtitle": "Ligue e faça a gestão de serviços externos",
+    "empty": "Ainda não há integrações disponíveis",
+    "emptyHint": "As integrações aparecerão aqui à medida que forem adicionadas.",
+    "addInstance": "Adicionar instância",
+    "back": "Voltar às integrações",
+    "notFound": "Esta integração já não está disponível.",
+    "panelCrashed": "O painel de integração falhou",
+    "panelCrashedDescription": "Este painel de integração teve um erro de renderização. Pode tentar novamente sem reiniciar a aplicação.",
+    "category": {
+      "infra": "Infraestrutura",
+      "web": "Servidores web",
+      "database": "Bases de dados",
+      "appService": "Serviços de aplicações",
+      "mail": "Correio",
+      "vault": "Cofres"
+    }
   }
 }

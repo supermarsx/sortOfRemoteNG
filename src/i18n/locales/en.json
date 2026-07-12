@@ -3195,5 +3195,24 @@
     "exportAllCustom": "Export All Custom",
     "importFromFile": "Import from File",
     "importExportDescription": "Export your custom themes and color schemes to share or backup. Import will skip existing items unless you delete them first."
+  },
+  "integrations": {
+    "title": "Integrations",
+    "subtitle": "Connect and manage external services",
+    "empty": "No integrations available yet",
+    "emptyHint": "Integrations will appear here as they are added.",
+    "addInstance": "Add instance",
+    "back": "Back to integrations",
+    "notFound": "This integration is no longer available.",
+    "panelCrashed": "Integration panel crashed",
+    "panelCrashedDescription": "This integration panel hit a render error. You can retry without restarting the app.",
+    "category": {
+      "infra": "Infrastructure",
+      "web": "Web Servers",
+      "database": "Databases",
+      "appService": "App Services",
+      "mail": "Mail",
+      "vault": "Vaults"
+    }
   }
 }

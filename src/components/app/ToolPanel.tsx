@@ -143,6 +143,11 @@ const DatabasePanel = dynamic(
   () => import("../database/DatabasePanel").then((m) => m.DatabasePanel),
   { ssr: false },
 );
+const IntegrationsHub = dynamic(
+  () =>
+    import("../integrations/IntegrationsHub").then((m) => m.IntegrationsHub),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -259,6 +264,9 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       )}
       {toolKey === "tabGroupManager" && (
         <TabGroupManager isOpen onClose={onClose} />
+      )}
+      {toolKey === "integrations" && (
+        <IntegrationsHub isOpen onClose={onClose} />
       )}
       {toolKey === "database" && (
         <DatabasePanel

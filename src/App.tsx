@@ -336,6 +336,7 @@ const AppContent: React.FC = () => {
       "connectionEditor",
       "bulkEditor",
       "database",
+      "integrations",
     ];
     const result = {} as Record<
       ToolKey,
@@ -1565,6 +1566,7 @@ const AppContent: React.FC = () => {
         setShowDebugPanel={setShowDebugPanel}
         setShowTagManager={toolShowSetters.current.tagManager}
         setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
+        setShowIntegrations={toolShowSetters.current.integrations}
       />
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>

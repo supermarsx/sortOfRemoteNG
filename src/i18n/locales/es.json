@@ -3195,5 +3195,24 @@
     "exportAllCustom": "Exportar todo personalizado",
     "importFromFile": "Importar desde archivo",
     "importExportDescription": "Exporte sus temas personalizados y combinaciones de colores para compartirlos o realizar una copia de seguridad. La importación omitirá los elementos existentes a menos que los elimine primero."
+  },
+  "integrations": {
+    "title": "Integraciones",
+    "subtitle": "Conecta y gestiona servicios externos",
+    "empty": "Aún no hay integraciones disponibles",
+    "emptyHint": "Las integraciones aparecerán aquí a medida que se añadan.",
+    "addInstance": "Añadir instancia",
+    "back": "Volver a integraciones",
+    "notFound": "Esta integración ya no está disponible.",
+    "panelCrashed": "El panel de integración falló",
+    "panelCrashedDescription": "Este panel de integración tuvo un error de renderizado. Puedes reintentar sin reiniciar la aplicación.",
+    "category": {
+      "infra": "Infraestructura",
+      "web": "Servidores web",
+      "database": "Bases de datos",
+      "appService": "Servicios de aplicaciones",
+      "mail": "Correo",
+      "vault": "Bóvedas"
+    }
   }
 }

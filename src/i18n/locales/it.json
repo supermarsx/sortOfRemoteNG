@@ -3195,5 +3195,24 @@
     "exportAllCustom": "Esporta tutto personalizzato",
     "importFromFile": "Importa da file",
     "importExportDescription": "Esporta i tuoi temi e combinazioni di colori personalizzati per condividerli o eseguirne il backup. L'importazione salterà gli elementi esistenti a meno che non li elimini prima."
+  },
+  "integrations": {
+    "title": "Integrazioni",
+    "subtitle": "Connetti e gestisci servizi esterni",
+    "empty": "Nessuna integrazione disponibile",
+    "emptyHint": "Le integrazioni appariranno qui man mano che vengono aggiunte.",
+    "addInstance": "Aggiungi istanza",
+    "back": "Torna alle integrazioni",
+    "notFound": "Questa integrazione non è più disponibile.",
+    "panelCrashed": "Il pannello di integrazione si è arrestato in modo anomalo",
+    "panelCrashedDescription": "Questo pannello di integrazione ha riscontrato un errore di rendering. Puoi riprovare senza riavviare l'app.",
+    "category": {
+      "infra": "Infrastruttura",
+      "web": "Server web",
+      "database": "Database",
+      "appService": "Servizi applicativi",
+      "mail": "Posta",
+      "vault": "Cassaforti"
+    }
   }
 }

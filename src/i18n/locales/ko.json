@@ -3195,5 +3195,24 @@
     "exportAllCustom": "모든 사용자 정의 내보내기",
     "importFromFile": "파일에서 가져오기",
     "importExportDescription": "사용자 정의 테마와 색 구성표를 내보내 공유하거나 백업하세요. 가져오기에서는 먼저 항목을 삭제하지 않는 한 기존 항목을 건너뜁니다."
+  },
+  "integrations": {
+    "title": "통합",
+    "subtitle": "외부 서비스 연결 및 관리",
+    "empty": "아직 사용할 수 있는 통합이 없습니다",
+    "emptyHint": "통합이 추가되면 여기에 표시됩니다.",
+    "addInstance": "인스턴스 추가",
+    "back": "통합으로 돌아가기",
+    "notFound": "이 통합은 더 이상 사용할 수 없습니다.",
+    "panelCrashed": "통합 패널이 충돌했습니다",
+    "panelCrashedDescription": "이 통합 패널에서 렌더링 오류가 발생했습니다. 앱을 다시 시작하지 않고 다시 시도할 수 있습니다.",
+    "category": {
+      "infra": "인프라",
+      "web": "웹 서버",
+      "database": "데이터베이스",
+      "appService": "앱 서비스",
+      "mail": "메일",
+      "vault": "볼트"
+    }
   }
 }

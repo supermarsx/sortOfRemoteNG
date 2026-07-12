@@ -675,6 +675,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tunnelChainEditor: "tab" as const,
     tunnelProfileEditor: "tab" as const,
     database: "tab" as const,
+    integrations: "tab" as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,
