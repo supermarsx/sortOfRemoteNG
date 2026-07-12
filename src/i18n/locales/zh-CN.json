@@ -3338,6 +3338,12 @@
       "connected": "已连接",
       "disconnected": "未连接",
       "noTabs": "连接后管理视图将在此处加载。",
+      "tabs": {
+        "instances": "实例",
+        "images": "镜像与配置文件",
+        "networking": "网络",
+        "storage": "存储与集群"
+      },
       "form": {
         "name": "实例名称",
         "namePlaceholder": "我的 LXD 服务器",

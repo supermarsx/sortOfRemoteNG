@@ -3338,6 +3338,12 @@
       "connected": "Verbunden",
       "disconnected": "Nicht verbunden",
       "noTabs": "Verwaltungsansichten werden hier nach dem Verbinden geladen.",
+      "tabs": {
+        "instances": "Instanzen",
+        "images": "Images & Profile",
+        "networking": "Netzwerk",
+        "storage": "Speicher & Cluster"
+      },
       "form": {
         "name": "Instanzname",
         "namePlaceholder": "Mein LXD-Server",

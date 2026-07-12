@@ -3338,6 +3338,12 @@
       "connected": "연결됨",
       "disconnected": "연결 안 됨",
       "noTabs": "연결하면 관리 보기가 여기에 로드됩니다.",
+      "tabs": {
+        "instances": "인스턴스",
+        "images": "이미지 및 프로필",
+        "networking": "네트워킹",
+        "storage": "스토리지 및 클러스터"
+      },
       "form": {
         "name": "인스턴스 이름",
         "namePlaceholder": "내 LXD 서버",

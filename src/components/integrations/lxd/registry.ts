@@ -32,6 +32,31 @@ export interface LxdCategoryDescriptor {
   importTab: () => Promise<{ default: ComponentType<LxdTabProps> }>;
 }
 
-/** The LXD sub-tab registry. EMPTY at lead time; category slices are appended by
- *  the per-crate integrator. Order defines tab order. */
-export const lxdCategories: LxdCategoryDescriptor[] = [];
+/** The LXD sub-tab registry. Order defines tab order. Category slices are wired
+ *  in by the per-crate integrator (t42-lxd-L) once every slice's tab lands. */
+export const lxdCategories: LxdCategoryDescriptor[] = [
+  {
+    categoryKey: "instances",
+    labelKey: "integrations.lxd.tabs.instances",
+    labelDefault: "Instances",
+    importTab: () => import("./LxdInstancesTab"),
+  },
+  {
+    categoryKey: "images",
+    labelKey: "integrations.lxd.tabs.images",
+    labelDefault: "Images & Profiles",
+    importTab: () => import("./LxdImagesTab"),
+  },
+  {
+    categoryKey: "networking",
+    labelKey: "integrations.lxd.tabs.networking",
+    labelDefault: "Networking",
+    importTab: () => import("./LxdNetworkingTab"),
+  },
+  {
+    categoryKey: "storage",
+    labelKey: "integrations.lxd.tabs.storage",
+    labelDefault: "Storage & Cluster",
+    importTab: () => import("./LxdStorageTab"),
+  },
+];

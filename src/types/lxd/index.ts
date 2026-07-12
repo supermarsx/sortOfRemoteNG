@@ -108,8 +108,8 @@ export function defaultLxdConnectionConfig(): LxdConnectionConfig {
   };
 }
 
-// ─── Category slice re-exports (append-only; per-crate integrator) ─────────────
-// export * from "./instances";
-// export * from "./images";
-// export * from "./networking";
-// export * from "./storage";
+// ─── Category slice re-exports (wired by the per-crate integrator) ─────────────
+export * from "./instances";
+export * from "./images";
+export * from "./networking";
+export * from "./storage";

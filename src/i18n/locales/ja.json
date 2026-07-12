@@ -3338,6 +3338,12 @@
       "connected": "接続済み",
       "disconnected": "未接続",
       "noTabs": "接続すると管理ビューがここに読み込まれます。",
+      "tabs": {
+        "instances": "インスタンス",
+        "images": "イメージとプロファイル",
+        "networking": "ネットワーク",
+        "storage": "ストレージとクラスター"
+      },
       "form": {
         "name": "インスタンス名",
         "namePlaceholder": "My LXD server",

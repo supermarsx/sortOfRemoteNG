@@ -3338,6 +3338,12 @@
       "connected": "Connecté",
       "disconnected": "Non connecté",
       "noTabs": "Les vues de gestion se chargent ici une fois connecté.",
+      "tabs": {
+        "instances": "Instances",
+        "images": "Images et profils",
+        "networking": "Réseau",
+        "storage": "Stockage et cluster"
+      },
       "form": {
         "name": "Nom de l'instance",
         "namePlaceholder": "Mon serveur LXD",

@@ -5,8 +5,8 @@
 // marker (disjoint-append discipline, §4b) — do not hand-edit those from a slice.
 export * from "./useLxdConnection";
 
-// ─── Category slice re-exports (append-only; per-crate integrator) ─────────────
-// export * from "./useLxdInstances";
-// export * from "./useLxdImages";
-// export * from "./useLxdNetworking";
-// export * from "./useLxdStorage";
+// ─── Category slice re-exports (wired by the per-crate integrator) ─────────────
+export * from "./useLxdInstances";
+export * from "./useLxdImages";
+export * from "./useLxdNetworking";
+export * from "./useLxdStorage";
