@@ -1,0 +1,75 @@
+{
+  "operations": {
+    "transport": {
+      "title": "Transport Maps",
+      "list": "List transport maps",
+      "id": "transport id",
+      "load": "Load",
+      "delete": "Delete",
+      "createReq": "Create transport (JSON)",
+      "create": "Create",
+      "updateReq": "Update transport (JSON, by id above)",
+      "update": "Apply update"
+    },
+    "queue": {
+      "title": "Mail Queue",
+      "summary": "Queue summary",
+      "active": "Active",
+      "deferred": "Deferred",
+      "hold": "Hold",
+      "incoming": "Incoming",
+      "name": "Queue (name)",
+      "list": "List queue",
+      "flush": "Flush",
+      "superDelete": "Super delete",
+      "itemId": "Delete single queue item (id)",
+      "itemIdPlaceholder": "queue id",
+      "deleteItem": "Delete item"
+    },
+    "quarantine": {
+      "title": "Quarantine",
+      "list": "List quarantine",
+      "id": "item id",
+      "load": "Load",
+      "release": "Release",
+      "whitelist": "Whitelist sender",
+      "delete": "Delete",
+      "settings": "Quarantine settings (JSON)",
+      "loadSettings": "Load settings",
+      "saveSettings": "Save settings"
+    },
+    "logs": {
+      "title": "Logs",
+      "get": "Get logs",
+      "getApi": "API logs"
+    },
+    "status": {
+      "title": "Server Status",
+      "containers": "Containers",
+      "system": "System status",
+      "solr": "Solr status",
+      "rspamd": "Rspamd stats",
+      "containerCount": "Containers",
+      "disk": "Disk",
+      "solrState": "Solr",
+      "fail2ban": "Fail2ban config (JSON)",
+      "loadFail2ban": "Load fail2ban",
+      "saveFail2ban": "Save fail2ban",
+      "fail2banHint": "Load to populate, then edit ban_time / max_attempts / whitelist / blacklist",
+      "banTime": "Ban time",
+      "maxAttempts": "Max attempts",
+      "retryWindow": "Retry window"
+    },
+    "rateLimits": {
+      "title": "Rate Limits",
+      "mailbox": "Mailbox / domain",
+      "get": "Get",
+      "delete": "Delete",
+      "object": "Object",
+      "value": "Value",
+      "frame": "Frame",
+      "setReq": "Set rate limit (JSON)",
+      "set": "Set rate limit"
+    }
+  }
+}
