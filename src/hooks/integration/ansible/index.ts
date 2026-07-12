@@ -8,6 +8,6 @@
 
 export * from "./useAnsibleConnection";
 
-// ── category hook re-exports (appended by the per-crate integrator) ──────────
-// export * from "./useAnsibleRuns";
-// export * from "./useAnsibleContent";
+// ── category hook re-exports (wired by the Wave-2 integrator; no collisions) ──
+export * from "./useAnsibleRuns";
+export * from "./useAnsibleContent";

@@ -8,6 +8,7 @@ import { netboxDescriptor } from "../../components/integrations/netbox/descripto
 import { vmwareDesktopDescriptor } from "../../components/integrations/vmwareDesktop/VmwareDesktopPanel";
 import { vmwareDescriptor } from "../../components/integrations/VmwarePanel";
 import { cpanelDescriptor } from "../../components/integrations/cpanel/descriptor";
+import { ansibleDescriptor } from "../../components/integrations/ansible/descriptor";
 
 export const infraIntegrations: IntegrationDescriptor[] = [
   lxdDescriptor,
@@ -16,4 +17,5 @@ export const infraIntegrations: IntegrationDescriptor[] = [
   vmwareDesktopDescriptor,
   vmwareDescriptor,
   cpanelDescriptor,
+  ansibleDescriptor,
 ];

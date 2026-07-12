@@ -45,7 +45,10 @@ beforeEach(() => {
 describe("exchangeConnectionApi", () => {
   it("maps setConfig/connect to their singleton commands (no id)", async () => {
     invokeMock.mockResolvedValue(undefined);
-    const config = { environment: "online" as const, online: { tenantId: "t", clientId: "c" } };
+    const config = {
+      environment: "online" as const,
+      online: { tenantId: "t", clientId: "c" },
+    };
     await exchangeConnectionApi.setConfig(config);
     await exchangeConnectionApi.connect();
     expect(invokeMock).toHaveBeenCalledWith("exchange_set_config", { config });
@@ -92,9 +95,19 @@ describe("exchangeDescriptor", () => {
     expect(mod.default).toBeTypeOf("function");
   });
 
-  it("starts with an empty per-crate tab registry (category execs append)", () => {
+  it("registers all five category sub-tabs in display order", () => {
     expect(Array.isArray(exchangeTabs)).toBe(true);
-    expect(exchangeTabs).toHaveLength(0);
+    expect(exchangeTabs.map((t) => t.categoryKey)).toEqual([
+      "recipients",
+      "mailflow",
+      "servers",
+      "clientaccess",
+      "orgsecurity",
+    ]);
+    for (const tab of exchangeTabs) {
+      expect(tab.labelKey).toMatch(/^integrations\.exchange\./);
+      expect(typeof tab.importTab).toBe("function");
+    }
   });
 });
 

@@ -29,7 +29,19 @@ export interface AnsibleCategoryTab {
   importTab: () => Promise<{ default: ComponentType<AnsibleTabProps> }>;
 }
 
-/** Registered Ansible sub-tabs. EMPTY at lead time; the per-crate integrator
- *  appends `{ categoryKey, label, importTab }` for each category the executor
- *  builds. */
-export const ansibleCategoryTabs: AnsibleCategoryTab[] = [];
+/** Registered Ansible sub-tabs. Wired by the Wave-2 integrator (`runs` =
+ *  inventory/playbooks/ad-hoc/facts/history, `content` = roles/galaxy/vault/
+ *  config). The shell resolves the label via
+ *  `t(`integrations.ansible.tabs.<categoryKey>`, label)`. */
+export const ansibleCategoryTabs: AnsibleCategoryTab[] = [
+  {
+    categoryKey: "runs",
+    label: "Runs & Inventory",
+    importTab: () => import("./AnsibleRunsTab"),
+  },
+  {
+    categoryKey: "content",
+    label: "Content & Roles",
+    importTab: () => import("./AnsibleContentTab"),
+  },
+];

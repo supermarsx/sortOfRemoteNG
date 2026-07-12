@@ -142,9 +142,10 @@ export interface ExchangeTabProps {
 export type ExchangeTabComponent = ComponentType<ExchangeTabProps>;
 
 // ─── Per-category type modules (append-only; owned by category execs) ─────────
-// Category execs (t42-exchange-c1..c5) append one line each via the integrator:
-//   export * from "./recipients";
-//   export * from "./mailflow";
-//   export * from "./servers";
-//   export * from "./clientaccess";
-//   export * from "./orgsecurity";
+// Wired by the Wave-2 integrator (no cross-slice name collisions — `export *`
+// is safe here; hook barrel uses named re-exports instead).
+export * from "./recipients";
+export * from "./mailflow";
+export * from "./servers";
+export * from "./clientaccess";
+export * from "./orgsecurity";

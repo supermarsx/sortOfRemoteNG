@@ -30,7 +30,37 @@ export interface ExchangeTabDescriptor {
   importTab: () => Promise<{ default: ComponentType<ExchangeTabProps> }>;
 }
 
-/** Registered Exchange category tabs, in display order. EMPTY at lead stage;
- *  category execs append via the per-crate integrator (recipients → mailflow →
- *  servers → clientaccess → orgsecurity). */
-export const exchangeTabs: ExchangeTabDescriptor[] = [];
+/** Registered Exchange category tabs, in display order. Wired by the Wave-2
+ *  integrator (recipients → mailflow → servers → clientaccess → orgsecurity). */
+export const exchangeTabs: ExchangeTabDescriptor[] = [
+  {
+    categoryKey: "recipients",
+    labelKey: "integrations.exchange.recipients.title",
+    labelDefault: "Recipients & Mailboxes",
+    importTab: () => import("./ExchangeRecipientsTab"),
+  },
+  {
+    categoryKey: "mailflow",
+    labelKey: "integrations.exchange.mailflow.title",
+    labelDefault: "Transport & Mail Flow",
+    importTab: () => import("./ExchangeMailflowTab"),
+  },
+  {
+    categoryKey: "servers",
+    labelKey: "integrations.exchange.servers.title",
+    labelDefault: "Servers, Databases & Migration",
+    importTab: () => import("./ExchangeServersTab"),
+  },
+  {
+    categoryKey: "clientaccess",
+    labelKey: "integrations.exchange.clientaccess.title",
+    labelDefault: "Client Access & Protocols",
+    importTab: () => import("./ExchangeClientAccessTab"),
+  },
+  {
+    categoryKey: "orgsecurity",
+    labelKey: "integrations.exchange.orgsecurity.title",
+    labelDefault: "Org Config, Security & Compliance",
+    importTab: () => import("./ExchangeOrgSecurityTab"),
+  },
+];

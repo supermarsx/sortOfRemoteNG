@@ -82,6 +82,6 @@ export interface AnsibleInfo {
   available_plugins: string[];
 }
 
-// ── category type re-exports (appended by the per-crate integrator) ──────────
-// export * from "./runs";
-// export * from "./content";
+// ── category type re-exports (wired by the Wave-2 integrator; no collisions) ──
+export * from "./runs";
+export * from "./content";
