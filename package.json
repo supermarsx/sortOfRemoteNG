@@ -111,6 +111,7 @@
     "webdriverio": "^9.27.1"
   },
   "overrides": {
-    "@wdio/native-utils": "2.3.0"
+    "@wdio/native-utils": "2.3.0",
+    "serialize-javascript": "^7.0.7"
   }
 }
