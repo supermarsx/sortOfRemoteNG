@@ -616,13 +616,23 @@ mod connections_dispatch_tests {
 
     #[tokio::test]
     async fn leftover_tmp_file_does_not_block_next_write() {
-        // Pre-plant `data.json.tmp` (the atomic write's temp slot). A
-        // normal write must succeed AND the leftover must no longer be
-        // present (it gets overwritten then renamed away). The canonical
-        // file holds the new content.
+        // Pre-plant the durable writer's temp sibling (`.data.json.tmp`, a
+        // hidden sibling in the same directory). A normal write must succeed
+        // AND the leftover must no longer be present (it gets overwritten
+        // then renamed away). The canonical file holds the new content.
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("data.json").to_string_lossy().to_string();
-        let tmp_path = format!("{}.tmp", path);
+        // Mirror `durable::temp_sibling`: `<dir>/.<name>.tmp`.
+        let p = std::path::Path::new(&path);
+        let tmp_path = p
+            .parent()
+            .unwrap()
+            .join(format!(
+                ".{}.tmp",
+                p.file_name().unwrap().to_string_lossy()
+            ))
+            .to_string_lossy()
+            .to_string();
         // Pre-plant: simulate a previously-killed writer.
         std::fs::write(&tmp_path, b"leftover garbage from prior crash").unwrap();
 
