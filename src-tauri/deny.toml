@@ -35,8 +35,23 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
     "OpenSSL",
+    # Additional permissive/public-domain licenses on transitive deps:
+    #   0BSD             — quoted_printable (BSD Zero Clause, OSI-approved)
+    #   Unlicense        — async_io_stream (public-domain dedication)
+    #   WTFPL            — tun (FSF-approved permissive)
+    #   CDLA-Permissive-2.0 — webpki-roots / webpki-root-certs (Mozilla CA bundle)
+    "0BSD",
+    "Unlicense",
+    "WTFPL",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
+# Workspace-internal `sorng-*` crates (and the root `app` crate) are never
+# published — they carry no `license` field by design. cargo-deny's built-in
+# `private.ignore` skips license evaluation for unpublished workspace members
+# (`publish = false`), so we don't have to stamp a license onto ~200 first-party
+# manifests. Third-party licenses are still enforced via the `allow` list above.
+private = { ignore = true }
 
 [bans]
 multiple-versions = "allow"

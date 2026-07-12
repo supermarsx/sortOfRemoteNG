@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "sorng-app-domains-core"
 version = "0.1.0"
 edition = "2021"

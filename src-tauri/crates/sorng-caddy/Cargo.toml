@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "sorng-caddy"
 version = "0.1.0"
 edition = "2021"
