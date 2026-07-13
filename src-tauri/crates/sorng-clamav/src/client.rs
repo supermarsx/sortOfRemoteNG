@@ -9,6 +9,8 @@ use log::debug;
 use reqwest::Client as HttpClient;
 use std::time::Duration;
 
+const SSH_STRICT_HOST_KEY_CHECKING: &str = "StrictHostKeyChecking=yes";
+
 /// ClamAV management client – connects via SSH to manage ClamAV remotely.
 pub struct ClamavClient {
     pub config: ClamavConnectionConfig,
@@ -90,7 +92,7 @@ impl ClamavClient {
 
         let mut ssh_args = vec![
             "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
+            SSH_STRICT_HOST_KEY_CHECKING.to_string(),
             "-o".to_string(),
             format!("ConnectTimeout={}", timeout),
             "-p".to_string(),
@@ -210,4 +212,15 @@ impl ClamavClient {
 
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SSH_STRICT_HOST_KEY_CHECKING;
+
+    #[test]
+    fn ssh_host_key_checking_fails_closed_for_unknown_hosts() {
+        assert_eq!(SSH_STRICT_HOST_KEY_CHECKING, "StrictHostKeyChecking=yes");
+        assert!(!SSH_STRICT_HOST_KEY_CHECKING.ends_with("accept-new"));
+    }
 }
