@@ -90,7 +90,7 @@ impl ClamavClient {
 
         let mut ssh_args = vec![
             "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
+            "StrictHostKeyChecking=yes".to_string(),
             "-o".to_string(),
             format!("ConnectTimeout={}", timeout),
             "-p".to_string(),
