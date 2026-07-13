@@ -74,8 +74,10 @@ impl CyrusSaslClient {
             ssh_args.push("BatchMode=yes".to_string());
         }
 
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
+        ssh_args.push("-l".to_string());
+        ssh_args.push(ssh_user.to_string());
+        ssh_args.push("--".to_string());
+        ssh_args.push(self.config.host.clone());
         ssh_args.push(command.to_string());
 
         let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
