@@ -49,6 +49,31 @@ interface ConnectionEditorProps {
   onClose: () => void;
 }
 
+type ConnectionEditorTabId =
+  | "general"
+  | "protocol"
+  | "behavior"
+  | "organize"
+  | "notes";
+
+interface ConnectionEditorTab {
+  id: ConnectionEditorTabId;
+  label: string;
+  icon: React.ElementType<{ size?: number; className?: string }>;
+  connectionOnly?: boolean;
+}
+
+const CONNECTION_EDITOR_TABS: ConnectionEditorTab[] = [
+  { id: "general", label: "Basics", icon: Settings2 },
+  { id: "protocol", label: "Protocol", icon: Cloud, connectionOnly: true },
+  { id: "behavior", label: "Behavior", icon: Zap, connectionOnly: true },
+  { id: "organize", label: "Organize", icon: Tag },
+  { id: "notes", label: "Notes", icon: FileText },
+];
+
+const getConnectionEditorTabs = (isGroup: boolean) =>
+  CONNECTION_EDITOR_TABS.filter((tab) => !isGroup || !tab.connectionOnly);
+
 /* ═══════════════════════════════════════════════════════════════
    Settings Search — highlights matching labels and counts results
    ═══════════════════════════════════════════════════════════════ */
@@ -119,7 +144,10 @@ function focusMatch(container: HTMLElement, index: number) {
   });
 }
 
-function useSettingsSearch(containerRef: React.RefObject<HTMLElement | null>) {
+function useSettingsSearch(
+  containerRef: React.RefObject<HTMLElement | null>,
+  refreshKey?: unknown,
+) {
   const [query, setQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -138,7 +166,7 @@ function useSettingsSearch(containerRef: React.RefObject<HTMLElement | null>) {
     setCurrentIndex(count > 0 ? 0 : -1);
 
     if (count > 0) focusMatch(el, 0);
-  }, [query, containerRef]);
+  }, [query, containerRef, refreshKey]);
 
   const goNext = useCallback(() => {
     if (matchCount <= 0) return;
@@ -801,6 +829,50 @@ const EditorFooter: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════
+   EditorTabs
+   ═══════════════════════════════════════════════════════════════ */
+
+const EditorTabs: React.FC<{
+  tabs: ConnectionEditorTab[];
+  activeTab: ConnectionEditorTabId;
+  onTabChange: (tab: ConnectionEditorTabId) => void;
+}> = ({ tabs, activeTab, onTabChange }) => (
+  <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5">
+    <div
+      role="tablist"
+      aria-label="Connection editor sections"
+      className="max-w-2xl mx-auto flex items-center gap-1 overflow-x-auto py-2"
+    >
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        const isActive = activeTab === tab.id;
+
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`connection-editor-tab-${tab.id}`}
+            aria-controls={`connection-editor-panel-${tab.id}`}
+            aria-selected={isActive}
+            data-testid={`connection-editor-tab-${tab.id}`}
+            onClick={() => onTabChange(tab.id)}
+            className={`h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors ${
+              isActive
+                ? "bg-primary/15 text-primary"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+            }`}
+          >
+            <Icon size={15} />
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+/* ═══════════════════════════════════════════════════════════════
    Root Component
    ═══════════════════════════════════════════════════════════════ */
 
@@ -810,8 +882,25 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onClose,
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose);
+  const [activeTab, setActiveTab] =
+    useState<ConnectionEditorTabId>("general");
+  const tabs = React.useMemo(
+    () => getConnectionEditorTabs(!!mgr.formData.isGroup),
+    [mgr.formData.isGroup],
+  );
   const formContentRef = useRef<HTMLDivElement>(null);
-  const { query, setQuery, matchCount, currentIndex, goNext, goPrev } = useSettingsSearch(formContentRef);
+  const { query, setQuery, matchCount, currentIndex, goNext, goPrev } =
+    useSettingsSearch(formContentRef, activeTab);
+
+  useEffect(() => {
+    if (isOpen) setActiveTab("general");
+  }, [connection?.id, isOpen]);
+
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab("general");
+    }
+  }, [activeTab, tabs]);
 
   if (!isOpen) return null;
 
@@ -832,31 +921,51 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
           />
         }
       />
+      <EditorTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 overflow-y-auto min-h-0">
         <div ref={formContentRef} className="max-w-2xl mx-auto w-full p-6">
-          <div className="flex flex-col gap-3">
-            <QuickToggles mgr={mgr} />
-            <NameInput mgr={mgr} />
-            <ParentSelector mgr={mgr} />
-
-            {!mgr.formData.isGroup && (
+          <div
+            role="tabpanel"
+            id={`connection-editor-panel-${activeTab}`}
+            aria-labelledby={`connection-editor-tab-${activeTab}`}
+            data-testid={`connection-editor-panel-${activeTab}`}
+            className="flex flex-col gap-4"
+          >
+            {activeTab === "general" && (
               <>
-                <ProtocolGrid mgr={mgr} />
-                <ConnectionFields mgr={mgr} />
-                <ProtocolSections mgr={mgr} />
+                <QuickToggles mgr={mgr} />
+                <NameInput mgr={mgr} />
+                <ParentSelector mgr={mgr} />
+
+                {!mgr.formData.isGroup && (
+                  <>
+                    <ProtocolGrid mgr={mgr} />
+                    <ConnectionFields mgr={mgr} />
+                  </>
+                )}
               </>
             )}
 
-            {!mgr.formData.isGroup && <BehaviorSection mgr={mgr} />}
+            {activeTab === "protocol" && !mgr.formData.isGroup && (
+              <ProtocolSections mgr={mgr} />
+            )}
 
-            <IconPicker mgr={mgr} />
-            <TagsSection mgr={mgr} />
-            <DescriptionSection mgr={mgr} />
+            {activeTab === "behavior" && !mgr.formData.isGroup && (
+              <BehaviorSection mgr={mgr} />
+            )}
 
-            <EditorFooter mgr={mgr} />
+            {activeTab === "organize" && (
+              <>
+                <IconPicker mgr={mgr} />
+                <TagsSection mgr={mgr} />
+              </>
+            )}
+
+            {activeTab === "notes" && <DescriptionSection mgr={mgr} />}
           </div>
         </div>
       </div>
+      <EditorFooter mgr={mgr} />
     </form>
   );
 };

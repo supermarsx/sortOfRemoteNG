@@ -103,6 +103,36 @@ describe("ConnectionEditor", () => {
 
       expect(screen.getByRole('button', { name: /Create/i })).toBeInTheDocument();
     });
+
+    it("should organize editor settings into tabs", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      expect(screen.getByTestId("connection-editor-tab-general")).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByTestId("connection-editor-tab-protocol")).toBeInTheDocument();
+      expect(screen.getByTestId("connection-editor-tab-behavior")).toBeInTheDocument();
+      expect(screen.getByTestId("connection-editor-tab-organize")).toBeInTheDocument();
+      expect(screen.getByTestId("connection-editor-tab-notes")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+
+      expect(screen.getByTestId("connection-editor-panel-protocol")).toBeInTheDocument();
+      expect(screen.queryByTestId("editor-name")).not.toBeInTheDocument();
+    });
+
+    it("should hide connection-only tabs for folders", async () => {
+      renderWithProviders({
+        connection: { ...mockConnection, id: "folder", isGroup: true, hostname: "" },
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("connection-editor-tab-protocol")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("connection-editor-tab-behavior")).not.toBeInTheDocument();
+      });
+      expect(screen.getByTestId("connection-editor-tab-organize")).toBeInTheDocument();
+      expect(screen.getByTestId("connection-editor-tab-notes")).toBeInTheDocument();
+    });
   });
 
   describe("New Connection", () => {
@@ -157,6 +187,7 @@ describe("ConnectionEditor", () => {
         onClose: vi.fn()
       });
 
+      fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
       const tagDisplay = screen.getByTestId('tag-display');
       // Tags should be populated from the connection after useEffect fires
       await waitFor(() => {
@@ -172,6 +203,7 @@ describe("ConnectionEditor", () => {
       // Open protocol dropdown and click SSH
       fireEvent.click(screen.getByTestId('editor-protocol'));
       fireEvent.click(screen.getByRole('button', { name: /^SSH/i }));
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
       expect(screen.getByTestId('ssh-options')).toBeInTheDocument();
     });
@@ -184,6 +216,7 @@ describe("ConnectionEditor", () => {
       const allButtons = screen.getAllByRole('button');
       const httpButton = allButtons.find((btn) => btn.textContent?.includes('HTTPWeb Service') || btn.textContent?.match(/HTTP\s*Web Service/));
       fireEvent.click(httpButton!);
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
       expect(screen.getByTestId('http-options')).toBeInTheDocument();
     });
@@ -193,12 +226,14 @@ describe("ConnectionEditor", () => {
     it("should render tag manager", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
+      fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
       expect(screen.getByTestId('tag-manager')).toBeInTheDocument();
     });
 
     it("should update tags when tag manager changes", async () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
+      fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
       const addTagButton = screen.getByText('Add Tag');
       fireEvent.click(addTagButton);
 
