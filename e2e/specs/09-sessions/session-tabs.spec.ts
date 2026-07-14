@@ -1,7 +1,39 @@
-import { S } from '../../helpers/selectors';
-import { resetAppState, createCollection, closeAllSessions } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import {
+  resetAppState,
+  createCollection,
+  closeAllSessions,
+} from "../../helpers/app";
 
-async function addConnection(name: string, protocol = 'SSH'): Promise<void> {
+async function connectionExists(name: string): Promise<boolean> {
+  const items = await $$(S.connectionItem);
+  for (const item of items) {
+    if ((await item.getText()).includes(name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function waitForSessionTab(connectionName: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const tabs = await $$(S.sessionTab);
+      for (const tab of tabs) {
+        if ((await tab.getText()).includes(connectionName)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    {
+      timeout: 5_000,
+      timeoutMsg: `Expected session tab for "${connectionName}" to open`,
+    },
+  );
+}
+
+async function addConnection(name: string, protocol = "SSH"): Promise<void> {
   const addBtn = await $(S.toolbarNewConnection);
   await addBtn.click();
 
@@ -12,14 +44,17 @@ async function addConnection(name: string, protocol = 'SSH'): Promise<void> {
   await nameInput.setValue(name);
 
   const hostnameInput = await $(S.editorHostname);
-  await hostnameInput.setValue('localhost');
+  await hostnameInput.setValue("localhost");
 
   const protocolSelect = await $(S.editorProtocol);
   await protocolSelect.selectByVisibleText(protocol);
 
   const saveBtn = await $(S.editorSave);
   await saveBtn.click();
-  await browser.pause(500);
+  await browser.waitUntil(() => connectionExists(name), {
+    timeout: 5_000,
+    timeoutMsg: `Expected connection "${name}" to appear in tree`,
+  });
 }
 
 async function openSession(connectionName: string): Promise<void> {
@@ -29,38 +64,38 @@ async function openSession(connectionName: string): Promise<void> {
     const text = await item.getText();
     if (text.includes(connectionName)) {
       await item.doubleClick();
-      await browser.pause(1_000);
+      await waitForSessionTab(connectionName);
       return;
     }
   }
   throw new Error(`Connection "${connectionName}" not found in tree`);
 }
 
-describe('Session Tabs', () => {
+describe("Session Tabs", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('Tab Tests');
+    await createCollection("Tab Tests");
   });
 
   afterEach(async () => {
     await closeAllSessions();
   });
 
-  it('should show tabs in tab bar when multiple sessions are opened', async () => {
-    await addConnection('Server A');
-    await addConnection('Server B');
-    await openSession('Server A');
-    await openSession('Server B');
+  it("should show tabs in tab bar when multiple sessions are opened", async () => {
+    await addConnection("Server A");
+    await addConnection("Server B");
+    await openSession("Server A");
+    await openSession("Server B");
 
     const tabs = await $$(S.sessionTab);
     expect(tabs.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('should switch active session when clicking a tab', async () => {
-    await addConnection('Server A');
-    await addConnection('Server B');
-    await openSession('Server A');
-    await openSession('Server B');
+  it("should switch active session when clicking a tab", async () => {
+    await addConnection("Server A");
+    await addConnection("Server B");
+    await openSession("Server A");
+    await openSession("Server B");
 
     const tabs = await $$(S.sessionTab);
     await tabs[0].click();
@@ -68,12 +103,12 @@ describe('Session Tabs', () => {
 
     const activeTab = await $('[data-testid="session-tab-active"]');
     const activeText = await activeTab.getText();
-    expect(activeText).toContain('Server A');
+    expect(activeText).toContain("Server A");
   });
 
-  it('should close tab and disconnect session when clicking close button', async () => {
-    await addConnection('Server A');
-    await openSession('Server A');
+  it("should close tab and disconnect session when clicking close button", async () => {
+    await addConnection("Server A");
+    await openSession("Server A");
 
     let tabs = await $$(S.sessionTab);
     expect(tabs.length).toBe(1);
@@ -86,37 +121,37 @@ describe('Session Tabs', () => {
     expect(tabs.length).toBe(0);
   });
 
-  it('should close tab on middle-click', async () => {
-    await addConnection('Server A');
-    await openSession('Server A');
+  it("should close tab on middle-click", async () => {
+    await addConnection("Server A");
+    await openSession("Server A");
 
     let tabs = await $$(S.sessionTab);
     expect(tabs.length).toBe(1);
 
-    await tabs[0].click({ button: 'middle' });
+    await tabs[0].click({ button: "middle" });
     await browser.pause(500);
 
     tabs = await $$(S.sessionTab);
     expect(tabs.length).toBe(0);
   });
 
-  it('should display connection name and status indicator on each tab', async () => {
-    await addConnection('Server A');
-    await openSession('Server A');
+  it("should display connection name and status indicator on each tab", async () => {
+    await addConnection("Server A");
+    await openSession("Server A");
 
     const tab = await $(S.sessionTab);
     const text = await tab.getText();
-    expect(text).toContain('Server A');
+    expect(text).toContain("Server A");
 
     const indicator = await tab.$('[data-testid="session-tab-status"]');
     expect(await indicator.isExisting()).toBe(true);
   });
 
-  it('should highlight the active tab differently from inactive tabs', async () => {
-    await addConnection('Server A');
-    await addConnection('Server B');
-    await openSession('Server A');
-    await openSession('Server B');
+  it("should highlight the active tab differently from inactive tabs", async () => {
+    await addConnection("Server A");
+    await addConnection("Server B");
+    await openSession("Server A");
+    await openSession("Server B");
 
     const activeTab = await $('[data-testid="session-tab-active"]');
     expect(await activeTab.isExisting()).toBe(true);
