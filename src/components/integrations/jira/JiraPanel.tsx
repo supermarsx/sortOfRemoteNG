@@ -23,6 +23,7 @@ import type {
 } from "../../../types/jira";
 import { useJiraConnection } from "../../../hooks/integration/jira/useJiraConnection";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { generateId } from "../../../utils/core/id";
 import { jiraCategoryTabs } from "./registry";
 
 /** The secret blob stored in the OS vault packs every possible auth secret (the
@@ -193,33 +194,48 @@ const JiraPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
       };
       const name = config.name;
 
-      // Persist host + creds (encrypted) and use the instance id as the stable
-      // connection id, so reconnecting a saved instance reuses its id.
-      let id = instanceId ?? null;
-      if (id) {
-        await updateInstance(id, {
-          integrationKey: "jira",
-          name,
-          host: config.host,
-          fields,
-          secret,
-        });
-      } else {
-        const created = await createInstance({
-          integrationKey: "jira",
-          name,
-          host: config.host,
-          fields,
-          secret,
-        });
-        id = created.id;
+      // Connect first. A failed backend connection must not leave a newly saved
+      // credential instance behind.
+      const id = instanceId ?? generateId();
+      await connect(id, config);
+
+      // Persist host + creds (encrypted) only after the backend accepted the
+      // connection. Existing instances keep their id; new instances are created
+      // with the same id as the live backend session.
+      try {
+        if (instanceId) {
+          await updateInstance(instanceId, {
+            integrationKey: "jira",
+            name,
+            host: config.host,
+            fields,
+            secret,
+          });
+        } else {
+          await createInstance({
+            id,
+            integrationKey: "jira",
+            name,
+            host: config.host,
+            fields,
+            secret,
+          });
+        }
+      } catch (e) {
+        const msg = typeof e === "string" ? e : (e as Error).message;
+        setError(
+          t(
+            "integrations.jira.saveAfterConnectFailed",
+            "Connected, but failed to save this Jira configuration: {{error}}",
+            { error: msg },
+          ),
+        );
       }
 
-      await connect(id, config);
       setActiveTab(jiraCategoryTabs[0]?.categoryKey ?? null);
     } catch {
       // `connect` already surfaced the error via the hook; persistence failures
-      // fall through here too and leave the form editable.
+      // after a successful connect are handled above and leave the session live.
     }
   }, [
     buildConfig,
@@ -229,6 +245,7 @@ const JiraPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
     updateInstance,
     connect,
     setError,
+    t,
   ]);
 
   const ActiveTab = useMemo(() => {
@@ -364,10 +381,7 @@ const JiraPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
                 className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-sm text-[var(--color-text)]"
                 value={usesPassword ? form.password : form.token}
                 onChange={(e) =>
-                  setField(
-                    usesPassword ? "password" : "token",
-                    e.target.value,
-                  )
+                  setField(usesPassword ? "password" : "token", e.target.value)
                 }
                 autoComplete="off"
               />

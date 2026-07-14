@@ -51,6 +51,7 @@ export interface IntegrationInstance {
 /** Input shape for creating/updating an instance. `secret` is handled out-of-band
  *  (written to the vault, never persisted in the config blob). */
 export interface IntegrationInstanceInput {
+  id?: string;
   integrationKey: string;
   name: string;
   host?: string;
@@ -148,7 +149,7 @@ export function useIntegrationConfigStore() {
     async (input: IntegrationInstanceInput): Promise<IntegrationInstance> => {
       const now = new Date().toISOString();
       const instance: IntegrationInstance = {
-        id: generateId(),
+        id: input.id ?? generateId(),
         integrationKey: input.integrationKey,
         name: input.name,
         host: input.host,

@@ -29,7 +29,12 @@ function StarRating({ rating }: { rating: number }) {
   return (
     <span className="sor-star-rating" aria-label={`${rating.toFixed(1)} stars`}>
       {[1, 2, 3, 4, 5].map((s) => (
-        <span key={s} className={s <= Math.round(rating) ? "sor-star-filled" : "sor-star-empty"}>
+        <span
+          key={s}
+          className={
+            s <= Math.round(rating) ? "sor-star-filled" : "sor-star-empty"
+          }
+        >
           ★
         </span>
       ))}
@@ -54,13 +59,18 @@ export default function MarketplacePanel() {
   const [tab, setTab] = useState<Tab>("browse");
   const [featured, setFeatured] = useState<MarketplaceListing[]>([]);
   const [updatable, setUpdatable] = useState<InstalledPlugin[]>([]);
-  const [detailPlugin, setDetailPlugin] = useState<MarketplaceListing | null>(null);
+  const [detailPlugin, setDetailPlugin] = useState<MarketplaceListing | null>(
+    null,
+  );
   const [repoName, setRepoName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewBody, setReviewBody] = useState("");
   const [reviewRating, setReviewRating] = useState(5);
-  const [confirmUninstall, setConfirmUninstall] = useState<{ id: string; name: string } | null>(null);
+  const [confirmUninstall, setConfirmUninstall] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   /* ---- bootstrap ---- */
   useEffect(() => {
@@ -131,7 +141,12 @@ export default function MarketplacePanel() {
 
   const handleAddReview = useCallback(async () => {
     if (!detailPlugin || !reviewTitle.trim()) return;
-    await mkt.addReview(detailPlugin.id, reviewRating, reviewTitle.trim(), reviewBody.trim());
+    await mkt.addReview(
+      detailPlugin.id,
+      reviewRating,
+      reviewTitle.trim(),
+      reviewBody.trim(),
+    );
     setReviewTitle("");
     setReviewBody("");
     setReviewRating(5);
@@ -156,23 +171,38 @@ export default function MarketplacePanel() {
       onKeyDown={(e) => e.key === "Enter" && openDetail(p.id)}
     >
       <div className="sor-plugin-icon">
-        {p.iconUrl ? <img src={p.iconUrl} alt="" /> : <span className="sor-plugin-icon-placeholder">🧩</span>}
+        {p.iconUrl ? (
+          <img src={p.iconUrl} alt="" />
+        ) : (
+          <span className="sor-plugin-icon-placeholder">🧩</span>
+        )}
       </div>
       <div className="sor-plugin-card-body">
         <h3 className="sor-plugin-name">
           {p.name}
-          {p.verified && <span className="sor-verified-badge" title={t("marketplace.verified")}>✓</span>}
+          {p.verified && (
+            <span
+              className="sor-verified-badge"
+              title={t("marketplace.verified")}
+            >
+              ✓
+            </span>
+          )}
         </h3>
         <p className="sor-plugin-description">{truncate(p.description, 100)}</p>
         <span className="sor-plugin-author">{p.author}</span>
         <div className="sor-plugin-meta">
           <StarRating rating={p.rating} />
-          <span className="sor-download-count">↓ {formatDownloads(p.downloads)}</span>
+          <span className="sor-download-count">
+            ↓ {formatDownloads(p.downloads)}
+          </span>
         </div>
       </div>
       <div className="sor-plugin-card-action">
         {installedIds.has(p.id) ? (
-          <span className="sor-badge sor-badge-installed">{t("marketplace.installed")}</span>
+          <span className="sor-badge sor-badge-installed">
+            {t("marketplace.installed")}
+          </span>
         ) : (
           <button
             className="sor-btn sor-btn-primary sor-btn-sm"
@@ -182,7 +212,9 @@ export default function MarketplacePanel() {
               mkt.install(p.id);
             }}
           >
-            {mkt.installing === p.id ? t("marketplace.installing") : t("marketplace.install")}
+            {mkt.installing === p.id
+              ? t("marketplace.installing")
+              : t("marketplace.install")}
           </button>
         )}
       </div>
@@ -234,7 +266,10 @@ export default function MarketplacePanel() {
       {mkt.installed.length === 0 ? (
         <div className="sor-empty-state">
           <p>{t("marketplace.noInstalled")}</p>
-          <button className="sor-btn sor-btn-primary" onClick={() => setTab("browse")}>
+          <button
+            className="sor-btn sor-btn-primary"
+            onClick={() => setTab("browse")}
+          >
             {t("marketplace.browsePlugins")}
           </button>
         </div>
@@ -244,19 +279,30 @@ export default function MarketplacePanel() {
             <li key={p.id} className="sor-installed-item">
               <div className="sor-installed-info">
                 <span className="sor-plugin-name">{p.name}</span>
-                <span className="sor-plugin-version">v{p.installedVersion}</span>
-                <span className={`sor-status ${p.enabled ? "sor-status-enabled" : "sor-status-disabled"}`}>
-                  {p.enabled ? t("marketplace.enabled") : t("marketplace.disabled")}
+                <span className="sor-plugin-version">
+                  v{p.installedVersion}
+                </span>
+                <span
+                  className={`sor-status ${p.enabled ? "sor-status-enabled" : "sor-status-disabled"}`}
+                >
+                  {p.enabled
+                    ? t("marketplace.enabled")
+                    : t("marketplace.disabled")}
                 </span>
               </div>
               <div className="sor-installed-actions">
-                <label className="sor-toggle">
+                <label
+                  className="sor-toggle"
+                  title="Enable/disable is not wired in this build"
+                >
                   <input
                     type="checkbox"
                     checked={p.enabled}
-                    onChange={() =>
-                      p.enabled ? setConfirmUninstall({ id: p.id, name: p.name }) : mkt.install(p.id)
-                    }
+                    readOnly
+                    disabled
+                    aria-label={`${p.name} ${
+                      p.enabled ? "enabled" : "disabled"
+                    }`}
                   />
                   <span className="sor-toggle-slider" />
                 </label>
@@ -266,12 +312,16 @@ export default function MarketplacePanel() {
                     disabled={mkt.installing === p.id}
                     onClick={() => mkt.updatePlugin(p.id)}
                   >
-                    {mkt.installing === p.id ? t("marketplace.updating") : t("marketplace.update")}
+                    {mkt.installing === p.id
+                      ? t("marketplace.updating")
+                      : t("marketplace.update")}
                   </button>
                 )}
                 <button
                   className="sor-btn sor-btn-sm sor-btn-danger"
-                  onClick={() => setConfirmUninstall({ id: p.id, name: p.name })}
+                  onClick={() =>
+                    setConfirmUninstall({ id: p.id, name: p.name })
+                  }
                 >
                   {t("marketplace.uninstall")}
                 </button>
@@ -316,7 +366,9 @@ export default function MarketplacePanel() {
                 disabled={mkt.installing === p.id}
                 onClick={() => mkt.updatePlugin(p.id)}
               >
-                {mkt.installing === p.id ? t("marketplace.updating") : t("marketplace.update")}
+                {mkt.installing === p.id
+                  ? t("marketplace.updating")
+                  : t("marketplace.update")}
               </button>
             </li>
           ))}
@@ -329,8 +381,14 @@ export default function MarketplacePanel() {
   const renderRepositories = () => (
     <div className="sor-repos-tab">
       <div className="sor-repos-actions">
-        <button className="sor-btn sor-btn-secondary" onClick={mkt.refreshRepositories} disabled={mkt.loading}>
-          {mkt.loading ? t("marketplace.refreshing") : t("marketplace.refreshAll")}
+        <button
+          className="sor-btn sor-btn-secondary"
+          onClick={mkt.refreshRepositories}
+          disabled={mkt.loading}
+        >
+          {mkt.loading
+            ? t("marketplace.refreshing")
+            : t("marketplace.refreshAll")}
         </button>
       </div>
 
@@ -343,7 +401,9 @@ export default function MarketplacePanel() {
               <span className="sor-repo-meta">
                 {r.pluginCount} {t("marketplace.plugins")} ·{" "}
                 {r.lastRefreshed
-                  ? t("marketplace.lastRefreshed", { date: new Date(r.lastRefreshed).toLocaleString() })
+                  ? t("marketplace.lastRefreshed", {
+                      date: new Date(r.lastRefreshed).toLocaleString(),
+                    })
                   : t("marketplace.neverRefreshed")}
               </span>
             </div>
@@ -383,7 +443,11 @@ export default function MarketplacePanel() {
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
           />
-          <button className="sor-btn sor-btn-primary" type="submit" disabled={!repoName || !repoUrl}>
+          <button
+            className="sor-btn sor-btn-primary"
+            type="submit"
+            disabled={!repoName || !repoUrl}
+          >
             {t("marketplace.add")}
           </button>
         </div>
@@ -399,14 +463,26 @@ export default function MarketplacePanel() {
 
     return (
       <div className="sor-modal-overlay" onClick={() => setDetailPlugin(null)}>
-        <div className="sor-modal sor-plugin-detail-modal" onClick={(e) => e.stopPropagation()} role="dialog">
-          <button className="sor-modal-close" onClick={() => setDetailPlugin(null)} aria-label={t("common.close")}>
+        <div
+          className="sor-modal sor-plugin-detail-modal"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+        >
+          <button
+            className="sor-modal-close"
+            onClick={() => setDetailPlugin(null)}
+            aria-label={t("common.close")}
+          >
             ✕
           </button>
 
           <div className="sor-detail-header">
             <div className="sor-plugin-icon-lg">
-              {p.iconUrl ? <img src={p.iconUrl} alt="" /> : <span className="sor-plugin-icon-placeholder">🧩</span>}
+              {p.iconUrl ? (
+                <img src={p.iconUrl} alt="" />
+              ) : (
+                <span className="sor-plugin-icon-placeholder">🧩</span>
+              )}
             </div>
             <div>
               <h2 className="sor-detail-title">
@@ -417,20 +493,29 @@ export default function MarketplacePanel() {
               <div className="sor-plugin-meta">
                 <StarRating rating={p.rating} />
                 <span>({p.reviewCount})</span>
-                <span className="sor-download-count">↓ {formatDownloads(p.downloads)}</span>
+                <span className="sor-download-count">
+                  ↓ {formatDownloads(p.downloads)}
+                </span>
                 <span className="sor-plugin-license">{p.license}</span>
               </div>
             </div>
           </div>
 
           <div className="sor-detail-body">
-            <p className="sor-detail-description">{p.longDescription || p.description}</p>
+            <p className="sor-detail-description">
+              {p.longDescription || p.description}
+            </p>
 
             {/* screenshots placeholder */}
             {p.screenshotUrls.length > 0 && (
               <div className="sor-screenshots">
                 {p.screenshotUrls.map((url, i) => (
-                  <img key={url} src={url} alt={`${p.name} screenshot ${i + 1}`} className="sor-screenshot" />
+                  <img
+                    key={url}
+                    src={url}
+                    alt={`${p.name} screenshot ${i + 1}`}
+                    className="sor-screenshot"
+                  />
                 ))}
               </div>
             )}
@@ -451,7 +536,9 @@ export default function MarketplacePanel() {
                 <>
                   <dt>{t("marketplace.homepage")}</dt>
                   <dd>
-                    <a href={p.homepage} target="_blank" rel="noreferrer">{p.homepage}</a>
+                    <a href={p.homepage} target="_blank" rel="noreferrer">
+                      {p.homepage}
+                    </a>
                   </dd>
                 </>
               )}
@@ -511,7 +598,11 @@ export default function MarketplacePanel() {
                 onChange={(e) => setReviewBody(e.target.value)}
                 rows={3}
               />
-              <button className="sor-btn sor-btn-primary sor-btn-sm" type="submit" disabled={!reviewTitle.trim()}>
+              <button
+                className="sor-btn sor-btn-primary sor-btn-sm"
+                type="submit"
+                disabled={!reviewTitle.trim()}
+              >
                 {t("marketplace.submitReview")}
               </button>
             </form>
@@ -520,7 +611,10 @@ export default function MarketplacePanel() {
           {/* install / uninstall */}
           <div className="sor-detail-footer">
             {isInstalled ? (
-              <button className="sor-btn sor-btn-danger" onClick={() => setConfirmUninstall({ id: p.id, name: p.name })}>
+              <button
+                className="sor-btn sor-btn-danger"
+                onClick={() => setConfirmUninstall({ id: p.id, name: p.name })}
+              >
                 {t("marketplace.uninstall")}
               </button>
             ) : (
@@ -529,7 +623,9 @@ export default function MarketplacePanel() {
                 disabled={mkt.installing === p.id}
                 onClick={() => mkt.install(p.id)}
               >
-                {mkt.installing === p.id ? t("marketplace.installing") : t("marketplace.install")}
+                {mkt.installing === p.id
+                  ? t("marketplace.installing")
+                  : t("marketplace.install")}
               </button>
             )}
           </div>
@@ -545,7 +641,10 @@ export default function MarketplacePanel() {
       {mkt.error && (
         <div className="sor-error-banner" role="alert">
           <span>{mkt.error}</span>
-          <button className="sor-btn sor-btn-sm" onClick={() => mkt.search(mkt.searchQuery)}>
+          <button
+            className="sor-btn sor-btn-sm"
+            onClick={() => mkt.search(mkt.searchQuery)}
+          >
             {t("common.dismiss")}
           </button>
         </div>
@@ -566,9 +665,16 @@ export default function MarketplacePanel() {
             value={mkt.selectedCategory ?? ""}
             onChange={(v) => handleCategoryChange(v)}
             variant="form-sm"
-            options={CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+            options={CATEGORIES.map((c) => ({
+              value: c.value,
+              label: c.label,
+            }))}
           />
-          <button className="sor-btn sor-btn-icon" onClick={handleRefresh} title={t("marketplace.refresh")}>
+          <button
+            className="sor-btn sor-btn-icon"
+            onClick={handleRefresh}
+            title={t("marketplace.refresh")}
+          >
             ↻
           </button>
         </div>
@@ -576,20 +682,24 @@ export default function MarketplacePanel() {
 
       {/* tab bar */}
       <nav className="sor-tab-bar" role="tablist">
-        {(["browse", "installed", "updates", "repositories"] as Tab[]).map((t_) => (
-          <button
-            key={t_}
-            role="tab"
-            aria-selected={tab === t_}
-            className={`sor-tab ${tab === t_ ? "sor-tab-active" : ""}`}
-            onClick={() => handleTabChange(t_)}
-          >
-            {t(`marketplace.tabs.${t_}`)}
-            {t_ === "updates" && updatable.length > 0 && (
-              <span className="sor-badge sor-badge-count">{updatable.length}</span>
-            )}
-          </button>
-        ))}
+        {(["browse", "installed", "updates", "repositories"] as Tab[]).map(
+          (t_) => (
+            <button
+              key={t_}
+              role="tab"
+              aria-selected={tab === t_}
+              className={`sor-tab ${tab === t_ ? "sor-tab-active" : ""}`}
+              onClick={() => handleTabChange(t_)}
+            >
+              {t(`marketplace.tabs.${t_}`)}
+              {t_ === "updates" && updatable.length > 0 && (
+                <span className="sor-badge sor-badge-count">
+                  {updatable.length}
+                </span>
+              )}
+            </button>
+          ),
+        )}
       </nav>
 
       {/* tab content */}
@@ -603,10 +713,18 @@ export default function MarketplacePanel() {
       {/* stats footer */}
       {mkt.stats && (
         <footer className="sor-marketplace-footer">
-          <span>{mkt.stats.totalListings} {t("marketplace.available")}</span>
-          <span>{mkt.stats.installedCount} {t("marketplace.installedLabel")}</span>
-          <span>{mkt.stats.updatesAvailable} {t("marketplace.updatesPending")}</span>
-          <span>{mkt.stats.repositoryCount} {t("marketplace.repos")}</span>
+          <span>
+            {mkt.stats.totalListings} {t("marketplace.available")}
+          </span>
+          <span>
+            {mkt.stats.installedCount} {t("marketplace.installedLabel")}
+          </span>
+          <span>
+            {mkt.stats.updatesAvailable} {t("marketplace.updatesPending")}
+          </span>
+          <span>
+            {mkt.stats.repositoryCount} {t("marketplace.repos")}
+          </span>
         </footer>
       )}
 
@@ -617,7 +735,9 @@ export default function MarketplacePanel() {
       <ConfirmDialog
         isOpen={!!confirmUninstall}
         title={t("marketplace.uninstall")}
-        message={t("marketplace.confirmUninstall", { name: confirmUninstall?.name ?? "" })}
+        message={t("marketplace.confirmUninstall", {
+          name: confirmUninstall?.name ?? "",
+        })}
         confirmText={t("marketplace.uninstall")}
         cancelText={t("common.cancel")}
         variant="danger"
