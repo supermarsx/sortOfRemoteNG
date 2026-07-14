@@ -7,7 +7,7 @@ description = "Let's Encrypt / ACME certificate management for SortOfRemote NG g
 
 [features]
 default = []
-dns-resolver = ["dep:trust-dns-resolver"]
+dns-resolver = ["dep:hickory-resolver"]
 
 [dependencies]
 serde = { workspace = true }
@@ -20,6 +20,8 @@ base64 = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
+p256 = { version = "0.13", features = ["ecdsa", "pem"] }
+rcgen = "=0.12.1"
 # Optional DNS resolver for DNS-01 challenge propagation checks.
 # When disabled, the crate falls back to spawning `nslookup`.
-trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime", "system-config"], optional = true }
+hickory-resolver = { version = "0.26.1", default-features = false, features = ["tokio", "system-config"], optional = true }

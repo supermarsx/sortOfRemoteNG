@@ -58,12 +58,6 @@ impl RustDeskService {
 
         self.connections.insert(session_id.clone(), record);
 
-        // Mark as connected after spawn
-        if let Some(r) = self.connections.get_mut(&session_id) {
-            r.session.connected = true;
-            r.session.connected_at = Some(Utc::now());
-        }
-
         Ok(session_id)
     }
 

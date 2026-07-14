@@ -24,8 +24,6 @@ quinn = { workspace = true }
 rustls = { workspace = true }
 tokio-rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
-russh = "0.40"
-russh-keys = "0.40"
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 which = { workspace = true }

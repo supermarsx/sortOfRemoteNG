@@ -197,6 +197,17 @@ impl CertificateStore {
         Ok(())
     }
 
+    /// Load an account private key (PEM format).
+    pub fn load_account_key(&self, account_id: &str) -> Result<String, String> {
+        let key_path = self
+            .base_dir
+            .join("accounts")
+            .join(account_id)
+            .join("account_key.pem");
+        std::fs::read_to_string(&key_path)
+            .map_err(|e| format!("Failed to read account key for {}: {}", account_id, e))
+    }
+
     /// Load an account by ID.
     pub fn load_account(&self, account_id: &str) -> Result<AcmeAccount, String> {
         let meta_path = self

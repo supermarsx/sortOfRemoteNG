@@ -5,6 +5,7 @@
 
 use crate::types::*;
 use rand::RngCore;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Generate a WireGuard keypair.
 ///
@@ -34,30 +35,9 @@ fn generate_private_key() -> [u8; 32] {
 
 /// Derive public key from private key bytes using Curve25519 base point.
 fn derive_public_key_from_bytes(private_key: &[u8; 32]) -> [u8; 32] {
-    // Curve25519 base point
-    let base_point: [u8; 32] = {
-        let mut bp = [0u8; 32];
-        bp[0] = 9;
-        bp
-    };
-
-    // Simplified scalar multiplication placeholder
-    // In production, use x25519-dalek or similar
-    scalar_mult(private_key, &base_point)
-}
-
-/// Simplified Curve25519 scalar multiplication.
-/// NOTE: In production, use the `x25519-dalek` crate for proper implementation.
-fn scalar_mult(scalar: &[u8; 32], point: &[u8; 32]) -> [u8; 32] {
-    // This is a structural placeholder — real WireGuard implementations
-    // use x25519-dalek::StaticSecret / PublicKey.
-    // For our purposes, the `wg genkey | wg pubkey` CLI is used at runtime.
-    let mut result = [0u8; 32];
-    // XOR-based placeholder to produce deterministic but non-trivial output
-    for i in 0..32 {
-        result[i] = scalar[i] ^ point[i % point.len()];
-    }
-    result
+    let secret = StaticSecret::from(*private_key);
+    let public = PublicKey::from(&secret);
+    *public.as_bytes()
 }
 
 /// Generate a preshared key (32 random bytes, base64 encoded).
@@ -138,4 +118,35 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::STANDARD
         .decode(s)
         .map_err(|e| format!("Invalid base64: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_keypair_uses_x25519_public_key() {
+        let pair = generate_keypair();
+        let private = base64_decode(&pair.private_key).unwrap();
+        let public = base64_decode(&pair.public_key).unwrap();
+        let private: [u8; 32] = private.try_into().unwrap();
+
+        assert_eq!(public, derive_public_key_from_bytes(&private));
+        assert!(is_clamped(&pair.private_key).unwrap());
+    }
+
+    #[test]
+    fn known_private_key_derives_stable_public_key() {
+        let private = [
+            0x40, 0x77, 0x4d, 0x47, 0x80, 0xa4, 0xe5, 0x09, 0x5b, 0x77, 0x62, 0xd0, 0x84, 0x06,
+            0x4a, 0x9c, 0xb6, 0x27, 0x99, 0xe8, 0x5a, 0xd0, 0x35, 0x35, 0x25, 0x17, 0x6f, 0xe1,
+            0x33, 0x4f, 0x12, 0x7f,
+        ];
+        let public = derive_public_key_from_bytes(&private);
+        assert_ne!(public, {
+            let mut xor_placeholder = private;
+            xor_placeholder[0] ^= 9;
+            xor_placeholder
+        });
+    }
 }

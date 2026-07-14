@@ -240,7 +240,10 @@ tokio-rustls = "0.26"
 rustls-native-certs = "0.8"
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 bytes = "1"
-ssh2 = { version = "0.9", features = ["openssl-on-win32", "vendored-openssl"] }
+# On Windows, let libssh2 use its native WinCNG backend. Enabling
+# `openssl-on-win32`/`vendored-openssl` forces openssl-sys to compile OpenSSL
+# from source and breaks clean Windows/MSVC builds without Perl/NASM.
+ssh2 = "0.9"
 windows = "=0.62.2"
 windows-sys = "=0.61.2"
 
@@ -389,8 +392,8 @@ windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
 sorng-ftp = { path = "crates/sorng-ftp" }
 tokio-test = { workspace = true }
 tempfile = { workspace = true }
-mockall = "0.11"
-serial_test = "2.0"
+mockall = "0.15"
+serial_test = "3.5"
 chrono = { workspace = true }
 uuid = { workspace = true }
 # reqwest: real HTTP client for the live-server e2e API suite (tests/api_test.rs,

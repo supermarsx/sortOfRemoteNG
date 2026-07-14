@@ -8,7 +8,13 @@ use crate::keystore::KeyStore;
 use crate::protocol::{self, msg, AgentMessage, ProtocolIdentity};
 use crate::types::*;
 use log::{debug, error, info, warn};
+use rsa::pkcs1v15;
+use rsa::BigUint;
 use sha2::{Digest, Sha256};
+use signature::{SignatureEncoding, Signer};
+use ssh_key::private::{Ed25519Keypair, KeypairData, RsaKeypair, RsaPrivateKey};
+use ssh_key::public::{Ed25519PublicKey, RsaPublicKey};
+use ssh_key::{Mpint, PrivateKey};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 
@@ -194,23 +200,37 @@ impl BuiltinAgent {
         comment: &str,
         constraints: Vec<KeyConstraint>,
     ) -> AgentMessage {
+        let parsed = match parse_add_identity_key(key_type, key_data, comment) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                debug!(
+                    "Treating add-identity payload for {} as public-only blob: {}",
+                    key_type, e
+                );
+                ParsedIdentity {
+                    public_key_blob: key_data.to_vec(),
+                    private_key: None,
+                    comment: comment.to_string(),
+                }
+            }
+        };
         let algorithm = KeyAlgorithm::from_ssh_name(key_type);
         let fingerprint = format!(
             "SHA256:{}",
             base64::Engine::encode(
                 &base64::engine::general_purpose::STANDARD_NO_PAD,
-                Sha256::digest(key_data),
+                Sha256::digest(&parsed.public_key_blob),
             )
         );
 
         let key = AgentKey {
             id: uuid::Uuid::new_v4().to_string(),
-            comment: comment.to_string(),
+            comment: parsed.comment,
             algorithm,
             bits: algorithm.default_bits(),
             fingerprint_sha256: fingerprint.clone(),
             fingerprint_md5: String::new(),
-            public_key_blob: key_data.to_vec(),
+            public_key_blob: parsed.public_key_blob,
             public_key_openssh: String::new(),
             source: KeySource::Imported,
             constraints,
@@ -221,7 +241,7 @@ impl BuiltinAgent {
             metadata: HashMap::new(),
         };
 
-        match self.store.add_key(key) {
+        match self.store.add_key_with_private(key, parsed.private_key) {
             Ok(id) => {
                 info!("Added key {} ({})", id, comment);
                 let _ = self.event_tx.send(AgentEvent::KeyAdded {
@@ -340,44 +360,39 @@ impl BuiltinAgent {
 
     // ── Signing ─────────────────────────────────────────────────────
 
-    /// Perform cryptographic signing. This is a placeholder that returns
-    /// a mock signature; real signing requires the private key material
-    /// which would be held in memory or delegated to a security key.
+    /// Perform cryptographic signing.
     fn sign_data(
         &self,
         algorithm: &KeyAlgorithm,
-        _key_blob: &[u8],
+        key_blob: &[u8],
         data: &[u8],
         flags: u32,
     ) -> Result<Vec<u8>, String> {
-        // Determine the signature algorithm name
-        let sig_algo = match algorithm {
-            KeyAlgorithm::Rsa => {
-                if flags & msg::SSH_AGENT_RSA_SHA2_512 != 0 {
-                    "rsa-sha2-512"
-                } else if flags & msg::SSH_AGENT_RSA_SHA2_256 != 0 {
-                    "rsa-sha2-256"
-                } else {
-                    "ssh-rsa"
+        let private_key = self
+            .store
+            .find_private_by_blob(key_blob)
+            .ok_or_else(|| "Key has no private signing material".to_string())?;
+
+        match private_key.key_data() {
+            KeypairData::Ed25519(_) => {
+                if *algorithm != KeyAlgorithm::Ed25519 {
+                    return Err("Stored key algorithm does not match Ed25519 signer".to_string());
                 }
+                let signature = private_key
+                    .try_sign(data)
+                    .map_err(|_| "Ed25519 signing failed".to_string())?;
+                Ok(make_signature_blob("ssh-ed25519", signature.as_bytes()))
             }
-            KeyAlgorithm::Ed25519 => "ssh-ed25519",
-            KeyAlgorithm::EcdsaP256 => "ecdsa-sha2-nistp256",
-            KeyAlgorithm::EcdsaP384 => "ecdsa-sha2-nistp384",
-            KeyAlgorithm::EcdsaP521 => "ecdsa-sha2-nistp521",
-            KeyAlgorithm::SkEd25519 => "sk-ssh-ed25519@openssh.com",
-            KeyAlgorithm::SkEcdsaP256 => "sk-ecdsa-sha2-nistp256@openssh.com",
-            KeyAlgorithm::Dsa => "ssh-dss",
-        };
-
-        // Build the signature blob in SSH wire format:
-        // string    signature_algo_name
-        // string    signature_blob
-        let hash = Sha256::digest(data);
-        let mut sig_blob = protocol::write_string(sig_algo.as_bytes());
-        sig_blob.extend(protocol::write_string(&hash));
-
-        Ok(sig_blob)
+            KeypairData::Rsa(rsa_keypair) => {
+                let (signature_algorithm, signature_bytes) =
+                    sign_rsa_agent_data(rsa_keypair, data, flags)?;
+                Ok(make_signature_blob(signature_algorithm, &signature_bytes))
+            }
+            other => Err(format!(
+                "Unsupported private key algorithm for agent signing: {:?}",
+                other.algorithm()
+            )),
+        }
     }
 
     // ── Confirmation Flow ───────────────────────────────────────────
@@ -509,6 +524,174 @@ impl BuiltinAgent {
     }
 }
 
+struct ParsedIdentity {
+    public_key_blob: Vec<u8>,
+    private_key: Option<PrivateKey>,
+    comment: String,
+}
+
+fn parse_add_identity_key(
+    key_type: &str,
+    key_data: &[u8],
+    fallback_comment: &str,
+) -> Result<ParsedIdentity, String> {
+    match key_type {
+        "ssh-ed25519" => parse_ed25519_identity(key_data, fallback_comment),
+        "ssh-rsa" | "rsa-sha2-256" | "rsa-sha2-512" => {
+            parse_rsa_identity(key_data, fallback_comment)
+        }
+        other => Err(format!("Unsupported add-identity key type: {}", other)),
+    }
+}
+
+fn parse_ed25519_identity(
+    key_data: &[u8],
+    fallback_comment: &str,
+) -> Result<ParsedIdentity, String> {
+    let (public, offset) = protocol::read_string(key_data, 0)?;
+    let (private, offset) = protocol::read_string(key_data, offset)?;
+    let (comment, offset) = read_optional_trailing_comment(key_data, offset, fallback_comment)?;
+    if offset != key_data.len() {
+        return Err("Unexpected trailing bytes in Ed25519 identity".to_string());
+    }
+
+    let public: [u8; 32] = public
+        .as_slice()
+        .try_into()
+        .map_err(|_| "Invalid Ed25519 public key length".to_string())?;
+    let private: [u8; 64] = private
+        .as_slice()
+        .try_into()
+        .map_err(|_| "Invalid Ed25519 private key length".to_string())?;
+    let keypair = Ed25519Keypair::from_bytes(&private)
+        .map_err(|e| format!("Invalid Ed25519 private key: {}", e))?;
+    if keypair.public != Ed25519PublicKey(public) {
+        return Err("Ed25519 public key does not match private key".to_string());
+    }
+
+    let mut private_key = PrivateKey::from(keypair);
+    private_key.set_comment(comment.clone());
+
+    Ok(ParsedIdentity {
+        public_key_blob: make_public_key_blob("ssh-ed25519", &[protocol::write_string(&public)]),
+        private_key: Some(private_key),
+        comment,
+    })
+}
+
+fn parse_rsa_identity(key_data: &[u8], fallback_comment: &str) -> Result<ParsedIdentity, String> {
+    let (n, offset) = read_mpint_field(key_data, 0)?;
+    let (e, offset) = read_mpint_field(key_data, offset)?;
+    let (d, offset) = read_mpint_field(key_data, offset)?;
+    let (iqmp, offset) = read_mpint_field(key_data, offset)?;
+    let (p, offset) = read_mpint_field(key_data, offset)?;
+    let (q, offset) = read_mpint_field(key_data, offset)?;
+    let (comment, offset) = read_optional_trailing_comment(key_data, offset, fallback_comment)?;
+    if offset != key_data.len() {
+        return Err("Unexpected trailing bytes in RSA identity".to_string());
+    }
+
+    let public = RsaPublicKey {
+        e: Mpint::from_bytes(&e).map_err(|err| format!("Invalid RSA exponent: {}", err))?,
+        n: Mpint::from_bytes(&n).map_err(|err| format!("Invalid RSA modulus: {}", err))?,
+    };
+    let private = RsaPrivateKey {
+        d: Mpint::from_bytes(&d).map_err(|err| format!("Invalid RSA private exponent: {}", err))?,
+        iqmp: Mpint::from_bytes(&iqmp).map_err(|err| format!("Invalid RSA iqmp: {}", err))?,
+        p: Mpint::from_bytes(&p).map_err(|err| format!("Invalid RSA p: {}", err))?,
+        q: Mpint::from_bytes(&q).map_err(|err| format!("Invalid RSA q: {}", err))?,
+    };
+    let keypair = RsaKeypair { public, private };
+    validate_rsa_keypair(&keypair)?;
+
+    let mut private_key = PrivateKey::from(keypair);
+    private_key.set_comment(comment.clone());
+
+    Ok(ParsedIdentity {
+        public_key_blob: make_public_key_blob(
+            "ssh-rsa",
+            &[protocol::write_string(&e), protocol::write_string(&n)],
+        ),
+        private_key: Some(private_key),
+        comment,
+    })
+}
+
+fn read_mpint_field(data: &[u8], offset: usize) -> Result<(Vec<u8>, usize), String> {
+    protocol::read_string(data, offset)
+}
+
+fn read_optional_trailing_comment(
+    data: &[u8],
+    offset: usize,
+    fallback_comment: &str,
+) -> Result<(String, usize), String> {
+    if offset == data.len() {
+        return Ok((fallback_comment.to_string(), offset));
+    }
+    protocol::read_utf8_string(data, offset)
+}
+
+fn make_public_key_blob(algorithm: &str, fields: &[Vec<u8>]) -> Vec<u8> {
+    let mut blob = protocol::write_string(algorithm.as_bytes());
+    for field in fields {
+        blob.extend_from_slice(field);
+    }
+    blob
+}
+
+fn make_signature_blob(algorithm: &str, signature: &[u8]) -> Vec<u8> {
+    let mut blob = protocol::write_string(algorithm.as_bytes());
+    blob.extend(protocol::write_string(signature));
+    blob
+}
+
+fn sign_rsa_agent_data(
+    keypair: &RsaKeypair,
+    data: &[u8],
+    flags: u32,
+) -> Result<(&'static str, Vec<u8>), String> {
+    let private_key = rsa_private_key_from_ssh_keypair(keypair)?;
+    if flags & msg::SSH_AGENT_RSA_SHA2_512 != 0 {
+        let signing_key = pkcs1v15::SigningKey::<sha2::Sha512>::new(private_key);
+        let signature = signing_key
+            .try_sign(data)
+            .map_err(|_| "RSA-SHA512 signing failed".to_string())?;
+        Ok(("rsa-sha2-512", signature.to_vec()))
+    } else if flags & msg::SSH_AGENT_RSA_SHA2_256 != 0 {
+        let signing_key = pkcs1v15::SigningKey::<sha2::Sha256>::new(private_key);
+        let signature = signing_key
+            .try_sign(data)
+            .map_err(|_| "RSA-SHA256 signing failed".to_string())?;
+        Ok(("rsa-sha2-256", signature.to_vec()))
+    } else {
+        let signing_key = pkcs1v15::SigningKey::<sha1::Sha1>::new(private_key);
+        let signature = signing_key
+            .try_sign(data)
+            .map_err(|_| "RSA-SHA1 signing failed".to_string())?;
+        Ok(("ssh-rsa", signature.to_vec()))
+    }
+}
+
+fn validate_rsa_keypair(keypair: &RsaKeypair) -> Result<(), String> {
+    rsa_private_key_from_ssh_keypair(keypair).map(|_| ())
+}
+
+fn rsa_private_key_from_ssh_keypair(keypair: &RsaKeypair) -> Result<rsa::RsaPrivateKey, String> {
+    let n =
+        BigUint::try_from(&keypair.public.n).map_err(|e| format!("Invalid RSA modulus: {}", e))?;
+    let e =
+        BigUint::try_from(&keypair.public.e).map_err(|e| format!("Invalid RSA exponent: {}", e))?;
+    let d = BigUint::try_from(&keypair.private.d)
+        .map_err(|e| format!("Invalid RSA private exponent: {}", e))?;
+    let p =
+        BigUint::try_from(&keypair.private.p).map_err(|e| format!("Invalid RSA prime p: {}", e))?;
+    let q =
+        BigUint::try_from(&keypair.private.q).map_err(|e| format!("Invalid RSA prime q: {}", e))?;
+    rsa::RsaPrivateKey::from_components(n, e, d, vec![p, q])
+        .map_err(|e| format!("Invalid RSA private key: {}", e))
+}
+
 /// Parse wire-format constraints into typed KeyConstraint values.
 fn parse_protocol_constraints(constraints: &[protocol::ProtocolConstraint]) -> Vec<KeyConstraint> {
     constraints
@@ -541,11 +724,65 @@ mod hex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use signature::Verifier;
+    use ssh_key::rand_core::OsRng;
+    use ssh_key::Algorithm;
     use tokio::sync::broadcast;
 
     fn make_agent() -> BuiltinAgent {
         let (tx, _) = broadcast::channel(16);
         BuiltinAgent::new(AgentConfig::default(), tx)
+    }
+
+    fn ed25519_agent_key_data(private_key: &PrivateKey, comment: &str) -> (Vec<u8>, Vec<u8>) {
+        let KeypairData::Ed25519(keypair) = private_key.key_data() else {
+            unreachable!("expected Ed25519 test key");
+        };
+        let public = keypair.public.as_ref();
+        let private = keypair.to_bytes();
+        let mut key_data = protocol::write_string(public);
+        key_data.extend(protocol::write_string(&private));
+        key_data.extend(protocol::write_string(comment.as_bytes()));
+
+        (
+            key_data,
+            make_public_key_blob("ssh-ed25519", &[protocol::write_string(public)]),
+        )
+    }
+
+    fn rsa_agent_key_data(private_key: &PrivateKey, comment: &str) -> (Vec<u8>, Vec<u8>) {
+        let KeypairData::Rsa(keypair) = private_key.key_data() else {
+            unreachable!("expected RSA test key");
+        };
+        let n = keypair.public.n.as_bytes();
+        let e = keypair.public.e.as_bytes();
+        let d = keypair.private.d.as_bytes();
+        let iqmp = keypair.private.iqmp.as_bytes();
+        let p = keypair.private.p.as_bytes();
+        let q = keypair.private.q.as_bytes();
+
+        let mut key_data = protocol::write_string(n);
+        key_data.extend(protocol::write_string(e));
+        key_data.extend(protocol::write_string(d));
+        key_data.extend(protocol::write_string(iqmp));
+        key_data.extend(protocol::write_string(p));
+        key_data.extend(protocol::write_string(q));
+        key_data.extend(protocol::write_string(comment.as_bytes()));
+
+        (
+            key_data,
+            make_public_key_blob(
+                "ssh-rsa",
+                &[protocol::write_string(e), protocol::write_string(n)],
+            ),
+        )
+    }
+
+    fn signature_algorithm(signature_blob: &[u8]) -> String {
+        let (algorithm, offset) = protocol::read_utf8_string(signature_blob, 0).unwrap();
+        let (_signature, offset) = protocol::read_string(signature_blob, offset).unwrap();
+        assert_eq!(offset, signature_blob.len());
+        algorithm
     }
 
     #[tokio::test]
@@ -641,5 +878,111 @@ mod tests {
             .await;
         assert!(matches!(resp, AgentMessage::Success));
         assert_eq!(agent.store.key_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_sign_request_fails_without_private_key_signer() {
+        let mut agent = make_agent();
+        let key_blob = vec![1, 2, 3, 4];
+        let add = AgentMessage::AddIdentity {
+            key_type: "ssh-ed25519".to_string(),
+            key_data: key_blob.clone(),
+            comment: "sign-test".to_string(),
+        };
+        assert!(matches!(
+            agent.process_message(add).await,
+            AgentMessage::Success
+        ));
+
+        let resp = agent
+            .process_message(AgentMessage::SignRequest {
+                key_blob,
+                data: b"session data".to_vec(),
+                flags: 0,
+            })
+            .await;
+
+        assert!(matches!(resp, AgentMessage::Failure));
+    }
+
+    #[tokio::test]
+    async fn test_add_identity_ed25519_signs_agent_blob() {
+        let mut agent = make_agent();
+        let private_key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+        let (key_data, public_blob) = ed25519_agent_key_data(&private_key, "ed-sign-test");
+
+        let resp = agent
+            .process_message(AgentMessage::AddIdentity {
+                key_type: "ssh-ed25519".to_string(),
+                key_data,
+                comment: "ignored-fallback".to_string(),
+            })
+            .await;
+        assert!(matches!(resp, AgentMessage::Success));
+
+        let data = b"session data".to_vec();
+        let resp = agent
+            .process_message(AgentMessage::SignRequest {
+                key_blob: public_blob,
+                data: data.clone(),
+                flags: 0,
+            })
+            .await;
+
+        let AgentMessage::SignResponse { signature } = resp else {
+            unreachable!("Expected SignResponse");
+        };
+        assert_eq!(signature_algorithm(&signature), "ssh-ed25519");
+        let signature = ssh_key::Signature::try_from(signature.as_slice()).unwrap();
+        Verifier::verify(private_key.public_key(), &data, &signature).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sign_request_unknown_key_fails() {
+        let mut agent = make_agent();
+        let resp = agent
+            .process_message(AgentMessage::SignRequest {
+                key_blob: vec![9, 9, 9],
+                data: b"session data".to_vec(),
+                flags: 0,
+            })
+            .await;
+
+        assert!(matches!(resp, AgentMessage::Failure));
+    }
+
+    #[tokio::test]
+    async fn test_add_identity_rsa_signs_requested_hash_algorithms() {
+        let mut agent = make_agent();
+        let private_key = PrivateKey::random(&mut OsRng, Algorithm::Rsa { hash: None }).unwrap();
+        let (key_data, public_blob) = rsa_agent_key_data(&private_key, "rsa-sign-test");
+
+        let resp = agent
+            .process_message(AgentMessage::AddIdentity {
+                key_type: "ssh-rsa".to_string(),
+                key_data,
+                comment: "ignored-fallback".to_string(),
+            })
+            .await;
+        assert!(matches!(resp, AgentMessage::Success));
+
+        for (flags, expected_algorithm) in [
+            (msg::SSH_AGENT_RSA_SHA2_256, "rsa-sha2-256"),
+            (msg::SSH_AGENT_RSA_SHA2_512, "rsa-sha2-512"),
+            (0, "ssh-rsa"),
+        ] {
+            let resp = agent
+                .process_message(AgentMessage::SignRequest {
+                    key_blob: public_blob.clone(),
+                    data: b"rsa session data".to_vec(),
+                    flags,
+                })
+                .await;
+
+            let AgentMessage::SignResponse { signature } = resp else {
+                unreachable!("Expected SignResponse for {}", expected_algorithm);
+            };
+            assert_eq!(signature_algorithm(&signature), expected_algorithm);
+        }
     }
 }

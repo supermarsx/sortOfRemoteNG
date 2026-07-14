@@ -5,12 +5,16 @@
 //! provisioning the challenge response and cleaning up after validation.
 
 use crate::acme::{dns01_txt_value, http01_response};
+use crate::dns_providers::{dns01_record_name, DnsProviderManager};
 use crate::types::*;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::{oneshot, Mutex};
+use tokio::task::JoinHandle;
 
 // ── Challenge Solver Trait ──────────────────────────────────────────
 
@@ -42,6 +46,10 @@ pub struct Http01Solver {
     config: HttpChallengeConfig,
     /// Whether the standalone server is running.
     server_running: bool,
+    /// Shutdown signal for the standalone server.
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    /// Background task serving standalone HTTP-01 responses.
+    server_task: Option<JoinHandle<()>>,
 }
 
 impl Http01Solver {
@@ -50,6 +58,8 @@ impl Http01Solver {
             tokens: Arc::new(Mutex::new(HashMap::new())),
             config,
             server_running: false,
+            shutdown_tx: None,
+            server_task: None,
         }
     }
 
@@ -64,15 +74,8 @@ impl Http01Solver {
     ) -> Result<ChallengeSolveResult, String> {
         let response = http01_response(token, key_thumbprint);
 
-        // Store the token → response mapping
-        self.tokens
-            .lock()
-            .await
-            .insert(token.to_string(), response.clone());
-
-        // Mode-specific provisioning
+        let message;
         if let Some(ref webroot) = self.config.webroot_path {
-            // Webroot mode: write the challenge file
             let challenge_dir = format!("{}/.well-known/acme-challenge", webroot);
             std::fs::create_dir_all(&challenge_dir)
                 .map_err(|e| format!("Failed to create challenge dir: {}", e))?;
@@ -82,17 +85,35 @@ impl Http01Solver {
                 .map_err(|e| format!("Failed to write challenge file: {}", e))?;
 
             log::info!("[HTTP-01] Challenge file written to {}", challenge_file);
-        } else if self.config.standalone_server && !self.server_running {
-            // Standalone mode: start the HTTP server
-            self.start_standalone_server().await?;
+            message = format!(
+                "HTTP-01 challenge file written for token {}",
+                &token[..8.min(token.len())]
+            );
+        } else if self.config.proxy_from_gateway {
+            message = format!(
+                "HTTP-01 challenge registered for gateway proxy token {}",
+                &token[..8.min(token.len())]
+            );
+        } else if self.config.standalone_server {
+            if !self.server_running {
+                return Err("HTTP-01 standalone challenge server is not running".to_string());
+            }
+            message = format!(
+                "HTTP-01 challenge registered for standalone listener token {}",
+                &token[..8.min(token.len())]
+            );
+        } else {
+            return Err(
+                "HTTP-01 challenge cannot be provisioned: configure webroot_path or gateway proxy"
+                    .to_string(),
+            );
         }
+
+        self.tokens.lock().await.insert(token.to_string(), response);
 
         Ok(ChallengeSolveResult {
             provisioned: true,
-            message: format!(
-                "HTTP-01 challenge provisioned for token {}",
-                &token[..8.min(token.len())]
-            ),
+            message,
             provisioned_at: Some(Utc::now()),
         })
     }
@@ -120,35 +141,47 @@ impl Http01Solver {
     }
 
     /// Start the standalone HTTP challenge server.
-    async fn start_standalone_server(&mut self) -> Result<(), String> {
+    pub async fn start_standalone_server(&mut self) -> Result<(), String> {
+        if self.server_running {
+            return Ok(());
+        }
+
         let port = self.config.listen_port;
         let addr = self.config.listen_addr.clone();
+        let bind_addr = format!("{}:{}", addr, port);
+
+        log::info!("[HTTP-01] Starting standalone server on {}", bind_addr);
+        let listener = TcpListener::bind(&bind_addr)
+            .await
+            .map_err(|e| format!("Failed to bind HTTP-01 standalone listener {bind_addr}: {e}"))?;
         let tokens = Arc::clone(&self.tokens);
-
-        log::info!("[HTTP-01] Starting standalone server on {}:{}", addr, port);
-
-        // Spawn the server in a background task
-        let _handle = tokio::spawn(async move {
-            // In production, this would be a minimal hyper/axum server that responds
-            // to GET /.well-known/acme-challenge/<token> requests.
-            //
-            //   let app = Router::new()
-            //       .route("/.well-known/acme-challenge/:token", get(handler))
-            //       .with_state(tokens);
-            //
-            //   let listener = TcpListener::bind(format!("{}:{}", addr, port)).await?;
-            //   axum::serve(listener, app).await?;
-            //
-            // The tokens HashMap is shared with the solver so provisioned tokens
-            // are immediately available.
-            log::info!(
-                "[HTTP-01] Standalone server would listen on {}:{}",
-                addr,
-                port
-            );
-            let _ = tokens; // keep the reference alive
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut shutdown_rx => {
+                        break;
+                    }
+                    accepted = listener.accept() => {
+                        match accepted {
+                            Ok((stream, _peer)) => {
+                                let tokens = Arc::clone(&tokens);
+                                tokio::spawn(async move {
+                                    handle_http01_connection(stream, tokens).await;
+                                });
+                            }
+                            Err(err) => {
+                                log::warn!("[HTTP-01] Standalone listener accept failed: {}", err);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         });
 
+        self.shutdown_tx = Some(shutdown_tx);
+        self.server_task = Some(task);
         self.server_running = true;
         Ok(())
     }
@@ -159,8 +192,13 @@ impl Http01Solver {
             return Ok(());
         }
         log::info!("[HTTP-01] Stopping standalone server");
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        if let Some(task) = self.server_task.take() {
+            let _ = task.await;
+        }
         self.server_running = false;
-        // In production: send shutdown signal to the server task
         Ok(())
     }
 
@@ -173,6 +211,50 @@ impl Http01Solver {
     pub async fn active_tokens(&self) -> Vec<String> {
         self.tokens.lock().await.keys().cloned().collect()
     }
+}
+
+async fn handle_http01_connection(
+    mut stream: tokio::net::TcpStream,
+    tokens: Arc<Mutex<HashMap<String, String>>>,
+) {
+    let mut buffer = [0u8; 4096];
+    let read = match stream.read(&mut buffer).await {
+        Ok(0) | Err(_) => return,
+        Ok(read) => read,
+    };
+
+    let request = String::from_utf8_lossy(&buffer[..read]);
+    let request_line = request.lines().next().unwrap_or_default();
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let raw_path = parts.next().unwrap_or_default();
+    let path = raw_path.split('?').next().unwrap_or(raw_path);
+
+    let (status, body) = if method == "GET" {
+        if let Some(token) = path.strip_prefix("/.well-known/acme-challenge/") {
+            if !token.is_empty() && !token.contains('/') {
+                match tokens.lock().await.get(token).cloned() {
+                    Some(response) => ("200 OK", response),
+                    None => ("404 Not Found", "challenge token not found".to_string()),
+                }
+            } else {
+                ("404 Not Found", "challenge token not found".to_string())
+            }
+        } else {
+            ("404 Not Found", "not found".to_string())
+        }
+    } else {
+        ("405 Method Not Allowed", "method not allowed".to_string())
+    };
+
+    let response = format!(
+        "HTTP/1.1 {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        status,
+        body.len(),
+        body
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.shutdown().await;
 }
 
 // ── DNS-01 Solver ───────────────────────────────────────────────────
@@ -206,7 +288,7 @@ impl Dns01Solver {
         key_thumbprint: &str,
     ) -> Result<ChallengeSolveResult, String> {
         let txt_value = dns01_txt_value(token, key_thumbprint);
-        let record_name = format!("_acme-challenge.{}", domain.trim_start_matches("*."));
+        let record_name = dns01_record_name(domain);
 
         log::info!(
             "[DNS-01] Creating TXT record: {} = {}",
@@ -214,37 +296,17 @@ impl Dns01Solver {
             txt_value
         );
 
-        let record_id = match self.config.provider {
-            DnsProvider::Cloudflare => {
-                self.create_cloudflare_record(&record_name, &txt_value)
-                    .await?
-            }
-            DnsProvider::Route53 => self.create_route53_record(&record_name, &txt_value).await?,
-            DnsProvider::Manual => {
-                log::info!(
-                    "[DNS-01] MANUAL: Please create the following TXT record:\n\
-                     Name:  {}\n\
-                     Value: {}\n\
-                     TTL:   {}",
-                    record_name,
-                    txt_value,
-                    self.config.ttl
-                );
-                None
-            }
-            _ => {
-                // For other providers, use a generic approach
-                self.create_generic_record(&record_name, &txt_value).await?
-            }
-        };
+        let manager = DnsProviderManager::new(self.config.clone());
+        let operation = manager.create_txt_record(&record_name, &txt_value).await?;
+        let record_id = operation.record_id;
 
         self.active_records
             .insert(domain.to_string(), (record_id, txt_value));
 
         Ok(ChallengeSolveResult {
-            provisioned: true,
-            message: format!("DNS-01 TXT record created for {}", record_name),
-            provisioned_at: Some(Utc::now()),
+            provisioned: operation.success,
+            message: operation.message,
+            provisioned_at: operation.success.then(Utc::now),
         })
     }
 
@@ -253,7 +315,7 @@ impl Dns01Solver {
         let timeout = self.config.propagation_timeout_secs;
         let interval = self.config.polling_interval_secs;
         let expected = self.get_txt_value(domain).unwrap_or("");
-        let record_name = format!("_acme-challenge.{}", domain.trim_start_matches("*."));
+        let record_name = dns01_record_name(domain);
         log::info!(
             "[DNS-01] Waiting for DNS propagation for {} (timeout: {}s)",
             record_name,
@@ -267,22 +329,28 @@ impl Dns01Solver {
                     record_name, timeout
                 ));
             }
-            // Try trust-dns-resolver if available, else fallback to nslookup
+            // Try hickory-resolver if available, else fallback to nslookup
             let found = {
                 #[cfg(feature = "dns-resolver")]
                 {
-                    use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
-                    use trust_dns_resolver::proto::rr::rdata::TXT;
-                    use trust_dns_resolver::TokioAsyncResolver;
-                    let resolver = TokioAsyncResolver::tokio(
+                    use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+                    use hickory_resolver::name_server::TokioRuntimeProvider;
+                    use hickory_resolver::proto::rr::rdata::TXT;
+                    use hickory_resolver::Resolver;
+                    let resolver = match Resolver::builder_with_config(
                         ResolverConfig::default(),
-                        ResolverOpts::default(),
-                    );
+                        TokioRuntimeProvider::default(),
+                    )
+                    .with_options(ResolverOpts::default())
+                    .build()
+                    {
+                        Ok(resolver) => resolver,
+                        Err(_) => return false,
+                    };
                     let response = resolver.txt_lookup(record_name.clone()).await;
                     if let Ok(txts) = response {
-                        txts.iter().any(|r: &TXT| {
-                            r.iter().any(|txt| &**txt == expected.as_bytes())
-                        })
+                        txts.iter()
+                            .any(|r: &TXT| r.iter().any(|txt| &**txt == expected.as_bytes()))
                     } else {
                         false
                     }
@@ -317,28 +385,15 @@ impl Dns01Solver {
     /// Clean up: remove the TXT record after validation.
     pub async fn cleanup(&mut self, domain: &str) -> Result<(), String> {
         if let Some((record_id, _)) = self.active_records.remove(domain) {
-            match self.config.provider {
-                DnsProvider::Cloudflare => {
-                    if let Some(id) = record_id {
-                        self.delete_cloudflare_record(&id).await?;
-                    }
-                }
-                DnsProvider::Route53 => {
-                    log::info!("[DNS-01] Route 53 cleanup for {}", domain);
-                }
-                DnsProvider::Manual => {
-                    log::info!(
-                        "[DNS-01] MANUAL: Please remove the _acme-challenge.{} TXT record",
-                        domain
-                    );
-                }
-                _ => {
-                    log::info!(
-                        "[DNS-01] Cleanup for {} (provider: {:?})",
-                        domain,
-                        self.config.provider
-                    );
-                }
+            if let Some(id) = record_id {
+                let manager = DnsProviderManager::new(self.config.clone());
+                manager.delete_txt_record(&id).await?;
+            } else {
+                log::info!(
+                    "[DNS-01] No provider cleanup handle for {} (provider: {:?})",
+                    domain,
+                    self.config.provider
+                );
             }
         }
         Ok(())
@@ -347,88 +402,6 @@ impl Dns01Solver {
     /// Get the TXT value needed for a domain (for manual mode display).
     pub fn get_txt_value(&self, domain: &str) -> Option<&str> {
         self.active_records.get(domain).map(|(_, v)| v.as_str())
-    }
-
-    // ── Provider-specific implementations ─────────────────────────
-
-    async fn create_cloudflare_record(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<Option<String>, String> {
-        let zone_id = self
-            .config
-            .zone_id
-            .as_ref()
-            .ok_or("Cloudflare zone_id is required")?;
-        let api_token = self
-            .config
-            .api_token
-            .as_ref()
-            .ok_or("Cloudflare api_token is required")?;
-
-        log::info!(
-            "[DNS-01/Cloudflare] Creating TXT record in zone {}: {} = {}",
-            zone_id,
-            name,
-            value
-        );
-
-        // In production:
-        // POST https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records
-        // Authorization: Bearer {api_token}
-        // Body: { "type": "TXT", "name": name, "content": value, "ttl": self.config.ttl }
-
-        let _ = (api_token, zone_id);
-        let record_id = uuid::Uuid::new_v4().to_string();
-        Ok(Some(record_id))
-    }
-
-    async fn delete_cloudflare_record(&self, record_id: &str) -> Result<(), String> {
-        log::info!("[DNS-01/Cloudflare] Deleting TXT record {}", record_id);
-        // In production:
-        // DELETE https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}
-        Ok(())
-    }
-
-    async fn create_route53_record(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<Option<String>, String> {
-        let hosted_zone_id = self
-            .config
-            .hosted_zone_id
-            .as_ref()
-            .ok_or("Route 53 hosted_zone_id is required")?;
-
-        log::info!(
-            "[DNS-01/Route53] UPSERT TXT record in zone {}: {} = \"{}\"",
-            hosted_zone_id,
-            name,
-            value
-        );
-
-        // In production:
-        // POST https://route53.amazonaws.com/2013-04-01/hostedzone/{id}/rrset
-        // (using AWS Signature V4 auth)
-
-        Ok(Some(uuid::Uuid::new_v4().to_string()))
-    }
-
-    async fn create_generic_record(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<Option<String>, String> {
-        log::info!(
-            "[DNS-01/{:?}] Creating TXT record: {} = {}",
-            self.config.provider,
-            name,
-            value
-        );
-        // In production: provider-specific API call
-        Ok(Some(uuid::Uuid::new_v4().to_string()))
     }
 }
 
@@ -469,27 +442,17 @@ impl TlsAlpn01Solver {
         token: &str,
         key_thumbprint: &str,
     ) -> Result<ChallengeSolveResult, String> {
-        let validation_value = crate::acme::tls_alpn01_value(token, key_thumbprint);
+        let _ = (token, key_thumbprint);
 
         log::info!(
             "[TLS-ALPN-01] Provisioning challenge certificate for {}",
             domain
         );
 
-        // In production: generate a self-signed X.509 certificate with the
-        // acmeIdentifier extension (OID 1.3.6.1.5.5.7.1.31) set to the
-        // validation value, and configure the TLS listener to serve it
-        // for SNI=domain with ALPN=acme-tls/1
-
-        // Store a placeholder
-        self.active_certs
-            .insert(domain.to_string(), validation_value);
-
-        Ok(ChallengeSolveResult {
-            provisioned: true,
-            message: format!("TLS-ALPN-01 certificate provisioned for {}", domain),
-            provisioned_at: Some(Utc::now()),
-        })
+        Err(
+            "TLS-ALPN-01 provisioning is unsupported: self-signed ACME validation certificate generation and TLS listener integration are not implemented"
+                .to_string(),
+        )
     }
 
     /// Clean up the challenge certificate.
@@ -534,6 +497,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_http01_standalone_server_starts_and_provisions() {
+        let config = HttpChallengeConfig {
+            standalone_server: true,
+            listen_port: 0,
+            listen_addr: "127.0.0.1".to_string(),
+            webroot_path: None,
+            proxy_from_gateway: false,
+        };
+        let mut solver = Http01Solver::new(config);
+
+        solver.start_standalone_server().await.unwrap();
+        assert!(solver.is_server_running());
+
+        let result = solver
+            .provision("standalone-token", "test-thumbprint")
+            .await
+            .unwrap();
+        assert!(result.provisioned);
+        assert_eq!(
+            solver.get_response("standalone-token").await.as_deref(),
+            Some("standalone-token.test-thumbprint")
+        );
+
+        solver.stop_standalone_server().await.unwrap();
+        assert!(!solver.is_server_running());
+    }
+
+    #[tokio::test]
     async fn test_dns01_manual_provision() {
         let config = DnsProviderConfig {
             provider: DnsProvider::Manual,
@@ -546,20 +537,22 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.provisioned);
+        assert!(!result.provisioned);
+        assert!(result.message.contains("Manual DNS-01"));
         assert!(solver.get_txt_value("example.com").is_some());
     }
 
     #[tokio::test]
-    async fn test_tls_alpn01_provision() {
+    async fn test_tls_alpn01_provision_reports_unsupported() {
         let mut solver = TlsAlpn01Solver::new();
 
-        solver
+        let err = solver
             .provision("example.com", "token", "thumb")
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert!(solver.get_challenge_cert("example.com").is_some());
+        assert!(err.contains("unsupported"));
+        assert!(solver.get_challenge_cert("example.com").is_none());
 
         solver.cleanup("example.com").await.unwrap();
         assert!(solver.get_challenge_cert("example.com").is_none());

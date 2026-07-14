@@ -148,11 +148,13 @@ impl SpiceService {
 
     /// Request a display update for a session.
     pub async fn request_update(&self, session_id: &str) -> Result<(), SpiceError> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session.send_command(SessionCommand::RequestUpdate).await
+        Err(SpiceError::unsupported(
+            "SPICE display update requests are not implemented; refusing to send placeholder data",
+        ))
     }
 
     /// Set display resolution for a session.
@@ -308,6 +310,7 @@ impl SpiceService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spice::session::SharedSessionState;
 
     #[test]
     fn service_new() {
@@ -319,5 +322,39 @@ mod tests {
     fn service_state() {
         let state = SpiceService::new_state();
         assert!(Arc::strong_count(&state) == 1);
+    }
+
+    #[tokio::test]
+    async fn request_update_returns_unsupported_for_registered_session() {
+        let mut svc = SpiceService::new();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(1);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(1);
+        let id = "test-session".to_string();
+        let state = Arc::new(Mutex::new(SharedSessionState {
+            connected: true,
+            display_width: 1024,
+            display_height: 768,
+            server_name: String::new(),
+            channels_open: Vec::new(),
+            bytes_sent: 0,
+            bytes_received: 0,
+            frame_count: 0,
+            last_activity: chrono::Utc::now().to_rfc3339(),
+            mouse_mode: "server".into(),
+        }));
+
+        svc.sessions.insert(
+            id.clone(),
+            SpiceSessionHandle {
+                id: id.clone(),
+                config: SpiceConfig::default(),
+                cmd_tx,
+                event_rx,
+                state,
+            },
+        );
+
+        let err = svc.request_update(&id).await.unwrap_err();
+        assert_eq!(err.kind, SpiceErrorKind::UnsupportedFeature);
     }
 }

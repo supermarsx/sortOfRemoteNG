@@ -103,7 +103,7 @@ impl SpiceSessionHandle {
     /// Spawn and connect a SPICE session.
     pub async fn connect(id: String, config: SpiceConfig) -> Result<Self, SpiceError> {
         let (cmd_tx, cmd_rx) = mpsc::channel(256);
-        let (event_tx, event_rx) = mpsc::channel(512);
+        let (event_tx, mut event_rx) = mpsc::channel(512);
 
         let state = Arc::new(Mutex::new(SharedSessionState {
             connected: false,
@@ -129,6 +129,32 @@ impl SpiceSessionHandle {
                     .await;
             }
         });
+
+        let readiness_timeout =
+            tokio::time::Duration::from_secs(config.connect_timeout_secs.max(1));
+        tokio::time::timeout(readiness_timeout, async {
+            loop {
+                match event_rx.recv().await {
+                    Some(SessionEvent::Connected { .. }) => return Ok(()),
+                    Some(SessionEvent::Disconnected(Some(message))) => {
+                        return Err(SpiceError::disconnected(message));
+                    }
+                    Some(SessionEvent::Disconnected(None)) => {
+                        return Err(SpiceError::disconnected(
+                            "SPICE session disconnected before handshake completed",
+                        ));
+                    }
+                    Some(_) => {}
+                    None => {
+                        return Err(SpiceError::disconnected(
+                            "SPICE session ended before handshake completed",
+                        ));
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|_| SpiceError::timeout("SPICE handshake did not complete before timeout"))??;
 
         Ok(Self {
             id,
@@ -347,12 +373,9 @@ async fn session_task(
                         }
                     }
                     Some(SessionCommand::RequestUpdate) => {
-                        // Send display update request
-                        let msg = [0u8; 4]; // placeholder
-                        if writer.write_all(&msg).await.is_ok() {
-                            let mut st = state.lock().await;
-                            st.bytes_sent += 4;
-                        }
+                        log::warn!(
+                            "SPICE display update requests are not implemented; ignoring request"
+                        );
                     }
                     Some(SessionCommand::SetResolution { width, height }) => {
                         let mut st = state.lock().await;

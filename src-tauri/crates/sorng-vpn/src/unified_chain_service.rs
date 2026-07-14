@@ -216,7 +216,8 @@ impl UnifiedChainService {
 
             let last_enabled_type = chain
                 .layers
-                .iter().rfind(|l| l.enabled)
+                .iter()
+                .rfind(|l| l.enabled)
                 .map(|l| l.tunnel_type.clone());
             let needs_target = matches!(
                 last_enabled_type.as_ref(),
@@ -252,8 +253,7 @@ impl UnifiedChainService {
 
         for &idx in &enabled_indices {
             // Mark layer as connecting
-            self.chains.get_mut(chain_id).unwrap().layers[idx].status =
-                LayerStatus::Connecting;
+            self.chains.get_mut(chain_id).unwrap().layers[idx].status = LayerStatus::Connecting;
 
             // Clone layer data for the connect call (avoids borrow conflict)
             let layer_snapshot = self.chains[chain_id].layers[idx].clone();
@@ -315,15 +315,11 @@ impl UnifiedChainService {
                 }
                 Err(e) => {
                     let layer = &mut self.chains.get_mut(chain_id).unwrap().layers[idx];
-                    layer.status = LayerStatus::Error {
-                        message: e.clone(),
-                    };
+                    layer.status = LayerStatus::Error { message: e.clone() };
                     layer.error = Some(e.clone());
 
                     let chain = self.chains.get_mut(chain_id).unwrap();
-                    chain.status = ChainStatus::Error {
-                        message: e.clone(),
-                    };
+                    chain.status = ChainStatus::Error { message: e.clone() };
                     chain.error = Some(e.clone());
                     self.emit_event("chain::status-changed", chain_id, "error");
                     return Err(e);
@@ -358,38 +354,33 @@ impl UnifiedChainService {
             .collect();
 
         for idx in connected_indices {
-            self.chains.get_mut(chain_id).unwrap().layers[idx].status =
-                LayerStatus::Disconnecting;
+            self.chains.get_mut(chain_id).unwrap().layers[idx].status = LayerStatus::Disconnecting;
 
             // Clone layer data to avoid borrow conflicts
             let layer = self.chains[chain_id].layers[idx].clone();
 
             match &layer.tunnel_type {
                 TunnelType::Openvpn => {
-                    if let Some(config_id) = layer.vpn.as_ref().and_then(|v| v.config_id.as_ref())
-                    {
+                    if let Some(config_id) = layer.vpn.as_ref().and_then(|v| v.config_id.as_ref()) {
                         let mut svc = self.openvpn_service.lock().await;
                         let _ = svc.disconnect(config_id).await;
                     }
                 }
                 TunnelType::Wireguard => {
-                    if let Some(config_id) = layer.vpn.as_ref().and_then(|v| v.config_id.as_ref())
-                    {
+                    if let Some(config_id) = layer.vpn.as_ref().and_then(|v| v.config_id.as_ref()) {
                         let mut svc = self.wireguard_service.lock().await;
                         let _ = svc.disconnect(config_id).await;
                     }
                 }
                 TunnelType::Tailscale => {
-                    if let Some(config_id) =
-                        layer.mesh.as_ref().and_then(|m| m.network_id.as_ref())
+                    if let Some(config_id) = layer.mesh.as_ref().and_then(|m| m.network_id.as_ref())
                     {
                         let mut svc = self.tailscale_service.lock().await;
                         let _ = svc.disconnect(config_id).await;
                     }
                 }
                 TunnelType::Zerotier => {
-                    if let Some(config_id) =
-                        layer.mesh.as_ref().and_then(|m| m.network_id.as_ref())
+                    if let Some(config_id) = layer.mesh.as_ref().and_then(|m| m.network_id.as_ref())
                     {
                         let mut svc = self.zerotier_service.lock().await;
                         let _ = svc.disconnect(config_id).await;
@@ -507,10 +498,7 @@ impl UnifiedChainService {
 
     // ── Layer connect helpers ───────────────────────────────────────
 
-    async fn connect_proxy_layer(
-        &self,
-        layer: &UnifiedChainLayer,
-    ) -> Result<Option<u16>, String> {
+    async fn connect_proxy_layer(&self, layer: &UnifiedChainLayer) -> Result<Option<u16>, String> {
         let proxy_config = layer
             .proxy
             .as_ref()
@@ -585,11 +573,8 @@ impl UnifiedChainService {
         Ok(None) // VPN connections don't produce a local port
     }
 
-    async fn connect_ssh_layer(
-        &self,
-        layer: &UnifiedChainLayer,
-    ) -> Result<Option<u16>, String> {
-        // Delegate to the proxy service's russh-based SSH tunnel implementation.
+    async fn connect_ssh_layer(&self, layer: &UnifiedChainLayer) -> Result<Option<u16>, String> {
+        // Delegate to the proxy service's SSH tunnel boundary.
         //
         // The SSH tunnel relay (`ProxyService::connect_ssh_tunnel_static`) already
         // handles all heavy work on its own `tokio::spawn`ed loop. This method
@@ -599,10 +584,7 @@ impl UnifiedChainService {
             .ssh_tunnel
             .as_ref()
             .ok_or("SSH layer missing ssh_tunnel config")?;
-        let host = ssh_cfg
-            .host
-            .clone()
-            .ok_or("SSH layer missing host")?;
+        let host = ssh_cfg.host.clone().ok_or("SSH layer missing host")?;
         let port = ssh_cfg.port.unwrap_or(22);
         let username = ssh_cfg.username.clone();
         let password = ssh_cfg.password.clone();

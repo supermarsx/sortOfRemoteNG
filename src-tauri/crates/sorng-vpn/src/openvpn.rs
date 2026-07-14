@@ -284,7 +284,7 @@ impl OpenVPNService {
 
         let pid = child.id().ok_or("Failed to get process ID")?;
         connection.process_id = Some(pid);
-        connection.connected_at = Some(Utc::now());
+        connection.connected_at = None;
 
         // Wait a bit for connection to establish
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
@@ -293,6 +293,10 @@ impl OpenVPNService {
         if let Ok(Some(_)) = child.try_wait() {
             let err_msg = "OpenVPN process exited early".to_string();
             connection.status = OpenVPNStatus::Error(err_msg.clone());
+            connection.process_id = None;
+            connection.connected_at = None;
+            connection.local_ip = None;
+            connection.remote_ip = None;
 
             self.emit_status(
                 connection_id,
@@ -302,19 +306,21 @@ impl OpenVPNService {
             return Err("OpenVPN connection failed".to_string());
         }
 
-        connection.status = OpenVPNStatus::Connected;
-        let local_ip = connection.local_ip.clone();
-        let remote_ip = connection.remote_ip.clone();
+        let err_msg =
+            "OpenVPN process started, but tunnel readiness could not be verified".to_string();
+        let _ = child.kill().await;
+        connection.status = OpenVPNStatus::Error(err_msg.clone());
+        connection.process_id = None;
+        connection.connected_at = None;
+        connection.local_ip = None;
+        connection.remote_ip = None;
 
         self.emit_status(
             connection_id,
-            "connected",
-            serde_json::json!({
-                "local_ip": local_ip,
-                "remote_ip": remote_ip,
-            }),
+            "error",
+            serde_json::json!({ "error": err_msg }),
         );
-        Ok(())
+        Err(err_msg)
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
@@ -344,12 +350,7 @@ impl OpenVPNService {
         connection.local_ip = None;
         connection.remote_ip = None;
 
-
-        self.emit_status(
-            connection_id,
-            "disconnected",
-            serde_json::json!({}),
-        );
+        self.emit_status(connection_id, "disconnected", serde_json::json!({}));
 
         Ok(())
     }
@@ -1124,9 +1125,14 @@ mod tests {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
         let config = default_config();
-        let id = svc.create_connection("Original".to_string(), config).await.unwrap();
+        let id = svc
+            .create_connection("Original".to_string(), config)
+            .await
+            .unwrap();
 
-        svc.update_connection(&id, Some("Updated Name".to_string()), None).await.unwrap();
+        svc.update_connection(&id, Some("Updated Name".to_string()), None)
+            .await
+            .unwrap();
 
         let conn = svc.get_connection(&id).await.unwrap();
         assert_eq!(conn.name, "Updated Name");
@@ -1137,16 +1143,24 @@ mod tests {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
         let config = default_config();
-        let id = svc.create_connection("Test".to_string(), config).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), config)
+            .await
+            .unwrap();
 
         let mut new_config = default_config();
         new_config.remote_host = Some("new-host.example.com".to_string());
         new_config.remote_port = Some(443);
 
-        svc.update_connection(&id, None, Some(new_config)).await.unwrap();
+        svc.update_connection(&id, None, Some(new_config))
+            .await
+            .unwrap();
 
         let conn = svc.get_connection(&id).await.unwrap();
-        assert_eq!(conn.config.remote_host, Some("new-host.example.com".to_string()));
+        assert_eq!(
+            conn.config.remote_host,
+            Some("new-host.example.com".to_string())
+        );
         assert_eq!(conn.config.remote_port, Some(443));
     }
 
@@ -1155,12 +1169,17 @@ mod tests {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
         let config = default_config();
-        let id = svc.create_connection("Test".to_string(), config).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), config)
+            .await
+            .unwrap();
 
         let mut new_config = default_config();
         new_config.protocol = Some("tcp".to_string());
 
-        svc.update_connection(&id, Some("Renamed".to_string()), Some(new_config)).await.unwrap();
+        svc.update_connection(&id, Some("Renamed".to_string()), Some(new_config))
+            .await
+            .unwrap();
 
         let conn = svc.get_connection(&id).await.unwrap();
         assert_eq!(conn.name, "Renamed");
@@ -1171,7 +1190,9 @@ mod tests {
     async fn update_connection_not_found() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let result = svc.update_connection("nonexistent", Some("Name".to_string()), None).await;
+        let result = svc
+            .update_connection("nonexistent", Some("Name".to_string()), None)
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
@@ -1181,7 +1202,10 @@ mod tests {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
         let config = default_config();
-        let id = svc.create_connection("Test".to_string(), config).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), config)
+            .await
+            .unwrap();
 
         // Update with None for both should be a no-op
         svc.update_connection(&id, None, None).await.unwrap();
@@ -1190,4 +1214,3 @@ mod tests {
         assert_eq!(conn.name, "Test");
     }
 }
-

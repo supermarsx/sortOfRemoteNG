@@ -6,7 +6,8 @@
 
 use crate::types::*;
 use log::{debug, info, warn};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
+use ssh_key::PrivateKey;
 use std::collections::HashMap;
 
 /// In-memory key store with constraint tracking.
@@ -15,6 +16,8 @@ pub struct KeyStore {
     keys: HashMap<String, AgentKey>,
     /// Map from fingerprint (SHA-256) → key id for fast blob-based lookups.
     blob_index: HashMap<Vec<u8>, String>,
+    /// Private signing keys, keyed by their public key blob.
+    private_keys: HashMap<Vec<u8>, PrivateKey>,
     /// Maximum number of keys allowed (0 = unlimited).
     max_keys: usize,
     /// Whether the store is locked (all operations disallowed until unlock).
@@ -29,6 +32,7 @@ impl KeyStore {
         Self {
             keys: HashMap::new(),
             blob_index: HashMap::new(),
+            private_keys: HashMap::new(),
             max_keys,
             locked: false,
             lock_passphrase: None,
@@ -65,7 +69,11 @@ impl KeyStore {
             let provided_hash = Self::hash_passphrase(passphrase);
             // Use constant-time comparison to mitigate timing attacks
             if stored_hash.len() != provided_hash.len()
-                || stored_hash.iter().zip(provided_hash.iter()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) != 0
+                || stored_hash
+                    .iter()
+                    .zip(provided_hash.iter())
+                    .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+                    != 0
             {
                 return Err("Incorrect passphrase".to_string());
             }
@@ -78,6 +86,15 @@ impl KeyStore {
 
     /// Add a key to the store. Returns the assigned key ID.
     pub fn add_key(&mut self, key: AgentKey) -> Result<String, String> {
+        self.add_key_with_private(key, None)
+    }
+
+    /// Add a key and optional private signing material to the store.
+    pub fn add_key_with_private(
+        &mut self,
+        key: AgentKey,
+        private_key: Option<PrivateKey>,
+    ) -> Result<String, String> {
         if self.locked {
             return Err("Agent is locked".to_string());
         }
@@ -95,6 +112,10 @@ impl KeyStore {
 
         self.blob_index
             .insert(key.public_key_blob.clone(), id.clone());
+        if let Some(private_key) = private_key {
+            self.private_keys
+                .insert(key.public_key_blob.clone(), private_key);
+        }
         self.keys.insert(id.clone(), key);
 
         Ok(id)
@@ -110,6 +131,7 @@ impl KeyStore {
             .remove(id)
             .ok_or_else(|| "Key not found".to_string())?;
         self.blob_index.remove(&key.public_key_blob);
+        self.private_keys.remove(&key.public_key_blob);
         info!("Removed key {}", id);
         Ok(key)
     }
@@ -135,6 +157,7 @@ impl KeyStore {
         let count = self.keys.len();
         self.keys.clear();
         self.blob_index.clear();
+        self.private_keys.clear();
         info!("Removed all {} keys", count);
         count
     }
@@ -145,6 +168,14 @@ impl KeyStore {
             return None;
         }
         self.blob_index.get(blob).and_then(|id| self.keys.get(id))
+    }
+
+    /// Find private signing material by public key blob.
+    pub fn find_private_by_blob(&self, blob: &[u8]) -> Option<&PrivateKey> {
+        if self.locked {
+            return None;
+        }
+        self.private_keys.get(blob)
     }
 
     /// Find a key by its unique ID.
@@ -239,6 +270,7 @@ impl KeyStore {
         for id in &expired_ids {
             if let Some(key) = self.keys.remove(id) {
                 self.blob_index.remove(&key.public_key_blob);
+                self.private_keys.remove(&key.public_key_blob);
                 info!("Expired key {} ({})", id, key.comment);
             }
         }

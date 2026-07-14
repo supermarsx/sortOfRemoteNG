@@ -70,27 +70,10 @@ impl OcspManager {
             responder_url
         );
 
-        // In production: build OCSP request, POST to responder, parse DER response
-        let entry = OcspCacheEntry {
-            certificate_id: cert_id.to_string(),
-            response_b64: "placeholder-ocsp-response".to_string(),
-            fetched_at: Utc::now(),
-            expires_at: Some(Utc::now() + chrono::Duration::hours(12)),
-            cert_status: OcspCertStatus::Good,
-            responder_url: responder_url.to_string(),
-        };
-
-        self.cache.insert(cert_id.to_string(), entry);
-
-        Ok(OcspStatus {
-            certificate_id: cert_id.to_string(),
-            status: OcspCertStatus::Good,
-            produced_at: Some(Utc::now()),
-            this_update: Some(Utc::now()),
-            next_update: Some(Utc::now() + chrono::Duration::hours(12)),
-            responder_url: Some(responder_url.to_string()),
-            is_fresh: true,
-        })
+        Err(
+            "OCSP fetch is unsupported: OCSP request DER construction, responder POST, and response signature validation are not implemented"
+                .to_string(),
+        )
     }
 
     /// Get the cached OCSP response for a certificate.
@@ -177,17 +160,17 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_ocsp_fetch_and_cache() {
+    async fn test_ocsp_fetch_reports_unsupported_without_caching() {
         let mut mgr = OcspManager::new(true, 3600);
 
-        let status = mgr
+        let err = mgr
             .fetch_response("cert1", "http://ocsp.test/")
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert_eq!(status.status, OcspCertStatus::Good);
-        assert!(mgr.is_fresh("cert1"));
-        assert!(mgr.get_cached("cert1").is_some());
+        assert!(err.contains("unsupported"));
+        assert!(!mgr.is_fresh("cert1"));
+        assert!(mgr.get_cached("cert1").is_none());
     }
 
     #[test]

@@ -7,7 +7,7 @@
 //!
 //! - **HTTP/HTTPS**: Standard web proxies with optional authentication
 //! - **SOCKS4/SOCKS5**: Versatile proxy protocols with UDP support
-//! - **SSH Tunneling**: Secure shell-based port forwarding
+//! - **SSH Tunneling**: currently disabled pending a hardened implementation
 //! - **DNS Tunneling**: Data exfiltration through DNS queries
 //! - **ICMP Tunneling**: Using ping packets for data transmission
 //! - **WebSocket Tunneling**: Real-time bidirectional communication
@@ -106,27 +106,6 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         self.0.signature_verification_algorithms.supported_schemes()
-    }
-}
-
-// ── SSH tunnel handler for russh ────────────────────────────────────────────
-
-/// Minimal russh client handler used exclusively for SSH port-forwarding tunnels.
-///
-/// Accepts all server host keys (mirrors the old `StrictHostKeyChecking=no` behaviour).
-/// A production deployment should verify host keys against a known-hosts file.
-struct SshTunnelHandler;
-
-#[async_trait::async_trait]
-impl russh::client::Handler for SshTunnelHandler {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        self,
-        _server_public_key: &russh_keys::key::PublicKey,
-    ) -> Result<(Self, bool), Self::Error> {
-        // Accept all host keys (equivalent to StrictHostKeyChecking=no)
-        Ok((self, true))
     }
 }
 
@@ -828,117 +807,14 @@ impl ProxyService {
     }
 
     async fn connect_ssh_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
-        // SSH tunneling implementation using the russh library.
-        //
-        // Establishes an SSH session, authenticates with password or key, binds
-        // a local TCP listener, and for every accepted connection opens an SSH
-        // direct-tcpip channel that forwards traffic to the target host/port.
-
-        let ssh_host = connection.proxy_config.host.clone();
-        let ssh_port = connection.proxy_config.port;
-        let username = connection
-            .proxy_config
-            .username
-            .clone()
-            .unwrap_or_else(|| "root".to_string());
-        let target_host = connection.target_host.clone();
-        let target_port = connection.target_port;
-
-        // Build russh client config
-        let config = russh::client::Config::default();
-        let config = Arc::new(config);
-
-        let ssh_addr = format!("{}:{}", ssh_host, ssh_port);
-        let mut session = russh::client::connect(config, &ssh_addr, SshTunnelHandler)
-            .await
-            .map_err(|e| format!("SSH connection failed to {}: {}", ssh_addr, e))?;
-
-        // Authenticate: prefer key file if provided, otherwise password
-        if let Some(key_path) = &connection.proxy_config.ssh_key_file {
-            let passphrase = connection.proxy_config.ssh_key_passphrase.as_deref();
-            let key_pair = russh_keys::load_secret_key(key_path, passphrase)
-                .map_err(|e| format!("Failed to load SSH key '{}': {}", key_path, e))?;
-            let authenticated = session
-                .authenticate_publickey(&username, Arc::new(key_pair))
-                .await
-                .map_err(|e| format!("SSH public-key authentication failed: {}", e))?;
-            if !authenticated {
-                return Err("SSH public-key authentication rejected by server".to_string());
-            }
-        } else if let Some(password) = &connection.proxy_config.password {
-            let authenticated = session
-                .authenticate_password(&username, password)
-                .await
-                .map_err(|e| format!("SSH password authentication failed: {}", e))?;
-            if !authenticated {
-                return Err("SSH password authentication rejected by server".to_string());
-            }
-        } else {
-            return Err(
-                "SSH tunnel requires either a password or an SSH key file".to_string(),
-            );
-        }
-
-        // Bind local TCP listener
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|e| format!("Failed to bind local port: {}", e))?;
-        let local_port = listener
-            .local_addr()
-            .map_err(|e| format!("Failed to get local address: {}", e))?
-            .port();
-
-        connection.local_port = Some(local_port);
-        connection.status = ProxyConnectionStatus::Connected;
-
-        // Wrap the session handle in an Arc<Mutex<>> so relay tasks can share it.
-        let session = Arc::new(tokio::sync::Mutex::new(session));
-
-        // Spawn a relay task: for every accepted TCP connection, open an SSH
-        // direct-tcpip channel and bidirectionally copy bytes.
-        tokio::spawn(async move {
-            loop {
-                let (mut tcp_stream, _peer) = match listener.accept().await {
-                    Ok(v) => v,
-                    Err(_) => break,
-                };
-                let session = session.clone();
-                let target_host = target_host.clone();
-                tokio::spawn(async move {
-                    // Open an SSH direct-tcpip channel for port forwarding
-                    let channel = {
-                        let handle = session.lock().await;
-                        handle
-                            .channel_open_direct_tcpip(
-                                &target_host,
-                                target_port as u32,
-                                "127.0.0.1",
-                                0,
-                            )
-                            .await
-                    };
-                    match channel {
-                        Ok(channel) => {
-                            // Convert the SSH channel into an AsyncRead + AsyncWrite
-                            // stream and split it so we can copy in both directions
-                            // concurrently without double-borrowing.
-                            let stream = channel.into_stream();
-                            let (mut ssh_read, mut ssh_write) = tokio::io::split(stream);
-                            let (mut tcp_read, mut tcp_write) = tcp_stream.split();
-                            let _ = tokio::join!(
-                                tokio::io::copy(&mut tcp_read, &mut ssh_write),
-                                tokio::io::copy(&mut ssh_read, &mut tcp_write),
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!("SSH direct-tcpip channel open failed: {}", e);
-                        }
-                    }
-                });
-            }
-        });
-
-        Ok(local_port)
+        connection.status = ProxyConnectionStatus::Error(
+            "SSH proxy tunnels are disabled until the relay is rebuilt on the hardened SSH stack"
+                .to_string(),
+        );
+        Err(
+            "SSH proxy tunnels are disabled until the relay is rebuilt on the hardened SSH stack"
+                .to_string(),
+        )
     }
 
     #[allow(unused_variables)]
@@ -952,11 +828,9 @@ impl ProxyService {
 
         #[cfg(windows)]
         {
-            Err(
-                "DNS tunneling via iodine is not supported on Windows. \
+            Err("DNS tunneling via iodine is not supported on Windows. \
                  iodine requires a TUN/TAP device that is unavailable on this platform."
-                    .to_string(),
-            )
+                .to_string())
         }
 
         #[cfg(not(windows))]
@@ -987,9 +861,13 @@ impl ProxyService {
                 domain,
             ]);
 
-            let child = command
-                .spawn()
-                .map_err(|e| format!("Failed to spawn DNS tunnel process ({}): {}", iodine_bin.display(), e))?;
+            let child = command.spawn().map_err(|e| {
+                format!(
+                    "Failed to spawn DNS tunnel process ({}): {}",
+                    iodine_bin.display(),
+                    e
+                )
+            })?;
 
             // Wait for tunnel to establish
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -1027,12 +905,10 @@ impl ProxyService {
 
         #[cfg(windows)]
         {
-            Err(
-                "ICMP tunneling via hping3 is not supported on Windows. \
+            Err("ICMP tunneling via hping3 is not supported on Windows. \
                  hping3 requires raw socket access that is unavailable on this platform. \
                  A native pnet-based implementation is planned for a future release."
-                    .to_string(),
-            )
+                .to_string())
         }
 
         #[cfg(not(windows))]
@@ -1052,9 +928,13 @@ impl ProxyService {
                 connection.target_host.as_str(),
             ]);
 
-            let child = command
-                .spawn()
-                .map_err(|e| format!("Failed to spawn ICMP tunnel process ({}): {}", hping3_bin.display(), e))?;
+            let child = command.spawn().map_err(|e| {
+                format!(
+                    "Failed to spawn ICMP tunnel process ({}): {}",
+                    hping3_bin.display(),
+                    e
+                )
+            })?;
 
             // Find an available local port for binding
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1144,9 +1024,8 @@ impl ProxyService {
             .with_custom_certificate_verifier(SkipServerVerification::new())
             .with_no_client_auth();
 
-        let quic_client_config =
-            quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
-                .map_err(|e| format!("QUIC crypto config error: {}", e))?;
+        let quic_client_config = quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
+            .map_err(|e| format!("QUIC crypto config error: {}", e))?;
 
         let client_config = quinn::ClientConfig::new(Arc::new(quic_client_config));
 
@@ -1157,17 +1036,15 @@ impl ProxyService {
         // Resolve the server address. If the host is not already a SocketAddr,
         // perform a blocking DNS lookup (acceptable here because it happens once
         // at connection setup).
-        let server_addr: SocketAddr = format!("{}:{}", host, port)
-            .parse()
-            .or_else(|_| {
-                // Host is a hostname, not an IP — resolve it.
-                use std::net::ToSocketAddrs;
-                format!("{}:{}", host, port)
-                    .to_socket_addrs()
-                    .map_err(|e| format!("DNS resolution failed for {}:{}: {}", host, port, e))?
-                    .next()
-                    .ok_or_else(|| format!("No addresses found for {}:{}", host, port))
-            })?;
+        let server_addr: SocketAddr = format!("{}:{}", host, port).parse().or_else(|_| {
+            // Host is a hostname, not an IP — resolve it.
+            use std::net::ToSocketAddrs;
+            format!("{}:{}", host, port)
+                .to_socket_addrs()
+                .map_err(|e| format!("DNS resolution failed for {}:{}: {}", host, port, e))?
+                .next()
+                .ok_or_else(|| format!("No addresses found for {}:{}", host, port))
+        })?;
 
         let quic_connection = endpoint
             .connect(server_addr, &host)
@@ -1402,9 +1279,13 @@ impl ProxyService {
             command.arg("--plugin").arg(plugin);
         }
 
-        let child = command
-            .spawn()
-            .map_err(|e| format!("Failed to spawn Shadowsocks process ({}): {}", ss_local_bin.display(), e))?;
+        let child = command.spawn().map_err(|e| {
+            format!(
+                "Failed to spawn Shadowsocks process ({}): {}",
+                ss_local_bin.display(),
+                e
+            )
+        })?;
 
         // Wait for Shadowsocks to start
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -1616,7 +1497,10 @@ impl ProxyService {
 
         // Get chain layers without borrowing mutably
         let layers_config: Vec<(usize, ProxyConfig)> = {
-            let chain = self.chains.get(chain_id).expect("chain_id passed to function");
+            let chain = self
+                .chains
+                .get(chain_id)
+                .expect("chain_id passed to function");
             chain
                 .layers
                 .iter()
@@ -1648,7 +1532,10 @@ impl ProxyService {
 
         // Now update the chain status and layer information
         {
-            let chain = self.chains.get_mut(chain_id).expect("chain_id passed to function");
+            let chain = self
+                .chains
+                .get_mut(chain_id)
+                .expect("chain_id passed to function");
             chain.status = ProxyConnectionStatus::Connected;
             chain.connected_at = Some(chrono::Utc::now().to_rfc3339());
             chain.final_local_port = previous_local_port;
@@ -1676,7 +1563,10 @@ impl ProxyService {
 
         // Collect local ports to disconnect
         let local_ports: Vec<u16> = {
-            let chain = self.chains.get(chain_id).expect("chain verified to exist above");
+            let chain = self
+                .chains
+                .get(chain_id)
+                .expect("chain verified to exist above");
             chain
                 .layers
                 .iter()
@@ -1702,7 +1592,10 @@ impl ProxyService {
 
         // Update chain status
         {
-            let chain = self.chains.get_mut(chain_id).expect("chain verified to exist above");
+            let chain = self
+                .chains
+                .get_mut(chain_id)
+                .expect("chain verified to exist above");
             chain.status = ProxyConnectionStatus::Disconnected;
 
             // Update layer statuses
@@ -2231,4 +2124,3 @@ mod tests {
         }
     }
 }
-

@@ -9,6 +9,7 @@
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use std::str;
 
 use super::encryption;
@@ -143,7 +144,7 @@ fn parse_connections_element(e: &BytesStart, file: &mut MrngConnectionFile) -> M
         let attr = attr?;
         let key = str::from_utf8(attr.key.as_ref()).unwrap_or("");
         let val = attr
-            .unescape_value()
+            .normalized_value(XmlVersion::Implicit1_0)
             .map_err(|e| MremotengError::XmlParse(e.to_string()))?;
 
         match key {
@@ -190,7 +191,7 @@ fn parse_node_element(
         let attr = attr?;
         let key = str::from_utf8(attr.key.as_ref()).unwrap_or("");
         let val = attr
-            .unescape_value()
+            .normalized_value(XmlVersion::Implicit1_0)
             .map_err(|e| MremotengError::XmlParse(e.to_string()))?;
         let val = val.as_ref();
 

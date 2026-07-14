@@ -24,7 +24,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["loggin
 rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-pemfile = "2.0"
 webpki-roots = "1"
-trust-dns-resolver = "0.23"
+hickory-resolver = { version = "0.26.1", default-features = false, features = ["tokio", "system-config"] }
 mime_guess = "2.0"
 quoted_printable = "0.5"
 regex = { workspace = true }

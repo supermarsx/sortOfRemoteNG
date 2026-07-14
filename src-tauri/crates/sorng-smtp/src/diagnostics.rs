@@ -5,6 +5,7 @@ use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use hickory_resolver::proto::rr::RData;
 use log::{debug, info, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -180,17 +181,21 @@ pub async fn run_diagnostics(domain: &str) -> DiagnosticsReport {
 
 // ─── MX Lookup ──────────────────────────────────────────────────
 
-/// Look up MX records using DNS via trust-dns-resolver.
+/// Look up MX records using DNS via hickory-resolver.
 pub async fn lookup_mx(domain: &str) -> Vec<MxRecord> {
     debug!("Looking up MX records for {}", domain);
-    match trust_dns_resolver::TokioAsyncResolver::tokio_from_system_conf() {
+    match hickory_resolver::Resolver::builder_tokio().and_then(|builder| builder.build()) {
         Ok(resolver) => match resolver.mx_lookup(domain).await {
             Ok(response) => {
                 let mut records: Vec<MxRecord> = response
+                    .answers()
                     .iter()
-                    .map(|mx| MxRecord {
-                        priority: mx.preference(),
-                        exchange: mx.exchange().to_string().trim_end_matches('.').to_string(),
+                    .filter_map(|record| match &record.data {
+                        RData::MX(mx) => Some(MxRecord {
+                            priority: mx.preference,
+                            exchange: mx.exchange.to_string().trim_end_matches('.').to_string(),
+                        }),
+                        _ => None,
                     })
                     .collect();
                 records.sort_by_key(|r| r.priority);
@@ -337,12 +342,13 @@ pub async fn get_smtp_banner(host: &str) -> Option<String> {
 /// Check if a domain has a TXT record that starts with the given prefix.
 pub async fn check_dns_txt(domain: &str, prefix: &str) -> bool {
     debug!("Checking TXT record for {} (prefix: {})", domain, prefix);
-    match trust_dns_resolver::TokioAsyncResolver::tokio_from_system_conf() {
+    match hickory_resolver::Resolver::builder_tokio().and_then(|builder| builder.build()) {
         Ok(resolver) => match resolver.txt_lookup(domain).await {
-            Ok(response) => response.iter().any(|txt| {
-                let text = txt.to_string();
-                text.starts_with(prefix)
-            }),
+            Ok(response) => response
+                .answers()
+                .iter()
+                .filter_map(txt_record_to_string)
+                .any(|text| text.starts_with(prefix)),
             Err(_) => false,
         },
         Err(_) => false,
@@ -351,12 +357,28 @@ pub async fn check_dns_txt(domain: &str, prefix: &str) -> bool {
 
 /// Retrieve all TXT records for a domain.
 pub async fn get_dns_txt_records(domain: &str) -> Vec<String> {
-    match trust_dns_resolver::TokioAsyncResolver::tokio_from_system_conf() {
+    match hickory_resolver::Resolver::builder_tokio().and_then(|builder| builder.build()) {
         Ok(resolver) => match resolver.txt_lookup(domain).await {
-            Ok(response) => response.iter().map(|txt| txt.to_string()).collect(),
+            Ok(response) => response
+                .answers()
+                .iter()
+                .filter_map(txt_record_to_string)
+                .collect(),
             Err(_) => Vec::new(),
         },
         Err(_) => Vec::new(),
+    }
+}
+
+fn txt_record_to_string(record: &hickory_resolver::proto::rr::Record) -> Option<String> {
+    match &record.data {
+        RData::TXT(txt) => Some(
+            txt.txt_data
+                .iter()
+                .map(|chunk| String::from_utf8_lossy(chunk))
+                .collect::<String>(),
+        ),
+        _ => None,
     }
 }
 

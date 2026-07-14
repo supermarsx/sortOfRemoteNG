@@ -98,25 +98,24 @@ impl McpService {
         }
 
         let addr = server::listen_address(&self.config);
-        info!("Starting MCP server on {}", addr);
+        let message = format!(
+            "MCP HTTP listener is not implemented for {}; refusing to report a running server",
+            addr
+        );
+        info!("{}", message);
+        self.running = false;
+        self.started_at = None;
+        self.last_error = Some(message.clone());
 
-        self.running = true;
-        self.started_at = Some(chrono::Utc::now());
-        self.last_error = None;
+        self.log_buffer
+            .log(McpLogLevel::Error, "mcp.server", &message, None);
 
-        self.log_buffer.log(
-            McpLogLevel::Info,
-            "mcp.server",
-            &format!("MCP server started on {}", addr),
-            None,
+        self.record_event(
+            McpEventType::Error,
+            json!({ "address": addr, "error": message.clone() }),
         );
 
-        self.record_event(McpEventType::ServerStarted, json!({ "address": addr }));
-        self.metrics.total_requests = 0;
-        self.metrics.total_tool_calls = 0;
-        self.metrics.total_resource_reads = 0;
-
-        Ok(self.get_status())
+        Err(message)
     }
 
     /// Stop the MCP server.
@@ -484,18 +483,22 @@ mod tests {
     }
 
     #[test]
-    fn test_start_stop() {
+    fn test_start_fails_without_listener() {
         let mut service = McpService::with_config(McpServerConfig {
             enabled: true,
             ..McpServerConfig::default()
         });
 
-        let status = service.start().unwrap();
-        assert!(status.running);
-        assert!(status.listen_address.is_some());
-
-        let status = service.stop().unwrap();
+        let err = service.start().unwrap_err();
+        assert!(err.contains("MCP HTTP listener is not implemented"));
+        assert!(service
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("MCP HTTP listener"));
+        let status = service.get_status();
         assert!(!status.running);
+        assert!(status.listen_address.is_none());
     }
 
     #[test]
@@ -511,7 +514,7 @@ mod tests {
             enabled: true,
             ..McpServerConfig::default()
         });
-        service.start().unwrap();
+        service.running = true;
         let result = service.start();
         assert!(result.is_err());
     }
@@ -561,9 +564,10 @@ mod tests {
             enabled: true,
             ..McpServerConfig::default()
         });
-        service.start().unwrap();
+        assert!(service.start().is_err());
         let events = service.get_events(100);
         assert!(!events.is_empty());
+        assert_eq!(events[0].event_type, McpEventType::Error);
     }
 
     #[test]

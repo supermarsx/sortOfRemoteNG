@@ -4,9 +4,12 @@
 //! identity (keypair) and can verify other peers via public key fingerprints.
 
 use chrono::Utc;
+use hkdf::Hkdf;
 use log::{debug, info};
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// An X25519 keypair for peer identity and key exchange.
 #[derive(Debug, Clone)]
@@ -19,29 +22,12 @@ pub struct Keypair {
 
 /// Generate a new X25519 keypair.
 pub fn generate_keypair() -> Keypair {
-    // Generate 32 random bytes for the private key
-    let mut private_key = vec![0u8; 32];
-    for byte in private_key.iter_mut() {
-        *byte = rand::random();
-    }
-
-    // Clamp the private key per X25519 spec
-    private_key[0] &= 248;
-    private_key[31] &= 127;
-    private_key[31] |= 64;
-
-    // In a real implementation, derive the public key using:
-    //   x25519_dalek::StaticSecret::from(private_key_bytes)
-    //   let public = x25519_dalek::PublicKey::from(&secret)
-    //
-    // For structural implementation, derive a deterministic "public key"
-    // from the private key using SHA-256 (NOT cryptographically correct,
-    // but demonstrates the API surface).
-    let public_key = Sha256::digest(&private_key).to_vec();
+    let secret = StaticSecret::random_from_rng(OsRng);
+    let public = PublicKey::from(&secret);
 
     Keypair {
-        private_key,
-        public_key,
+        private_key: secret.to_bytes().to_vec(),
+        public_key: public.as_bytes().to_vec(),
     }
 }
 
@@ -75,20 +61,19 @@ pub fn key_exchange(our_private: &[u8], their_public: &[u8]) -> Result<Vec<u8>, 
         return Err("Public key must be 32 bytes".to_string());
     }
 
-    // In a real implementation:
-    //   let secret = x25519_dalek::StaticSecret::from(our_private_bytes);
-    //   let their_pub = x25519_dalek::PublicKey::from(their_public_bytes);
-    //   let shared = secret.diffie_hellman(&their_pub);
-    //   Ok(shared.as_bytes().to_vec())
-    //
-    // Structural placeholder:
-    let mut combined = Vec::with_capacity(64);
-    combined.extend_from_slice(our_private);
-    combined.extend_from_slice(their_public);
-    let shared = Sha256::digest(&combined).to_vec();
+    let our_private: [u8; 32] = our_private
+        .try_into()
+        .map_err(|_| "Private key must be 32 bytes".to_string())?;
+    let their_public: [u8; 32] = their_public
+        .try_into()
+        .map_err(|_| "Public key must be 32 bytes".to_string())?;
+
+    let secret = StaticSecret::from(our_private);
+    let peer = PublicKey::from(their_public);
+    let shared = secret.diffie_hellman(&peer);
 
     debug!("Key exchange completed");
-    Ok(shared)
+    Ok(shared.as_bytes().to_vec())
 }
 
 /// Derive encryption keys from the shared secret using HKDF.
@@ -98,23 +83,11 @@ pub fn derive_keys(
     info: &[u8],
     key_len: usize,
 ) -> Result<Vec<u8>, String> {
-    // HKDF-SHA256 (RFC 5869):
-    // 1. Extract: PRK = HMAC-SHA256(salt, shared_secret)
-    // 2. Expand: OKM = HMAC-SHA256(PRK, info || 0x01)
-
-    // Structural implementation using simple derivation:
-    let mut input = Vec::new();
-    input.extend_from_slice(shared_secret);
-    input.extend_from_slice(salt);
-    input.extend_from_slice(info);
-
-    let derived = Sha256::digest(&input);
-
-    if key_len > 32 {
-        return Err("Key length exceeds SHA-256 output size".to_string());
-    }
-
-    Ok(derived[..key_len].to_vec())
+    let hk = Hkdf::<Sha256>::new(Some(salt), shared_secret);
+    let mut out = vec![0u8; key_len];
+    hk.expand(info, &mut out)
+        .map_err(|_| "HKDF output length exceeds RFC 5869 limit".to_string())?;
+    Ok(out)
 }
 
 /// Verify that a peer's public key matches a known fingerprint.
@@ -176,30 +149,24 @@ pub fn complete_key_exchange(
     })
 }
 
-/// Sign a message with our private key using HMAC-SHA256.
-pub fn sign_message(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
-    use hmac::{Hmac, Mac};
-    let mut mac = Hmac::<Sha256>::new_from_slice(private_key)
-        .map_err(|_| "Invalid key length for HMAC".to_string())?;
-    mac.update(message);
-    Ok(mac.finalize().into_bytes().to_vec())
+/// Sign a message with our private key.
+pub fn sign_message(_private_key: &[u8], _message: &[u8]) -> Result<Vec<u8>, String> {
+    Err(
+        "Peer identity signing is unsupported: X25519 keys provide key agreement, not signatures"
+            .to_string(),
+    )
 }
 
 /// Verify a signature from a peer.
 pub fn verify_signature(
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
+    _public_key: &[u8],
+    _message: &[u8],
+    _signature: &[u8],
 ) -> Result<bool, String> {
-    use hmac::{Hmac, Mac};
-    // public_key is SHA256(private_key), used as the HMAC key
-    // The signer used private_key as HMAC key; verifier uses the shared secret
-    // derived during key exchange. For symmetric HMAC auth, both sides share
-    // the same key material.
-    let mut mac = Hmac::<Sha256>::new_from_slice(public_key)
-        .map_err(|_| "Invalid key length for HMAC".to_string())?;
-    mac.update(message);
-    Ok(mac.verify_slice(signature).is_ok())
+    Err(
+        "Peer identity signature verification is unsupported: configure an Ed25519 identity key"
+            .to_string(),
+    )
 }
 
 /// A challenge-response authentication protocol for peer verification.
@@ -259,4 +226,37 @@ pub fn respond_to_challenge(
             &our_keypair.public_key,
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn x25519_key_exchange_matches_on_both_sides() {
+        let alice = generate_keypair();
+        let bob = generate_keypair();
+
+        let alice_shared = key_exchange(&alice.private_key, &bob.public_key).unwrap();
+        let bob_shared = key_exchange(&bob.private_key, &alice.public_key).unwrap();
+
+        assert_eq!(alice_shared, bob_shared);
+        assert_eq!(alice_shared.len(), 32);
+    }
+
+    #[test]
+    fn hkdf_derives_requested_length() {
+        let key = derive_keys(b"shared", b"salt", b"info", 48).unwrap();
+        assert_eq!(key.len(), 48);
+    }
+
+    #[test]
+    fn x25519_identity_does_not_claim_signature_support() {
+        let keypair = generate_keypair();
+        let err = sign_message(&keypair.private_key, b"message").unwrap_err();
+        assert!(err.contains("unsupported"));
+
+        let err = verify_signature(&keypair.public_key, b"message", b"sig").unwrap_err();
+        assert!(err.contains("unsupported"));
+    }
 }

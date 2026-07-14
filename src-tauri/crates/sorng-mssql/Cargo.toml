@@ -14,7 +14,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-tiberius = { version = "0.12", default-features = false, features = ["tds73", "chrono", "rustls"] }
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "chrono", "native-tls"] }
 ssh2 = { workspace = true }
 thiserror = { workspace = true }
 

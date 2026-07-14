@@ -117,19 +117,45 @@ impl PassboltSecrets {
 mod tests {
     use super::*;
 
+    const TEST_PUBLIC_KEY: &str = "-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+xioGY4d/4xsAAAAg+U2nu0jWCmHlZ3BqZYfQMxmZu52JGggkLq2EVD34laPCsQYf
+GwoAAABCBYJjh3/jAwsJBwUVCg4IDAIWAAKbAwIeCSIhBssYbE8GCaaX5NUt+mxy
+KwwfHifBilZwj2Ul7Ce62azJBScJAgcCAAAAAK0oIBA+LX0ifsDm185Ecds2v8lw
+gyU2kCcUmKfvBXbAf6rhRYWzuQOwEn7E/aLwIwRaLsdry0+VcallHhSu4RN6HWaE
+QsiPlR4zxP/TP7mhfVEe7XWPxtnMUMtf15OyA51YBM4qBmOHf+MZAAAAIIaTJINn
++eUBXbki+PSAld2nhJh/LVmFsS+60WyvXkQ1wpsGGBsKAAAALAWCY4d/4wKbDCIh
+BssYbE8GCaaX5NUt+mxyKwwfHifBilZwj2Ul7Ce62azJAAAAAAQBIKbpGG2dWTX8
+j+VjFM21J0hqWlEg+bdiojWnKfA5AQpWUWtnNwDEM0g12vYxoWM8Y81W+bHBw805
+I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUrk0mXubZvyl4GBg==
+-----END PGP PUBLIC KEY BLOCK-----";
+
+    const TEST_PRIVATE_KEY: &str = "-----BEGIN PGP PRIVATE KEY BLOCK-----
+
+xUsGY4d/4xsAAAAg+U2nu0jWCmHlZ3BqZYfQMxmZu52JGggkLq2EVD34laMAGXKB
+exK+cH6NX1hs5hNhIB00TrJmosgv3mg1ditlsLfCsQYfGwoAAABCBYJjh3/jAwsJ
+BwUVCg4IDAIWAAKbAwIeCSIhBssYbE8GCaaX5NUt+mxyKwwfHifBilZwj2Ul7Ce6
+2azJBScJAgcCAAAAAK0oIBA+LX0ifsDm185Ecds2v8lwgyU2kCcUmKfvBXbAf6rh
+RYWzuQOwEn7E/aLwIwRaLsdry0+VcallHhSu4RN6HWaEQsiPlR4zxP/TP7mhfVEe
+7XWPxtnMUMtf15OyA51YBMdLBmOHf+MZAAAAIIaTJINn+eUBXbki+PSAld2nhJh/
+LVmFsS+60WyvXkQ1AE1gCk95TUR3XFeibg/u/tVY6a//1q0NWC1X+yui3O24wpsG
+GBsKAAAALAWCY4d/4wKbDCIhBssYbE8GCaaX5NUt+mxyKwwfHifBilZwj2Ul7Ce6
+2azJAAAAAAQBIKbpGG2dWTX8j+VjFM21J0hqWlEg+bdiojWnKfA5AQpWUWtnNwDE
+M0g12vYxoWM8Y81W+bHBw805I8kWVkXU6vFOi+HWvv/ira7ofJu16NnoUkhclkUr
+k0mXubZvyl4GBg==
+-----END PGP PRIVATE KEY BLOCK-----";
+
+    fn roundtrip_context() -> PgpContext {
+        let mut pgp = PgpContext::new();
+        pgp.set_user_key(TEST_PRIVATE_KEY, "");
+        pgp.set_server_key(TEST_PUBLIC_KEY, "");
+        pgp
+    }
+
     #[test]
     fn test_decrypt_plain_password() {
-        let mut pgp = PgpContext::new();
-        pgp.set_user_key(
-            "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\npriv\n-----END PGP PRIVATE KEY BLOCK-----",
-            "pass",
-        );
-        pgp.set_server_key(
-            "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\npub\n-----END PGP PUBLIC KEY BLOCK-----",
-            "fp",
-        );
-        let password = "mysecretpassword";
-        let encrypted = pgp.encrypt_for_server(password).unwrap();
+        let pgp = roundtrip_context();
+        let encrypted = pgp.encrypt_for_server("plain-password").unwrap();
         let secret = Secret {
             id: "sec-uuid".into(),
             user_id: "user-uuid".into(),
@@ -140,7 +166,8 @@ mod tests {
         };
 
         let decrypted = PassboltSecrets::decrypt(&pgp, &secret).unwrap();
-        assert!(!decrypted.password.is_empty());
+        assert_eq!(decrypted.password, "plain-password");
+        assert_eq!(decrypted.description, None);
     }
 
     #[test]
@@ -159,18 +186,21 @@ mod tests {
 
     #[test]
     fn test_build_secret_data_no_totp() {
-        let mut pgp = PgpContext::new();
-        pgp.set_user_key(
-            "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\npriv\n-----END PGP PRIVATE KEY BLOCK-----",
-            "pass",
-        );
-        pgp.set_server_key(
-            "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\npub\n-----END PGP PUBLIC KEY BLOCK-----",
-            "fp",
-        );
-        let result =
+        let pgp = roundtrip_context();
+        let encrypted =
             PassboltSecrets::build_secret_data(&pgp, "password123", Some("My login"), None);
-        assert!(result.is_ok());
+        let secret = Secret {
+            id: "sec-uuid".into(),
+            user_id: "user-uuid".into(),
+            resource_id: "res-uuid".into(),
+            data: encrypted.unwrap(),
+            created: "2024-01-01T00:00:00Z".into(),
+            modified: "2024-01-01T00:00:00Z".into(),
+        };
+
+        let decrypted = PassboltSecrets::decrypt(&pgp, &secret).unwrap();
+        assert_eq!(decrypted.password, "password123");
+        assert_eq!(decrypted.description, Some("My login".into()));
     }
 
     #[test]

@@ -484,9 +484,15 @@ impl KerberosAuth {
             .initialize_security_context_impl(&mut builder)
             .map_err(|e| format!("sspi initialize_security_context failed: {e}"))?
             .resolve_to_result()
-            .map_err(|e| format!("Kerberos token generation failed (no KDC or ticket cache?): {e}"))?;
+            .map_err(|e| {
+                format!("Kerberos token generation failed (no KDC or ticket cache?): {e}")
+            })?;
 
-        let token = output.into_iter().next().map(|b| b.buffer).unwrap_or_default();
+        let token = output
+            .into_iter()
+            .next()
+            .map(|b| b.buffer)
+            .unwrap_or_default();
         if token.is_empty() {
             return Err(
                 "sspi::Kerberos produced empty token — check KDC reachability and tgt cache"
@@ -526,7 +532,10 @@ impl AuthProvider for KerberosAuth {
                 Ok(Some(format!("Negotiate {}", encoded)))
             }
             SspiAuthState::Negotiated => {
-                use sspi::{BufferType, ClientRequestFlags, DataRepresentation, SecurityBuffer, Sspi, SspiImpl};
+                use sspi::{
+                    BufferType, ClientRequestFlags, DataRepresentation, SecurityBuffer, Sspi,
+                    SspiImpl,
+                };
 
                 let token = challenge
                     .strip_prefix("Negotiate ")
@@ -563,7 +572,11 @@ impl AuthProvider for KerberosAuth {
 
                 self.state = SspiAuthState::Authenticated;
 
-                let out = output.into_iter().next().map(|b| b.buffer).unwrap_or_default();
+                let out = output
+                    .into_iter()
+                    .next()
+                    .map(|b| b.buffer)
+                    .unwrap_or_default();
                 if out.is_empty() {
                     Ok(None)
                 } else {
@@ -796,8 +809,6 @@ impl AuthProvider for CertificateAuth {
     }
 
     fn initial_auth_header(&self) -> Result<String, String> {
-        // Certificate auth doesn't use Authorization headers;
-        // instead, the TLS client certificate is configured on the HTTP client.
         if self.certificate_path.is_none() && self.thumbprint.is_none() {
             return Err(
                 "Certificate authentication requires a certificate path or thumbprint".to_string(),
@@ -807,8 +818,10 @@ impl AuthProvider for CertificateAuth {
             "Certificate auth: cert={:?}, thumbprint={:?}",
             self.certificate_path, self.thumbprint
         );
-        // Return empty string - cert is set at transport level
-        Ok(String::new())
+        Err(
+            "WinRM certificate authentication is unsupported: TLS client certificates are not attached to the HTTP transport yet"
+                .to_string(),
+        )
     }
 
     async fn process_challenge(&mut self, _challenge: &str) -> Result<Option<String>, String> {
@@ -857,8 +870,6 @@ impl AuthProvider for DigestAuth {
     }
 
     async fn process_challenge(&mut self, challenge: &str) -> Result<Option<String>, String> {
-        use sha2::{Digest, Sha256};
-
         // Parse challenge parameters
         let params = parse_digest_challenge(challenge);
 
@@ -870,7 +881,17 @@ impl AuthProvider for DigestAuth {
             .get("nonce")
             .ok_or("Missing nonce in Digest challenge")?
             .clone();
-        let _qop = params.get("qop").cloned().unwrap_or_default();
+        let qop = params.get("qop").cloned().unwrap_or_default();
+        let algorithm = params
+            .get("algorithm")
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_else(|| "md5".to_string());
+        if algorithm != "md5" {
+            return Err(format!(
+                "Unsupported Digest algorithm '{}'; only MD5 is implemented",
+                algorithm
+            ));
+        }
 
         self.realm = Some(realm.clone());
         self.nonce = Some(nonce.clone());
@@ -889,21 +910,40 @@ impl AuthProvider for DigestAuth {
 
         // HA1 = MD5(username:realm:password)
         let ha1_input = format!("{}:{}:{}", user, realm, self.password);
-        let ha1 = format!("{:x}", Sha256::digest(ha1_input.as_bytes()));
+        let ha1 = md5_hex(ha1_input.as_bytes());
 
         // HA2 = MD5(method:uri)
         let ha2_input = format!("{}:{}", method, uri);
-        let ha2 = format!("{:x}", Sha256::digest(ha2_input.as_bytes()));
+        let ha2 = md5_hex(ha2_input.as_bytes());
 
-        // response = MD5(HA1:nonce:nc:cnonce:qop:HA2)
-        let response_input = format!("{}:{}:{}:{}:auth:{}", ha1, nonce, nc, cnonce, ha2);
-        let response = format!("{:x}", Sha256::digest(response_input.as_bytes()));
+        let response = if qop.is_empty() {
+            let response_input = format!("{}:{}:{}", ha1, nonce, ha2);
+            md5_hex(response_input.as_bytes())
+        } else if qop
+            .split(',')
+            .any(|candidate| candidate.trim().eq_ignore_ascii_case("auth"))
+        {
+            let response_input = format!("{}:{}:{}:{}:auth:{}", ha1, nonce, nc, cnonce, ha2);
+            md5_hex(response_input.as_bytes())
+        } else {
+            return Err(format!(
+                "Unsupported Digest qop '{}'; only auth is implemented",
+                qop
+            ));
+        };
 
-        let header = format!(
-            "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", \
-             nc={}, cnonce=\"{}\", qop=auth, response=\"{}\"",
-            user, realm, nonce, uri, nc, cnonce, response
-        );
+        let header = if qop.is_empty() {
+            format!(
+                "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
+                user, realm, nonce, uri, response
+            )
+        } else {
+            format!(
+                "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", \
+                 nc={}, cnonce=\"{}\", qop=auth, response=\"{}\"",
+                user, realm, nonce, uri, nc, cnonce, response
+            )
+        };
 
         Ok(Some(header))
     }
@@ -948,18 +988,107 @@ pub fn create_auth_provider(
 
 // ─── Utility Functions ───────────────────────────────────────────────────────
 
-/// Simple MD4 hash implementation for NTLM NT hash computation.
+/// MD5 hex digest used by HTTP Digest authentication.
+fn md5_hex(data: &[u8]) -> String {
+    use md5::Digest;
+    format!("{:x}", md5::Md5::digest(data))
+}
+
+/// MD4 hash implementation for NTLM NT hash computation.
 /// MD4 is cryptographically broken but required by the NTLM protocol.
 fn md4_hash(data: &[u8]) -> Vec<u8> {
-    // Simplified MD4 implementation for NTLM compatibility.
-    // In production, use a proper MD4 crate.
-    use md5::Digest;
+    fn f(x: u32, y: u32, z: u32) -> u32 {
+        (x & y) | (!x & z)
+    }
+    fn g(x: u32, y: u32, z: u32) -> u32 {
+        (x & y) | (x & z) | (y & z)
+    }
+    fn h(x: u32, y: u32, z: u32) -> u32 {
+        x ^ y ^ z
+    }
+    fn round1(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+        *a = a.wrapping_add(f(b, c, d)).wrapping_add(x).rotate_left(s);
+    }
+    fn round2(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+        *a = a
+            .wrapping_add(g(b, c, d))
+            .wrapping_add(x)
+            .wrapping_add(0x5a82_7999)
+            .rotate_left(s);
+    }
+    fn round3(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+        *a = a
+            .wrapping_add(h(b, c, d))
+            .wrapping_add(x)
+            .wrapping_add(0x6ed9_eba1)
+            .rotate_left(s);
+    }
 
-    // Note: This uses MD5 as a placeholder. A proper implementation would use MD4.
-    // For WinRM over HTTPS with NTLMv2, this still works as the outer HMAC-MD5
-    // provides the actual security.
-    let result = md5::Md5::digest(data);
-    result.to_vec()
+    let bit_len = (data.len() as u64) * 8;
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bit_len.to_le_bytes());
+
+    let mut a = 0x6745_2301u32;
+    let mut b = 0xefcd_ab89u32;
+    let mut c = 0x98ba_dcfeu32;
+    let mut d = 0x1032_5476u32;
+
+    for chunk in msg.chunks_exact(64) {
+        let mut x = [0u32; 16];
+        for (i, word) in x.iter_mut().enumerate() {
+            let j = i * 4;
+            *word = u32::from_le_bytes([chunk[j], chunk[j + 1], chunk[j + 2], chunk[j + 3]]);
+        }
+
+        let (aa, bb, cc, dd) = (a, b, c, d);
+
+        for i in 0..16 {
+            match i % 4 {
+                0 => round1(&mut a, b, c, d, x[i], 3),
+                1 => round1(&mut d, a, b, c, x[i], 7),
+                2 => round1(&mut c, d, a, b, x[i], 11),
+                _ => round1(&mut b, c, d, a, x[i], 19),
+            }
+        }
+
+        for (i, &k) in [0usize, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15]
+            .iter()
+            .enumerate()
+        {
+            match i % 4 {
+                0 => round2(&mut a, b, c, d, x[k], 3),
+                1 => round2(&mut d, a, b, c, x[k], 5),
+                2 => round2(&mut c, d, a, b, x[k], 9),
+                _ => round2(&mut b, c, d, a, x[k], 13),
+            }
+        }
+
+        for (i, &k) in [0usize, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15]
+            .iter()
+            .enumerate()
+        {
+            match i % 4 {
+                0 => round3(&mut a, b, c, d, x[k], 3),
+                1 => round3(&mut d, a, b, c, x[k], 9),
+                2 => round3(&mut c, d, a, b, x[k], 11),
+                _ => round3(&mut b, c, d, a, x[k], 15),
+            }
+        }
+
+        a = a.wrapping_add(aa);
+        b = b.wrapping_add(bb);
+        c = c.wrapping_add(cc);
+        d = d.wrapping_add(dd);
+    }
+
+    [a, b, c, d]
+        .into_iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect()
 }
 
 /// Get the current time as a Windows FILETIME (100-nanosecond intervals since 1601-01-01).
@@ -972,4 +1101,63 @@ fn get_filetime_now() -> u64 {
     let unix_secs = now.timestamp() as u64;
     let filetime_offset: u64 = 11644473600;
     (unix_secs + filetime_offset) * 10_000_000
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn credential() -> PsCredential {
+        PsCredential {
+            username: "Aladdin".to_string(),
+            password: Some("open sesame".to_string()),
+            domain: None,
+            certificate_path: None,
+            certificate_thumbprint: None,
+            private_key_path: None,
+            ssh_key_path: None,
+        }
+    }
+
+    #[test]
+    fn md4_matches_rfc_vectors() {
+        assert_eq!(
+            hex::encode(md4_hash(b"")),
+            "31d6cfe0d16ae931b73c59d7e0c089c0"
+        );
+        assert_eq!(
+            hex::encode(md4_hash(b"a")),
+            "bde52cb31de33e46245e05fbdbd6fb24"
+        );
+    }
+
+    #[tokio::test]
+    async fn digest_uses_md5_response_hash() {
+        let mut auth = DigestAuth::new(&credential());
+        let header = auth
+            .process_challenge(
+                r#"Digest realm="testrealm@host.com", nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093", qop="auth""#,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(header.starts_with("Digest "));
+        let response = parse_digest_challenge(&header)
+            .get("response")
+            .cloned()
+            .unwrap();
+        assert_eq!(response.len(), 32);
+    }
+
+    #[test]
+    fn certificate_auth_fails_instead_of_returning_empty_success() {
+        let mut credential = credential();
+        credential.certificate_path = Some("client.pem".to_string());
+        credential.private_key_path = Some("client-key.pem".to_string());
+        let auth = CertificateAuth::new(&credential);
+
+        let err = auth.initial_auth_header().unwrap_err();
+        assert!(err.contains("unsupported"));
+    }
 }

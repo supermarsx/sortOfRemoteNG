@@ -24,4 +24,4 @@ ironrdp-core = "0.1"
 ironrdp-cliprdr = "0.5"
 ironrdp-cliprdr-native = "0.5"
 log = "0.4"
-openh264 = { version = "0.6", optional = true }
+openh264 = { version = "0.8", optional = true }

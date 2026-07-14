@@ -66,13 +66,7 @@ impl AnyDeskService {
             let result = Command::new("anydesk.exe").arg(anydesk_id).spawn();
 
             match result {
-                Ok(_) => {
-                    // Mark as connected (simplified - in reality you'd monitor the process)
-                    if let Some(conn) = self.connections.get_mut(&session_id) {
-                        conn.session.connected = true;
-                    }
-                    Ok(session_id)
-                }
+                Ok(_) => Ok(session_id),
                 Err(e) => {
                     // Remove the connection on failure
                     self.connections.remove(&session_id);
@@ -88,12 +82,7 @@ impl AnyDeskService {
             let result = Command::new("open").arg(url).spawn();
 
             match result {
-                Ok(_) => {
-                    if let Some(conn) = self.connections.get_mut(&session_id) {
-                        conn.session.connected = true;
-                    }
-                    Ok(session_id)
-                }
+                Ok(_) => Ok(session_id),
                 Err(e) => {
                     self.connections.remove(&session_id);
                     Err(format!("Failed to launch AnyDesk: {}", e))
@@ -107,24 +96,14 @@ impl AnyDeskService {
             let result = Command::new("anydesk").arg(&anydesk_id).spawn();
 
             match result {
-                Ok(_) => {
-                    if let Some(conn) = self.connections.get_mut(&session_id) {
-                        conn.session.connected = true;
-                    }
-                    Ok(session_id)
-                }
+                Ok(_) => Ok(session_id),
                 Err(_) => {
                     // Try alternative method with URL scheme
                     let url = format!("anydesk://{}", anydesk_id);
                     let result = Command::new("xdg-open").arg(url).spawn();
 
                     match result {
-                        Ok(_) => {
-                            if let Some(conn) = self.connections.get_mut(&session_id) {
-                                conn.session.connected = true;
-                            }
-                            Ok(session_id)
-                        }
+                        Ok(_) => Ok(session_id),
                         Err(e) => {
                             self.connections.remove(&session_id);
                             Err(format!("Failed to launch AnyDesk: {}", e))
@@ -164,4 +143,3 @@ impl AnyDeskService {
             .map(|conn| conn.session.clone())
     }
 }
-
