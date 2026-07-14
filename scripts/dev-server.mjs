@@ -19,6 +19,30 @@ const log = (m) => console.log(`[dev-server] ${m}`);
 
 const preEnv = process.env.SORNG_DEV_PORT;
 const preResolved = process.env.SORNG_DEV_PORT_RESOLVED === "1";
+const bundlerEnv = (
+  process.env.SORNG_NEXT_DEV_BUNDLER ??
+  process.env.SORNG_DEV_BUNDLER ??
+  "turbopack"
+)
+  .trim()
+  .toLowerCase();
+
+function resolveBundlerFlag(value) {
+  switch (value) {
+    case "turbo":
+    case "turbopack":
+      return { label: "Turbopack", flag: "--turbopack" };
+    case "webpack":
+    case "":
+      return { label: "Webpack", flag: "--webpack" };
+    default:
+      log(
+        `unknown SORNG_NEXT_DEV_BUNDLER=${JSON.stringify(value)}; ` +
+          "falling back to Turbopack",
+      );
+      return { label: "Turbopack", flag: "--turbopack" };
+  }
+}
 
 async function main() {
   let port;
@@ -71,12 +95,16 @@ async function main() {
     return;
   }
 
+  // Keep the bundler selectable for diagnosing Next compiler regressions.
+  const bundler = resolveBundlerFlag(bundlerEnv);
+  log(`starting Next.js dev server with ${bundler.label}`);
+
   const child = spawn(
     process.execPath,
     [
       "./node_modules/next/dist/bin/next",
       "dev",
-      "--turbopack",
+      bundler.flag,
       "--port",
       String(port),
     ],
