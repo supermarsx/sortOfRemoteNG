@@ -1,4 +1,16 @@
-import { ScrollText, Gauge, Keyboard, Network, Server, Radio, TerminalSquare, FileCode, ListVideo, Circle, HardDrive } from "lucide-react";
+import {
+  ScrollText,
+  Gauge,
+  Keyboard,
+  Network,
+  Server,
+  Radio,
+  TerminalSquare,
+  FileCode,
+  ListVideo,
+  Circle,
+  HardDrive,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ToolDisplayModes } from "../../../../types/settings/settings";
 type ToolEntryKey = keyof ToolDisplayModes;
@@ -11,7 +23,7 @@ const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [
   { key: "actionLog", label: "Action Log", icon: ScrollText },
   { key: "shortcutManager", label: "Shortcut Manager", icon: Keyboard },
   { key: "bulkSsh", label: "Bulk SSH Commander", icon: TerminalSquare },
-  { key: "internalProxy", label: "Internal Proxy Manager", icon: Server },
+  { key: "rdpSessions", label: "Session Manager", icon: Server },
   { key: "proxyChain", label: "Proxy Chain Menu", icon: Network },
   { key: "wol", label: "Wake-on-LAN", icon: Radio },
   { key: "windowsBackup", label: "Windows Backup", icon: HardDrive },

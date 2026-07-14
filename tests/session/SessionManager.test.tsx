@@ -1,15 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   render,
+  renderHook,
   screen,
   fireEvent,
   waitFor,
   cleanup,
 } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { SessionManager } from "../../src/components/session/sessionManager/SessionManager";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import {
+  ConnectionContext,
+  type ConnectionState,
+} from "../../src/contexts/ConnectionContextTypes";
 import { ToastProvider } from "../../src/contexts/ToastContext";
-import { Connection } from "../../src/types/connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
+import { useUnifiedSessionManager } from "../../src/hooks/session/useUnifiedSessionManager";
 import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -98,7 +108,35 @@ const CONNECTIONS: Connection[] = [
   } as Connection,
 ];
 
-function renderManager(props: Partial<React.ComponentProps<typeof SessionManager>> = {}) {
+const SSH_CONNECTION = {
+  id: "conn-ssh",
+  name: "Prod SSH",
+  protocol: "ssh",
+  hostname: "ssh.example.com",
+  port: 22,
+  username: "deploy",
+} as Connection;
+
+const SSH_SESSION: ConnectionSession = {
+  id: "ssh-session-1",
+  connectionId: "conn-ssh",
+  name: "Prod SSH",
+  status: "connected",
+  startTime: new Date("2026-01-01T12:00:00.000Z"),
+  protocol: "ssh",
+  hostname: "ssh.example.com",
+  backendSessionId: "backend-ssh-1",
+  metrics: {
+    connectionTime: 125,
+    dataTransferred: 4096,
+    latency: 18,
+    throughput: 256,
+  },
+};
+
+function renderManager(
+  props: Partial<React.ComponentProps<typeof SessionManager>> = {},
+) {
   return render(
     <ToastProvider>
       <ConnectionProvider>
@@ -113,6 +151,106 @@ function renderManager(props: Partial<React.ComponentProps<typeof SessionManager
       </ConnectionProvider>
     </ToastProvider>,
   );
+}
+
+function renderUnifiedSessionManagerHook({
+  sessions,
+  connections = CONNECTIONS,
+}: {
+  sessions: ConnectionSession[];
+  connections?: Connection[];
+}) {
+  const state: ConnectionState = {
+    connections,
+    sessions,
+    selectedConnection: null,
+    selectedConnectionIds: new Set<string>(),
+    filter: {
+      searchTerm: "",
+      protocols: [],
+      tags: [],
+      colorTags: [],
+      showRecent: false,
+      showFavorites: false,
+    },
+    isLoading: false,
+    sidebarCollapsed: false,
+    tabGroups: [],
+  };
+
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <ConnectionContext.Provider
+      value={{
+        state,
+        dispatch: vi.fn(),
+        saveData: vi.fn(async () => {}),
+        loadData: vi.fn(async () => {}),
+      }}
+    >
+      {children}
+    </ConnectionContext.Provider>
+  );
+
+  return renderHook(
+    () =>
+      useUnifiedSessionManager({
+        isVisible: true,
+        connections,
+        activeBackendSessionIds: ["rdp-1"],
+        thumbnailsEnabled: false,
+      }),
+    { wrapper },
+  );
+}
+
+function renderManagerWithConnectionState({
+  sessions,
+  connections = CONNECTIONS,
+}: {
+  sessions: ConnectionSession[];
+  connections?: Connection[];
+}) {
+  const state: ConnectionState = {
+    connections,
+    sessions,
+    selectedConnection: null,
+    selectedConnectionIds: new Set<string>(),
+    filter: {
+      searchTerm: "",
+      protocols: [],
+      tags: [],
+      colorTags: [],
+      showRecent: false,
+      showFavorites: false,
+    },
+    isLoading: false,
+    sidebarCollapsed: false,
+    tabGroups: [],
+  };
+  const dispatch = vi.fn();
+
+  render(
+    <ToastProvider>
+      <ConnectionContext.Provider
+        value={{
+          state,
+          dispatch,
+          saveData: vi.fn(async () => {}),
+          loadData: vi.fn(async () => {}),
+        }}
+      >
+        <SessionManager
+          isVisible
+          connections={connections}
+          activeBackendSessionIds={["rdp-1"]}
+          onClose={() => {}}
+          thumbnailsEnabled={false}
+        />
+      </ConnectionContext.Provider>
+    </ToastProvider>,
+  );
+
+  return { dispatch };
 }
 
 describe("SessionManager (unified RDP + internal proxy)", () => {
@@ -150,9 +288,24 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
   it("filters to proxy only and hides RDP rows", async () => {
     renderManager();
     await screen.findByText("https://example.com");
-    fireEvent.click(screen.getByTestId("session-filter-http-proxy"));
+    fireEvent.click(screen.getByTestId("session-filter-proxy"));
     expect(screen.getByText("https://example.com")).toBeInTheDocument();
     expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
+  });
+
+  it("renders frontend SSH sessions in the same Session Manager panel", async () => {
+    renderManagerWithConnectionState({
+      sessions: [SSH_SESSION],
+      connections: [...CONNECTIONS, SSH_CONNECTION],
+    });
+
+    expect(await screen.findByText("Prod SSH")).toBeInTheDocument();
+    expect(screen.getByTestId("session-group-ssh")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("session-filter-connections"));
+
+    expect(screen.getByText("Prod SSH")).toBeInTheDocument();
+    expect(screen.queryByText("https://example.com")).not.toBeInTheDocument();
   });
 
   it("RDP disconnect action calls the RDP source handler", async () => {
@@ -216,5 +369,36 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(
       await screen.findByText("https://example.com/api/status"),
     ).toBeInTheDocument();
+  });
+
+  it("projects SSH frontend sessions from ConnectionContext into unified rows", () => {
+    const { result } = renderUnifiedSessionManagerHook({
+      sessions: [SSH_SESSION],
+      connections: [...CONNECTIONS, SSH_CONNECTION],
+    });
+
+    const sshRow = result.current.frontendConnectionRows[0];
+
+    expect(sshRow).toMatchObject({
+      uid: "ssh:ssh-session-1",
+      kind: "ssh",
+      source: "frontend",
+      bucket: "connection",
+      kindLabel: "SSH",
+      groupKey: "ssh",
+      groupLabel: "SSH",
+      nativeId: "ssh-session-1",
+      title: "Prod SSH",
+      subtitle: "deploy@ssh.example.com:22",
+      status: "connected",
+      connectionId: "conn-ssh",
+      protocol: "ssh",
+      hostname: "ssh.example.com",
+      username: "deploy",
+      metrics: SSH_SESSION.metrics,
+    });
+    expect(sshRow.frontendSession).toBe(SSH_SESSION);
+    expect(result.current.frontendRows).toContain(sshRow);
+    expect(result.current.rows).toContain(sshRow);
   });
 });

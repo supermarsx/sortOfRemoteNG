@@ -123,7 +123,7 @@ const layoutSettings = {
   showImportExportIcon: true,
   showSettingsIcon: true,
   showProxyMenuIcon: true,
-  showInternalProxyIcon: true,
+  showInternalProxyIcon: false,
   showShortcutManagerIcon: true,
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
@@ -221,7 +221,9 @@ describe("Extended settings section centralization", () => {
       />,
     );
 
-    expect(container.querySelectorAll(".sor-settings-card").length).toBeGreaterThanOrEqual(2);
+    expect(
+      container.querySelectorAll(".sor-settings-card").length,
+    ).toBeGreaterThanOrEqual(2);
     const watchdogToggle = screen.getByRole("checkbox", {
       name: /enable memory watchdog/i,
     });
@@ -261,14 +263,15 @@ describe("Extended settings section centralization", () => {
     const secondaryBarHeader = screen
       .getByText("Secondary Bar Icons")
       .closest(".sor-settings-section-header") as HTMLElement;
-    const secondaryBarCard = secondaryBarHeader.nextElementSibling as HTMLElement;
+    const secondaryBarCard =
+      secondaryBarHeader.nextElementSibling as HTMLElement;
     // Each row is a <label> rendered by the shared Toggle primitive,
     // wrapping a leading icon span (text-textSecondary).
     const secondaryBarRows = Array.from(
       secondaryBarCard.querySelectorAll("label"),
     );
 
-    expect(secondaryBarRows).toHaveLength(22);
+    expect(secondaryBarRows).toHaveLength(21);
     for (const row of secondaryBarRows) {
       const iconWrapper = row.querySelector(".sor-settings-toggle-icon");
       expect(iconWrapper).not.toBeNull();
@@ -277,7 +280,9 @@ describe("Extended settings section centralization", () => {
         /\btext-(primary|warning|success|error|info)\b/,
       );
     }
-    expect(secondaryBarCard.querySelectorAll("[data-tooltip]")).toHaveLength(22);
+    expect(secondaryBarCard.querySelectorAll("[data-tooltip]")).toHaveLength(
+      21,
+    );
 
     expect(
       container.querySelectorAll(
@@ -308,9 +313,9 @@ describe("Extended settings section centralization", () => {
       container.querySelector('input[type="checkbox"]')?.className,
     ).toContain("sor-settings-checkbox");
 
-    const sslModeSelect = screen.getByText(
-      "Manual (Provide Certificate)",
-    ).closest('[role="combobox"]') as HTMLElement;
+    const sslModeSelect = screen
+      .getByText("Manual (Provide Certificate)")
+      .closest('[role="combobox"]') as HTMLElement;
     expect(sslModeSelect.className).toContain("sor-settings-select");
 
     const requestsInput = container.querySelector(
@@ -446,9 +451,9 @@ describe("Extended settings section centralization", () => {
       ).toContain("sor-settings-select");
     }
 
-    const tlsPolicySelect = screen.getAllByText(
-      "Trust On First Use (TOFU)",
-    )[0].closest('[role="combobox"]') as HTMLElement;
+    const tlsPolicySelect = screen
+      .getAllByText("Trust On First Use (TOFU)")[0]
+      .closest('[role="combobox"]') as HTMLElement;
     expect(tlsPolicySelect.className).toContain("sor-settings-select");
 
     const infoToggle = screen.getByRole("checkbox", {

@@ -14,6 +14,8 @@
  *                               (e.g. "tool:settings", "tool:wol")
  *   - Windows management tabs — protocol starts with "winmgmt:"
  *                               (e.g. "winmgmt:services")
+ *   - integration panels      — protocol starts with "integration:"
+ *                               (e.g. "integration:netbox")
  *
  * Tools and winmgmt panels live in the same tab strip and the same
  * tiling grid as real sessions — they're legitimate first-class
@@ -31,11 +33,12 @@
  * protocol prefix once.
  */
 
-import type { ConnectionSession } from '../../types/connection/connection';
-import { TOOL_PROTOCOL_PREFIX } from '../../components/app/toolSession';
-import { WINMGMT_PROTOCOL_PREFIX } from '../../components/windows/WindowsToolPanel.helpers';
+import type { ConnectionSession } from "../../types/connection/connection";
+import { INTEGRATION_PROTOCOL_PREFIX } from "../../types/connection/connection";
+import { TOOL_PROTOCOL_PREFIX } from "../../components/app/toolSession";
+import { WINMGMT_PROTOCOL_PREFIX } from "../../components/windows/WindowsToolPanel.helpers";
 
-export type TabKind = 'connection' | 'tool' | 'winmgmt';
+export type TabKind = "connection" | "tool" | "winmgmt" | "integration";
 
 /**
  * Classify a single session by its protocol prefix. Unknown
@@ -45,10 +48,11 @@ export type TabKind = 'connection' | 'tool' | 'winmgmt';
  * an internal tool).
  */
 export function classifyTabKind(session: { protocol?: string }): TabKind {
-  const protocol = session.protocol ?? '';
-  if (protocol.startsWith(TOOL_PROTOCOL_PREFIX)) return 'tool';
-  if (protocol.startsWith(WINMGMT_PROTOCOL_PREFIX)) return 'winmgmt';
-  return 'connection';
+  const protocol = session.protocol ?? "";
+  if (protocol.startsWith(TOOL_PROTOCOL_PREFIX)) return "tool";
+  if (protocol.startsWith(WINMGMT_PROTOCOL_PREFIX)) return "winmgmt";
+  if (protocol.startsWith(INTEGRATION_PROTOCOL_PREFIX)) return "integration";
+  return "connection";
 }
 
 /**
@@ -58,25 +62,37 @@ export function classifyTabKind(session: { protocol?: string }): TabKind {
  * This is the common predicate — most callers just need the
  * yes/no, not the full classification.
  */
-export function isRealConnectionSession(session: { protocol?: string }): boolean {
-  return classifyTabKind(session) === 'connection';
+export function isRealConnectionSession(session: {
+  protocol?: string;
+}): boolean {
+  return classifyTabKind(session) === "connection";
 }
 
 export function isToolTabSession(session: { protocol?: string }): boolean {
-  return classifyTabKind(session) === 'tool';
+  return classifyTabKind(session) === "tool";
 }
 
 export function isWinmgmtTabSession(session: { protocol?: string }): boolean {
-  return classifyTabKind(session) === 'winmgmt';
+  return classifyTabKind(session) === "winmgmt";
 }
 
-export interface PartitionedSessions<S extends { protocol?: string } = ConnectionSession> {
+export function isIntegrationTabSession(session: {
+  protocol?: string;
+}): boolean {
+  return classifyTabKind(session) === "integration";
+}
+
+export interface PartitionedSessions<
+  S extends { protocol?: string } = ConnectionSession,
+> {
   /** Real remote connections (ssh, rdp, http, ...). */
   connections: S[];
   /** Internal tool tabs (`tool:*`). */
   tools: S[];
   /** Windows management panels (`winmgmt:*`). */
   winmgmt: S[];
+  /** Integration panels (`integration:*`). */
+  integrations: S[];
 }
 
 /**
@@ -90,20 +106,24 @@ export function partitionSessions<S extends { protocol?: string }>(
   const connections: S[] = [];
   const tools: S[] = [];
   const winmgmt: S[] = [];
+  const integrations: S[] = [];
   for (const s of sessions) {
     switch (classifyTabKind(s)) {
-      case 'connection':
+      case "connection":
         connections.push(s);
         break;
-      case 'tool':
+      case "tool":
         tools.push(s);
         break;
-      case 'winmgmt':
+      case "winmgmt":
         winmgmt.push(s);
+        break;
+      case "integration":
+        integrations.push(s);
         break;
     }
   }
-  return { connections, tools, winmgmt };
+  return { connections, tools, winmgmt, integrations };
 }
 
 /**
@@ -111,7 +131,9 @@ export function partitionSessions<S extends { protocol?: string }>(
  * around `partitionSessions` for the common case where you only
  * need the number, not the partition.
  */
-export function realConnectionCount(sessions: Array<{ protocol?: string }>): number {
+export function realConnectionCount(
+  sessions: Array<{ protocol?: string }>,
+): number {
   let n = 0;
   for (const s of sessions) {
     if (isRealConnectionSession(s)) n++;

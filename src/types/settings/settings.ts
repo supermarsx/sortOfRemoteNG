@@ -376,8 +376,6 @@ export interface GlobalSettings {
   showCloudSyncStatusIcon: boolean; // Separate cloud sync icon
   showErrorLogBar: boolean;
   showRdpSessionsIcon: boolean;
-  /** Show the Integrations hub icon in the secondary bar. Defaults visible. */
-  showIntegrationsIcon?: boolean;
 
   // Recording & Macros
   recording: RecordingConfig;
@@ -1392,7 +1390,6 @@ export interface ToolDisplayModes {
   tunnelProfileEditor: "tab";
   bulkEditor: "tab";
   database: "tab";
-  integrations: "tab";
 }
 
 export interface SettingsDialogConfig {

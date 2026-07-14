@@ -9,7 +9,11 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { LoadingElement } from "../ui/display/loadingElement";
-import { ConnectionSession } from "../../types/connection/connection";
+import {
+  ConnectionSession,
+  INTEGRATION_PROTOCOL_PREFIX,
+  isIntegrationConnectionProtocol,
+} from "../../types/connection/connection";
 import { isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol } from "../windows/WindowsToolPanel.helpers";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
@@ -21,6 +25,13 @@ const ToolTabViewer = dynamic(
 const WindowsToolPanel = dynamic(() => import("../windows/WindowsToolPanel"), {
   ssr: false,
 });
+const IntegrationPanelHost = dynamic(
+  () =>
+    import("../integrations/IntegrationPanelHost").then(
+      (module) => module.IntegrationPanelHost,
+    ),
+  { ssr: false },
+);
 const WebTerminal = dynamic(() => import("../ssh/WebTerminal"), { ssr: false });
 const WebBrowser = dynamic(
   () => import("../protocol/WebBrowser").then((module) => module.WebBrowser),
@@ -128,6 +139,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         <ToolTabViewer
           session={session}
           onClose={() => onCloseSession?.(session.id)}
+          onCloseManagedSession={onCloseSession}
           onReattachSession={onReattachSession}
           onDetachToWindow={onDetachToWindow}
           onReconnect={onReconnect}
@@ -143,6 +155,21 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
       return (
         <WindowsToolPanel
           session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (isIntegrationConnectionProtocol(session.protocol)) {
+      const descriptorKey = session.protocol.slice(
+        INTEGRATION_PROTOCOL_PREFIX.length,
+      );
+      return (
+        <IntegrationPanelHost
+          descriptorKey={descriptorKey}
+          protocol={session.protocol}
+          instanceId={session.backendSessionId}
+          integrationSettings={session.integration}
           onClose={() => onCloseSession?.(session.id)}
         />
       );

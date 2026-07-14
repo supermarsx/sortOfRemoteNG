@@ -24,7 +24,6 @@ import {
   FileCode,
   Power,
   ScreenShare,
-  ArrowUpDown,
   Bug,
   HardDrive,
   Cloud,
@@ -504,20 +503,6 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             )}
           />
           <Toggle
-            checked={settings.showInternalProxyIcon}
-            onChange={(v) => updateSettings({ showInternalProxyIcon: v })}
-            icon={<ArrowUpDown size={16} />}
-            label={t(
-              "settingsLayout.internalProxyManager",
-              "Internal Proxy Manager",
-            )}
-            settingKey="showInternalProxyIcon"
-            infoTooltip={t(
-              "settingsLayout.internalProxyManagerTooltip",
-              "Show the internal authentication proxy manager icon",
-            )}
-          />
-          <Toggle
             checked={settings.showShortcutManagerIcon}
             onChange={(v) => updateSettings({ showShortcutManagerIcon: v })}
             icon={<Keyboard size={16} />}
@@ -692,11 +677,11 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             checked={settings.showRdpSessionsIcon}
             onChange={(v) => updateSettings({ showRdpSessionsIcon: v })}
             icon={<Cpu size={16} />}
-            label={t("settingsLayout.rdpSessions", "RDP Sessions")}
+            label={t("settingsLayout.sessionManager", "Session Manager")}
             settingKey="showRdpSessionsIcon"
             infoTooltip={t(
-              "settingsLayout.rdpSessionsTooltip",
-              "Show the RDP Sessions icon for opening and monitoring RDP session tools",
+              "settingsLayout.sessionManagerTooltip",
+              "Show the Session Manager icon for opening and monitoring active sessions",
             )}
           />
         </Card>

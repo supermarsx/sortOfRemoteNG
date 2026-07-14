@@ -1,76 +1,133 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useEffect } from "react";
 import { ConnectionEditor } from "../../src/components/connection/ConnectionEditor";
 import { Connection } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { useConnections } from "../../src/contexts/useConnections";
+
+vi.mock("../../src/types/integrations/registry", () => ({
+  integrationRegistry: [
+    {
+      key: "netbox",
+      label: "NetBox",
+      category: "infra",
+      icon: () => null,
+      importPanel: async () => ({ default: () => null }),
+    },
+    {
+      key: "grafana",
+      label: "Grafana",
+      category: "app-service",
+      icon: () => null,
+      importPanel: async () => ({ default: () => null }),
+    },
+    {
+      key: "exchange",
+      label: "Exchange",
+      category: "app-service",
+      icon: () => null,
+      importPanel: async () => ({ default: () => null }),
+    },
+  ],
+}));
 
 // Mock ToastContext (useConnectionEditor depends on it)
-vi.mock('../../src/contexts/ToastContext', () => ({
+vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
-    toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+    toast: {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    },
   }),
 }));
 
 // Mock child components
-vi.mock('../../src/components/connection/TagManager', () => ({
+vi.mock("../../src/components/connection/TagManager", () => ({
   TagManager: ({ tags, onChange }: any) => (
     <div data-testid="tag-manager">
-      <span data-testid="tag-display">{tags?.join(', ') || 'none'}</span>
-      <button onClick={() => onChange(['test-tag'])}>Add Tag</button>
+      <span data-testid="tag-display">{tags?.join(", ") || "none"}</span>
+      <button onClick={() => onChange(["test-tag"])}>Add Tag</button>
     </div>
-  )
+  ),
 }));
 
-vi.mock('../../src/components/connectionEditor/SSHOptions', () => ({
-  default: ({ formData }: any) => formData.protocol === 'ssh' ? <div data-testid="ssh-options">SSH Options</div> : null
+vi.mock("../../src/components/connectionEditor/SSHOptions", () => ({
+  default: ({ formData }: any) =>
+    formData.protocol === "ssh" ? (
+      <div data-testid="ssh-options">SSH Options</div>
+    ) : null,
 }));
 
-vi.mock('../../src/components/connectionEditor/HTTPOptions', () => ({
-  default: ({ formData }: any) => ['http', 'https'].includes(formData.protocol) ? <div data-testid="http-options">HTTP Options</div> : null
+vi.mock("../../src/components/connectionEditor/HTTPOptions", () => ({
+  default: ({ formData }: any) =>
+    ["http", "https"].includes(formData.protocol) ? (
+      <div data-testid="http-options">HTTP Options</div>
+    ) : null,
 }));
 
-vi.mock('../../src/components/connectionEditor/CloudProviderOptions', () => ({
-  default: () => <div data-testid="cloud-options">Cloud Options</div>
+vi.mock("../../src/components/connectionEditor/CloudProviderOptions", () => ({
+  default: () => <div data-testid="cloud-options">Cloud Options</div>,
 }));
 
-vi.mock('../../src/utils/discovery/defaultPorts', () => ({
+vi.mock("../../src/utils/discovery/defaultPorts", () => ({
   getDefaultPort: vi.fn((protocol) => {
     const ports: Record<string, number> = {
       rdp: 3389,
       ssh: 22,
       vnc: 5900,
       http: 80,
-      https: 443
+      https: 443,
     };
     return ports[protocol] || 3389;
-  })
+  }),
 }));
 
-vi.mock('../../src/utils/core/id', () => ({
-  generateId: vi.fn(() => 'test-generated-id')
+vi.mock("../../src/utils/core/id", () => ({
+  generateId: vi.fn(() => "test-generated-id"),
 }));
 
 const mockConnection: Connection = {
-  id: 'test-connection',
-  name: 'Test Connection',
-  protocol: 'rdp',
-  hostname: '192.168.1.100',
+  id: "test-connection",
+  name: "Test Connection",
+  protocol: "rdp",
+  hostname: "192.168.1.100",
   port: 3389,
-  username: 'testuser',
-  password: 'testpass',
-  domain: '',
-  description: 'Test connection',
+  username: "testuser",
+  password: "testpass",
+  domain: "",
+  description: "Test connection",
   isGroup: false,
-  tags: ['test', 'rdp'],
+  tags: ["test", "rdp"],
   createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
+  updatedAt: new Date().toISOString(),
 };
 
-const renderWithProviders = (props: any) => {
+const ConnectionStateProbe = ({
+  onConnections,
+}: {
+  onConnections?: (connections: Connection[]) => void;
+}) => {
+  const { state } = useConnections();
+
+  useEffect(() => {
+    onConnections?.(state.connections);
+  }, [onConnections, state.connections]);
+
+  return null;
+};
+
+const renderWithProviders = (
+  props: any,
+  onConnections?: (connections: Connection[]) => void,
+) => {
   return render(
     <ConnectionProvider>
+      <ConnectionStateProbe onConnections={onConnections} />
       <ConnectionEditor {...props} />
-    </ConnectionProvider>
+    </ConnectionProvider>,
   );
 };
 
@@ -93,45 +150,78 @@ describe("ConnectionEditor", () => {
     });
 
     it("should display reset button for existing connections", () => {
-      renderWithProviders({ connection: mockConnection, isOpen: true, onClose: vi.fn() });
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
 
-      expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Reset/i }),
+      ).toBeInTheDocument();
     });
 
     it("should display save button", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      expect(screen.getByRole('button', { name: /Create/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Create/i }),
+      ).toBeInTheDocument();
     });
 
     it("should organize editor settings into tabs", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      expect(screen.getByTestId("connection-editor-tab-general")).toHaveAttribute("aria-selected", "true");
-      expect(screen.getByTestId("connection-editor-tab-protocol")).toBeInTheDocument();
-      expect(screen.getByTestId("connection-editor-tab-behavior")).toBeInTheDocument();
-      expect(screen.getByTestId("connection-editor-tab-organize")).toBeInTheDocument();
-      expect(screen.getByTestId("connection-editor-tab-notes")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-tab-general"),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(
+        screen.getByTestId("connection-editor-tab-protocol"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-tab-behavior"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-tab-organize"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-tab-notes"),
+      ).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
-      expect(screen.getByTestId("connection-editor-panel-protocol")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-panel-protocol"),
+      ).toBeInTheDocument();
       expect(screen.queryByTestId("editor-name")).not.toBeInTheDocument();
     });
 
     it("should hide connection-only tabs for folders", async () => {
       renderWithProviders({
-        connection: { ...mockConnection, id: "folder", isGroup: true, hostname: "" },
+        connection: {
+          ...mockConnection,
+          id: "folder",
+          isGroup: true,
+          hostname: "",
+        },
         isOpen: true,
         onClose: vi.fn(),
       });
 
       await waitFor(() => {
-        expect(screen.queryByTestId("connection-editor-tab-protocol")).not.toBeInTheDocument();
-        expect(screen.queryByTestId("connection-editor-tab-behavior")).not.toBeInTheDocument();
+        expect(
+          screen.queryByTestId("connection-editor-tab-protocol"),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByTestId("connection-editor-tab-behavior"),
+        ).not.toBeInTheDocument();
       });
-      expect(screen.getByTestId("connection-editor-tab-organize")).toBeInTheDocument();
-      expect(screen.getByTestId("connection-editor-tab-notes")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-tab-organize"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("connection-editor-tab-notes"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -139,32 +229,32 @@ describe("ConnectionEditor", () => {
     it("should initialize with default values for new connection", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const nameInput = screen.getByTestId('editor-name');
+      const nameInput = screen.getByTestId("editor-name");
       // RDP should be selected by default (has active styling)
-      expect(nameInput).toHaveValue('');
+      expect(nameInput).toHaveValue("");
       // RDP should be displayed as the selected protocol in the dropdown toggle
-      expect(screen.getByTestId('editor-protocol')).toHaveTextContent(/RDP/);
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/RDP/);
     });
 
     it("should update form data when inputs change", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const nameInput = screen.getByTestId('editor-name');
-      fireEvent.change(nameInput, { target: { value: 'New Connection' } });
+      const nameInput = screen.getByTestId("editor-name");
+      fireEvent.change(nameInput, { target: { value: "New Connection" } });
 
-      expect(nameInput).toHaveValue('New Connection');
+      expect(nameInput).toHaveValue("New Connection");
     });
 
     it("should update protocol and set default port", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       // Open protocol dropdown and click SSH
-      const protocolToggle = screen.getByTestId('editor-protocol');
+      const protocolToggle = screen.getByTestId("editor-protocol");
       fireEvent.click(protocolToggle);
-      fireEvent.click(screen.getByRole('button', { name: /^SSH/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^SSH/i }));
 
       // Dropdown toggle should now show SSH
-      expect(screen.getByTestId('editor-protocol')).toHaveTextContent(/SSH/);
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/SSH/);
     });
   });
 
@@ -173,52 +263,188 @@ describe("ConnectionEditor", () => {
       renderWithProviders({
         connection: mockConnection,
         isOpen: true,
-        onClose: vi.fn()
+        onClose: vi.fn(),
       });
 
-      const nameInput = screen.getByTestId('editor-name');
-      expect(nameInput).toHaveValue('Test Connection');
+      const nameInput = screen.getByTestId("editor-name");
+      expect(nameInput).toHaveValue("Test Connection");
     });
 
     it("should display existing tags", async () => {
       renderWithProviders({
         connection: mockConnection,
         isOpen: true,
-        onClose: vi.fn()
+        onClose: vi.fn(),
       });
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
-      const tagDisplay = screen.getByTestId('tag-display');
+      const tagDisplay = screen.getByTestId("tag-display");
       // Tags should be populated from the connection after useEffect fires
-      await waitFor(() => {
-        expect(tagDisplay.textContent).toContain('test');
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(tagDisplay.textContent).toContain("test");
+        },
+        { timeout: 3000 },
+      );
     });
   });
 
   describe("Protocol-Specific Options", () => {
+    it("should expose integration registry entries as protocol options", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("button", { name: /NetBox/i }));
+
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/NetBox/);
+      expect(
+        screen.getByTestId("editor-integration-instance-id"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-integration-instance-name"),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("editor-hostname")).toHaveAttribute(
+        "placeholder",
+        "service.example.com",
+      );
+      expect(
+        screen.getByTestId("editor-integration-base-url"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-integration-auth-token"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-integration-api-key"),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("editor-username")).toBeInTheDocument();
+      expect(screen.getByTestId("editor-password")).toBeInTheDocument();
+      expect(screen.getByTestId("editor-integration-tls-verify")).toBeChecked();
+      expect(screen.getByTestId("editor-integration-timeout")).toHaveValue(30);
+    });
+
+    it("should populate generic integration fields for integration-backed connections", async () => {
+      const integrationConnection: Connection = {
+        ...mockConnection,
+        protocol: "integration:grafana",
+        hostname: "grafana.internal",
+        port: 443,
+        username: "ops",
+        password: "grafana-pass",
+        timeout: 45,
+        integration: {
+          descriptorKey: "grafana",
+          descriptorLabel: "Grafana",
+          category: "app-service",
+          instanceId: "grafana-prod",
+          instanceName: "Production Grafana",
+          host: "grafana.internal",
+          baseUrl: "https://grafana.internal",
+          username: "ops",
+          tlsVerify: false,
+          timeout: 45,
+        },
+      };
+
+      renderWithProviders({
+        connection: integrationConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+          /Grafana/,
+        );
+      });
+      expect(screen.getByTestId("editor-integration-instance-id")).toHaveValue(
+        "grafana-prod",
+      );
+      expect(
+        screen.getByTestId("editor-integration-instance-name"),
+      ).toHaveValue("Production Grafana");
+      expect(screen.getByTestId("editor-hostname")).toHaveValue(
+        "grafana.internal",
+      );
+      expect(screen.getByTestId("editor-integration-base-url")).toHaveValue(
+        "https://grafana.internal",
+      );
+      expect(screen.getByTestId("editor-integration-auth-token")).toHaveValue(
+        "",
+      );
+      expect(screen.getByTestId("editor-integration-api-key")).toHaveValue("");
+      expect(screen.getByTestId("editor-username")).toHaveValue("ops");
+      expect(screen.getByTestId("editor-password")).toHaveValue("grafana-pass");
+      expect(
+        screen.getByTestId("editor-integration-tls-verify"),
+      ).not.toBeChecked();
+      expect(screen.getByTestId("editor-integration-timeout")).toHaveValue(45);
+    });
+
+    it("should expose tailored Exchange fields for integration-backed Exchange connections", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("button", { name: /Exchange/i }));
+
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        /Exchange/,
+      );
+      expect(screen.getByTestId("editor-exchange-environment")).toHaveValue(
+        "online",
+      );
+      expect(
+        screen.getByTestId("editor-exchange-tenant-id"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-exchange-client-id"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-exchange-client-secret"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("editor-exchange-server"),
+      ).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByTestId("editor-exchange-environment"), {
+        target: { value: "hybrid" },
+      });
+
+      expect(screen.getByTestId("editor-exchange-server")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("editor-exchange-onprem-username"),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("editor-exchange-auth-method")).toHaveValue(
+        "kerberos",
+      );
+      expect(screen.getByTestId("editor-exchange-use-ssl")).toBeChecked();
+    });
+
     it("should show SSH options for SSH protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       // Open protocol dropdown and click SSH
-      fireEvent.click(screen.getByTestId('editor-protocol'));
-      fireEvent.click(screen.getByRole('button', { name: /^SSH/i }));
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("button", { name: /^SSH/i }));
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
-      expect(screen.getByTestId('ssh-options')).toBeInTheDocument();
+      expect(screen.getByTestId("ssh-options")).toBeInTheDocument();
     });
 
     it("should show HTTP options for HTTP protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       // Open protocol dropdown and click HTTP (accessible name is "HTTPWeb Service" without space)
-      fireEvent.click(screen.getByTestId('editor-protocol'));
-      const allButtons = screen.getAllByRole('button');
-      const httpButton = allButtons.find((btn) => btn.textContent?.includes('HTTPWeb Service') || btn.textContent?.match(/HTTP\s*Web Service/));
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      const allButtons = screen.getAllByRole("button");
+      const httpButton = allButtons.find(
+        (btn) =>
+          btn.textContent?.includes("HTTPWeb Service") ||
+          btn.textContent?.match(/HTTP\s*Web Service/),
+      );
       fireEvent.click(httpButton!);
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
-      expect(screen.getByTestId('http-options')).toBeInTheDocument();
+      expect(screen.getByTestId("http-options")).toBeInTheDocument();
     });
   });
 
@@ -227,19 +453,19 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
-      expect(screen.getByTestId('tag-manager')).toBeInTheDocument();
+      expect(screen.getByTestId("tag-manager")).toBeInTheDocument();
     });
 
     it("should update tags when tag manager changes", async () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       fireEvent.click(screen.getByTestId("connection-editor-tab-organize"));
-      const addTagButton = screen.getByText('Add Tag');
+      const addTagButton = screen.getByText("Add Tag");
       fireEvent.click(addTagButton);
 
-      const tagDisplay = screen.getByTestId('tag-display');
+      const tagDisplay = screen.getByTestId("tag-display");
       await waitFor(() => {
-        expect(tagDisplay.textContent).toContain('test-tag');
+        expect(tagDisplay.textContent).toContain("test-tag");
       });
     });
   });
@@ -250,13 +476,15 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: mockOnClose });
 
       // Fill required fields first
-      const nameInput = screen.getByTestId('editor-name');
-      fireEvent.change(nameInput, { target: { value: 'Test Connection' } });
+      const nameInput = screen.getByTestId("editor-name");
+      fireEvent.change(nameInput, { target: { value: "Test Connection" } });
 
       const hostnameInput = screen.getByPlaceholderText(/192\.168\.1\.100/i);
-      fireEvent.change(hostnameInput, { target: { value: 'test.example.com' } });
+      fireEvent.change(hostnameInput, {
+        target: { value: "test.example.com" },
+      });
 
-      const saveButton = screen.getByRole('button', { name: /Create/i });
+      const saveButton = screen.getByRole("button", { name: /Create/i });
       fireEvent.click(saveButton);
 
       await waitFor(() => {
@@ -270,20 +498,182 @@ describe("ConnectionEditor", () => {
       // For now, we test that the save button exists and is clickable
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const saveButton = screen.getByRole('button', { name: /Create/i });
+      const saveButton = screen.getByRole("button", { name: /Create/i });
       expect(saveButton).toBeInTheDocument();
+    });
+
+    it("should not persist integration token, API key, or password in connection data", async () => {
+      const mockOnClose = vi.fn();
+      let latestConnections: Connection[] = [];
+
+      renderWithProviders(
+        { isOpen: true, onClose: mockOnClose },
+        (connections) => {
+          latestConnections = connections;
+        },
+      );
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "NetBox Production" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("button", { name: /NetBox/i }));
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "netbox.internal" },
+      });
+      fireEvent.change(screen.getByTestId("editor-integration-base-url"), {
+        target: { value: "https://netbox.internal" },
+      });
+      fireEvent.change(screen.getByTestId("editor-integration-auth-token"), {
+        target: { value: "token-secret" },
+      });
+      fireEvent.change(screen.getByTestId("editor-integration-api-key"), {
+        target: { value: "api-secret" },
+      });
+      fireEvent.change(screen.getByTestId("editor-username"), {
+        target: { value: "ops" },
+      });
+      fireEvent.change(screen.getByTestId("editor-password"), {
+        target: { value: "password-secret" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled();
+        expect(latestConnections).toHaveLength(1);
+      });
+
+      const saved = latestConnections[0] as Connection & {
+        integration?: Record<string, unknown>;
+      };
+      expect(saved.protocol).toBe("integration:netbox");
+      expect(saved.hostname).toBe("netbox.internal");
+      expect(saved.username).toBe("ops");
+      expect(saved.password).toBe("");
+      expect(saved.integration).toMatchObject({
+        descriptorKey: "netbox",
+        descriptorLabel: "NetBox",
+        category: "infra",
+        host: "netbox.internal",
+        baseUrl: "https://netbox.internal",
+        username: "ops",
+        tlsVerify: true,
+        timeout: 30,
+      });
+      expect(saved.integration).not.toHaveProperty("authToken");
+      expect(saved.integration).not.toHaveProperty("apiKey");
+      expect(saved.integration).not.toHaveProperty("password");
+    });
+
+    it("should persist Exchange provider metadata without Exchange secrets", async () => {
+      const mockOnClose = vi.fn();
+      let latestConnections: Connection[] = [];
+
+      renderWithProviders(
+        { isOpen: true, onClose: mockOnClose },
+        (connections) => {
+          latestConnections = connections;
+        },
+      );
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "Exchange Hybrid" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("button", { name: /Exchange/i }));
+      fireEvent.change(screen.getByTestId("editor-exchange-environment"), {
+        target: { value: "hybrid" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-timeout"), {
+        target: { value: "180" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-tenant-id"), {
+        target: { value: "tenant.onmicrosoft.com" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-client-id"), {
+        target: { value: "client-guid" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-client-secret"), {
+        target: { value: "client-secret" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-online-username"), {
+        target: { value: "admin@tenant.onmicrosoft.com" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-organization"), {
+        target: { value: "tenant.onmicrosoft.com" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-server"), {
+        target: { value: "mail01.contoso.local" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-port"), {
+        target: { value: "5986" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-onprem-username"), {
+        target: { value: "CONTOSO\\administrator" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-password"), {
+        target: { value: "onprem-secret" },
+      });
+      fireEvent.change(screen.getByTestId("editor-exchange-auth-method"), {
+        target: { value: "ntlm" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /Create/i }));
+
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled();
+        expect(latestConnections).toHaveLength(1);
+      });
+
+      const saved = latestConnections[0] as Connection & {
+        integration?: Record<string, unknown>;
+      };
+      expect(saved.protocol).toBe("integration:exchange");
+      expect(saved.hostname).toBe("mail01.contoso.local");
+      expect(saved.username).toBe("admin@tenant.onmicrosoft.com");
+      expect(saved.password).toBe("");
+      expect(saved.timeout).toBe(180);
+      expect(saved.integration).toMatchObject({
+        descriptorKey: "exchange",
+        descriptorLabel: "Exchange",
+        category: "app-service",
+        host: "mail01.contoso.local",
+        username: "admin@tenant.onmicrosoft.com",
+        timeout: 180,
+        providerFields: {
+          environment: "hybrid",
+          timeoutSecs: "180",
+          tenantId: "tenant.onmicrosoft.com",
+          clientId: "client-guid",
+          onlineUsername: "admin@tenant.onmicrosoft.com",
+          organization: "tenant.onmicrosoft.com",
+          server: "mail01.contoso.local",
+          port: "5986",
+          onPremUsername: "CONTOSO\\administrator",
+          useSsl: true,
+          authMethod: "ntlm",
+          skipCertCheck: false,
+        },
+      });
+      expect(saved.integration).not.toHaveProperty("providerSecrets");
+      expect(JSON.stringify(saved.integration)).not.toContain("client-secret");
+      expect(JSON.stringify(saved.integration)).not.toContain("onprem-secret");
     });
   });
 
   describe("Close Functionality", () => {
     it("should call onClose when new connection is saved", async () => {
       const mockOnClose = vi.fn();
-      const { container } = renderWithProviders({ isOpen: true, onClose: mockOnClose });
+      const { container } = renderWithProviders({
+        isOpen: true,
+        onClose: mockOnClose,
+      });
 
-      const nameInput = screen.getByTestId('editor-name');
-      fireEvent.change(nameInput, { target: { value: 'Test' } });
+      const nameInput = screen.getByTestId("editor-name");
+      fireEvent.change(nameInput, { target: { value: "Test" } });
 
-      const form = container.querySelector('form')!;
+      const form = container.querySelector("form")!;
       fireEvent.submit(form);
 
       await waitFor(() => {
@@ -294,7 +684,7 @@ describe("ConnectionEditor", () => {
     it("should not render when closed", () => {
       renderWithProviders({ isOpen: false, onClose: vi.fn() });
 
-      expect(screen.queryByText('New Connection')).not.toBeInTheDocument();
+      expect(screen.queryByText("New Connection")).not.toBeInTheDocument();
     });
   });
 
@@ -302,7 +692,7 @@ describe("ConnectionEditor", () => {
     it("should require name for saving", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const saveButton = screen.getByRole('button', { name: /Create/i });
+      const saveButton = screen.getByRole("button", { name: /Create/i });
 
       // Form should be submittable even with empty name (validation happens elsewhere)
       expect(saveButton).toBeEnabled();
@@ -311,8 +701,8 @@ describe("ConnectionEditor", () => {
     it("should handle empty hostname gracefully", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const nameInput = screen.getByTestId('editor-name');
-      fireEvent.change(nameInput, { target: { value: 'Test Connection' } });
+      const nameInput = screen.getByTestId("editor-name");
+      fireEvent.change(nameInput, { target: { value: "Test Connection" } });
 
       // Should not crash with empty hostname
       expect(screen.getByText("New Connection")).toBeInTheDocument();

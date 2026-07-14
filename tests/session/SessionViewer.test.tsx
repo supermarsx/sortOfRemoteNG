@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
   rdpClientProps: vi.fn(),
   anyDeskClientProps: vi.fn(),
   rdpErrorScreenProps: vi.fn(),
+  integrationPanelHostProps: vi.fn(),
 }));
 
 vi.mock("../../src/components/app/ToolPanel", () => ({
@@ -36,6 +37,17 @@ vi.mock("../../src/components/windows/WindowsToolPanel", () => ({
 vi.mock("../../src/components/windows/WindowsToolPanel.helpers", () => ({
   __esModule: true,
   isWinmgmtProtocol: (protocol: string) => protocol.startsWith("winmgmt:"),
+}));
+
+vi.mock("../../src/components/integrations/IntegrationPanelHost", () => ({
+  IntegrationPanelHost: (props: any) => {
+    mockState.integrationPanelHostProps(props);
+    return (
+      <button type="button" onClick={() => props.onClose?.()}>
+        Mock Integration Panel
+      </button>
+    );
+  },
 }));
 
 vi.mock("../../src/components/ssh/WebTerminal", () => ({
@@ -132,6 +144,48 @@ describe("SessionViewer", () => {
       await screen.findByTestId("mock-windows-tool-panel"),
     ).toBeInTheDocument();
     expect(mockState.windowsToolPanelProps).toHaveBeenCalled();
+  });
+
+  it("routes integration protocol sessions to the integration panel host", async () => {
+    const onCloseSession = vi.fn();
+
+    render(
+      <SessionViewer
+        session={createSession({
+          protocol: "integration:netbox",
+          backendSessionId: "netbox-prod",
+          integration: {
+            descriptorKey: "netbox",
+            descriptorLabel: "NetBox",
+            category: "infra",
+            instanceId: "netbox-prod",
+            host: "netbox.internal",
+            providerFields: {
+              site: "prod",
+            },
+          },
+        })}
+        onCloseSession={onCloseSession}
+      />,
+    );
+
+    const panelButton = await screen.findByRole("button", {
+      name: /mock integration panel/i,
+    });
+    fireEvent.click(panelButton);
+
+    expect(mockState.integrationPanelHostProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        descriptorKey: "netbox",
+        protocol: "integration:netbox",
+        instanceId: "netbox-prod",
+        integrationSettings: expect.objectContaining({
+          descriptorKey: "netbox",
+          providerFields: { site: "prod" },
+        }),
+      }),
+    );
+    expect(onCloseSession).toHaveBeenCalledWith("session-1");
   });
 
   it("routes SSH connected sessions to the web terminal", async () => {

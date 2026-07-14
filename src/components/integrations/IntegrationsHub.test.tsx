@@ -31,11 +31,7 @@ import {
   INTEGRATION_CONFIG_KEY,
   INTEGRATION_VAULT_SERVICE,
 } from "../../hooks/integrations/useIntegrationConfigStore";
-import {
-  createToolSession,
-  TOOL_LABELS,
-  getToolKeyFromProtocol,
-} from "../app/toolSession";
+import { getToolKeyFromProtocol } from "../app/toolSession";
 import { integrationRegistry } from "../../types/integrations/registry";
 
 beforeEach(() => {
@@ -69,16 +65,13 @@ describe("IntegrationsHub", () => {
         screen.queryByTestId("integrations-empty"),
       ).not.toBeInTheDocument(),
     );
-    expect(
-      screen.getAllByTestId(/^integration-card-/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByTestId(/^integration-card-/).length).toBeGreaterThan(
+      0,
+    );
   });
 
-  it("is wired as a Tool-surface tab", () => {
-    const session = createToolSession("integrations");
-    expect(session.protocol).toBe("tool:integrations");
-    expect(getToolKeyFromProtocol(session.protocol)).toBe("integrations");
-    expect(TOOL_LABELS.integrations).toBe("Integrations");
+  it("is not wired as a standalone Tool-surface tab", () => {
+    expect(getToolKeyFromProtocol("tool:integrations")).toBeNull();
   });
 });
 

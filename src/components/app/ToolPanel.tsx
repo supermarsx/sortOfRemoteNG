@@ -143,15 +143,11 @@ const DatabasePanel = dynamic(
   () => import("../database/DatabasePanel").then((m) => m.DatabasePanel),
   { ssr: false },
 );
-const IntegrationsHub = dynamic(
-  () =>
-    import("../integrations/IntegrationsHub").then((m) => m.IntegrationsHub),
-  { ssr: false },
-);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
   onClose: () => void;
+  onCloseManagedSession?: (sessionId: string) => void;
   /** RDP panel extras — provided by SessionViewer from App-level hooks */
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
@@ -177,6 +173,7 @@ interface ToolTabViewerProps {
 export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   session,
   onClose,
+  onCloseManagedSession,
   onReattachSession,
   onDetachToWindow,
   onReconnect,
@@ -222,6 +219,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           onReattachSession={onReattachSession}
           onDetachToWindow={onDetachToWindow}
           onReconnect={onReconnect}
+          onCloseSession={onCloseManagedSession}
           thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
           thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
           thumbnailInterval={settings.rdpSessionThumbnailInterval}
@@ -264,9 +262,6 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       )}
       {toolKey === "tabGroupManager" && (
         <TabGroupManager isOpen onClose={onClose} />
-      )}
-      {toolKey === "integrations" && (
-        <IntegrationsHub isOpen onClose={onClose} />
       )}
       {toolKey === "database" && (
         <DatabasePanel
@@ -312,6 +307,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
           onReattachSession={onReattachSession}
           onDetachToWindow={onDetachToWindow}
           onReconnect={onReconnect}
+          onCloseSession={onCloseManagedSession}
           thumbnailsEnabled={settings.rdpSessionThumbnailsEnabled}
           thumbnailPolicy={settings.rdpSessionThumbnailPolicy}
           thumbnailInterval={settings.rdpSessionThumbnailInterval}

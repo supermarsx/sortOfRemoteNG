@@ -2,6 +2,8 @@ import React, { Suspense, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
+import { INTEGRATION_PROTOCOL_PREFIX } from "../../types/connection/connection";
+import type { IntegrationConnectionSettings } from "../../types/connection/connection";
 import {
   findDescriptor,
   type IntegrationDescriptor,
@@ -9,9 +11,13 @@ import {
 
 interface IntegrationPanelHostProps {
   /** Descriptor key to route to (from the hub selection). */
-  descriptorKey: string;
+  descriptorKey?: string;
+  /** Optional protocol route, for connection-backed sessions (`integration:key`). */
+  protocol?: string;
   /** Which persisted instance to bind to, if any. */
   instanceId?: string;
+  /** Non-secret settings from the connection that launched this panel. */
+  integrationSettings?: IntegrationConnectionSettings;
   /** Close the panel and return to the hub. */
   onClose: () => void;
 }
@@ -25,13 +31,23 @@ interface IntegrationPanelHostProps {
  */
 export const IntegrationPanelHost: React.FC<IntegrationPanelHostProps> = ({
   descriptorKey,
+  protocol,
   instanceId,
+  integrationSettings,
   onClose,
 }) => {
   const { t } = useTranslation();
+  const effectiveDescriptorKey =
+    descriptorKey ??
+    (protocol?.startsWith(INTEGRATION_PROTOCOL_PREFIX)
+      ? protocol.slice(INTEGRATION_PROTOCOL_PREFIX.length)
+      : undefined);
   const descriptor: IntegrationDescriptor | undefined = useMemo(
-    () => findDescriptor(descriptorKey),
-    [descriptorKey],
+    () =>
+      effectiveDescriptorKey
+        ? findDescriptor(effectiveDescriptorKey)
+        : undefined,
+    [effectiveDescriptorKey],
   );
 
   // `React.lazy` wants a stable component identity per descriptor; memoise on key.
@@ -43,17 +59,14 @@ export const IntegrationPanelHost: React.FC<IntegrationPanelHostProps> = ({
   if (!descriptor || !LazyPanel) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--color-textSecondary)]">
-        {t(
-          "integrations.notFound",
-          "This integration is no longer available.",
-        )}
+        {t("integrations.notFound", "This integration is no longer available.")}
       </div>
     );
   }
 
   return (
     <FeatureErrorBoundary
-      boundaryKey={`${descriptorKey}:${instanceId ?? "new"}`}
+      boundaryKey={`${effectiveDescriptorKey}:${instanceId ?? "new"}`}
       title={t("integrations.panelCrashed", "Integration panel crashed")}
       message={t(
         "integrations.panelCrashedDescription",
@@ -67,7 +80,12 @@ export const IntegrationPanelHost: React.FC<IntegrationPanelHostProps> = ({
           </div>
         }
       >
-        <LazyPanel isOpen onClose={onClose} instanceId={instanceId} />
+        <LazyPanel
+          isOpen
+          onClose={onClose}
+          instanceId={instanceId}
+          integrationSettings={integrationSettings}
+        />
       </Suspense>
     </FeatureErrorBoundary>
   );

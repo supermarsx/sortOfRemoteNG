@@ -157,7 +157,7 @@ export const defaultSettings: GlobalSettings = {
   showDebugPanelIcon: false,
   showSecurityIcon: true,
   showProxyMenuIcon: true,
-  showInternalProxyIcon: true,
+  showInternalProxyIcon: false,
   showShortcutManagerIcon: true,
   showWolIcon: true,
   showErrorLogBar: false,
@@ -529,7 +529,6 @@ export const defaultSettings: GlobalSettings = {
     tunnelChainEditor: "tab" as const,
     tunnelProfileEditor: "tab" as const,
     database: "tab" as const,
-    integrations: "tab" as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,
@@ -703,7 +702,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       // context's own updateSettings already applied this blob before saving).
       let changed = true;
       try {
-        changed = JSON.stringify(settingsRef.current) !== JSON.stringify(detail);
+        changed =
+          JSON.stringify(settingsRef.current) !== JSON.stringify(detail);
       } catch {
         changed = true;
       }

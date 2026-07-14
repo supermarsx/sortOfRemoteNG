@@ -13,10 +13,14 @@ import {
   SquareStack,
   X,
 } from "lucide-react";
-import { ConnectionSession, TabLayout, TabLayoutMode } from "../../types/connection/connection";
+import {
+  ConnectionSession,
+  TabLayout,
+  TabLayoutMode,
+} from "../../types/connection/connection";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { useTabLayoutManager } from "../../hooks/session/useTabLayoutManager";
-import { Slider } from '../ui/forms';
+import { Slider } from "../ui/forms";
 import MenuSurface from "../ui/overlays/MenuSurface";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
 import { partitionSessions } from "../../utils/session/sessionClassification";
@@ -62,7 +66,11 @@ const LayoutModeButton: React.FC<{
  * grid-preview cells reflect how many tiles will actually be
  * occupied, not how many sessions exist.
  */
-const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number; totalTabCount: number }> = ({ mgr, sessionCount, totalTabCount }) => (
+const CustomGridPopover: React.FC<{
+  mgr: Mgr;
+  sessionCount: number;
+  totalTabCount: number;
+}> = ({ mgr, sessionCount, totalTabCount }) => (
   <div className="relative" ref={mgr.customGridButtonRef}>
     <button
       onClick={() => mgr.setShowCustomGrid(!mgr.showCustomGrid)}
@@ -84,33 +92,73 @@ const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number; totalTabCoun
       className="sor-popover-panel p-4 min-w-[200px]"
       dataTestId="tab-layout-custom-grid-popover"
     >
-      <div className="text-[var(--color-text)] text-sm font-medium mb-3">Custom Grid Layout</div>
+      <div className="text-[var(--color-text)] text-sm font-medium mb-3">
+        Custom Grid Layout
+      </div>
       <div className="space-y-3">
         <div>
-          <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Columns</label>
+          <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
+            Columns
+          </label>
           <div className="flex items-center space-x-2">
-            <Slider value={mgr.customCols} onChange={(v: number) => mgr.setCustomCols(v)} min={1} max={mgr.maxCustomGridDim} className="flex-1" />
-            <span className="text-[var(--color-text)] text-sm w-6">{mgr.customCols}</span>
+            <Slider
+              value={mgr.customCols}
+              onChange={(v: number) => mgr.setCustomCols(v)}
+              min={1}
+              max={mgr.maxCustomGridDim}
+              className="flex-1"
+            />
+            <span className="text-[var(--color-text)] text-sm w-6">
+              {mgr.customCols}
+            </span>
           </div>
         </div>
         <div>
-          <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Rows</label>
+          <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
+            Rows
+          </label>
           <div className="flex items-center space-x-2">
-            <Slider value={mgr.customRows} onChange={(v: number) => mgr.setCustomRows(v)} min={1} max={mgr.maxCustomGridDim} className="flex-1" />
-            <span className="text-[var(--color-text)] text-sm w-6">{mgr.customRows}</span>
+            <Slider
+              value={mgr.customRows}
+              onChange={(v: number) => mgr.setCustomRows(v)}
+              min={1}
+              max={mgr.maxCustomGridDim}
+              className="flex-1"
+            />
+            <span className="text-[var(--color-text)] text-sm w-6">
+              {mgr.customRows}
+            </span>
           </div>
         </div>
         <div className="border border-[var(--color-border)] rounded p-2">
-          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${mgr.customCols}, 1fr)`, gridTemplateRows: `repeat(${mgr.customRows}, 1fr)` }}>
-            {Array.from({ length: mgr.customCols * mgr.customRows }).map((_, i) => (
-              <div key={i} className={`h-4 rounded ${i < totalTabCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`} />
-            ))}
+          <div
+            className="grid gap-1"
+            style={{
+              gridTemplateColumns: `repeat(${mgr.customCols}, 1fr)`,
+              gridTemplateRows: `repeat(${mgr.customRows}, 1fr)`,
+            }}
+          >
+            {Array.from({ length: mgr.customCols * mgr.customRows }).map(
+              (_, i) => (
+                <div
+                  key={i}
+                  className={`h-4 rounded ${i < totalTabCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`}
+                />
+              ),
+            )}
           </div>
           <div className="text-[var(--color-textMuted)] text-xs mt-1 text-center">
-            {mgr.customCols * mgr.customRows} tiles · {Math.min(totalTabCount, mgr.customCols * mgr.customRows)} filled · {sessionCount} session{sessionCount === 1 ? '' : 's'}
+            {mgr.customCols * mgr.customRows} tiles ·{" "}
+            {Math.min(totalTabCount, mgr.customCols * mgr.customRows)} filled ·{" "}
+            {sessionCount} session{sessionCount === 1 ? "" : "s"}
           </div>
         </div>
-        <button onClick={mgr.handleCustomGridApply} className="w-full px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded text-sm transition-colors">Apply Layout</button>
+        <button
+          onClick={mgr.handleCustomGridApply}
+          className="w-full px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded text-sm transition-colors"
+        >
+          Apply Layout
+        </button>
       </div>
     </PopoverSurface>
   </div>
@@ -195,7 +243,9 @@ const TileHeader: React.FC<TileHeaderProps> = ({
   onShowInTile,
   onMaximize,
 }) => {
-  const [menuOpen, setMenuOpen] = useState<{ x: number; y: number } | null>(null);
+  const [menuOpen, setMenuOpen] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const [showSubmenu, setShowSubmenu] = useState(false);
 
   const openMenu = (e: React.MouseEvent) => {
@@ -217,7 +267,9 @@ const TileHeader: React.FC<TileHeaderProps> = ({
           <span className="text-[10px] text-[var(--color-textMuted)] shrink-0 select-none">
             {slotIndex + 1}/{totalSlots}
           </span>
-          <span className="text-[var(--color-text)] text-sm truncate select-none">{session.name}</span>
+          <span className="text-[var(--color-text)] text-sm truncate select-none">
+            {session.name}
+          </span>
         </div>
         <div className="flex items-center space-x-0.5">
           <button
@@ -230,7 +282,10 @@ const TileHeader: React.FC<TileHeaderProps> = ({
             <MoreVertical size={12} />
           </button>
           <button
-            onClick={(ev) => { ev.stopPropagation(); onDetach(); }}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onDetach();
+            }}
             className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] p-0.5 rounded hover:bg-[var(--color-border)]"
             title="Detach"
             aria-label="Detach"
@@ -238,7 +293,10 @@ const TileHeader: React.FC<TileHeaderProps> = ({
             <ExternalLink size={12} />
           </button>
           <button
-            onClick={(ev) => { ev.stopPropagation(); onClose(); }}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onClose();
+            }}
             className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] p-0.5 rounded hover:bg-[var(--color-border)]"
             title="Close"
             aria-label="Close"
@@ -249,7 +307,10 @@ const TileHeader: React.FC<TileHeaderProps> = ({
       </div>
       <MenuSurface
         isOpen={menuOpen !== null}
-        onClose={() => { setMenuOpen(null); setShowSubmenu(false); }}
+        onClose={() => {
+          setMenuOpen(null);
+          setShowSubmenu(false);
+        }}
         position={menuOpen}
         className="min-w-[200px]"
         dataTestId={`tile-menu-${slotIndex}`}
@@ -302,14 +363,32 @@ const TileHeader: React.FC<TileHeaderProps> = ({
             )}
           </div>
         </div>
-        <button onClick={() => { onMaximize(); setMenuOpen(null); }} className="sor-menu-item">
+        <button
+          onClick={() => {
+            onMaximize();
+            setMenuOpen(null);
+          }}
+          className="sor-menu-item"
+        >
           <Maximize2 size={14} className="mr-2" /> Maximize (switch to tabs)
         </button>
         <div className="sor-menu-divider" />
-        <button onClick={() => { onDetach(); setMenuOpen(null); }} className="sor-menu-item">
+        <button
+          onClick={() => {
+            onDetach();
+            setMenuOpen(null);
+          }}
+          className="sor-menu-item"
+        >
           <ExternalLink size={14} className="mr-2" /> Detach to new window
         </button>
-        <button onClick={() => { onClose(); setMenuOpen(null); }} className="sor-menu-item sor-menu-item-danger">
+        <button
+          onClick={() => {
+            onClose();
+            setMenuOpen(null);
+          }}
+          className="sor-menu-item sor-menu-item-danger"
+        >
           <X size={14} className="mr-2" /> Close session
         </button>
       </MenuSurface>
@@ -320,12 +399,12 @@ const TileHeader: React.FC<TileHeaderProps> = ({
 /* ── Compute per-session CSS from layout ──────────────── */
 
 interface SessionStyle {
-  position: 'absolute';
+  position: "absolute";
   left: string;
   top: string;
   width: string;
   height: string;
-  visibility: 'visible' | 'hidden';
+  visibility: "visible" | "hidden";
   zIndex: number;
 }
 
@@ -335,57 +414,59 @@ function computeSessionStyles(
   activeSessionId?: string,
 ): Map<string, SessionStyle> {
   const styles = new Map<string, SessionStyle>();
-  const isTabsMode = layout.mode === 'tabs';
-  const isMiniMosaic = layout.mode === 'miniMosaic';
+  const isTabsMode = layout.mode === "tabs";
+  const isMiniMosaic = layout.mode === "miniMosaic";
 
   if (isTabsMode) {
     for (const session of sessions) {
       const isActive = session.id === activeSessionId;
       styles.set(session.id, {
-        position: 'absolute',
-        left: '0',
-        top: '0',
-        width: '100%',
-        height: '100%',
-        visibility: isActive ? 'visible' : 'hidden',
+        position: "absolute",
+        left: "0",
+        top: "0",
+        width: "100%",
+        height: "100%",
+        visibility: isActive ? "visible" : "hidden",
         zIndex: isActive ? 1 : 0,
       });
     }
   } else if (isMiniMosaic) {
     for (const session of sessions) {
       styles.set(session.id, {
-        position: 'absolute',
-        left: '0',
-        top: '0',
-        width: '0',
-        height: '0',
-        visibility: 'hidden',
+        position: "absolute",
+        left: "0",
+        top: "0",
+        width: "0",
+        height: "0",
+        visibility: "hidden",
         zIndex: 0,
       });
     }
   } else {
-    const layoutMap = new Map(layout.sessions.map((s) => [s.sessionId, s.position]));
+    const layoutMap = new Map(
+      layout.sessions.map((s) => [s.sessionId, s.position]),
+    );
     for (const session of sessions) {
       const pos = layoutMap.get(session.id);
       const isActive = session.id === activeSessionId;
       if (pos) {
         styles.set(session.id, {
-          position: 'absolute',
+          position: "absolute",
           left: `${pos.x}%`,
           top: `${pos.y}%`,
           width: `${pos.width}%`,
           height: `${pos.height}%`,
-          visibility: 'visible',
+          visibility: "visible",
           zIndex: isActive ? 10 : 1,
         });
       } else {
         styles.set(session.id, {
-          position: 'absolute',
-          left: '0',
-          top: '0',
-          width: '0',
-          height: '0',
-          visibility: 'hidden',
+          position: "absolute",
+          left: "0",
+          top: "0",
+          width: "0",
+          height: "0",
+          visibility: "hidden",
           zIndex: 0,
         });
       }
@@ -419,7 +500,14 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   renderSession,
   middleClickCloseTab = true,
 }) => {
-  const mgr = useTabLayoutManager(sessions, activeSessionId, layout, onLayoutChange, onSessionClose, middleClickCloseTab);
+  const mgr = useTabLayoutManager(
+    sessions,
+    activeSessionId,
+    layout,
+    onLayoutChange,
+    onSessionClose,
+    middleClickCloseTab,
+  );
 
   const isTabsMode = layout.mode === "tabs";
   const isMiniMosaic = layout.mode === "miniMosaic";
@@ -447,10 +535,14 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   // We render a breakdown when the user actually has any of the
   // non-connection kinds open, so the toolbar still acknowledges
   // them without lying about the session count.
-  const sessionPartition = useMemo(() => partitionSessions(sessions), [sessions]);
+  const sessionPartition = useMemo(
+    () => partitionSessions(sessions),
+    [sessions],
+  );
   const connectionCount = sessionPartition.connections.length;
   const toolCount = sessionPartition.tools.length;
   const winmgmtCount = sessionPartition.winmgmt.length;
+  const integrationCount = sessionPartition.integrations.length;
   const counterChips = useMemo(() => {
     // Always render the session chip — it's the headline number,
     // and showing "0 sessions" alongside any tool/panel chips
@@ -458,31 +550,39 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
     // letting the toolbar look like it's hiding something.
     const chips: Array<{ key: string; label: string }> = [
       {
-        key: 'sessions',
-        label: `${connectionCount} session${connectionCount === 1 ? '' : 's'}`,
+        key: "sessions",
+        label: `${connectionCount} session${connectionCount === 1 ? "" : "s"}`,
       },
     ];
     if (toolCount > 0) {
       chips.push({
-        key: 'tools',
-        label: `${toolCount} tool${toolCount === 1 ? '' : 's'}`,
+        key: "tools",
+        label: `${toolCount} tool${toolCount === 1 ? "" : "s"}`,
       });
     }
     if (winmgmtCount > 0) {
       chips.push({
-        key: 'winmgmt',
-        label: `${winmgmtCount} panel${winmgmtCount === 1 ? '' : 's'}`,
+        key: "winmgmt",
+        label: `${winmgmtCount} panel${winmgmtCount === 1 ? "" : "s"}`,
+      });
+    }
+    if (integrationCount > 0) {
+      chips.push({
+        key: "integrations",
+        label: `${integrationCount} integration${integrationCount === 1 ? "" : "s"}`,
       });
     }
     return chips;
-  }, [connectionCount, toolCount, winmgmtCount]);
-  const counterAriaLabel = counterChips.map((chip) => chip.label).join(', ');
+  }, [connectionCount, toolCount, winmgmtCount, integrationCount]);
+  const counterAriaLabel = counterChips.map((chip) => chip.label).join(", ");
 
   /** Promote a hidden session into the active tile slot. */
   const promoteHidden = useCallback(
     (sessionId: string) => {
       // Find the active slot, fall back to the first slot.
-      const activeSlot = layout.sessions.findIndex((s) => s.sessionId === activeSessionId);
+      const activeSlot = layout.sessions.findIndex(
+        (s) => s.sessionId === activeSessionId,
+      );
       const targetSlot = activeSlot >= 0 ? activeSlot : 0;
       mgr.assignSessionToSlot(sessionId, targetSlot);
       onSessionSelect(sessionId);
@@ -497,42 +597,121 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
    */
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
 
-  const handleSlotDragOver = useCallback((e: React.DragEvent, slotIndex: number) => {
-    if (!mosaicMode) return;
-    if (!e.dataTransfer.types.includes(SESSION_TAB_DND_TYPE)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverSlot(slotIndex);
-  }, [mosaicMode]);
+  const handleSlotDragOver = useCallback(
+    (e: React.DragEvent, slotIndex: number) => {
+      if (!mosaicMode) return;
+      if (!e.dataTransfer.types.includes(SESSION_TAB_DND_TYPE)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDragOverSlot(slotIndex);
+    },
+    [mosaicMode],
+  );
 
-  const handleSlotDrop = useCallback((e: React.DragEvent, slotIndex: number) => {
-    if (!mosaicMode) return;
-    const sessionId = e.dataTransfer.getData(SESSION_TAB_DND_TYPE);
-    if (!sessionId) return;
-    e.preventDefault();
-    setDragOverSlot(null);
-    mgr.assignSessionToSlot(sessionId, slotIndex);
-    onSessionSelect(sessionId);
-  }, [mosaicMode, mgr, onSessionSelect]);
+  const handleSlotDrop = useCallback(
+    (e: React.DragEvent, slotIndex: number) => {
+      if (!mosaicMode) return;
+      const sessionId = e.dataTransfer.getData(SESSION_TAB_DND_TYPE);
+      if (!sessionId) return;
+      e.preventDefault();
+      setDragOverSlot(null);
+      mgr.assignSessionToSlot(sessionId, slotIndex);
+      onSessionSelect(sessionId);
+    },
+    [mosaicMode, mgr, onSessionSelect],
+  );
 
   return (
     <div className="flex flex-col h-full">
       {/* ── Layout toolbar ───────────────────────────── */}
-      <div className="sor-toolbar-row select-none" data-testid="tab-layout-toolbar">
+      <div
+        className="sor-toolbar-row select-none"
+        data-testid="tab-layout-toolbar"
+      >
         <div className="flex items-center space-x-2">
-          <LayoutModeButton mode="tabs" currentMode={layout.mode} title="Tabs (single pane)" icon={<Minimize2 size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-tabs" />
-          <LayoutModeButton mode="splitVertical" currentMode={layout.mode} title="Split left/right" icon={<Columns size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-splitVertical" />
-          <LayoutModeButton mode="splitHorizontal" currentMode={layout.mode} title="Split top/bottom" icon={<Rows size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-splitHorizontal" />
-          <LayoutModeButton mode="sideBySide" currentMode={layout.mode} title="Side-by-side (2 cols, fill rows)" icon={<SquareStack size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-sideBySide" />
-          <LayoutModeButton mode="grid2" currentMode={layout.mode} title="2 side by side (capped)" icon={<LayoutGrid size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-grid2" />
-          <LayoutModeButton mode="grid4" currentMode={layout.mode} title="4 squares (capped)" icon={<Grid3X3 size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-grid4" />
-          <LayoutModeButton mode="grid6" currentMode={layout.mode} title="6 squares (capped)" icon={<Grid3X3 size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-grid6" />
-          <LayoutModeButton mode="mosaic" currentMode={layout.mode} title="Auto mosaic (sqrt grid)" icon={<Square size={16} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-mosaic" />
-          <LayoutModeButton mode="miniMosaic" currentMode={layout.mode} title="Mini mosaic (preview grid)" icon={<Grid3X3 size={14} />} onClick={mgr.handleLayoutModeChange} testId="layout-mode-miniMosaic" />
-          <CustomGridPopover mgr={mgr} sessionCount={connectionCount} totalTabCount={sessions.length} />
+          <LayoutModeButton
+            mode="tabs"
+            currentMode={layout.mode}
+            title="Tabs (single pane)"
+            icon={<Minimize2 size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-tabs"
+          />
+          <LayoutModeButton
+            mode="splitVertical"
+            currentMode={layout.mode}
+            title="Split left/right"
+            icon={<Columns size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-splitVertical"
+          />
+          <LayoutModeButton
+            mode="splitHorizontal"
+            currentMode={layout.mode}
+            title="Split top/bottom"
+            icon={<Rows size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-splitHorizontal"
+          />
+          <LayoutModeButton
+            mode="sideBySide"
+            currentMode={layout.mode}
+            title="Side-by-side (2 cols, fill rows)"
+            icon={<SquareStack size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-sideBySide"
+          />
+          <LayoutModeButton
+            mode="grid2"
+            currentMode={layout.mode}
+            title="2 side by side (capped)"
+            icon={<LayoutGrid size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-grid2"
+          />
+          <LayoutModeButton
+            mode="grid4"
+            currentMode={layout.mode}
+            title="4 squares (capped)"
+            icon={<Grid3X3 size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-grid4"
+          />
+          <LayoutModeButton
+            mode="grid6"
+            currentMode={layout.mode}
+            title="6 squares (capped)"
+            icon={<Grid3X3 size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-grid6"
+          />
+          <LayoutModeButton
+            mode="mosaic"
+            currentMode={layout.mode}
+            title="Auto mosaic (sqrt grid)"
+            icon={<Square size={16} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-mosaic"
+          />
+          <LayoutModeButton
+            mode="miniMosaic"
+            currentMode={layout.mode}
+            title="Mini mosaic (preview grid)"
+            icon={<Grid3X3 size={14} />}
+            onClick={mgr.handleLayoutModeChange}
+            testId="layout-mode-miniMosaic"
+          />
+          <CustomGridPopover
+            mgr={mgr}
+            sessionCount={connectionCount}
+            totalTabCount={sessions.length}
+          />
         </div>
         <div className="flex items-center gap-3">
-          <HiddenSessionsMenu hiddenSessions={mgr.hiddenSessions} onPromote={promoteHidden} />
+          <HiddenSessionsMenu
+            hiddenSessions={mgr.hiddenSessions}
+            onPromote={promoteHidden}
+          />
           <div
             className="text-[var(--color-textSecondary)] text-sm select-none flex items-center gap-1.5"
             aria-label={counterAriaLabel}
@@ -541,11 +720,16 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             {counterChips.map((chip, idx) => (
               <React.Fragment key={chip.key}>
                 {idx > 0 && (
-                  <span className="text-[var(--color-textMuted)]" aria-hidden="true">
+                  <span
+                    className="text-[var(--color-textMuted)]"
+                    aria-hidden="true"
+                  >
                     ·
                   </span>
                 )}
-                <span data-testid={`session-counter-${chip.key}`}>{chip.label}</span>
+                <span data-testid={`session-counter-${chip.key}`}>
+                  {chip.label}
+                </span>
               </React.Fragment>
             ))}
           </div>
@@ -563,23 +747,38 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           const style = sessionStyles.get(session.id);
           if (!style) return null;
           const isActive = session.id === activeSessionId;
-          const slotIndex = layout.sessions.findIndex((s) => s.sessionId === session.id);
-          const isVisibleTile = mosaicMode && style.visibility === 'visible' && slotIndex >= 0;
+          const slotIndex = layout.sessions.findIndex(
+            (s) => s.sessionId === session.id,
+          );
+          const isVisibleTile =
+            mosaicMode && style.visibility === "visible" && slotIndex >= 0;
           const isDropTarget = isVisibleTile && dragOverSlot === slotIndex;
           return (
             <div
               key={session.id}
-              className={isVisibleTile
-                ? `border-2 transition-colors ${
-                    isDropTarget
-                      ? "border-primary ring-2 ring-primary/40"
-                      : isActive ? "border-primary" : "border-[var(--color-border)]"
-                  }`
-                : ''}
+              className={
+                isVisibleTile
+                  ? `border-2 transition-colors ${
+                      isDropTarget
+                        ? "border-primary ring-2 ring-primary/40"
+                        : isActive
+                          ? "border-primary"
+                          : "border-[var(--color-border)]"
+                    }`
+                  : ""
+              }
               style={style}
-              onDragOver={isVisibleTile ? (e) => handleSlotDragOver(e, slotIndex) : undefined}
-              onDragLeave={isVisibleTile ? () => setDragOverSlot(null) : undefined}
-              onDrop={isVisibleTile ? (e) => handleSlotDrop(e, slotIndex) : undefined}
+              onDragOver={
+                isVisibleTile
+                  ? (e) => handleSlotDragOver(e, slotIndex)
+                  : undefined
+              }
+              onDragLeave={
+                isVisibleTile ? () => setDragOverSlot(null) : undefined
+              }
+              onDrop={
+                isVisibleTile ? (e) => handleSlotDrop(e, slotIndex) : undefined
+              }
               data-testid={isVisibleTile ? `tile-slot-${slotIndex}` : undefined}
             >
               {isVisibleTile && (
@@ -598,11 +797,15 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                   }}
                   onMaximize={() => {
                     onSessionSelect(session.id);
-                    onLayoutChange({ mode: 'tabs', sessions: [] });
+                    onLayoutChange({ mode: "tabs", sessions: [] });
                   }}
                 />
               )}
-              <div className={isVisibleTile ? "absolute inset-0 top-[29px]" : "h-full"}>
+              <div
+                className={
+                  isVisibleTile ? "absolute inset-0 top-[29px]" : "h-full"
+                }
+              >
                 {renderSession(session)}
               </div>
             </div>
@@ -611,24 +814,33 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
 
         {/* Mini mosaic preview grid (sessions are hidden, just show previews) */}
         {isMiniMosaic && (
-          <div className="grid grid-cols-4 gap-2 h-full p-2" data-testid="mini-mosaic-grid">
+          <div
+            className="grid grid-cols-4 gap-2 h-full p-2"
+            data-testid="mini-mosaic-grid"
+          >
             {sessions.map((session) => (
               <button
                 key={`preview-${session.id}`}
                 type="button"
                 className={`border-2 rounded cursor-pointer transition-all text-left overflow-hidden select-none ${
-                  session.id === activeSessionId ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-primary/60"
+                  session.id === activeSessionId
+                    ? "border-primary bg-primary/20"
+                    : "border-[var(--color-border)] hover:border-primary/60"
                 }`}
                 onClick={() => {
                   onSessionSelect(session.id);
                   // Promote the click target to "tabs" mode so the
                   // user actually gets to interact with it.
-                  onLayoutChange({ ...layout, mode: 'tabs', sessions: [] });
+                  onLayoutChange({ ...layout, mode: "tabs", sessions: [] });
                 }}
               >
-                <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">{session.name}</div>
+                <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">
+                  {session.name}
+                </div>
                 <div className="h-full bg-[var(--color-background)] flex items-center justify-center">
-                  <span className="text-[var(--color-textMuted)] text-xs">Click to focus</span>
+                  <span className="text-[var(--color-textMuted)] text-xs">
+                    Click to focus
+                  </span>
                 </div>
               </button>
             ))}

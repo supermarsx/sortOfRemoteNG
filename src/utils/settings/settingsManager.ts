@@ -1,5 +1,6 @@
 import {
   GlobalSettings,
+  ToolDisplayModes,
   ActionLogEntry,
   PerformanceMetrics,
   CustomScript,
@@ -258,7 +259,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showDebugPanelIcon: false,
   showSecurityIcon: true,
   showProxyMenuIcon: true,
-  showInternalProxyIcon: true,
+  showInternalProxyIcon: false,
   showShortcutManagerIcon: true,
   showWolIcon: true,
   showBulkSSHIcon: true,
@@ -675,7 +676,6 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tunnelChainEditor: "tab" as const,
     tunnelProfileEditor: "tab" as const,
     database: "tab" as const,
-    integrations: "tab" as const,
   },
   diagnostics: defaultDiagnosticsConfig,
   memoryWatchdog: defaultMemoryWatchdogSettings,
@@ -693,6 +693,22 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     allowedCipherSuites: [],
   },
 };
+
+function mergeToolDisplayModes(
+  stored?: Partial<ToolDisplayModes>,
+): ToolDisplayModes {
+  const merged = { ...DEFAULT_SETTINGS.toolDisplayModes };
+  if (!stored) {
+    return merged;
+  }
+
+  for (const key of Object.keys(merged) as Array<keyof ToolDisplayModes>) {
+    if (stored[key] === "tab") {
+      merged[key] = "tab";
+    }
+  }
+  return merged;
+}
 
 /**
  * Handles persistence and retrieval of application settings, action logs,
@@ -934,10 +950,9 @@ export class SettingsManager {
             ...DEFAULT_SETTINGS.networkDiscovery,
             ...(storedSettings.networkDiscovery ?? {}),
           },
-          toolDisplayModes: {
-            ...DEFAULT_SETTINGS.toolDisplayModes,
-            ...(storedSettings.toolDisplayModes ?? {}),
-          },
+          toolDisplayModes: mergeToolDisplayModes(
+            storedSettings.toolDisplayModes,
+          ),
           rdpDefaults: {
             ...DEFAULT_SETTINGS.rdpDefaults,
             ...(storedSettings.rdpDefaults ?? {}),

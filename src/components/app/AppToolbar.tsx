@@ -27,7 +27,6 @@ import {
   FlaskConical,
   Tag,
   Layers,
-  Puzzle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -54,7 +53,6 @@ interface AppToolbarProps {
   openImportExport: () => void;
   setShowSettings: (v: boolean) => void;
   setRdpPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setShowInternalProxyManager: (v: boolean) => void;
   setShowProxyMenu: (v: boolean) => void;
   setShowShortcutManager: (v: boolean) => void;
   setShowWol: (v: boolean) => void;
@@ -80,7 +78,6 @@ interface AppToolbarProps {
   setShowDebugPanel: (v: boolean) => void;
   setShowTagManager: (v: boolean) => void;
   setShowTabGroupManager: (v: boolean) => void;
-  setShowIntegrations: (v: boolean) => void;
 }
 
 export const AppToolbar: React.FC<AppToolbarProps> = ({
@@ -95,7 +92,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   openImportExport,
   setShowSettings,
   setRdpPanelOpen,
-  setShowInternalProxyManager,
   setShowProxyMenu,
   setShowShortcutManager,
   setShowWol,
@@ -121,7 +117,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowDebugPanel,
   setShowTagManager,
   setShowTabGroupManager,
-  setShowIntegrations,
 }) => {
   const { t } = useTranslation();
   const noCollection = !databaseManager.getCurrentDatabase();
@@ -291,26 +286,6 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               title={t("toolbar.sessionManager", "Session Manager")}
             >
               <Cpu size={14} />
-            </button>
-          )}
-          {appSettings.showInternalProxyIcon && (
-            <button
-              onClick={() => setShowInternalProxyManager(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("toolbar.sessionManager", "Session Manager")}
-            >
-              <ArrowUpDown size={14} />
-            </button>
-          )}
-          {(appSettings.showIntegrationsIcon ?? true) && (
-            <button
-              onClick={() => setShowIntegrations(true)}
-              disabled={noCollection}
-              className="app-bar-button p-2"
-              title={t("integrations.title", "Integrations")}
-            >
-              <Puzzle size={14} />
             </button>
           )}
           {appSettings.showProxyMenuIcon && (

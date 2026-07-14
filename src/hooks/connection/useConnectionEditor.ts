@@ -12,7 +12,18 @@ import {
   HardDrive,
   LucideIcon,
 } from "lucide-react";
-import { Connection } from "../../types/connection/connection";
+import {
+  INTEGRATION_PROTOCOL_PREFIX,
+  isIntegrationConnectionProtocol,
+  type Connection,
+  type IntegrationConnectionProtocol,
+  type IntegrationConnectionSettings,
+} from "../../types/connection/connection";
+import {
+  integrationRegistry,
+  type IntegrationCategory,
+  type IntegrationDescriptor,
+} from "../../types/integrations/registry";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
@@ -23,6 +34,14 @@ import {
   getMaxDescendantDepth,
   MAX_NESTING_DEPTH,
 } from "../../utils/window/dragDropManager";
+import {
+  EXCHANGE_INTEGRATION_KEY,
+  exchangeConnectionHost,
+  exchangeConnectionTimeout,
+  exchangeConnectionUsername,
+  normalizeExchangeConnectionFields,
+  toExchangeProviderFields,
+} from "../../utils/integrations/exchangeConnectionFields";
 
 /* ═══════════════════════════════════════════════════════════════
    Static data
@@ -36,15 +55,103 @@ export interface ProtocolOption {
   color: string;
 }
 
+const INTEGRATION_CATEGORY_LABELS: Record<IntegrationCategory, string> = {
+  infra: "Infrastructure",
+  web: "Web",
+  database: "Database",
+  "app-service": "App Service",
+  mail: "Mail",
+  vault: "Vault",
+};
+
+export const toIntegrationProtocol = (
+  descriptorKey: string,
+): IntegrationConnectionProtocol =>
+  `${INTEGRATION_PROTOCOL_PREFIX}${descriptorKey}` as IntegrationConnectionProtocol;
+
+export const getIntegrationKeyFromProtocol = (
+  protocol: string | undefined,
+): string | undefined =>
+  isIntegrationConnectionProtocol(protocol)
+    ? protocol.slice(INTEGRATION_PROTOCOL_PREFIX.length)
+    : undefined;
+
+const findIntegrationDescriptorForProtocol = (
+  protocol: string | undefined,
+): IntegrationDescriptor | undefined => {
+  const descriptorKey = getIntegrationKeyFromProtocol(protocol);
+  return descriptorKey
+    ? integrationRegistry.find((descriptor) => descriptor.key === descriptorKey)
+    : undefined;
+};
+
+type IntegrationConnectionFormSettings = IntegrationConnectionSettings & {
+  authToken?: string;
+  apiKey?: string;
+  password?: string;
+  providerSecrets?: Record<string, string>;
+};
+
 export const PROTOCOL_OPTIONS: ProtocolOption[] = [
-  { value: "rdp", label: "RDP", desc: "Remote Desktop", icon: Monitor, color: "blue" },
-  { value: "ssh", label: "SSH", desc: "Secure Shell", icon: Terminal, color: "green" },
-  { value: "vnc", label: "VNC", desc: "Virtual Network", icon: Server, color: "purple" },
-  { value: "http", label: "HTTP", desc: "Web Service", icon: Globe, color: "orange" },
-  { value: "https", label: "HTTPS", desc: "Secure Web", icon: Shield, color: "emerald" },
-  { value: "winrm", label: "WinRM", desc: "Windows Remote Management", icon: Server, color: "amber" },
-  { value: "anydesk", label: "AnyDesk", desc: "Remote Access", icon: Monitor, color: "red" },
+  {
+    value: "rdp",
+    label: "RDP",
+    desc: "Remote Desktop",
+    icon: Monitor,
+    color: "blue",
+  },
+  {
+    value: "ssh",
+    label: "SSH",
+    desc: "Secure Shell",
+    icon: Terminal,
+    color: "green",
+  },
+  {
+    value: "vnc",
+    label: "VNC",
+    desc: "Virtual Network",
+    icon: Server,
+    color: "purple",
+  },
+  {
+    value: "http",
+    label: "HTTP",
+    desc: "Web Service",
+    icon: Globe,
+    color: "orange",
+  },
+  {
+    value: "https",
+    label: "HTTPS",
+    desc: "Secure Web",
+    icon: Shield,
+    color: "emerald",
+  },
+  {
+    value: "winrm",
+    label: "WinRM",
+    desc: "Windows Remote Management",
+    icon: Server,
+    color: "amber",
+  },
+  {
+    value: "anydesk",
+    label: "AnyDesk",
+    desc: "Remote Access",
+    icon: Monitor,
+    color: "red",
+  },
 ];
+
+export const INTEGRATION_PROTOCOL_OPTIONS: ProtocolOption[] =
+  integrationRegistry.map((descriptor) => ({
+    value: toIntegrationProtocol(descriptor.key),
+    label: descriptor.label,
+    desc: `Integration - ${INTEGRATION_CATEGORY_LABELS[descriptor.category]}`,
+    icon: descriptor.icon,
+    color: "cyan",
+  }));
 
 export const CLOUD_OPTIONS = [
   { value: "gcp", label: "GCP", desc: "Google Cloud" },
@@ -79,6 +186,154 @@ export const PROTOCOL_COLOR_MAP: Record<string, string> = {
   emerald: "bg-emerald-500/20 border-emerald-500/60 text-emerald-300",
   red: "bg-red-500/20 border-red-500/60 text-red-300",
   amber: "bg-amber-500/20 border-amber-500/60 text-amber-300",
+  cyan: "bg-cyan-500/20 border-cyan-500/60 text-cyan-300",
+};
+
+const getDefaultConnectionPort = (protocol: string | undefined): number =>
+  isIntegrationConnectionProtocol(protocol)
+    ? 443
+    : getDefaultPort(protocol || "rdp");
+
+const hostFromBaseUrl = (baseUrl: string | undefined): string => {
+  if (!baseUrl) {
+    return "";
+  }
+
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return "";
+  }
+};
+
+const buildIntegrationSettings = (
+  protocol: string | undefined,
+  current?: IntegrationConnectionFormSettings,
+  source?: Partial<Connection>,
+): IntegrationConnectionFormSettings | undefined => {
+  if (!isIntegrationConnectionProtocol(protocol)) {
+    return undefined;
+  }
+
+  const descriptorKey = getIntegrationKeyFromProtocol(protocol);
+  if (!descriptorKey) {
+    return undefined;
+  }
+
+  const descriptor = findIntegrationDescriptorForProtocol(protocol);
+  const baseUrl = current?.baseUrl ?? "";
+  const providerFields =
+    descriptorKey === EXCHANGE_INTEGRATION_KEY
+      ? toExchangeProviderFields(
+          normalizeExchangeConnectionFields(current?.providerFields, {
+            host: current?.host || source?.hostname,
+            username: current?.username || source?.username,
+            timeout: current?.timeout ?? source?.timeout,
+          }),
+        )
+      : current?.providerFields;
+  const exchangeFields =
+    descriptorKey === EXCHANGE_INTEGRATION_KEY
+      ? normalizeExchangeConnectionFields(providerFields, {
+          host: current?.host || source?.hostname,
+          username: current?.username || source?.username,
+          timeout: current?.timeout ?? source?.timeout,
+        })
+      : undefined;
+
+  return {
+    descriptorKey,
+    descriptorLabel: descriptor?.label ?? current?.descriptorLabel,
+    category: descriptor?.category ?? current?.category,
+    instanceId: current?.instanceId ?? "",
+    instanceName: current?.instanceName ?? "",
+    credentialRefId: current?.credentialRefId,
+    host:
+      current?.host ||
+      source?.hostname ||
+      (exchangeFields ? exchangeConnectionHost(exchangeFields) : "") ||
+      hostFromBaseUrl(baseUrl),
+    baseUrl,
+    authToken: current?.authToken ?? "",
+    apiKey: current?.apiKey ?? "",
+    username:
+      current?.username ??
+      source?.username ??
+      (exchangeFields ? exchangeConnectionUsername(exchangeFields) : ""),
+    password: current?.password ?? source?.password ?? "",
+    tlsVerify: current?.tlsVerify ?? true,
+    timeout:
+      (exchangeFields
+        ? exchangeConnectionTimeout(
+            exchangeFields,
+            current?.timeout ?? source?.timeout,
+          )
+        : undefined) ??
+      current?.timeout ??
+      source?.timeout ??
+      30,
+    providerFields,
+    providerSecrets: current?.providerSecrets ?? {},
+  };
+};
+
+const normalizeIntegrationFields = (
+  data: Partial<Connection>,
+): Partial<Connection> => {
+  const integration = buildIntegrationSettings(
+    data.protocol,
+    data.integration as IntegrationConnectionFormSettings | undefined,
+    data,
+  );
+
+  if (!integration) {
+    return {
+      ...data,
+      integration: undefined,
+    };
+  }
+
+  return {
+    ...data,
+    hostname: integration.host ?? data.hostname ?? "",
+    username: integration.username ?? data.username ?? "",
+    password: "",
+    timeout: integration.timeout ?? data.timeout,
+    integration,
+  };
+};
+
+const toPersistableIntegrationSettings = (
+  integration?: IntegrationConnectionFormSettings,
+): IntegrationConnectionSettings | undefined => {
+  if (!integration) {
+    return undefined;
+  }
+
+  const {
+    authToken: _authToken,
+    apiKey: _apiKey,
+    password: _password,
+    providerSecrets: _providerSecrets,
+    ...persistable
+  } = integration;
+  return persistable;
+};
+
+const stripIntegrationSecretsForPersistence = (
+  data: Partial<Connection>,
+): Partial<Connection> => {
+  if (!isIntegrationConnectionProtocol(data.protocol)) {
+    return data;
+  }
+
+  return {
+    ...data,
+    password: "",
+    integration: toPersistableIntegrationSettings(
+      data.integration as IntegrationConnectionFormSettings | undefined,
+    ),
+  };
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -109,6 +364,7 @@ const DEFAULT_FORM: Partial<Connection> = {
   basicAuthPassword: "",
   basicAuthRealm: "",
   httpHeaders: {},
+  integration: undefined,
 };
 
 type ManagedSshSecretField = "password" | "passphrase" | "privateKey";
@@ -147,7 +403,9 @@ export function useConnectionEditor(
     advanced: false,
     description: false,
   });
-  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "pending" | "saved">("idle");
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    "idle" | "pending" | "saved"
+  >("idle");
   const autoSaveTimerRef = useRef<number | null>(null);
   const isInitializedRef = useRef(false);
   const originalDataRef = useRef<string>("");
@@ -206,7 +464,10 @@ export function useConnectionEditor(
         case "password":
           sshPasswordRef.current = value;
           setHasSshPassword(value.length > 0);
-          if (sshPasswordInputRef.current && sshPasswordInputRef.current.value !== value) {
+          if (
+            sshPasswordInputRef.current &&
+            sshPasswordInputRef.current.value !== value
+          ) {
             sshPasswordInputRef.current.value = value;
           }
           break;
@@ -223,7 +484,10 @@ export function useConnectionEditor(
         case "privateKey":
           sshPrivateKeyRef.current = value;
           setHasSshPrivateKey(value.length > 0);
-          if (sshPrivateKeyInputRef.current && sshPrivateKeyInputRef.current.value !== value) {
+          if (
+            sshPrivateKeyInputRef.current &&
+            sshPrivateKeyInputRef.current.value !== value
+          ) {
             sshPrivateKeyInputRef.current.value = value;
           }
           break;
@@ -299,11 +563,14 @@ export function useConnectionEditor(
     };
   }, []);
 
-  const buildEditorSnapshot = useCallback((data: Partial<Connection>) => {
-    const snapshot = mergeManagedSshSecrets(data);
+  const buildEditorSnapshot = useCallback(
+    (data: Partial<Connection>) => {
+      const snapshot = mergeManagedSshSecrets(data);
 
-    return JSON.stringify(snapshot);
-  }, [mergeManagedSshSecrets]);
+      return JSON.stringify(snapshot);
+    },
+    [mergeManagedSshSecrets],
+  );
 
   // ── Derived ───────────────────────────────────────────────────
   const allTags = useMemo(
@@ -352,7 +619,8 @@ export function useConnectionEditor(
       }
 
       const groupDepth = getConnectionDepth(group.id, state.connections) + 1;
-      const wouldExceedDepth = groupDepth + descendantDepth >= MAX_NESTING_DEPTH;
+      const wouldExceedDepth =
+        groupDepth + descendantDepth >= MAX_NESTING_DEPTH;
 
       return {
         group,
@@ -400,11 +668,14 @@ export function useConnectionEditor(
         basicAuthRealm: connection.basicAuthRealm || "",
         httpHeaders: connection.httpHeaders || {},
         sshConnectionConfigOverride: isSshConnection
-          ? sanitizeSshConnectionOverride(connection.sshConnectionConfigOverride)
+          ? sanitizeSshConnectionOverride(
+              connection.sshConnectionConfigOverride,
+            )
           : connection.sshConnectionConfigOverride,
       };
-      setFormData(resolved);
-      originalDataRef.current = buildEditorSnapshot(resolved);
+      const normalized = normalizeIntegrationFields(resolved);
+      setFormData(normalized);
+      originalDataRef.current = buildEditorSnapshot(normalized);
       // Mark as initialized on the *next* effect cycle so the auto-save
       // effect that fires from the setFormData re-render still sees false.
       isInitializedRef.current = false;
@@ -432,7 +703,13 @@ export function useConnectionEditor(
     if (formData.protocol === "ssh" && isOpen) {
       syncManagedSshInputs();
     }
-  }, [formData.authType, formData.protocol, isOpen, sshSecretRevision, syncManagedSshInputs]);
+  }, [
+    formData.authType,
+    formData.protocol,
+    isOpen,
+    sshSecretRevision,
+    syncManagedSshInputs,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -448,7 +725,9 @@ export function useConnectionEditor(
 
   const buildConnectionData = useCallback((): Connection => {
     const now = new Date().toISOString();
-    const effectiveFormData = mergeManagedSshSecrets(formData);
+    const effectiveFormData = stripIntegrationSecretsForPersistence(
+      normalizeIntegrationFields(mergeManagedSshSecrets(formData)),
+    );
 
     // enableWinrmTools, sshConnectionConfigOverride, etc.) are always
     // persisted without having to enumerate them individually.
@@ -461,7 +740,7 @@ export function useConnectionEditor(
       hostname: effectiveFormData.hostname || "",
       port:
         effectiveFormData.port ||
-        getDefaultPort(effectiveFormData.protocol as string),
+        getDefaultConnectionPort(effectiveFormData.protocol as string),
       isGroup: effectiveFormData.isGroup || false,
       tags: effectiveFormData.tags || [],
       order: connection?.order ?? Date.now(),
@@ -488,7 +767,14 @@ export function useConnectionEditor(
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [formData, connection, settings.autoSaveEnabled, buildConnectionData, dispatch, sshSecretRevision]);
+  }, [
+    formData,
+    connection,
+    settings.autoSaveEnabled,
+    buildConnectionData,
+    dispatch,
+    sshSecretRevision,
+  ]);
 
   // ── Handlers ──────────────────────────────────────────────────
   const handleSubmit = useCallback(
@@ -497,7 +783,8 @@ export function useConnectionEditor(
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
       // Detect whether anything actually changed
-      const hasChanges = buildEditorSnapshot(formData) !== originalDataRef.current;
+      const hasChanges =
+        buildEditorSnapshot(formData) !== originalDataRef.current;
 
       if (connection) {
         if (!hasChanges) {
@@ -516,7 +803,15 @@ export function useConnectionEditor(
         onClose();
       }
     },
-    [buildConnectionData, buildEditorSnapshot, connection, dispatch, onClose, formData, toast],
+    [
+      buildConnectionData,
+      buildEditorSnapshot,
+      connection,
+      dispatch,
+      onClose,
+      formData,
+      toast,
+    ],
   );
 
   const handleTagsChange = useCallback(
@@ -524,66 +819,86 @@ export function useConnectionEditor(
     [],
   );
 
-  const handleProtocolChange = useCallback((protocol: string) => {
-    const nextProtocol = protocol as Connection["protocol"];
-    const nextAuthType = ["http", "https"].includes(protocol)
-      ? "basic"
-      : "password";
+  const handleProtocolChange = useCallback(
+    (protocol: string) => {
+      const nextProtocol = protocol as Connection["protocol"];
+      const isNextIntegration = isIntegrationConnectionProtocol(protocol);
+      const nextAuthType = isIntegrationConnectionProtocol(protocol)
+        ? "header"
+        : ["http", "https"].includes(protocol)
+          ? "basic"
+          : "password";
+      const nextIntegration = buildIntegrationSettings(
+        protocol,
+        undefined,
+        formData,
+      );
 
-    if (formData.protocol === "ssh" && nextProtocol !== "ssh") {
-      const carriedPassword = sshPasswordRef.current;
-      clearManagedSshSecrets();
+      if (formData.protocol === "ssh" && nextProtocol !== "ssh") {
+        const carriedPassword = sshPasswordRef.current;
+        clearManagedSshSecrets();
+        setFormData((prev) => ({
+          ...prev,
+          protocol: nextProtocol,
+          port: getDefaultConnectionPort(protocol),
+          authType: nextAuthType,
+          password: isNextIntegration ? "" : carriedPassword,
+          integration: buildIntegrationSettings(protocol, undefined, prev),
+          passphrase: "",
+          privateKey: "",
+          totpSecret: "",
+          sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+            prev.sshConnectionConfigOverride,
+          ),
+        }));
+        return;
+      }
+
+      if (formData.protocol !== "ssh" && nextProtocol === "ssh") {
+        hydrateManagedSshSecrets({
+          password:
+            typeof formData.password === "string" ? formData.password : "",
+          passphrase:
+            typeof formData.passphrase === "string" ? formData.passphrase : "",
+          privateKey:
+            typeof formData.privateKey === "string" ? formData.privateKey : "",
+        });
+        sshTotpSecretRef.current =
+          typeof formData.totpSecret === "string" ? formData.totpSecret : "";
+        sshProxyCommandPasswordRef.current =
+          formData.sshConnectionConfigOverride?.proxyCommandPassword || "";
+        setFormData((prev) => ({
+          ...prev,
+          protocol: nextProtocol,
+          port: getDefaultConnectionPort(protocol),
+          authType: nextAuthType,
+          password: "",
+          passphrase: "",
+          privateKey: "",
+          totpSecret: "",
+          integration: undefined,
+          sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+            prev.sshConnectionConfigOverride,
+          ),
+        }));
+        return;
+      }
+
       setFormData((prev) => ({
         ...prev,
         protocol: nextProtocol,
-        port: getDefaultPort(protocol),
+        port: getDefaultConnectionPort(protocol),
         authType: nextAuthType,
-        password: carriedPassword,
-        passphrase: "",
-        privateKey: "",
-        totpSecret: "",
-        sshConnectionConfigOverride: sanitizeSshConnectionOverride(
-          prev.sshConnectionConfigOverride,
-        ),
+        integration: nextIntegration,
       }));
-      return;
-    }
-
-    if (formData.protocol !== "ssh" && nextProtocol === "ssh") {
-      hydrateManagedSshSecrets({
-        password: typeof formData.password === "string" ? formData.password : "",
-        passphrase:
-          typeof formData.passphrase === "string" ? formData.passphrase : "",
-        privateKey:
-          typeof formData.privateKey === "string" ? formData.privateKey : "",
-      });
-      sshTotpSecretRef.current =
-        typeof formData.totpSecret === "string" ? formData.totpSecret : "";
-      sshProxyCommandPasswordRef.current =
-        formData.sshConnectionConfigOverride?.proxyCommandPassword || "";
-      setFormData((prev) => ({
-        ...prev,
-        protocol: nextProtocol,
-        port: getDefaultPort(protocol),
-        authType: nextAuthType,
-        password: "",
-        passphrase: "",
-        privateKey: "",
-        totpSecret: "",
-        sshConnectionConfigOverride: sanitizeSshConnectionOverride(
-          prev.sshConnectionConfigOverride,
-        ),
-      }));
-      return;
-    }
-
-    setFormData((prev) => ({
-      ...prev,
-      protocol: nextProtocol,
-      port: getDefaultPort(protocol),
-      authType: nextAuthType,
-    }));
-  }, [clearManagedSshSecrets, formData.passphrase, formData.password, formData.privateKey, formData.protocol, formData.sshConnectionConfigOverride, formData.totpSecret, hydrateManagedSshSecrets, sanitizeSshConnectionOverride]);
+    },
+    [
+      clearManagedSshSecrets,
+      formData,
+      hydrateManagedSshSecrets,
+      sanitizeSshConnectionOverride,
+    ],
+  );
 
   const handleResetToDefaults = useCallback(() => {
     clearManagedSshSecrets();
@@ -593,7 +908,8 @@ export function useConnectionEditor(
       name: prev.name,
       createdAt: prev.createdAt,
       protocol: prev.protocol,
-      port: getDefaultPort(prev.protocol as string),
+      port: getDefaultConnectionPort(prev.protocol as string),
+      integration: buildIntegrationSettings(prev.protocol, undefined),
     }));
   }, [clearManagedSshSecrets]);
 

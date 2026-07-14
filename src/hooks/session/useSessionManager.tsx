@@ -5,6 +5,7 @@ import { useConnections } from "../../contexts/useConnections";
 import {
   Connection,
   ConnectionSession,
+  isIntegrationConnectionProtocol,
 } from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/toolSession";
 import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
@@ -29,7 +30,10 @@ const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
 const UNSUPPORTED_DIRECT_SESSION_PROTOCOLS = new Set<string>(["ftp", "scp"]);
 
 export function usesGenericSessionTimer(protocol: string): boolean {
-  return !CLIENT_OWNED_CONNECT_PROTOCOLS.has(protocol);
+  return (
+    !CLIENT_OWNED_CONNECT_PROTOCOLS.has(protocol) &&
+    !isIntegrationConnectionProtocol(protocol)
+  );
 }
 
 export function getUnsupportedDirectSessionMessage(
@@ -377,7 +381,10 @@ export const useSessionManager = () => {
 
     // Check for existing session for protocols that should reuse connections
     const reuseSessionProtocols = ["ssh", "http", "https"];
-    if (reuseSessionProtocols.includes(connection.protocol)) {
+    const shouldReuseSession =
+      reuseSessionProtocols.includes(connection.protocol) ||
+      isIntegrationConnectionProtocol(connection.protocol);
+    if (shouldReuseSession) {
       const existingSession = state.sessions.find(
         (session) =>
           session.connectionId === connection.id &&
@@ -420,6 +427,9 @@ export const useSessionManager = () => {
       return;
     }
 
+    const isIntegrationSession = isIntegrationConnectionProtocol(
+      connection.protocol,
+    );
     const session: ConnectionSession = {
       id: generateId(),
       connectionId: connection.id,
@@ -427,10 +437,14 @@ export const useSessionManager = () => {
         settings.hostnameOverride && connection.hostname
           ? connection.hostname
           : connection.name,
-      status: "connecting",
+      status: isIntegrationSession ? "connected" : "connecting",
       startTime: new Date(),
       protocol: connection.protocol,
-      hostname: connection.hostname,
+      hostname: connection.integration?.host || connection.hostname,
+      backendSessionId: isIntegrationSession
+        ? connection.integration?.instanceId
+        : undefined,
+      integration: isIntegrationSession ? connection.integration : undefined,
       reconnectAttempts: 0,
       maxReconnectAttempts: connection.retryAttempts || settings.retryAttempts,
       ...(unsupportedMessage
@@ -567,7 +581,8 @@ export const useSessionManager = () => {
     // Tool/winmgmt tabs just get removed — no connection lifecycle
     if (
       isToolProtocol(session.protocol) ||
-      isWinmgmtProtocol(session.protocol)
+      isWinmgmtProtocol(session.protocol) ||
+      isIntegrationConnectionProtocol(session.protocol)
     ) {
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return;

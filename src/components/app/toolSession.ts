@@ -37,7 +37,6 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   tunnelProfileEditor: "Tunnel Profile",
   bulkEditor: "Bulk Editor",
   database: "Databases",
-  integrations: "Integrations",
 };
 
 export const isToolProtocol = (protocol: string): boolean =>
@@ -48,13 +47,19 @@ export const getToolKeyFromProtocol = (protocol: string): ToolKey | null => {
     return null;
   }
 
-  return protocol.slice(TOOL_PROTOCOL_PREFIX.length) as ToolKey;
+  const key = protocol.slice(TOOL_PROTOCOL_PREFIX.length);
+  return Object.prototype.hasOwnProperty.call(TOOL_LABELS, key)
+    ? (key as ToolKey)
+    : null;
 };
 
 export const getToolProtocol = (toolKey: ToolKey): string =>
   `${TOOL_PROTOCOL_PREFIX}${toolKey}`;
 
-export const createToolSession = (toolKey: ToolKey, opts?: { connectionId?: string; name?: string }): ConnectionSession => ({
+export const createToolSession = (
+  toolKey: ToolKey,
+  opts?: { connectionId?: string; name?: string },
+): ConnectionSession => ({
   id: generateId(),
   connectionId: opts?.connectionId ?? `tool-${toolKey}`,
   name: opts?.name ?? TOOL_LABELS[toolKey],

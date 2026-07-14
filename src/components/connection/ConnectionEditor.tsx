@@ -17,7 +17,11 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { Connection } from "../../types/connection/connection";
+import {
+  isIntegrationConnectionProtocol,
+  type Connection,
+  type IntegrationConnectionSettings,
+} from "../../types/connection/connection";
 import { TagManager } from "./TagManager";
 import SSHOptions from "../connectionEditor/SSHOptions";
 import HTTPOptions from "../connectionEditor/HTTPOptions";
@@ -31,13 +35,32 @@ import RecoveryInfoSection from "../connectionEditor/RecoveryInfoSection";
 import {
   useConnectionEditor,
   PROTOCOL_OPTIONS,
+  INTEGRATION_PROTOCOL_OPTIONS,
   CLOUD_OPTIONS,
   ICON_OPTIONS,
   PROTOCOL_COLOR_MAP,
+  getIntegrationKeyFromProtocol,
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
-import { Checkbox, NumberInput, PasswordInput, Select, Textarea} from '../ui/forms';
-import { InfoTooltip } from '../ui/InfoTooltip';
+import {
+  EXCHANGE_AUTH_METHODS,
+  EXCHANGE_ENVIRONMENTS,
+  EXCHANGE_INTEGRATION_KEY,
+  exchangeConnectionHost,
+  exchangeConnectionTimeout,
+  exchangeConnectionUsername,
+  normalizeExchangeConnectionFields,
+  toExchangeProviderFields,
+  type ExchangeConnectionProviderFields,
+} from "../../utils/integrations/exchangeConnectionFields";
+import {
+  Checkbox,
+  NumberInput,
+  PasswordInput,
+  Select,
+  Textarea,
+} from "../ui/forms";
+import { InfoTooltip } from "../ui/InfoTooltip";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -78,7 +101,14 @@ const getConnectionEditorTabs = (isGroup: boolean) =>
    Settings Search — highlights matching labels and counts results
    ═══════════════════════════════════════════════════════════════ */
 
-const SKIP_TAGS = new Set(["INPUT", "TEXTAREA", "SCRIPT", "STYLE", "SELECT", "OPTION"]);
+const SKIP_TAGS = new Set([
+  "INPUT",
+  "TEXTAREA",
+  "SCRIPT",
+  "STYLE",
+  "SELECT",
+  "OPTION",
+]);
 
 function clearAllMarks(container: HTMLElement) {
   const marks = container.querySelectorAll("mark[data-sh]");
@@ -119,7 +149,8 @@ function applyHighlights(container: HTMLElement, q: string): number {
     mark.className = "bg-warning/40 text-[var(--color-text)] rounded-sm px-0.5";
     mark.textContent = text.slice(idx, idx + q.length);
     frag.appendChild(mark);
-    if (idx + q.length < text.length) frag.appendChild(document.createTextNode(text.slice(idx + q.length)));
+    if (idx + q.length < text.length)
+      frag.appendChild(document.createTextNode(text.slice(idx + q.length)));
     tn.parentNode!.replaceChild(frag, tn);
   }
   return count;
@@ -129,13 +160,18 @@ function focusMatch(container: HTMLElement, index: number) {
   const marks = container.querySelectorAll("mark[data-sh]");
   marks.forEach((m, i) => {
     if (i === index) {
-      m.className = "bg-warning text-[var(--color-text)] rounded-sm px-0.5 ring-1 ring-warning";
+      m.className =
+        "bg-warning text-[var(--color-text)] rounded-sm px-0.5 ring-1 ring-warning";
       // Scroll the overflow-y-auto parent, not the viewport
       const scroller = container.parentElement;
       if (scroller) {
         const markRect = (m as HTMLElement).getBoundingClientRect();
         const scrollerRect = scroller.getBoundingClientRect();
-        const offset = markRect.top - scrollerRect.top - scroller.clientHeight / 2 + markRect.height / 2;
+        const offset =
+          markRect.top -
+          scrollerRect.top -
+          scroller.clientHeight / 2 +
+          markRect.height / 2;
         scroller.scrollBy({ top: offset, behavior: "smooth" });
       }
     } else {
@@ -159,7 +195,11 @@ function useSettingsSearch(
     clearAllMarks(el);
 
     const q = query.trim().toLowerCase();
-    if (!q) { setMatchCount(0); setCurrentIndex(0); return; }
+    if (!q) {
+      setMatchCount(0);
+      setCurrentIndex(0);
+      return;
+    }
 
     const count = applyHighlights(el, q);
     setMatchCount(count);
@@ -196,17 +236,40 @@ const SearchBar: React.FC<{
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div data-search-bar className="flex items-center gap-1 bg-[var(--color-border)]/60 rounded-lg px-2 py-1 min-w-[180px] max-w-[300px]">
-      <Search size={13} className="text-[var(--color-textMuted)] flex-shrink-0" />
+    <div
+      data-search-bar
+      className="flex items-center gap-1 bg-[var(--color-border)]/60 rounded-lg px-2 py-1 min-w-[180px] max-w-[300px]"
+    >
+      <Search
+        size={13}
+        className="text-[var(--color-textMuted)] flex-shrink-0"
+      />
       <input
         ref={inputRef}
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Escape") { setQuery(""); inputRef.current?.blur(); }
-          if (e.key === "Enter" && matchCount > 0) { if (e.shiftKey) { goPrev(); } else { goNext(); } e.preventDefault(); }
-          if (e.key === "F3" || (e.key === "g" && (e.ctrlKey || e.metaKey))) { if (e.shiftKey) { goPrev(); } else { goNext(); } e.preventDefault(); }
+          if (e.key === "Escape") {
+            setQuery("");
+            inputRef.current?.blur();
+          }
+          if (e.key === "Enter" && matchCount > 0) {
+            if (e.shiftKey) {
+              goPrev();
+            } else {
+              goNext();
+            }
+            e.preventDefault();
+          }
+          if (e.key === "F3" || (e.key === "g" && (e.ctrlKey || e.metaKey))) {
+            if (e.shiftKey) {
+              goPrev();
+            } else {
+              goNext();
+            }
+            e.preventDefault();
+          }
         }}
         placeholder="Search settings..."
         className="bg-transparent border-none outline-none text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)] w-full min-w-0"
@@ -236,7 +299,10 @@ const SearchBar: React.FC<{
           </button>
           <button
             type="button"
-            onClick={() => { setQuery(""); inputRef.current?.focus(); }}
+            onClick={() => {
+              setQuery("");
+              inputRef.current?.focus();
+            }}
             className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors flex-shrink-0"
           >
             <X size={12} />
@@ -313,7 +379,11 @@ const EditorHeader: React.FC<{
           <button
             type="button"
             onClick={() => {
-              if (window.confirm("Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.")) {
+              if (
+                window.confirm(
+                  "Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.",
+                )
+              ) {
                 mgr.handleResetToDefaults();
               }
             }}
@@ -354,7 +424,13 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
           : ""
       }`}
     >
-      <Checkbox checked={!!mgr.formData.isGroup} onChange={(v: boolean) => mgr.setFormData({ ...mgr.formData, isGroup: v })} className="sr-only" />
+      <Checkbox
+        checked={!!mgr.formData.isGroup}
+        onChange={(v: boolean) =>
+          mgr.setFormData({ ...mgr.formData, isGroup: v })
+        }
+        className="sr-only"
+      />
       <FolderIcon size={16} />
       <span className="text-sm font-medium">Folder/Group</span>
     </label>
@@ -366,7 +442,13 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             : ""
         }`}
       >
-        <Checkbox checked={!!mgr.formData.favorite} onChange={(v: boolean) => mgr.setFormData({ ...mgr.formData, favorite: v })} className="sr-only" />
+        <Checkbox
+          checked={!!mgr.formData.favorite}
+          onChange={(v: boolean) =>
+            mgr.setFormData({ ...mgr.formData, favorite: v })
+          }
+          className="sr-only"
+        />
         <Star
           size={16}
           className={mgr.formData.favorite ? "fill-yellow-400" : ""}
@@ -395,7 +477,7 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       onChange={(e) =>
         mgr.setFormData({ ...mgr.formData, name: e.target.value })
       }
-        className="sor-form-input text-sm"
+      className="sor-form-input text-sm"
       placeholder={mgr.formData.isGroup ? "My Servers" : "Production Server"}
       autoFocus
     />
@@ -413,12 +495,27 @@ const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
         Parent Folder
       </label>
-      <Select value={mgr.formData.parentId || ""} data-testid="editor-parent-folder" onChange={(v: string) =>
+      <Select
+        value={mgr.formData.parentId || ""}
+        data-testid="editor-parent-folder"
+        onChange={(v: string) =>
           mgr.setFormData({
             ...mgr.formData,
             parentId: v || undefined,
-          })} options={[{ value: '', label: 'Root (No parent)' }, ...mgr.selectableGroups.map(({ group, disabled, reason }) => ({ value: group.id, label: `${group.name}
-            ${disabled ? ` (${reason})` : ""}`, disabled: disabled, title: reason }))]} className="w-full px-4 py-2.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+          })
+        }
+        options={[
+          { value: "", label: "Root (No parent)" },
+          ...mgr.selectableGroups.map(({ group, disabled, reason }) => ({
+            value: group.id,
+            label: `${group.name}
+            ${disabled ? ` (${reason})` : ""}`,
+            disabled: disabled,
+            title: reason,
+          })),
+        ]}
+        className="w-full px-4 py-2.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+      />
     </div>
   );
 };
@@ -437,6 +534,10 @@ const ALL_PROTOCOL_OPTIONS = [
     color: "info",
     group: "cloud" as const,
   })),
+  ...INTEGRATION_PROTOCOL_OPTIONS.map((p) => ({
+    ...p,
+    group: "integration" as const,
+  })),
 ];
 
 const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
@@ -447,13 +548,16 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   React.useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const current = ALL_PROTOCOL_OPTIONS.find((p) => p.value === mgr.formData.protocol);
+  const current = ALL_PROTOCOL_OPTIONS.find(
+    (p) => p.value === mgr.formData.protocol,
+  );
   const CurrentIcon = current?.icon ?? Cloud;
 
   return (
@@ -464,14 +568,19 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-          data-testid="editor-protocol"
-          aria-expanded={open}
-          aria-haspopup="listbox"
-          className="w-full flex items-center gap-2.5 px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm hover:border-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 transition-all"
+        data-testid="editor-protocol"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="w-full flex items-center gap-2.5 px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm hover:border-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 transition-all"
       >
-        <CurrentIcon size={16} className="text-[var(--color-textSecondary)] flex-shrink-0" />
+        <CurrentIcon
+          size={16}
+          className="text-[var(--color-textSecondary)] flex-shrink-0"
+        />
         <span className="font-medium">{current?.label ?? "Select"}</span>
-        <span className="text-[var(--color-textMuted)] text-xs">{current?.desc ?? ""}</span>
+        <span className="text-[var(--color-textMuted)] text-xs">
+          {current?.desc ?? ""}
+        </span>
         <ChevronDown
           size={14}
           className="ml-auto text-[var(--color-textMuted)] flex-shrink-0 transition-transform"
@@ -489,17 +598,33 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => { mgr.handleProtocolChange(value); setOpen(false); }}
+                  onClick={() => {
+                    mgr.handleProtocolChange(value);
+                    setOpen(false);
+                  }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                     isActive
                       ? "bg-primary/15 text-primary"
                       : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
                   }`}
                 >
-                  <Icon size={16} className={isActive ? "text-primary" : "text-[var(--color-textSecondary)]"} />
+                  <Icon
+                    size={16}
+                    className={
+                      isActive
+                        ? "text-primary"
+                        : "text-[var(--color-textSecondary)]"
+                    }
+                  />
                   <span className="font-medium">{label}</span>
-                  <span className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}>{desc}</span>
-                  {isActive && <Check size={14} className="ml-auto text-primary" />}
+                  <span
+                    className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
+                  >
+                    {desc}
+                  </span>
+                  {isActive && (
+                    <Check size={14} className="ml-auto text-primary" />
+                  )}
                 </button>
               );
             })}
@@ -507,28 +632,93 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
           {/* Cloud providers */}
           <div className="border-t border-[var(--color-border)] py-1">
-            <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">Cloud Providers</p>
+            <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
+              Cloud Providers
+            </p>
             {CLOUD_OPTIONS.map(({ value, label, desc }) => {
               const isActive = mgr.formData.protocol === value;
               return (
                 <button
                   key={value}
                   type="button"
-                  onClick={() => { mgr.handleProtocolChange(value); setOpen(false); }}
+                  onClick={() => {
+                    mgr.handleProtocolChange(value);
+                    setOpen(false);
+                  }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
                     isActive
                       ? "bg-primary/15 text-primary"
                       : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
                   }`}
                 >
-                  <Cloud size={16} className={isActive ? "text-primary" : "text-[var(--color-textSecondary)]"} />
+                  <Cloud
+                    size={16}
+                    className={
+                      isActive
+                        ? "text-primary"
+                        : "text-[var(--color-textSecondary)]"
+                    }
+                  />
                   <span className="font-medium">{label}</span>
-                  <span className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}>{desc}</span>
-                  {isActive && <Check size={14} className="ml-auto text-primary" />}
+                  <span
+                    className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
+                  >
+                    {desc}
+                  </span>
+                  {isActive && (
+                    <Check size={14} className="ml-auto text-primary" />
+                  )}
                 </button>
               );
             })}
           </div>
+
+          {/* Integrations */}
+          {INTEGRATION_PROTOCOL_OPTIONS.length > 0 && (
+            <div className="border-t border-[var(--color-border)] py-1">
+              <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
+                Integrations
+              </p>
+              {INTEGRATION_PROTOCOL_OPTIONS.map(
+                ({ value, label, desc, icon: Icon }) => {
+                  const isActive = mgr.formData.protocol === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        mgr.handleProtocolChange(value);
+                        setOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                        isActive
+                          ? "bg-primary/15 text-primary"
+                          : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+                      }`}
+                    >
+                      <Icon
+                        size={16}
+                        className={
+                          isActive
+                            ? "text-primary"
+                            : "text-[var(--color-textSecondary)]"
+                        }
+                      />
+                      <span className="font-medium">{label}</span>
+                      <span
+                        className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
+                      >
+                        {desc}
+                      </span>
+                      {isActive && (
+                        <Check size={14} className="ml-auto text-primary" />
+                      )}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -539,94 +729,646 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
    ConnectionFields — hostname / port inputs
    ═══════════════════════════════════════════════════════════════ */
 
-const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
-  const p = mgr.formData.protocol || '';
+const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
+  mgr,
+}) => {
+  const protocol = mgr.formData.protocol as string | undefined;
+  type IntegrationConnectionFormSettings = IntegrationConnectionSettings & {
+    authToken?: string;
+    apiKey?: string;
+    password?: string;
+    providerSecrets?: Record<string, string>;
+  };
+  const integration: IntegrationConnectionFormSettings = {
+    descriptorKey:
+      mgr.formData.integration?.descriptorKey ||
+      getIntegrationKeyFromProtocol(protocol) ||
+      "",
+    ...mgr.formData.integration,
+  };
+
+  const updateIntegration = (
+    patch: Partial<IntegrationConnectionFormSettings>,
+  ) => {
+    const nextIntegration: IntegrationConnectionFormSettings = {
+      ...integration,
+      ...patch,
+      descriptorKey:
+        integration.descriptorKey ||
+        getIntegrationKeyFromProtocol(protocol) ||
+        "",
+    };
+    const mirrored: Partial<Connection> = {};
+
+    if ("host" in patch) mirrored.hostname = patch.host || "";
+    if ("username" in patch) mirrored.username = patch.username || "";
+    if ("timeout" in patch) mirrored.timeout = patch.timeout;
+
+    mgr.setFormData({
+      ...mgr.formData,
+      ...mirrored,
+      integration: nextIntegration,
+    });
+  };
+
+  const descriptorKey =
+    integration.descriptorKey || getIntegrationKeyFromProtocol(protocol) || "";
+  const isExchange = descriptorKey === EXCHANGE_INTEGRATION_KEY;
+  const exchangeFields = normalizeExchangeConnectionFields(
+    integration.providerFields,
+    {
+      host: integration.host || mgr.formData.hostname,
+      username: integration.username || mgr.formData.username,
+      timeout: integration.timeout ?? mgr.formData.timeout,
+    },
+  );
+  const exchangeSecrets = integration.providerSecrets ?? {};
+  const showExchangeOnline =
+    exchangeFields.environment === "online" ||
+    exchangeFields.environment === "hybrid";
+  const showExchangeOnPrem =
+    exchangeFields.environment === "onPremises" ||
+    exchangeFields.environment === "hybrid";
+
+  const updateExchangeFields = (
+    patch: Partial<ExchangeConnectionProviderFields>,
+  ) => {
+    const nextFields: ExchangeConnectionProviderFields = {
+      ...exchangeFields,
+      ...patch,
+    };
+    updateIntegration({
+      providerFields: toExchangeProviderFields(nextFields),
+      host: exchangeConnectionHost(nextFields),
+      username: exchangeConnectionUsername(nextFields),
+      timeout: exchangeConnectionTimeout(nextFields, integration.timeout ?? 30),
+    });
+  };
+
+  const updateExchangeSecret = (
+    key: "clientSecret" | "password",
+    value: string,
+  ) => {
+    updateIntegration({
+      providerSecrets: {
+        ...exchangeSecrets,
+        [key]: value,
+      },
+    });
+  };
+
+  if (isExchange) {
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              Instance ID
+            </label>
+            <input
+              type="text"
+              data-testid="editor-integration-instance-id"
+              value={integration.instanceId || ""}
+              onChange={(e) =>
+                updateIntegration({ instanceId: e.target.value })
+              }
+              className="sor-form-input text-sm font-mono"
+              placeholder="optional saved instance id"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              Instance Name
+            </label>
+            <input
+              type="text"
+              data-testid="editor-integration-instance-name"
+              value={integration.instanceName || ""}
+              onChange={(e) =>
+                updateIntegration({ instanceName: e.target.value })
+              }
+              className="sor-form-input text-sm"
+              placeholder="Corporate Exchange"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              Environment
+            </label>
+            <select
+              data-testid="editor-exchange-environment"
+              value={exchangeFields.environment}
+              onChange={(e) =>
+                updateExchangeFields({
+                  environment: e.target
+                    .value as ExchangeConnectionProviderFields["environment"],
+                })
+              }
+              className="sor-form-input text-sm"
+            >
+              {EXCHANGE_ENVIRONMENTS.map((environment) => (
+                <option key={environment} value={environment}>
+                  {environment === "online"
+                    ? "Exchange Online"
+                    : environment === "onPremises"
+                      ? "Exchange Server"
+                      : "Hybrid"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+              Timeout (s)
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              data-testid="editor-exchange-timeout"
+              value={exchangeFields.timeoutSecs}
+              onChange={(e) =>
+                updateExchangeFields({ timeoutSecs: e.target.value })
+              }
+              className="sor-form-input text-sm"
+              placeholder="120"
+            />
+          </div>
+        </div>
+
+        {showExchangeOnline && (
+          <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Tenant ID
+                </label>
+                <input
+                  type="text"
+                  data-testid="editor-exchange-tenant-id"
+                  value={exchangeFields.tenantId}
+                  onChange={(e) =>
+                    updateExchangeFields({ tenantId: e.target.value })
+                  }
+                  className="sor-form-input text-sm font-mono"
+                  placeholder="contoso.onmicrosoft.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Client ID
+                </label>
+                <input
+                  type="text"
+                  data-testid="editor-exchange-client-id"
+                  value={exchangeFields.clientId}
+                  onChange={(e) =>
+                    updateExchangeFields({ clientId: e.target.value })
+                  }
+                  className="sor-form-input text-sm font-mono"
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Client Secret
+                </label>
+                <PasswordInput
+                  data-testid="editor-exchange-client-secret"
+                  value={exchangeSecrets.clientSecret || ""}
+                  onChange={(e) =>
+                    updateExchangeSecret("clientSecret", e.target.value)
+                  }
+                  isSaved={false}
+                  className="sor-form-input text-sm"
+                  placeholder="client secret"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Online Username
+                </label>
+                <input
+                  type="text"
+                  data-testid="editor-exchange-online-username"
+                  value={exchangeFields.onlineUsername}
+                  onChange={(e) =>
+                    updateExchangeFields({ onlineUsername: e.target.value })
+                  }
+                  className="sor-form-input text-sm"
+                  placeholder="admin@contoso.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                Organization
+              </label>
+              <input
+                type="text"
+                data-testid="editor-exchange-organization"
+                value={exchangeFields.organization}
+                onChange={(e) =>
+                  updateExchangeFields({ organization: e.target.value })
+                }
+                className="sor-form-input text-sm font-mono"
+                placeholder="contoso.onmicrosoft.com"
+              />
+            </div>
+          </div>
+        )}
+
+        {showExchangeOnPrem && (
+          <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+            <div className="grid grid-cols-[1fr_100px] gap-2">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Server
+                </label>
+                <input
+                  type="text"
+                  data-testid="editor-exchange-server"
+                  value={exchangeFields.server}
+                  onChange={(e) =>
+                    updateExchangeFields({ server: e.target.value })
+                  }
+                  className="sor-form-input text-sm font-mono"
+                  placeholder="mail01.contoso.local"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Port
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  data-testid="editor-exchange-port"
+                  value={exchangeFields.port}
+                  onChange={(e) =>
+                    updateExchangeFields({ port: e.target.value })
+                  }
+                  className="sor-form-input text-sm"
+                  placeholder="443"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  On-prem Username
+                </label>
+                <input
+                  type="text"
+                  data-testid="editor-exchange-onprem-username"
+                  value={exchangeFields.onPremUsername}
+                  onChange={(e) =>
+                    updateExchangeFields({ onPremUsername: e.target.value })
+                  }
+                  className="sor-form-input text-sm"
+                  placeholder="CONTOSO\\administrator"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Password
+                </label>
+                <PasswordInput
+                  data-testid="editor-exchange-password"
+                  value={exchangeSecrets.password || ""}
+                  onChange={(e) =>
+                    updateExchangeSecret("password", e.target.value)
+                  }
+                  isSaved={false}
+                  className="sor-form-input text-sm"
+                  placeholder="password"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+                  Auth Method
+                </label>
+                <select
+                  data-testid="editor-exchange-auth-method"
+                  value={exchangeFields.authMethod}
+                  onChange={(e) =>
+                    updateExchangeFields({
+                      authMethod: e.target
+                        .value as ExchangeConnectionProviderFields["authMethod"],
+                    })
+                  }
+                  className="sor-form-input text-sm"
+                >
+                  {EXCHANGE_AUTH_METHODS.map((method) => (
+                    <option key={method} value={method}>
+                      {method.charAt(0).toUpperCase() + method.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-text)]">
+                <Checkbox
+                  checked={exchangeFields.useSsl}
+                  onChange={(checked) =>
+                    updateExchangeFields({ useSsl: checked })
+                  }
+                  variant="form"
+                  data-testid="editor-exchange-use-ssl"
+                />
+                <span>Use SSL</span>
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-text)]">
+                <Checkbox
+                  checked={exchangeFields.skipCertCheck}
+                  onChange={(checked) =>
+                    updateExchangeFields({ skipCertCheck: checked })
+                  }
+                  variant="form"
+                  data-testid="editor-exchange-skip-cert-check"
+                />
+                <span>Skip Cert</span>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-  <div className="space-y-2">
-    {/* Hostname + Port row */}
-    <div className="grid grid-cols-[1fr_100px] gap-2">
-      <div>
-        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-          Hostname / IP <span className="text-error">*</span>
-        </label>
-        <input
-          type="text"
-          required
-          data-testid="editor-hostname"
-          value={mgr.formData.hostname || ""}
-          onChange={(e) =>
-            mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
-          }
-            className="sor-form-input text-sm font-mono"
-          placeholder={
-            p === 'http' || p === 'https' ? 'example.com'
-            : p === 'ssh' ? '192.168.1.100 or server.example.com'
-            : '192.168.1.100'
-          }
-        />
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-          Port
-        </label>
-        <NumberInput value={mgr.formData.port || 0} onChange={(v: number) => mgr.setFormData({
-              ...mgr.formData,
-              port: v,
-            })} variant="form" min={1} max={65535} data-testid="editor-port" />
-      </div>
-    </div>
-    {p !== 'ssh' && (
+    <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Instance ID
+          </label>
+          <input
+            type="text"
+            data-testid="editor-integration-instance-id"
+            value={integration.instanceId || ""}
+            onChange={(e) => updateIntegration({ instanceId: e.target.value })}
+            className="sor-form-input text-sm font-mono"
+            placeholder="optional saved instance id"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Instance Name
+          </label>
+          <input
+            type="text"
+            data-testid="editor-integration-instance-name"
+            value={integration.instanceName || ""}
+            onChange={(e) =>
+              updateIntegration({ instanceName: e.target.value })
+            }
+            className="sor-form-input text-sm"
+            placeholder="Production"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Host <span className="text-error">*</span>
+          </label>
+          <input
+            type="text"
+            data-testid="editor-hostname"
+            value={integration.host || ""}
+            onChange={(e) => updateIntegration({ host: e.target.value })}
+            className="sor-form-input text-sm font-mono"
+            placeholder="service.example.com"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Base URL
+          </label>
+          <input
+            type="text"
+            data-testid="editor-integration-base-url"
+            value={integration.baseUrl || ""}
+            onChange={(e) => updateIntegration({ baseUrl: e.target.value })}
+            className="sor-form-input text-sm font-mono"
+            placeholder="https://service.example.com"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Auth Token
+          </label>
+          <PasswordInput
+            data-testid="editor-integration-auth-token"
+            value={integration.authToken || ""}
+            onChange={(e) => updateIntegration({ authToken: e.target.value })}
+            isSaved={false}
+            className="sor-form-input text-sm"
+            placeholder="token"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            API Key
+          </label>
+          <PasswordInput
+            data-testid="editor-integration-api-key"
+            value={integration.apiKey || ""}
+            onChange={(e) => updateIntegration({ apiKey: e.target.value })}
+            isSaved={false}
+            className="sor-form-input text-sm"
+            placeholder="api key"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
             Username
-            <InfoTooltip text={
-              p === 'rdp' ? 'Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).'
-              : p === 'winrm' ? 'Account for WinRM Basic auth. Domain accounts use the Domain field below.'
-              : p === 'vnc' ? 'VNC authentication usually only needs a password, not a username.'
-              : 'Username for authentication with the remote service.'
-            } />
           </label>
           <input
             type="text"
             data-testid="editor-username"
-            value={mgr.formData.username || ""}
-            onChange={(e) =>
-              mgr.setFormData({ ...mgr.formData, username: e.target.value })
-            }
+            value={integration.username || ""}
+            onChange={(e) => updateIntegration({ username: e.target.value })}
             className="sor-form-input text-sm"
+            placeholder="admin"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Password
+          </label>
+          <PasswordInput
+            data-testid="editor-password"
+            value={integration.password || ""}
+            onChange={(e) => updateIntegration({ password: e.target.value })}
+            isSaved={false}
+            className="sor-form-input text-sm"
+            placeholder="password"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-text)]">
+          <Checkbox
+            checked={integration.tlsVerify ?? true}
+            onChange={(checked) => updateIntegration({ tlsVerify: checked })}
+            variant="form"
+            data-testid="editor-integration-tls-verify"
+          />
+          <span>TLS Verify</span>
+        </label>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Timeout (s)
+          </label>
+          <NumberInput
+            value={integration.timeout ?? 30}
+            onChange={(value: number) => updateIntegration({ timeout: value })}
+            variant="form"
+            min={1}
+            max={3600}
+            data-testid="editor-integration-timeout"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const p = mgr.formData.protocol || "";
+  if (isIntegrationConnectionProtocol(p)) {
+    return <IntegrationConnectionFields mgr={mgr} />;
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Hostname + Port row */}
+      <div className="grid grid-cols-[1fr_100px] gap-2">
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Hostname / IP <span className="text-error">*</span>
+          </label>
+          <input
+            type="text"
+            required
+            data-testid="editor-hostname"
+            value={mgr.formData.hostname || ""}
+            onChange={(e) =>
+              mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
+            }
+            className="sor-form-input text-sm font-mono"
             placeholder={
-              p === 'rdp' ? 'Administrator'
-              : p === 'winrm' ? 'Administrator'
-              : p === 'vnc' ? '(optional)'
-              : 'admin'
+              p === "http" || p === "https"
+                ? "example.com"
+                : p === "ssh"
+                  ? "192.168.1.100 or server.example.com"
+                  : "192.168.1.100"
             }
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-            Password
-            <InfoTooltip text={
-              p === 'rdp' ? 'Windows account password. Sent via CredSSP/NLA during the RDP handshake.'
-              : p === 'winrm' ? 'Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security).'
-              : p === 'vnc' ? 'VNC server password. Most VNC servers only use password authentication.'
-              : 'Password for authentication with the remote service.'
-            } />
+          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+            Port
           </label>
-          <PasswordInput
-            data-testid="editor-password"
-            value={mgr.formData.password || ""}
-            onChange={(e) =>
-              mgr.setFormData({ ...mgr.formData, password: e.target.value })
+          <NumberInput
+            value={mgr.formData.port || 0}
+            onChange={(v: number) =>
+              mgr.setFormData({
+                ...mgr.formData,
+                port: v,
+              })
             }
-            isSaved={!mgr.isNewConnection && !!mgr.formData.password}
-            className="sor-form-input text-sm"
-            placeholder="••••••••"
+            variant="form"
+            min={1}
+            max={65535}
+            data-testid="editor-port"
           />
         </div>
       </div>
-    )}
-  </div>
+      {p !== "ssh" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+              Username
+              <InfoTooltip
+                text={
+                  p === "rdp"
+                    ? "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically)."
+                    : p === "winrm"
+                      ? "Account for WinRM Basic auth. Domain accounts use the Domain field below."
+                      : p === "vnc"
+                        ? "VNC authentication usually only needs a password, not a username."
+                        : "Username for authentication with the remote service."
+                }
+              />
+            </label>
+            <input
+              type="text"
+              data-testid="editor-username"
+              value={mgr.formData.username || ""}
+              onChange={(e) =>
+                mgr.setFormData({ ...mgr.formData, username: e.target.value })
+              }
+              className="sor-form-input text-sm"
+              placeholder={
+                p === "rdp"
+                  ? "Administrator"
+                  : p === "winrm"
+                    ? "Administrator"
+                    : p === "vnc"
+                      ? "(optional)"
+                      : "admin"
+              }
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
+              Password
+              <InfoTooltip
+                text={
+                  p === "rdp"
+                    ? "Windows account password. Sent via CredSSP/NLA during the RDP handshake."
+                    : p === "winrm"
+                      ? "Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security)."
+                      : p === "vnc"
+                        ? "VNC server password. Most VNC servers only use password authentication."
+                        : "Password for authentication with the remote service."
+                }
+              />
+            </label>
+            <PasswordInput
+              data-testid="editor-password"
+              value={mgr.formData.password || ""}
+              onChange={(e) =>
+                mgr.setFormData({ ...mgr.formData, password: e.target.value })
+              }
+              isSaved={!mgr.isNewConnection && !!mgr.formData.password}
+              className="sor-form-input text-sm"
+              placeholder="••••••••"
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -642,13 +1384,22 @@ const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       sshSecretManager={mgr.sshSecrets}
     />
     <HTTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
-    <CloudProviderOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+    <CloudProviderOptions
+      formData={mgr.formData}
+      setFormData={mgr.setFormData}
+    />
     <RDPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <WinRMOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <TOTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <BackupCodesSection formData={mgr.formData} setFormData={mgr.setFormData} />
-    <SecurityQuestionsSection formData={mgr.formData} setFormData={mgr.setFormData} />
-    <RecoveryInfoSection formData={mgr.formData} setFormData={mgr.setFormData} />
+    <SecurityQuestionsSection
+      formData={mgr.formData}
+      setFormData={mgr.setFormData}
+    />
+    <RecoveryInfoSection
+      formData={mgr.formData}
+      setFormData={mgr.setFormData}
+    />
   </div>
 );
 
@@ -657,16 +1408,19 @@ const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
    ═══════════════════════════════════════════════════════════════ */
 
 const FOCUS_OPTIONS = [
-  { value: '', label: 'Use global setting' },
-  { value: 'true', label: 'Focus tab' },
-  { value: 'false', label: 'Open in background' },
+  { value: "", label: "Use global setting" },
+  { value: "true", label: "Focus tab" },
+  { value: "false", label: "Open in background" },
 ] as const;
 
 const parseFocusBool = (v: string): boolean | undefined =>
-  v === 'true' ? true : v === 'false' ? false : undefined;
+  v === "true" ? true : v === "false" ? false : undefined;
 
 const BehaviorSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
-  const isWindows = mgr.formData.osType === 'windows' || (!mgr.formData.osType && (mgr.formData.protocol === 'rdp' || mgr.formData.protocol === 'winrm'));
+  const isWindows =
+    mgr.formData.osType === "windows" ||
+    (!mgr.formData.osType &&
+      (mgr.formData.protocol === "rdp" || mgr.formData.protocol === "winrm"));
   return (
     <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
       <h3 className="text-xs font-semibold text-[var(--color-textSecondary)] flex items-center gap-1.5">
@@ -674,21 +1428,53 @@ const BehaviorSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">On Connect</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+            On Connect
+          </label>
           <Select
-            value={mgr.formData.focusOnConnect === true ? 'true' : mgr.formData.focusOnConnect === false ? 'false' : ''}
-            onChange={(v: string) => mgr.setFormData({ ...mgr.formData, focusOnConnect: parseFocusBool(v) })}
-            options={FOCUS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+            value={
+              mgr.formData.focusOnConnect === true
+                ? "true"
+                : mgr.formData.focusOnConnect === false
+                  ? "false"
+                  : ""
+            }
+            onChange={(v: string) =>
+              mgr.setFormData({
+                ...mgr.formData,
+                focusOnConnect: parseFocusBool(v),
+              })
+            }
+            options={FOCUS_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+            }))}
             variant="form"
           />
         </div>
         {isWindows && (
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">On Windows Management Tool</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+              On Windows Management Tool
+            </label>
             <Select
-              value={mgr.formData.focusOnWinmgmtTool === true ? 'true' : mgr.formData.focusOnWinmgmtTool === false ? 'false' : ''}
-              onChange={(v: string) => mgr.setFormData({ ...mgr.formData, focusOnWinmgmtTool: parseFocusBool(v) })}
-              options={FOCUS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              value={
+                mgr.formData.focusOnWinmgmtTool === true
+                  ? "true"
+                  : mgr.formData.focusOnWinmgmtTool === false
+                    ? "false"
+                    : ""
+              }
+              onChange={(v: string) =>
+                mgr.setFormData({
+                  ...mgr.formData,
+                  focusOnWinmgmtTool: parseFocusBool(v),
+                })
+              }
+              options={FOCUS_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
               variant="form"
             />
           </div>
@@ -786,9 +1572,7 @@ const DescriptionSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({
       <div className="p-4 border-t border-[var(--color-border)]">
         <Textarea
           value={mgr.formData.description || ""}
-          onChange={(v) =>
-            mgr.setFormData({ ...mgr.formData, description: v })
-          }
+          onChange={(v) => mgr.setFormData({ ...mgr.formData, description: v })}
           rows={4}
           className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
           placeholder="Add notes about this connection..."
@@ -882,8 +1666,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onClose,
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose);
-  const [activeTab, setActiveTab] =
-    useState<ConnectionEditorTabId>("general");
+  const [activeTab, setActiveTab] = useState<ConnectionEditorTabId>("general");
   const tabs = React.useMemo(
     () => getConnectionEditorTabs(!!mgr.formData.isGroup),
     [mgr.formData.isGroup],
@@ -915,13 +1698,20 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         onClose={onClose}
         searchBar={
           <SearchBar
-            query={query} setQuery={setQuery}
-            matchCount={matchCount} currentIndex={currentIndex}
-            goNext={goNext} goPrev={goPrev}
+            query={query}
+            setQuery={setQuery}
+            matchCount={matchCount}
+            currentIndex={currentIndex}
+            goNext={goNext}
+            goPrev={goPrev}
           />
         }
       />
-      <EditorTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+      <EditorTabs
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
       <div className="flex-1 overflow-y-auto min-h-0">
         <div ref={formContentRef} className="max-w-2xl mx-auto w-full p-6">
           <div

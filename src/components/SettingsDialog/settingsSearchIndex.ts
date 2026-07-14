@@ -864,9 +864,9 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   },
   {
     key: "showRdpSessionsIcon",
-    label: "RDP Sessions Icon",
-    description: "Show RDP Sessions in toolbar",
-    tags: ["toolbar", "icon", "rdp"],
+    label: "Session Manager Icon",
+    description: "Show Session Manager in toolbar",
+    tags: ["toolbar", "icon", "rdp", "ssh", "sessions"],
     section: "layout",
     sectionLabel: "Layout",
   },

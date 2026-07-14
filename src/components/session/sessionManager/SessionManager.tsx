@@ -22,6 +22,9 @@ import {
   History,
   BarChart3,
   LayoutGrid,
+  Terminal,
+  Database,
+  Wrench,
 } from "lucide-react";
 import { ErrorBanner, EmptyState } from "../../ui/display";
 import { Checkbox } from "../../ui/forms";
@@ -42,7 +45,6 @@ import {
 import {
   useUnifiedSessionManager,
   UnifiedSessionRow,
-  SessionKind,
 } from "../../../hooks/session/useUnifiedSessionManager";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -58,6 +60,7 @@ interface SessionManagerProps {
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
   onReconnect?: (connection: Connection) => void;
+  onCloseSession?: (sessionId: string) => void;
   thumbnailsEnabled?: boolean;
   thumbnailPolicy?: "realtime" | "on-blur" | "on-detach" | "manual";
   thumbnailInterval?: number;
@@ -76,13 +79,30 @@ type ManagerView =
   | "proxy-logs"
   | "proxy-stats";
 
-const KIND_META: Record<
-  SessionKind,
-  { label: string; icon: React.ElementType }
-> = {
-  rdp: { label: "RDP", icon: Monitor },
-  "http-proxy": { label: "HTTP / HTTPS Proxy", icon: Globe },
+const KIND_ICON_MAP: Record<string, React.ElementType> = {
+  anydesk: Monitor,
+  http: Globe,
+  "http-proxy": Globe,
+  https: Globe,
+  integration: Database,
+  rdp: Monitor,
+  rlogin: Terminal,
+  rustdesk: Monitor,
+  sftp: Server,
+  ssh: Terminal,
+  telnet: Terminal,
+  tool: Wrench,
+  vnc: Monitor,
+  winmgmt: Server,
+  winrm: Server,
 };
+
+function groupIconForRow(row: UnifiedSessionRow): React.ElementType {
+  if (row.bucket === "integration") return Database;
+  if (row.bucket === "tool") return Wrench;
+  if (row.bucket === "winmgmt") return Server;
+  return KIND_ICON_MAP[String(row.kind)] ?? Server;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    Status pill (normalized across both kinds)
@@ -199,7 +219,7 @@ const RdpRow: React.FC<{
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {row.detached && onReattachSession && (
             <button
               onClick={() => onReattachSession(s.id, s.connection_id)}
@@ -207,7 +227,7 @@ const RdpRow: React.FC<{
               data-tooltip="Reattach"
               title="Reattach"
             >
-              <PlugZap size={13} />
+              <PlugZap size={15} />
             </button>
           )}
           {onDetachToWindow && (
@@ -217,7 +237,7 @@ const RdpRow: React.FC<{
               data-tooltip="Detach to window"
               title="Detach to window"
             >
-              <ExternalLink size={13} />
+              <ExternalLink size={15} />
             </button>
           )}
           <button
@@ -229,7 +249,7 @@ const RdpRow: React.FC<{
             data-tooltip="Detach viewer"
             title="Detach viewer"
           >
-            <Unplug size={13} />
+            <Unplug size={15} />
           </button>
           <button
             onClick={() => rdp.handleSignOut(s.id)}
@@ -237,7 +257,7 @@ const RdpRow: React.FC<{
             data-tooltip="Sign out"
             title="Sign out"
           >
-            <LogOut size={13} />
+            <LogOut size={15} />
           </button>
           <button
             onClick={() => onViewLogs(s.id)}
@@ -245,7 +265,7 @@ const RdpRow: React.FC<{
             data-tooltip="View logs"
             title="View logs"
           >
-            <ScrollText size={13} />
+            <ScrollText size={15} />
           </button>
           <div className="w-px h-3 bg-[var(--color-border)] mx-0.5" />
           <button
@@ -254,7 +274,7 @@ const RdpRow: React.FC<{
             data-tooltip="Force reboot"
             title="Force reboot"
           >
-            <RotateCcw size={13} />
+            <RotateCcw size={15} />
           </button>
           <button
             onClick={() => rdp.handleDisconnect(s.id)}
@@ -262,7 +282,7 @@ const RdpRow: React.FC<{
             data-tooltip="Disconnect"
             title="Disconnect session"
           >
-            <PowerOff size={13} />
+            <PowerOff size={15} />
           </button>
         </div>
       </div>
@@ -332,8 +352,80 @@ const ProxyRow: React.FC<{
           title="Stop session"
           data-tooltip="Stop session"
         >
-          <StopCircle size={14} />
+          <StopCircle size={15} />
         </button>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   Frontend row — tabs projected from ConnectionContext sessions
+   ═══════════════════════════════════════════════════════════════════ */
+
+const FrontendRow: React.FC<{
+  row: UnifiedSessionRow;
+  onCloseSession: (sessionId: string) => void;
+}> = ({ row, onCloseSession }) => {
+  const Icon = groupIconForRow(row);
+  const started = row.startedAt
+    ? row.startedAt.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <div
+      className="group sor-selection-row p-4 cursor-default"
+      data-testid={`session-row-frontend-${row.nativeId}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <Icon size={14} className="text-info flex-shrink-0" />
+            <span className="text-[var(--color-text)] text-sm font-medium truncate">
+              {row.title}
+            </span>
+            {row.kindLabel && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-textSecondary)] uppercase">
+                {row.kindLabel}
+              </span>
+            )}
+            <StatusPill row={row} />
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-textSecondary)]">
+            {row.subtitle && (
+              <span className="font-mono truncate">{row.subtitle}</span>
+            )}
+            {started && (
+              <span className="flex items-center gap-1">
+                <Clock size={10} />
+                {started}
+              </span>
+            )}
+            {row.metrics?.latency != null && (
+              <span>{Math.round(row.metrics.latency)} ms</span>
+            )}
+          </div>
+          {row.errorMessage && (
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-error">
+              <AlertCircle size={10} className="flex-shrink-0" />
+              <span className="truncate">{row.errorMessage}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => onCloseSession(row.nativeId)}
+            className="sor-icon-btn-xs text-error hover:text-error"
+            data-tooltip="Close session"
+            title="Close session"
+          >
+            <StopCircle size={15} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -344,23 +436,23 @@ const ProxyRow: React.FC<{
    ═══════════════════════════════════════════════════════════════════ */
 
 const GroupHeader: React.FC<{
-  kind: SessionKind;
+  groupKey: string;
+  label: string;
+  icon: React.ElementType;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
-}> = ({ kind, count, collapsed, onToggle }) => {
-  const meta = KIND_META[kind];
-  const Icon = meta.icon;
+}> = ({ groupKey, label, icon: Icon, count, collapsed, onToggle }) => {
   return (
     <button
       type="button"
       onClick={onToggle}
       className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wide hover:bg-[var(--color-surfaceHover)]/60 transition-colors"
       aria-expanded={!collapsed}
-      data-testid={`session-group-${kind}`}
+      data-testid={`session-group-${groupKey}`}
     >
       <Icon size={13} className="text-[var(--color-textMuted)]" />
-      <span className="flex-1">{meta.label}</span>
+      <span className="flex-1">{label}</span>
       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-border)] text-[var(--color-textSecondary)]">
         {count}
       </span>
@@ -372,11 +464,31 @@ const GroupHeader: React.FC<{
    Sessions view (both kinds, grouped + filtered)
    ═══════════════════════════════════════════════════════════════════ */
 
-const KIND_FILTERS: { id: SessionKind | "all"; label: string }[] = [
+type SessionFilter =
+  | "all"
+  | "rdp"
+  | "proxy"
+  | "connections"
+  | "tools"
+  | "winmgmt"
+  | "integrations";
+
+const KIND_FILTERS: { id: SessionFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "rdp", label: "RDP" },
-  { id: "http-proxy", label: "Proxy" },
+  { id: "proxy", label: "Proxy" },
+  { id: "connections", label: "Connections" },
+  { id: "tools", label: "Tools" },
+  { id: "winmgmt", label: "Windows" },
+  { id: "integrations", label: "Integrations" },
 ];
+
+interface SessionGroup {
+  key: string;
+  label: string;
+  icon: React.ElementType;
+  rows: UnifiedSessionRow[];
+}
 
 const SessionsView: React.FC<{
   mgr: Mgr;
@@ -384,29 +496,65 @@ const SessionsView: React.FC<{
   onDetachToWindow?: (sessionId: string) => void;
   onViewRdpLogs: (sessionId: string) => void;
   onViewerDetach: (backendSessionId: string) => void;
+  onCloseSession: (sessionId: string) => void;
 }> = ({
   mgr,
   onReattachSession,
   onDetachToWindow,
   onViewRdpLogs,
   onViewerDetach,
+  onCloseSession,
 }) => {
-  const [kindFilter, setKindFilter] = useState<SessionKind | "all">("all");
-  const [collapsed, setCollapsed] = useState<Record<SessionKind, boolean>>({
-    rdp: false,
-    "http-proxy": false,
-  });
+  const [kindFilter, setKindFilter] = useState<SessionFilter>("all");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const visibleRdp = useMemo(
-    () => (kindFilter === "http-proxy" ? [] : mgr.rdpRows),
-    [kindFilter, mgr.rdpRows],
-  );
-  const visibleProxy = useMemo(
-    () => (kindFilter === "rdp" ? [] : mgr.proxyRows),
-    [kindFilter, mgr.proxyRows],
-  );
+  const visibleRows = useMemo(() => {
+    return mgr.rows.filter((row) => {
+      switch (kindFilter) {
+        case "rdp":
+          return row.source === "rdp";
+        case "proxy":
+          return row.source === "http-proxy";
+        case "connections":
+          return row.bucket === "connection";
+        case "tools":
+          return row.bucket === "tool";
+        case "winmgmt":
+          return row.bucket === "winmgmt";
+        case "integrations":
+          return row.bucket === "integration";
+        case "all":
+        default:
+          return true;
+      }
+    });
+  }, [kindFilter, mgr.rows]);
 
-  const totalVisible = visibleRdp.length + visibleProxy.length;
+  const groups = useMemo<SessionGroup[]>(() => {
+    const byKey = new Map<string, SessionGroup>();
+    for (const row of visibleRows) {
+      const key = row.groupKey || String(row.kind);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.rows.push(row);
+        continue;
+      }
+      byKey.set(key, {
+        key,
+        label: row.groupLabel || row.kindLabel || String(row.kind),
+        icon: groupIconForRow(row),
+        rows: [row],
+      });
+    }
+    return Array.from(byKey.values());
+  }, [visibleRows]);
+
+  const totalVisible = visibleRows.length;
+  const showRdpBulk =
+    mgr.rdpRows.length > 0 && (kindFilter === "all" || kindFilter === "rdp");
+  const showProxyBulk =
+    mgr.proxyRows.length > 0 &&
+    (kindFilter === "all" || kindFilter === "proxy");
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -424,9 +572,9 @@ const SessionsView: React.FC<{
             </button>
           ))}
         </div>
-        {(mgr.rdpRows.length > 0 || mgr.proxyRows.length > 0) && (
+        {(showRdpBulk || showProxyBulk) && (
           <div className="flex items-center gap-1.5">
-            {mgr.rdpRows.length > 0 && kindFilter !== "http-proxy" && (
+            {showRdpBulk && (
               <button
                 onClick={mgr.rdp.handleDisconnectAll}
                 className="sor-option-chip text-xs bg-error/20 hover:bg-error/40 text-error border-error/40"
@@ -436,7 +584,7 @@ const SessionsView: React.FC<{
                 <span>Disconnect RDP</span>
               </button>
             )}
-            {mgr.proxyRows.length > 0 && kindFilter !== "rdp" && (
+            {showProxyBulk && (
               <button
                 onClick={mgr.proxy.handleStopAll}
                 className="sor-option-chip text-xs bg-error/20 hover:bg-error/40 text-error border-error/40"
@@ -457,71 +605,57 @@ const SessionsView: React.FC<{
             <EmptyState
               icon={Server}
               message="No active sessions"
-              hint="RDP sessions and internal HTTP/HTTPS proxy sessions appear here when established."
+              hint="Remote sessions, tool tabs, Windows panels, integration panels, and internal proxy sessions appear here when active."
             />
           </div>
         ) : (
           <>
-            {kindFilter !== "http-proxy" && (
-              <div>
+            {groups.map((group) => (
+              <div key={group.key}>
                 <GroupHeader
-                  kind="rdp"
-                  count={visibleRdp.length}
-                  collapsed={collapsed.rdp}
-                  onToggle={() =>
-                    setCollapsed((c) => ({ ...c, rdp: !c.rdp }))
-                  }
-                />
-                {!collapsed.rdp &&
-                  (visibleRdp.length === 0 ? (
-                    <p className="px-2 py-2 text-xs text-[var(--color-textMuted)]">
-                      No active RDP sessions.
-                    </p>
-                  ) : (
-                    <div className="sor-selection-list mt-1">
-                      {visibleRdp.map((row) => (
-                        <RdpRow
-                          key={row.uid}
-                          mgr={mgr}
-                          row={row}
-                          onReattachSession={onReattachSession}
-                          onDetachToWindow={onDetachToWindow}
-                          onViewLogs={onViewRdpLogs}
-                          onViewerDetach={onViewerDetach}
-                        />
-                      ))}
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            {kindFilter !== "rdp" && (
-              <div>
-                <GroupHeader
-                  kind="http-proxy"
-                  count={visibleProxy.length}
-                  collapsed={collapsed["http-proxy"]}
+                  groupKey={group.key}
+                  label={group.label}
+                  icon={group.icon}
+                  count={group.rows.length}
+                  collapsed={collapsed[group.key] ?? false}
                   onToggle={() =>
                     setCollapsed((c) => ({
                       ...c,
-                      "http-proxy": !c["http-proxy"],
+                      [group.key]: !(c[group.key] ?? false),
                     }))
                   }
                 />
-                {!collapsed["http-proxy"] &&
-                  (visibleProxy.length === 0 ? (
-                    <p className="px-2 py-2 text-xs text-[var(--color-textMuted)]">
-                      No active proxy sessions.
-                    </p>
-                  ) : (
-                    <div className="sor-selection-list mt-1">
-                      {visibleProxy.map((row) => (
-                        <ProxyRow key={row.uid} mgr={mgr} row={row} />
-                      ))}
-                    </div>
-                  ))}
+                {!(collapsed[group.key] ?? false) && (
+                  <div className="sor-selection-list mt-1">
+                    {group.rows.map((row) => {
+                      if (row.source === "rdp" && row.rdpSession) {
+                        return (
+                          <RdpRow
+                            key={row.uid}
+                            mgr={mgr}
+                            row={row}
+                            onReattachSession={onReattachSession}
+                            onDetachToWindow={onDetachToWindow}
+                            onViewLogs={onViewRdpLogs}
+                            onViewerDetach={onViewerDetach}
+                          />
+                        );
+                      }
+                      if (row.source === "http-proxy" && row.proxySession) {
+                        return <ProxyRow key={row.uid} mgr={mgr} row={row} />;
+                      }
+                      return (
+                        <FrontendRow
+                          key={row.uid}
+                          row={row}
+                          onCloseSession={onCloseSession}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </>
         )}
       </div>
@@ -552,6 +686,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
   onReattachSession,
   onDetachToWindow,
   onReconnect,
+  onCloseSession,
   thumbnailsEnabled = true,
   thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
@@ -572,6 +707,17 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     setLogSessionFilter(sessionId);
     setView("rdp-logs");
   };
+
+  const handleCloseManagedSession = useCallback(
+    (sessionId: string) => {
+      if (onCloseSession) {
+        onCloseSession(sessionId);
+        return;
+      }
+      dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+    },
+    [dispatch, onCloseSession],
+  );
 
   /** Mark the frontend RDP tab disconnected when its viewer is detached. */
   const handleViewerDetach = useCallback(
@@ -640,6 +786,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           <div className="mt-auto p-3 border-t border-[var(--color-border)] space-y-2">
             <div className="text-[10px] text-[var(--color-textMuted)]">
               {mgr.rdpRows.length} RDP &middot; {mgr.proxyRows.length} proxy
+              &middot; {mgr.frontendRows.length} tabs
             </div>
             <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-textSecondary)] cursor-pointer">
               <Checkbox
@@ -657,7 +804,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               aria-busy={mgr.isLoading}
               className="sor-btn sor-btn-secondary sor-btn-xs w-full disabled:opacity-60"
             >
-              <RefreshCw size={12} /> {mgr.isLoading ? "Refreshing..." : "Refresh"}
+              <RefreshCw size={12} />{" "}
+              {mgr.isLoading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </div>
@@ -673,6 +821,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               onDetachToWindow={onDetachToWindow}
               onViewRdpLogs={handleViewRdpLogs}
               onViewerDetach={handleViewerDetach}
+              onCloseSession={handleCloseManagedSession}
             />
           )}
           {view === "rdp-logs" && (
@@ -784,9 +933,7 @@ const RdpHistoryView: React.FC<{
                       {entry.username}
                     </span>
                   )}
-                  {!canReconnect && (
-                    <span className="italic">unavailable</span>
-                  )}
+                  {!canReconnect && <span className="italic">unavailable</span>}
                 </div>
               </div>
               {canReconnect && (

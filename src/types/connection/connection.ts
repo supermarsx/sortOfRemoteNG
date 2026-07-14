@@ -1,5 +1,13 @@
-import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig, TOTPConfig } from "../settings/settings";
-import type { InheritableTrustPolicy, TrustPolicy } from "../../utils/auth/trustStore";
+import {
+  ProxyConfig,
+  SSHTerminalConfig,
+  SSHConnectionConfig,
+  TOTPConfig,
+} from "../settings/settings";
+import type {
+  InheritableTrustPolicy,
+  TrustPolicy,
+} from "../../utils/auth/trustStore";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -23,10 +31,74 @@ export interface HttpAutoLoginSelectors {
   submitSelector?: string;
 }
 
+export const INTEGRATION_PROTOCOL_PREFIX = "integration:" as const;
+
+export type BuiltInConnectionProtocol =
+  | "rdp"
+  | "ssh"
+  | "vnc"
+  | "anydesk"
+  | "http"
+  | "https"
+  | "telnet"
+  | "rlogin"
+  | "mysql"
+  | "ftp"
+  | "sftp"
+  | "scp"
+  | "winrm"
+  | "rustdesk"
+  | "smb"
+  | "gcp"
+  | "azure"
+  | "ibm-csp"
+  | "digital-ocean"
+  | "heroku"
+  | "scaleway"
+  | "linode"
+  | "ovhcloud"
+  | "ilo"
+  | "lenovo"
+  | "supermicro";
+
+export type IntegrationConnectionProtocol =
+  `${typeof INTEGRATION_PROTOCOL_PREFIX}${string}`;
+
+export type ConnectionProtocol =
+  | BuiltInConnectionProtocol
+  | IntegrationConnectionProtocol;
+
+export const isIntegrationConnectionProtocol = (
+  protocol: string | undefined,
+): protocol is IntegrationConnectionProtocol =>
+  !!protocol && protocol.startsWith(INTEGRATION_PROTOCOL_PREFIX);
+
+export type IntegrationProviderFieldValue = string | number | boolean | null;
+export type IntegrationProviderFields = Record<
+  string,
+  IntegrationProviderFieldValue
+>;
+
+export interface IntegrationConnectionSettings {
+  descriptorKey: string;
+  descriptorLabel?: string;
+  category?: "infra" | "web" | "database" | "app-service" | "mail" | "vault";
+  instanceId?: string;
+  instanceName?: string;
+  credentialRefId?: string;
+  host?: string;
+  baseUrl?: string;
+  username?: string;
+  tlsVerify?: boolean;
+  timeout?: number;
+  /** Integration-specific non-secret metadata, such as Exchange tenant/server fields. */
+  providerFields?: IntegrationProviderFields;
+}
+
 export interface Connection {
   id: string;
   name: string;
-  protocol: 'rdp' | 'ssh' | 'vnc' | 'anydesk' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb' | 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean' | 'heroku' | 'scaleway' | 'linode' | 'ovhcloud' | 'ilo' | 'lenovo' | 'supermicro';
+  protocol: ConnectionProtocol;
   hostname: string;
   port: number;
   username?: string;
@@ -49,7 +121,7 @@ export interface Connection {
   updatedAt: string;
 
   /** Target OS — determines available management tools and feature sets */
-  osType?: 'windows' | 'linux' | 'macos' | 'other';
+  osType?: "windows" | "linux" | "macos" | "other";
 
   // ─── Focus Behavior ──────────────────────────────────────────────
   /** Focus tab on connect: true = focus, false = background, undefined = use global */
@@ -65,13 +137,13 @@ export interface Connection {
   retryDelay?: number;
   warnOnClose?: boolean;
   hostnameOverride?: boolean;
-  
+
   // Authentication
-  authType?: 'password' | 'key' | 'totp' | 'basic' | 'header';
+  authType?: "password" | "key" | "totp" | "basic" | "header";
   privateKey?: string;
   passphrase?: string;
   totpSecret?: string;
-  totpConfigs?: TOTPConfig[];  // Multiple TOTP configs per connection
+  totpConfigs?: TOTPConfig[]; // Multiple TOTP configs per connection
 
   // Security Questions & Recovery Info
   securityQuestions?: SecurityQuestion[];
@@ -116,26 +188,34 @@ export interface Connection {
 
   // Database specific
   database?: string;
-  
+
   // File transfer specific
   localPath?: string;
   remotePath?: string;
-  
+
   // Wake on LAN
   macAddress?: string;
   wolPort?: number;
-  
+
   // RustDesk specific
   rustdeskId?: string;
   rustdeskPassword?: string;
-  
+
   // SMB specific
   shareName?: string;
   workgroup?: string;
-  
+
   // Cloud Provider specific
   cloudProvider?: {
-    provider: 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean' | 'heroku' | 'scaleway' | 'linode' | 'ovhcloud';
+    provider:
+      | "gcp"
+      | "azure"
+      | "ibm-csp"
+      | "digital-ocean"
+      | "heroku"
+      | "scaleway"
+      | "linode"
+      | "ovhcloud";
     projectId?: string; // GCP, Azure resource group
     subscriptionId?: string; // Azure
     region?: string;
@@ -158,15 +238,18 @@ export interface Connection {
     projectName?: string; // Scaleway, OVH
     serviceId?: string; // OVH
   };
-  
+
+  // Integration-backed connection settings. Protocol is `integration:<descriptorKey>`.
+  integration?: IntegrationConnectionSettings;
+
   // Status Checking
   statusCheck?: {
     enabled: boolean;
-    method: 'ping' | 'socket' | 'http';
+    method: "ping" | "socket" | "http";
     interval: number;
     timeout: number;
   };
-  
+
   // Performance Monitoring
   performanceMonitoring?: {
     enabled: boolean;
@@ -178,7 +261,7 @@ export interface Connection {
       packetLoss: number;
     };
   };
-  
+
   // Security Settings
   security?: {
     encryptionAlgorithm?: string;
@@ -203,7 +286,7 @@ export interface Connection {
     // Chained tunnels/proxies - executed in order (first = outermost)
     tunnelChain?: TunnelChainLayer[];
   };
-  
+
   // Custom Scripts
   scripts?: {
     onConnect?: string[];
@@ -213,13 +296,15 @@ export interface Connection {
   // Proxy/VPN chaining
   proxyChainId?: string;
   connectionChainId?: string;
-  tunnelChainId?: string;  // Reference to SavedTunnelChain (resolved at connect time)
+  tunnelChainId?: string; // Reference to SavedTunnelChain (resolved at connect time)
 
   // SSH Terminal Config Override (inherits from global settings)
   sshTerminalConfigOverride?: Partial<SSHTerminalConfig>;
 
   // Recording Config Override (per-connection)
-  recordingConfigOverride?: Partial<import('../settings/settings').RecordingConfig>;
+  recordingConfigOverride?: Partial<
+    import("../settings/settings").RecordingConfig
+  >;
 
   /** Disable SSH terminal recording for this connection */
   disableSshRecording?: boolean;
@@ -272,7 +357,7 @@ export interface WinrmConnectionSettings {
   /** Preferred protocol: try this first */
   preferSsl?: boolean;
   /** Authentication method */
-  authMethod?: 'basic' | 'negotiate' | 'ntlm' | 'kerberos' | 'credssp';
+  authMethod?: "basic" | "negotiate" | "ntlm" | "kerberos" | "credssp";
   /** Skip CA certificate validation (for self-signed certs) */
   skipCaCheck?: boolean;
   /** Skip CN / hostname verification */
@@ -347,9 +432,9 @@ export interface RdpDisplaySettings {
   autoRotate?: 0 | 90 | 180 | 270;
 }
 
-export type RdpAudioPlaybackMode = 'local' | 'remote' | 'disabled';
-export type RdpAudioRecordingMode = 'enabled' | 'disabled';
-export type RdpAudioQuality = 'dynamic' | 'medium' | 'high';
+export type RdpAudioPlaybackMode = "local" | "remote" | "disabled";
+export type RdpAudioRecordingMode = "enabled" | "disabled";
+export type RdpAudioQuality = "dynamic" | "medium" | "high";
 
 export interface RdpAudioSettings {
   /** Where to play remote audio: on the local machine, remote, or disable */
@@ -360,7 +445,7 @@ export interface RdpAudioSettings {
   audioQuality?: RdpAudioQuality;
 }
 
-export type RdpMouseMode = 'relative' | 'absolute';
+export type RdpMouseMode = "relative" | "absolute";
 export type RdpKeyboardLayout = number; // LCID e.g. 0x0409 for US English
 
 export interface RdpInputSettings {
@@ -374,13 +459,13 @@ export interface RdpInputSettings {
   keyboardLayout?: RdpKeyboardLayout;
   /** Keyboard type */
   keyboardType?:
-    | 'ibm-pc-xt'
-    | 'olivetti'
-    | 'ibm-pc-at'
-    | 'ibm-enhanced'
-    | 'nokia1050'
-    | 'nokia9140'
-    | 'japanese';
+    | "ibm-pc-xt"
+    | "olivetti"
+    | "ibm-pc-at"
+    | "ibm-enhanced"
+    | "nokia1050"
+    | "nokia9140"
+    | "japanese";
   /** Number of function keys (typically 12) */
   keyboardFunctionKeys?: number;
   /** IME filename for Asian input methods */
@@ -390,7 +475,7 @@ export interface RdpInputSettings {
   /** Auto-detect keyboard layout from the OS at connection time */
   autoDetectLayout?: boolean;
   /** Input event priority: 'realtime' sends immediately, 'batched' groups events */
-  inputPriority?: 'realtime' | 'batched';
+  inputPriority?: "realtime" | "batched";
   /** Batch interval in ms when inputPriority is 'batched' */
   batchIntervalMs?: number;
 
@@ -420,11 +505,15 @@ export interface RdpInputSettings {
    *             traditional RDP behavior)
    * - 'dot':    Show a small dot as local cursor for minimal distraction
    */
-  localCursor?: 'local' | 'remote' | 'dot';
+  localCursor?: "local" | "remote" | "dot";
 
   // ─── Magnifier ──────────────────────────────────────────────────
   /** Default magnifier PiP corner */
-  magnifierDefaultCorner?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  magnifierDefaultCorner?:
+    | "bottom-right"
+    | "bottom-left"
+    | "top-right"
+    | "top-left";
   /** Auto-reposition behavior when cursor approaches PiP */
   magnifierAutoReposition?: boolean;
   /** Default PiP window size in pixels (150-500) */
@@ -434,17 +523,14 @@ export interface RdpInputSettings {
 }
 
 export const ClipboardDirections = [
-  'bidirectional',
-  'client-to-server',
-  'server-to-client',
-  'disabled',
+  "bidirectional",
+  "client-to-server",
+  "server-to-client",
+  "disabled",
 ] as const;
 export type ClipboardDirection = (typeof ClipboardDirections)[number];
 
-export const RdpPrinterOutputModes = [
-  'spool-file',
-  'native-print',
-] as const;
+export const RdpPrinterOutputModes = ["spool-file", "native-print"] as const;
 export type RdpPrinterOutputMode = (typeof RdpPrinterOutputModes)[number];
 
 export interface RdpDeviceRedirection {
@@ -511,11 +597,17 @@ export interface RdpPerformanceSettings {
   // ─── Bitmap Caching ───────────────────────────────────────────────
   /** Enable persistent bitmap caching (disk cache) */
   persistentBitmapCaching?: boolean;
-  
+
   // ─── Network ──────────────────────────────────────────────────────
   /** Connection speed preset: determines which optimizations to enable */
-  connectionSpeed?: 'modem' | 'broadband-low' | 'broadband-high' | 'wan' | 'lan' | 'auto-detect';
-  
+  connectionSpeed?:
+    | "modem"
+    | "broadband-low"
+    | "broadband-high"
+    | "wan"
+    | "lan"
+    | "auto-detect";
+
   // ─── Frame Delivery ───────────────────────────────────────────────
   /** Target frame rate limit (0 = unlimited) */
   targetFps?: number;
@@ -536,7 +628,7 @@ export interface RdpPerformanceSettings {
    * - `wgpu` — GPU compositor (CPU fallback currently)
    * - `auto` — try wgpu → softbuffer → webview
    */
-  renderBackend?: 'inherit' | 'auto' | 'softbuffer' | 'wgpu' | 'webview';
+  renderBackend?: "inherit" | "auto" | "softbuffer" | "wgpu" | "webview";
 
   // ─── Client-side Renderer (JS frontend) ───────────────────────────
   /**
@@ -550,7 +642,15 @@ export interface RdpPerformanceSettings {
    * - `webcodecs-cpu` — WebCodecs H.264 software decode in a Worker
    * - `inherit` — use the global default from settings
    */
-  frontendRenderer?: 'inherit' | 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker' | 'webcodecs-cpu';
+  frontendRenderer?:
+    | "inherit"
+    | "auto"
+    | "canvas2d"
+    | "webgl"
+    | "webgpu"
+    | "offscreen-worker"
+    | "webcodecs-worker"
+    | "webcodecs-cpu";
 
   // ─── Frame Scheduling ──────────────────────────────────────────────
   /**
@@ -559,7 +659,7 @@ export interface RdpPerformanceSettings {
    * - `low-latency` — MessageChannel.postMessage (~1ms interval, unbound from vsync)
    * - `adaptive` — starts with vsync, switches to low-latency when queue pressure rises
    */
-  frameScheduling?: 'vsync' | 'low-latency' | 'adaptive';
+  frameScheduling?: "vsync" | "low-latency" | "adaptive";
 
   /**
    * Enable triple buffering in the WebGL renderer.
@@ -573,8 +673,8 @@ export interface RdpPerformanceSettings {
 
 /** Available RDP bitmap codec identifiers */
 export const RdpBitmapCodecs = [
-  'remotefx',    // Microsoft RemoteFX (RFX) — DWT + RLGR entropy coding
-  'nscodec',     // NSCodec — simple wavelet compression
+  "remotefx", // Microsoft RemoteFX (RFX) — DWT + RLGR entropy coding
+  "nscodec", // NSCodec — simple wavelet compression
 ] as const;
 export type RdpBitmapCodec = (typeof RdpBitmapCodecs)[number];
 
@@ -584,11 +684,11 @@ export interface RdpCodecSettings {
   /** Enable RemoteFX (RFX) codec — best quality + compression ratio */
   remoteFx?: boolean;
   /** RemoteFX entropy algorithm: RLGR1 (faster) or RLGR3 (better compression) */
-  remoteFxEntropy?: 'rlgr1' | 'rlgr3';
+  remoteFxEntropy?: "rlgr1" | "rlgr3";
   /** Enable RDPGFX Dynamic Virtual Channel for H.264 hardware-accelerated decode */
   enableGfx?: boolean;
   /** H.264 decoder preference: auto tries MF hardware first, then openh264 software */
-  h264Decoder?: 'auto' | 'media-foundation' | 'openh264';
+  h264Decoder?: "auto" | "media-foundation" | "openh264";
   /**
    * When true, send raw H.264 NAL units to the frontend for WebCodecs GPU decode
    * instead of decoding on the backend. Requires enableGfx + webcodecs-worker renderer.
@@ -599,19 +699,19 @@ export interface RdpCodecSettings {
 // ─── CredSSP Oracle Remediation Policy ─────────────────────────────
 /** Maps to Windows Group Policy "Encryption Oracle Remediation" */
 export const CredsspOracleRemediationPolicies = [
-  'force-updated',
-  'mitigated',
-  'vulnerable',
+  "force-updated",
+  "mitigated",
+  "vulnerable",
 ] as const;
 export type CredsspOracleRemediationPolicy =
   (typeof CredsspOracleRemediationPolicies)[number];
 
 /** NLA negotiation enforcement level */
-export const NlaModes = ['required', 'preferred', 'disabled'] as const;
+export const NlaModes = ["required", "preferred", "disabled"] as const;
 export type NlaMode = (typeof NlaModes)[number];
 
 /** Minimum TLS version */
-export const TlsVersions = ['1.0', '1.1', '1.2', '1.3'] as const;
+export const TlsVersions = ["1.0", "1.1", "1.2", "1.3"] as const;
 export type TlsVersion = (typeof TlsVersions)[number];
 
 /** CredSSP TSRequest version to advertise */
@@ -675,21 +775,31 @@ export interface RdpSecuritySettings {
   sspiPackageList?: string;
 
   /** Server certificate validation mode for the RDP TLS handshake */
-  serverCertValidation?: 'validate' | 'warn' | 'ignore';
+  serverCertValidation?: "validate" | "warn" | "ignore";
 }
 
 // ─── RDP Gateway ────────────────────────────────────────────────────
 
 /** Gateway authentication methods */
-export const GatewayAuthMethods = ['ntlm', 'basic', 'digest', 'negotiate', 'smartcard'] as const;
+export const GatewayAuthMethods = [
+  "ntlm",
+  "basic",
+  "digest",
+  "negotiate",
+  "smartcard",
+] as const;
 export type GatewayAuthMethod = (typeof GatewayAuthMethods)[number];
 
 /** Gateway credential sources */
-export const GatewayCredentialSources = ['same-as-connection', 'separate', 'ask'] as const;
+export const GatewayCredentialSources = [
+  "same-as-connection",
+  "separate",
+  "ask",
+] as const;
 export type GatewayCredentialSource = (typeof GatewayCredentialSources)[number];
 
 /** Gateway transport modes */
-export const GatewayTransportModes = ['auto', 'http', 'udp'] as const;
+export const GatewayTransportModes = ["auto", "http", "udp"] as const;
 export type GatewayTransportMode = (typeof GatewayTransportModes)[number];
 
 export interface RdpGatewaySettings {
@@ -734,12 +844,12 @@ export interface RdpHyperVSettings {
 
 /** Negotiation strategies for auto-detect */
 export const NegotiationStrategies = [
-  'auto',            // Try all combos automatically
-  'nla-first',       // NLA/CredSSP → TLS → plain
-  'tls-first',       // TLS → NLA/CredSSP → plain
-  'nla-only',        // Only NLA/CredSSP, fail if unavailable
-  'tls-only',        // Only TLS, no CredSSP
-  'plain-only',      // No TLS, no CredSSP (extremely insecure)
+  "auto", // Try all combos automatically
+  "nla-first", // NLA/CredSSP → TLS → plain
+  "tls-first", // TLS → NLA/CredSSP → plain
+  "nla-only", // Only NLA/CredSSP, fail if unavailable
+  "tls-only", // Only TLS, no CredSSP
+  "plain-only", // No TLS, no CredSSP (extremely insecure)
 ] as const;
 export type NegotiationStrategy = (typeof NegotiationStrategies)[number];
 
@@ -760,7 +870,7 @@ export interface RdpNegotiationSettings {
 
 export interface RdpAdvancedSettings {
   /** What happens when the tab is closed: disconnect, detach (background), ask, or inherit global */
-  sessionClosePolicy?: 'disconnect' | 'detach' | 'ask' | 'global';
+  sessionClosePolicy?: "disconnect" | "detach" | "ask" | "global";
   /** Client name reported to server (max 15 chars) */
   clientName?: string;
   /** Client build number */
@@ -804,30 +914,30 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     smartSizing: true,
   },
   audio: {
-    playbackMode: 'local',
-    recordingMode: 'disabled',
-    audioQuality: 'dynamic',
+    playbackMode: "local",
+    recordingMode: "disabled",
+    audioQuality: "dynamic",
   },
   input: {
     mouseEnabled: true,
     keyboardEnabled: true,
-    mouseMode: 'absolute',
+    mouseMode: "absolute",
     keyboardLayout: 0x0409,
-    keyboardType: 'ibm-enhanced',
+    keyboardType: "ibm-enhanced",
     keyboardFunctionKeys: 12,
-    imeFileName: '',
+    imeFileName: "",
     enableUnicodeInput: true,
     autoDetectLayout: true,
-    inputPriority: 'realtime',
+    inputPriority: "realtime",
     batchIntervalMs: 16,
     scrollSpeed: 1.0,
     smoothScroll: true,
-    localCursor: 'local',
+    localCursor: "local",
   },
   deviceRedirection: {
     clipboard: true,
-    clipboardDirection: 'bidirectional',
-    printerOutputMode: 'spool-file',
+    clipboardDirection: "bidirectional",
+    printerOutputMode: "spool-file",
     driveRedirection: false,
     drives: [],
     printers: false,
@@ -848,20 +958,20 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     enableFontSmoothing: true,
     enableDesktopComposition: false,
     persistentBitmapCaching: false,
-    connectionSpeed: 'broadband-high',
+    connectionSpeed: "broadband-high",
     targetFps: 30,
     frameBatching: false,
     frameBatchIntervalMs: 33,
     codecs: {
       enableCodecs: true,
       remoteFx: true,
-      remoteFxEntropy: 'rlgr3',
+      remoteFxEntropy: "rlgr3",
       enableGfx: false,
-      h264Decoder: 'auto',
+      h264Decoder: "auto",
     },
-    renderBackend: 'webview',
-    frontendRenderer: 'auto',
-    frameScheduling: 'adaptive',
+    renderBackend: "webview",
+    frontendRenderer: "auto",
+    frameScheduling: "adaptive",
     tripleBuffering: true,
   },
   security: {
@@ -874,29 +984,29 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
   },
   gateway: {
     enabled: false,
-    hostname: '',
+    hostname: "",
     port: 443,
-    authMethod: 'ntlm',
-    credentialSource: 'same-as-connection',
+    authMethod: "ntlm",
+    credentialSource: "same-as-connection",
     bypassForLocal: true,
-    transportMode: 'auto',
+    transportMode: "auto",
   },
   hyperv: {
     useVmId: false,
-    vmId: '',
+    vmId: "",
     enhancedSessionMode: false,
-    hostServer: '',
+    hostServer: "",
   },
   negotiation: {
     autoDetect: false,
-    strategy: 'nla-first',
+    strategy: "nla-first",
     maxRetries: 3,
     retryDelayMs: 1000,
-    loadBalancingInfo: '',
+    loadBalancingInfo: "",
     useRoutingToken: false,
   },
   advanced: {
-    clientName: 'SortOfRemoteNG',
+    clientName: "SortOfRemoteNG",
     clientBuild: 0,
     readTimeoutMs: 16,
     fullFrameSyncInterval: 300,
@@ -916,46 +1026,46 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
 /**
  * Types of tunnel/proxy layers that can be chained
  */
-export type TunnelType = 
-  | 'proxy'           // HTTP/HTTPS/SOCKS proxy
-  | 'ssh-tunnel'      // SSH port forwarding
-  | 'ssh-jump'        // SSH jump host (ProxyJump - modern method)
-  | 'ssh-proxycmd'    // SSH ProxyCommand (nc/ncat/socat style)
-  | 'ssh-stdio'       // SSH ProxyUseFdpass/stdio forwarding
-  | 'openvpn'         // OpenVPN tunnel
-  | 'wireguard'       // WireGuard tunnel
-  | 'shadowsocks'     // Shadowsocks proxy
-  | 'tor'             // Tor network
-  | 'i2p'             // I2P network
-  | 'stunnel'         // SSL/TLS tunnel
-  | 'chisel'          // Chisel HTTP tunnel
-  | 'ngrok'           // ngrok tunnel
-  | 'cloudflared'     // Cloudflare tunnel
-  | 'tailscale'       // Tailscale mesh
-  | 'zerotier';       // ZeroTier network
+export type TunnelType =
+  | "proxy" // HTTP/HTTPS/SOCKS proxy
+  | "ssh-tunnel" // SSH port forwarding
+  | "ssh-jump" // SSH jump host (ProxyJump - modern method)
+  | "ssh-proxycmd" // SSH ProxyCommand (nc/ncat/socat style)
+  | "ssh-stdio" // SSH ProxyUseFdpass/stdio forwarding
+  | "openvpn" // OpenVPN tunnel
+  | "wireguard" // WireGuard tunnel
+  | "shadowsocks" // Shadowsocks proxy
+  | "tor" // Tor network
+  | "i2p" // I2P network
+  | "stunnel" // SSL/TLS tunnel
+  | "chisel" // Chisel HTTP tunnel
+  | "ngrok" // ngrok tunnel
+  | "cloudflared" // Cloudflare tunnel
+  | "tailscale" // Tailscale mesh
+  | "zerotier"; // ZeroTier network
 
 /**
  * SSH chaining method - how this node connects through the chain
  */
-export type SSHChainingMethod = 
-  | 'proxyjump'       // Modern -J / ProxyJump (recommended)
-  | 'proxycommand'    // Classic ProxyCommand with nc/ncat/socat
-  | 'nested-ssh'      // Nested SSH commands (ssh -t host1 ssh host2)
-  | 'local-forward'   // Local port forwarding (-L)
-  | 'dynamic-socks'   // Dynamic SOCKS proxy (-D)
-  | 'stdio'           // stdio forwarding via ProxyUseFdpass
-  | 'agent-forward';  // SSH agent forwarding (-A)
+export type SSHChainingMethod =
+  | "proxyjump" // Modern -J / ProxyJump (recommended)
+  | "proxycommand" // Classic ProxyCommand with nc/ncat/socat
+  | "nested-ssh" // Nested SSH commands (ssh -t host1 ssh host2)
+  | "local-forward" // Local port forwarding (-L)
+  | "dynamic-socks" // Dynamic SOCKS proxy (-D)
+  | "stdio" // stdio forwarding via ProxyUseFdpass
+  | "agent-forward"; // SSH agent forwarding (-A)
 
 /**
  * Dynamic chaining strategy for the entire chain
  */
 export type DynamicChainingStrategy =
-  | 'strict'          // All hops must succeed in order
-  | 'dynamic'         // Try hops dynamically, skip failed ones
-  | 'random'          // Randomize hop order (for anonymity)
-  | 'round-robin'     // Rotate through available paths
-  | 'failover'        // Use backup path on failure
-  | 'load-balance';   // Distribute across multiple paths
+  | "strict" // All hops must succeed in order
+  | "dynamic" // Try hops dynamically, skip failed ones
+  | "random" // Randomize hop order (for anonymity)
+  | "round-robin" // Rotate through available paths
+  | "failover" // Use backup path on failure
+  | "load-balance"; // Distribute across multiple paths
 
 /**
  * Configuration for dynamic/mixed chaining at the chain level
@@ -986,16 +1096,16 @@ export interface TunnelChainLayer {
   id: string;
   type: TunnelType;
   enabled: boolean;
-  name?: string;          // Descriptive name for this layer
+  name?: string; // Descriptive name for this layer
   tunnelProfileId?: string; // Reference to a SavedTunnelProfile
-  
+
   // Common settings
   localBindHost?: string; // Local address to bind (default: 127.0.0.1)
   localBindPort?: number; // Local port to bind (0 = auto-assign)
-  
+
   // Per-node chaining method selection (for SSH-based layers)
   sshChainingMethod?: SSHChainingMethod;
-  
+
   // Per-node chain dynamics override
   nodeChainConfig?: {
     // Skip this node if it fails (for dynamic chaining)
@@ -1011,20 +1121,20 @@ export interface TunnelChainLayer {
     // Priority (lower = higher priority)
     priority?: number;
   };
-  
+
   // Proxy settings (type: 'proxy' | 'shadowsocks')
   proxy?: {
-    proxyType: 'http' | 'https' | 'socks4' | 'socks5' | 'http-connect';
+    proxyType: "http" | "https" | "socks4" | "socks5" | "http-connect";
     host: string;
     port: number;
     username?: string;
     password?: string;
     // Shadowsocks-specific
-    method?: string;      // Encryption method
-    plugin?: string;      // Plugin name
-    pluginOpts?: string;  // Plugin options
+    method?: string; // Encryption method
+    plugin?: string; // Plugin name
+    pluginOpts?: string; // Plugin options
   };
-  
+
   // SSH tunnel settings (type: 'ssh-tunnel' | 'ssh-jump' | 'ssh-proxycmd' | 'ssh-stdio')
   sshTunnel?: {
     // Reference to an existing SSH connection, or inline config
@@ -1037,9 +1147,9 @@ export interface TunnelChainLayer {
     privateKey?: string;
     passphrase?: string;
     // Forwarding config
-    forwardType: 'local' | 'remote' | 'dynamic';
-    remoteHost?: string;  // Target host (from SSH server's perspective)
-    remotePort?: number;  // Target port
+    forwardType: "local" | "remote" | "dynamic";
+    remoteHost?: string; // Target host (from SSH server's perspective)
+    remotePort?: number; // Target port
     // Jump host specific (ProxyJump -J)
     jumpTargetHost?: string;
     jumpTargetPort?: number;
@@ -1055,13 +1165,13 @@ export interface TunnelChainLayer {
       // Full command template (%h = host, %p = port, %r = user)
       command?: string;
       // Or use built-in templates
-      template?: 'nc' | 'ncat' | 'socat' | 'connect' | 'corkscrew' | 'custom';
+      template?: "nc" | "ncat" | "socat" | "connect" | "corkscrew" | "custom";
       // Proxy host for templates
       proxyHost?: string;
       proxyPort?: number;
       proxyUsername?: string;
       proxyPassword?: string;
-      proxyType?: 'http' | 'socks4' | 'socks5';
+      proxyType?: "http" | "socks4" | "socks5";
     };
     // Nested SSH command (ssh -t host1 ssh host2)
     nestedSsh?: {
@@ -1082,17 +1192,17 @@ export interface TunnelChainLayer {
     serverAliveInterval?: number;
     serverAliveCountMax?: number;
     // Strict host key checking
-    strictHostKeyChecking?: 'yes' | 'no' | 'ask' | 'accept-new';
+    strictHostKeyChecking?: "yes" | "no" | "ask" | "accept-new";
   };
-  
+
   // VPN settings (type: 'openvpn' | 'wireguard')
   vpn?: {
-    configId?: string;    // Reference to saved VPN config
-    configFile?: string;  // Path to config file
+    configId?: string; // Reference to saved VPN config
+    configFile?: string; // Path to config file
     // Inline config options
     serverHost?: string;
     serverPort?: number;
-    protocol?: 'udp' | 'tcp';
+    protocol?: "udp" | "tcp";
     // WireGuard-specific
     privateKey?: string;
     publicKey?: string;
@@ -1101,7 +1211,7 @@ export interface TunnelChainLayer {
     endpoint?: string;
     persistentKeepalive?: number;
   };
-  
+
   // Generic tunnel settings (tor, i2p, stunnel, chisel, ngrok, cloudflared)
   tunnel?: {
     configPath?: string;
@@ -1111,7 +1221,7 @@ export interface TunnelChainLayer {
     region?: string;
     extraArgs?: string[];
   };
-  
+
   // Mesh network settings (type: 'tailscale' | 'zerotier')
   mesh?: {
     networkId?: string;
@@ -1120,9 +1230,9 @@ export interface TunnelChainLayer {
     targetIP?: string;
     targetPort?: number;
   };
-  
+
   // Runtime state (not persisted)
-  status?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  status?: "disconnected" | "connecting" | "connected" | "error";
   actualLocalPort?: number; // Actual bound port if auto-assigned
   error?: string;
 }
@@ -1134,16 +1244,16 @@ export function createSSHTunnelLayer(
   connectionId: string,
   remoteHost: string,
   remotePort: number,
-  localPort?: number
+  localPort?: number,
 ): TunnelChainLayer {
   return {
     id: crypto.randomUUID(),
-    type: 'ssh-tunnel',
+    type: "ssh-tunnel",
     enabled: true,
     localBindPort: localPort,
     sshTunnel: {
       connectionId,
-      forwardType: 'local',
+      forwardType: "local",
       remoteHost,
       remotePort,
     },
@@ -1154,15 +1264,15 @@ export function createSSHTunnelLayer(
  * Helper to create a proxy chain layer
  */
 export function createProxyLayer(
-  proxyType: 'http' | 'https' | 'socks4' | 'socks5',
+  proxyType: "http" | "https" | "socks4" | "socks5",
   host: string,
   port: number,
   username?: string,
-  password?: string
+  password?: string,
 ): TunnelChainLayer {
   return {
     id: crypto.randomUUID(),
-    type: 'proxy',
+    type: "proxy",
     enabled: true,
     proxy: {
       proxyType,
@@ -1180,15 +1290,15 @@ export function createProxyLayer(
 export function createSSHJumpLayer(
   connectionId: string,
   targetHost: string,
-  targetPort: number
+  targetPort: number,
 ): TunnelChainLayer {
   return {
     id: crypto.randomUUID(),
-    type: 'ssh-jump',
+    type: "ssh-jump",
     enabled: true,
     sshTunnel: {
       connectionId,
-      forwardType: 'local',
+      forwardType: "local",
       jumpTargetHost: targetHost,
       jumpTargetPort: targetPort,
     },
@@ -1199,12 +1309,17 @@ export interface ConnectionSession {
   id: string;
   connectionId: string;
   name: string;
-  status: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
+  status:
+    | "connecting"
+    | "connected"
+    | "disconnected"
+    | "error"
+    | "reconnecting";
   startTime: Date;
   lastActivity?: Date;
   protocol: string;
   hostname: string;
-  
+
   // Tab Layout
   layout?: {
     x: number;
@@ -1219,13 +1334,13 @@ export interface ConnectionSession {
   // Backend session handles
   backendSessionId?: string;
   shellId?: string;
-  
+
   // Zoom level
   zoomLevel?: number;
-  
+
   // Terminal buffer for detach/reattach preservation
   terminalBuffer?: string;
-  
+
   // Performance Metrics
   metrics?: {
     connectionTime: number;
@@ -1235,7 +1350,7 @@ export interface ConnectionSession {
     packetLoss?: number;
     jitter?: number;
   };
-  
+
   // Tab Grouping
   group?: string;
   /** Tab group ID (sessions with same tabGroupId are visually grouped) */
@@ -1247,6 +1362,9 @@ export interface ConnectionSession {
 
   // Error detail (shown on error screens when available)
   errorMessage?: string;
+
+  // Integration-backed tabs can carry their source connection settings into the panel.
+  integration?: IntegrationConnectionSettings;
 }
 
 export interface TabGroup {
@@ -1257,16 +1375,16 @@ export interface TabGroup {
 }
 
 export type TabLayoutMode =
-  | 'tabs'
-  | 'sideBySide'
-  | 'mosaic'
-  | 'miniMosaic'
-  | 'splitVertical'
-  | 'splitHorizontal'
-  | 'grid2'
-  | 'grid4'
-  | 'grid6'
-  | 'customGrid';
+  | "tabs"
+  | "sideBySide"
+  | "mosaic"
+  | "miniMosaic"
+  | "splitVertical"
+  | "splitHorizontal"
+  | "grid2"
+  | "grid4"
+  | "grid6"
+  | "customGrid";
 
 export interface TabLayout {
   mode: TabLayoutMode;
@@ -1284,7 +1402,6 @@ export interface TabLayout {
   }[];
 }
 
-
 export interface ConnectionFilter {
   searchTerm: string;
   protocols: string[];
@@ -1292,10 +1409,17 @@ export interface ConnectionFilter {
   colorTags: string[];
   showRecent: boolean;
   showFavorites: boolean;
-  status?: 'online' | 'offline' | 'unknown';
-  groupBy?: 'none' | 'protocol' | 'status' | 'hostname' | 'colorTag';
-  sortBy?: 'name' | 'protocol' | 'hostname' | 'createdAt' | 'updatedAt' | 'recentlyUsed' | 'custom';
-  sortDirection?: 'asc' | 'desc';
+  status?: "online" | "offline" | "unknown";
+  groupBy?: "none" | "protocol" | "status" | "hostname" | "colorTag";
+  sortBy?:
+    | "name"
+    | "protocol"
+    | "hostname"
+    | "createdAt"
+    | "updatedAt"
+    | "recentlyUsed"
+    | "custom";
+  sortDirection?: "asc" | "desc";
 }
 
 export interface StorageSettings {
@@ -1305,12 +1429,11 @@ export interface StorageSettings {
 
 export interface ConnectionStatus {
   connectionId: string;
-  status: 'online' | 'offline' | 'checking' | 'unknown' | 'timeout' | 'error';
+  status: "online" | "offline" | "checking" | "unknown" | "timeout" | "error";
   lastChecked: Date;
   responseTime?: number;
   error?: string;
 }
-
 
 export interface DiscoveredHost {
   ip: string;
@@ -1332,11 +1455,11 @@ export interface DiscoveredService {
 export interface FileTransferSession {
   id: string;
   connectionId: string;
-  type: 'upload' | 'download';
+  type: "upload" | "download";
   localPath: string;
   remotePath: string;
   progress: number;
-  status: 'pending' | 'active' | 'completed' | 'error' | 'cancelled';
+  status: "pending" | "active" | "completed" | "error" | "cancelled";
   error?: string;
   startTime: Date;
   endTime?: Date;
@@ -1366,4 +1489,3 @@ export interface ConnectionDatabase {
   updatedAt: string;
   lastAccessed: string;
 }
-
