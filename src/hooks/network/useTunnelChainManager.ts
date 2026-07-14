@@ -3,18 +3,26 @@ import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { createToolSession } from "../../components/app/toolSession";
-import type { SavedTunnelChain, SavedTunnelProfile } from "../../types/settings/vpnSettings";
+import type {
+  SavedTunnelChain,
+  SavedTunnelProfile,
+} from "../../types/settings/vpnSettings";
 
 // ── Types ─────────────────────────────────────────────────────────
 
 export interface ActiveChainStatus {
   backendChainId: string;
-  status: "disconnected" | "connecting" | "connected" | "disconnecting" | "error";
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   error?: string;
 }
 
-// Map frontend TunnelType to backend ConnectionType for ad-hoc connect
-function mapTunnelTypeToConnectionType(type: string): string | null {
+// Map frontend TunnelType to backend ConnectionType for ad-hoc connect.
+export function mapTunnelTypeToConnectionType(type: string): string | null {
   switch (type) {
     case "proxy":
     case "shadowsocks":
@@ -33,6 +41,44 @@ function mapTunnelTypeToConnectionType(type: string): string | null {
   }
 }
 
+export function getUnsupportedAdHocLayerTypes(
+  chain: SavedTunnelChain,
+): string[] {
+  return Array.from(
+    new Set(
+      chain.layers
+        .filter(
+          (layer) =>
+            layer.enabled && !mapTunnelTypeToConnectionType(layer.type),
+        )
+        .map((layer) => layer.type),
+    ),
+  );
+}
+
+export function getTunnelChainConnectBlockReason(
+  chain: SavedTunnelChain,
+): string | null {
+  const enabledLayers = chain.layers.filter((layer) => layer.enabled);
+  if (enabledLayers.length === 0) {
+    return "No enabled layers in this chain.";
+  }
+
+  const unsupportedTypes = getUnsupportedAdHocLayerTypes(chain);
+  if (unsupportedTypes.length > 0) {
+    return `Ad-hoc Connect is not available for ${unsupportedTypes.join(", ")} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.`;
+  }
+
+  const hasConnectableLayer = enabledLayers.some((layer) =>
+    Boolean(mapTunnelTypeToConnectionType(layer.type)),
+  );
+  if (!hasConnectableLayer) {
+    return "No independently connectable layers in this chain.";
+  }
+
+  return null;
+}
+
 // ── Hook ──────────────────────────────────────────────────────────
 
 export function useTunnelChainManager(isOpen: boolean) {
@@ -40,10 +86,14 @@ export function useTunnelChainManager(isOpen: boolean) {
 
   // ── State ──────────────────────────────────────────────────────
   const [tunnelChains, setTunnelChains] = useState<SavedTunnelChain[]>([]);
-  const [tunnelProfiles, setTunnelProfiles] = useState<SavedTunnelProfile[]>([]);
+  const [tunnelProfiles, setTunnelProfiles] = useState<SavedTunnelProfile[]>(
+    [],
+  );
   const [chainSearch, setChainSearch] = useState("");
   const [profileSearch, setProfileSearch] = useState("");
-  const [activeStatuses, setActiveStatuses] = useState<Map<string, ActiveChainStatus>>(new Map());
+  const [activeStatuses, setActiveStatuses] = useState<
+    Map<string, ActiveChainStatus>
+  >(new Map());
   const [isLoading, setIsLoading] = useState(false);
 
   // ── Load data ──────────────────────────────────────────────────
@@ -58,33 +108,39 @@ export function useTunnelChainManager(isOpen: boolean) {
     reload();
 
     const unsubscribe = proxyCollectionManager.subscribe(reload);
-    return () => { unsubscribe(); };
+    return () => {
+      unsubscribe();
+    };
   }, [isOpen, reload]);
 
   // ── Poll backend chain statuses ────────────────────────────────
 
   const refreshActiveStatuses = useCallback(async () => {
     try {
-      const chains = await invoke<Array<{
-        id: string;
-        name: string;
-        status: string | { Error: string };
-        error?: string;
-      }>>("list_connection_chains");
+      const chains = await invoke<
+        Array<{
+          id: string;
+          name: string;
+          status: string | { Error: string };
+          error?: string;
+        }>
+      >("list_connection_chains");
 
       const newStatuses = new Map<string, ActiveChainStatus>();
       for (const chain of chains) {
         // Match backend chain to frontend chain by name prefix
-        const frontendChain = tunnelChains.find(tc =>
-          chain.name === `adhoc:${tc.id}` || chain.name === tc.name
+        const frontendChain = tunnelChains.find(
+          (tc) => chain.name === `adhoc:${tc.id}` || chain.name === tc.name,
         );
         if (frontendChain) {
-          const statusStr = typeof chain.status === "string"
-            ? chain.status.toLowerCase()
-            : "error";
-          const errorStr = typeof chain.status === "object" && "Error" in chain.status
-            ? chain.status.Error
-            : chain.error;
+          const statusStr =
+            typeof chain.status === "string"
+              ? chain.status.toLowerCase()
+              : "error";
+          const errorStr =
+            typeof chain.status === "object" && "Error" in chain.status
+              ? chain.status.Error
+              : chain.error;
           newStatuses.set(frontendChain.id, {
             backendChainId: chain.id,
             status: statusStr as ActiveChainStatus["status"],
@@ -120,85 +176,132 @@ export function useTunnelChainManager(isOpen: boolean) {
   // ── Chain CRUD ─────────────────────────────────────────────────
 
   const handleNewChain = useCallback(() => {
-    const session = createToolSession("tunnelChainEditor", { name: "New Tunnel Chain" });
-    dispatch({ type: "ADD_SESSION", payload: session });
-  }, [dispatch]);
-
-  const handleEditChain = useCallback((chain: SavedTunnelChain) => {
     const session = createToolSession("tunnelChainEditor", {
-      connectionId: chain.id,
-      name: `Edit: ${chain.name}`,
+      name: "New Tunnel Chain",
     });
     dispatch({ type: "ADD_SESSION", payload: session });
   }, [dispatch]);
 
-  const handleDuplicateChain = useCallback(async (id: string) => {
-    await proxyCollectionManager.duplicateTunnelChain(id);
-    reload();
-  }, [reload]);
+  const handleEditChain = useCallback(
+    (chain: SavedTunnelChain) => {
+      const session = createToolSession("tunnelChainEditor", {
+        connectionId: chain.id,
+        name: `Edit: ${chain.name}`,
+      });
+      dispatch({ type: "ADD_SESSION", payload: session });
+    },
+    [dispatch],
+  );
 
-  const handleDeleteChain = useCallback(async (id: string) => {
-    // Disconnect if active
-    const status = activeStatuses.get(id);
-    if (status && status.status === "connected") {
-      try {
-        await invoke("disconnect_connection_chain", { chainId: status.backendChainId });
-        await invoke("delete_connection_chain", { chainId: status.backendChainId });
-      } catch { /* ignore */ }
-    }
-    await proxyCollectionManager.deleteTunnelChain(id);
-    reload();
-  }, [activeStatuses, reload]);
+  const handleDuplicateChain = useCallback(
+    async (id: string) => {
+      await proxyCollectionManager.duplicateTunnelChain(id);
+      reload();
+    },
+    [reload],
+  );
+
+  const handleDeleteChain = useCallback(
+    async (id: string) => {
+      // Disconnect if active
+      const status = activeStatuses.get(id);
+      if (status && status.status === "connected") {
+        try {
+          await invoke("disconnect_connection_chain", {
+            chainId: status.backendChainId,
+          });
+          await invoke("delete_connection_chain", {
+            chainId: status.backendChainId,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      await proxyCollectionManager.deleteTunnelChain(id);
+      reload();
+    },
+    [activeStatuses, reload],
+  );
 
   // ── Profile CRUD ───────────────────────────────────────────────
 
   const handleNewProfile = useCallback(() => {
-    const session = createToolSession("tunnelProfileEditor", { name: "New Tunnel Profile" });
-    dispatch({ type: "ADD_SESSION", payload: session });
-  }, [dispatch]);
-
-  const handleEditProfile = useCallback((profile: SavedTunnelProfile) => {
     const session = createToolSession("tunnelProfileEditor", {
-      connectionId: profile.id,
-      name: `Edit: ${profile.name}`,
+      name: "New Tunnel Profile",
     });
     dispatch({ type: "ADD_SESSION", payload: session });
   }, [dispatch]);
 
-  const handleDuplicateProfile = useCallback(async (id: string) => {
-    await proxyCollectionManager.duplicateTunnelProfile(id);
-    reload();
-  }, [reload]);
+  const handleEditProfile = useCallback(
+    (profile: SavedTunnelProfile) => {
+      const session = createToolSession("tunnelProfileEditor", {
+        connectionId: profile.id,
+        name: `Edit: ${profile.name}`,
+      });
+      dispatch({ type: "ADD_SESSION", payload: session });
+    },
+    [dispatch],
+  );
 
-  const handleDeleteProfile = useCallback(async (id: string) => {
-    try {
-      await proxyCollectionManager.deleteTunnelProfile(id);
+  const handleDuplicateProfile = useCallback(
+    async (id: string) => {
+      await proxyCollectionManager.duplicateTunnelProfile(id);
       reload();
-    } catch (err) {
-      console.error("Cannot delete tunnel profile:", err);
-    }
-  }, [reload]);
+    },
+    [reload],
+  );
+
+  const handleDeleteProfile = useCallback(
+    async (id: string) => {
+      try {
+        await proxyCollectionManager.deleteTunnelProfile(id);
+        reload();
+      } catch (err) {
+        console.error("Cannot delete tunnel profile:", err);
+      }
+    },
+    [reload],
+  );
 
   // ── Ad-hoc connect/disconnect ──────────────────────────────────
 
   const handleConnectChain = useCallback(async (chainId: string) => {
     const chain = proxyCollectionManager.getTunnelChain(chainId);
     if (!chain) return;
+    const blockReason = getTunnelChainConnectBlockReason(chain);
+    if (blockReason) {
+      setActiveStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(chainId, {
+          backendChainId: "",
+          status: "error",
+          error: blockReason,
+        });
+        return next;
+      });
+      return;
+    }
 
     setIsLoading(true);
     try {
       // Build backend ChainLayer[] from frontend TunnelChainLayer[]
       const backendLayers = chain.layers
-        .filter(l => l.enabled)
+        .filter((l) => l.enabled)
         .map((layer, idx) => {
           const connectionType = mapTunnelTypeToConnectionType(layer.type);
           if (!connectionType) {
-            throw new Error(`Tunnel type "${layer.type}" does not support ad-hoc connect`);
+            throw new Error(
+              `Tunnel type "${layer.type}" does not support ad-hoc connect`,
+            );
           }
           return {
             id: layer.id,
             connection_type: connectionType,
-            connection_id: layer.vpn?.configId || layer.mesh?.networkId || layer.proxy?.host || layer.id,
+            connection_id:
+              layer.vpn?.configId ||
+              layer.mesh?.networkId ||
+              layer.proxy?.host ||
+              layer.id,
             position: idx,
             status: "Disconnected",
             local_port: null,
@@ -220,16 +323,20 @@ export function useTunnelChainManager(isOpen: boolean) {
       // Connect
       await invoke("connect_connection_chain", { chainId: backendChainId });
 
-      setActiveStatuses(prev => {
+      setActiveStatuses((prev) => {
         const next = new Map(prev);
         next.set(chainId, { backendChainId, status: "connected" });
         return next;
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      setActiveStatuses(prev => {
+      setActiveStatuses((prev) => {
         const next = new Map(prev);
-        next.set(chainId, { backendChainId: "", status: "error", error: errorMsg });
+        next.set(chainId, {
+          backendChainId: "",
+          status: "error",
+          error: errorMsg,
+        });
         return next;
       });
     } finally {
@@ -237,26 +344,33 @@ export function useTunnelChainManager(isOpen: boolean) {
     }
   }, []);
 
-  const handleDisconnectChain = useCallback(async (chainId: string) => {
-    const status = activeStatuses.get(chainId);
-    if (!status?.backendChainId) return;
+  const handleDisconnectChain = useCallback(
+    async (chainId: string) => {
+      const status = activeStatuses.get(chainId);
+      if (!status?.backendChainId) return;
 
-    setIsLoading(true);
-    try {
-      await invoke("disconnect_connection_chain", { chainId: status.backendChainId });
-      await invoke("delete_connection_chain", { chainId: status.backendChainId });
+      setIsLoading(true);
+      try {
+        await invoke("disconnect_connection_chain", {
+          chainId: status.backendChainId,
+        });
+        await invoke("delete_connection_chain", {
+          chainId: status.backendChainId,
+        });
 
-      setActiveStatuses(prev => {
-        const next = new Map(prev);
-        next.delete(chainId);
-        return next;
-      });
-    } catch (err) {
-      console.error("Failed to disconnect chain:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeStatuses]);
+        setActiveStatuses((prev) => {
+          const next = new Map(prev);
+          next.delete(chainId);
+          return next;
+        });
+      } catch (err) {
+        console.error("Failed to disconnect chain:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [activeStatuses],
+  );
 
   // ── Return ─────────────────────────────────────────────────────
 
@@ -290,6 +404,7 @@ export function useTunnelChainManager(isOpen: boolean) {
     // Ad-hoc connect/disconnect
     handleConnectChain,
     handleDisconnectChain,
+    getConnectBlockReason: getTunnelChainConnectBlockReason,
 
     // Reload
     reload,

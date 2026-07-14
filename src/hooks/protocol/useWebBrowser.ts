@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { debugLog } from "../../utils/core/debugLogger";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   ConnectionSession,
   HttpBookmarkItem,
@@ -87,6 +86,32 @@ export function useWebBrowser(session: ConnectionSession) {
     // belt is for existing data + .mremoteng/.royal imports.
     return `${protocol}://${normalizedHostname}${portSuffix}/`;
   }, [connection, session.protocol, normalizedHostname]);
+
+  const markSessionConnected = useCallback(() => {
+    if (session.status === "connected") return;
+    dispatch({
+      type: "UPDATE_SESSION",
+      payload: {
+        ...session,
+        status: "connected",
+        errorMessage: undefined,
+      },
+    });
+  }, [dispatch, session]);
+
+  const markSessionError = useCallback(
+    (errorMessage: string) => {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          status: "error",
+          errorMessage,
+        },
+      });
+    },
+    [dispatch, session],
+  );
 
   // ── State ───────────────────────────────────────────────────
   const [currentUrl, setCurrentUrl] = useState(buildTargetUrl);
@@ -360,12 +385,14 @@ export function useWebBrowser(session: ConnectionSession) {
   }, [trustPrompt, certIdentity, normalizedHostname, connection]);
 
   const handleTrustReject = useCallback(() => {
+    const errorMessage = "Connection aborted: certificate not trusted by user.";
     setTrustPrompt(null);
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
-    setLoadError("Connection aborted: certificate not trusted by user.");
+    setLoadError(errorMessage);
     setIsLoading(false);
-  }, []);
+    markSessionError(errorMessage);
+  }, [markSessionError]);
 
   /**
    * P7: snapshot the live `:root --color-*` CSS variables so the
@@ -436,10 +463,10 @@ export function useWebBrowser(session: ConnectionSession) {
         if (gen !== navGenRef.current) return;
       }
       loadTimeoutRef.current = setTimeout(() => {
+        const errorMessage = `Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`;
         setIsLoading(false);
-        setLoadError(
-          `Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`,
-        );
+        setLoadError(errorMessage);
+        markSessionError(errorMessage);
       }, LOAD_TIMEOUT_MS);
       try {
         // ── Universal proxy mediation (P1) ──
@@ -561,20 +588,24 @@ export function useWebBrowser(session: ConnectionSession) {
           setHistory((prev) => [...prev.slice(0, historyIndex + 1), url]);
           setHistoryIndex((prev) => prev + 1);
         }
+        markSessionConnected();
         debugLog("WebBrowser", "Navigation initiated", { url, hasAuth });
       } catch (error) {
         if (gen !== navGenRef.current) return;
         console.error("Navigation failed:", error);
         const msg = error instanceof Error ? error.message : String(error);
-        if (msg.includes("401") || msg.includes("Unauthorized")) {
-          setLoadError(
-            !resolvedCreds
+        const errorMessage =
+          msg.includes("401") || msg.includes("Unauthorized")
+            ? !resolvedCreds
               ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
-              : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings.",
-          );
+              : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings."
+            : `Failed to load page: ${msg}`;
+        if (msg.includes("401") || msg.includes("Unauthorized")) {
+          setLoadError(errorMessage);
         } else {
-          setLoadError(`Failed to load page: ${msg}`);
+          setLoadError(errorMessage);
         }
+        markSessionError(errorMessage);
         setIsLoading(false);
       }
     },
@@ -588,6 +619,8 @@ export function useWebBrowser(session: ConnectionSession) {
       fetchAndVerifyCert,
       settings.webRecording,
       webRecorder,
+      markSessionConnected,
+      markSessionError,
     ],
   );
 
@@ -1047,29 +1080,22 @@ export function useWebBrowser(session: ConnectionSession) {
 
   // ── Page actions ───────────────────────────────────────────
   const handleSavePage = useCallback(async () => {
-    if (!connection) return;
-    const now = new Date();
-    const ts = [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, "0"),
-      String(now.getDate()).padStart(2, "0"),
-      String(now.getHours()).padStart(2, "0"),
-      String(now.getMinutes()).padStart(2, "0"),
-      String(now.getSeconds()).padStart(2, "0"),
-    ].join("-");
-    const defaultName = `${connection.name}-${ts}.pdf`;
     try {
-      const filePath = await saveDialog({
-        title: "Save page as PDF",
-        defaultPath: defaultName,
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-      });
-      if (!filePath) return;
-      iframeRef.current?.contentWindow?.print();
+      const contentWindow = iframeRef.current?.contentWindow;
+      if (!contentWindow) {
+        toast.error("Page is not ready to print");
+        return;
+      }
+      contentWindow.focus?.();
+      contentWindow.print();
+      toast.info(
+        "Use the system print dialog to choose Save as PDF or another printer.",
+      );
     } catch (e) {
-      console.error("Save page failed:", e);
+      console.error("Print page failed:", e);
+      toast.error("Print failed. Check the console for details.");
     }
-  }, [connection]);
+  }, [toast]);
 
   const handleCopyAll = useCallback(async () => {
     try {

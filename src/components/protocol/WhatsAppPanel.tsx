@@ -38,7 +38,9 @@ export const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ className }) => {
   };
 
   return (
-    <div className={`flex flex-col h-full bg-[var(--color-surface)] ${className ?? ""}`}>
+    <div
+      className={`flex flex-col h-full bg-[var(--color-surface)] ${className ?? ""}`}
+    >
       {/* Header */}
       <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -46,13 +48,14 @@ export const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ className }) => {
           <span className="text-[var(--color-text)] font-medium">WhatsApp</span>
           {waHook.configured && (
             <span className="text-xs px-2 py-0.5 bg-success text-success rounded">
-              Connected
+              Configured
             </span>
           )}
         </div>
         <div className="flex items-center space-x-2">
           <span className="text-xs text-[var(--color-textSecondary)]">
-            {waHook.sessions.length} session{waHook.sessions.length !== 1 ? "s" : ""}
+            {waHook.sessions.length} session
+            {waHook.sessions.length !== 1 ? "s" : ""}
           </span>
           <button
             onClick={waHook.refreshSessions}
@@ -92,4 +95,3 @@ export const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ className }) => {
 };
 
 export default WhatsAppPanel;
-

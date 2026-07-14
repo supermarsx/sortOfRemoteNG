@@ -2,7 +2,19 @@ import type { SectionProps } from "./types";
 import RecordingControls from "./RecordingControls";
 import SecurityIcon, { AuthIcon } from "./SecurityIcon";
 import React from "react";
-import { ArrowLeft, ArrowRight, RotateCcw, ExternalLink, Shield, ShieldOff, Globe, Star, Copy, Download, ClipboardCopy } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  RotateCcw,
+  ExternalLink,
+  Shield,
+  ShieldOff,
+  Globe,
+  Star,
+  Copy,
+  Download,
+  ClipboardCopy,
+} from "lucide-react";
 import RDPTotpPanel from "../../rdp/RDPTotpPanel";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { getStoredIdentity } from "../../../utils/auth/trustStore";
@@ -116,7 +128,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
     <button
       onClick={mgr.handleSavePage}
       className="sor-icon-btn-sm"
-      title="Save page as PDF"
+      title="Print / Save as PDF"
     >
       <Download size={16} />
     </button>
@@ -144,9 +156,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
       >
         <Shield size={16} />
         {mgr.totpConfigs.length > 0 && (
-          <span className="sor-notification-dot">
-            {mgr.totpConfigs.length}
-          </span>
+          <span className="sor-notification-dot">{mgr.totpConfigs.length}</span>
         )}
       </button>
       {mgr.showTotpPanel && (

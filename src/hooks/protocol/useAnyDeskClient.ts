@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { useConnections } from '../../contexts/useConnections';
-import type { Connection, ConnectionSession } from '../../types/connection/connection';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useConnections } from "../../contexts/useConnections";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 
 interface AnyDeskBackendSession {
   id: string;
@@ -12,7 +15,10 @@ interface AnyDeskBackendSession {
 }
 
 const getLaunchTarget = (connection: Connection | undefined) =>
-  connection?.hostname?.trim() || connection?.name?.trim() || '';
+  connection?.hostname?.trim() || connection?.name?.trim() || "";
+
+const UNCONFIRMED_MANAGED_SESSION_MESSAGE =
+  "AnyDesk launched, but the backend cannot verify a connected remote session yet.";
 
 export function useAnyDeskClient(session: ConnectionSession) {
   const { state, dispatch } = useConnections();
@@ -24,35 +30,50 @@ export function useAnyDeskClient(session: ConnectionSession) {
   const [isLaunching, setIsLaunching] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [backendSession, setBackendSession] = useState<AnyDeskBackendSession | null>(null);
-  const [launchMode, setLaunchMode] = useState<'managed' | 'external' | null>(null);
+  const [backendSession, setBackendSession] =
+    useState<AnyDeskBackendSession | null>(null);
+  const [launchMode, setLaunchMode] = useState<"managed" | "external" | null>(
+    null,
+  );
 
   const anydeskId = getLaunchTarget(connection);
+  const activeBackendSessionId = session.backendSessionId ?? backendSession?.id;
 
-  const updateSession = useCallback((payload: Partial<ConnectionSession>) => {
-    dispatch({
-      type: 'UPDATE_SESSION',
-      payload: {
-        ...session,
-        ...payload,
-      },
-    });
-  }, [dispatch, session]);
+  const updateSession = useCallback(
+    (payload: Partial<ConnectionSession>) => {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          ...payload,
+        },
+      });
+    },
+    [dispatch, session],
+  );
 
   const refreshSession = useCallback(async () => {
-    if (!session.backendSessionId) {
+    if (!activeBackendSessionId) {
       setBackendSession(null);
       return null;
     }
 
     try {
-      const data = await invoke<AnyDeskBackendSession | null>('get_anydesk_session', {
-        sessionId: session.backendSessionId,
-      });
+      const data = await invoke<AnyDeskBackendSession | null>(
+        "get_anydesk_session",
+        {
+          sessionId: activeBackendSessionId,
+        },
+      );
 
       setBackendSession(data);
       if (!data) {
         updateSession({ backendSessionId: undefined });
+      } else if (!data.connected && session.status === "connected") {
+        updateSession({
+          status: "connecting",
+          errorMessage: UNCONFIRMED_MANAGED_SESSION_MESSAGE,
+        });
       }
 
       return data;
@@ -61,25 +82,25 @@ export function useAnyDeskClient(session: ConnectionSession) {
       setError(message);
       return null;
     }
-  }, [session.backendSessionId, updateSession]);
+  }, [activeBackendSessionId, session.status, updateSession]);
 
   const launchExternalScheme = useCallback(() => {
     if (!anydeskId) {
-      throw new Error('Missing AnyDesk ID or hostname.');
+      throw new Error("Missing AnyDesk ID or hostname.");
     }
 
-    window.open(`anydesk://${anydeskId}`, '_blank', 'noopener,noreferrer');
-    setLaunchMode('external');
+    window.open(`anydesk://${anydeskId}`, "_blank", "noopener,noreferrer");
+    setLaunchMode("external");
   }, [anydeskId]);
 
   const launch = useCallback(async () => {
     if (!connection) {
-      setError('The connection for this session could not be found.');
+      setError("The connection for this session could not be found.");
       return;
     }
 
     if (!anydeskId) {
-      setError('Add an AnyDesk ID or hostname before launching this session.');
+      setError("Add an AnyDesk ID or hostname before launching this session.");
       return;
     }
 
@@ -87,26 +108,48 @@ export function useAnyDeskClient(session: ConnectionSession) {
     setError(null);
 
     try {
-      const sessionId = await invoke<string>('launch_anydesk', {
+      const sessionId = await invoke<string>("launch_anydesk", {
         anydeskId,
         password: connection.password || null,
       });
 
-      updateSession({ backendSessionId: sessionId, status: 'connected', errorMessage: undefined });
-      setLaunchMode('managed');
+      setLaunchMode("managed");
 
-      const managedSession = await invoke<AnyDeskBackendSession | null>('get_anydesk_session', {
-        sessionId,
-      });
+      const managedSession = await invoke<AnyDeskBackendSession | null>(
+        "get_anydesk_session",
+        {
+          sessionId,
+        },
+      );
       setBackendSession(managedSession);
+
+      if (managedSession?.connected) {
+        updateSession({
+          backendSessionId: sessionId,
+          status: "connected",
+          errorMessage: undefined,
+        });
+      } else {
+        updateSession({
+          backendSessionId: sessionId,
+          status: "connecting",
+          errorMessage: UNCONFIRMED_MANAGED_SESSION_MESSAGE,
+        });
+        setError(UNCONFIRMED_MANAGED_SESSION_MESSAGE);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
 
       try {
         launchExternalScheme();
-        setError(`Native AnyDesk launch failed. Falling back to the URL scheme. ${message}`);
+        setError(
+          `Native AnyDesk launch failed. Falling back to the URL scheme. ${message}`,
+        );
       } catch (schemeError) {
-        const schemeMessage = schemeError instanceof Error ? schemeError.message : String(schemeError);
+        const schemeMessage =
+          schemeError instanceof Error
+            ? schemeError.message
+            : String(schemeError);
         setError(`Failed to launch AnyDesk. ${message}. ${schemeMessage}`);
       }
     } finally {
@@ -115,9 +158,9 @@ export function useAnyDeskClient(session: ConnectionSession) {
   }, [anydeskId, connection, launchExternalScheme, updateSession]);
 
   const disconnect = useCallback(async () => {
-    if (!session.backendSessionId) {
+    if (!activeBackendSessionId) {
       setLaunchMode(null);
-      updateSession({ status: 'disconnected', backendSessionId: undefined });
+      updateSession({ status: "disconnected", backendSessionId: undefined });
       return;
     }
 
@@ -125,31 +168,33 @@ export function useAnyDeskClient(session: ConnectionSession) {
     setError(null);
 
     try {
-      await invoke<void>('disconnect_anydesk', { sessionId: session.backendSessionId });
+      await invoke<void>("disconnect_anydesk", {
+        sessionId: activeBackendSessionId,
+      });
       setBackendSession(null);
       setLaunchMode(null);
-      updateSession({ status: 'disconnected', backendSessionId: undefined });
+      updateSession({ status: "disconnected", backendSessionId: undefined });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
     } finally {
       setIsDisconnecting(false);
     }
-  }, [session.backendSessionId, updateSession]);
+  }, [activeBackendSessionId, updateSession]);
 
   useEffect(() => {
     refreshSession();
   }, [refreshSession]);
 
   useEffect(() => {
-    if (!session.backendSessionId) return undefined;
+    if (!activeBackendSessionId) return undefined;
 
     const interval = window.setInterval(() => {
       refreshSession();
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [refreshSession, session.backendSessionId]);
+  }, [refreshSession, activeBackendSessionId]);
 
   return {
     connection,

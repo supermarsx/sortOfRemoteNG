@@ -84,6 +84,7 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
       setConfigured(ok);
       return ok;
     } catch {
+      setConfigured(false);
       return false;
     }
   }, []);
@@ -94,7 +95,7 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
       const list = await wa.waListSessions();
       setSessions(list);
     } catch {
-      /* ignore polling errors */
+      setSessions([]);
     }
   }, []);
 
@@ -138,8 +139,13 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
   );
 
   const sendLocation = useAsyncAction(
-    async (to: string, lat: number, lng: number, name?: string, address?: string) =>
-      wa.waSendLocation(to, lat, lng, name, address),
+    async (
+      to: string,
+      lat: number,
+      lng: number,
+      name?: string,
+      address?: string,
+    ) => wa.waSendLocation(to, lat, lng, name, address),
   );
 
   const sendReaction = useAsyncAction(
@@ -188,8 +194,8 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
     async (request: WaCreateTemplateRequest) => wa.waCreateTemplate(request),
   );
 
-  const listTemplates = useAsyncAction(
-    async (limit?: number, after?: string) => wa.waListTemplates(limit, after),
+  const listTemplates = useAsyncAction(async (limit?: number, after?: string) =>
+    wa.waListTemplates(limit, after),
   );
 
   const deleteTemplate = useAsyncAction(async (name: string) =>
@@ -201,9 +207,8 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
     wa.waCheckContact(phoneNumber),
   );
 
-  const meLink = useAsyncAction(
-    async (phoneNumber: string, message?: string) =>
-      wa.waMeLink(phoneNumber, message),
+  const meLink = useAsyncAction(async (phoneNumber: string, message?: string) =>
+    wa.waMeLink(phoneNumber, message),
   );
 
   // ── Groups ───────────────────────────────────────────────────────
@@ -221,9 +226,7 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
     wa.waGetBusinessProfile(),
   );
 
-  const listPhoneNumbers = useAsyncAction(async () =>
-    wa.waListPhoneNumbers(),
-  );
+  const listPhoneNumbers = useAsyncAction(async () => wa.waListPhoneNumbers());
 
   // ── Chat History ─────────────────────────────────────────────────
   const getMessages = useAsyncAction(async (threadId: string) =>
@@ -239,9 +242,7 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
     wa.waUnofficialDisconnect(),
   );
 
-  const unofficialState = useAsyncAction(async () =>
-    wa.waUnofficialState(),
-  );
+  const unofficialState = useAsyncAction(async () => wa.waUnofficialState());
 
   const unofficialSendText = useAsyncAction(
     async (to: string, text: string, replyTo?: string) =>
@@ -249,25 +250,17 @@ export function useWhatsApp(opts?: UseWhatsAppOptions) {
   );
 
   // ── Pairing ──────────────────────────────────────────────────────
-  const pairingStartQr = useAsyncAction(async () =>
-    wa.waPairingStartQr(),
-  );
+  const pairingStartQr = useAsyncAction(async () => wa.waPairingStartQr());
 
-  const pairingRefreshQr = useAsyncAction(async () =>
-    wa.waPairingRefreshQr(),
-  );
+  const pairingRefreshQr = useAsyncAction(async () => wa.waPairingRefreshQr());
 
   const pairingStartPhone = useAsyncAction(async (phoneNumber: string) =>
     wa.waPairingStartPhone(phoneNumber),
   );
 
-  const pairingState = useAsyncAction(async () =>
-    wa.waPairingState(),
-  );
+  const pairingState = useAsyncAction(async () => wa.waPairingState());
 
-  const pairingCancel = useAsyncAction(async () =>
-    wa.waPairingCancel(),
-  );
+  const pairingCancel = useAsyncAction(async () => wa.waPairingCancel());
 
   return {
     // state

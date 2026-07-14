@@ -731,7 +731,12 @@ export function useWebTerminal(
             if (existingShellId) {
               dispatch({
                 type: "UPDATE_SESSION",
-                payload: { ...currentSession, shellId: existingShellId },
+                payload: {
+                  ...currentSession,
+                  shellId: existingShellId,
+                  status: "connected",
+                  errorMessage: undefined,
+                },
               });
               writeLine("\x1b[32mReattached to existing SSH session\x1b[0m");
               setStatusState("connected");
@@ -742,7 +747,12 @@ export function useWebTerminal(
             });
             dispatch({
               type: "UPDATE_SESSION",
-              payload: { ...currentSession, shellId },
+              payload: {
+                ...currentSession,
+                shellId,
+                status: "connected",
+                errorMessage: undefined,
+              },
             });
             writeLine(
               "\x1b[32mRestarted shell on existing SSH connection\x1b[0m",
@@ -1024,7 +1034,13 @@ export function useWebTerminal(
         const shellId = await invoke<string>("start_shell", { sessionId });
         dispatch({
           type: "UPDATE_SESSION",
-          payload: { ...currentSession, backendSessionId: sessionId, shellId },
+          payload: {
+            ...currentSession,
+            backendSessionId: sessionId,
+            shellId,
+            status: "connected",
+            errorMessage: undefined,
+          },
         });
         writeLine("\x1b[32mShell started successfully\x1b[0m");
         setStatusState("connected");
@@ -1107,6 +1123,14 @@ export function useWebTerminal(
             );
             setStatusState("error");
             setError("ProxyCommand not confirmed — connection aborted");
+            dispatch({
+              type: "UPDATE_SESSION",
+              payload: {
+                ...currentSession,
+                status: "error",
+                errorMessage: "ProxyCommand not confirmed — connection aborted",
+              },
+            });
             return;
           } catch (gateErr) {
             console.error("ProxyCommand confirmation flow failed:", gateErr);
@@ -1126,6 +1150,14 @@ export function useWebTerminal(
         });
         setStatusState("error");
         setError(classification.friendly);
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...currentSession,
+            status: "error",
+            errorMessage: classification.friendly,
+          },
+        });
         writeLine(`\x1b[31m${classification.friendly}\x1b[0m`);
         writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
         writeLine(`\x1b[90mRaw error: ${details.message}\x1b[0m`);

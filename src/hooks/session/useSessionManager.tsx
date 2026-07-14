@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
-import { Connection, ConnectionSession } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/toolSession";
 import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
 import { isRealConnectionSession } from "../../utils/session/sessionClassification";
@@ -14,6 +17,28 @@ import { raceWithTimeout } from "../../utils/core/raceWithTimeout";
 import { generateId } from "../../utils/core/id";
 import { ConfirmDialog } from "../../components/ui/dialogs/ConfirmDialog";
 import { recordRdpSessionHistory } from "../../utils/rdp/rdpSessionHistory";
+
+const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
+  "ssh",
+  "rdp",
+  "http",
+  "https",
+  "anydesk",
+]);
+
+const UNSUPPORTED_DIRECT_SESSION_PROTOCOLS = new Set<string>(["ftp", "scp"]);
+
+export function usesGenericSessionTimer(protocol: string): boolean {
+  return !CLIENT_OWNED_CONNECT_PROTOCOLS.has(protocol);
+}
+
+export function getUnsupportedDirectSessionMessage(
+  protocol: string,
+): string | null {
+  const normalized = protocol.toLowerCase();
+  if (!UNSUPPORTED_DIRECT_SESSION_PROTOCOLS.has(normalized)) return null;
+  return `${normalized.toUpperCase()} sessions are not wired to a frontend runtime yet. Use SFTP for file-transfer sessions until the ${normalized.toUpperCase()} client is implemented.`;
+}
 
 /**
  * Manages connection sessions and exposes helpers for session workflows.
@@ -34,6 +59,24 @@ export const useSessionManager = () => {
   stateRef.current = state;
   // Store active timeout IDs so they can be cleared on unmount
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const notificationStatusRef = useRef<
+    Map<
+      string,
+      {
+        id: string;
+        name: string;
+        protocol: string;
+        hostname: string;
+        status: ConnectionSession["status"];
+        errorMessage?: string;
+        reconnectAttempts?: number;
+      }
+    >
+  >(new Map());
+  const notificationsPrimedRef = useRef(false);
+  const permissionRequestRef = useRef<Promise<NotificationPermission> | null>(
+    null,
+  );
   const [dialogState, setDialogState] = useState<{
     message: string;
     showCancel: boolean;
@@ -65,6 +108,134 @@ export const useSessionManager = () => {
     };
   }, []);
 
+  const sendSessionNotification = useCallback(
+    (
+      kind: "connect" | "reconnect" | "disconnect" | "error",
+      session: {
+        id: string;
+        name: string;
+        protocol: string;
+        hostname: string;
+        errorMessage?: string;
+      },
+    ) => {
+      const settings = settingsManager.getSettings();
+      const enabled =
+        (kind === "connect" && settings.notifyOnConnect) ||
+        (kind === "reconnect" && settings.notifyOnReconnect) ||
+        (kind === "disconnect" && settings.notifyOnDisconnect) ||
+        (kind === "error" && settings.notifyOnError);
+
+      if (!enabled || typeof window === "undefined") return;
+
+      const NotificationCtor = window.Notification;
+      if (!NotificationCtor) return;
+
+      const title =
+        kind === "connect"
+          ? "Session connected"
+          : kind === "reconnect"
+            ? "Session reconnected"
+            : kind === "disconnect"
+              ? "Session disconnected"
+              : "Session error";
+      const body =
+        kind === "error"
+          ? `${session.name}: ${session.errorMessage || "Connection failed"}`
+          : `${session.name} (${session.protocol.toUpperCase()} ${session.hostname})`;
+
+      const notify = () => {
+        try {
+          new NotificationCtor(title, {
+            body,
+            silent: !settings.notificationSound,
+            tag: `sortofremoteng:${kind}:${session.id}`,
+          });
+        } catch {
+          // Notification support varies by shell/webview. This setting must not
+          // interfere with the connection lifecycle when the platform rejects it.
+        }
+      };
+
+      if (NotificationCtor.permission === "granted") {
+        notify();
+        return;
+      }
+
+      if (NotificationCtor.permission !== "default") return;
+
+      permissionRequestRef.current ??= NotificationCtor.requestPermission();
+      permissionRequestRef.current
+        .then((permission) => {
+          if (permission === "granted") notify();
+        })
+        .finally(() => {
+          permissionRequestRef.current = null;
+        });
+    },
+    [settingsManager],
+  );
+
+  useEffect(() => {
+    const current = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        protocol: string;
+        hostname: string;
+        status: ConnectionSession["status"];
+        errorMessage?: string;
+        reconnectAttempts?: number;
+      }
+    >();
+
+    for (const session of state.sessions) {
+      if (!isRealConnectionSession(session)) continue;
+      current.set(session.id, {
+        id: session.id,
+        name: session.name,
+        protocol: session.protocol,
+        hostname: session.hostname,
+        status: session.status,
+        errorMessage: session.errorMessage,
+        reconnectAttempts: session.reconnectAttempts,
+      });
+    }
+
+    if (!notificationsPrimedRef.current) {
+      notificationStatusRef.current = current;
+      notificationsPrimedRef.current = true;
+      return;
+    }
+
+    const previous = notificationStatusRef.current;
+
+    for (const [id, session] of current) {
+      const prev = previous.get(id);
+      if (!prev || prev.status === session.status) continue;
+
+      if (session.status === "connected") {
+        const reconnected =
+          prev.status === "reconnecting" ||
+          (session.reconnectAttempts ?? 0) > 0;
+        sendSessionNotification(reconnected ? "reconnect" : "connect", session);
+      } else if (session.status === "disconnected") {
+        sendSessionNotification("disconnect", session);
+      } else if (session.status === "error") {
+        sendSessionNotification("error", session);
+      }
+    }
+
+    for (const [id, prev] of previous) {
+      if (!current.has(id) && prev.status === "connected") {
+        sendSessionNotification("disconnect", prev);
+      }
+    }
+
+    notificationStatusRef.current = current;
+  }, [sendSessionNotification, state.sessions]);
+
   const connectSession = async (
     session: ConnectionSession,
     connection: Connection,
@@ -90,6 +261,10 @@ export const useSessionManager = () => {
 
     if (connection.statusCheck?.enabled) {
       statusChecker.startChecking(connection);
+    }
+
+    if (!usesGenericSessionTimer(connection.protocol)) {
+      return;
     }
 
     const timeout = (connection.timeout ?? settings.connectionTimeout) * 1000;
@@ -196,6 +371,9 @@ export const useSessionManager = () => {
    */
   const handleConnect = async (connection: Connection) => {
     const settings = settingsManager.getSettings();
+    const unsupportedMessage = getUnsupportedDirectSessionMessage(
+      connection.protocol,
+    );
 
     // Check for existing session for protocols that should reuse connections
     const reuseSessionProtocols = ["ssh", "http", "https"];
@@ -255,14 +433,28 @@ export const useSessionManager = () => {
       hostname: connection.hostname,
       reconnectAttempts: 0,
       maxReconnectAttempts: connection.retryAttempts || settings.retryAttempts,
+      ...(unsupportedMessage
+        ? { status: "error" as const, errorMessage: unsupportedMessage }
+        : {}),
     };
 
     dispatch({ type: "ADD_SESSION", payload: session });
 
     // Per-connection focusOnConnect overrides the global setting
-    const shouldFocus = connection.focusOnConnect ?? !settings.openConnectionInBackground;
+    const shouldFocus =
+      connection.focusOnConnect ?? !settings.openConnectionInBackground;
     if (shouldFocus) {
       setActiveSessionId(session.id);
+    }
+
+    if (unsupportedMessage) {
+      settingsManager.logAction(
+        "error",
+        "Connection unavailable",
+        connection.id,
+        unsupportedMessage,
+      );
+      return;
     }
 
     await connectSession(session, connection);
@@ -373,7 +565,10 @@ export const useSessionManager = () => {
     if (!session) return;
 
     // Tool/winmgmt tabs just get removed — no connection lifecycle
-    if (isToolProtocol(session.protocol) || isWinmgmtProtocol(session.protocol)) {
+    if (
+      isToolProtocol(session.protocol) ||
+      isWinmgmtProtocol(session.protocol)
+    ) {
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return;
     }
@@ -400,7 +595,10 @@ export const useSessionManager = () => {
     // Per-connection override takes precedence over the global setting.
     if (session.protocol === "rdp") {
       const perConn = connection?.rdpSettings?.advanced?.sessionClosePolicy;
-      const closePolicy = (perConn && perConn !== 'global') ? perConn : (settings.rdpSessionClosePolicy || "detach");
+      const closePolicy =
+        perConn && perConn !== "global"
+          ? perConn
+          : settings.rdpSessionClosePolicy || "detach";
 
       if (closePolicy === "ask") {
         // Single confirmation — OK closes tab (session stays running), Cancel aborts.
@@ -419,7 +617,9 @@ export const useSessionManager = () => {
           if (!confirmed) return;
         }
         try {
-          await invoke("disconnect_rdp", { connectionId: session.connectionId });
+          await invoke("disconnect_rdp", {
+            connectionId: session.connectionId,
+          });
         } catch (error) {
           console.error("Failed to disconnect RDP session:", error);
         }
@@ -454,7 +654,8 @@ export const useSessionManager = () => {
     }
 
     // Notify detached windows that this session has been closed from main window
-    const isTauri = typeof window !== "undefined" && 
+    const isTauri =
+      typeof window !== "undefined" &&
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (isTauri && session.layout?.isDetached) {
       try {
@@ -466,17 +667,19 @@ export const useSessionManager = () => {
     }
 
     // Record RDP session to history before removing
-    if (session.protocol === 'rdp') {
+    if (session.protocol === "rdp") {
       const now = new Date();
       const durationSecs = session.startTime
-        ? Math.round((now.getTime() - new Date(session.startTime).getTime()) / 1000)
+        ? Math.round(
+            (now.getTime() - new Date(session.startTime).getTime()) / 1000,
+          )
         : 0;
       recordRdpSessionHistory({
-        connectionId: session.connectionId || '',
+        connectionId: session.connectionId || "",
         connectionName: session.name || connection?.name || session.hostname,
         hostname: session.hostname,
         port: connection?.port || 3389,
-        username: connection?.username || '',
+        username: connection?.username || "",
         lastConnected: session.startTime
           ? new Date(session.startTime).toISOString()
           : now.toISOString(),

@@ -75,7 +75,11 @@ vi.mock("../../src/components/rdp/RDPErrorScreen", () => ({
   __esModule: true,
   default: (props: any) => {
     mockState.rdpErrorScreenProps(props);
-    return <div data-testid="mock-rdp-error-screen">RDP Error: {props.errorMessage}</div>;
+    return (
+      <div data-testid="mock-rdp-error-screen">
+        RDP Error: {props.errorMessage}
+      </div>
+    );
   },
 }));
 
@@ -124,12 +128,18 @@ describe("SessionViewer", () => {
       />,
     );
 
-    expect(await screen.findByTestId("mock-windows-tool-panel")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("mock-windows-tool-panel"),
+    ).toBeInTheDocument();
     expect(mockState.windowsToolPanelProps).toHaveBeenCalled();
   });
 
   it("routes SSH connected sessions to the web terminal", async () => {
-    render(<SessionViewer session={createSession({ protocol: "ssh", status: "connected" })} />);
+    render(
+      <SessionViewer
+        session={createSession({ protocol: "ssh", status: "connected" })}
+      />,
+    );
 
     expect(await screen.findByTestId("mock-web-terminal")).toBeInTheDocument();
     expect(mockState.webTerminalProps).toHaveBeenCalled();
@@ -137,7 +147,9 @@ describe("SessionViewer", () => {
 
   it("routes RDP connected and RDP error sessions to their dedicated views", async () => {
     const { rerender } = render(
-      <SessionViewer session={createSession({ protocol: "rdp", status: "connected" })} />,
+      <SessionViewer
+        session={createSession({ protocol: "rdp", status: "connected" })}
+      />,
     );
 
     expect(await screen.findByTestId("mock-rdp-client")).toBeInTheDocument();
@@ -152,17 +164,21 @@ describe("SessionViewer", () => {
       />,
     );
 
-    expect(await screen.findByTestId("mock-rdp-error-screen")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("mock-rdp-error-screen"),
+    ).toBeInTheDocument();
     expect(screen.getByText(/rdp handshake failed/i)).toBeInTheDocument();
   });
 
-  it("renders loading state for non-RDP connecting sessions", () => {
-    render(<SessionViewer session={createSession({ protocol: "ssh", status: "connecting" })} />);
+  it("mounts runtime-owned non-RDP connecting sessions so clients report real status", () => {
+    render(
+      <SessionViewer
+        session={createSession({ protocol: "ssh", status: "connecting" })}
+      />,
+    );
 
-    expect(screen.getByText("Connecting...")).toBeInTheDocument();
-    expect(
-      screen.getByText(/establishing ssh connection to example-host/i),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("mock-web-terminal")).toBeInTheDocument();
+    expect(mockState.webTerminalProps).toHaveBeenCalled();
   });
 
   it("renders generic error view for non-RDP error sessions", () => {
@@ -183,13 +199,23 @@ describe("SessionViewer", () => {
 
   it("shows feature boundary fallback when a child view crashes", async () => {
     mockState.throwWebTerminal = true;
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
-    render(<SessionViewer session={createSession({ protocol: "ssh", status: "connected" })} />);
+    render(
+      <SessionViewer
+        session={createSession({ protocol: "ssh", status: "connected" })}
+      />,
+    );
 
     expect(await screen.findByText("SSH panel failed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /retry panel/i })).toBeInTheDocument();
-    expect(screen.getByText(/mock terminal renderer crashed/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /retry panel/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/mock terminal renderer crashed/i),
+    ).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });

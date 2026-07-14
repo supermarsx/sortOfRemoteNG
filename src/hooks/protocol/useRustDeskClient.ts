@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { ConnectionSession } from '../../types/connection/connection';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ConnectionSession } from "../../types/connection/connection";
 
 // ─── Types mirroring the Rust backend (see sorng-rustdesk/src/rustdesk/types.rs) ──
 
-export type RustDeskQuality = 'best' | 'balanced' | 'low' | 'custom';
-export type RustDeskCodec = 'auto' | 'vp8' | 'vp9' | 'av1' | 'h264' | 'h265';
+export type RustDeskQuality = "best" | "balanced" | "low" | "custom";
+export type RustDeskCodec = "auto" | "vp8" | "vp9" | "av1" | "h264" | "h265";
 export type RustDeskConnectionType =
-  | 'remote_desktop'
-  | 'file_transfer'
-  | 'port_forward'
-  | 'view_camera'
-  | 'terminal';
+  | "remote_desktop"
+  | "file_transfer"
+  | "port_forward"
+  | "view_camera"
+  | "terminal";
 
 export interface RustDeskConnectRequest {
   remote_id: string;
@@ -63,7 +63,7 @@ interface ClientSettings {
 }
 
 const DEFAULT_SETTINGS: ClientSettings = {
-  quality: 'balanced',
+  quality: "balanced",
   viewOnly: false,
   showCursor: true,
   enableAudio: true,
@@ -71,31 +71,38 @@ const DEFAULT_SETTINGS: ClientSettings = {
   enableFileTransfer: true,
 };
 
+const UNCONFIRMED_RUSTDESK_SESSION_MESSAGE =
+  "RustDesk launched, but the backend cannot verify a connected remote session.";
+
 /**
  * Pull the RustDesk remote ID from the session's connection record.
  * Falls back to hostname if no explicit ID was configured.
  */
 function resolveRemoteId(session: ConnectionSession): string {
-  const conn = (session as unknown as { connection?: { rustdeskId?: string } }).connection;
+  const conn = (session as unknown as { connection?: { rustdeskId?: string } })
+    .connection;
   return conn?.rustdeskId || session.hostname;
 }
 
 function resolveRemotePassword(session: ConnectionSession): string | undefined {
-  const conn = (session as unknown as {
-    connection?: { rustdeskPassword?: string; password?: string };
-  }).connection;
+  const conn = (
+    session as unknown as {
+      connection?: { rustdeskPassword?: string; password?: string };
+    }
+  ).connection;
   return conn?.rustdeskPassword || conn?.password || undefined;
 }
 
 export function useRustDeskClient(session: ConnectionSession) {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<
-    'connecting' | 'connected' | 'disconnected' | 'error'
-  >('connecting');
+    "connecting" | "connected" | "disconnected" | "error"
+  >("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettingsState] = useState<ClientSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettingsState] =
+    useState<ClientSettings>(DEFAULT_SETTINGS);
   const [binaryInfo, setBinaryInfo] = useState<RustDeskBinaryInfo | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   // Lifecycle guard — prevents state updates after unmount and gates parallel
@@ -108,11 +115,11 @@ export function useRustDeskClient(session: ConnectionSession) {
     React.Dispatch<React.SetStateAction<ClientSettings>>
   >((next) => {
     setSettingsState((prev) => {
-      const resolved = typeof next === 'function' ? next(prev) : next;
+      const resolved = typeof next === "function" ? next(prev) : next;
       const liveSessionId = sessionIdRef.current;
       if (liveSessionId) {
         // Fire-and-forget; errors are logged but do not toggle connection status.
-        invoke('rustdesk_update_session_settings', {
+        invoke("rustdesk_update_session_settings", {
           sessionId: liveSessionId,
           update: {
             quality: resolved.quality,
@@ -122,7 +129,7 @@ export function useRustDeskClient(session: ConnectionSession) {
             enable_file_transfer: resolved.enableFileTransfer,
           },
         }).catch((err) => {
-          console.warn('[RustDesk] failed to push session settings:', err);
+          console.warn("[RustDesk] failed to push session settings:", err);
         });
       }
       return resolved;
@@ -130,18 +137,18 @@ export function useRustDeskClient(session: ConnectionSession) {
   }, []);
 
   const initializeRustDeskConnection = useCallback(async () => {
-    setConnectionStatus('connecting');
+    setConnectionStatus("connecting");
     setErrorMessage(null);
 
     try {
       // 1) Make sure the local RustDesk binary is installed before we try to
       //    dial out. This is a cheap guard that gives the user a clear error.
-      const info = await invoke<RustDeskBinaryInfo>('rustdesk_get_binary_info');
+      const info = await invoke<RustDeskBinaryInfo>("rustdesk_get_binary_info");
       if (!activeRef.current) return;
       setBinaryInfo(info);
       if (!info.installed) {
         throw new Error(
-          'RustDesk client is not installed on this system. Please install RustDesk first.',
+          "RustDesk client is not installed on this system. Please install RustDesk first.",
         );
       }
 
@@ -149,35 +156,52 @@ export function useRustDeskClient(session: ConnectionSession) {
       const request: RustDeskConnectRequest = {
         remote_id: resolveRemoteId(session),
         password: resolveRemotePassword(session) ?? null,
-        connection_type: 'remote_desktop',
+        connection_type: "remote_desktop",
         quality: settings.quality,
         view_only: settings.viewOnly,
         enable_audio: settings.enableAudio,
         enable_clipboard: settings.enableClipboard,
         enable_file_transfer: settings.enableFileTransfer,
-        codec: 'auto',
+        codec: "auto",
         force_relay: false,
         tunnel_local_port: null,
         tunnel_remote_port: null,
       };
 
       // 3) Ask the backend to spawn the RustDesk process for us.
-      const sessionId = await invoke<string>('rustdesk_connect', { request });
+      const sessionId = await invoke<string>("rustdesk_connect", { request });
       if (!activeRef.current) {
         // Race: component unmounted while awaiting. Clean up.
-        invoke('rustdesk_disconnect', { sessionId }).catch(() => {});
+        invoke("rustdesk_disconnect", { sessionId }).catch(() => {});
         return;
+      }
+
+      const backendSession = await invoke<RustDeskSession | null>(
+        "rustdesk_get_session",
+        {
+          sessionId,
+        },
+      );
+
+      if (!activeRef.current) {
+        invoke("rustdesk_disconnect", { sessionId }).catch(() => {});
+        return;
+      }
+
+      if (!backendSession?.connected) {
+        await invoke("rustdesk_disconnect", { sessionId }).catch(() => {});
+        throw new Error(UNCONFIRMED_RUSTDESK_SESSION_MESSAGE);
       }
 
       sessionIdRef.current = sessionId;
       setIsConnected(true);
-      setConnectionStatus('connected');
+      setConnectionStatus("connected");
     } catch (err) {
       if (!activeRef.current) return;
       const msg = err instanceof Error ? err.message : String(err);
-      console.error('[RustDesk] connection failed:', msg);
+      console.error("[RustDesk] connection failed:", msg);
       setErrorMessage(msg);
-      setConnectionStatus('error');
+      setConnectionStatus("error");
       setIsConnected(false);
     }
   }, [session, settings]);
@@ -186,12 +210,12 @@ export function useRustDeskClient(session: ConnectionSession) {
     const sid = sessionIdRef.current;
     sessionIdRef.current = null;
     setIsConnected(false);
-    setConnectionStatus('disconnected');
+    setConnectionStatus("disconnected");
     if (sid) {
       try {
-        await invoke('rustdesk_disconnect', { sessionId: sid });
+        await invoke("rustdesk_disconnect", { sessionId: sid });
       } catch (err) {
-        console.warn('[RustDesk] disconnect failed:', err);
+        console.warn("[RustDesk] disconnect failed:", err);
       }
     }
   }, []);
@@ -216,14 +240,14 @@ export function useRustDeskClient(session: ConnectionSession) {
 
   const getStatusColor = useCallback(() => {
     switch (connectionStatus) {
-      case 'connected':
-        return 'text-green-400';
-      case 'connecting':
-        return 'text-yellow-400';
-      case 'error':
-        return 'text-red-400';
+      case "connected":
+        return "text-green-400";
+      case "connecting":
+        return "text-yellow-400";
+      case "error":
+        return "text-red-400";
       default:
-        return 'text-[var(--color-textSecondary)]';
+        return "text-[var(--color-textSecondary)]";
     }
   }, [connectionStatus]);
 
