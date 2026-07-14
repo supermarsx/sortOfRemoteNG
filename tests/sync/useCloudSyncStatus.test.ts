@@ -24,8 +24,16 @@ describe("useCloudSyncStatus", () => {
       enabled: true,
       enabledProviders: ["googleDrive", "oneDrive"] as CloudSyncProvider[],
       providerStatus: {
-        googleDrive: { enabled: true, lastSyncTime: Date.now() / 1000 - 30, lastSyncStatus: "success" as const },
-        oneDrive: { enabled: true, lastSyncTime: Date.now() / 1000 - 3600, lastSyncStatus: "success" as const },
+        googleDrive: {
+          enabled: true,
+          lastSyncTime: Date.now() / 1000 - 30,
+          lastSyncStatus: "success" as const,
+        },
+        oneDrive: {
+          enabled: true,
+          lastSyncTime: Date.now() / 1000 - 3600,
+          lastSyncStatus: "success" as const,
+        },
       },
       frequency: "hourly",
     };
@@ -35,7 +43,10 @@ describe("useCloudSyncStatus", () => {
     );
 
     expect(result.current.hasSync).toBe(true);
-    expect(result.current.enabledProviders).toEqual(["googleDrive", "oneDrive"]);
+    expect(result.current.enabledProviders).toEqual([
+      "googleDrive",
+      "oneDrive",
+    ]);
     expect(result.current.isSyncing).toBe(false);
     expect(result.current.getLastSyncTime()).toBeDefined();
   });
@@ -60,8 +71,12 @@ describe("useCloudSyncStatus", () => {
     );
 
     expect(result.current.hasSync).toBe(true);
-    expect(result.current.config.providerStatus.sftp?.lastSyncStatus).toBe("conflict");
-    expect(result.current.config.providerStatus.sftp?.lastSyncError).toBe("Remote file modified");
+    expect(result.current.config.providerStatus.sftp?.lastSyncStatus).toBe(
+      "conflict",
+    );
+    expect(result.current.config.providerStatus.sftp?.lastSyncError).toBe(
+      "Remote file modified",
+    );
   });
 
   it("handles sync errors gracefully", async () => {
@@ -107,9 +122,7 @@ describe("useCloudSyncStatus", () => {
   });
 
   it("returns defaults when no config provided", () => {
-    const { result } = renderHook(() =>
-      useCloudSyncStatus({}),
-    );
+    const { result } = renderHook(() => useCloudSyncStatus({}));
 
     expect(result.current.hasSync).toBe(false);
     expect(result.current.config.enabled).toBe(false);
@@ -151,6 +164,51 @@ describe("useCloudSyncStatus", () => {
     );
 
     expect(result.current.enabledProviders).toEqual(["googleDrive"]);
+  });
+
+  it("reports provider tests as explicit backend errors instead of random success", async () => {
+    const config = {
+      enabled: true,
+      enabledProviders: ["googleDrive"] as CloudSyncProvider[],
+      providerStatus: {},
+      frequency: "manual",
+    };
+
+    const { result } = renderHook(() =>
+      useCloudSyncStatus({ cloudSyncConfig: config }),
+    );
+
+    await act(async () => {
+      await result.current.handleTestProvider("googleDrive");
+    });
+
+    const testResult = result.current.getTestResultForProvider("googleDrive");
+    expect(testResult?.success).toBe(false);
+    expect(testResult?.message).toMatch(
+      /Tauri backend|registered sync backend/,
+    );
+    expect(testResult?.canRead).toBe(false);
+    expect(testResult?.canWrite).toBe(false);
+  });
+
+  it("derives enabled providers from sync targets when present", () => {
+    const config = {
+      enabled: true,
+      enabledProviders: [] as CloudSyncProvider[],
+      syncTargets: [
+        { provider: "oneDrive" as CloudSyncProvider, enabled: true },
+        { provider: "sftp" as CloudSyncProvider, enabled: false },
+      ],
+      providerStatus: {},
+      frequency: "manual",
+    };
+
+    const { result } = renderHook(() =>
+      useCloudSyncStatus({ cloudSyncConfig: config }),
+    );
+
+    expect(result.current.enabledProviders).toEqual(["oneDrive"]);
+    expect(result.current.hasSync).toBe(true);
   });
 });
 

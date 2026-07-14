@@ -9,12 +9,15 @@ import {
   BackupLocationPreset,
   BackupTarget,
   DestinationRetentionPolicy,
+  defaultBackupConfig,
   generateBackupTargetId,
+  migrateBackupConfig,
 } from "../../types/settings/settings";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { appDataDir, documentDir, join, homeDir } from "@tauri-apps/api/path";
 import { useConnections } from "../../contexts/useConnections";
+import { buildBackupPayload } from "../../utils/services/backupPayload";
 
 /* ═══════════════════════════════════════════════════════════════
    Static label / description maps
@@ -104,7 +107,7 @@ export function useBackupSettings(
     dropbox: "",
   });
 
-  const backup = settings.backup;
+  const backup = migrateBackupConfig(settings.backup ?? defaultBackupConfig);
 
   // Load preset paths on mount
   useEffect(() => {
@@ -167,27 +170,28 @@ export function useBackupSettings(
   };
 
   const handleRunBackupNow = async () => {
-    if (!backup.destinationPath || isRunningBackup) return;
+    const hasEnabledDestination =
+      Boolean(backup.destinationPath) ||
+      (backup.destinations ?? []).some(
+        (destination) =>
+          destination.enabled &&
+          (destination.preset !== "custom" ||
+            Boolean(destination.customPath || backup.destinationPath)),
+      );
+    if (!hasEnabledDestination || isRunningBackup) return;
 
     setIsRunningBackup(true);
     try {
       await invoke("backup_update_config", { config: backup });
 
-      const connections = backup.includePasswords
-        ? state.connections
-        : state.connections.map((conn) => ({
-            ...conn,
-            password: conn.password ? "***ENCRYPTED***" : undefined,
-            basicAuthPassword: conn.basicAuthPassword
-              ? "***ENCRYPTED***"
-              : undefined,
-          }));
-
-      const data = {
-        connections,
-        settings: backup.includeSettings ? settings : {},
-        timestamp: Date.now(),
-      };
+      const data = buildBackupPayload(
+        {
+          connections: state.connections,
+          settings: backup.includeSettings ? settings : {},
+          timestamp: Date.now(),
+        },
+        backup,
+      );
 
       await invoke("backup_run_now", { backupType: "manual", data });
       updateBackup({ lastBackupTime: Date.now() });
@@ -242,8 +246,7 @@ export function useBackupSettings(
       id,
       label: `${presetLabel} ${destinations.length + 1}`,
       preset,
-      customPath:
-        preset === "custom" ? "" : presetPaths[preset] || undefined,
+      customPath: preset === "custom" ? "" : presetPaths[preset] || undefined,
       enabled: true,
     };
     writeDestinations([...destinations, next]);
@@ -256,10 +259,7 @@ export function useBackupSettings(
   };
 
   /** Patch one destination by id with the provided updates. */
-  const updateDestination = (
-    id: string,
-    updates: Partial<BackupTarget>,
-  ) => {
+  const updateDestination = (id: string, updates: Partial<BackupTarget>) => {
     writeDestinations(
       destinations.map((d) => (d.id === id ? { ...d, ...updates } : d)),
     );

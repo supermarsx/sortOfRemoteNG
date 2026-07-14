@@ -203,6 +203,55 @@ describe("BackupWorkerService", () => {
       expect(job.status).toBe("completed");
     });
 
+    it("redacts connection and settings secrets when passwords are excluded", async () => {
+      vi.mocked(invoke).mockImplementation(async (command: string) => {
+        if (command === "load_data") {
+          return {
+            connections: [
+              {
+                id: "c1",
+                name: "server",
+                password: "secret-password",
+                privateKey: "secret-key",
+              },
+            ],
+            settings: {
+              backup: { encryptionPassword: "backup-secret" },
+              cloudSync: { googleDrive: { accessToken: "cloud-token" } },
+              theme: "dark",
+            },
+            timestamp: 123,
+            app_data: {},
+          };
+        }
+        return undefined;
+      });
+      await backupWorker.initialize(makeConfig({ includePasswords: false }));
+      await backupWorker.runBackup();
+
+      const runCall = vi
+        .mocked(invoke)
+        .mock.calls.find(([command]) => command === "backup_run_now");
+      expect(runCall?.[1]).toEqual({
+        backupType: "full",
+        data: expect.objectContaining({
+          connections: [
+            expect.not.objectContaining({ password: "secret-password" }),
+          ],
+          settings: expect.objectContaining({ theme: "dark" }),
+        }),
+      });
+      expect(
+        (runCall?.[1] as any).data.connections[0].privateKey,
+      ).toBeUndefined();
+      expect(
+        (runCall?.[1] as any).data.settings.backup.encryptionPassword,
+      ).toBeUndefined();
+      expect(
+        (runCall?.[1] as any).data.settings.cloudSync.googleDrive.accessToken,
+      ).toBeUndefined();
+    });
+
     it("creates destination directory when it does not exist", async () => {
       vi.mocked(exists).mockResolvedValue(false);
       await backupWorker.initialize(makeConfig());
@@ -227,12 +276,43 @@ describe("BackupWorkerService", () => {
     });
 
     it("returns a failed job when invoke rejects", async () => {
-      vi.mocked(invoke).mockRejectedValue(new Error("backend error"));
+      vi.mocked(invoke).mockImplementation(async (command: string) => {
+        if (command === "load_data") {
+          return {
+            connections: [],
+            settings: {},
+            timestamp: Date.now(),
+            app_data: {},
+          };
+        }
+        if (command === "backup_run_now") {
+          throw new Error("backend error");
+        }
+        return undefined;
+      });
       await backupWorker.initialize(makeConfig());
       const job = await backupWorker.runBackup();
 
       expect(job.status).toBe("failed");
       expect(job.error).toBe("backend error");
+    });
+
+    it("fails the job when current storage cannot be loaded", async () => {
+      vi.mocked(invoke).mockImplementation(async (command: string) => {
+        if (command === "load_data") {
+          throw new Error("storage locked");
+        }
+        return undefined;
+      });
+      await backupWorker.initialize(makeConfig());
+      const job = await backupWorker.runBackup();
+
+      expect(job.status).toBe("failed");
+      expect(job.error).toContain("Failed to load current data for backup");
+      expect(invoke).not.toHaveBeenCalledWith(
+        "backup_run_now",
+        expect.anything(),
+      );
     });
 
     it("adds completed job to recentJobs", async () => {

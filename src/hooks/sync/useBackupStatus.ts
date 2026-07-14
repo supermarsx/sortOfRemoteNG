@@ -1,16 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
-import { useConnections } from '../../contexts/useConnections';
-import { SettingsManager } from '../../utils/settings/settingsManager';
-import { Connection } from '../../types/connection/connection';
-import { GlobalSettings } from '../../types/settings/settings';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { useConnections } from "../../contexts/useConnections";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { Connection } from "../../types/connection/connection";
+import { GlobalSettings } from "../../types/settings/settings";
+import { buildBackupPayload } from "../../utils/services/backupPayload";
 
 export interface BackupStatus {
   isRunning: boolean;
   lastBackupTime?: number;
   lastBackupType?: string;
-  lastBackupStatus?: 'success' | 'failed' | 'partial';
+  lastBackupStatus?: "success" | "failed" | "partial";
   lastError?: string;
   nextScheduledTime?: number;
   backupCount: number;
@@ -40,6 +41,12 @@ export interface BackupListItem {
   payloadHash?: string;
 }
 
+interface DestinationListing {
+  targetId: string;
+  targetLabel: string;
+  backups: BackupListItem[];
+}
+
 interface BackupRestorePayload {
   connections?: Connection[];
   settings?: Partial<GlobalSettings>;
@@ -49,18 +56,18 @@ interface BackupRestorePayload {
 // ─── Formatting helpers ─────────────────────────────────────────────
 
 export const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
 export const formatRelativeTime = (timestamp?: number): string => {
-  if (!timestamp) return 'Never';
+  if (!timestamp) return "Never";
   const now = Date.now() / 1000;
   const diff = now - timestamp;
-  if (diff < 60) return 'Just now';
+  if (diff < 60) return "Just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
@@ -68,11 +75,11 @@ export const formatRelativeTime = (timestamp?: number): string => {
 };
 
 export const formatNextTime = (timestamp?: number): string => {
-  if (!timestamp) return 'Not scheduled';
+  if (!timestamp) return "Not scheduled";
   const now = Date.now() / 1000;
   const diff = timestamp - now;
-  if (diff < 0) return 'Overdue';
-  if (diff < 60) return 'In < 1m';
+  if (diff < 0) return "Overdue";
+  if (diff < 60) return "In < 1m";
   if (diff < 3600) return `In ${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `In ${Math.floor(diff / 3600)}h`;
   return new Date(timestamp * 1000).toLocaleDateString();
@@ -86,7 +93,7 @@ interface UseBackupStatusOptions {
 
 export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   const { t } = useTranslation();
-  const { dispatch } = useConnections();
+  const { state, dispatch } = useConnections();
   const settingsManager = SettingsManager.getInstance();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -94,7 +101,10 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   const [backupList, setBackupList] = useState<BackupListItem[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
   const [showBackupList, setShowBackupList] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -102,10 +112,10 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   useEffect(() => {
     const fetchBackupStatus = async () => {
       try {
-        const status = await invoke<BackupStatus>('backup_get_status');
+        const status = await invoke<BackupStatus>("backup_get_status");
         setBackupStatus(status);
       } catch (error) {
-        console.error('Failed to fetch backup status:', error);
+        console.error("Failed to fetch backup status:", error);
       }
     };
     fetchBackupStatus();
@@ -116,10 +126,31 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   // Fetch backup list when showing list
   const fetchBackupList = useCallback(async () => {
     try {
-      const list = await invoke<BackupListItem[]>('backup_list');
-      setBackupList(list);
+      try {
+        const listings = await invoke<DestinationListing[]>(
+          "backup_list_all_targets",
+        );
+        if (!Array.isArray(listings)) {
+          throw new Error(
+            "backup_list_all_targets returned an invalid payload",
+          );
+        }
+        const flattened = listings
+          .flatMap((listing) =>
+            (listing.backups ?? []).map((backup) => ({
+              ...backup,
+              targetId: backup.targetId ?? listing.targetId,
+              targetLabel: backup.targetLabel ?? listing.targetLabel,
+            })),
+          )
+          .sort((a, b) => b.createdAt - a.createdAt);
+        setBackupList(flattened);
+      } catch {
+        const list = await invoke<BackupListItem[]>("backup_list");
+        setBackupList(Array.isArray(list) ? list : []);
+      }
     } catch (error) {
-      console.error('Failed to fetch backup list:', error);
+      console.error("Failed to fetch backup list:", error);
     }
   }, []);
 
@@ -130,11 +161,13 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
   }, [showBackupList, fetchBackupList]);
 
   const getStatusIcon = useCallback(() => {
-    if (isBackingUp || backupStatus?.isRunning) return 'loading' as const;
-    if (!backupStatus || backupStatus.backupCount === 0) return 'empty' as const;
-    if (backupStatus.lastBackupStatus === 'failed') return 'failed' as const;
-    if (backupStatus.lastBackupStatus === 'success') return 'success' as const;
-    return 'default' as const;
+    if (isBackingUp || backupStatus?.isRunning) return "loading" as const;
+    if (!backupStatus || backupStatus.backupCount === 0)
+      return "empty" as const;
+    if (backupStatus.lastBackupStatus === "failed") return "failed" as const;
+    if (backupStatus.lastBackupStatus === "partial") return "partial" as const;
+    if (backupStatus.lastBackupStatus === "success") return "success" as const;
+    return "default" as const;
   }, [isBackingUp, backupStatus]);
 
   const handleBackupNow = useCallback(async () => {
@@ -143,60 +176,86 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
       if (onBackupNow) {
         await onBackupNow({});
       } else {
-        await invoke('backup_run_now', {
-          backupType: 'manual',
-          data: { connections: [], settings: {}, timestamp: Date.now() },
+        const settings = settingsManager.getSettings();
+        const backupConfig = settings.backup;
+        const connections = state?.connections ?? [];
+        const data = buildBackupPayload(
+          {
+            connections,
+            settings,
+            timestamp: Date.now(),
+          },
+          backupConfig,
+        );
+        await invoke("backup_update_config", { config: backupConfig });
+        await invoke("backup_run_now", {
+          backupType: "manual",
+          data,
         });
       }
-      const status = await invoke<BackupStatus>('backup_get_status');
+      const status = await invoke<BackupStatus>("backup_get_status");
       setBackupStatus(status);
       await fetchBackupList();
     } catch (error) {
-      console.error('Backup failed:', error);
+      console.error("Backup failed:", error);
     } finally {
       setIsBackingUp(false);
     }
-  }, [onBackupNow, fetchBackupList]);
+  }, [onBackupNow, fetchBackupList, settingsManager, state?.connections]);
 
   const handleTestBackup = useCallback(async () => {
     setIsTesting(true);
     setTestResult(null);
     try {
       const testData = {
-        connections: [{ id: 'test', name: 'Test Connection', protocol: 'ssh' }],
+        connections: [{ id: "test", name: "Test Connection", protocol: "ssh" }],
         settings: { testMode: true },
         timestamp: Date.now(),
       };
 
-      const metadata = await invoke<{ id: string; checksum: string }>('backup_run_now', {
-        backupType: 'test',
-        data: testData,
-      });
+      const metadata = await invoke<{ id: string; checksum: string }>(
+        "backup_run_now",
+        {
+          backupType: "test",
+          data: testData,
+        },
+      );
 
-      const restored = await invoke<{ connections: unknown[] }>('backup_restore', {
-        backupId: metadata.id,
-      });
+      const restored = await invoke<{ connections: unknown[] }>(
+        "backup_restore",
+        {
+          backupId: metadata.id,
+        },
+      );
 
-      await invoke('backup_delete', { backupId: metadata.id });
+      await invoke("backup_delete", { backupId: metadata.id });
 
       if (restored && restored.connections && restored.connections.length > 0) {
         setTestResult({
           success: true,
-          message: t('backup.testSuccess', 'Backup test passed! Data integrity verified.'),
+          message: t(
+            "backup.testSuccess",
+            "Backup test passed! Data integrity verified.",
+          ),
         });
       } else {
         setTestResult({
           success: false,
-          message: t('backup.testFailed', 'Backup test failed: Data verification failed.'),
+          message: t(
+            "backup.testFailed",
+            "Backup test failed: Data verification failed.",
+          ),
         });
       }
 
-      const status = await invoke<BackupStatus>('backup_get_status');
+      const status = await invoke<BackupStatus>("backup_get_status");
       setBackupStatus(status);
     } catch (error) {
       setTestResult({
         success: false,
-        message: t('backup.testError', 'Backup test failed: {{error}}', { error: String(error) }),
+        message: t("backup.testError", "Backup test failed: {{error}}", {
+          error: String(error),
+        }),
       });
     } finally {
       setIsTesting(false);
@@ -208,8 +267,8 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
       if (
         !confirm(
           t(
-            'backup.confirmRestore',
-            'Are you sure you want to restore this backup? Current data will be overwritten.',
+            "backup.confirmRestore",
+            "Are you sure you want to restore this backup? Current data will be overwritten.",
           ),
         )
       ) {
@@ -220,7 +279,7 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
         // user controls which copy gets restored when the same
         // backup ID exists at multiple destinations. Passing
         // `undefined` falls back to the legacy "find-first" path.
-        const data = await invoke<BackupRestorePayload>('backup_restore', {
+        const data = await invoke<BackupRestorePayload>("backup_restore", {
           backupId,
           targetId,
         });
@@ -232,16 +291,88 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
             }))
           : [];
 
-        if (restoredConnections.length > 0) {
-          dispatch({ type: 'SET_CONNECTIONS', payload: restoredConnections });
+        const applied: string[] = [];
+        const failed: string[] = [];
+        const hadConnections = Array.isArray(data?.connections);
+        const hadSettings = Boolean(
+          data?.settings && Object.keys(data.settings).length > 0,
+        );
+
+        if (hadConnections) {
+          try {
+            dispatch({ type: "SET_CONNECTIONS", payload: restoredConnections });
+            applied.push(
+              t("backup.restoreConnections", "{{count}} connection(s)", {
+                count: restoredConnections.length,
+              }),
+            );
+          } catch (error) {
+            failed.push(
+              t("backup.restoreConnectionsFailed", "connections: {{error}}", {
+                error: String(error),
+              }),
+            );
+          }
         }
-        if (data?.settings && Object.keys(data.settings).length > 0) {
-          await settingsManager.saveSettings(data.settings);
+
+        if (hadSettings && data?.settings) {
+          try {
+            await settingsManager.saveSettings(data.settings);
+            applied.push(t("backup.restoreSettings", "settings"));
+          } catch (error) {
+            failed.push(
+              t("backup.restoreSettingsFailed", "settings: {{error}}", {
+                error: String(error),
+              }),
+            );
+          }
         }
-        alert(t('backup.restoreSuccess', 'Backup restored successfully.'));
+
+        if (applied.length === 0 && failed.length === 0) {
+          alert(
+            t(
+              "backup.restoreEmpty",
+              "Backup restored no supported data. No connections or settings were found.",
+            ),
+          );
+          return;
+        }
+
+        if (failed.length > 0 && applied.length > 0) {
+          alert(
+            t(
+              "backup.restorePartial",
+              "Backup partially restored: {{applied}}. Failed: {{failed}}",
+              {
+                applied: applied.join(", "),
+                failed: failed.join("; "),
+              },
+            ),
+          );
+          return;
+        }
+
+        if (failed.length > 0) {
+          alert(
+            t("backup.restoreFailed", "Failed to restore backup: {{error}}", {
+              error: failed.join("; "),
+            }),
+          );
+          return;
+        }
+
+        alert(
+          t("backup.restoreSuccessDetailed", "Backup restored: {{applied}}.", {
+            applied: applied.join(", "),
+          }),
+        );
       } catch (error) {
-        console.error('Restore failed:', error);
-        alert(t('backup.restoreFailed', 'Failed to restore backup: {{error}}', { error: String(error) }));
+        console.error("Restore failed:", error);
+        alert(
+          t("backup.restoreFailed", "Failed to restore backup: {{error}}", {
+            error: String(error),
+          }),
+        );
       }
     },
     [t, dispatch, settingsManager],
@@ -249,16 +380,23 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
 
   const handleDeleteBackup = useCallback(
     async (backupId: string) => {
-      if (!confirm(t('backup.confirmDelete', 'Are you sure you want to delete this backup?'))) {
+      if (
+        !confirm(
+          t(
+            "backup.confirmDelete",
+            "Are you sure you want to delete this backup?",
+          ),
+        )
+      ) {
         return;
       }
       try {
-        await invoke('backup_delete', { backupId });
+        await invoke("backup_delete", { backupId });
         await fetchBackupList();
-        const status = await invoke<BackupStatus>('backup_get_status');
+        const status = await invoke<BackupStatus>("backup_get_status");
         setBackupStatus(status);
       } catch (error) {
-        console.error('Delete failed:', error);
+        console.error("Delete failed:", error);
       }
     },
     [t, fetchBackupList],

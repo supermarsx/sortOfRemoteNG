@@ -1,11 +1,18 @@
-import { useState, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { CloudSyncProvider } from '../../types/settings/settings';
+import { useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  CloudSyncProvider,
+  CloudSyncTarget,
+} from "../../types/settings/settings";
+import {
+  providersFromCloudSyncConfig,
+  testCloudSyncProvider,
+} from "../../utils/services/cloudSyncService";
 
 interface ProviderStatus {
   enabled: boolean;
   lastSyncTime?: number;
-  lastSyncStatus?: 'success' | 'failed' | 'partial' | 'conflict';
+  lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
   lastSyncError?: string;
 }
 
@@ -22,6 +29,7 @@ interface UseCloudSyncStatusParams {
   cloudSyncConfig?: {
     enabled: boolean;
     enabledProviders: CloudSyncProvider[];
+    syncTargets?: Array<Pick<CloudSyncTarget, "provider" | "enabled">>;
     providerStatus: Partial<Record<CloudSyncProvider, ProviderStatus>>;
     frequency: string;
   };
@@ -29,28 +37,28 @@ interface UseCloudSyncStatusParams {
 }
 
 export const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
-  none: 'None',
-  googleDrive: 'Google Drive',
-  oneDrive: 'OneDrive',
-  nextcloud: 'Nextcloud',
-  webdav: 'WebDAV',
-  sftp: 'SFTP',
+  none: "None",
+  googleDrive: "Google Drive",
+  oneDrive: "OneDrive",
+  nextcloud: "Nextcloud",
+  webdav: "WebDAV",
+  sftp: "SFTP",
 };
 
 export const PROVIDER_ICONS: Record<CloudSyncProvider, string> = {
-  none: '❌',
-  googleDrive: '🔵',
-  oneDrive: '☁️',
-  nextcloud: '🟢',
-  webdav: '🌐',
-  sftp: '🔒',
+  none: "❌",
+  googleDrive: "🔵",
+  oneDrive: "☁️",
+  nextcloud: "🟢",
+  webdav: "🌐",
+  sftp: "🔒",
 };
 
 export const formatRelativeTime = (timestamp?: number): string => {
-  if (!timestamp) return 'Never';
+  if (!timestamp) return "Never";
   const now = Date.now() / 1000;
   const diff = now - timestamp;
-  if (diff < 60) return 'Just now';
+  if (diff < 60) return "Just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
@@ -75,11 +83,12 @@ export function useCloudSyncStatus({
   const config = cloudSyncConfig ?? {
     enabled: false,
     enabledProviders: [],
+    syncTargets: [],
     providerStatus: {},
-    frequency: 'manual',
+    frequency: "manual",
   };
 
-  const enabledProviders = config.enabledProviders.filter((p) => p !== 'none');
+  const enabledProviders = providersFromCloudSyncConfig(config);
   const hasSync = config.enabled && enabledProviders.length > 0;
 
   const handleSyncAll = async () => {
@@ -108,30 +117,20 @@ export function useCloudSyncStatus({
     setTestingProvider(provider);
     setIsTesting(true);
     setTestResults((prev) => prev.filter((r) => r.provider !== provider));
-    const startTime = Date.now();
     try {
-      await new Promise((resolve) =>
-        setTimeout(resolve, 1000 + Math.random() * 1000),
-      );
-      const latencyMs = Date.now() - startTime;
-      const canRead = Math.random() > 0.1;
-      const canWrite = Math.random() > 0.15;
-      const success = canRead && canWrite;
+      const result = await testCloudSyncProvider(provider);
       setTestResults((prev) => [
         ...prev,
         {
           provider,
-          success,
-          message: success
-            ? t('sync.testSuccess', 'Connection successful')
-            : t('sync.testFailed', 'Connection failed: {{reason}}', {
-                reason: !canRead
-                  ? 'Cannot read from remote'
-                  : 'Cannot write to remote',
-              }),
-          latencyMs,
-          canRead,
-          canWrite,
+          success: result.status === "success",
+          message:
+            result.status === "success"
+              ? t("sync.testSuccess", "Connection successful")
+              : result.message,
+          latencyMs: result.latencyMs,
+          canRead: result.canRead,
+          canWrite: result.canWrite,
         },
       ]);
     } catch (error) {
@@ -140,7 +139,7 @@ export function useCloudSyncStatus({
         {
           provider,
           success: false,
-          message: t('sync.testError', 'Test failed: {{error}}', {
+          message: t("sync.testError", "Test failed: {{error}}", {
             error: String(error),
           }),
         },

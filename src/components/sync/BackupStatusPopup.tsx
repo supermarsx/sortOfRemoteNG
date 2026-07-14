@@ -13,7 +13,10 @@ import {
   FolderOpen,
   FileCheck,
 } from "lucide-react";
-import { ToolbarPopover, ToolbarPopoverHeader } from "../ui/overlays/ToolbarPopover";
+import {
+  ToolbarPopover,
+  ToolbarPopoverHeader,
+} from "../ui/overlays/ToolbarPopover";
 import {
   useBackupStatus,
   formatBytes,
@@ -31,8 +34,11 @@ const StatusIconButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
     loading: <Loader2 className="w-4 h-4 animate-spin text-primary" />,
     empty: <Archive className="w-4 h-4 text-[var(--color-textMuted)]" />,
     failed: <AlertCircle className="w-4 h-4 text-error" />,
+    partial: <AlertCircle className="w-4 h-4 text-warning" />,
     success: <CheckCircle className="w-4 h-4 text-success" />,
-    default: <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />,
+    default: (
+      <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />
+    ),
   };
   return (
     <button
@@ -87,6 +93,9 @@ const StatusSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           )}
           {mgr.backupStatus.lastBackupStatus === "failed" && (
             <AlertCircle className="w-3.5 h-3.5 text-error" />
+          )}
+          {mgr.backupStatus.lastBackupStatus === "partial" && (
+            <AlertCircle className="w-3.5 h-3.5 text-warning" />
           )}
           <span className="text-[var(--color-textSecondary)]">
             {formatRelativeTime(mgr.backupStatus.lastBackupTime)}
@@ -195,9 +204,7 @@ const BackupList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <span>{formatRelativeTime(backup.createdAt)}</span>
                   <span>•</span>
                   <span>{formatBytes(backup.sizeBytes)}</span>
-                  {backup.encrypted && (
-                    <span className="text-warning">🔒</span>
-                  )}
+                  {backup.encrypted && <span className="text-warning">🔒</span>}
                   {backup.targetLabel && (
                     <span
                       className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium"

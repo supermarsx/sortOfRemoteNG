@@ -27,6 +27,12 @@ import {
   GlobalSettings,
   defaultCloudSyncConfig,
 } from "./types/settings/settings";
+import {
+  aggregateCloudSyncResults,
+  providersFromCloudSyncConfig,
+  syncCloudTargets,
+  syncTargetsFromCloudSyncConfig,
+} from "./utils/services/cloudSyncService";
 import { SettingsManager } from "./utils/settings/settingsManager";
 import { StatusChecker } from "./utils/connection/statusChecker";
 import { DatabaseManager } from "./utils/connection/databaseManager";
@@ -1110,44 +1116,56 @@ const AppContent: React.FC = () => {
   const performCloudSync = useCallback(
     async (provider?: CloudSyncProvider) => {
       const currentConfig = appSettings.cloudSync ?? defaultCloudSyncConfig;
-      const enabledProviders = currentConfig.enabledProviders ?? [];
+      const enabledProviders = providersFromCloudSyncConfig(currentConfig);
 
       if (!currentConfig.enabled || enabledProviders.length === 0) {
         return;
       }
 
-      const targetProviders = provider
-        ? enabledProviders.includes(provider)
-          ? [provider]
-          : []
-        : enabledProviders;
+      const targetsToRun = syncTargetsFromCloudSyncConfig(
+        currentConfig,
+        provider,
+      );
 
-      if (targetProviders.length === 0) {
+      if (targetsToRun.length === 0) {
         return;
       }
 
+      const results = await syncCloudTargets(targetsToRun);
       const nowSeconds = Math.floor(Date.now() / 1000);
       const nextProviderStatus: GlobalSettings["cloudSync"]["providerStatus"] =
         {
           ...currentConfig.providerStatus,
         };
 
-      targetProviders.forEach((target) => {
-        nextProviderStatus[target] = {
-          ...nextProviderStatus[target],
+      const targetProviders = Array.from(
+        new Set(targetsToRun.map((target) => target.provider)),
+      );
+
+      targetProviders.forEach((targetProvider) => {
+        const providerResults = results.filter(
+          (result) => result.provider === targetProvider,
+        );
+        const aggregate = aggregateCloudSyncResults(providerResults);
+        nextProviderStatus[targetProvider] = {
+          ...nextProviderStatus[targetProvider],
           enabled: true,
           lastSyncTime: nowSeconds,
-          lastSyncStatus: "success",
-          lastSyncError: undefined,
+          lastSyncStatus: aggregate.status,
+          lastSyncError:
+            aggregate.status === "success" ? undefined : aggregate.message,
         };
       });
 
+      const aggregate = aggregateCloudSyncResults(results);
       const updatedCloudSync: GlobalSettings["cloudSync"] = {
         ...currentConfig,
+        enabledProviders,
         providerStatus: nextProviderStatus,
         lastSyncTime: nowSeconds,
-        lastSyncStatus: "success",
-        lastSyncError: undefined,
+        lastSyncStatus: aggregate.status,
+        lastSyncError:
+          aggregate.status === "success" ? undefined : aggregate.message,
       };
 
       setAppSettings((prev) => ({ ...prev, cloudSync: updatedCloudSync }));

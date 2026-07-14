@@ -40,6 +40,7 @@ import { BackupStatusPopup } from "../sync/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "../sync/CloudSyncStatusPopup";
 import { SyncBackupStatusBar } from "../sync/SyncBackupStatusBar";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
+import { buildBackupPayload } from "../../utils/services/backupPayload";
 
 interface AppToolbarProps {
   appSettings: GlobalSettings;
@@ -470,11 +471,17 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           {appSettings.showBackupStatusIcon && (
             <BackupStatusPopup
               onBackupNow={async () => {
-                const data = {
-                  connections,
-                  settings: appSettings,
-                  timestamp: Date.now(),
-                };
+                const data = buildBackupPayload(
+                  {
+                    connections,
+                    settings: appSettings,
+                    timestamp: Date.now(),
+                  },
+                  appSettings.backup,
+                );
+                await invoke("backup_update_config", {
+                  config: appSettings.backup,
+                });
                 await invoke("backup_run_now", {
                   backupType: "manual",
                   data,
@@ -493,16 +500,20 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           {appSettings.showSyncBackupStatusIcon && (
             <SyncBackupStatusBar
               cloudSyncConfig={appSettings.cloudSync}
-              onSyncNow={() => {
-                void performCloudSync();
-              }}
+              onSyncNow={performCloudSync}
               onBackupNow={async () => {
                 try {
-                  const data = {
-                    connections,
-                    settings: appSettings,
-                    timestamp: Date.now(),
-                  };
+                  const data = buildBackupPayload(
+                    {
+                      connections,
+                      settings: appSettings,
+                      timestamp: Date.now(),
+                    },
+                    appSettings.backup,
+                  );
+                  await invoke("backup_update_config", {
+                    config: appSettings.backup,
+                  });
                   await invoke("backup_run_now", {
                     backupType: "manual",
                     data,

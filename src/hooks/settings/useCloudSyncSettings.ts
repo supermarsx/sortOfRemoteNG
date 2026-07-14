@@ -22,6 +22,10 @@ import {
   generateCloudSyncTargetId,
   ProviderSyncStatus,
 } from "../../types/settings/settings";
+import {
+  aggregateCloudSyncResults,
+  syncCloudTargets,
+} from "../../utils/services/cloudSyncService";
 
 // ─── Static data ───────────────────────────────────────────────────
 
@@ -214,28 +218,35 @@ export function useCloudSyncSettings(
     return timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
   };
 
-  const applySyncStatusUpdate = (
-    providers: CloudSyncProvider[],
-    status: ProviderSyncStatus["lastSyncStatus"],
-  ) => {
+  const applySyncStatusUpdate = async (targetsToRun: CloudSyncTarget[]) => {
     const nowSeconds = Math.floor(Date.now() / 1000);
+    const results = await syncCloudTargets(targetsToRun);
+    const providers = Array.from(new Set(targetsToRun.map((t) => t.provider)));
     const newStatus = { ...providerStatus };
 
     providers.forEach((provider) => {
+      const providerResults = results.filter(
+        (result) => result.provider === provider,
+      );
+      const aggregate = aggregateCloudSyncResults(providerResults);
       newStatus[provider] = {
         ...newStatus[provider],
         enabled: true,
         lastSyncTime: nowSeconds,
-        lastSyncStatus: status,
-        lastSyncError: undefined,
+        lastSyncStatus: aggregate.status,
+        lastSyncError:
+          aggregate.status === "success" ? undefined : aggregate.message,
       };
     });
 
+    const aggregate = aggregateCloudSyncResults(results);
     updateCloudSync({
+      enabledProviders: providers,
       providerStatus: newStatus,
       lastSyncTime: nowSeconds,
-      lastSyncStatus: status,
-      lastSyncError: undefined,
+      lastSyncStatus: aggregate.status,
+      lastSyncError:
+        aggregate.status === "success" ? undefined : aggregate.message,
     });
   };
 
@@ -317,10 +328,7 @@ export function useCloudSyncSettings(
     setIsSyncing(true);
     setSyncingTargetId(targetId ?? null);
     try {
-      const providersTouched = Array.from(
-        new Set(targetsToRun.map((t) => t.provider)),
-      );
-      applySyncStatusUpdate(providersTouched, "success");
+      await applySyncStatusUpdate(targetsToRun);
     } finally {
       setIsSyncing(false);
       setSyncingTargetId(null);

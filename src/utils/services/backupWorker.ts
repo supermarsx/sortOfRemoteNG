@@ -13,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { BackupConfig } from "../../types/settings/backupSettings";
 import { join } from "@tauri-apps/api/path";
 import { exists, mkdir, readDir, remove } from "@tauri-apps/plugin-fs";
+import { buildBackupPayload } from "./backupPayload";
 
 interface StoragePayload {
   connections: unknown[];
@@ -337,28 +338,34 @@ class BackupWorkerService {
   }
 
   private async loadCurrentStoragePayload(): Promise<StoragePayload> {
+    if (!this.config) {
+      throw new Error("Backup worker not initialized");
+    }
     try {
       const data = await invoke<Partial<StoragePayload> | null>("load_data");
+      const payload = buildBackupPayload(
+        {
+          connections: Array.isArray(data?.connections) ? data.connections : [],
+          settings:
+            data?.settings && typeof data.settings === "object"
+              ? data.settings
+              : {},
+          timestamp:
+            typeof data?.timestamp === "number" ? data.timestamp : Date.now(),
+          app_data:
+            data?.app_data && typeof data.app_data === "object"
+              ? data.app_data
+              : {},
+        },
+        this.config,
+      );
       return {
-        connections: Array.isArray(data?.connections) ? data.connections : [],
-        settings:
-          data?.settings && typeof data.settings === "object"
-            ? data.settings
-            : {},
-        timestamp:
-          typeof data?.timestamp === "number" ? data.timestamp : Date.now(),
-        app_data:
-          data?.app_data && typeof data.app_data === "object"
-            ? data.app_data
-            : {},
+        ...payload,
+        app_data: payload.app_data ?? {},
       };
-    } catch {
-      return {
-        connections: [],
-        settings: {},
-        timestamp: Date.now(),
-        app_data: {},
-      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to load current data for backup: ${message}`);
     }
   }
 
