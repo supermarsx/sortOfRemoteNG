@@ -9,106 +9,28 @@ import { Mail, Loader2, Plug, PlugZap, RefreshCw, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { IntegrationPanelProps } from "../../../types/integrations/registry";
 import type {
-  ExchangeConnectionConfig,
   ExchangeEnvironment,
   OnPremAuthMethod,
 } from "../../../types/exchange";
 import { useExchangeConnection } from "../../../hooks/integration/exchange";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import {
+  EMPTY_EXCHANGE_CONNECTION_FORM,
+  EXCHANGE_AUTH_METHODS,
+  EXCHANGE_CLIENT_SECRET_KEY,
+  EXCHANGE_INTEGRATION_KEY,
+  EXCHANGE_ON_PREM_PASSWORD_KEY,
+  EXCHANGE_ENVIRONMENTS,
+  exchangeConfigFromForm,
+  exchangeConnectionHost,
+  exchangeFormFromConnectionSettings,
+  exchangeFormFromInstance,
+  exchangeFormProviderFields,
+  exchangeProviderFieldsToInstanceFields,
+  exchangeSecretsForVault,
+  type ExchangeConnectionFormState,
+} from "../../../utils/integrations/exchangeConnectionFields";
 import { exchangeTabs } from "./registry";
-
-const INTEGRATION_KEY = "exchange";
-
-const ENVIRONMENTS: ExchangeEnvironment[] = ["online", "onPremises", "hybrid"];
-const AUTH_METHODS: OnPremAuthMethod[] = [
-  "kerberos",
-  "negotiate",
-  "basic",
-  "ntlm",
-];
-
-/** Local connect-form state. Both credential variants live in one flat struct;
- *  `environment` selects which set is submitted. The single secret persisted to
- *  the OS vault is the active variant's secret (online `clientSecret`, else the
- *  on-prem `password`). */
-interface FormState {
-  name: string;
-  environment: ExchangeEnvironment;
-  timeoutSecs: string;
-  // Exchange Online (OAuth2 / Graph)
-  tenantId: string;
-  clientId: string;
-  clientSecret: string;
-  onlineUsername: string;
-  organization: string;
-  // On-premises (PowerShell remoting)
-  server: string;
-  port: string;
-  onPremUsername: string;
-  password: string;
-  useSsl: boolean;
-  authMethod: OnPremAuthMethod;
-  skipCertCheck: boolean;
-}
-
-const EMPTY_FORM: FormState = {
-  name: "",
-  environment: "online",
-  timeoutSecs: "",
-  tenantId: "",
-  clientId: "",
-  clientSecret: "",
-  onlineUsername: "",
-  organization: "",
-  server: "",
-  port: "",
-  onPremUsername: "",
-  password: "",
-  useSsl: true,
-  authMethod: "kerberos",
-  skipCertCheck: false,
-};
-
-/** The active variant's secret — the one value stored in the OS vault. */
-function activeSecret(form: FormState): string {
-  return form.environment === "onPremises"
-    ? form.password
-    : form.clientSecret;
-}
-
-function toConfig(form: FormState): ExchangeConnectionConfig {
-  const timeoutSecs = form.timeoutSecs.trim()
-    ? Number(form.timeoutSecs.trim())
-    : null;
-  const config: ExchangeConnectionConfig = {
-    environment: form.environment,
-    timeoutSecs: Number.isFinite(timeoutSecs as number)
-      ? (timeoutSecs as number)
-      : null,
-  };
-  if (form.environment === "online" || form.environment === "hybrid") {
-    config.online = {
-      tenantId: form.tenantId.trim(),
-      clientId: form.clientId.trim(),
-      clientSecret: form.clientSecret || null,
-      username: form.onlineUsername.trim() || null,
-      organization: form.organization.trim() || null,
-    };
-  }
-  if (form.environment === "onPremises" || form.environment === "hybrid") {
-    const port = form.port.trim() ? Number(form.port.trim()) : 443;
-    config.onPrem = {
-      server: form.server.trim(),
-      port: Number.isFinite(port) ? port : 443,
-      username: form.onPremUsername.trim(),
-      password: form.password,
-      useSsl: form.useSsl,
-      authMethod: form.authMethod,
-      skipCertCheck: form.skipCertCheck,
-    };
-  }
-  return config;
-}
 
 /**
  * Exchange integration panel — the shell (crate lead t42-exchange-L). Owns the
@@ -122,6 +44,7 @@ function toConfig(form: FormState): ExchangeConnectionConfig {
 const ExchangePanel: React.FC<IntegrationPanelProps> = ({
   onClose,
   instanceId,
+  integrationSettings,
 }) => {
   const { t } = useTranslation();
   const {
@@ -133,52 +56,75 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
     disconnect,
     refresh,
   } = useExchangeConnection();
-  const { instances, createInstance, updateInstance, readSecret } =
-    useIntegrationConfigStore();
+  const {
+    instances,
+    createInstance,
+    updateInstance,
+    readSecret,
+    readNamedSecret,
+  } = useIntegrationConfigStore();
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<ExchangeConnectionFormState>(() =>
+    exchangeFormFromConnectionSettings(integrationSettings),
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>(
     exchangeTabs[0]?.categoryKey ?? null,
   );
 
-  // Prefill from a saved instance, including the secret from the vault.
+  // Connection-launched panels prefill once from non-secret connection metadata.
+  useEffect(() => {
+    if (instanceId) return;
+    setForm(
+      integrationSettings
+        ? exchangeFormFromConnectionSettings(integrationSettings)
+        : EMPTY_EXCHANGE_CONNECTION_FORM,
+    );
+  }, [instanceId, integrationSettings]);
+
+  // Saved instances are authoritative when an instance id is supplied.
   useEffect(() => {
     if (!instanceId) return;
-    const inst = instances.find((i) => i.id === instanceId);
-    if (!inst) return;
     let cancelled = false;
+    const inst = instances.find((i) => i.id === instanceId);
+    if (!inst) {
+      setForm(
+        integrationSettings
+          ? exchangeFormFromConnectionSettings(integrationSettings)
+          : EMPTY_EXCHANGE_CONNECTION_FORM,
+      );
+      return () => {
+        cancelled = true;
+      };
+    }
+
     (async () => {
-      const secret = (await readSecret(inst)) ?? "";
+      const legacySecret = (await readSecret(inst)) ?? "";
+      const clientSecret =
+        (await readNamedSecret(inst, EXCHANGE_CLIENT_SECRET_KEY)) ??
+        (inst.fields?.environment !== "onPremises" ? legacySecret : "");
+      const password =
+        (await readNamedSecret(inst, EXCHANGE_ON_PREM_PASSWORD_KEY)) ??
+        (inst.fields?.environment === "onPremises" ? legacySecret : "");
       if (cancelled) return;
-      const f = inst.fields ?? {};
-      const environment = (f.environment as ExchangeEnvironment) || "online";
-      setForm({
-        name: inst.name ?? "",
-        environment,
-        timeoutSecs: f.timeoutSecs ?? "",
-        tenantId: f.tenantId ?? "",
-        clientId: f.clientId ?? "",
-        clientSecret: environment === "onPremises" ? "" : secret,
-        onlineUsername: f.onlineUsername ?? "",
-        organization: f.organization ?? "",
-        server: f.server ?? "",
-        port: f.port ?? "",
-        onPremUsername: f.onPremUsername ?? "",
-        password: environment === "onPremises" ? secret : "",
-        useSsl: f.useSsl ? f.useSsl === "true" : true,
-        authMethod: (f.authMethod as OnPremAuthMethod) || "kerberos",
-        skipCertCheck: f.skipCertCheck === "true",
-      });
+      setForm(
+        exchangeFormFromInstance(inst.name, inst.fields, {
+          clientSecret,
+          password,
+        }),
+      );
     })();
     return () => {
       cancelled = true;
     };
-  }, [instanceId, instances, readSecret]);
+  }, [instanceId, instances, integrationSettings, readSecret, readNamedSecret]);
 
   const setField = useCallback(
-    <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    <K extends keyof ExchangeConnectionFormState>(
+      key: K,
+      value: ExchangeConnectionFormState[K],
+    ) => {
       setForm((prev) => ({ ...prev, [key]: value }));
     },
     [],
@@ -219,7 +165,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
       return;
     }
     setFormError(null);
-    await connect(toConfig(form));
+    await connect(exchangeConfigFromForm(form));
   }, [validate, connect, form]);
 
   const handleSave = useCallback(async () => {
@@ -231,42 +177,28 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
     setFormError(null);
     setIsSaving(true);
     try {
-      const fields: Record<string, string> = {
-        environment: form.environment,
-        timeoutSecs: form.timeoutSecs.trim(),
-        tenantId: form.tenantId.trim(),
-        clientId: form.clientId.trim(),
-        onlineUsername: form.onlineUsername.trim(),
-        organization: form.organization.trim(),
-        server: form.server.trim(),
-        port: form.port.trim(),
-        onPremUsername: form.onPremUsername.trim(),
-        useSsl: String(form.useSsl),
-        authMethod: form.authMethod,
-        skipCertCheck: String(form.skipCertCheck),
-      };
-      const host =
-        form.environment === "onPremises"
-          ? form.server.trim()
-          : form.organization.trim() || form.tenantId.trim();
+      const providerFields = exchangeFormProviderFields(form);
+      const fields = exchangeProviderFieldsToInstanceFields(providerFields);
+      const host = exchangeConnectionHost(providerFields);
       const name =
         form.name.trim() ||
         host ||
         t("integrations.exchange.title", "Exchange");
+      const secrets = exchangeSecretsForVault(form);
       if (instanceId) {
         await updateInstance(instanceId, {
           name,
           host,
           fields,
-          secret: activeSecret(form),
+          secrets,
         });
       } else {
         await createInstance({
-          integrationKey: INTEGRATION_KEY,
+          integrationKey: EXCHANGE_INTEGRATION_KEY,
           name,
           host,
           fields,
-          secret: activeSecret(form),
+          secrets,
         });
       }
     } catch (e) {
@@ -347,6 +279,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                 {t("integrations.exchange.form.instanceName", "Instance name")}
               </span>
               <input
+                data-testid="exchange-instance-name"
                 className={inputClass}
                 value={form.name}
                 onChange={(e) => setField("name", e.target.value)}
@@ -363,16 +296,14 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                 {t("integrations.exchange.form.environment", "Environment")}
               </span>
               <select
+                data-testid="exchange-environment"
                 className={inputClass}
                 value={form.environment}
                 onChange={(e) =>
-                  setField(
-                    "environment",
-                    e.target.value as ExchangeEnvironment,
-                  )
+                  setField("environment", e.target.value as ExchangeEnvironment)
                 }
               >
-                {ENVIRONMENTS.map((env) => (
+                {EXCHANGE_ENVIRONMENTS.map((env) => (
                   <option key={env} value={env}>
                     {t(
                       `integrations.exchange.environment.${env}`,
@@ -400,6 +331,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     {t("integrations.exchange.form.tenantId", "Tenant ID")}
                   </span>
                   <input
+                    data-testid="exchange-tenant-id"
                     className={inputClass}
                     value={form.tenantId}
                     onChange={(e) => setField("tenantId", e.target.value)}
@@ -411,6 +343,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     {t("integrations.exchange.form.clientId", "Client ID")}
                   </span>
                   <input
+                    data-testid="exchange-client-id"
                     className={inputClass}
                     value={form.clientId}
                     onChange={(e) => setField("clientId", e.target.value)}
@@ -425,6 +358,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     )}
                   </span>
                   <input
+                    data-testid="exchange-client-secret"
                     type="password"
                     className={inputClass}
                     value={form.clientSecret}
@@ -440,6 +374,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     )}
                   </span>
                   <input
+                    data-testid="exchange-organization"
                     className={inputClass}
                     value={form.organization}
                     onChange={(e) => setField("organization", e.target.value)}
@@ -463,6 +398,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                       {t("integrations.exchange.form.server", "Server")}
                     </span>
                     <input
+                      data-testid="exchange-server"
                       className={inputClass}
                       value={form.server}
                       onChange={(e) => setField("server", e.target.value)}
@@ -474,6 +410,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                       {t("integrations.exchange.form.port", "Port")}
                     </span>
                     <input
+                      data-testid="exchange-port"
                       className={inputClass}
                       value={form.port}
                       onChange={(e) => setField("port", e.target.value)}
@@ -487,11 +424,10 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     {t("integrations.exchange.form.username", "Username")}
                   </span>
                   <input
+                    data-testid="exchange-onprem-username"
                     className={inputClass}
                     value={form.onPremUsername}
-                    onChange={(e) =>
-                      setField("onPremUsername", e.target.value)
-                    }
+                    onChange={(e) => setField("onPremUsername", e.target.value)}
                     placeholder="CONTOSO\\administrator"
                   />
                 </label>
@@ -500,6 +436,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     {t("integrations.exchange.form.password", "Password")}
                   </span>
                   <input
+                    data-testid="exchange-onprem-password"
                     type="password"
                     className={inputClass}
                     value={form.password}
@@ -512,16 +449,14 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                     {t("integrations.exchange.form.authMethod", "Auth method")}
                   </span>
                   <select
+                    data-testid="exchange-auth-method"
                     className={inputClass}
                     value={form.authMethod}
                     onChange={(e) =>
-                      setField(
-                        "authMethod",
-                        e.target.value as OnPremAuthMethod,
-                      )
+                      setField("authMethod", e.target.value as OnPremAuthMethod)
                     }
                   >
-                    {AUTH_METHODS.map((m) => (
+                    {EXCHANGE_AUTH_METHODS.map((m) => (
                       <option key={m} value={m}>
                         {t(
                           `integrations.exchange.authMethod.${m}`,
@@ -533,6 +468,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                 </label>
                 <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
                   <input
+                    data-testid="exchange-use-ssl"
                     type="checkbox"
                     checked={form.useSsl}
                     onChange={(e) => setField("useSsl", e.target.checked)}
@@ -541,6 +477,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                 </label>
                 <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
                   <input
+                    data-testid="exchange-skip-cert-check"
                     type="checkbox"
                     checked={form.skipCertCheck}
                     onChange={(e) =>
@@ -560,6 +497,7 @@ const ExchangePanel: React.FC<IntegrationPanelProps> = ({
                 {t("integrations.exchange.form.timeoutSecs", "Timeout (s)")}
               </span>
               <input
+                data-testid="exchange-timeout"
                 className={inputClass}
                 value={form.timeoutSecs}
                 onChange={(e) => setField("timeoutSecs", e.target.value)}
