@@ -241,7 +241,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: "${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}"
         with:
           includeUpdaterJson: false
-          args: --no-default-features --features full --bundles ${{ matrix.bundles }}
+          args: --features full --bundles ${{ matrix.bundles }} -- --no-default-features
 
       # ----------------------------------------------------------------------
       # Windows: sign .msi/.exe post-bundle via signtool + EV thumbprint.

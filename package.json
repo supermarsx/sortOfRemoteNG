@@ -1,7 +1,7 @@
 {
   "name": "sortofremoteng",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -21,12 +21,12 @@
     "test:coverage:import-export": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --config vitest.import-export.config.ts --run --coverage",
     "tauri": "tauri",
     "tauri:dev": "node ./scripts/tauri-dev.mjs --features full-dev -- --no-default-features",
-    "tauri:build": "tauri build --features full-dev -- --no-default-features",
+    "tauri:build": "node ./scripts/native-build-env.mjs tauri build --features full -- --no-default-features",
     "turbo:dev": "turbo dev",
     "turbo:build": "turbo build",
     "e2e:smoke:up": "docker compose -f e2e/docker-compose.yml --env-file e2e/.env up -d test-ssh",
     "e2e:smoke:down": "docker compose -f e2e/docker-compose.yml --env-file e2e/.env down -v",
-    "e2e:smoke:required": "cargo test --manifest-path src-tauri/Cargo.toml -p sorng-ssh --features docker-e2e --test golden_path -- --include-ignored && cargo test --manifest-path src-tauri/Cargo.toml -p sorng-sftp --features docker-e2e --test golden_path -- --include-ignored",
+    "e2e:smoke:required": "node ./scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-ssh --features docker-e2e --test golden_path -- --include-ignored && node ./scripts/native-build-env.mjs cargo test --manifest-path src-tauri/Cargo.toml -p sorng-sftp --features docker-e2e --test golden_path -- --include-ignored",
     "e2e": "wdio run e2e/wdio.conf.ts",
     "e2e:docker:up": "docker compose -f e2e/docker-compose.yml --env-file e2e/.env up -d",
     "e2e:docker:down": "docker compose -f e2e/docker-compose.yml --env-file e2e/.env down -v",

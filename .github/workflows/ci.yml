@@ -249,15 +249,10 @@ jobs:
         run: cargo test -p sorng-rdp --features docker-e2e --test rdpdr_e2e -- --nocapture
 
   # ── t3-e2: feature-flag cleanup + -D warnings gate (R4) ────────────
-  # The two jobs below are owned by executor t3-e2 and are DISJOINT
-  # from t3-e1's windows-check job above. They are currently allowed
-  # to fail (continue-on-error) while P2 cleanup executors (F5 vpn
-  # warnings, t3-e9..e14 todo!-cleanup) land; the goal is to make them
-  # blocking once the workspace is clean. Remove continue-on-error
-  # when the Acceptance rows for t3-e2 flip to green locally.
+  # The two jobs below gate the canonical shipping feature set. Keep this
+  # blocking so Rust feature drift cannot pass CI unnoticed.
   rust-check-all-features-linux:
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: src-tauri
@@ -289,7 +284,6 @@ jobs:
 
   rust-lint:
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: src-tauri
