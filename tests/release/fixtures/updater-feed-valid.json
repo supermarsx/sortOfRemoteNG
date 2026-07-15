@@ -1,0 +1,12 @@
+{
+  "version": "26.1.0",
+  "notes": "Release 26.1",
+  "pub_date": "2026-07-15T00:00:00Z",
+  "platforms": {
+    "linux-x86_64": {
+      "version": "26.1.0",
+      "signature": "fixture-signature",
+      "url": "https://example.invalid/v26.1/sortOfRemoteNG_26.1.0_amd64.AppImage"
+    }
+  }
+}

@@ -14,22 +14,22 @@ The macOS `.dmg` / `.app` artifacts produced by `tauri-action` must be:
 2. Notarized via `xcrun notarytool submit …` (Apple's current pipeline — `altool` is deprecated and hard-removed from recent Xcode).
 3. Stapled via `xcrun stapler staple` so the installed `.app` launches offline without Gatekeeper nagging.
 
-Without enrollment we cannot produce step (1) — which blocks (2) and (3) — which blocks v1.0 macOS ship and macOS updater feed promotion. The updater feed must point at notarized, stapled artifacts produced by the signed release workflow.
+Without enrollment we cannot produce step (1) — which blocks (2) and (3) — which blocks macOS production shipping and updater feed promotion. The updater feed must point at notarized, stapled artifacts produced by the signed release workflow.
 
 ---
 
 ## 2. Individual vs Organization — recommendation
 
-| Axis | Individual | Organization |
-|---|---|---|
-| Cost | $99 USD / yr | $99 USD / yr |
-| Requires D-U-N-S | No | **Yes** (9-digit Dun & Bradstreet number) |
-| Publisher name on Gatekeeper dialogs | Your legal personal name | Legal entity name |
-| Team ID tied to | A person | The legal entity |
-| Time-to-approval (typical) | Hours–2 days | **2–4 weeks** (D-U-N-S verification, legal-entity + domain checks, possible Apple callback) |
-| Multiple engineers can sign | No (cert bound to the individual) | Yes (roles: Account Holder, Admin, Developer, App Manager, Marketing) |
-| Transfers if owner leaves company | **Painful** (re-sign + re-notarize under new Team ID; users see new publisher) | Clean (reassign roles) |
-| Fee waiver possible | No | Yes, for qualifying non-profits / educational / government |
+| Axis                                 | Individual                                                                     | Organization                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Cost                                 | $99 USD / yr                                                                   | $99 USD / yr                                                                                |
+| Requires D-U-N-S                     | No                                                                             | **Yes** (9-digit Dun & Bradstreet number)                                                   |
+| Publisher name on Gatekeeper dialogs | Your legal personal name                                                       | Legal entity name                                                                           |
+| Team ID tied to                      | A person                                                                       | The legal entity                                                                            |
+| Time-to-approval (typical)           | Hours–2 days                                                                   | **2–4 weeks** (D-U-N-S verification, legal-entity + domain checks, possible Apple callback) |
+| Multiple engineers can sign          | No (cert bound to the individual)                                              | Yes (roles: Account Holder, Admin, Developer, App Manager, Marketing)                       |
+| Transfers if owner leaves company    | **Painful** (re-sign + re-notarize under new Team ID; users see new publisher) | Clean (reassign roles)                                                                      |
+| Fee waiver possible                  | No                                                                             | Yes, for qualifying non-profits / educational / government                                  |
 
 ### Recommendation
 
@@ -137,13 +137,13 @@ Developer ID Application certs are valid for **5 years**. Calendar a renewal rem
 
 Configure in **GitHub → repo → Settings → Secrets and variables → Actions**:
 
-| Secret name | Example (placeholder) value | Source |
-|---|---|---|
-| `APPLE_ID` | `releases@example.com` | The Apple Account email used at enrollment. |
-| `APPLE_PASSWORD` | `abcd-efgh-ijkl-mnop` | App-Specific Password from §6. |
-| `APPLE_TEAM_ID` | `K36BKF7T3D` | 10-char Team ID from §4. |
-| `APPLE_CERT_P12_BASE64` | `MIIK...base64...==` (multi-KB) | base64 of `.p12` from §5 step 7. |
-| `APPLE_CERT_PASSWORD` | `s3cret-p12-export-pw` | The `.p12` export password set in §5 step 6. |
+| Secret name             | Example (placeholder) value     | Source                                       |
+| ----------------------- | ------------------------------- | -------------------------------------------- |
+| `APPLE_ID`              | `releases@example.com`          | The Apple Account email used at enrollment.  |
+| `APPLE_PASSWORD`        | `abcd-efgh-ijkl-mnop`           | App-Specific Password from §6.               |
+| `APPLE_TEAM_ID`         | `K36BKF7T3D`                    | 10-char Team ID from §4.                     |
+| `APPLE_CERT_P12_BASE64` | `MIIK...base64...==` (multi-KB) | base64 of `.p12` from §5 step 7.             |
+| `APPLE_CERT_PASSWORD`   | `s3cret-p12-export-pw`          | The `.p12` export password set in §5 step 6. |
 
 All five are referenced by the release workflow. Rotating `APPLE_PASSWORD` or `APPLE_CERT_P12_BASE64` requires a re-run of the workflow to pick up new values. Production updater feeds must not be promoted from unsigned or unnotarized macOS artifacts.
 
@@ -161,8 +161,8 @@ GitHub-hosted `macos-latest` runners start with a login keychain but no Develope
 - name: Import Developer ID cert into ephemeral keychain
   env:
     APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
-    APPLE_CERT_PASSWORD:  ${{ secrets.APPLE_CERT_PASSWORD }}
-    KEYCHAIN_PASSWORD:    ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+    APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+    KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
   run: |
     set -euo pipefail
     KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
@@ -192,9 +192,9 @@ GitHub-hosted `macos-latest` runners start with a login keychain but no Develope
 
 - name: Store notarytool credentials
   env:
-    APPLE_ID:       ${{ secrets.APPLE_ID }}
+    APPLE_ID: ${{ secrets.APPLE_ID }}
     APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-    APPLE_TEAM_ID:  ${{ secrets.APPLE_TEAM_ID }}
+    APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
   run: |
     xcrun notarytool store-credentials "sortofremoteng-notary" \
       --apple-id     "$APPLE_ID" \
@@ -266,14 +266,14 @@ If any of (1)-(4) fail, do **not** proceed to CI wiring — fix the local path f
 
 ## 10. Timeline (from kickoff, assuming organization enrollment)
 
-| Day | Activity |
-|---|---|
-| D+0 | Submit enrollment form, pay $99, request/attach D-U-N-S if needed. |
-| D+1 to D+5 | D-U-N-S issuance (if new). |
-| D+3 to D+21 | Apple verification (email + possible phone call-back). **Watch the phone.** Plan budget: **2–4 weeks**. |
-| D+(approval) | Create Developer ID Application cert, export `.p12`, generate App-Specific Password, populate 5 GitHub secrets. |
-| D+(approval)+1 | Run §9 verification locally. |
-| D+(approval)+2 | Wire into t3-e22 `release.yml`; dry-run on a throwaway tag. |
+| Day            | Activity                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| D+0            | Submit enrollment form, pay $99, request/attach D-U-N-S if needed.                                              |
+| D+1 to D+5     | D-U-N-S issuance (if new).                                                                                      |
+| D+3 to D+21    | Apple verification (email + possible phone call-back). **Watch the phone.** Plan budget: **2–4 weeks**.         |
+| D+(approval)   | Create Developer ID Application cert, export `.p12`, generate App-Specific Password, populate 5 GitHub secrets. |
+| D+(approval)+1 | Run §9 verification locally.                                                                                    |
+| D+(approval)+2 | Wire into t3-e22 `release.yml`; dry-run on a throwaway tag.                                                     |
 
 **Blocking risk**: if the org isn't registered yet, add 1–5 business days (US) or longer (EU / APAC) before D+0.
 

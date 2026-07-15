@@ -18,6 +18,8 @@ jobs:
         run: npm run version:test
       - name: Check rolling-version synchronization
         run: npm run version:check
+      - name: Test release metadata enforcement
+        run: npm run release:test
 
   format:
     runs-on: ubuntu-latest

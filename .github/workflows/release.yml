@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v[0-9][0-9].[1-9]*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.2.3)"
+        description: "Public tag to release (exactly vYY.N, e.g. v26.1)"
         required: true
       release_tier:
         description: "Release tier: production publishes latest.json; staging/dry-run never do."
@@ -26,11 +26,54 @@ env:
   RELEASE_TIER: ${{ github.event_name == 'push' && 'production' || github.event.inputs.release_tier || 'dry-run' }}
 
 jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      public_tag: ${{ steps.release_version.outputs.public_tag }}
+      public_version: ${{ steps.release_version.outputs.public_version }}
+      machine_version: ${{ steps.release_version.outputs.machine_version }}
+    steps:
+      - name: Checkout requested public release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+      - name: Install Node toolchain
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate release tier
+        shell: bash
+        run: |
+          case "$RELEASE_TIER" in
+            production|staging|dry-run) ;;
+            *)
+              echo "::error::Invalid release tier '$RELEASE_TIER'."
+              exit 1
+              ;;
+          esac
+          echo "Release tier: $RELEASE_TIER"
+
+      - name: Resolve and validate public release identity
+        id: release_version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+        run: |
+          node scripts/ci/resolve-release-version.mjs \
+            --tag "$RELEASE_TAG" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Check machine-version projections
+        run: npm run version:check
+
   # --------------------------------------------------------------------------
   # Build + (optionally) sign platform bundles in a matrix.
   # Production is strict; staging/dry-run may build unsigned bundles.
   # --------------------------------------------------------------------------
   build:
+    needs: metadata
     strategy:
       fail-fast: false
       matrix:
@@ -45,8 +88,6 @@ jobs:
             target: windows
             bundles: "msi,nsis"
     runs-on: ${{ matrix.os }}
-    outputs:
-      version: ${{ steps.resolve_version.outputs.version }}
     env:
       # Tauri updater signing (production requires this; non-production may omit it)
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -56,19 +97,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Validate release tier
-        shell: bash
-        run: |
-          case "$RELEASE_TIER" in
-            production|staging|dry-run) ;;
-            *)
-              echo "::error::Invalid release tier '$RELEASE_TIER'."
-              exit 1
-              ;;
-          esac
-          echo "Release tier: $RELEASE_TIER"
+          ref: ${{ needs.metadata.outputs.public_tag }}
 
       - name: Check updater signing key
         shell: bash
@@ -80,15 +109,6 @@ jobs:
             fi
             echo "::notice::TAURI_SIGNING_PRIVATE_KEY is not set; $RELEASE_TIER bundles may be unsigned and will not publish production latest.json."
           fi
-
-      - name: Resolve version from tag
-        id: resolve_version
-        shell: bash
-        run: |
-          RAW="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="${RAW#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Resolved version: ${VERSION}"
 
       - name: Install Node toolchain
         uses: actions/setup-node@v4
@@ -308,6 +328,12 @@ jobs:
           esac
           ls -la artifacts/ || true
 
+      - name: Validate staged artifact version metadata
+        run: >-
+          node scripts/ci/validate-release-artifacts.mjs
+          --dist-dir artifacts
+          --expected-version "${{ needs.metadata.outputs.machine_version }}"
+
       - name: Validate production staged artifacts
         if: env.RELEASE_TIER == 'production'
         shell: bash
@@ -368,11 +394,13 @@ jobs:
   # Aggregate artifacts, build the tiered updater feed, attach to GitHub Release.
   # --------------------------------------------------------------------------
   publish:
-    needs: build
+    needs: [metadata, build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.public_tag }}
 
       - name: Install Node toolchain
         uses: actions/setup-node@v4
@@ -391,24 +419,24 @@ jobs:
         shell: bash
         run: mkdir -p dist
 
-      - name: Resolve version, release tag, and feed file
+      - name: Resolve release destination and feed file
         id: meta
         shell: bash
+        env:
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
         run: |
           set -euo pipefail
-          RAW="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="${RAW#v}"
           case "$RELEASE_TIER" in
             production)
-              RELEASE_TAG="${RAW}"
+              RELEASE_TAG="${PUBLIC_TAG}"
               FEED_FILE="latest.json"
               ;;
             staging)
-              RELEASE_TAG="${RAW}-staging"
+              RELEASE_TAG="${PUBLIC_TAG}-staging"
               FEED_FILE="staging-latest.json"
               ;;
             dry-run)
-              RELEASE_TAG="${RAW}-dry-run"
+              RELEASE_TAG="${PUBLIC_TAG}-dry-run"
               FEED_FILE="dry-run-latest.json"
               ;;
             *)
@@ -418,7 +446,6 @@ jobs:
           esac
           REPO="${{ github.repository }}"
           BASE="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           echo "feed_file=${FEED_FILE}" >> "$GITHUB_OUTPUT"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
@@ -426,6 +453,12 @@ jobs:
           echo "Release tier: $RELEASE_TIER"
           echo "Release tag: $RELEASE_TAG"
           echo "Feed file: $FEED_FILE"
+
+      - name: Validate aggregated artifact version metadata
+        run: >-
+          node scripts/ci/validate-release-artifacts.mjs
+          --dist-dir dist
+          --expected-version "${{ needs.metadata.outputs.machine_version }}"
 
       # ----------------------------------------------------------------------
       # Build the updater feed in the Tauri updater shape:
@@ -437,7 +470,8 @@ jobs:
       - name: Generate updater feed
         shell: bash
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+          PUBLIC_VERSION: ${{ needs.metadata.outputs.public_version }}
           PUB_DATE: ${{ steps.meta.outputs.pub_date }}
           BASE: ${{ steps.meta.outputs.base }}
           FEED_FILE: ${{ steps.meta.outputs.feed_file }}
@@ -484,9 +518,9 @@ jobs:
           add_platform "windows-x86_64" "${WIN_NSIS:-$WIN_MSI}"
 
           jq -n \
-            --arg version "$VERSION" \
+            --arg version "$MACHINE_VERSION" \
             --arg pub_date "$PUB_DATE" \
-            --arg notes "Release $VERSION" \
+            --arg notes "Release $PUBLIC_VERSION" \
             --argjson platforms "$jq_platforms" \
             '{version: $version, pub_date: $pub_date, notes: $notes, platforms: $platforms}' \
             > "$FEED_FILE"
@@ -500,6 +534,7 @@ jobs:
         run: |
           node scripts/ci/validate-updater-feed.mjs "${{ steps.meta.outputs.feed_file }}" \
             --dist-dir dist \
+            --expected-version "${{ needs.metadata.outputs.machine_version }}" \
             --require-signature-files \
             --require-platform linux-x86_64 \
             --require-platform darwin-x86_64 \
@@ -512,6 +547,7 @@ jobs:
         run: |
           node scripts/ci/validate-updater-feed.mjs "${{ steps.meta.outputs.feed_file }}" \
             --dist-dir dist \
+            --expected-version "${{ needs.metadata.outputs.machine_version }}" \
             --allow-empty-platforms \
             --allow-empty-signatures
 
@@ -520,7 +556,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.release_tag }}
-          name: sortOfRemoteNG ${{ steps.meta.outputs.version }}
+          name: sortOfRemoteNG ${{ needs.metadata.outputs.public_version }}
           draft: true
           prerelease: false
           make_latest: true
@@ -536,8 +572,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.release_tag }}
-          target_commitish: ${{ github.sha }}
-          name: sortOfRemoteNG ${{ steps.meta.outputs.version }} (staging)
+          target_commitish: ${{ needs.metadata.outputs.public_tag }}
+          name: sortOfRemoteNG ${{ needs.metadata.outputs.public_version }} (staging)
           draft: true
           prerelease: true
           make_latest: false

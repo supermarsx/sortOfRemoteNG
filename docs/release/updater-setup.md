@@ -39,16 +39,16 @@ dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwNDBGMTM2QTFFRUU2RDQKUldU
 exactly two places, with a third (developer workstation) as an opt-in for
 local signed-build testing.
 
-| Location | Purpose | Access |
-| --- | --- | --- |
-| **1Password vault: `sortOfRemoteNG / Release signing`** | Canonical master copy. Holds `sortofremoteng.key`, the password used at generation time, and a dated rotation log entry. | Release maintainers only. |
-| **GitHub secret `TAURI_SIGNING_PRIVATE_KEY`** (+ `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) | Consumed by the release CI workflow (`tauri-action`). Paste the **entire** `*.key` file contents including the `untrusted comment:` header line. | Repository admins; rotates by overwrite. |
-| Developer workstation at `~/.tauri/sortofremoteng.key` | *Optional.* Only for maintainers running signed local builds. Must be 0600 / ACL-restricted. Not required for normal development — `tauri dev` and unsigned `tauri build` both work without it. | Individual maintainer. |
+| Location                                                                               | Purpose                                                                                                                                                                                         | Access                                   |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **1Password vault: `sortOfRemoteNG / Release signing`**                                | Canonical master copy. Holds `sortofremoteng.key`, the password used at generation time, and a dated rotation log entry.                                                                        | Release maintainers only.                |
+| **GitHub secret `TAURI_SIGNING_PRIVATE_KEY`** (+ `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) | Consumed by the release CI workflow (`tauri-action`). Paste the **entire** `*.key` file contents including the `untrusted comment:` header line.                                                | Repository admins; rotates by overwrite. |
+| Developer workstation at `~/.tauri/sortofremoteng.key`                                 | _Optional._ Only for maintainers running signed local builds. Must be 0600 / ACL-restricted. Not required for normal development — `tauri dev` and unsigned `tauri build` both work without it. | Individual maintainer.                   |
 
 The repository's `.gitignore` contains the patterns `.keys/`, `*.key`,
 `*.key.pub` to stop accidental commits of either half of the keypair.
 **The public `*.key.pub` file is also gitignored** — we commit the pubkey
-*inline* in `tauri.conf.json`, never as a loose file, so that a single
+_inline_ in `tauri.conf.json`, never as a loose file, so that a single
 well-reviewed location is the source of truth.
 
 ### Regenerating the keypair (bootstrap / one-time)
@@ -77,17 +77,26 @@ The GitHub release workflow (`.github/workflows/release.yml`, produced by
 executor t3-e22) consumes these env vars when invoking
 `tauri-apps/tauri-action`:
 
-| Env var | Required | Notes |
-| --- | --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | **yes** | Full contents of `sortofremoteng.key`, including the `untrusted comment:` header. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | if password-protected | Plaintext password; mark as a secret. |
+| Env var                              | Required              | Notes                                                                             |
+| ------------------------------------ | --------------------- | --------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | **yes**               | Full contents of `sortofremoteng.key`, including the `untrusted comment:` header. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | if password-protected | Plaintext password; mark as a secret.                                             |
 
 No other updater-specific secrets are required — the pubkey is embedded
 at build time from `tauri.conf.json`.
 
-The release workflow validates updater feeds before publishing. Production
-and staging releases must include signed artifacts plus a valid `latest.json`;
-dry runs build and validate without promoting the feed.
+Release identity has two deliberate representations:
+
+- `version.json` is the public authority in rolling `YY.N` form (`26.1`).
+- Git tags and GitHub Release names stay public: `vYY.N` and `YY.N`.
+- Package manifests, bundle filenames, and updater feeds use the machine-only
+  SemVer projection `YY.N.0` (`26.1.0`).
+
+Before any build starts, the release workflow requires an exact `vYY.N` tag,
+requires that its `YY.N` value matches `version.json`, derives `YY.N.0` once,
+and runs `npm run version:check`. Production requires signed artifacts;
+staging and dry-run builds may be unsigned, but every tier validates versioned
+artifact filenames and updater metadata before anything can be published.
 
 ---
 
@@ -121,30 +130,33 @@ standard Tauri v2 schema; see the
 [Tauri updater docs](https://v2.tauri.app/plugin/updater/) for the
 upstream reference). The file must be a release asset named exactly
 `latest.json` and must sign the **installer artifacts**, not itself.
+The feed's `version` is always the machine projection (`YY.N.0`), while its
+release URL and human-facing notes retain the public tag/version (`vYY.N` and
+`YY.N`).
 
 ```jsonc
 {
-  "version": "0.1.1",                 // semver; must be > the running app's version
-  "notes": "Release notes text or markdown.",
+  "version": "26.1.0", // machine SemVer; must be > the running app's version
+  "notes": "Release 26.1",
   "pub_date": "2026-04-20T00:00:00Z", // RFC 3339 / ISO 8601
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64 minisign signature of the .msi/.exe artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v0.1.1/sortOfRemoteNG_0.1.1_x64_en-US.msi"
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_26.1.0_x64_en-US.msi",
     },
     "darwin-x86_64": {
       "signature": "<base64 minisign signature of the .app.tar.gz artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v0.1.1/sortOfRemoteNG_x64.app.tar.gz"
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_x64.app.tar.gz",
     },
     "darwin-aarch64": {
       "signature": "<base64 minisign signature>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v0.1.1/sortOfRemoteNG_aarch64.app.tar.gz"
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_aarch64.app.tar.gz",
     },
     "linux-x86_64": {
       "signature": "<base64 minisign signature of the .AppImage artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v0.1.1/sortOfRemoteNG_0.1.1_amd64.AppImage"
-    }
-  }
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_26.1.0_amd64.AppImage",
+    },
+  },
 }
 ```
 
@@ -161,7 +173,8 @@ Platform identifier rules (per Tauri v2):
 The release workflow owns the generator that emits this file from the
 `tauri build` output. `scripts/ci/validate-updater-feed.mjs` enforces the
 schema, platform entries, artifact URLs, and signatures before a feed can be
-published.
+published. It also requires valid SemVer transport metadata and the exact
+expected machine projection supplied by the release workflow.
 
 ---
 
@@ -202,7 +215,7 @@ cargo check -p sorng-updater
 cargo check -p sorng-commands-core -p sorng-commands-tools
 cargo check -p app                # embeds pubkey at compile time
 npm run lint && npm run test      # covers the Settings updater UI and command facade
-node scripts/ci/validate-updater-feed.mjs <latest.json>
+node scripts/ci/validate-updater-feed.mjs <latest.json> --expected-version 26.1.0
 npm run tauri:build               # produces signed bundle if env vars set
 ```
 

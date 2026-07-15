@@ -46,18 +46,18 @@ This project aims to provide a unified interface for all your remote management 
 
 Apache Kafka integration (topic admin, producer/consumer, ACLs, consumer groups, Schema Registry, Kafka Connect) is **off by default**. The backend crate `sorng-kafka` depends on `rdkafka`, which links against the C library `librdkafka`.
 
-**Runtime requirement (v1.0):** `librdkafka ≥ 2.x` must be installed on the host. Release artifacts dynamic-link against the system library — at service-init time a `dlopen` probe surfaces a typed `LibraryMissing` error with a per-OS install hint (apt / dnf / pacman / brew / vcpkg / winget / MSYS2) if it is absent.
+**Runtime requirement (shipping Kafka baseline):** `librdkafka ≥ 2.x` must be installed on the host. Release artifacts dynamic-link against the system library — at service-init time a `dlopen` probe surfaces a typed `LibraryMissing` error with a per-OS install hint (apt / dnf / pacman / brew / vcpkg / winget / MSYS2) if it is absent.
 
 Build flags:
 
-- `--features kafka` (v1.0 default) — dynamic-link against a system-installed librdkafka. Install via `apt install librdkafka-dev`, `dnf install librdkafka-devel`, `pacman -S librdkafka`, `brew install librdkafka`, `vcpkg install librdkafka:x64-windows`, or `winget install librdkafka`.
+- `--features kafka` (shipping default) — dynamic-link against a system-installed librdkafka. Install via `apt install librdkafka-dev`, `dnf install librdkafka-devel`, `pacman -S librdkafka`, `brew install librdkafka`, `vcpkg install librdkafka:x64-windows`, or `winget install librdkafka`.
 - `--features kafka-dynamic` — explicit alias of `--features kafka` (kept for CI compatibility).
 - `--features kafka-static` — compiles librdkafka from source via CMake. Developer/CI only; fails on Windows/MSYS64 due to a known cmake path-mangling issue.
 
 Example:
 
 ```bash
-# v1.0 default (install librdkafka first — see per-OS commands above):
+# Shipping default (install librdkafka first — see per-OS commands above):
 cargo build --features kafka
 
 # No Kafka — default dev loop:
@@ -203,8 +203,8 @@ accordingly:
   fresh install.
 - **Loopback-only unless you opt in.** When enabled it binds `127.0.0.1` only.
   It binds a routable address (`0.0.0.0`) **only** when you explicitly turn on
-  *Allow remote connections*.
-- **Authentication is forced when remote.** With *Allow remote connections* on,
+  _Allow remote connections_.
+- **Authentication is forced when remote.** With _Allow remote connections_ on,
   authentication cannot be turned off — the server refuses to start without a
   resolvable API key (fail-closed).
 

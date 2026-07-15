@@ -25,10 +25,10 @@ that returns a valid `latest.json`. `sortOfRemoteNG` composes the runtime list
 inside `sorng-updater`:
 
 1. Settings-managed private endpoint (`settings.json` →
-  `updater.privateEndpointEnabled` + `updater.privateEndpointUrl`), when
-  enabled and valid.
+   `updater.privateEndpointEnabled` + `updater.privateEndpointUrl`), when
+   enabled and valid.
 2. Public GitHub Releases, always present:
-  `https://github.com/supermarsx/sortOfRemoteNG/releases/latest/download/latest.json`.
+   `https://github.com/supermarsx/sortOfRemoteNG/releases/latest/download/latest.json`.
 
 The runtime uses `UpdaterExt::updater_builder().endpoints(..)` to pass the
 resolved list to `tauri-plugin-updater`. A private endpoint therefore checks
@@ -81,16 +81,16 @@ A minimal layout that works out of the box with the Tauri updater:
 ```
 s3://sortofremoteng-updates/
 ├── latest.json                                      (public-read)
-├── 0.1.1/
-│   ├── sortOfRemoteNG_0.1.1_x64_en-US.msi           (public-read)
-│   ├── sortOfRemoteNG_0.1.1_x64_en-US.msi.sig       (public-read)
-│   ├── sortOfRemoteNG_0.1.1_x64.app.tar.gz
-│   ├── sortOfRemoteNG_0.1.1_x64.app.tar.gz.sig
-│   ├── sortOfRemoteNG_0.1.1_aarch64.app.tar.gz
-│   ├── sortOfRemoteNG_0.1.1_aarch64.app.tar.gz.sig
-│   ├── sortOfRemoteNG_0.1.1_amd64.AppImage
-│   └── sortOfRemoteNG_0.1.1_amd64.AppImage.sig
-└── 0.1.2/…
+├── 26.1.0/
+│   ├── sortOfRemoteNG_26.1.0_x64_en-US.msi           (public-read)
+│   ├── sortOfRemoteNG_26.1.0_x64_en-US.msi.sig       (public-read)
+│   ├── sortOfRemoteNG_26.1.0_x64.app.tar.gz
+│   ├── sortOfRemoteNG_26.1.0_x64.app.tar.gz.sig
+│   ├── sortOfRemoteNG_26.1.0_aarch64.app.tar.gz
+│   ├── sortOfRemoteNG_26.1.0_aarch64.app.tar.gz.sig
+│   ├── sortOfRemoteNG_26.1.0_amd64.AppImage
+│   └── sortOfRemoteNG_26.1.0_amd64.AppImage.sig
+└── 26.2.0/…
 ```
 
 **Conventions:**
@@ -100,11 +100,13 @@ s3://sortofremoteng-updates/
   within a minute).
 - Installer + `.sig` file names match the `tauri build` output exactly;
   renaming breaks the embedded signature check.
+- Directory, artifact, and feed versions use machine SemVer `YY.N.0`. Public
+  GitHub tags and release labels remain `vYY.N` and `YY.N`.
 - The bucket is fronted by **CloudFront** (or your CDN of choice) with
   ACM-issued TLS. Origin access is typically **OAI / OAC** so only the
   CDN can read — clients only ever talk to the CDN hostname.
-- The URL you bake into `UPDATER_PRIVATE_ENDPOINT_URL` is the CDN
-  hostname + `/latest.json`, e.g.
+- The URL configured in Settings or managed settings is the CDN hostname plus
+  `/latest.json`, e.g.
   `https://updates.corp.example.com/sortofremoteng/latest.json`.
 
 ---
@@ -113,27 +115,27 @@ s3://sortofremoteng-updates/
 
 ```jsonc
 {
-  "version": "0.1.1",
-  "notes": "Enterprise build; release notes here.",
+  "version": "26.1.0",
+  "notes": "Enterprise build for release 26.1.",
   "pub_date": "2026-04-20T00:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64 minisign signature of the .msi artifact>",
-      "url": "https://updates.corp.example.com/sortofremoteng/0.1.1/sortOfRemoteNG_0.1.1_x64_en-US.msi"
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_x64_en-US.msi",
     },
     "darwin-x86_64": {
       "signature": "<base64 minisign signature>",
-      "url": "https://updates.corp.example.com/sortofremoteng/0.1.1/sortOfRemoteNG_0.1.1_x64.app.tar.gz"
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_x64.app.tar.gz",
     },
     "darwin-aarch64": {
       "signature": "<base64 minisign signature>",
-      "url": "https://updates.corp.example.com/sortofremoteng/0.1.1/sortOfRemoteNG_0.1.1_aarch64.app.tar.gz"
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_aarch64.app.tar.gz",
     },
     "linux-x86_64": {
       "signature": "<base64 minisign signature>",
-      "url": "https://updates.corp.example.com/sortofremoteng/0.1.1/sortOfRemoteNG_0.1.1_amd64.AppImage"
-    }
-  }
+      "url": "https://updates.corp.example.com/sortofremoteng/26.1.0/sortOfRemoteNG_26.1.0_amd64.AppImage",
+    },
+  },
 }
 ```
 
@@ -224,7 +226,7 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
 3. **Upload to S3** (versioned dir + root `latest.json`):
    ```sh
    aws s3 cp src-tauri/target/release/bundle/ \
-     s3://sortofremoteng-updates/0.1.1/ --recursive \
+     s3://sortofremoteng-updates/26.1.0/ --recursive \
      --exclude "*" --include "*.msi" --include "*.msi.sig" \
      --include "*.tar.gz" --include "*.tar.gz.sig" \
      --include "*.AppImage" --include "*.AppImage.sig"
@@ -237,9 +239,9 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
      --distribution-id <DIST_ID> --paths "/latest.json"
    ```
 5. **Smoke-test** on a staging workstation with the private endpoint
-  configured in Settings > Updater: launch the app, check for updates,
-  confirm the new version is reported, then run Download and install to
-  verify the Tauri updater accepts the signed artifact.
+   configured in Settings > Updater: launch the app, check for updates,
+   confirm the new version is reported, then run Download and install to
+   verify the Tauri updater accepts the signed artifact.
 6. **Promote** by publishing the matching GitHub release with the same
    signed artifacts + `latest.json` so public-feed users receive the
    same update.
@@ -273,6 +275,5 @@ rollback installer, copy installer, or channel-history rollback command.
   URL to be confidential, gate access at the CDN / VPN / firewall layer
   rather than encrypting the settings file.
 - **Windows note**: `%APPDATA%` resolves to `C:\Users\<user>\AppData\Roaming`.
-  MDM pushes should target that path per user, or use the
-  `UPDATER_PRIVATE_ENDPOINT_URL` build-time path for machine-wide
-  deployments.
+  MDM pushes should target that path per user and preserve other settings keys;
+  there is no build-time private-endpoint override.
