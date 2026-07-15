@@ -1,7 +1,8 @@
-import { S } from './selectors';
+import { S } from "./selectors";
 
 type WindowSnapshot = {
   hasAppShell: boolean;
+  hasPrimaryWorkspace: boolean;
   hasCriticalError: boolean;
   hasSplash: boolean;
   hasWelcome: boolean;
@@ -12,38 +13,55 @@ type WindowSnapshot = {
 async function getWindowSnapshot(): Promise<WindowSnapshot> {
   return browser.execute(() => ({
     hasAppShell: document.querySelector('[data-testid="app-shell"]') !== null,
-    hasCriticalError: document.querySelector('[data-testid="critical-error-screen"]') !== null,
+    hasPrimaryWorkspace:
+      document.querySelector('[data-testid="toolbar-new-connection"]') !== null,
+    hasCriticalError:
+      document.querySelector('[data-testid="critical-error-screen"]') !== null,
     hasSplash: document.querySelector('[data-testid="splash-screen"]') !== null,
-    hasWelcome: document.querySelector('[data-testid="welcome-screen"]') !== null,
+    hasWelcome:
+      document.querySelector('[data-testid="welcome-screen"]') !== null,
     hasTauriInvoke:
-      typeof (globalThis as { __TAURI__?: { core?: { invoke?: unknown } } }).__TAURI__?.core
-        ?.invoke === 'function',
+      typeof (globalThis as { __TAURI__?: { core?: { invoke?: unknown } } })
+        .__TAURI__?.core?.invoke === "function",
     href: window.location.href,
   }));
 }
 
 function isNativeSplashDocument(snapshot: WindowSnapshot): boolean {
-  return snapshot.href.startsWith('data:text/html');
+  return snapshot.href.startsWith("data:text/html");
 }
 
-async function dismissNativeSplash(snapshot?: WindowSnapshot): Promise<boolean> {
-  const currentSnapshot = snapshot ?? (await getWindowSnapshot().catch(() => null));
-  if (!currentSnapshot || !isNativeSplashDocument(currentSnapshot) || !currentSnapshot.hasTauriInvoke) {
+async function dismissNativeSplash(
+  snapshot?: WindowSnapshot,
+): Promise<boolean> {
+  const currentSnapshot =
+    snapshot ?? (await getWindowSnapshot().catch(() => null));
+  if (
+    !currentSnapshot ||
+    !isNativeSplashDocument(currentSnapshot) ||
+    !currentSnapshot.hasTauriInvoke
+  ) {
     return false;
   }
 
-  const closed = await browser.executeAsync((done: (result: boolean) => void) => {
-    const tauri = (globalThis as { __TAURI__?: { core?: { invoke?: (cmd: string) => Promise<unknown> } } }).__TAURI__;
-    const invoke = tauri?.core?.invoke;
-    if (typeof invoke !== 'function') {
-      done(false);
-      return;
-    }
+  const closed = await browser.executeAsync(
+    (done: (result: boolean) => void) => {
+      const tauri = (
+        globalThis as {
+          __TAURI__?: { core?: { invoke?: (cmd: string) => Promise<unknown> } };
+        }
+      ).__TAURI__;
+      const invoke = tauri?.core?.invoke;
+      if (typeof invoke !== "function") {
+        done(false);
+        return;
+      }
 
-    invoke('close_splash')
-      .then(() => done(true))
-      .catch(() => done(false));
-  });
+      invoke("close_splash")
+        .then(() => done(true))
+        .catch(() => done(false));
+    },
+  );
 
   if (closed) {
     await browser.pause(500);
@@ -57,19 +75,22 @@ async function ensureAppWindowSelected(): Promise<void> {
 
   for (let pass = 0; pass < 3; pass += 1) {
     const handles = await browser.getWindowHandles();
-    fallbackHandle = handles.at(-1);
 
     for (const handle of [...handles].reverse()) {
       try {
         await browser.switchToWindow(handle);
         const snapshot = await getWindowSnapshot();
-        if (
-          snapshot.hasAppShell ||
-          snapshot.hasCriticalError ||
-          snapshot.hasSplash ||
-          snapshot.hasWelcome
-        ) {
+        if (snapshot.hasPrimaryWorkspace) {
           return;
+        }
+        if (
+          !fallbackHandle &&
+          (snapshot.hasAppShell ||
+            snapshot.hasCriticalError ||
+            snapshot.hasSplash ||
+            snapshot.hasWelcome)
+        ) {
+          fallbackHandle = handle;
         }
 
         if (isNativeSplashDocument(snapshot)) {
@@ -81,18 +102,42 @@ async function ensureAppWindowSelected(): Promise<void> {
           continue;
         }
 
-        if (snapshot.href && snapshot.href !== 'about:blank') {
-          return;
+        if (snapshot.href && snapshot.href !== "about:blank") {
+          fallbackHandle ??= handle;
         }
       } catch {
         // Ignore transient handles while the Tauri webview is switching documents.
       }
     }
+    fallbackHandle ??= handles.at(-1);
   }
 
   if (fallbackHandle) {
     await browser.switchToWindow(fallbackHandle);
   }
+}
+
+export async function closeDetachedAppWindows(): Promise<void> {
+  const handles = await browser.getWindowHandles();
+  if (handles.length <= 1) return;
+
+  let primaryHandle: string | undefined;
+  for (const handle of handles) {
+    await browser.switchToWindow(handle).catch(() => undefined);
+    const snapshot = await getWindowSnapshot().catch(() => null);
+    if (snapshot?.hasPrimaryWorkspace) {
+      primaryHandle = handle;
+      break;
+    }
+  }
+  if (!primaryHandle) return;
+
+  for (const handle of handles) {
+    if (handle === primaryHandle) continue;
+    await browser.switchToWindow(handle).catch(() => undefined);
+    await browser.closeWindow().catch(() => undefined);
+  }
+  await browser.switchToWindow(primaryHandle);
 }
 
 export async function waitForAppReady(): Promise<void> {
@@ -103,16 +148,16 @@ export async function waitForAppReady(): Promise<void> {
       const snapshot = await getWindowSnapshot().catch(() => null);
       return Boolean(
         snapshot &&
-          (snapshot.hasAppShell ||
-            snapshot.hasCriticalError ||
-            snapshot.hasSplash ||
-            snapshot.hasWelcome),
+        (snapshot.hasAppShell ||
+          snapshot.hasCriticalError ||
+          snapshot.hasSplash ||
+          snapshot.hasWelcome),
       );
     },
     {
       timeout: 30_000,
       interval: 250,
-      timeoutMsg: 'Expected the Tauri app window to become available',
+      timeoutMsg: "Expected the Tauri app window to become available",
     },
   );
 
@@ -127,6 +172,7 @@ export async function waitForAppReady(): Promise<void> {
 }
 
 export async function resetAppState(): Promise<void> {
+  await closeDetachedAppWindows().catch(() => undefined);
   await ensureAppWindowSelected();
 
   await closeAllSessions().catch(() => undefined);
@@ -167,7 +213,9 @@ export async function resetAppState(): Promise<void> {
         .databases()
         .then((dbs) => {
           const deletions = dbs
-            .filter((db) => db.name && db.name.toLowerCase().includes('mremote'))
+            .filter(
+              (db) => db.name && db.name.toLowerCase().includes("mremote"),
+            )
             .map(
               (db) =>
                 new Promise<void>((resolve) => {
@@ -209,10 +257,31 @@ export async function getActiveSessionCount(): Promise<number> {
 
 export async function closeAllSessions(): Promise<void> {
   let tabs = await $$(S.sessionTab);
+  let attemptsRemaining = Math.max(4, (await tabs.length) * 2);
   while ((await tabs.length) > 0) {
+    if (attemptsRemaining-- <= 0) {
+      throw new Error("Session tabs did not close within the bounded cleanup");
+    }
+    const previousCount = await tabs.length;
     const closeBtn = await tabs[0].$('[data-testid="session-tab-close"]');
     await closeBtn.click();
-    await browser.pause(300);
+    const confirm = await $(S.confirmDialog);
+    if (await confirm.isDisplayed().catch(() => false)) {
+      await (await $(S.confirmYes)).click();
+    }
+    await browser
+      .waitUntil(
+        async () => {
+          const remainingTabs = await $$(S.sessionTab);
+          return (await remainingTabs.length) < previousCount;
+        },
+        {
+          timeout: 3_000,
+          interval: 100,
+          timeoutMsg: "Session tab did not close after confirmation",
+        },
+      )
+      .catch(() => undefined);
     tabs = await $$(S.sessionTab);
   }
 }
@@ -239,11 +308,61 @@ export async function createCollection(
   await ensureAppWindowSelected();
 
   const collectionSelector = await $(S.collectionSelector);
-  if (!(await collectionSelector.isDisplayed().catch(() => false))) {
+  const modernCreate = await $('[data-testid="database-create"]');
+  if (
+    !(await collectionSelector.isDisplayed().catch(() => false)) &&
+    !(await modernCreate.isDisplayed().catch(() => false))
+  ) {
     const toolbarButton = await $(S.toolbarCollection);
     await toolbarButton.waitForClickable({ timeout: 10_000 });
     await toolbarButton.click();
-    await collectionSelector.waitForDisplayed({ timeout: 10_000 });
+    await browser.waitUntil(
+      async () =>
+        (await collectionSelector.isDisplayed().catch(() => false)) ||
+        (await modernCreate.isDisplayed().catch(() => false)),
+      {
+        timeout: 10_000,
+        timeoutMsg: "Expected the collection manager to open",
+      },
+    );
+  }
+
+  if (await modernCreate.isDisplayed().catch(() => false)) {
+    await modernCreate.waitForClickable({ timeout: 10_000 });
+    await modernCreate.click();
+
+    const nameInput = await $('[data-testid="database-name"]');
+    await nameInput.waitForDisplayed({ timeout: 5_000 });
+    await nameInput.setValue(name);
+
+    if (encrypted && password) {
+      const encryptionToggle = await $(
+        '//*[@data-testid="database-name"]/ancestor::div[contains(@class,"space-y-3")][1]//*[@role="checkbox" or @type="checkbox"]',
+      );
+      await encryptionToggle.click();
+      const passwordInputs = await $$('input[type="password"]');
+      if ((await passwordInputs.length) < 2) {
+        throw new Error("Expected collection password and confirmation fields");
+      }
+      await passwordInputs[0].setValue(password);
+      await passwordInputs[1].setValue(password);
+    }
+
+    const confirm = await $('[data-testid="database-confirm"]');
+    await confirm.waitForClickable({ timeout: 5_000 });
+    await confirm.click();
+    await browser.waitUntil(
+      async () => {
+        const newConnection = await $(S.toolbarNewConnection);
+        return (await newConnection.getAttribute("disabled")) === null;
+      },
+      {
+        timeout: 10_000,
+        timeoutMsg: "Expected the new collection to become active",
+      },
+    );
+    await closeAllSessions();
+    return;
   }
 
   const createBtn = await $(S.collectionCreate);

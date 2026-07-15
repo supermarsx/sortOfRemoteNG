@@ -1,7 +1,7 @@
 import type { Connection } from "../../types/connection/connection";
 import type { ProxyCollectionData } from "../../types/settings/settings";
-import { redactSecrets } from "../errors/redact";
 import { proxyCollectionManager } from "../connection/proxyCollectionManager";
+import { formatErrorForDisplay } from "../errors/formatError";
 import type {
   ResolvedChainConfig,
   ResolvedJumpHost,
@@ -499,13 +499,7 @@ export function formatRuntimeNetworkPathError(
   runtime?: RuntimeNetworkPath | null,
   additionalSecrets: readonly (string | null | undefined)[] = [],
 ): string {
-  const raw =
-    error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : String(error);
-  return redactSecrets(raw, [
+  return formatErrorForDisplay(error, [
     ...(runtime?.redactionSecrets ?? []),
     ...additionalSecrets.filter((value): value is string => Boolean(value)),
   ]);

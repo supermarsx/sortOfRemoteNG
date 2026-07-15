@@ -18,7 +18,9 @@
   },
   "include": [
     "./specs/**/*.ts",
+    "./fixtures/**/*.ts",
     "./helpers/**/*.ts",
+    "./*.config.ts",
     "./wdio.conf.ts"
   ]
 }
