@@ -246,14 +246,11 @@ impl ExchangeClient {
     /// In production this delegates to `sorng-powershell` session execution;
     /// the method is designed so the service layer can plug the real executor.
     pub async fn run_ps(&self, script: &str) -> ExchangeResult<String> {
-        // This is the integration point: the service layer wraps this with
-        // the real sorng-powershell execution engine.
-        // For now we return a placeholder indicating the script that would run.
-        warn!("run_ps stub – real execution via sorng-powershell session required");
-        Ok(format!(
-            "{{\"_stub\": true, \"script\": \"{}\"}}",
-            script.replace('"', "\\\"")
-        ))
+        warn!("run_ps unsupported – sorng-exchange is not wired to sorng-powershell execution");
+        Err(ExchangeError::powershell(format!(
+            "on-prem Exchange PowerShell execution is not wired to the sorng-powershell session engine (script length: {} chars)",
+            script.len()
+        )))
     }
 
     /// Execute a PowerShell command and deserialise the JSON output.
@@ -307,5 +304,25 @@ impl ExchangeClient {
         resp.json()
             .await
             .map_err(|e| ExchangeError::unknown(format!("response parse error: {e}")))
+    }
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn run_ps_fails_loudly_when_executor_is_unavailable() {
+        let client = ExchangeClient::new(ExchangeConnectionConfig::default())
+            .expect("default Exchange client should build");
+
+        let error = client
+            .run_ps("Get-Mailbox")
+            .await
+            .expect_err("an unavailable PowerShell executor must not report success");
+
+        assert_eq!(error.kind, ExchangeErrorKind::PowerShell);
+        assert!(error.message.contains("not wired"));
+        assert!(error.message.contains("11 chars"));
     }
 }
