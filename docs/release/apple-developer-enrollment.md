@@ -282,7 +282,7 @@ If any of (1)-(4) fail, do **not** proceed to CI wiring — fix the local path f
 ## 11. Runbook references (for successor executors)
 
 - t3-e22 `release.yml` consumes all five secrets from §7. Keep secret names stable.
-- t3-e24 `SECURITY.md` should cross-link this file as the source of signing-identity provenance.
+- t3-e24 `security.md` should cross-link this file as the source of signing-identity provenance.
 - Calendar entry: Developer ID Application cert **expires 5 years** after issuance. Set a reminder at year 4, month 9.
 - Calendar entry: App-Specific Password — **rotate yearly** or on Account Holder change. Revoke at <https://account.apple.com/> → Sign-In and Security.
 

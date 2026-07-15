@@ -81,8 +81,8 @@ docs
 *.md
 !readme.md
 !license.md
-!SECURITY.md
-!ARCHITECTURE.md
+!security.md
+!architecture.md
 
 # --- Docker self-reference --------------------------------------------------
 Dockerfile*

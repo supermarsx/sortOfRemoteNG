@@ -88,7 +88,7 @@ Strengths:
 - Reactivation is already recognized as a meaningful protocol event.
 - Reconnect behavior has a testable shape.
 - Session polling has moved away from timeout polling toward wake-driven behavior.
-- The per-session actor model aligns with the app architecture in `ARCHITECTURE.md`.
+- The per-session actor model aligns with the app architecture in `architecture.md`.
 
 Weaknesses:
 
@@ -806,7 +806,7 @@ When a feature fails, degradation should be explicit:
 
 | File                                                           | Change                                                               |
 | -------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `ARCHITECTURE.md`                                              | Add a short RDP session actor subsection after implementation lands. |
+| `architecture.md`                                              | Add a short RDP session actor subsection after implementation lands. |
 | `docs/testing/`                                                | Add RDP diagnostics and live fixture runbook if needed.              |
 | `docs/plans/rdp-lifecycle-virtual-channels-frame-flow-plan.md` | This plan. Keep updated as phases complete.                          |
 
@@ -992,7 +992,7 @@ Deliverables:
 
 - Backend diagnostics snapshot command/event.
 - Compact frontend diagnostics panel.
-- `ARCHITECTURE.md` RDP subsection.
+- `architecture.md` RDP subsection.
 - RDP testing runbook updates.
 
 Exit criteria:

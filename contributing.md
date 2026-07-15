@@ -2,8 +2,8 @@
 
 Thanks for your interest! This file covers the minimum you need to get a
 dev environment running and pass CI. Architecture, security model, and the
-full feature matrix live in [`ARCHITECTURE.md`](ARCHITECTURE.md) and
-[`SECURITY.md`](SECURITY.md).
+full feature matrix live in [`architecture.md`](architecture.md) and
+[`security.md`](security.md).
 
 ## Toolchain requirements
 
@@ -114,5 +114,5 @@ Open a GitHub issue with:
 3. Relevant log output (the app emits structured logs; set
    `RUST_LOG=debug` for verbose).
 
-Security issues: see [`SECURITY.md`](SECURITY.md) for the disclosure
+Security issues: see [`security.md`](security.md) for the disclosure
 process — please email the maintainers rather than filing a public issue.

@@ -111,7 +111,7 @@ macOS and Linux developers get the normal host-matched `stable` toolchain —
 no extra steps.
 
 CI enforces the Windows MSVC host explicitly in the `rust-check-windows`
-job (see `.github/workflows/ci.yml`). See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+job (see `.github/workflows/ci.yml`). See [`contributing.md`](contributing.md)
 for the full dev-loop.
 
 ### Installation

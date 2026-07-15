@@ -9,7 +9,7 @@
 # "export ordinal too large" error from rdkafka/ironrdp chains). That
 # requirement is enforced by:
 #   - CI: `.github/workflows/ci.yml` `rust-check-windows` job (see below).
-#   - Developers: `README.md` Toolchain section + `CONTRIBUTING.md`.
+#   - Developers: `README.md` Toolchain section + `contributing.md`.
 #
 # To switch a Windows machine to MSVC host:
 #   rustup set default-host x86_64-pc-windows-msvc
