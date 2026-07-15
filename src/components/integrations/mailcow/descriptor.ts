@@ -15,5 +15,6 @@ export const mailcowDescriptor: IntegrationDescriptor = {
   label: "mailcow",
   category: "app-service",
   icon: Mailbox,
+  defaultConnectionIconKey: "mailbox",
   importPanel: () => import("./MailcowPanel"),
 };

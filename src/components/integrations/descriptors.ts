@@ -19,6 +19,7 @@ export const lxdDescriptor: IntegrationDescriptor = {
   label: "LXD / Incus",
   category: "infra",
   icon: Boxes,
+  defaultConnectionIconKey: "boxes",
   importPanel: () => import("./lxd/LxdPanel"),
 };
 
@@ -27,6 +28,7 @@ export const pfsenseDescriptor: IntegrationDescriptor = {
   label: "pfSense",
   category: "infra",
   icon: ShieldCheck,
+  defaultConnectionIconKey: "shield-check",
   importPanel: () => import("./pfsense/PfsensePanel"),
 };
 
@@ -35,6 +37,7 @@ export const vmwareDesktopDescriptor: IntegrationDescriptor = {
   label: "VMware Workstation",
   category: "infra",
   icon: MonitorPlay,
+  defaultConnectionIconKey: "monitor-play",
   importPanel: () => import("./vmwareDesktop/VmwareDesktopPanel"),
 };
 
@@ -43,6 +46,7 @@ export const vmwareDescriptor: IntegrationDescriptor = {
   label: "VMware vSphere",
   category: "infra",
   icon: Server,
+  defaultConnectionIconKey: "server",
   importPanel: () => import("./VmwarePanel"),
 };
 
@@ -51,6 +55,7 @@ export const nginxDescriptor: IntegrationDescriptor = {
   label: "Nginx",
   category: "web",
   icon: Server,
+  defaultConnectionIconKey: "server",
   importPanel: () => import("./NginxPanel"),
 };
 
@@ -59,6 +64,7 @@ export const haproxyDescriptor: IntegrationDescriptor = {
   label: "HAProxy",
   category: "web",
   icon: Network,
+  defaultConnectionIconKey: "network",
   importPanel: () => import("./HaproxyPanel"),
 };
 
@@ -67,6 +73,7 @@ export const caddyDescriptor: IntegrationDescriptor = {
   label: "Caddy",
   category: "web",
   icon: Boxes,
+  defaultConnectionIconKey: "boxes",
   importPanel: () => import("./CaddyPanel"),
 };
 
@@ -75,6 +82,7 @@ export const traefikDescriptor: IntegrationDescriptor = {
   label: "Traefik",
   category: "web",
   icon: Waypoints,
+  defaultConnectionIconKey: "waypoints",
   importPanel: () => import("./TraefikPanel"),
 };
 
@@ -83,6 +91,7 @@ export const mssqlDescriptor: IntegrationDescriptor = {
   label: "SQL Server",
   category: "database",
   icon: Database,
+  defaultConnectionIconKey: "database",
   importPanel: () => import("./MssqlPanel"),
 };
 
@@ -91,6 +100,7 @@ export const prometheusDescriptor: IntegrationDescriptor = {
   label: "Prometheus",
   category: "app-service",
   icon: Activity,
+  defaultConnectionIconKey: "activity",
   importPanel: () => import("./PrometheusPanel"),
 };
 
@@ -99,6 +109,7 @@ export const gdriveDescriptor: IntegrationDescriptor = {
   label: "Google Drive",
   category: "app-service",
   icon: HardDrive,
+  defaultConnectionIconKey: "drive",
   importPanel: () => import("./GdrivePanel"),
 };
 
@@ -107,6 +118,7 @@ export const grafanaDescriptor: IntegrationDescriptor = {
   label: "Grafana",
   category: "app-service",
   icon: BarChart3,
+  defaultConnectionIconKey: "bar-chart",
   importPanel: () => import("./GrafanaPanel"),
 };
 
@@ -115,6 +127,7 @@ export const budibaseDescriptor: IntegrationDescriptor = {
   label: "Budibase",
   category: "app-service",
   icon: Boxes,
+  defaultConnectionIconKey: "boxes",
   importPanel: () => import("./BudibasePanel"),
 };
 
@@ -123,5 +136,6 @@ export const keepassDescriptor: IntegrationDescriptor = {
   label: "KeePass",
   category: "vault",
   icon: KeyRound,
+  defaultConnectionIconKey: "key-round",
   importPanel: () => import("./keepass/KeepassPanel"),
 };

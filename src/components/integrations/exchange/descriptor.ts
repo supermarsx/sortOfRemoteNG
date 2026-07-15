@@ -15,5 +15,6 @@ export const exchangeDescriptor: IntegrationDescriptor = {
   label: "Exchange",
   category: "app-service",
   icon: Mail,
+  defaultConnectionIconKey: "mail",
   importPanel: () => import("./ExchangePanel"),
 };

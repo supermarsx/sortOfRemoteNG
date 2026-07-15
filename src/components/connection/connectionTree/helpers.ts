@@ -1,60 +1,38 @@
+import type { LucideIcon } from "lucide-react";
+import type { Connection } from "../../../types/connection/connection";
+import { findDescriptor } from "../../../types/integrations/registry";
 import {
-  Monitor,
-  Terminal,
-  Eye,
-  Globe,
-  Phone,
-  Database,
-  Server,
-  Shield,
-  Cloud,
-  Folder,
-  Star,
-  HardDrive,
-} from "lucide-react";
-import { Connection } from "../../../types/connection/connection";
+  CONNECTION_ICON_REGISTRY,
+  getConnectionIconDefinition,
+  type ConnectionIconKey,
+} from "../../../utils/icons/connectionIconCatalog";
+import {
+  GENERIC_CONNECTION_ICON_KEY,
+  getConnectionIntegrationKey,
+  getProtocolDefaultIconKey,
+  resolveEffectiveConnectionIcon,
+} from "../../../utils/icons/resolveConnectionIcon";
 
-export const getProtocolIcon = (protocol: string) => {
-  switch (protocol) {
-    case "rdp":
-      return Monitor;
-    case "ssh":
-      return Terminal;
-    case "vnc":
-      return Eye;
-    case "http":
-    case "https":
-      return Globe;
-    case "telnet":
-    case "rlogin":
-      return Phone;
-    case "mysql":
-      return Database;
-    case "winrm":
-      return Server;
-    default:
-      return Monitor;
-  }
+export const getProtocolIcon = (protocol: string): LucideIcon => {
+  const key =
+    getProtocolDefaultIconKey(protocol) ?? GENERIC_CONNECTION_ICON_KEY;
+  return getConnectionIconDefinition(key)!.icon;
 };
 
-export const iconRegistry: Record<string, typeof Monitor> = {
-  monitor: Monitor,
-  terminal: Terminal,
-  globe: Globe,
-  database: Database,
-  server: Server,
-  shield: Shield,
-  cloud: Cloud,
-  folder: Folder,
-  star: Star,
-  drive: HardDrive,
+/** Backward-compatible component registry, now backed by the full catalog. */
+export const iconRegistry: Readonly<Record<ConnectionIconKey, LucideIcon>> =
+  CONNECTION_ICON_REGISTRY;
+
+export const getConnectionIconResolution = (connection: Connection) => {
+  const integrationKey = getConnectionIntegrationKey(connection);
+  const descriptor = integrationKey
+    ? findDescriptor(integrationKey)
+    : undefined;
+  return resolveEffectiveConnectionIcon(connection, descriptor);
 };
 
-export const getConnectionIcon = (connection: Connection) => {
-  const key = (connection.icon || "").toLowerCase();
-  if (key && iconRegistry[key]) return iconRegistry[key];
-  return getProtocolIcon(connection.protocol);
-};
+export const getConnectionIcon = (connection: Connection): LucideIcon =>
+  getConnectionIconResolution(connection).icon;
 
 export const getStatusColor = (status?: string) => {
   switch (status) {

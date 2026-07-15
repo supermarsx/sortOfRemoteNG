@@ -15,5 +15,6 @@ export const ansibleDescriptor: IntegrationDescriptor = {
   label: "Ansible",
   category: "infra",
   icon: ServerCog,
+  defaultConnectionIconKey: "server-cog",
   importPanel: () => import("./AnsiblePanel"),
 };

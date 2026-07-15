@@ -19,5 +19,6 @@ export const mailDescriptor: IntegrationDescriptor = {
   label: "Mail Server",
   category: "mail",
   icon: Mail,
+  defaultConnectionIconKey: "mail",
   importPanel: () => import("./MailServerPanel"),
 };

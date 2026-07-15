@@ -15,5 +15,6 @@ export const netboxDescriptor: IntegrationDescriptor = {
   label: "NetBox",
   category: "infra",
   icon: Network,
+  defaultConnectionIconKey: "network",
   importPanel: () => import("./NetboxPanel"),
 };

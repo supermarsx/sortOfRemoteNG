@@ -15,5 +15,6 @@ export const cpanelDescriptor: IntegrationDescriptor = {
   label: "cPanel/WHM",
   category: "infra",
   icon: Server,
+  defaultConnectionIconKey: "server",
   importPanel: () => import("./CpanelPanel"),
 };

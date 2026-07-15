@@ -15,5 +15,6 @@ export const osticketDescriptor: IntegrationDescriptor = {
   label: "osTicket",
   category: "app-service",
   icon: LifeBuoy,
+  defaultConnectionIconKey: "life-buoy",
   importPanel: () => import("./OsticketPanel"),
 };

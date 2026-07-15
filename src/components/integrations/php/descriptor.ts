@@ -15,5 +15,6 @@ export const phpDescriptor: IntegrationDescriptor = {
   label: "PHP-FPM",
   category: "web",
   icon: FileCode2,
+  defaultConnectionIconKey: "file-code",
   importPanel: () => import("./PhpPanel"),
 };

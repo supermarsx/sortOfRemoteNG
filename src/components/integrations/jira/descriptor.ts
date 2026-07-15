@@ -15,5 +15,6 @@ export const jiraDescriptor: IntegrationDescriptor = {
   label: "Jira",
   category: "app-service",
   icon: SquareKanban,
+  defaultConnectionIconKey: "kanban",
   importPanel: () => import("./JiraPanel"),
 };

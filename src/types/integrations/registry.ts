@@ -50,6 +50,12 @@ export interface IntegrationDescriptor {
   category: IntegrationCategory;
   /** Lucide icon component rendered in the hub list + tabs. */
   icon: LucideIcon;
+  /**
+   * Stable string key used as the default icon for saved connections backed
+   * by this integration. Unlike `icon`, this value is persistence-safe and
+   * can be resolved through the connection icon catalog.
+   */
+  defaultConnectionIconKey?: string;
   /** Lazy import of the panel module. Mirrors `dynamic(() => import(...))` in
    *  `ToolTabViewer`, but data-driven — the panel host awaits this. */
   importPanel: () => Promise<{ default: ComponentType<IntegrationPanelProps> }>;
