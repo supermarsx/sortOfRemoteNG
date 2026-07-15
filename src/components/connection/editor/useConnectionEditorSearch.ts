@@ -15,6 +15,7 @@ import {
 } from "./connectionEditorSearchIndex";
 import {
   type ConnectionEditorExpandableSectionId,
+  type ConnectionEditorProtocolSubtabId,
   type ConnectionEditorSearchDescriptor,
   type ConnectionEditorTabDescriptor,
   type ConnectionEditorTabId,
@@ -213,14 +214,24 @@ function focusAndHighlightSearchTarget({
   fieldId,
   sectionId,
   fieldLabel,
+  protocolSubtabId,
   query,
 }: {
   container: HTMLElement;
   fieldId: string;
   sectionId: string;
   fieldLabel?: string;
+  protocolSubtabId?: ConnectionEditorProtocolSubtabId;
   query: string;
 }): boolean {
+  if (
+    protocolSubtabId &&
+    !Array.from(
+      container.querySelectorAll<HTMLElement>("[data-protocol-subtab]"),
+    ).some((panel) => panel.dataset.protocolSubtab === protocolSubtabId)
+  ) {
+    return false;
+  }
   clearSearchHighlight(container);
   const section = findSection(container, sectionId);
   if (!section) return false;
@@ -267,6 +278,7 @@ interface ConnectionEditorSearchNavigationOptions {
   formData: ConnectionEditorSearchFormData;
   dynamicValues?: ConnectionEditorSearchDynamicValues;
   activateTab: (tabId: ConnectionEditorTabId) => void;
+  activateProtocolSubtab?: (subtabId: ConnectionEditorProtocolSubtabId) => void;
   expandSection: (sectionId: ConnectionEditorExpandableSectionId) => void;
 }
 
@@ -314,7 +326,12 @@ export function useConnectionEditorSearch(
   );
 
   const focusField = useCallback(
-    (fieldId: string, sectionId: string, fieldLabel?: string) => {
+    (
+      fieldId: string,
+      sectionId: string,
+      fieldLabel?: string,
+      protocolSubtabId?: ConnectionEditorProtocolSubtabId,
+    ) => {
       scheduleAfterTabRender(() => {
         const container = containerRef.current;
         if (!container) return false;
@@ -323,6 +340,7 @@ export function useConnectionEditorSearch(
           fieldId,
           sectionId,
           fieldLabel,
+          protocolSubtabId,
           query,
         });
       });
@@ -338,10 +356,18 @@ export function useConnectionEditorSearch(
       if (!descriptor) return false;
 
       navigation.activateTab(result.tabId);
+      if (result.protocolSubtabId) {
+        navigation.activateProtocolSubtab?.(result.protocolSubtabId);
+      }
       if (descriptor.expandableSectionId) {
         navigation.expandSection(descriptor.expandableSectionId);
       }
-      focusField(result.focusId, result.sectionId, result.fieldLabel);
+      focusField(
+        result.focusId,
+        result.sectionId,
+        result.fieldLabel,
+        result.protocolSubtabId,
+      );
       lastNavigatedResultId.current = result.id;
       return true;
     },

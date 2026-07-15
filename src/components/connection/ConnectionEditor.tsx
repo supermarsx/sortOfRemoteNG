@@ -46,6 +46,7 @@ import { BehaviorSection } from "./editor/BehaviorSection";
 import {
   getConnectionEditorSearchDescriptors,
   getConnectionEditorTabs,
+  type ConnectionEditorProtocolSubtabId,
   type ConnectionEditorTabDescriptor,
   type ConnectionEditorTabId,
 } from "./editor/editorRegistry";
@@ -1350,6 +1351,20 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose);
   const [activeTab, setActiveTab] = useState<ConnectionEditorTabId>("general");
+  const [protocolSubtabsByProtocol, setProtocolSubtabsByProtocol] = useState<
+    Partial<Record<string, ConnectionEditorProtocolSubtabId>>
+  >({});
+  const protocolKey = mgr.formData.protocol ?? "";
+  const activeProtocolSubtabId = protocolSubtabsByProtocol[protocolKey];
+  const activateProtocolSubtab = useCallback(
+    (subtabId: ConnectionEditorProtocolSubtabId) => {
+      setProtocolSubtabsByProtocol((previous) => ({
+        ...previous,
+        [protocolKey]: subtabId,
+      }));
+    },
+    [protocolKey],
+  );
   const tabs = React.useMemo(
     () => getConnectionEditorTabs(!!mgr.formData.isGroup),
     [mgr.formData.isGroup],
@@ -1390,11 +1405,15 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     formData: mgr.formData as ConnectionEditorSearchFormData,
     dynamicValues: searchDynamicValues,
     activateTab: setActiveTab,
+    activateProtocolSubtab,
     expandSection: mgr.expandSection,
   });
 
   useEffect(() => {
-    if (isOpen) setActiveTab("general");
+    if (isOpen) {
+      setActiveTab("general");
+      setProtocolSubtabsByProtocol({});
+    }
   }, [connection?.id, isOpen]);
 
   useEffect(() => {
@@ -1459,7 +1478,11 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             )}
 
             {activeTab === "protocol" && !mgr.formData.isGroup && (
-              <ProtocolSections mgr={mgr} />
+              <ProtocolSections
+                mgr={mgr}
+                activeSubtabId={activeProtocolSubtabId}
+                onActiveSubtabChange={activateProtocolSubtab}
+              />
             )}
 
             {activeTab === "behavior" && !mgr.formData.isGroup && (

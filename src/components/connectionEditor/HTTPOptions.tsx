@@ -14,22 +14,37 @@ import HeaderModal from "./httpOptions/HeaderModal";
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   formData,
   setFormData,
+  sections,
 }) => {
   const mgr = useHTTPOptions(formData, setFormData);
+  const shows = (section: NonNullable<HTTPOptionsProps["sections"]>[number]) =>
+    !sections || sections.includes(section);
 
   if (formData.isGroup || !mgr.isHttpProtocol) return null;
 
   return (
     <>
-      <AuthTypeSection mgr={mgr} />
-      <BasicAuthFields mgr={mgr} />
-      <AutoLoginSection mgr={mgr} />
-      <TlsVerifySection mgr={mgr} />
-      <TrustPolicySection mgr={mgr} />
-      <CustomHeadersSection mgr={mgr} />
-      <BookmarksSection mgr={mgr} />
-      <BookmarkModal mgr={mgr} />
-      <HeaderModal mgr={mgr} />
+      {shows("authentication") && (
+        <>
+          <AuthTypeSection mgr={mgr} />
+          <BasicAuthFields mgr={mgr} />
+          <CustomHeadersSection mgr={mgr} />
+          <HeaderModal mgr={mgr} />
+        </>
+      )}
+      {shows("security") && (
+        <>
+          <TlsVerifySection mgr={mgr} />
+          <TrustPolicySection mgr={mgr} />
+        </>
+      )}
+      {shows("advanced") && (
+        <>
+          <AutoLoginSection mgr={mgr} />
+          <BookmarksSection mgr={mgr} />
+          <BookmarkModal mgr={mgr} />
+        </>
+      )}
     </>
   );
 };

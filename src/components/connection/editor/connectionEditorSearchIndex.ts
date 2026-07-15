@@ -1,9 +1,11 @@
 import type {
   ConnectionEditorSearchDescriptor,
   ConnectionEditorSearchFieldDescriptor,
+  ConnectionEditorProtocolSubtabId,
   ConnectionEditorTabDescriptor,
   ConnectionEditorTabId,
 } from "./editorRegistry";
+import { getConnectionEditorProtocolSubtabId } from "./editorRegistry";
 
 export type ConnectionEditorSearchFormData = Readonly<Record<string, unknown>>;
 
@@ -20,6 +22,7 @@ export interface ConnectionEditorSearchIndexEntry {
   fieldId: string;
   focusId: string;
   fieldLabel: string;
+  protocolSubtabId?: ConnectionEditorProtocolSubtabId;
   breadcrumb: string;
   segments: readonly string[];
 }
@@ -215,6 +218,7 @@ export function buildConnectionEditorSearchIndex({
         fieldId: field.id,
         focusId: field.focusId ?? field.id,
         fieldLabel: field.label,
+        protocolSubtabId: getConnectionEditorProtocolSubtabId(field, formData),
         breadcrumb: `${tabLabel} / ${descriptor.label}`,
         segments,
       });

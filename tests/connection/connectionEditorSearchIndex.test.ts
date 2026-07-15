@@ -140,6 +140,32 @@ describe("connection editor search index", () => {
     expect(windowsSshFields).toContain("focus-on-winmgmt-tool");
   });
 
+  it("projects protocol search fields onto their owning protocol subtabs", () => {
+    const rdpIndex = buildIndex({ isGroup: false, protocol: "rdp" });
+    expect(
+      rdpIndex.find((entry) => entry.fieldId === "rdp-display"),
+    ).toMatchObject({ protocolSubtabId: "display-input" });
+    expect(
+      rdpIndex.find((entry) => entry.fieldId === "rdp-gateway"),
+    ).toMatchObject({ protocolSubtabId: "network" });
+    expect(
+      rdpIndex.find((entry) => entry.fieldId === "rdp-performance"),
+    ).toMatchObject({ protocolSubtabId: "resources" });
+
+    const httpsIndex = buildIndex({ isGroup: false, protocol: "https" });
+    expect(
+      httpsIndex.find((entry) => entry.fieldId === "http-tls"),
+    ).toMatchObject({ protocolSubtabId: "security" });
+    expect(
+      httpsIndex.find((entry) => entry.fieldId === "http-bookmarks"),
+    ).toMatchObject({ protocolSubtabId: "advanced" });
+
+    const winrmIndex = buildIndex({ isGroup: false, protocol: "winrm" });
+    expect(
+      winrmIndex.find((entry) => entry.fieldId === "winrm-options"),
+    ).toMatchObject({ protocolSubtabId: "connection" });
+  });
+
   it("excludes exchange fields hidden by the selected environment", () => {
     const onlineFields = buildIndex({
       isGroup: false,

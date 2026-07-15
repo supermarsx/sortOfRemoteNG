@@ -15,7 +15,15 @@ import WmiSection from "./winrmOptions/WmiSection";
 interface WinRMOptionsProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+  sections?: readonly WinRMOptionsSection[];
 }
+
+export type WinRMOptionsSection =
+  | "connection"
+  | "transport"
+  | "authentication"
+  | "security"
+  | "advanced";
 
 const DEFAULT_WINRM: WinrmConnectionSettings = {
   httpPort: 5985,
@@ -45,12 +53,15 @@ function shouldShow(formData: Partial<Connection>): boolean {
 export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
   formData,
   setFormData,
+  sections,
 }) => {
   const { settings } = useSettings();
   const globalDefaults = settings.winrmDefaults ?? DEFAULT_WINRM;
   const ws: WinrmConnectionSettings = formData.winrmSettings ?? globalDefaults;
   const enableWinrm =
     formData.enableWinrmTools ?? settings.enableWinrmTools ?? true;
+  const shows = (section: WinRMOptionsSection) =>
+    !sections || sections.includes(section);
 
   const update = useCallback(
     (patch: Partial<WinrmConnectionSettings>) => {
@@ -74,75 +85,78 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
       defaultOpen
     >
       <div className="space-y-3">
-        {/* Enable/disable WinRM tools for this connection */}
-        <div className="flex items-center justify-between">
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
-            Enable WinRM Tools{" "}
-            <InfoTooltip text="Show Windows management tools (Services, Processes, Event Viewer, etc.) in the context menu and RDP toolbar for this connection. When disabled, the WinRM configuration below still applies to any programmatic WinRM usage." />
-          </label>
-          <div className="flex items-center gap-2">
-            {formData.enableWinrmTools === undefined && (
-              <span className="text-xs text-[var(--color-textMuted)]">
-                (global: {settings.enableWinrmTools ? "on" : "off"})
-              </span>
+        {shows("connection") && (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
+                Enable WinRM Tools{" "}
+                <InfoTooltip text="Show Windows management tools (Services, Processes, Event Viewer, etc.) in the context menu and RDP toolbar for this connection. When disabled, the WinRM configuration below still applies to any programmatic WinRM usage." />
+              </label>
+              <div className="flex items-center gap-2">
+                {formData.enableWinrmTools === undefined && (
+                  <span className="text-xs text-[var(--color-textMuted)]">
+                    (global: {settings.enableWinrmTools ? "on" : "off"})
+                  </span>
+                )}
+                <select
+                  value={
+                    formData.enableWinrmTools === undefined
+                      ? "inherit"
+                      : formData.enableWinrmTools
+                        ? "on"
+                        : "off"
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFormData((prev) => ({
+                      ...prev,
+                      enableWinrmTools:
+                        v === "inherit" ? undefined : v === "on",
+                    }));
+                  }}
+                  className="sor-form-input text-sm w-32"
+                >
+                  <option value="inherit">Use global</option>
+                  <option value="on">Enabled</option>
+                  <option value="off">Disabled</option>
+                </select>
+              </div>
+            </div>
+
+            {!enableWinrm && (
+              <p className="text-xs text-warning">
+                WinRM tools are disabled for this connection. The toolbar
+                buttons and context menu entries will be hidden.
+              </p>
             )}
-            <select
-              value={
-                formData.enableWinrmTools === undefined
-                  ? "inherit"
-                  : formData.enableWinrmTools
-                    ? "on"
-                    : "off"
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                setFormData((prev) => ({
-                  ...prev,
-                  enableWinrmTools: v === "inherit" ? undefined : v === "on",
-                }));
-              }}
-              className="sor-form-input text-sm w-32"
-            >
-              <option value="inherit">Use global</option>
-              <option value="on">Enabled</option>
-              <option value="off">Disabled</option>
-            </select>
-          </div>
-        </div>
 
-        {!enableWinrm && (
-          <p className="text-xs text-warning">
-            WinRM tools are disabled for this connection. The toolbar buttons
-            and context menu entries will be hidden.
-          </p>
+            {formData.protocol !== "rdp" && (
+              <div>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  Domain{" "}
+                  <InfoTooltip text="NetBIOS domain name for domain-joined accounts. Leave empty for local accounts." />
+                </label>
+                <input
+                  type="text"
+                  value={formData.domain || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, domain: e.target.value })
+                  }
+                  className="sor-form-input text-sm"
+                  placeholder="CONTOSO (optional — for domain accounts)"
+                />
+                <p className="text-xs text-[var(--color-textMuted)] mt-1">
+                  NetBIOS domain name. Leave empty for local accounts.
+                </p>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Domain — only show here if the parent protocol doesn't already have one */}
-        {formData.protocol !== "rdp" && (
-          <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-              Domain{" "}
-              <InfoTooltip text="NetBIOS domain name for domain-joined accounts. Leave empty for local accounts." />
-            </label>
-            <input
-              type="text"
-              value={formData.domain || ""}
-              onChange={(e) =>
-                setFormData({ ...formData, domain: e.target.value })
-              }
-              className="sor-form-input text-sm"
-              placeholder="CONTOSO (optional — for domain accounts)"
-            />
-            <p className="text-xs text-[var(--color-textMuted)] mt-1">
-              NetBIOS domain name. Leave empty for local accounts.
-            </p>
-          </div>
-        )}
-
-        <TransportSection ws={ws} update={update} />
-        <AuthSection ws={ws} update={update} />
-        <TlsSection ws={ws} update={update} />
-        <WmiSection ws={ws} update={update} />
+        {shows("transport") && <TransportSection ws={ws} update={update} />}
+        {shows("authentication") && <AuthSection ws={ws} update={update} />}
+        {shows("security") && <TlsSection ws={ws} update={update} />}
+        {shows("advanced") && <WmiSection ws={ws} update={update} />}
       </div>
     </CollapsibleSection>
   );

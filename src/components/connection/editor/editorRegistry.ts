@@ -16,6 +16,18 @@ export type ConnectionEditorTabId =
 
 export type ConnectionEditorExpandableSectionId = "advanced";
 
+export type ConnectionEditorProtocolSubtabId =
+  | "connection"
+  | "authentication"
+  | "security"
+  | "display-input"
+  | "resources"
+  | "network"
+  | "advanced"
+  | "provider"
+  | "terminal"
+  | "recovery";
+
 export interface ConnectionEditorTabDescriptor {
   id: ConnectionEditorTabId;
   label: string;
@@ -36,6 +48,7 @@ export interface ConnectionEditorSearchFieldDescriptor {
   protocols?: readonly string[];
   protocolPrefixes?: readonly string[];
   excludedProtocols?: readonly string[];
+  protocolSubtabId?: ConnectionEditorProtocolSubtabId;
   visibleWhen?: (formData: Readonly<Record<string, unknown>>) => boolean;
 }
 
@@ -55,6 +68,7 @@ export interface ConnectionEditorSearchDescriptor {
 
 export interface ConnectionEditorSearchNavigationHandlers {
   activateTab: (tabId: ConnectionEditorTabId) => void;
+  activateProtocolSubtab?: (subtabId: ConnectionEditorProtocolSubtabId) => void;
   expandSection?: (sectionId: ConnectionEditorExpandableSectionId) => void;
   focusField?: (
     fieldId: string,
@@ -72,6 +86,60 @@ export const CONNECTION_EDITOR_TABS = [
 ] as const satisfies readonly ConnectionEditorTabDescriptor[];
 
 type SearchFormData = Readonly<Record<string, unknown>>;
+
+export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
+  Record<string, ConnectionEditorProtocolSubtabId>
+> = {
+  "ssh-username": "authentication",
+  "ssh-authentication": "authentication",
+  "ssh-host-key-trust": "authentication",
+  "ssh-known-hosts": "authentication",
+  "ssh-password": "authentication",
+  "ssh-private-key": "authentication",
+  "ssh-connection-timing": "authentication",
+  "http-authentication": "authentication",
+  "http-basic-username": "authentication",
+  "http-basic-password": "authentication",
+  "http-realm": "authentication",
+  "http-custom-headers": "authentication",
+  "http-tls": "security",
+  "http-trust-policy": "security",
+  "http-auto-login": "advanced",
+  "http-auto-login-selectors": "advanced",
+  "http-bookmarks": "advanced",
+  "rdp-target-os": "connection",
+  "rdp-domain": "connection",
+  "rdp-display": "display-input",
+  "rdp-audio": "display-input",
+  "rdp-input": "display-input",
+  "rdp-devices": "resources",
+  "rdp-performance": "resources",
+  "rdp-security": "security",
+  "rdp-gateway": "network",
+  "rdp-tcp": "network",
+  "rdp-hyper-v": "advanced",
+  "rdp-negotiation": "advanced",
+  "rdp-advanced": "advanced",
+  "winrm-options": "network",
+  "cloud-gcp": "provider",
+  "cloud-azure": "provider",
+  "cloud-digital-ocean": "provider",
+  "two-factor": "recovery",
+  "backup-codes": "recovery",
+  "security-questions": "recovery",
+  "recovery-information": "recovery",
+};
+
+export function getConnectionEditorProtocolSubtabId(
+  field: ConnectionEditorSearchFieldDescriptor,
+  formData: SearchFormData,
+): ConnectionEditorProtocolSubtabId | undefined {
+  if (field.protocolSubtabId) return field.protocolSubtabId;
+  if (field.id === "winrm-options" && formData.protocol === "winrm") {
+    return "connection";
+  }
+  return PROTOCOL_SEARCH_FIELD_SUBTABS[field.id];
+}
 
 const getExchangeEnvironment = (formData: SearchFormData): unknown =>
   (
@@ -792,7 +860,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       {
         id: "rdp-gateway",
         focusId: "protocol-options",
-        label: "Gateway",
+        label: "RDP Gateway",
         protocols: ["rdp"],
         copy: [
           "Gateway server",

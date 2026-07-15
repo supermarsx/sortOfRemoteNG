@@ -140,7 +140,9 @@ describe("ConnectionEditor subcomponents", () => {
         />,
       );
 
-      expect(screen.getByTestId("editor-password")).toHaveValue("stored-password");
+      expect(screen.getByTestId("editor-password")).toHaveValue(
+        "stored-password",
+      );
       expect(
         consoleErrorSpy.mock.calls.some((call) =>
           call.some(
@@ -155,6 +157,40 @@ describe("ConnectionEditor subcomponents", () => {
     } finally {
       consoleErrorSpy.mockRestore();
     }
+  });
+
+  it("adapts SSH core, terminal, and connection controls without overlap", () => {
+    const props = {
+      formData: { ...baseData, protocol: "ssh" } as Partial<Connection>,
+      setFormData: () => {},
+    };
+    const { rerender } = render(
+      <SSHOptions {...props} sections={["terminal"]} />,
+    );
+
+    expect(screen.getByText("Terminal Settings Override")).toBeInTheDocument();
+    expect(screen.queryByText("Username")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("SSH Connection Settings Override"),
+    ).not.toBeInTheDocument();
+
+    rerender(<SSHOptions {...props} sections={["connection"]} />);
+    expect(
+      screen.getByText("SSH Connection Settings Override"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Terminal Settings Override"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Username")).not.toBeInTheDocument();
+
+    rerender(<SSHOptions {...props} sections={["authentication"]} />);
+    expect(screen.getByText("Username")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Terminal Settings Override"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("SSH Connection Settings Override"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows basic auth fields in HTTPOptions", () => {
@@ -176,7 +212,11 @@ describe("ConnectionEditor subcomponents", () => {
   it("uses centralized input classes in CloudProviderOptions", () => {
     const { container } = render(
       <CloudProviderOptions
-        formData={{ ...baseData, protocol: "gcp", cloudProvider: { provider: "gcp" as const } }}
+        formData={{
+          ...baseData,
+          protocol: "gcp",
+          cloudProvider: { provider: "gcp" as const },
+        }}
         setFormData={() => {}}
       />,
     );

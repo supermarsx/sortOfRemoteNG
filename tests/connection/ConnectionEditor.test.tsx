@@ -830,6 +830,11 @@ describe("ConnectionEditor", () => {
         expect(
           screen.getByTestId("connection-editor-tab-protocol"),
         ).toHaveAttribute("aria-selected", "true");
+        expect(
+          screen.getByTestId(
+            "connection-editor-protocol-subtab-authentication",
+          ),
+        ).toHaveAttribute("aria-selected", "true");
         expect(screen.getByLabelText("Known Hosts Path")).toHaveFocus();
         expect(
           document.querySelector('[data-editor-search-active="true"]'),
@@ -867,6 +872,83 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Protocol-Specific Options", () => {
+    it("shows tailored subtabs and remembers selection per protocol", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSH/i }));
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+
+      expect(
+        screen.getByRole("tablist", { name: "Protocol settings sections" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("tab", { name: "Authentication" }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("tab", { name: "Security" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "Network" }));
+
+      fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(
+        screen.getByRole("option", { name: /^HTTP\s+Web Service/i }),
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(
+        screen.getByRole("tab", { name: "Authentication" }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "Security" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Advanced" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("tab", { name: "Terminal" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+
+      fireEvent.click(screen.getByTestId("connection-editor-tab-general"));
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /^SSH/i }));
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(screen.getByRole("tab", { name: "Network" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+
+    it("opens the correct protocol subtab before focusing a search match", async () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "Gateway server" } });
+      expect(
+        screen.getByRole("option", {
+          name: /Protocol \/ Protocol Options.*Gateway/i,
+        }),
+      ).toBeInTheDocument();
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("connection-editor-tab-protocol"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(
+          screen.getByTestId("connection-editor-protocol-subtab-network"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent("Gateway");
+      });
+      expect(document.activeElement).toHaveTextContent("Gateway");
+    });
+
     it("should expose integration registry entries as protocol options", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 

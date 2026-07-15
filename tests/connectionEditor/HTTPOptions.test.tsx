@@ -65,6 +65,28 @@ describe("HTTPOptions", () => {
     expect(screen.getByDisplayValue("abc123")).toBeInTheDocument();
   });
 
+  it("renders only the requested logical adapter section", () => {
+    render(
+      <HTTPOptions
+        formData={{
+          ...makeFormData(),
+          protocol: "https",
+          authType: "header",
+        }}
+        setFormData={() => {}}
+        sections={["security"]}
+      />,
+    );
+
+    expect(screen.getByText("Verify TLS certificates")).toBeInTheDocument();
+    expect(
+      screen.getByText("HTTPS Certificate Trust Policy"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Authentication Type")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bookmarks \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Custom HTTP Headers")).not.toBeInTheDocument();
+  });
+
   it("adds a bookmark via modal and closes with escape", async () => {
     render(<Wrapper />);
 
@@ -106,15 +128,23 @@ describe("HTTPOptions", () => {
       />,
     );
 
-    expect(screen.getByText("HTTPS Certificate Trust Policy")).toBeInTheDocument();
-    const legacyFallback = screen.getByText("Strict (reject unless pre-approved)");
+    expect(
+      screen.getByText("HTTPS Certificate Trust Policy"),
+    ).toBeInTheDocument();
+    const legacyFallback = screen.getByText(
+      "Strict (reject unless pre-approved)",
+    );
     expect(legacyFallback).toBeInTheDocument();
 
     fireEvent.click(legacyFallback.closest("button")!);
-    fireEvent.mouseDown(await screen.findByRole("option", { name: "Always Ask" }));
+    fireEvent.mouseDown(
+      await screen.findByRole("option", { name: "Always Ask" }),
+    );
 
     await waitFor(() => {
-      const formData = JSON.parse(screen.getByTestId("form-data").textContent ?? "{}");
+      const formData = JSON.parse(
+        screen.getByTestId("form-data").textContent ?? "{}",
+      );
       expect(formData.httpsTrustPolicy).toBe("always-ask");
       expect(formData.tlsTrustPolicy).toBe("strict");
     });
@@ -157,8 +187,12 @@ describe("HTTPOptions", () => {
       />,
     );
 
-    expect(screen.getByText("Stored HTTPS Certificates (1)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Stored HTTPS Certificates (1)"),
+    ).toBeInTheDocument();
     expect(screen.getByText("example.com:443")).toBeInTheDocument();
-    expect(screen.queryByText("legacy.example.com:443")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("legacy.example.com:443"),
+    ).not.toBeInTheDocument();
   });
 });

@@ -278,4 +278,19 @@ describe("settings runtime applicability", () => {
       timeoutSec: 42,
     });
   });
+
+  it("adapts WinRM options to the requested logical section", () => {
+    render(
+      <WinRMOptions
+        formData={{ protocol: "winrm", isGroup: false }}
+        setFormData={vi.fn()}
+        sections={["transport"]}
+      />,
+    );
+
+    expect(screen.getAllByRole("spinbutton")).toHaveLength(3);
+    expect(screen.queryByText("Enable WinRM Tools")).not.toBeInTheDocument();
+    expect(screen.queryByText("Domain")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("root\\cimv2")).not.toBeInTheDocument();
+  });
 });

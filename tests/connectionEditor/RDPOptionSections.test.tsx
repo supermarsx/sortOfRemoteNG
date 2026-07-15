@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import AdvancedSection from "../../src/components/connectionEditor/rdpOptions/AdvancedSection";
+import RDPOptions from "../../src/components/connectionEditor/RDPOptions";
 import AudioSection from "../../src/components/connectionEditor/rdpOptions/AudioSection";
 import DeviceRedirectionSection from "../../src/components/connectionEditor/rdpOptions/DeviceRedirectionSection";
 import GatewaySection from "../../src/components/connectionEditor/rdpOptions/GatewaySection";
@@ -10,7 +11,11 @@ import NegotiationSection from "../../src/components/connectionEditor/rdpOptions
 import PerformanceSection from "../../src/components/connectionEditor/rdpOptions/PerformanceSection";
 import SecuritySection from "../../src/components/connectionEditor/rdpOptions/SecuritySection";
 import TcpSection from "../../src/components/connectionEditor/rdpOptions/TcpSection";
-import { DEFAULT_RDP_SETTINGS, type Connection, type RDPConnectionSettings } from "../../src/types/connection/connection";
+import {
+  DEFAULT_RDP_SETTINGS,
+  type Connection,
+  type RDPConnectionSettings,
+} from "../../src/types/connection/connection";
 import type { RDPOptionsMgr } from "../../src/hooks/rdp/useRDPOptions";
 
 vi.mock("../../src/utils/settings/settingsManager", () => ({
@@ -39,6 +44,38 @@ const createMgr = (overrides: Partial<RDPOptionsMgr> = {}): RDPOptionsMgr =>
   }) as unknown as RDPOptionsMgr;
 
 describe("RDP connection editor sections", () => {
+  it("adapts the top-level RDP editor to requested sections", () => {
+    const formData: Partial<Connection> = {
+      protocol: "rdp",
+      hostname: "rdp-host",
+      port: 3389,
+      isGroup: false,
+    };
+    const setFormData = vi.fn();
+    const { rerender } = render(
+      <RDPOptions
+        formData={formData}
+        setFormData={setFormData}
+        sections={["connection"]}
+      />,
+    );
+
+    expect(screen.getByText("Target OS")).toBeInTheDocument();
+    expect(screen.getByText("Domain")).toBeInTheDocument();
+    expect(screen.queryByText("Display")).not.toBeInTheDocument();
+
+    rerender(
+      <RDPOptions
+        formData={formData}
+        setFormData={setFormData}
+        sections={["display"]}
+      />,
+    );
+    expect(screen.getByText("Display")).toBeInTheDocument();
+    expect(screen.queryByText("Target OS")).not.toBeInTheDocument();
+    expect(screen.queryByText("Domain")).not.toBeInTheDocument();
+  });
+
   it("renders Security controls with centralized form classes and updates CredSSP", () => {
     const updateRdp = vi.fn();
     const setFormData = vi.fn();
@@ -59,8 +96,12 @@ describe("RDP connection editor sections", () => {
       />,
     );
 
-    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const combobox = container.querySelector('[role="combobox"]') as HTMLButtonElement;
+    const checkbox = container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
+    const combobox = container.querySelector(
+      '[role="combobox"]',
+    ) as HTMLButtonElement;
     const textInput = screen.getByPlaceholderText(/!kerberos,!pku2u/i);
 
     expect(checkbox.className).toContain("sor-form-checkbox");
@@ -100,7 +141,9 @@ describe("RDP connection editor sections", () => {
       />,
     );
 
-    expect(screen.getByText("Trusted RDP Certificates (1)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Trusted RDP Certificates (1)"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByTitle("Remove trust"));
 
     expect(handleRemoveTrust).toHaveBeenCalledWith(
@@ -121,8 +164,12 @@ describe("RDP connection editor sections", () => {
       <GatewaySection rdp={rdp} updateRdp={updateRdp} />,
     );
 
-    const combobox = container.querySelector('[role="combobox"]') as HTMLButtonElement;
-    const numberInput = container.querySelector('input[type="number"]') as HTMLInputElement;
+    const combobox = container.querySelector(
+      '[role="combobox"]',
+    ) as HTMLButtonElement;
+    const numberInput = container.querySelector(
+      'input[type="number"]',
+    ) as HTMLInputElement;
     const usernameInput = screen.getByPlaceholderText(/DOMAIN\\user/i);
 
     expect(combobox.className).toContain("sor-form-select");
@@ -135,10 +182,14 @@ describe("RDP connection editor sections", () => {
     const tcp = createRdp();
     const tcpRender = render(<TcpSection rdp={tcp} updateRdp={updateTcp} />);
 
-    const tcpCheckbox = tcpRender.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const tcpCheckbox = tcpRender.container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
     expect(tcpCheckbox.className).toContain("sor-form-checkbox");
     fireEvent.click(tcpCheckbox);
-    expect(updateTcp).toHaveBeenCalledWith("tcp", { connectTimeoutSecs: undefined });
+    expect(updateTcp).toHaveBeenCalledWith("tcp", {
+      connectTimeoutSecs: undefined,
+    });
 
     tcpRender.unmount();
 
@@ -148,13 +199,19 @@ describe("RDP connection editor sections", () => {
       <AdvancedSection rdp={advanced} updateRdp={updateAdvanced} />,
     );
 
-    const advancedCheckbox = advancedRender.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const advancedInput = advancedRender.container.querySelector('select, input[type="text"]') as HTMLSelectElement | HTMLInputElement;
+    const advancedCheckbox = advancedRender.container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
+    const advancedInput = advancedRender.container.querySelector(
+      'select, input[type="text"]',
+    ) as HTMLSelectElement | HTMLInputElement;
 
     expect(advancedCheckbox.className).toContain("sor-form-checkbox");
     expect(advancedInput.className).toContain("sor-form-input");
     fireEvent.click(advancedCheckbox);
-    expect(updateAdvanced).toHaveBeenCalledWith("advanced", { readTimeoutMs: undefined });
+    expect(updateAdvanced).toHaveBeenCalledWith("advanced", {
+      readTimeoutMs: undefined,
+    });
   });
 
   it("renders Audio and Performance selects with centralized form classes", () => {
@@ -163,7 +220,9 @@ describe("RDP connection editor sections", () => {
       <AudioSection rdp={audio} updateRdp={vi.fn()} />,
     );
 
-    const audioCombobox = audioRender.container.querySelector('[role="combobox"]') as HTMLButtonElement;
+    const audioCombobox = audioRender.container.querySelector(
+      '[role="combobox"]',
+    ) as HTMLButtonElement;
     expect(audioCombobox.className).toContain("sor-form-select");
 
     audioRender.unmount();
@@ -174,14 +233,20 @@ describe("RDP connection editor sections", () => {
       <PerformanceSection rdp={performance} updateRdp={updatePerformance} />,
     );
 
-    const performanceCombobox = performanceRender.container.querySelector('[role="combobox"]') as HTMLButtonElement;
-    const performanceCheckbox = performanceRender.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const performanceCombobox = performanceRender.container.querySelector(
+      '[role="combobox"]',
+    ) as HTMLButtonElement;
+    const performanceCheckbox = performanceRender.container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
 
     expect(performanceCombobox.className).toContain("sor-form-select");
     expect(performanceCheckbox.className).toContain("sor-form-checkbox");
 
     fireEvent.click(performanceCheckbox);
-    expect(updatePerformance).toHaveBeenCalledWith("performance", { disableWallpaper: false });
+    expect(updatePerformance).toHaveBeenCalledWith("performance", {
+      disableWallpaper: false,
+    });
   });
 
   it("renders Input controls with centralized classes and keyboard detection affordance", () => {
@@ -225,10 +290,14 @@ describe("RDP connection editor sections", () => {
       <NegotiationSection rdp={negotiation} updateRdp={updateNegotiation} />,
     );
 
-    const negotiationCheckbox = negotiationRender.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const negotiationCheckbox = negotiationRender.container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
     expect(negotiationCheckbox.className).toContain("sor-form-checkbox");
     fireEvent.click(negotiationCheckbox);
-    expect(updateNegotiation).toHaveBeenCalledWith("negotiation", { maxRetries: undefined });
+    expect(updateNegotiation).toHaveBeenCalledWith("negotiation", {
+      maxRetries: undefined,
+    });
 
     negotiationRender.unmount();
 
@@ -243,8 +312,12 @@ describe("RDP connection editor sections", () => {
       <HyperVSection rdp={hyperv} updateRdp={updateHyperV} />,
     );
 
-    const hypervCheckbox = hypervRender.container.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const hypervInput = hypervRender.container.querySelector('input[type="text"]') as HTMLInputElement;
+    const hypervCheckbox = hypervRender.container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
+    const hypervInput = hypervRender.container.querySelector(
+      'input[type="text"]',
+    ) as HTMLInputElement;
 
     expect(hypervCheckbox.className).toContain("sor-form-checkbox");
     expect(hypervInput.className).toContain("sor-form-input");
@@ -264,8 +337,14 @@ describe("RDP connection editor sections", () => {
     expect(screen.getByText("Clipboard Direction")).toBeInTheDocument();
     expect(screen.getByText("Printer Output Mode")).toBeInTheDocument();
 
-    const comboboxes = Array.from(container.querySelectorAll('[role="combobox"]'));
+    const comboboxes = Array.from(
+      container.querySelectorAll('[role="combobox"]'),
+    );
     expect(comboboxes.length).toBeGreaterThan(2);
-    expect(comboboxes.every((combobox) => combobox.className.includes("sor-form-select"))).toBe(true);
+    expect(
+      comboboxes.every((combobox) =>
+        combobox.className.includes("sor-form-select"),
+      ),
+    ).toBe(true);
   });
 });
