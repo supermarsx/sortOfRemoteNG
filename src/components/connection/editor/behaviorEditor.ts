@@ -20,6 +20,12 @@ export const EDITABLE_SESSION_EVENTS = [
   { value: "session.reconnectFailed", label: "Reconnect failed" },
   { value: "session.disconnected", label: "Remote session disconnected" },
   { value: "session.ended", label: "Session ended" },
+  { value: "window.focused", label: "Window focused" },
+  { value: "window.blurred", label: "Window blurred" },
+  { value: "window.minimized", label: "Window minimized" },
+  { value: "window.restored", label: "Window restored" },
+  { value: "window.closeRequested", label: "Window close requested" },
+  { value: "window.closed", label: "Window closed" },
 ] as const satisfies ReadonlyArray<{
   value: ConnectionBehaviorEventType;
   label: string;
@@ -30,6 +36,9 @@ export const EDITABLE_ACTION_TYPES = [
   { value: "writeLog", label: "Write action log" },
   { value: "reconnect", label: "Reconnect session" },
   { value: "runCustomScript", label: "Run saved script" },
+  { value: "focusSession", label: "Focus session and owning window" },
+  { value: "closeTab", label: "Close session tab" },
+  { value: "setOwningWindowState", label: "Set owning window state" },
 ] as const;
 
 export type EditableBehaviorActionType =
@@ -95,6 +104,12 @@ export function createDefaultBehaviorAction(
         scriptId: scripts.find((script) => script.enabled)?.id ?? "",
         timeoutMs: 30_000,
       };
+    case "focusSession":
+      return { type, raiseWindow: true, restoreIfMinimized: true };
+    case "closeTab":
+      return { type, respectClosePolicy: true };
+    case "setOwningWindowState":
+      return { type, state: "focused" };
   }
 }
 

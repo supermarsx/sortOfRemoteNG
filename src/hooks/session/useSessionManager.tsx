@@ -24,6 +24,7 @@ import {
   resolveConnectionWarnOnClose,
 } from "../../utils/behavior/legacyBehavior";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
+import { BehaviorWindowActionRuntime } from "../../utils/behavior/windowActions";
 import {
   useSessionLifecycleEvents,
   type SessionLifecycleNotification,
@@ -78,6 +79,9 @@ export const useSessionManager = () => {
   const reconnectsInFlightRef = useRef(new Set<string>());
   const permissionRequestRef = useRef<Promise<NotificationPermission> | null>(
     null,
+  );
+  const handleSessionCloseRef = useRef<(sessionId: string) => Promise<boolean>>(
+    async () => false,
   );
   const [dialogState, setDialogState] = useState<{
     message: string;
@@ -601,9 +605,10 @@ export const useSessionManager = () => {
    * Closes an active session and performs cleanup.
    * @param sessionId - ID of the session to close.
    */
-  const handleSessionClose = async (sessionId: string) => {
-    const session = state.sessions.find((s) => s.id === sessionId);
-    if (!session) return;
+  const handleSessionClose = async (sessionId: string): Promise<boolean> => {
+    const currentState = stateRef.current;
+    const session = currentState.sessions.find((s) => s.id === sessionId);
+    if (!session) return false;
 
     // Tool/winmgmt tabs just get removed — no connection lifecycle.
     if (
@@ -611,10 +616,10 @@ export const useSessionManager = () => {
       isWinmgmtProtocol(session.protocol)
     ) {
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
-      return;
+      return true;
     }
 
-    const connection = state.connections.find(
+    const connection = currentState.connections.find(
       (c) => c.id === session.connectionId,
     );
     const settings = settingsManager.getSettings();
@@ -635,10 +640,12 @@ export const useSessionManager = () => {
         await lifecycle.emitEnded(session, connection, { reason: "user" });
       }
       if (activeSessionId === sessionId) {
-        const remaining = state.sessions.filter((s) => s.id !== sessionId);
+        const remaining = currentState.sessions.filter(
+          (s) => s.id !== sessionId,
+        );
         setActiveSessionId(remaining.length > 0 ? remaining[0].id : undefined);
       }
-      return;
+      return true;
     }
 
     // Global "confirm before closing an active tab" check —
@@ -651,7 +658,7 @@ export const useSessionManager = () => {
       const confirmed = await showConfirm(
         `Close the active session "${session.name}"?`,
       );
-      if (!confirmed) return;
+      if (!confirmed) return false;
     }
 
     // RDP sessions use their own close policy instead of the generic warnOnClose.
@@ -668,7 +675,7 @@ export const useSessionManager = () => {
         const confirmed = await showConfirm(
           "Close this RDP tab? The session will keep running in the background — you can reattach later from the RDP Sessions panel.",
         );
-        if (!confirmed) return;
+        if (!confirmed) return false;
         // Tab closes, RDPClient unmount calls detach_rdp_session, backend stays alive
       } else if (closePolicy === "disconnect") {
         // Fully disconnect — ask for confirmation if warnOnClose is on
@@ -680,7 +687,7 @@ export const useSessionManager = () => {
           const confirmed = await showConfirm(
             "Disconnect this RDP session? The remote session will be ended.",
           );
-          if (!confirmed) return;
+          if (!confirmed) return false;
         }
         try {
           await invoke("disconnect_rdp", {
@@ -699,7 +706,7 @@ export const useSessionManager = () => {
       );
       if (shouldWarn) {
         const confirmed = await showConfirm(t("dialogs.confirmClose"));
-        if (!confirmed) return;
+        if (!confirmed) return false;
       }
     }
 
@@ -776,14 +783,61 @@ export const useSessionManager = () => {
     }
 
     if (activeSessionId === sessionId) {
-      const remaining = state.sessions.filter((s) => s.id !== sessionId);
+      const remaining = currentState.sessions.filter((s) => s.id !== sessionId);
       setActiveSessionId(remaining.length > 0 ? remaining[0].id : undefined);
     }
 
     if (connection) {
       await lifecycle.emitEnded(session, connection, { reason: "user" });
     }
+    return true;
   };
+
+  handleSessionCloseRef.current = handleSessionClose;
+
+  const behaviorWindowActionsRef = useRef<BehaviorWindowActionRuntime | null>(
+    null,
+  );
+  if (!behaviorWindowActionsRef.current) {
+    behaviorWindowActionsRef.current = new BehaviorWindowActionRuntime({
+      getWindow: async (windowId) => {
+        const isTauri =
+          typeof window !== "undefined" &&
+          Boolean(
+            (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+          );
+        if (!isTauri) return undefined;
+        const { getAllWindows } = await import("@tauri-apps/api/window");
+        return (await getAllWindows()).find(
+          (candidate) => candidate.label === windowId,
+        );
+      },
+      activateSession: async (windowId, sessionId) => {
+        const session = stateRef.current.sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        if (!session) return false;
+        const owner =
+          session.layout?.isDetached && session.layout.windowId
+            ? session.layout.windowId
+            : "main";
+        if (owner !== windowId) return false;
+        if (windowId === "main") {
+          setActiveSessionId(sessionId);
+          return true;
+        }
+        const { emitTo } = await import("@tauri-apps/api/event");
+        const { BEHAVIOR_ACTIVATE_SESSION_EVENT } =
+          await import("../../utils/behavior/windowActions");
+        await emitTo(windowId, BEHAVIOR_ACTIVATE_SESSION_EVENT, {
+          windowId,
+          sessionId,
+        });
+        return true;
+      },
+      closeSession: (sessionId) => handleSessionCloseRef.current(sessionId),
+    });
+  }
 
   const lifecycle = useSessionLifecycleEvents({
     sessions: state.sessions,
@@ -793,6 +847,7 @@ export const useSessionManager = () => {
     scriptEngine,
     showNotification,
     requestReconnect: (request) => requestReconnect(request),
+    windowActions: behaviorWindowActionsRef.current,
     onTransition: sendSessionNotification,
   });
 
@@ -906,6 +961,7 @@ export const useSessionManager = () => {
     handleQuickConnect,
     handleSessionClose,
     restoreSession,
+    emitWindowSignal: lifecycle.emitWindowSignal,
     confirmDialog,
   };
 };

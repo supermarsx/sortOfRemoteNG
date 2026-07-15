@@ -72,6 +72,7 @@ import { useWindowTheme } from "./hooks/window/useWindowTheme";
 import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
 import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
 import { useWindowManager } from "./hooks/window/useWindowManager";
+import { useBehaviorWindowLifecycle } from "./hooks/window/useBehaviorWindowLifecycle";
 import { AppToolbar } from "./components/app/AppToolbar";
 import { AppStatusBar } from "./components/app/AppStatusBar";
 import { DebugPanel } from "./components/debug/DebugPanel";
@@ -183,7 +184,22 @@ const AppContent: React.FC = () => {
     handleSessionClose,
     restoreSession,
     confirmDialog,
+    emitWindowSignal,
   } = useSessionManager();
+
+  const {
+    requestClose: requestMainWindowClose,
+    cancelClose: cancelMainWindowClose,
+    confirmClose: confirmMainWindowClose,
+  } = useBehaviorWindowLifecycle({
+    windowId: "main",
+    kind: "main",
+    activeSessionId,
+    receiveDetachedSignals: true,
+    onSignal: async (signal) => {
+      await emitWindowSignal(signal);
+    },
+  });
 
   const { isInitialized, initProgress, initStatus, criticalError } =
     useAppLifecycle({
@@ -1325,6 +1341,7 @@ const AppContent: React.FC = () => {
     const performClose = async () => {
       if (closingMainRef.current) return;
       closingMainRef.current = true;
+      await confirmMainWindowClose();
       try {
         const windows = await getAllWindows();
         await Promise.all(
@@ -1349,12 +1366,14 @@ const AppContent: React.FC = () => {
           return;
         }
 
+        await requestMainWindowClose();
+
         // Check if we should warn the user. Only real connections
         // count here — closing the app while only tool tabs are
         // open (Settings, Wake-on-LAN, etc.) is not lossy and
         // shouldn't trigger a prompt.
         const settings = settingsManager.getSettings();
-        const hasActiveSessions = realConnectionCount(state.sessions) > 0;
+        const hasActiveSessions = realConnectionCount(sessionsRef.current) > 0;
 
         if (
           (settings.warnOnClose || settings.warnOnExit) &&
@@ -1378,6 +1397,7 @@ const AppContent: React.FC = () => {
             onCancel: () => {
               awaitingCloseConfirmRef.current = false;
               pendingCloseRef.current = null;
+              void cancelMainWindowClose();
             },
           });
         } else {
@@ -1406,7 +1426,14 @@ const AppContent: React.FC = () => {
         /* ignore */
       }
     };
-  }, [settingsManager, state.sessions.length, t]);
+  }, [
+    cancelMainWindowClose,
+    confirmMainWindowClose,
+    requestMainWindowClose,
+    settingsManager,
+    state.sessions.length,
+    t,
+  ]);
 
   // Convert native title attributes to data-tooltip for the styled tooltip
   // system. Uses a MutationObserver so dynamically-added elements (e.g. RDP

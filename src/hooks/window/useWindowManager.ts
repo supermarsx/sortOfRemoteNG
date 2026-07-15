@@ -24,7 +24,7 @@ interface UseWindowManagerParams {
   tabGroups: TabGroup[];
   dispatch: React.Dispatch<ConnectionAction>;
   setActiveSessionId: (id: string | undefined) => void;
-  handleSessionClose: (sessionId: string) => Promise<void>;
+  handleSessionClose: (sessionId: string) => Promise<boolean | void>;
   /** Called when a drop from main lands on empty space — should create a new detached window. */
   handleSessionDetach?: (sessionId: string) => void;
 }

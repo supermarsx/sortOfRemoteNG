@@ -6,6 +6,7 @@ import type {
   ConnectionBehaviorAutomationV1,
   ConnectionBehaviorEventReason,
   ConnectionBehaviorRuleV1,
+  ConnectionBehaviorWindowKind,
 } from "../../../types/connection/behavior";
 import type { CustomScript } from "../../../types/settings/settings";
 import { SettingsManager } from "../../../utils/settings/settingsManager";
@@ -361,6 +362,58 @@ const ActionEditor: React.FC<ActionEditorProps> = ({
           />
         </div>
       )}
+
+      {action.type === "focusSession" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+            <Checkbox
+              variant="form"
+              checked={action.restoreIfMinimized !== false}
+              onChange={(restoreIfMinimized) =>
+                onReplace({ ...action, restoreIfMinimized })
+              }
+              aria-label={`Action ${number} restore minimized window`}
+            />
+            Restore the owning window if minimized
+          </label>
+          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+            <Checkbox
+              variant="form"
+              checked={action.raiseWindow !== false}
+              onChange={(raiseWindow) => onReplace({ ...action, raiseWindow })}
+              aria-label={`Action ${number} raise owning window`}
+            />
+            Raise and focus the owning window
+          </label>
+        </div>
+      )}
+
+      {action.type === "closeTab" && (
+        <p className="text-xs text-[var(--color-textSecondary)]">
+          Uses the existing close confirmation, disconnect, and cleanup policy.
+        </p>
+      )}
+
+      {action.type === "setOwningWindowState" && (
+        <FormField label="Owning window state">
+          <Select
+            label={`Action ${number} owning window state`}
+            value={action.state}
+            onChange={(state) =>
+              onReplace({
+                ...action,
+                state: state as "focused" | "minimized" | "restored",
+              })
+            }
+            options={[
+              { value: "focused", label: "Focused" },
+              { value: "minimized", label: "Minimized" },
+              { value: "restored", label: "Restored" },
+            ]}
+            variant="form-sm"
+          />
+        </FormField>
+      )}
     </li>
   );
 };
@@ -410,6 +463,26 @@ const RuleEditor: React.FC<RuleEditorProps> = ({
     const when = {
       ...rule.when,
       reasons: reasons.length > 0 ? reasons : undefined,
+    };
+    onReplace({
+      ...rule,
+      when: when.reasons || when.windowKinds ? when : undefined,
+    });
+  };
+
+  const toggleWindowKind = (
+    kind: ConnectionBehaviorWindowKind,
+    checked: boolean,
+  ) => {
+    const current = rule.when?.windowKinds ?? [];
+    const windowKinds = checked
+      ? [...current, kind].filter(
+          (candidate, index, all) => all.indexOf(candidate) === index,
+        )
+      : current.filter((candidate) => candidate !== kind);
+    const when = {
+      ...rule.when,
+      windowKinds: windowKinds.length > 0 ? windowKinds : undefined,
     };
     onReplace({
       ...rule,
@@ -473,7 +546,7 @@ const RuleEditor: React.FC<RuleEditorProps> = ({
           error={ruleNameError ?? idError}
           variant="form-sm"
         />
-        <FormField label="Session event">
+        <FormField label="Session or window event">
           <Select
             label={`Rule ${number} event`}
             value={rule.event}
@@ -506,6 +579,33 @@ const RuleEditor: React.FC<RuleEditorProps> = ({
                 aria-label={`Rule ${number} reason ${reason.label}`}
               />
               {reason.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="rounded border border-[var(--color-border)] p-3">
+        <legend className="px-1 text-xs font-medium text-[var(--color-textSecondary)]">
+          Window kinds (optional — none means main and detached)
+        </legend>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          {(
+            [
+              ["main", "Main window"],
+              ["detached", "Detached windows"],
+            ] as const
+          ).map(([kind, label]) => (
+            <label
+              key={kind}
+              className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]"
+            >
+              <Checkbox
+                variant="form"
+                checked={rule.when?.windowKinds?.includes(kind) ?? false}
+                onChange={(checked) => toggleWindowKind(kind, checked)}
+                aria-label={`Rule ${number} window kind ${label}`}
+              />
+              {label}
             </label>
           ))}
         </div>

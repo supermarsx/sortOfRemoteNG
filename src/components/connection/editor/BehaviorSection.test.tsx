@@ -136,7 +136,7 @@ describe("BehaviorSection", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("builds, orders, and configures only runtime-backed session automation", async () => {
+  it("builds, orders, and configures runtime-backed session automation", async () => {
     let latest: Partial<Connection> = {};
     const scripts = [makeScript()];
     render(
@@ -238,7 +238,7 @@ describe("BehaviorSection", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Rule 1 event" }));
     expect(
       screen.queryByRole("option", { name: /window focused/i }),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("combobox", { name: "Rule 1 event" }), {
       key: "Escape",
     });
@@ -247,10 +247,10 @@ describe("BehaviorSection", () => {
     );
     expect(
       screen.queryByRole("option", { name: /focus session/i }),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole("option", { name: /close tab/i }),
-    ).not.toBeInTheDocument();
+      screen.queryByRole("option", { name: /close session tab/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows actionable validation for an unavailable or protocol-mismatched script", async () => {
@@ -321,7 +321,7 @@ describe("BehaviorSection", () => {
     });
   });
 
-  it("keeps deferred version-1 actions read-only instead of exposing an unwired editor", () => {
+  it("reopens wired window actions as editable controls", () => {
     render(
       <Harness
         initial={{
@@ -340,11 +340,65 @@ describe("BehaviorSection", () => {
       />,
     );
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      'action 1 uses "focusSession"',
-    );
     expect(
-      screen.queryByRole("combobox", { name: "Action 1 type" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("combobox", { name: "Action 1 type" }),
+    ).toHaveTextContent("Focus session and owning window");
+    expect(
+      screen.getByLabelText("Action 1 restore minimized window"),
+    ).toBeChecked();
+    expect(screen.getByLabelText("Action 1 raise owning window")).toBeChecked();
+  });
+
+  it("saves and reopens window events, filters, and action options", async () => {
+    let latest: Partial<Connection> = {};
+    const first = render(<Harness onChange={(value) => (latest = value)} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add automation rule" }),
+    );
+    choose("Rule 1 event", "Window closed");
+    fireEvent.click(
+      screen.getByLabelText("Rule 1 window kind Detached windows"),
+    );
+    choose("Action 1 type", "Focus session and owning window");
+    fireEvent.click(screen.getByLabelText("Action 1 raise owning window"));
+    choose("New action for rule 1", "Close session tab");
+    fireEvent.click(screen.getByRole("button", { name: "Add action" }));
+    choose("New action for rule 1", "Set owning window state");
+    fireEvent.click(screen.getByRole("button", { name: "Add action" }));
+    choose("Action 3 owning window state", "Restored");
+
+    await waitFor(() => {
+      expect(latest.behaviorAutomation?.rules[0]).toMatchObject({
+        event: "window.closed",
+        when: { windowKinds: ["detached"] },
+        actions: [
+          {
+            type: "focusSession",
+            raiseWindow: false,
+            restoreIfMinimized: true,
+          },
+          { type: "closeTab", respectClosePolicy: true },
+          { type: "setOwningWindowState", state: "restored" },
+        ],
+      });
+    });
+
+    const saved = latest.behaviorAutomation;
+    first.unmount();
+    render(<Harness initial={{ behaviorAutomation: saved }} />);
+    expect(
+      screen.getByRole("combobox", { name: "Rule 1 event" }),
+    ).toHaveTextContent("Window closed");
+    expect(
+      screen.getByLabelText("Rule 1 window kind Detached windows"),
+    ).toBeChecked();
+    expect(
+      screen.getByLabelText("Action 1 raise owning window"),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("combobox", {
+        name: "Action 3 owning window state",
+      }),
+    ).toHaveTextContent("Restored");
   });
 });

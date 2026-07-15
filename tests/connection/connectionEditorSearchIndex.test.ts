@@ -232,6 +232,61 @@ describe("connection editor search index", () => {
     );
   });
 
+  it("indexes wired window lifecycle events, filters, and action metadata", () => {
+    const index = buildIndex({
+      isGroup: false,
+      protocol: "ssh",
+      behaviorAutomation: {
+        version: 1,
+        rules: [
+          {
+            id: "window-rule",
+            name: "Restore detached shell",
+            event: "window.closed",
+            when: { windowKinds: ["detached"] },
+            actions: [
+              { type: "focusSession", restoreIfMinimized: true },
+              { type: "closeTab", respectClosePolicy: true },
+              { type: "setOwningWindowState", state: "restored" },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(searchConnectionEditorIndex(index, "Window closed")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sectionId: "behavior-automation",
+          fieldId: "automation-rule-1-event",
+        }),
+      ]),
+    );
+    expect(searchConnectionEditorIndex(index, "Detached windows")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: "automation-rule-1-window-kinds",
+        }),
+      ]),
+    );
+    expect(searchConnectionEditorIndex(index, "Restored")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: "behavior-rule-1-action-3-window-state",
+        }),
+      ]),
+    );
+    expect(
+      searchConnectionEditorIndex(index, "existing close confirmation"),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: "behavior-rule-1-action-2-close-policy",
+        }),
+      ]),
+    );
+  });
+
   it("searches case-insensitively with stable registry order and snippets", () => {
     const index = buildIndex({
       isGroup: false,

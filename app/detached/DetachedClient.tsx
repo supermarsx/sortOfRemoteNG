@@ -28,6 +28,11 @@ import { generateId } from "../../src/utils/core/id";
 import MenuSurface from "../../src/components/ui/overlays/MenuSurface";
 import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 import type { WindowSessionSync, WindowCommand } from "../../src/types/windowManager";
+import { useBehaviorWindowLifecycle } from "../../src/hooks/window/useBehaviorWindowLifecycle";
+import {
+  BEHAVIOR_ACTIVATE_SESSION_EVENT,
+  type BehaviorActivateSessionPayload,
+} from "../../src/utils/behavior/windowActions";
 
 /** Protocol → Icon mapping matching main window SessionTabs. */
 const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
@@ -356,6 +361,19 @@ const DetachedSessionContent: React.FC<{
     return state.sessions.find((s) => s.id === sessionId) ?? state.sessions[0] ?? null;
   }, [state.sessions, sessionId, activeTabId]);
 
+  const detachedWindowId = isTauri
+    ? getCurrentWindow().label
+    : "detached-browser";
+  const {
+    requestClose: requestBehaviorWindowClose,
+    cancelClose: cancelBehaviorWindowClose,
+    confirmClose: confirmBehaviorWindowClose,
+  } = useBehaviorWindowLifecycle({
+    windowId: detachedWindowId,
+    kind: "detached",
+    activeSessionId: activeSession?.id,
+  });
+
   // Auto-set activeTabId when first session loads
   useEffect(() => {
     if (!activeTabId && activeSession) setActiveTabId(activeSession.id);
@@ -376,6 +394,29 @@ const DetachedSessionContent: React.FC<{
   activeSessionRef.current = activeSession;
   const warnRef = useRef(warnOnDetachClose);
   warnRef.current = warnOnDetachClose;
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const unlistenPromise = listen<BehaviorActivateSessionPayload>(
+      BEHAVIOR_ACTIVATE_SESSION_EVENT,
+      (event) => {
+        const payload = event.payload;
+        if (payload.windowId !== detachedWindowId) return;
+        const target = sessionsRef.current.find(
+          (candidate) =>
+            candidate.id === payload.sessionId &&
+            candidate.layout?.isDetached &&
+            candidate.layout.windowId === detachedWindowId,
+        );
+        if (target) setActiveTabId(target.id);
+      },
+    );
+    return () => {
+      unlistenPromise
+        .then((unlisten) => unlisten())
+        .catch(() => undefined);
+    };
+  }, [detachedWindowId, isTauri]);
 
   /** Close a tab with confirmation if the setting requires it. */
   const handleTabClose = useCallback((sessionId: string) => {
@@ -590,15 +631,30 @@ const DetachedSessionContent: React.FC<{
   handleReattachRef.current = handleReattach;
 
   const handleCloseRequest = useCallback(async () => {
-    if (reattachRef.current) { reattachRef.current = false; return true; }
+    await requestBehaviorWindowClose();
+    if (reattachRef.current) {
+      reattachRef.current = false;
+      await confirmBehaviorWindowClose();
+      return true;
+    }
     if (warnRef.current && !skipNextConfirmRef.current) {
       const confirmed = await requestCloseConfirmation();
-      if (!confirmed) return false;
+      if (!confirmed) {
+        await cancelBehaviorWindowClose();
+        return false;
+      }
     }
     skipNextConfirmRef.current = false;
     await disconnectActiveSession();
+    await confirmBehaviorWindowClose();
     return true;
-  }, [disconnectActiveSession, requestCloseConfirmation]);
+  }, [
+    cancelBehaviorWindowClose,
+    confirmBehaviorWindowClose,
+    disconnectActiveSession,
+    requestBehaviorWindowClose,
+    requestCloseConfirmation,
+  ]);
 
   // Register close handler ONCE — stable because all deps are stable
   useEffect(() => {

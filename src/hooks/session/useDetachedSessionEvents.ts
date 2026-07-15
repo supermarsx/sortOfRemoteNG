@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../../types/connection/connection";
 
 export function useDetachedSessionEvents(
-  handleSessionClose: (sessionId: string) => Promise<void>,
+  handleSessionClose: (sessionId: string) => Promise<boolean | void>,
   sessions: ConnectionSession[],
   dispatch: React.Dispatch<any>,
   setActiveSessionId: (id: string) => void

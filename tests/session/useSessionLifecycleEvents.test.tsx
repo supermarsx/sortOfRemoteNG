@@ -5,6 +5,7 @@ import {
   useSessionLifecycleEvents,
   type SessionBehaviorScriptRuntime,
   type SessionBehaviorSettingsRuntime,
+  type SessionBehaviorWindowActionRuntime,
 } from "../../src/hooks/session/useSessionLifecycleEvents";
 import type {
   Connection,
@@ -16,6 +17,7 @@ import type {
   ConnectionBehaviorRuleV1,
 } from "../../src/types/connection/behavior";
 import type { CustomScript } from "../../src/types/settings/settings";
+import type { BehaviorWindowLifecycleSignal } from "../../src/utils/behavior/windowLifecycle";
 
 function makeSession(
   overrides: Partial<ConnectionSession> = {},
@@ -86,12 +88,20 @@ function makeRuntime(scripts: CustomScript[] = []) {
   const showNotification = vi.fn();
   const requestReconnect = vi.fn().mockResolvedValue(true);
   const onTransition = vi.fn();
+  const focusSession = vi.fn().mockResolvedValue(true);
+  const setOwningWindowState = vi.fn().mockResolvedValue(true);
+  const closeTab = vi.fn().mockResolvedValue(true);
   const settingsManager: SessionBehaviorSettingsRuntime = {
     getSettings: () => ({ notificationSound: false }),
     getCustomScripts: () => scripts,
     logAction,
   };
   const scriptEngine: SessionBehaviorScriptRuntime = { executeScript };
+  const windowActions: SessionBehaviorWindowActionRuntime = {
+    focusSession,
+    setOwningWindowState,
+    closeTab,
+  };
   return {
     settingsManager,
     scriptEngine,
@@ -100,8 +110,31 @@ function makeRuntime(scripts: CustomScript[] = []) {
     showNotification,
     requestReconnect,
     onTransition,
+    windowActions,
+    focusSession,
+    setOwningWindowState,
+    closeTab,
   };
 }
+
+const windowSignal = (
+  edge: BehaviorWindowLifecycleSignal["edge"],
+  eventId: string,
+  windowId = "main",
+  activeSessionId = "session-1",
+  closeAttemptId?: string,
+): BehaviorWindowLifecycleSignal => ({
+  version: 1,
+  edge,
+  eventId,
+  timestamp: 1_000,
+  closeAttemptId,
+  window: {
+    id: windowId,
+    kind: windowId === "main" ? "main" : "detached",
+    activeSessionId,
+  },
+});
 
 describe("classifySessionLifecycleTransition", () => {
   it.each([
@@ -476,5 +509,199 @@ describe("useSessionLifecycleEvents", () => {
       undefined,
       connection.name,
     );
+  });
+
+  it("attributes isolated main and detached lifecycle edges only to each active real owner", async () => {
+    const runtime = makeRuntime();
+    const connection = makeConnection(
+      [
+        "window.focused",
+        "window.blurred",
+        "window.minimized",
+        "window.restored",
+        "window.closeRequested",
+        "window.closed",
+      ].map((event) =>
+        makeRule(event as ConnectionBehaviorEventType, [
+          {
+            type: "writeLog",
+            message:
+              "{{event.type}}/{{window.id}}/{{session.id}}/{{event.reason}}",
+          },
+        ]),
+      ),
+    );
+    const main = makeSession({
+      status: "connected",
+      layout: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        zIndex: 1,
+        isDetached: false,
+      },
+    });
+    const detached = makeSession({
+      id: "session-2",
+      status: "connected",
+      layout: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        zIndex: 1,
+        isDetached: true,
+        windowId: "detached-1",
+      },
+    });
+    const { result } = renderHook(() =>
+      useSessionLifecycleEvents({
+        sessions: [main, detached],
+        connections: [connection],
+        ...runtime,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.emitWindowSignal(windowSignal("focused", "main-f"));
+      await result.current.emitWindowSignal(windowSignal("focused", "main-f2"));
+      await result.current.emitWindowSignal(windowSignal("blurred", "main-b"));
+      await result.current.emitWindowSignal(
+        windowSignal("minimized", "main-m"),
+      );
+      await result.current.emitWindowSignal(windowSignal("restored", "main-r"));
+      await result.current.emitWindowSignal(
+        windowSignal("focused", "det-f", "detached-1", "session-2"),
+      );
+      await result.current.emitWindowSignal(
+        windowSignal("blurred", "wrong-owner", "detached-1", "session-1"),
+      );
+      await result.current.emitWindowSignal(
+        windowSignal("closeRequested", "close-1", "main", "session-1", "try-1"),
+      );
+      await result.current.emitWindowSignal(
+        windowSignal(
+          "closeCancelled",
+          "cancel-1",
+          "main",
+          "session-1",
+          "try-1",
+        ),
+      );
+      await result.current.emitWindowSignal(
+        windowSignal("closed", "late-close", "main", "session-1", "try-1"),
+      );
+      await result.current.emitWindowSignal(
+        windowSignal("closeRequested", "close-2", "main", "session-1", "try-2"),
+      );
+      await result.current.emitWindowSignal(
+        windowSignal("closed", "closed-2", "main", "session-1", "try-2"),
+      );
+    });
+
+    expect(runtime.logAction.mock.calls.map((call) => call[3])).toEqual([
+      "window.focused/main/session-1/",
+      "window.blurred/main/session-1/",
+      "window.minimized/main/session-1/",
+      "window.restored/main/session-1/",
+      "window.focused/detached-1/session-2/",
+      "window.closeRequested/main/session-1/windowClose",
+      "window.closeRequested/main/session-1/windowClose",
+      "window.closed/main/session-1/windowClose",
+    ]);
+  });
+
+  it("executes wired window actions and reports a truthful close cancellation", async () => {
+    const runtime = makeRuntime();
+    runtime.closeTab.mockResolvedValue(false);
+    const connection = makeConnection([
+      makeRule("session.started", [
+        {
+          type: "focusSession",
+          restoreIfMinimized: true,
+          raiseWindow: false,
+        },
+        { type: "setOwningWindowState", state: "minimized" },
+        { type: "closeTab", respectClosePolicy: true },
+      ]),
+    ]);
+    const session = makeSession();
+    const { result } = renderHook(() =>
+      useSessionLifecycleEvents({
+        sessions: [session],
+        connections: [connection],
+        ...runtime,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.emitStarted(session, connection);
+    });
+    expect(runtime.focusSession).toHaveBeenCalledWith(
+      session,
+      expect.objectContaining({ raiseWindow: false }),
+    );
+    expect(runtime.setOwningWindowState).toHaveBeenCalledWith(session, {
+      type: "setOwningWindowState",
+      state: "minimized",
+    });
+    expect(runtime.closeTab).toHaveBeenCalledWith(session);
+    expect(runtime.logAction).toHaveBeenCalledWith(
+      "error",
+      "Connection behavior action failed",
+      connection.id,
+      expect.stringContaining("close request was cancelled"),
+      undefined,
+      connection.name,
+    );
+  });
+
+  it("prevents action-driven focus/minimize events from recursively fanning out", async () => {
+    const runtime = makeRuntime();
+    const connection = makeConnection([
+      makeRule("window.focused", [
+        { type: "setOwningWindowState", state: "minimized" },
+      ]),
+      makeRule("window.minimized", [{ type: "focusSession" }]),
+    ]);
+    const session = makeSession({
+      status: "connected",
+      layout: {
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        zIndex: 1,
+        isDetached: false,
+      },
+    });
+    const hook = renderHook(() =>
+      useSessionLifecycleEvents({
+        sessions: [session],
+        connections: [connection],
+        ...runtime,
+      }),
+    );
+    runtime.setOwningWindowState.mockImplementation(async () => {
+      await hook.result.current.emitWindowSignal(
+        windowSignal("minimized", "action-minimized"),
+      );
+      return true;
+    });
+    runtime.focusSession.mockImplementation(async () => {
+      await hook.result.current.emitWindowSignal(
+        windowSignal("focused", "action-focused"),
+      );
+      return true;
+    });
+
+    await act(async () => {
+      await hook.result.current.emitWindowSignal(
+        windowSignal("focused", "initial-focus"),
+      );
+    });
+    expect(runtime.setOwningWindowState).toHaveBeenCalledTimes(1);
+    expect(runtime.focusSession).toHaveBeenCalledTimes(1);
   });
 });

@@ -16,10 +16,23 @@ import {
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { generateId } from "../../utils/core/id";
 import { isRealConnectionSession } from "../../utils/session/sessionClassification";
+import {
+  BehaviorWindowLifecycleCoordinator,
+  type BehaviorWindowLifecycleSignal,
+} from "../../utils/behavior/windowLifecycle";
+import { getBehaviorOwningWindowId } from "../../utils/behavior/windowActions";
 
 type ReconnectAction = Extract<
   ConnectionBehaviorActionV1,
   { type: "reconnect" }
+>;
+type FocusSessionAction = Extract<
+  ConnectionBehaviorActionV1,
+  { type: "focusSession" }
+>;
+type SetOwningWindowStateAction = Extract<
+  ConnectionBehaviorActionV1,
+  { type: "setOwningWindowState" }
 >;
 
 export interface SessionLifecycleNotification {
@@ -61,6 +74,18 @@ export interface SessionReconnectRequest {
   parentEventId?: string;
 }
 
+export interface SessionBehaviorWindowActionRuntime {
+  focusSession(
+    session: ConnectionSession,
+    action: FocusSessionAction,
+  ): Promise<boolean>;
+  setOwningWindowState(
+    session: ConnectionSession,
+    action: SetOwningWindowStateAction,
+  ): Promise<boolean>;
+  closeTab(session: ConnectionSession): Promise<boolean>;
+}
+
 export type SessionLifecycleNotificationKind =
   | "connect"
   | "reconnect"
@@ -75,6 +100,7 @@ export interface UseSessionLifecycleEventsOptions {
   scriptEngine: SessionBehaviorScriptRuntime;
   showNotification(notification: SessionLifecycleNotification): void;
   requestReconnect(request: SessionReconnectRequest): Promise<boolean>;
+  windowActions?: SessionBehaviorWindowActionRuntime;
   onTransition?(
     kind: SessionLifecycleNotificationKind,
     session: ConnectionSession,
@@ -96,6 +122,11 @@ interface SessionRuntimeSnapshot {
 
 interface PendingEventMetadata extends SessionLifecycleEventMetadata {
   type: ConnectionBehaviorEventType;
+}
+
+interface PendingWindowActionParent {
+  eventId: string;
+  expiresAt: number;
 }
 
 const DEFAULT_SCRIPT_TIMEOUT_MS = 30_000;
@@ -207,6 +238,10 @@ export const useSessionLifecycleEvents = (
   const endingSessionsRef = useRef(new Set<string>());
   const pendingMetadataRef = useRef(new Map<string, PendingEventMetadata>());
   const directEventsRef = useRef(new Set<string>());
+  const windowCoordinatorRef = useRef(new BehaviorWindowLifecycleCoordinator());
+  const pendingWindowParentsRef = useRef(
+    new Map<string, PendingWindowActionParent>(),
+  );
   const primedRef = useRef(false);
 
   const dispatcherRef = useRef<ConnectionBehaviorDispatcher | null>(null);
@@ -225,6 +260,40 @@ export const useSessionLifecycleEvents = (
 
     dispatcherRef.current = new ConnectionBehaviorDispatcher({
       handlers: {
+        focusSession: async (action, context) => {
+          const snapshot = runtimeSnapshot(context.event.session?.id);
+          const runtime = optionsRef.current.windowActions;
+          if (!runtime) {
+            throw new Error("Window behavior actions are unavailable.");
+          }
+          const windowId = getBehaviorOwningWindowId(snapshot.session);
+          const expectedTypes: ConnectionBehaviorEventType[] = [];
+          if (action.restoreIfMinimized !== false) {
+            expectedTypes.push("window.restored");
+          }
+          if (action.raiseWindow !== false)
+            expectedTypes.push("window.focused");
+          const parent: PendingWindowActionParent = {
+            eventId: context.event.eventId,
+            expiresAt: (optionsRef.current.now?.() ?? Date.now()) + 2_000,
+          };
+          for (const type of expectedTypes) {
+            pendingWindowParentsRef.current.set(
+              `${windowId}\u001f${type}`,
+              parent,
+            );
+          }
+          const accepted = await runtime.focusSession(snapshot.session, action);
+          if (!accepted) {
+            for (const type of expectedTypes) {
+              const key = `${windowId}\u001f${type}`;
+              if (pendingWindowParentsRef.current.get(key) === parent) {
+                pendingWindowParentsRef.current.delete(key);
+              }
+            }
+            throw new Error("The owning window could not focus the session.");
+          }
+        },
         notify: (action, context) => {
           const inheritedSound =
             optionsRef.current.settingsManager.getSettings()
@@ -274,6 +343,16 @@ export const useSessionLifecycleEvents = (
             throw new Error("The reconnect request was not accepted.");
           }
         },
+        closeTab: async (_action, context) => {
+          const snapshot = runtimeSnapshot(context.event.session?.id);
+          const runtime = optionsRef.current.windowActions;
+          if (!runtime) {
+            throw new Error("Window behavior actions are unavailable.");
+          }
+          if (!(await runtime.closeTab(snapshot.session))) {
+            throw new Error("The close request was cancelled or unavailable.");
+          }
+        },
         runCustomScript: async (action, context) => {
           const snapshot = runtimeSnapshot(context.event.session?.id);
           const script = optionsRef.current.settingsManager
@@ -321,6 +400,27 @@ export const useSessionLifecycleEvents = (
             undefined,
             context.event.connection.name,
           );
+        },
+        setOwningWindowState: async (action, context) => {
+          const snapshot = runtimeSnapshot(context.event.session?.id);
+          const runtime = optionsRef.current.windowActions;
+          if (!runtime) {
+            throw new Error("Window behavior actions are unavailable.");
+          }
+          const windowId = getBehaviorOwningWindowId(snapshot.session);
+          const type = `window.${action.state}` as ConnectionBehaviorEventType;
+          const key = `${windowId}\u001f${type}`;
+          const parent: PendingWindowActionParent = {
+            eventId: context.event.eventId,
+            expiresAt: (optionsRef.current.now?.() ?? Date.now()) + 2_000,
+          };
+          pendingWindowParentsRef.current.set(key, parent);
+          if (!(await runtime.setOwningWindowState(snapshot.session, action))) {
+            if (pendingWindowParentsRef.current.get(key) === parent) {
+              pendingWindowParentsRef.current.delete(key);
+            }
+            throw new Error("The owning window state could not be changed.");
+          }
         },
       },
       onActionError: (error, context) => {
@@ -413,6 +513,66 @@ export const useSessionLifecycleEvents = (
       return emit("session.started", session, connection, metadata);
     },
     [emit],
+  );
+
+  const emitWindowSignal = useCallback(
+    async (
+      signal: BehaviorWindowLifecycleSignal,
+    ): Promise<ConnectionBehaviorDispatchResult | undefined> => {
+      const accepted = windowCoordinatorRef.current.accept(
+        signal,
+        optionsRef.current.sessions,
+      );
+      if (!accepted) return undefined;
+
+      const connection = optionsRef.current.connections.find(
+        (candidate) => candidate.id === accepted.session.connectionId,
+      );
+      if (!connection) return undefined;
+      snapshotsRef.current.set(accepted.session.id, {
+        connection,
+        session: accepted.session,
+      });
+
+      const parentKey = `${accepted.window.id}\u001f${accepted.type}`;
+      const pendingParent = pendingWindowParentsRef.current.get(parentKey);
+      const now = optionsRef.current.now?.() ?? Date.now();
+      let parentEventId = accepted.parentEventId;
+      if (pendingParent) {
+        pendingWindowParentsRef.current.delete(parentKey);
+        if (pendingParent.expiresAt >= now) {
+          parentEventId ??= pendingParent.eventId;
+        }
+      }
+
+      return dispatcherRef.current!.dispatch(connection.behaviorAutomation, {
+        eventId: accepted.eventId,
+        parentEventId,
+        type: accepted.type,
+        timestamp: accepted.timestamp,
+        source: "window-lifecycle-bridge",
+        reason: accepted.type.startsWith("window.close")
+          ? "windowClose"
+          : undefined,
+        connection: {
+          id: connection.id,
+          name: connection.name,
+          protocol: connection.protocol,
+          hostname: connection.hostname,
+          port: connection.port,
+        },
+        session: {
+          id: accepted.session.id,
+          name: accepted.session.name,
+          status: accepted.session.status,
+        },
+        window: accepted.window,
+        error: accepted.session.errorMessage
+          ? { message: sanitizeBehaviorText(accepted.session.errorMessage) }
+          : undefined,
+      });
+    },
+    [],
   );
 
   const emitInitialStatus = useCallback(
@@ -557,6 +717,7 @@ export const useSessionLifecycleEvents = (
   return {
     emitStarted,
     emitInitialStatus,
+    emitWindowSignal,
     prepareEvent,
     beginEnding,
     emitEnded,

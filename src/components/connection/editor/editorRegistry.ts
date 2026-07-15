@@ -215,6 +215,12 @@ const getBehaviorAutomationFields = (
           "Reconnecting",
           "Reconnected",
           "Session closed",
+          "Window focused",
+          "Window blurred",
+          "Window minimized",
+          "Window restored",
+          "Window close requested",
+          "Window closed",
         ],
       }),
       behaviorValueField({
@@ -229,6 +235,12 @@ const getBehaviorAutomationFields = (
           "Remote closed",
           "Application shutdown",
         ],
+      }),
+      behaviorValueField({
+        id: `automation-rule-${ruleNumber}-window-kinds`,
+        label: "Window kinds (optional — none means main and detached)",
+        path: `${rulePath}.when.windowKinds`,
+        optionText: ["Main window", "Detached windows"],
       }),
       behaviorValueField({
         id: `automation-rule-${ruleNumber}-delay`,
@@ -268,6 +280,9 @@ const getBehaviorAutomationFields = (
             "Write log entry",
             "Reconnect",
             "Run saved script",
+            "Focus session and owning window",
+            "Close session tab",
+            "Set owning window state",
           ],
         }),
       );
@@ -346,6 +361,40 @@ const getBehaviorAutomationFields = (
             id: `${prefix}-script-timeout`,
             focusId: `${prefix}-script-timeout`,
             label: `Action ${actionNumber} script timeout (ms)`,
+          }),
+        );
+      } else if (actionValue.type === "focusSession") {
+        fields.push(
+          behaviorValueField({
+            id: `${prefix}-restore-minimized`,
+            label: `Action ${actionNumber} restore minimized window`,
+            path: `${actionPath}.restoreIfMinimized`,
+            copy: ["Restore the owning window if minimized"],
+          }),
+          behaviorValueField({
+            id: `${prefix}-raise-window`,
+            label: `Action ${actionNumber} raise owning window`,
+            path: `${actionPath}.raiseWindow`,
+            copy: ["Raise and focus the owning window"],
+          }),
+        );
+      } else if (actionValue.type === "closeTab") {
+        fields.push(
+          behaviorValueField({
+            id: `${prefix}-close-policy`,
+            label: `Action ${actionNumber} close policy`,
+            copy: [
+              "Uses the existing close confirmation, disconnect, and cleanup policy.",
+            ],
+          }),
+        );
+      } else if (actionValue.type === "setOwningWindowState") {
+        fields.push(
+          behaviorValueField({
+            id: `${prefix}-window-state`,
+            label: `Action ${actionNumber} owning window state`,
+            path: `${actionPath}.state`,
+            optionText: ["Focused", "Minimized", "Restored"],
           }),
         );
       }
@@ -1070,7 +1119,19 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
     id: "behavior-automation",
     tabId: "behavior",
     label: "Session Automation",
-    keywords: ["behavior", "rules", "events", "actions", "lifecycle"],
+    keywords: [
+      "behavior",
+      "rules",
+      "events",
+      "actions",
+      "lifecycle",
+      "window",
+      "focus",
+      "minimize",
+      "restore",
+      "close",
+      "detached",
+    ],
     copy: [
       "Rules run in order. Actions inside each matching rule also run in order.",
       "Add automation rule",
@@ -1087,6 +1148,17 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Write log entry",
           "Reconnect",
           "Run saved script",
+          "Focus session and owning window",
+          "Close session tab",
+          "Set owning window state",
+          "Window focused",
+          "Window blurred",
+          "Window minimized",
+          "Window restored",
+          "Window close requested",
+          "Window closed",
+          "Main window",
+          "Detached windows",
         ],
       },
     ],
