@@ -980,8 +980,14 @@ pub fn create_auth_provider(
             Ok(Box::new(NegotiateAuth::new(credential)))
         }
         PsAuthMethod::Kerberos => Ok(Box::new(KerberosAuth::new(credential, target_host))),
-        PsAuthMethod::CredSsp => Ok(Box::new(CredSspAuth::new(credential, target_host))),
-        PsAuthMethod::Certificate => Ok(Box::new(CertificateAuth::new(credential))),
+        PsAuthMethod::CredSsp => Err(
+            "CredSSP authentication is unsupported: TLS channel binding and credential delegation are not implemented"
+                .to_string(),
+        ),
+        PsAuthMethod::Certificate => Err(
+            "Certificate authentication is unsupported: the current HTTP transport cannot attach the client identity"
+                .to_string(),
+        ),
         PsAuthMethod::Digest => Ok(Box::new(DigestAuth::new(credential))),
     }
 }
@@ -1159,5 +1165,19 @@ mod tests {
 
         let err = auth.initial_auth_header().unwrap_err();
         assert!(err.contains("unsupported"));
+    }
+
+    #[test]
+    fn unfinished_authentication_factories_fail_closed() {
+        let credential = credential();
+        let credssp = create_auth_provider(&PsAuthMethod::CredSsp, &credential, "server")
+            .err()
+            .expect("CredSSP must be rejected");
+        assert!(credssp.contains("TLS channel binding"));
+
+        let certificate = create_auth_provider(&PsAuthMethod::Certificate, &credential, "server")
+            .err()
+            .expect("certificate authentication must be rejected");
+        assert!(certificate.contains("client identity"));
     }
 }

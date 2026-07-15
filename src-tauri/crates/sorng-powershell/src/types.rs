@@ -5,7 +5,7 @@ use std::collections::HashMap;
 // ─── Transport Protocol ──────────────────────────────────────────────────────
 
 /// Transport protocol used for PowerShell Remoting connections.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum PsTransportProtocol {
@@ -31,7 +31,7 @@ impl PsTransportProtocol {
 // ─── Authentication ──────────────────────────────────────────────────────────
 
 /// Authentication method for WinRM connections.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[derive(Default)]
 pub enum PsAuthMethod {
@@ -154,30 +154,191 @@ fn default_true() -> bool {
 impl PsRemotingConfig {
     /// Compute the effective port for this configuration.
     pub fn effective_port(&self) -> u16 {
-        self.port.unwrap_or_else(|| self.transport.default_port())
+        self.port.unwrap_or_else(|| {
+            if self.use_ssl && self.transport == PsTransportProtocol::Http {
+                PsTransportProtocol::Https.default_port()
+            } else {
+                self.transport.default_port()
+            }
+        })
     }
 
-    /// Compute the full WinRM endpoint URI.
-    pub fn endpoint_uri(&self) -> String {
-        if let Some(ref uri) = self.connection_uri {
-            return uri.clone();
+    /// Whether the effective endpoint uses TLS.
+    ///
+    /// A custom connection URI is authoritative. `use_ssl` remains a
+    /// compatibility alias for older saved connections.
+    pub fn uses_tls(&self) -> bool {
+        if let Some(uri) = self.connection_uri.as_deref() {
+            return url::Url::parse(uri)
+                .map(|parsed| parsed.scheme().eq_ignore_ascii_case("https"))
+                .unwrap_or(false);
         }
-        let scheme = match self.transport {
-            PsTransportProtocol::Http => "http",
-            PsTransportProtocol::Https => "https",
-            PsTransportProtocol::Ssh => {
-                return format!("ssh://{}:{}", self.computer_name, self.effective_port())
-            }
-        };
-        format!(
-            "{}://{}:{}/{}/{}",
-            scheme,
-            self.computer_name,
-            self.effective_port(),
-            self.application_name,
-            self.uri_path.trim_start_matches('/')
-        )
+
+        self.use_ssl || self.transport == PsTransportProtocol::Https
     }
+
+    /// Compute and validate the canonical remote endpoint URI.
+    ///
+    /// `uri_path` is the complete WSMan application path. Older versions
+    /// appended both `application_name` and the default `/wsman` path, which
+    /// produced the invalid `/wsman/wsman` endpoint. Adjacent duplicate path
+    /// segments are collapsed while preserving custom application prefixes.
+    pub fn try_endpoint_uri(&self) -> Result<String, String> {
+        if let Some(uri) = self.connection_uri.as_deref() {
+            return canonicalize_connection_uri(uri, &self.transport);
+        }
+
+        let host = self.computer_name.trim();
+        if host.is_empty() {
+            return Err("PowerShell Remoting computer name cannot be empty".to_string());
+        }
+        let authority_host = bracket_ipv6_host(host);
+
+        if self.transport == PsTransportProtocol::Ssh {
+            return Ok(format!(
+                "ssh://{}:{}",
+                authority_host,
+                self.effective_port()
+            ));
+        }
+
+        let scheme = if self.uses_tls() { "https" } else { "http" };
+        let path = canonical_wsman_path(&self.uri_path, &self.application_name);
+        Ok(format!(
+            "{}://{}:{}{}",
+            scheme,
+            authority_host,
+            self.effective_port(),
+            path
+        ))
+    }
+
+    /// Compute the canonical endpoint URI.
+    ///
+    /// This compatibility wrapper is retained for read-only diagnostics.
+    /// Connection establishment should use [`Self::try_endpoint_uri`] so an
+    /// invalid custom URI is reported instead of being sent to the network.
+    pub fn endpoint_uri(&self) -> String {
+        self.try_endpoint_uri()
+            .unwrap_or_else(|_| self.connection_uri.clone().unwrap_or_default())
+    }
+
+    /// Validate security requirements enforced by the current transport.
+    pub fn validate_security(&self) -> Result<(), String> {
+        self.try_endpoint_uri()?;
+
+        if self.auth_method == PsAuthMethod::Basic && !self.uses_tls() {
+            return Err(
+                "PowerShell Remoting Basic authentication requires HTTPS; HTTP would expose credentials"
+                    .to_string(),
+            );
+        }
+
+        match self.transport {
+            PsTransportProtocol::Ssh => Err(
+                "PowerShell Remoting over SSH is not supported by the current backend"
+                    .to_string(),
+            ),
+            PsTransportProtocol::Http | PsTransportProtocol::Https => match self.auth_method {
+                PsAuthMethod::Certificate => Err(
+                    "PowerShell Remoting certificate authentication is not supported: the current HTTP transport cannot attach the client identity"
+                        .to_string(),
+                ),
+                PsAuthMethod::CredSsp => Err(
+                    "PowerShell Remoting CredSSP is not supported: TLS channel binding and credential delegation are not implemented"
+                        .to_string(),
+                ),
+                _ => Ok(()),
+            },
+        }
+    }
+}
+
+fn bracket_ipv6_host(host: &str) -> String {
+    if host.contains(':') && !(host.starts_with('[') && host.ends_with(']')) {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    }
+}
+
+fn canonical_wsman_path(uri_path: &str, application_name: &str) -> String {
+    let application_name = application_name.trim_matches('/');
+    let uri_path = uri_path.trim_matches('/');
+    let requested = if uri_path.is_empty() {
+        application_name.to_string()
+    } else if application_name.is_empty()
+        || uri_path
+            .split('/')
+            .next()
+            .is_some_and(|first| first.eq_ignore_ascii_case(application_name))
+    {
+        uri_path.to_string()
+    } else {
+        format!("{application_name}/{uri_path}")
+    };
+    canonical_path(&requested)
+}
+
+fn canonical_path(requested: &str) -> String {
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in requested
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
+        if segments
+            .last()
+            .is_some_and(|previous| previous.eq_ignore_ascii_case(segment))
+        {
+            continue;
+        }
+        segments.push(segment);
+    }
+
+    if segments.is_empty() {
+        "/wsman".to_string()
+    } else {
+        format!("/{}", segments.join("/"))
+    }
+}
+
+fn canonicalize_connection_uri(
+    connection_uri: &str,
+    transport: &PsTransportProtocol,
+) -> Result<String, String> {
+    let mut parsed = url::Url::parse(connection_uri)
+        .map_err(|error| format!("Invalid PowerShell Remoting connection URI: {error}"))?;
+    let expected_scheme = match transport {
+        PsTransportProtocol::Http | PsTransportProtocol::Https => &["http", "https"][..],
+        PsTransportProtocol::Ssh => &["ssh"][..],
+    };
+    if !expected_scheme
+        .iter()
+        .any(|scheme| parsed.scheme().eq_ignore_ascii_case(scheme))
+    {
+        return Err(format!(
+            "PowerShell Remoting {:?} transport does not support the '{}' URI scheme",
+            transport,
+            parsed.scheme()
+        ));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("PowerShell Remoting connection URIs must not embed credentials".to_string());
+    }
+    if parsed.host_str().is_none() {
+        return Err("PowerShell Remoting connection URI must include a host".to_string());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(
+            "PowerShell Remoting connection URIs must not include a query or fragment".to_string(),
+        );
+    }
+
+    if *transport != PsTransportProtocol::Ssh {
+        let path = canonical_path(parsed.path());
+        parsed.set_path(&path);
+    }
+    Ok(parsed.to_string().trim_end_matches('/').to_string())
 }
 
 // ─── Session Options ─────────────────────────────────────────────────────────
@@ -1199,4 +1360,139 @@ impl WsManNamespace {
     pub const PS_STREAMS: &'static str =
         "http://schemas.microsoft.com/powershell/Microsoft.PowerShell";
     pub const CIM: &'static str = "http://schemas.dmtf.org/wbem/wscim/1/common";
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn config() -> PsRemotingConfig {
+        serde_json::from_value(json!({
+            "computerName": "server.example",
+            "credential": { "username": "alice" }
+        }))
+        .expect("minimal remoting config")
+    }
+
+    #[test]
+    fn default_endpoint_contains_one_wsman_segment() {
+        let config = config();
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:5986/wsman"
+        );
+    }
+
+    #[test]
+    fn duplicate_wsman_segments_are_collapsed() {
+        let mut config = config();
+        config.uri_path = "/wsman/WSMAN/".to_string();
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:5986/wsman"
+        );
+
+        config.connection_uri = Some("https://server.example:7443/custom/wsman/wsman/".to_string());
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:7443/custom/wsman"
+        );
+    }
+
+    #[test]
+    fn empty_uri_path_falls_back_to_application_name() {
+        let mut config = config();
+        config.uri_path.clear();
+        config.application_name = "PowerShell".to_string();
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:5986/PowerShell"
+        );
+    }
+
+    #[test]
+    fn custom_application_prefix_is_preserved_without_default_duplication() {
+        let mut config = config();
+        config.application_name = "PowerShell".to_string();
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:5986/PowerShell/wsman"
+        );
+
+        config.uri_path = "/PowerShell/wsman".to_string();
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:5986/PowerShell/wsman"
+        );
+    }
+
+    #[test]
+    fn legacy_use_ssl_selects_https_and_its_default_port() {
+        let mut config = config();
+        config.transport = PsTransportProtocol::Http;
+        config.use_ssl = true;
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://server.example:5986/wsman"
+        );
+    }
+
+    #[test]
+    fn ipv6_hosts_are_bracketed() {
+        let mut config = config();
+        config.computer_name = "2001:db8::10".to_string();
+        assert_eq!(
+            config.try_endpoint_uri().unwrap(),
+            "https://[2001:db8::10]:5986/wsman"
+        );
+    }
+
+    #[test]
+    fn connection_uri_rejects_embedded_credentials_and_non_transport_schemes() {
+        let mut config = config();
+        config.connection_uri = Some("https://alice:secret@server.example/wsman".to_string());
+        assert!(config
+            .try_endpoint_uri()
+            .unwrap_err()
+            .contains("credentials"));
+
+        config.connection_uri = Some("ssh://server.example:22".to_string());
+        assert!(config.try_endpoint_uri().unwrap_err().contains("scheme"));
+    }
+
+    #[test]
+    fn basic_authentication_requires_effective_https() {
+        let mut config = config();
+        config.auth_method = PsAuthMethod::Basic;
+        config.transport = PsTransportProtocol::Http;
+        config.use_ssl = false;
+        assert!(config
+            .validate_security()
+            .unwrap_err()
+            .contains("requires HTTPS"));
+
+        config.connection_uri = Some("https://server.example:5986/wsman".to_string());
+        assert!(config.validate_security().is_ok());
+    }
+
+    #[test]
+    fn unfinished_transports_and_authentication_fail_closed() {
+        let mut config = config();
+        config.transport = PsTransportProtocol::Ssh;
+        assert!(config
+            .validate_security()
+            .unwrap_err()
+            .contains("not supported"));
+
+        config = self::config();
+        config.auth_method = PsAuthMethod::Certificate;
+        assert!(config
+            .validate_security()
+            .unwrap_err()
+            .contains("certificate authentication"));
+
+        config.auth_method = PsAuthMethod::CredSsp;
+        assert!(config.validate_security().unwrap_err().contains("CredSSP"));
+    }
 }

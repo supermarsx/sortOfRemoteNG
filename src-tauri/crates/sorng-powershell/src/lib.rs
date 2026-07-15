@@ -1,4 +1,6 @@
+pub mod actor;
 pub mod auth;
+pub mod capabilities;
 pub mod cim;
 pub mod configuration;
 pub mod copy;

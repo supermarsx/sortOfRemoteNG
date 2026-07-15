@@ -42,7 +42,8 @@ pub struct WinRmTransport {
 impl WinRmTransport {
     /// Create a new WinRM transport from configuration.
     pub fn new(config: &PsRemotingConfig) -> Result<Self, String> {
-        let endpoint = config.endpoint_uri();
+        config.validate_security()?;
+        let endpoint = config.try_endpoint_uri()?;
 
         let mut client_builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(
@@ -969,18 +970,11 @@ impl SshPsTransport {
         }
     }
 
-    /// Connect via SSH. The actual SSH session is delegated to sorng-ssh.
-    pub async fn connect(&mut self, credential: &PsCredential) -> Result<(), String> {
-        // In a real implementation, this would establish an SSH connection
-        // using the sorng-ssh crate and start the powershell subsystem.
-        log::info!(
-            "SSH PS transport: connecting to {}:{} as {}",
-            self.host,
-            self.port,
-            credential.username
-        );
-        self.connected = true;
-        Ok(())
+    /// Refuse to report a connection until an authenticated SSH subsystem
+    /// transport with host-key verification is implemented.
+    pub async fn connect(&mut self, _credential: &PsCredential) -> Result<(), String> {
+        self.connected = false;
+        Err("PowerShell Remoting over SSH is not supported by the current backend".to_string())
     }
 
     pub async fn execute(&self, script: &str) -> Result<String, String> {
@@ -995,5 +989,27 @@ impl SshPsTransport {
     pub async fn disconnect(&mut self) -> Result<(), String> {
         self.connected = false;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn ssh_placeholder_fails_closed() {
+        let credential = PsCredential {
+            username: "alice".to_string(),
+            password: Some("secret".to_string()),
+            domain: None,
+            certificate_path: None,
+            certificate_thumbprint: None,
+            private_key_path: None,
+            ssh_key_path: None,
+        };
+        let mut transport = SshPsTransport::new("server.example", 22);
+        let error = transport.connect(&credential).await.unwrap_err();
+        assert!(error.contains("not supported"));
+        assert!(!transport.connected);
     }
 }
