@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
- * ParticleStorm — pure-CSS variant ported from .orb-previews/D-liquid-wisp.html.
+ * ParticleStorm — pure-CSS variant ported from prototypes/orb-previews/D-liquid-wisp.html.
  *
  * Two counter-drifting dot fields inside a glowing rim + a hot white core.
  */

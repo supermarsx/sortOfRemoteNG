@@ -5,7 +5,7 @@
  * a sin schedule; a single brightness cursor travels through all 30 edges
  * sequentially like a circuit lighting up.
  *
- * Ported from `.orb-previews/X6-icosahedron.html`.
+ * Ported from `prototypes/orb-previews/X6-icosahedron.html`.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

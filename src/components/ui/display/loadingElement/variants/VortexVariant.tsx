@@ -4,7 +4,7 @@
  * bright singularity at the center. Each particle lives on its own phase;
  * brightness peaks as it falls into the eye then respawns at the rim.
  *
- * Ported from `.orb-previews/X3-vortex.html`.
+ * Ported from `prototypes/orb-previews/X3-vortex.html`.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

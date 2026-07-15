@@ -8,7 +8,7 @@
  * brighten/glow/scale up. Sphere wrapper rotates Y over a fixed CSS
  * keyframe (12s), tilted on X for a 3D feel.
  *
- * Faithful port of .orb-previews/E3-lissajous-knot.html.
+ * Faithful port of prototypes/orb-previews/E3-lissajous-knot.html.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

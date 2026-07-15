@@ -5,7 +5,7 @@
  * spirals light up like phosphor traces. Sphere wrapper rotates Y over
  * config.spinSeconds, tilted on X.
  *
- * Faithful port of .orb-previews/H-fibonacci-sphere.html.
+ * Faithful port of prototypes/orb-previews/H-fibonacci-sphere.html.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

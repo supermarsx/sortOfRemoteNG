@@ -4,7 +4,7 @@
  * on irregular base periods (11s/14s/17s/13s), an outer halo that breathes
  * (auraSpeed), and a slow chromatic hue-rotate (hueRotateDeg).
  *
- * Faithful port of .orb-previews/F-aurora-bloom.html.
+ * Faithful port of prototypes/orb-previews/F-aurora-bloom.html.
  */
 
 import React from 'react';

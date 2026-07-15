@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
- * Hologram — pure-CSS variant ported from .orb-previews/C-conic-shimmer.html.
+ * Hologram — pure-CSS variant ported from prototypes/orb-previews/C-conic-shimmer.html.
  *
  * Pixel-mesh sphere (radial-gradient dots clipped by a soft mask) + a CRT
  * scanline that sweeps top-to-bottom + a flickering center pixel.

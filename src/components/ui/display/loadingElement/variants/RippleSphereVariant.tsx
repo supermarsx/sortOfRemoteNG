@@ -10,7 +10,7 @@
  * floor (matching the prompt's contract — slightly tighter than the source
  * HTML's 0.35..1 range).
  *
- * Faithful port of .orb-previews/G-ripple-sphere.html.
+ * Faithful port of prototypes/orb-previews/G-ripple-sphere.html.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

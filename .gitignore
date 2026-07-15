@@ -65,6 +65,7 @@ e2e/screenshots/failure-*.png
 /target-copilot-rdp-one-shot
 
 # Scratch backup copies of source files (rename / delete instead of leaving around)
+/scratchpad/
 *.rs.bak
 *_old.rs
 *_orig.rs

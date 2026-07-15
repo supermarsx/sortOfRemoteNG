@@ -4,7 +4,7 @@
  * placed by rₙ = c·√(i+1), θₙ = i·GA. A brightness wave rolls outward from
  * the center; alternating dots take the primary or secondary color.
  *
- * Ported from `.orb-previews/X5-phyllotaxis.html`.
+ * Ported from `prototypes/orb-previews/X5-phyllotaxis.html`.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

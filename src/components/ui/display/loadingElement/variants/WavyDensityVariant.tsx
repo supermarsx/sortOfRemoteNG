@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
- * WavyDensity — variant ported from .orb-previews/E-wavy-density.html.
+ * WavyDensity — variant ported from prototypes/orb-previews/E-wavy-density.html.
  *
  * Particles spawn at random points on a sphere (or chaos-blended toward a
  * deterministic spiral). Each dot gets a random lifetime, sweep phase, and

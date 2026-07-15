@@ -5,7 +5,7 @@
  * latitude that boosts brightness, like analog TV interference inside a
  * globe. Outer wrapper rotates Y over 18s.
  *
- * Ported from `.orb-previews/X4-tv-static.html`.
+ * Ported from `prototypes/orb-previews/X4-tv-static.html`.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';

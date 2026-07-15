@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- co-located variant descriptor metadata stays with the component by design */
 /**
- * DotPulse — pure-CSS variant ported from .orb-previews/A-pulsing-core.html.
+ * DotPulse — pure-CSS variant ported from prototypes/orb-previews/A-pulsing-core.html.
  *
  * Halftone dot disc rotating + dotted shockwave rings + bright pulsing core.
  */
