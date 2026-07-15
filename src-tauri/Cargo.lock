@@ -11741,6 +11741,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-socket-transport"
+version = "26.1.0"
+dependencies = [
+ "serde",
+ "socket2 0.5.10",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "sorng-spamassassin"
 version = "26.1.0"
 dependencies = [

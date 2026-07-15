@@ -1,0 +1,13 @@
+[package]
+publish = false
+name = "sorng-socket-transport"
+version.workspace = true
+edition = "2021"
+description = "Shared direct TCP and UDP transport runtime for SortOfRemote NG"
+
+[dependencies]
+serde = { workspace = true }
+socket2 = "0.5"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }

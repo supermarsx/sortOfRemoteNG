@@ -21,6 +21,7 @@ members = [
   "crates/sorng-compression-vendor",
   "crates/sorng-opkssh-vendor",
   "crates/sorng-protocols",
+  "crates/sorng-socket-transport",
   "crates/sorng-vpn",
   "crates/sorng-cloud",
   "crates/sorng-aws",
@@ -223,6 +224,7 @@ serde_yaml = "0.9"
 # ── Async runtime ─────────────────────────────────────────────────────
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
 async-trait = "0.1"
 
