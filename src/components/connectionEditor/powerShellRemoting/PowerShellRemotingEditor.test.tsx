@@ -82,7 +82,9 @@ describe("PowerShellRemotingEditor", () => {
     expect(
       document.querySelector("[data-powershell-section] button[aria-controls]"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/strict PSRP over SSH/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/persistent PSRP over SSH or direct WSMan/i),
+    ).toBeInTheDocument();
   });
 
   it("blocks Basic over HTTP in both the field and page validation", () => {
@@ -100,7 +102,7 @@ describe("PowerShellRemotingEditor", () => {
     );
   });
 
-  it("enables strict SSH while unavailable WSMan, agent, and TOFU choices fail closed", () => {
+  it("enables direct WSMan and strict SSH while unsupported auth and trust choices fail closed", () => {
     render(<Harness />);
 
     const transport = screen.getByRole("combobox", {
@@ -108,8 +110,8 @@ describe("PowerShellRemotingEditor", () => {
     });
     fireEvent.click(transport);
     expect(
-      screen.getByRole("option", { name: /WSMan — unavailable/i }),
-    ).toHaveAttribute("aria-disabled", "true");
+      screen.getByRole("option", { name: /WSMan — direct only/i }),
+    ).not.toHaveAttribute("aria-disabled", "true");
     expect(
       screen.getByRole("option", { name: "PowerShell over SSH" }),
     ).not.toHaveAttribute("aria-disabled", "true");

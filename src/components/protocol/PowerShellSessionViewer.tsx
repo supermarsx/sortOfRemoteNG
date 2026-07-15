@@ -45,6 +45,9 @@ export const PowerShellSessionViewer: React.FC<{
   const [actionError, setActionError] = useState<string | null>(null);
   const active = Boolean(model.backend?.activePipelineId);
   const canRun = model.status === "ready" && !active;
+  const activeTransport =
+    model.backend?.diagnostics.transport ?? model.transport;
+  const isWsman = activeTransport === "wsman";
 
   const transcript = useMemo(
     () =>
@@ -95,7 +98,7 @@ export const PowerShellSessionViewer: React.FC<{
       <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           <TerminalSquare size={15} className="text-primary" aria-hidden />
-          <strong>PowerShell over SSH</strong>
+          <strong>PowerShell over {isWsman ? "WSMan" : "SSH"}</strong>
           <span
             className="rounded-full border border-[var(--color-border)] px-2 py-1 font-medium uppercase"
             role="status"
@@ -118,9 +121,21 @@ export const PowerShellSessionViewer: React.FC<{
           <span className="ml-auto text-[var(--color-textMuted)]">
             {model.backend
               ? `${model.backend.stats.pipelinesCompleted} completed · ${model.backend.stats.pipelinesFailed} failed · ${model.backend.stats.pipelinesCancelled} cancelled`
-              : "Opening verified SSH runspace"}
+              : isWsman
+                ? "Opening Trust Center-verified WSMan runspace"
+                : "Opening verified SSH runspace"}
           </span>
         </div>
+        {isWsman ? (
+          <div
+            className="mt-2 inline-flex rounded border border-warning/30 bg-warning/5 px-2 py-1 text-[10px] text-warning"
+            data-testid="powershell-wsman-verification"
+            title={model.backend?.diagnostics.limitations.join(" · ")}
+          >
+            Deterministic contract verified · live Windows unverified · direct
+            endpoints only
+          </div>
+        ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"

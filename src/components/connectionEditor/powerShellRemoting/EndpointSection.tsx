@@ -65,7 +65,7 @@ export function EndpointSection({
             options={[
               {
                 value: "wsman",
-                label: "WSMan — unavailable",
+                label: `WSMan${wsmanCapability?.status === "unsupported" ? " — unavailable" : " — direct only"}`,
                 disabled: wsmanCapability?.status === "unsupported",
                 title: wsmanCapability?.reason,
               },

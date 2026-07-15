@@ -87,6 +87,7 @@ const backendSession = (id = "backend-ps-1"): PowerShellBackendSession => ({
   terminalErrorCode: null,
   capabilities: {
     transport: "ssh",
+    supportedTransports: ["ssh", "wsman"],
     persistentRunspace: true,
     pipelineInput: true,
     pipelineCancellation: true,
@@ -95,7 +96,9 @@ const backendSession = (id = "backend-ps-1"): PowerShellBackendSession => ({
     boundedReplay: true,
     uiReattach: true,
     transportReconnect: false,
-    wsmanAvailable: false,
+    wsmanAvailable: true,
+    wsmanContractVerified: true,
+    wsmanLiveWindowsVerified: false,
     maxConcurrentPipelines: 1,
   },
   stats: {
@@ -117,6 +120,8 @@ const backendSession = (id = "backend-ps-1"): PowerShellBackendSession => ({
     authentication: "established",
     runspaceHealth: "healthy",
     activePipeline: null,
+    contractVerification: "adapter_tests_verified",
+    liveInteroperability: "live_target_dependent",
     limitations: [],
   },
 });
@@ -155,14 +160,17 @@ describe("usePowerShellSession", () => {
     expect(mocks.invoke).toHaveBeenCalledWith(
       "open_powershell_session",
       expect.objectContaining({
-        options: expect.objectContaining({
-          host: "ps.example.test",
-          auth: { type: "password", password: "secret" },
-          hostKeyPolicy: {
-            type: "pinned_sha256",
-            fingerprint: "SHA256:test",
-          },
-        }),
+        options: {
+          transport: "ssh",
+          options: expect.objectContaining({
+            host: "ps.example.test",
+            auth: { type: "password", password: "secret" },
+            hostKeyPolicy: {
+              type: "pinned_sha256",
+              fingerprint: "SHA256:test",
+            },
+          }),
+        },
         eventChannel: expect.any(mocks.MockChannel),
       }),
     );
@@ -289,5 +297,53 @@ describe("usePowerShellSession", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("detach_powershell_session", {
       sessionId: "backend-ps-1",
     });
+  });
+
+  it("opens direct WSMan with the union payload and surfaces the runspace-open phase failure", async () => {
+    const wsmanSettings = createDefaultPowerShellRemotingSettings();
+    wsmanSettings.transport = "wsman";
+    wsmanSettings.credential.username = "LAB\\alice";
+    wsmanSettings.credential.domain = "LAB";
+    wsmanSettings.wsman.authMethod = "ntlm";
+    const wsmanConnection: Connection = {
+      ...connection,
+      port: 5986,
+      powerShellRemoting: wsmanSettings,
+    };
+    mocks.useConnections.mockReturnValue({
+      state: { connections: [wsmanConnection], sessions: [] },
+      dispatch: mocks.dispatch,
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "open_powershell_session") {
+        return Promise.reject(
+          new Error("The PowerShell WSMan runspace could not be opened."),
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() =>
+      usePowerShellSession(frontendSession()),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("failed"));
+    expect(result.current.transport).toBe("wsman");
+    expect(result.current.error).toMatch(/WSMan runspace could not be opened/i);
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "open_powershell_session",
+      expect.objectContaining({
+        options: {
+          transport: "wsman",
+          options: expect.objectContaining({
+            endpoint: "https://ps.example.test:5986/wsman",
+            authentication: "ntlm",
+            tlsTrust: "trust_center",
+            networkPath: "direct",
+          }),
+        },
+        eventChannel: expect.any(mocks.MockChannel),
+      }),
+    );
   });
 });

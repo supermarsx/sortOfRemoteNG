@@ -22,6 +22,7 @@ const session: ConnectionSession = {
 };
 
 const createModel = (): PowerShellSessionModel => ({
+  transport: "ssh",
   status: "ready" as const,
   error: null,
   backendSessionId: "backend-ps-1",
@@ -38,6 +39,7 @@ const createModel = (): PowerShellSessionModel => ({
     terminalErrorCode: null,
     capabilities: {
       transport: "ssh" as const,
+      supportedTransports: ["ssh", "wsman"],
       persistentRunspace: true,
       pipelineInput: true,
       pipelineCancellation: true,
@@ -46,7 +48,9 @@ const createModel = (): PowerShellSessionModel => ({
       boundedReplay: true,
       uiReattach: true,
       transportReconnect: false,
-      wsmanAvailable: false,
+      wsmanAvailable: true,
+      wsmanContractVerified: true,
+      wsmanLiveWindowsVerified: false,
       maxConcurrentPipelines: 1,
     },
     stats: {
@@ -68,6 +72,8 @@ const createModel = (): PowerShellSessionModel => ({
       authentication: "established",
       runspaceHealth: "healthy",
       activePipeline: null,
+      contractVerification: "adapter_tests_verified",
+      liveInteroperability: "live_target_dependent",
       limitations: [],
     },
   },
@@ -162,5 +168,38 @@ describe("PowerShellSessionViewer", () => {
     await waitFor(() => expect(model.reconnect).toHaveBeenCalledOnce());
     await waitFor(() => expect(model.disconnect).toHaveBeenCalledOnce());
     await waitFor(() => expect(model.cancel).toHaveBeenCalledOnce());
+  });
+
+  it("labels WSMan verification boundaries and renders a failed connection phase", () => {
+    const model = createModel();
+    model.transport = "wsman";
+    model.status = "failed";
+    model.error = "The WSMan runspace could not be opened.";
+    model.backend!.phase = "failed";
+    model.backend!.capabilities.transport = "wsman";
+    model.backend!.diagnostics = {
+      transport: "wsman",
+      hostKeyVerification: "trust_center_tls",
+      authentication: "ntlm",
+      runspaceHealth: "failed",
+      activePipeline: null,
+      contractVerification: "deterministic_contract_verified",
+      liveInteroperability: "live_windows_unverified",
+      limitations: ["direct endpoints only"],
+    };
+    hookMock.mockReturnValue(model);
+
+    render(<PowerShellSessionViewer session={session} />);
+
+    expect(screen.getByText("PowerShell over WSMan")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("powershell-wsman-verification"),
+    ).toHaveTextContent(
+      /Deterministic contract verified · live Windows unverified · direct endpoints only/i,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("failed");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /WSMan runspace could not be opened/i,
+    );
   });
 });

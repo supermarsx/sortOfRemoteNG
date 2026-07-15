@@ -8,7 +8,7 @@ import type {
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { normalizePowerShellRemotingSettings } from "../../utils/powershell/normalizePowerShellRemoting";
 import {
-  buildPowerShellSshSessionOptions,
+  buildPowerShellSessionOptions,
   PowerShellSequenceCursor,
   type PowerShellBackendSession,
   type PowerShellEventEnvelope,
@@ -22,6 +22,7 @@ import {
 export type PowerShellViewerStatus = "connecting" | PowerShellSessionPhase;
 
 export interface PowerShellSessionModel {
+  transport: "ssh" | "wsman";
   status: PowerShellViewerStatus;
   error: string | null;
   backendSessionId: string | null;
@@ -251,7 +252,7 @@ export function usePowerShellSession(
       setReplayTruncated(false);
       cursorRef.current.reset();
 
-      const options = buildPowerShellSshSessionOptions(
+      const options = buildPowerShellSessionOptions(
         currentConnection,
         settingsRef.current,
       );
@@ -395,6 +396,7 @@ export function usePowerShellSession(
   const clear = useCallback(() => setEvents([]), []);
 
   return {
+    transport: settings.transport,
     status,
     error,
     backendSessionId,

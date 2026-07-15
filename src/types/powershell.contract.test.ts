@@ -67,7 +67,7 @@ describe("sorng-powershell JSON contracts", () => {
       JSON.stringify(CURRENT_POWER_SHELL_REMOTING_CAPABILITIES),
     );
 
-    expect(capabilities.implementation).toBe("strictSshPsrpRunspace");
+    expect(capabilities.implementation).toBe("dualTransportPsrpRunspace");
     expect(capabilities.transports).toHaveLength(3);
     expect(capabilities.authentication).toHaveLength(8);
     expect(capabilities.features).toHaveLength(8);
@@ -76,6 +76,15 @@ describe("sorng-powershell JSON contracts", () => {
     );
     expect(capabilities.authentication).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          authMethod: "basic",
+          status: "partial",
+          requiresTls: true,
+        }),
+        expect.objectContaining({
+          authMethod: "ntlm",
+          status: "partial",
+        }),
         expect.objectContaining({
           authMethod: "certificate",
           status: "unsupported",
@@ -88,8 +97,8 @@ describe("sorng-powershell JSON contracts", () => {
     );
     expect(capabilities.transports).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ transport: "http", status: "unsupported" }),
-        expect.objectContaining({ transport: "https", status: "unsupported" }),
+        expect.objectContaining({ transport: "http", status: "partial" }),
+        expect.objectContaining({ transport: "https", status: "partial" }),
       ]),
     );
   });

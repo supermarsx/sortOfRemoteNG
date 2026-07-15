@@ -10,6 +10,22 @@ pub const MAX_COMMAND_QUEUE_CAPACITY: usize = 256;
 pub const MAX_SCRIPT_BYTES: usize = 1024 * 1024;
 pub const MAX_INPUT_TEXT_BYTES: usize = 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PowerShellSessionTransport {
+    Ssh,
+    Wsman,
+}
+
+impl PowerShellSessionTransport {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ssh => "ssh",
+            Self::Wsman => "wsman",
+        }
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PowerShellSshAuth {
@@ -135,6 +151,242 @@ impl PowerShellSshSessionOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PowerShellWsmanAuth {
+    Basic,
+    Ntlm,
+    Negotiate,
+    Kerberos,
+    CredSsp,
+    Certificate,
+    Default,
+    Digest,
+}
+
+impl PowerShellWsmanAuth {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Basic => "basic",
+            Self::Ntlm => "ntlm",
+            Self::Negotiate => "negotiate",
+            Self::Kerberos => "kerberos",
+            Self::CredSsp => "credSsp",
+            Self::Certificate => "certificate",
+            Self::Default => "default",
+            Self::Digest => "digest",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PowerShellWsmanTrustPolicy {
+    #[default]
+    TrustCenter,
+    AlwaysTrust,
+    PinnedInline,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PowerShellSessionNetworkPath {
+    #[default]
+    Direct,
+    ConnectionPath,
+    Proxy,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PowerShellWsmanSessionOptions {
+    pub endpoint: String,
+    pub username: String,
+    pub password: String,
+    #[serde(default)]
+    pub domain: Option<String>,
+    pub authentication: PowerShellWsmanAuth,
+    #[serde(default)]
+    pub tls_trust: PowerShellWsmanTrustPolicy,
+    #[serde(default)]
+    pub network_path: PowerShellSessionNetworkPath,
+    #[serde(default)]
+    pub connection_id: Option<String>,
+    #[serde(default = "default_configuration_name")]
+    pub configuration_name: String,
+    #[serde(default = "default_culture")]
+    pub culture: String,
+    #[serde(default = "default_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_request_timeout_ms")]
+    pub request_timeout_ms: u64,
+    #[serde(default = "default_idle_timeout_sec")]
+    pub idle_timeout_sec: u32,
+    #[serde(default = "default_wsman_envelope_bytes")]
+    pub max_envelope_bytes: usize,
+    #[serde(default = "default_wsman_response_bytes")]
+    pub max_response_bytes: usize,
+    #[serde(default = "default_wsman_auth_rounds")]
+    pub max_auth_rounds: usize,
+    #[serde(default = "default_wsman_empty_receives")]
+    pub max_empty_receives: usize,
+    #[serde(default = "default_event_capacity")]
+    pub event_capacity: usize,
+    #[serde(default = "default_command_queue_capacity")]
+    pub command_queue_capacity: usize,
+    #[serde(default = "default_queue_wait_timeout_ms")]
+    pub queue_wait_timeout_ms: u64,
+}
+
+impl fmt::Debug for PowerShellWsmanSessionOptions {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PowerShellWsmanSessionOptions")
+            .field("endpoint", &self.endpoint)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .field("domain", &self.domain)
+            .field("authentication", &self.authentication)
+            .field("tls_trust", &self.tls_trust)
+            .field("network_path", &self.network_path)
+            .field("connection_id", &self.connection_id)
+            .field("configuration_name", &self.configuration_name)
+            .field("culture", &self.culture)
+            .field("connect_timeout_ms", &self.connect_timeout_ms)
+            .field("request_timeout_ms", &self.request_timeout_ms)
+            .field("idle_timeout_sec", &self.idle_timeout_sec)
+            .field("max_envelope_bytes", &self.max_envelope_bytes)
+            .field("max_response_bytes", &self.max_response_bytes)
+            .field("max_auth_rounds", &self.max_auth_rounds)
+            .field("max_empty_receives", &self.max_empty_receives)
+            .field("event_capacity", &self.event_capacity)
+            .field("command_queue_capacity", &self.command_queue_capacity)
+            .field("queue_wait_timeout_ms", &self.queue_wait_timeout_ms)
+            .finish()
+    }
+}
+
+impl PowerShellWsmanSessionOptions {
+    pub(crate) fn validate(&self) -> Result<(), PowerShellSessionError> {
+        let endpoint = url::Url::parse(&self.endpoint)
+            .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
+        if !matches!(endpoint.scheme(), "http" | "https")
+            || endpoint.host_str().is_none()
+            || !endpoint.username().is_empty()
+            || endpoint.password().is_some()
+            || endpoint.query().is_some()
+            || endpoint.fragment().is_some()
+            || self.endpoint.len() > 2_048
+        {
+            return Err(PowerShellSessionError::invalid("endpoint"));
+        }
+        if self.username.trim().is_empty() || self.username.len() > 256 {
+            return Err(PowerShellSessionError::invalid("username"));
+        }
+        if self.password.len() > MAX_INPUT_TEXT_BYTES
+            || self.domain.as_ref().is_some_and(|value| value.len() > 256)
+            || self
+                .connection_id
+                .as_ref()
+                .is_some_and(|value| value.len() > 256)
+        {
+            return Err(PowerShellSessionError::invalid("credential"));
+        }
+        match self.authentication {
+            PowerShellWsmanAuth::Basic if endpoint.scheme() != "https" => {
+                return Err(PowerShellSessionError::TransportSecurityRequired);
+            }
+            PowerShellWsmanAuth::Basic | PowerShellWsmanAuth::Ntlm => {}
+            _ => return Err(PowerShellSessionError::AuthenticationUnsupported),
+        }
+        if self.tls_trust != PowerShellWsmanTrustPolicy::TrustCenter {
+            return Err(PowerShellSessionError::TlsTrustUnsupported);
+        }
+        if self.network_path != PowerShellSessionNetworkPath::Direct {
+            return Err(PowerShellSessionError::NetworkPathUnsupported);
+        }
+        if self.configuration_name.is_empty()
+            || !self
+                .configuration_name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        {
+            return Err(PowerShellSessionError::invalid("configurationName"));
+        }
+        if self.culture.is_empty()
+            || self.culture.len() > 32
+            || !self
+                .culture
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(PowerShellSessionError::invalid("culture"));
+        }
+        if self.connect_timeout_ms == 0
+            || self.connect_timeout_ms > 300_000
+            || self.request_timeout_ms == 0
+            || self.request_timeout_ms > 300_000
+            || self.idle_timeout_sec == 0
+            || self.idle_timeout_sec > 604_800
+        {
+            return Err(PowerShellSessionError::invalid("timeouts"));
+        }
+        if !(1_024..=8 * 1024 * 1024).contains(&self.max_envelope_bytes)
+            || !(1_024..=64 * 1024 * 1024).contains(&self.max_response_bytes)
+            || !(1..=8).contains(&self.max_auth_rounds)
+            || !(1..=1_024).contains(&self.max_empty_receives)
+            || self.event_capacity == 0
+            || self.event_capacity > MAX_EVENT_CAPACITY
+            || self.command_queue_capacity == 0
+            || self.command_queue_capacity > MAX_COMMAND_QUEUE_CAPACITY
+            || self.queue_wait_timeout_ms == 0
+            || self.queue_wait_timeout_ms > 60_000
+        {
+            return Err(PowerShellSessionError::invalid("limits"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(tag = "transport", content = "options", rename_all = "snake_case")]
+pub enum PowerShellSessionOptions {
+    Ssh(PowerShellSshSessionOptions),
+    Wsman(PowerShellWsmanSessionOptions),
+}
+
+impl fmt::Debug for PowerShellSessionOptions {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ssh(options) => formatter.debug_tuple("Ssh").field(options).finish(),
+            Self::Wsman(options) => formatter.debug_tuple("Wsman").field(options).finish(),
+        }
+    }
+}
+
+impl PowerShellSessionOptions {
+    pub(crate) fn validate(&self) -> Result<(), PowerShellSessionError> {
+        match self {
+            Self::Ssh(options) => options.validate(),
+            Self::Wsman(options) => options.validate(),
+        }
+    }
+
+    pub const fn transport(&self) -> PowerShellSessionTransport {
+        match self {
+            Self::Ssh(_) => PowerShellSessionTransport::Ssh,
+            Self::Wsman(_) => PowerShellSessionTransport::Wsman,
+        }
+    }
+
+    pub fn connection_id(&self) -> Option<&str> {
+        match self {
+            Self::Ssh(options) => options.connection_id.as_deref(),
+            Self::Wsman(options) => options.connection_id.as_deref(),
+        }
+    }
+}
+
 const fn default_ssh_port() -> u16 {
     22
 }
@@ -161,6 +413,34 @@ const fn default_command_queue_capacity() -> usize {
 
 const fn default_queue_wait_timeout_ms() -> u64 {
     2_000
+}
+
+fn default_configuration_name() -> String {
+    "Microsoft.PowerShell".to_owned()
+}
+
+fn default_culture() -> String {
+    "en-US".to_owned()
+}
+
+const fn default_idle_timeout_sec() -> u32 {
+    7_200
+}
+
+const fn default_wsman_envelope_bytes() -> usize {
+    512 * 1024
+}
+
+const fn default_wsman_response_bytes() -> usize {
+    8 * 1024 * 1024
+}
+
+const fn default_wsman_auth_rounds() -> usize {
+    3
+}
+
+const fn default_wsman_empty_receives() -> usize {
+    32
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -250,6 +530,7 @@ pub struct PowerShellEventReplay {
 #[serde(rename_all = "camelCase")]
 pub struct PowerShellSessionCapabilities {
     pub transport: String,
+    pub supported_transports: Vec<String>,
     pub persistent_runspace: bool,
     pub pipeline_input: bool,
     pub pipeline_cancellation: bool,
@@ -259,13 +540,22 @@ pub struct PowerShellSessionCapabilities {
     pub ui_reattach: bool,
     pub transport_reconnect: bool,
     pub wsman_available: bool,
+    pub wsman_contract_verified: bool,
+    pub wsman_live_windows_verified: bool,
     pub max_concurrent_pipelines: usize,
 }
 
 impl Default for PowerShellSessionCapabilities {
     fn default() -> Self {
+        Self::service()
+    }
+}
+
+impl PowerShellSessionCapabilities {
+    pub fn service() -> Self {
         Self {
-            transport: "ssh".to_owned(),
+            transport: "multiple".to_owned(),
+            supported_transports: vec!["ssh".to_owned(), "wsman".to_owned()],
             persistent_runspace: true,
             pipeline_input: true,
             pipeline_cancellation: true,
@@ -274,8 +564,17 @@ impl Default for PowerShellSessionCapabilities {
             bounded_replay: true,
             ui_reattach: true,
             transport_reconnect: false,
-            wsman_available: false,
+            wsman_available: true,
+            wsman_contract_verified: true,
+            wsman_live_windows_verified: false,
             max_concurrent_pipelines: 1,
+        }
+    }
+
+    pub fn for_transport(transport: PowerShellSessionTransport) -> Self {
+        Self {
+            transport: transport.as_str().to_owned(),
+            ..Self::service()
         }
     }
 }
@@ -304,6 +603,8 @@ pub struct PowerShellSessionDiagnostics {
     pub authentication: String,
     pub runspace_health: String,
     pub active_pipeline: Option<String>,
+    pub contract_verification: String,
+    pub live_interoperability: String,
     pub limitations: Vec<String>,
 }
 
@@ -338,6 +639,9 @@ pub struct PowerShellPipelineStarted {
 pub enum PowerShellSessionError {
     InvalidConfiguration { field: String },
     AuthenticationUnsupported,
+    TransportSecurityRequired,
+    TlsTrustUnsupported,
+    NetworkPathUnsupported,
     SessionLimitReached,
     SessionNotFound,
     SessionClosed,
@@ -359,7 +663,16 @@ impl fmt::Display for PowerShellSessionError {
         formatter.write_str(match self {
             Self::InvalidConfiguration { .. } => "PowerShell session configuration is invalid",
             Self::AuthenticationUnsupported => {
-                "SSH agent authentication is not available for strict PowerShell remoting"
+                "the selected authentication method is not available for this PowerShell transport"
+            }
+            Self::TransportSecurityRequired => {
+                "the selected PowerShell authentication method requires HTTPS"
+            }
+            Self::TlsTrustUnsupported => {
+                "the selected TLS trust mode is not available; use the Trust Center"
+            }
+            Self::NetworkPathUnsupported => {
+                "the live PowerShell session service currently requires a direct network path"
             }
             Self::SessionLimitReached => "the PowerShell session limit has been reached",
             Self::SessionNotFound => "the PowerShell session was not found",
@@ -372,7 +685,9 @@ impl fmt::Display for PowerShellSessionError {
             Self::CommandQueueFull => "the PowerShell session command queue is full",
             Self::CommandTimedOut => "the PowerShell session command timed out",
             Self::DeliveryUnavailable => "PowerShell event delivery is unavailable",
-            Self::ConnectionFailed => "the strict SSH connection could not be established",
+            Self::ConnectionFailed => {
+                "the PowerShell transport connection could not be established"
+            }
             Self::RunspaceOpenFailed => "the PowerShell runspace could not be opened",
             Self::ProtocolFailed => "the PowerShell remoting protocol failed",
         })
@@ -392,6 +707,9 @@ impl PowerShellSessionError {
         match self {
             Self::InvalidConfiguration { .. } => "invalid_configuration",
             Self::AuthenticationUnsupported => "authentication_unsupported",
+            Self::TransportSecurityRequired => "transport_security_required",
+            Self::TlsTrustUnsupported => "tls_trust_unsupported",
+            Self::NetworkPathUnsupported => "network_path_unsupported",
             Self::SessionLimitReached => "session_limit_reached",
             Self::SessionNotFound => "session_not_found",
             Self::SessionClosed => "session_closed",

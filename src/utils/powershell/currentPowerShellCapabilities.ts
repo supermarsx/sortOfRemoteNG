@@ -147,19 +147,19 @@ export const LEGACY_POWER_SHELL_REMOTING_CAPABILITIES = {
 
 /** Shipping live-session capabilities exposed by the strict PSRP service. */
 export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
-  implementation: "strictSshPsrpRunspace",
+  implementation: "dualTransportPsrpRunspace",
   transports: [
     {
       transport: "http",
-      status: "unsupported",
+      status: "partial",
       reason:
-        "WSMan is not registered in the live PowerShell session service yet",
+        "direct PSRP-over-WSMan with explicit NTLM is deterministic-contract verified; live Windows interoperability is unverified and HTTP has no transport confidentiality",
     },
     {
       transport: "https",
-      status: "unsupported",
+      status: "partial",
       reason:
-        "WSMan is not registered in the live PowerShell session service yet",
+        "direct PSRP-over-WSMan with Basic or explicit NTLM and Trust Center TLS is deterministic-contract verified; live Windows interoperability is unverified",
     },
     {
       transport: "ssh",
@@ -169,24 +169,48 @@ export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
     },
   ],
   authentication: [
-    "basic",
-    "ntlm",
-    "negotiate",
-    "kerberos",
-    "credSsp",
-    "certificate",
-    "default",
-    "digest",
-  ].map((authMethod) => ({
-    authMethod,
-    status: "unsupported" as const,
-    requiresTls:
-      authMethod === "basic" ||
-      authMethod === "credSsp" ||
-      authMethod === "certificate",
-    reason:
-      "this authentication method belongs to the unavailable WSMan adapter",
-  })) as PsAuthCapability[],
+    {
+      authMethod: "basic",
+      status: "partial",
+      requiresTls: true,
+      reason:
+        "available only over direct HTTPS with Trust Center verification; deterministic-contract verified and live Windows unverified",
+    },
+    {
+      authMethod: "ntlm",
+      status: "partial",
+      requiresTls: false,
+      reason:
+        "explicit NTLM challenge exchange is deterministic-contract verified; live Windows acceptance is unverified and HTTPS is recommended",
+    },
+    ...(
+      [
+        [
+          "negotiate",
+          "Negotiate/SPNEGO is not claimed; select NTLM explicitly",
+        ],
+        ["kerberos", "Kerberos is not integrated with the WSMan HTTP exchange"],
+        [
+          "credSsp",
+          "CredSSP channel binding and delegation are not implemented",
+        ],
+        [
+          "certificate",
+          "client certificate identities are not attached by the adapter",
+        ],
+        [
+          "default",
+          "backend-default authentication is ambiguous; select NTLM explicitly",
+        ],
+        ["digest", "Digest is not integrated with the WSMan HTTP exchange"],
+      ] as const
+    ).map(([authMethod, reason]) => ({
+      authMethod,
+      status: "unsupported" as const,
+      requiresTls: authMethod === "credSsp" || authMethod === "certificate",
+      reason,
+    })),
+  ] as PsAuthCapability[],
   features: [
     {
       feature: "legacyWinRsProcessShell",
@@ -218,7 +242,7 @@ export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
       feature: "disconnectReconnect",
       status: "partial",
       reason:
-        "viewer detach and bounded replay are supported; SSH transport reconnect creates a new runspace",
+        "viewer detach and bounded replay are supported; transport reconnect creates a new runspace",
     },
     {
       feature: "interactiveState",
@@ -228,7 +252,8 @@ export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
     {
       feature: "networkPath",
       status: "unsupported",
-      reason: "the strict SSH adapter currently connects directly",
+      reason:
+        "live SSH and WSMan sessions currently require direct endpoints; configured connection paths and proxies fail closed",
     },
   ],
 } as const satisfies PsRemotingCapabilities;

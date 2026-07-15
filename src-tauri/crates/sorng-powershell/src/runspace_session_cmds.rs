@@ -21,7 +21,7 @@ fn tauri_sink(channel: Channel<PowerShellEventEnvelope>) -> DynPowerShellSession
 
 #[tauri::command]
 pub async fn open_powershell_session(
-    options: PowerShellSshSessionOptions,
+    options: PowerShellSessionOptions,
     event_channel: Channel<PowerShellEventEnvelope>,
     state: tauri::State<'_, PowerShellSessionServiceState>,
 ) -> Result<String, PowerShellSessionError> {

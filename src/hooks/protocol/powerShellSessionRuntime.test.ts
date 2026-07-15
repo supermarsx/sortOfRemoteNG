@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Connection } from "../../types/connection/connection";
 import { createDefaultPowerShellRemotingSettings } from "../../utils/powershell/normalizePowerShellRemoting";
 import {
-  buildPowerShellSshSessionOptions,
+  buildPowerShellSessionOptions,
   PowerShellSequenceCursor,
 } from "./powerShellSessionRuntime";
 
@@ -31,18 +31,21 @@ describe("PowerShell live-session runtime", () => {
       fingerprint: "SHA256:abc123",
     };
 
-    expect(buildPowerShellSshSessionOptions(connection(), settings)).toEqual(
+    expect(buildPowerShellSessionOptions(connection(), settings)).toEqual(
       expect.objectContaining({
-        host: "ps.example.test",
-        port: 22,
-        username: "ps-admin",
-        auth: { type: "password", password: "secret" },
-        hostKeyPolicy: {
-          type: "pinned_sha256",
-          fingerprint: "SHA256:abc123",
-        },
-        connectionId: "powershell-1",
-        subsystem: "powershell",
+        transport: "ssh",
+        options: expect.objectContaining({
+          host: "ps.example.test",
+          port: 22,
+          username: "ps-admin",
+          auth: { type: "password", password: "secret" },
+          hostKeyPolicy: {
+            type: "pinned_sha256",
+            fingerprint: "SHA256:abc123",
+          },
+          connectionId: "powershell-1",
+          subsystem: "powershell",
+        }),
       }),
     );
   });
@@ -54,30 +57,93 @@ describe("PowerShell live-session runtime", () => {
     settings.ssh.privateKeyPath = "C:\\Keys\\id_ed25519";
     settings.ssh.hostTrust.mode = "strict";
 
-    expect(buildPowerShellSshSessionOptions(connection(), settings)).toEqual(
+    expect(buildPowerShellSessionOptions(connection(), settings)).toEqual(
       expect.objectContaining({
-        auth: expect.objectContaining({ type: "private_key" }),
-        hostKeyPolicy: {
-          type: "known_hosts",
-          path: "C:\\Users\\operator\\.ssh\\known_hosts",
-        },
+        transport: "ssh",
+        options: expect.objectContaining({
+          auth: expect.objectContaining({ type: "private_key" }),
+          hostKeyPolicy: {
+            type: "known_hosts",
+            path: "C:\\Users\\operator\\.ssh\\known_hosts",
+          },
+        }),
       }),
     );
 
-    settings.transport = "wsman";
-    expect(() =>
-      buildPowerShellSshSessionOptions(connection(), settings),
-    ).toThrow(/WSMan is unavailable/i);
-    settings.transport = "ssh";
     settings.ssh.authMethod = "agent";
-    expect(() =>
-      buildPowerShellSshSessionOptions(connection(), settings),
-    ).toThrow(/agent authentication is not available/i);
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /agent authentication is not available/i,
+    );
     settings.ssh.authMethod = "password";
     settings.ssh.hostTrust.mode = "tofu";
-    expect(() =>
-      buildPowerShellSshSessionOptions(connection(), settings),
-    ).toThrow(/Trust-on-first-use is not available/i);
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /Trust-on-first-use is not available/i,
+    );
+  });
+
+  it("builds direct NTLM WSMan options with bounded limits and Trust Center verification", () => {
+    const settings = createDefaultPowerShellRemotingSettings();
+    settings.transport = "wsman";
+    settings.credential.username = "LAB\\alice";
+    settings.credential.domain = "LAB";
+    settings.wsman.authMethod = "ntlm";
+    settings.wsman.connectionUri =
+      "https://win.example.test:15986/custom/wsman";
+    settings.session.maxReceivedDataSizeMb = 50;
+    settings.session.maxReceivedObjectSizeMb = 10;
+
+    expect(buildPowerShellSessionOptions(connection(), settings)).toEqual({
+      transport: "wsman",
+      options: expect.objectContaining({
+        endpoint: "https://win.example.test:15986/custom/wsman",
+        username: "LAB\\alice",
+        password: "secret",
+        domain: "LAB",
+        authentication: "ntlm",
+        tlsTrust: "trust_center",
+        networkPath: "direct",
+        configurationName: "microsoft.powershell",
+        maxEnvelopeBytes: 8 * 1024 * 1024,
+        maxResponseBytes: 50 * 1024 * 1024,
+      }),
+    });
+  });
+
+  it("fails closed for unsafe WSMan security, unsupported auth, and configured routes", () => {
+    const settings = createDefaultPowerShellRemotingSettings();
+    settings.transport = "wsman";
+    settings.credential.username = "alice";
+    settings.wsman.authMethod = "basic";
+    settings.wsman.scheme = "http";
+    settings.wsman.port = 5985;
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /Basic authentication.*HTTPS/i,
+    );
+
+    settings.wsman.scheme = "https";
+    settings.wsman.port = 5986;
+    settings.wsman.authMethod = "kerberos";
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /Kerberos authentication is not supported/i,
+    );
+
+    settings.wsman.authMethod = "ntlm";
+    settings.wsman.tls.skipHostnameCheck = true;
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /TLS verification bypasses are blocked/i,
+    );
+
+    settings.wsman.tls.skipHostnameCheck = false;
+    settings.networkPath.mode = "connectionPath";
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /direct Network Path/i,
+    );
+
+    settings.networkPath.mode = "direct";
+    settings.wsman.proxy.mode = "http";
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /proxies are not materialized/i,
+    );
   });
 
   it("deduplicates replay and rejects invalid sequence numbers", () => {

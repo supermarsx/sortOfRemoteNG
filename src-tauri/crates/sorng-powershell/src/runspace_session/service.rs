@@ -15,9 +15,15 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
 
+use crate::psrp_wsman::{
+    canonical_wsman_endpoint, WsmanPsrpLimits, WsmanPsrpTransport, PSRP_WSMAN_LIMITATIONS,
+};
 use crate::strict_ssh::{
     SshHostKeyPolicy, StrictSshAuth, StrictSshPsrpConfig, StrictSshPsrpTransport,
     STRICT_SSH_PSRP_LIMITATIONS,
+};
+use crate::types::{
+    PsAuthMethod, PsCredential, PsRemotingConfig, PsSessionOption, PsTransportProtocol,
 };
 
 use super::replay::ReplayBuffer;
@@ -25,9 +31,11 @@ use super::{
     DynPowerShellSessionSink, PowerShellEventEnvelope, PowerShellEventReplay,
     PowerShellPipelineInput, PowerShellPipelineStarted, PowerShellProgress, PowerShellSession,
     PowerShellSessionCapabilities, PowerShellSessionDiagnostics, PowerShellSessionError,
-    PowerShellSessionEvent, PowerShellSessionPhase, PowerShellSessionStats, PowerShellSshAuth,
+    PowerShellSessionEvent, PowerShellSessionOptions, PowerShellSessionPhase,
+    PowerShellSessionStats, PowerShellSessionTransport, PowerShellSshAuth,
     PowerShellSshHostKeyPolicy, PowerShellSshSessionOptions, PowerShellStreamKind,
-    MAX_ACTIVE_POWERSHELL_SESSIONS, MAX_INPUT_TEXT_BYTES, MAX_SCRIPT_BYTES,
+    PowerShellWsmanAuth, PowerShellWsmanSessionOptions, MAX_ACTIVE_POWERSHELL_SESSIONS,
+    MAX_INPUT_TEXT_BYTES, MAX_SCRIPT_BYTES,
 };
 
 const MAX_COMPLETED_SESSIONS: usize = 128;
@@ -50,6 +58,10 @@ struct SessionEntry {
     port: u16,
     username: String,
     runspace_id: String,
+    transport: PowerShellSessionTransport,
+    transport_verification: String,
+    authentication: String,
+    limitations: Vec<String>,
     command_tx: mpsc::Sender<ActorCommand>,
     queue_wait_timeout: Duration,
     command_timeout: Duration,
@@ -59,6 +71,21 @@ struct SessionEntry {
     replay: Mutex<ReplayBuffer>,
     delivery: Mutex<DeliveryState>,
     next_sequence: AtomicU64,
+}
+
+struct SessionRegistration {
+    connection_id: Option<String>,
+    host: String,
+    port: u16,
+    username: String,
+    transport: PowerShellSessionTransport,
+    transport_verification: String,
+    authentication: String,
+    limitations: Vec<String>,
+    event_capacity: usize,
+    command_queue_capacity: usize,
+    queue_wait_timeout_ms: u64,
+    request_timeout_ms: u64,
 }
 
 struct RuntimeState {
@@ -127,12 +154,12 @@ impl PowerShellSessionService {
 
     pub async fn open_session(
         &self,
-        options: PowerShellSshSessionOptions,
+        options: PowerShellSessionOptions,
         sink: DynPowerShellSessionSink,
     ) -> Result<String, PowerShellSessionError> {
         options.validate()?;
 
-        if let Some(connection_id) = options.connection_id.as_deref() {
+        if let Some(connection_id) = options.connection_id() {
             let previous = self
                 .shared
                 .active
@@ -150,40 +177,59 @@ impl PowerShellSessionService {
             return Err(PowerShellSessionError::SessionLimitReached);
         }
 
-        let strict_config = strict_config(&options);
-        let transport = StrictSshPsrpTransport::connect(strict_config)
-            .await
-            .map_err(|_| PowerShellSessionError::ConnectionFailed)?;
-        let pool = RunspacePool::open_with_transport(transport)
-            .await
-            .map_err(|_| PowerShellSessionError::RunspaceOpenFailed)?;
-
-        self.register_pool(options, sink, pool).await
+        match options {
+            PowerShellSessionOptions::Ssh(options) => {
+                let registration = ssh_registration(&options);
+                let transport = StrictSshPsrpTransport::connect(strict_config(&options))
+                    .await
+                    .map_err(|_| PowerShellSessionError::ConnectionFailed)?;
+                let pool = RunspacePool::open_with_transport(transport)
+                    .await
+                    .map_err(|_| PowerShellSessionError::RunspaceOpenFailed)?;
+                self.register_pool(registration, sink, pool).await
+            }
+            PowerShellSessionOptions::Wsman(options) => {
+                let config = wsman_config(&options)?;
+                let canonical_endpoint = canonical_wsman_endpoint(&config)
+                    .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
+                let registration = wsman_registration(&options, &canonical_endpoint)?;
+                let transport = WsmanPsrpTransport::new(&config, wsman_limits(&options))
+                    .map_err(|_| PowerShellSessionError::invalid("wsman"))?;
+                let pool = RunspacePool::open_with_transport(transport)
+                    .await
+                    .map_err(|_| PowerShellSessionError::RunspaceOpenFailed)?;
+                self.register_pool(registration, sink, pool).await
+            }
+        }
     }
 
     async fn register_pool<T: PsrpTransport + 'static>(
         &self,
-        options: PowerShellSshSessionOptions,
+        registration: SessionRegistration,
         sink: DynPowerShellSessionSink,
         pool: RunspacePool<T>,
     ) -> Result<String, PowerShellSessionError> {
         let session_id = Uuid::new_v4().to_string();
         let runspace_id = pool.id().to_string();
-        let (command_tx, command_rx) = mpsc::channel(options.command_queue_capacity);
+        let (command_tx, command_rx) = mpsc::channel(registration.command_queue_capacity);
         let now = Utc::now().timestamp_millis();
         let entry = Arc::new(SessionEntry {
             id: session_id.clone(),
-            connection_id: options.connection_id.clone(),
-            host: options.host.clone(),
-            port: options.port,
-            username: options.username.clone(),
+            connection_id: registration.connection_id,
+            host: registration.host,
+            port: registration.port,
+            username: registration.username,
             runspace_id,
+            transport: registration.transport,
+            transport_verification: registration.transport_verification,
+            authentication: registration.authentication,
+            limitations: registration.limitations,
             command_tx,
-            queue_wait_timeout: Duration::from_millis(options.queue_wait_timeout_ms),
+            queue_wait_timeout: Duration::from_millis(registration.queue_wait_timeout_ms),
             command_timeout: Duration::from_millis(
-                options
+                registration
                     .request_timeout_ms
-                    .saturating_add(options.queue_wait_timeout_ms),
+                    .saturating_add(registration.queue_wait_timeout_ms),
             ),
             actor: Mutex::new(None),
             runtime: RwLock::new(RuntimeState {
@@ -196,7 +242,7 @@ impl PowerShellSessionService {
             counters: RuntimeCounters::new(now),
             replay: Mutex::new(ReplayBuffer::new(
                 session_id.clone(),
-                options.event_capacity,
+                registration.event_capacity,
             )),
             delivery: Mutex::new(DeliveryState { sink: Some(sink) }),
             next_sequence: AtomicU64::new(1),
@@ -393,7 +439,7 @@ impl PowerShellSessionService {
     }
 
     pub fn capabilities(&self) -> PowerShellSessionCapabilities {
-        PowerShellSessionCapabilities::default()
+        PowerShellSessionCapabilities::service()
     }
 
     async fn active_entry(
@@ -913,6 +959,151 @@ fn strict_config(options: &PowerShellSshSessionOptions) -> StrictSshPsrpConfig {
     }
 }
 
+fn ssh_registration(options: &PowerShellSshSessionOptions) -> SessionRegistration {
+    let transport_verification = match &options.host_key_policy {
+        PowerShellSshHostKeyPolicy::PinnedSha256 { .. } => "pinned_sha256",
+        PowerShellSshHostKeyPolicy::KnownHosts { .. } => "known_hosts",
+    };
+    let authentication = match &options.auth {
+        PowerShellSshAuth::Password { .. } => "password",
+        PowerShellSshAuth::PrivateKey { .. } => "private_key",
+        PowerShellSshAuth::Agent => "unsupported_agent",
+    };
+    SessionRegistration {
+        connection_id: options.connection_id.clone(),
+        host: options.host.clone(),
+        port: options.port,
+        username: options.username.clone(),
+        transport: PowerShellSessionTransport::Ssh,
+        transport_verification: transport_verification.to_owned(),
+        authentication: authentication.to_owned(),
+        limitations: STRICT_SSH_PSRP_LIMITATIONS
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        event_capacity: options.event_capacity,
+        command_queue_capacity: options.command_queue_capacity,
+        queue_wait_timeout_ms: options.queue_wait_timeout_ms,
+        request_timeout_ms: options.request_timeout_ms,
+    }
+}
+
+fn wsman_config(
+    options: &PowerShellWsmanSessionOptions,
+) -> Result<PsRemotingConfig, PowerShellSessionError> {
+    let endpoint = url::Url::parse(&options.endpoint)
+        .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
+    let host = endpoint
+        .host_str()
+        .ok_or_else(|| PowerShellSessionError::invalid("endpoint"))?;
+    let transport = match endpoint.scheme() {
+        "http" => PsTransportProtocol::Http,
+        "https" => PsTransportProtocol::Https,
+        _ => return Err(PowerShellSessionError::invalid("endpoint")),
+    };
+    let authentication = match options.authentication {
+        PowerShellWsmanAuth::Basic => PsAuthMethod::Basic,
+        PowerShellWsmanAuth::Ntlm => PsAuthMethod::Ntlm,
+        _ => return Err(PowerShellSessionError::AuthenticationUnsupported),
+    };
+    let max_data_mb = bytes_to_megabytes(options.max_response_bytes);
+    let max_object_mb = bytes_to_megabytes(options.max_envelope_bytes);
+    Ok(PsRemotingConfig {
+        computer_name: host.to_owned(),
+        port: Some(
+            endpoint
+                .port_or_known_default()
+                .ok_or_else(|| PowerShellSessionError::invalid("endpoint"))?,
+        ),
+        transport,
+        auth_method: authentication,
+        credential: PsCredential {
+            username: options.username.clone(),
+            password: Some(options.password.clone()),
+            domain: options.domain.clone(),
+            certificate_path: None,
+            certificate_thumbprint: None,
+            private_key_path: None,
+            ssh_key_path: None,
+        },
+        skip_ca_check: false,
+        skip_cn_check: false,
+        skip_revocation_check: false,
+        use_ssl: endpoint.scheme() == "https",
+        uri_path: "/wsman".to_owned(),
+        connection_uri: Some(options.endpoint.clone()),
+        session_option: PsSessionOption {
+            operation_timeout_sec: millis_to_seconds(options.request_timeout_ms),
+            open_timeout_sec: millis_to_seconds(options.connect_timeout_ms),
+            idle_timeout_sec: options.idle_timeout_sec,
+            culture: options.culture.clone(),
+            ui_culture: options.culture.clone(),
+            max_received_data_size_mb: max_data_mb,
+            max_received_object_size_mb: max_object_mb,
+            ..PsSessionOption::default()
+        },
+        configuration_name: options.configuration_name.clone(),
+        application_name: "wsman".to_owned(),
+        enable_reconnect: false,
+        proxy: None,
+        custom_headers: HashMap::new(),
+    })
+}
+
+fn wsman_limits(options: &PowerShellWsmanSessionOptions) -> WsmanPsrpLimits {
+    WsmanPsrpLimits {
+        max_envelope_bytes: options.max_envelope_bytes,
+        max_response_bytes: options.max_response_bytes,
+        max_auth_rounds: options.max_auth_rounds,
+        max_empty_receives: options.max_empty_receives,
+        operation_timeout: Duration::from_millis(options.request_timeout_ms),
+        connect_timeout: Duration::from_millis(options.connect_timeout_ms),
+    }
+}
+
+fn wsman_registration(
+    options: &PowerShellWsmanSessionOptions,
+    canonical_endpoint: &str,
+) -> Result<SessionRegistration, PowerShellSessionError> {
+    let endpoint = url::Url::parse(canonical_endpoint)
+        .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
+    Ok(SessionRegistration {
+        connection_id: options.connection_id.clone(),
+        host: endpoint
+            .host_str()
+            .ok_or_else(|| PowerShellSessionError::invalid("endpoint"))?
+            .to_owned(),
+        port: endpoint
+            .port_or_known_default()
+            .ok_or_else(|| PowerShellSessionError::invalid("endpoint"))?,
+        username: options.username.clone(),
+        transport: PowerShellSessionTransport::Wsman,
+        transport_verification: if endpoint.scheme() == "https" {
+            "trust_center_tls"
+        } else {
+            "direct_http_no_tls"
+        }
+        .to_owned(),
+        authentication: options.authentication.as_str().to_owned(),
+        limitations: PSRP_WSMAN_LIMITATIONS
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        event_capacity: options.event_capacity,
+        command_queue_capacity: options.command_queue_capacity,
+        queue_wait_timeout_ms: options.queue_wait_timeout_ms,
+        request_timeout_ms: options.request_timeout_ms,
+    })
+}
+
+fn millis_to_seconds(value: u64) -> u32 {
+    u32::try_from(value.div_ceil(1_000)).unwrap_or(u32::MAX)
+}
+
+fn bytes_to_megabytes(value: usize) -> u32 {
+    u32::try_from(value.div_ceil(1024 * 1024)).unwrap_or(u32::MAX)
+}
+
 impl From<PowerShellPipelineInput> for PsValue {
     fn from(input: PowerShellPipelineInput) -> Self {
         match input {
@@ -978,12 +1169,12 @@ impl SessionEntry {
             active_pipeline_id: active_pipeline.clone(),
             input_open: runtime.input_open,
             terminal_error_code: runtime.terminal_error_code.clone(),
-            capabilities: PowerShellSessionCapabilities::default(),
+            capabilities: PowerShellSessionCapabilities::for_transport(self.transport),
             stats: self.counters.snapshot(runtime.closed_at_ms),
             diagnostics: PowerShellSessionDiagnostics {
-                transport: "ssh".into(),
-                host_key_verification: "strict".into(),
-                authentication: "established".into(),
+                transport: self.transport.as_str().into(),
+                host_key_verification: self.transport_verification.clone(),
+                authentication: self.authentication.clone(),
                 runspace_health: match runtime.phase {
                     PowerShellSessionPhase::Failed => "failed",
                     PowerShellSessionPhase::Closed => "closed",
@@ -991,10 +1182,19 @@ impl SessionEntry {
                 }
                 .into(),
                 active_pipeline,
-                limitations: STRICT_SSH_PSRP_LIMITATIONS
-                    .iter()
-                    .map(|value| (*value).to_owned())
-                    .collect(),
+                contract_verification: if self.transport == PowerShellSessionTransport::Wsman {
+                    "deterministic_contract_verified"
+                } else {
+                    "adapter_tests_verified"
+                }
+                .into(),
+                live_interoperability: if self.transport == PowerShellSessionTransport::Wsman {
+                    "live_windows_unverified"
+                } else {
+                    "live_target_dependent"
+                }
+                .into(),
+                limitations: self.limitations.clone(),
             },
         }
     }
@@ -1165,16 +1365,45 @@ fn write_lock<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runspace_session::{PowerShellSessionNetworkPath, PowerShellWsmanTrustPolicy};
+
+    fn test_wsman_options() -> PowerShellWsmanSessionOptions {
+        PowerShellWsmanSessionOptions {
+            endpoint: "https://server.example:5986/wsman".into(),
+            username: "alice".into(),
+            password: "also-do-not-print".into(),
+            domain: Some("LAB".into()),
+            authentication: PowerShellWsmanAuth::Basic,
+            tls_trust: PowerShellWsmanTrustPolicy::TrustCenter,
+            network_path: PowerShellSessionNetworkPath::Direct,
+            connection_id: None,
+            configuration_name: "Microsoft.PowerShell".into(),
+            culture: "en-US".into(),
+            connect_timeout_ms: 2_000,
+            request_timeout_ms: 5_000,
+            idle_timeout_sec: 60,
+            max_envelope_bytes: 512 * 1024,
+            max_response_bytes: 8 * 1024 * 1024,
+            max_auth_rounds: 3,
+            max_empty_receives: 32,
+            event_capacity: 64,
+            command_queue_capacity: 16,
+            queue_wait_timeout_ms: 500,
+        }
+    }
 
     #[test]
-    fn capabilities_are_truthful_for_shipping_ssh_adapter() {
-        let capabilities = PowerShellSessionCapabilities::default();
-        assert_eq!(capabilities.transport, "ssh");
+    fn capabilities_are_truthful_for_shipping_transports() {
+        let capabilities = PowerShellSessionCapabilities::service();
+        assert_eq!(capabilities.transport, "multiple");
+        assert_eq!(capabilities.supported_transports, ["ssh", "wsman"]);
         assert!(capabilities.pipeline_input);
         assert!(capabilities.pipeline_cancellation);
         assert!(capabilities.all_streams);
         assert!(!capabilities.transport_reconnect);
-        assert!(!capabilities.wsman_available);
+        assert!(capabilities.wsman_available);
+        assert!(capabilities.wsman_contract_verified);
+        assert!(!capabilities.wsman_live_windows_verified);
     }
 
     #[test]
@@ -1185,6 +1414,42 @@ mod tests {
         let debug = format!("{auth:?}");
         assert!(!debug.contains("do-not-print"));
         assert!(debug.contains("REDACTED"));
+
+        let wsman = test_wsman_options();
+        let debug = format!("{wsman:?}");
+        assert!(!debug.contains("also-do-not-print"));
+        assert!(debug.contains("REDACTED"));
+    }
+
+    #[test]
+    fn wsman_session_options_fail_closed_before_transport_construction() {
+        let mut options = test_wsman_options();
+        options.endpoint = "http://server.example:5985/wsman".into();
+        assert_eq!(
+            options.validate(),
+            Err(PowerShellSessionError::TransportSecurityRequired)
+        );
+
+        options.endpoint = "https://server.example:5986/wsman".into();
+        options.authentication = PowerShellWsmanAuth::Negotiate;
+        assert_eq!(
+            options.validate(),
+            Err(PowerShellSessionError::AuthenticationUnsupported)
+        );
+
+        options.authentication = PowerShellWsmanAuth::Ntlm;
+        options.tls_trust = PowerShellWsmanTrustPolicy::AlwaysTrust;
+        assert_eq!(
+            options.validate(),
+            Err(PowerShellSessionError::TlsTrustUnsupported)
+        );
+
+        options.tls_trust = PowerShellWsmanTrustPolicy::TrustCenter;
+        options.network_path = PowerShellSessionNetworkPath::ConnectionPath;
+        assert_eq!(
+            options.validate(),
+            Err(PowerShellSessionError::NetworkPathUnsupported)
+        );
     }
 
     #[test]

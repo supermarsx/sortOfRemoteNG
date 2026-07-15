@@ -54,12 +54,13 @@ export function PowerShellRemotingEditor({
           />
           <div>
             <p className="text-sm font-medium text-[var(--color-text)]">
-              Live sessions: strict PSRP over SSH
+              Live sessions: persistent PSRP over SSH or direct WSMan
             </p>
             <p className="mt-0.5 text-xs text-[var(--color-textMuted)]">
               The session viewer uses a persistent runspace with all standard
-              streams, input, cancellation, and bounded replay. WSMan remains
-              disabled until its adapter joins this shipping service.
+              streams, input, cancellation, and bounded replay. WSMan is
+              deterministic-contract verified with strict Trust Center TLS; live
+              Windows interoperability remains explicitly unverified.
             </p>
           </div>
         </div>

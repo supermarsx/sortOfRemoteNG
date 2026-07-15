@@ -1,5 +1,6 @@
 import type { Connection } from "../../types/connection/connection";
 import type { PowerShellRemotingSettings } from "../../types/powershellRemoting";
+import { canonicalPowerShellEndpoint } from "../../utils/powershell/normalizePowerShellRemoting";
 
 export type PowerShellSessionPhase =
   | "ready"
@@ -58,7 +59,8 @@ export interface PowerShellEventReplay {
 }
 
 export interface PowerShellSessionCapabilities {
-  transport: "ssh";
+  transport: "ssh" | "wsman" | "multiple";
+  supportedTransports: Array<"ssh" | "wsman">;
   persistentRunspace: boolean;
   pipelineInput: boolean;
   pipelineCancellation: boolean;
@@ -68,6 +70,8 @@ export interface PowerShellSessionCapabilities {
   uiReattach: boolean;
   transportReconnect: boolean;
   wsmanAvailable: boolean;
+  wsmanContractVerified: boolean;
+  wsmanLiveWindowsVerified: boolean;
   maxConcurrentPipelines: number;
 }
 
@@ -86,11 +90,13 @@ export interface PowerShellSessionStats {
 }
 
 export interface PowerShellSessionDiagnostics {
-  transport: "ssh";
+  transport: "ssh" | "wsman";
   hostKeyVerification: string;
   authentication: string;
   runspaceHealth: string;
   activePipeline?: string | null;
+  contractVerification: string;
+  liveInteroperability: string;
   limitations: string[];
 }
 
@@ -123,7 +129,7 @@ export type PowerShellPipelineInput =
   | { type: "integer"; value: number }
   | { type: "float"; value: number };
 
-export type PowerShellSshSessionOptions = {
+export type PowerShellSshSessionDetails = {
   host: string;
   port: number;
   username: string;
@@ -142,17 +148,169 @@ export type PowerShellSshSessionOptions = {
   queueWaitTimeoutMs: number;
 };
 
+export type PowerShellWsmanSessionDetails = {
+  endpoint: string;
+  username: string;
+  password: string;
+  domain?: string | null;
+  authentication: "basic" | "ntlm";
+  tlsTrust: "trust_center";
+  networkPath: "direct";
+  connectionId: string;
+  configurationName: string;
+  culture: string;
+  connectTimeoutMs: number;
+  requestTimeoutMs: number;
+  idleTimeoutSec: number;
+  maxEnvelopeBytes: number;
+  maxResponseBytes: number;
+  maxAuthRounds: number;
+  maxEmptyReceives: number;
+  eventCapacity: number;
+  commandQueueCapacity: number;
+  queueWaitTimeoutMs: number;
+};
+
+export type PowerShellSessionOptions =
+  | { transport: "ssh"; options: PowerShellSshSessionDetails }
+  | { transport: "wsman"; options: PowerShellWsmanSessionDetails };
+
 const secondsToMs = (value: number, fallback: number): number =>
   Math.max(1_000, Math.min(300_000, Math.round((value || fallback) * 1_000)));
 
+const boundedInteger = (
+  value: number,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number =>
+  Math.max(
+    minimum,
+    Math.min(maximum, Math.round(Number.isFinite(value) ? value : fallback)),
+  );
+
+const megabytesToBytes = (
+  value: number,
+  fallback: number,
+  maximumBytes: number,
+): number =>
+  Math.min(maximumBytes, boundedInteger(value, fallback, 1, 64) * 1024 * 1024);
+
+const requireDirectNetworkPath = (
+  settings: PowerShellRemotingSettings,
+): void => {
+  if (settings.networkPath.mode !== "direct") {
+    throw new Error(
+      "Live PowerShell sessions currently require a direct Network Path. Connection paths remain fail-closed.",
+    );
+  }
+};
+
 /** Build the strict, secret-bearing invoke payload without retaining it. */
-export function buildPowerShellSshSessionOptions(
+export function buildPowerShellSessionOptions(
   connection: Connection,
   settings: PowerShellRemotingSettings,
-): PowerShellSshSessionOptions {
+): PowerShellSessionOptions {
+  requireDirectNetworkPath(settings);
+  if (settings.transport === "wsman") {
+    if (settings.wsman.proxy.mode !== "none") {
+      throw new Error(
+        "Explicit WSMan proxies are not materialized by the live-session adapter. Select a direct endpoint.",
+      );
+    }
+    if (
+      settings.wsman.authMethod !== "basic" &&
+      settings.wsman.authMethod !== "ntlm"
+    ) {
+      throw new Error(
+        `${settings.wsman.authMethod} authentication is not supported by the live WSMan adapter. Select Basic over HTTPS or NTLM explicitly.`,
+      );
+    }
+    if (
+      settings.wsman.tls.skipHostnameCheck ||
+      settings.wsman.tls.skipRevocationCheck
+    ) {
+      throw new Error(
+        "WSMan TLS verification bypasses are blocked. Use the Trust Center without skip flags.",
+      );
+    }
+    if (settings.wsman.tls.trustMode === "alwaysTrust") {
+      throw new Error(
+        "Always-trust TLS is blocked for live WSMan sessions. Use the Trust Center.",
+      );
+    }
+    if (settings.wsman.tls.trustMode === "pinned") {
+      throw new Error(
+        "Inline WSMan certificate pins are not materialized. Register the endpoint identity in the Trust Center first.",
+      );
+    }
+    if (settings.wsman.tls.clientCertificateRef) {
+      throw new Error(
+        "Certificate authentication is not supported by the live WSMan adapter.",
+      );
+    }
+    const endpoint = canonicalPowerShellEndpoint(settings, connection.hostname);
+    const endpointScheme = new URL(endpoint).protocol.replace(/:$/, "");
+    if (settings.wsman.authMethod === "basic" && endpointScheme !== "https") {
+      throw new Error(
+        "Basic authentication is blocked unless the canonical WSMan endpoint uses HTTPS.",
+      );
+    }
+    const username =
+      settings.credential.username.trim() || connection.username?.trim() || "";
+    if (!username) throw new Error("A PowerShell WSMan username is required.");
+    if (connection.password === undefined || connection.password === null) {
+      throw new Error(
+        "A resolved password is required for PowerShell WSMan authentication.",
+      );
+    }
+    return {
+      transport: "wsman",
+      options: {
+        endpoint,
+        username,
+        password: connection.password,
+        domain: settings.credential.domain?.trim() || null,
+        authentication: settings.wsman.authMethod,
+        tlsTrust: "trust_center",
+        networkPath: "direct",
+        connectionId: connection.id,
+        configurationName:
+          settings.wsman.configurationName.trim() || "Microsoft.PowerShell",
+        culture: "en-US",
+        connectTimeoutMs: secondsToMs(settings.session.connectTimeoutSec, 30),
+        requestTimeoutMs: secondsToMs(
+          settings.session.operationTimeoutSec,
+          180,
+        ),
+        idleTimeoutSec: boundedInteger(
+          settings.session.idleTimeoutSec,
+          7_200,
+          1,
+          604_800,
+        ),
+        maxEnvelopeBytes: megabytesToBytes(
+          settings.session.maxReceivedObjectSizeMb,
+          1,
+          8 * 1024 * 1024,
+        ),
+        maxResponseBytes: megabytesToBytes(
+          settings.session.maxReceivedDataSizeMb,
+          8,
+          64 * 1024 * 1024,
+        ),
+        maxAuthRounds: 3,
+        maxEmptyReceives: 32,
+        eventCapacity: 2_048,
+        commandQueueCapacity: 64,
+        queueWaitTimeoutMs: 2_000,
+      },
+    };
+  }
+
   if (settings.transport !== "ssh") {
     throw new Error(
-      "WSMan is unavailable in the live PowerShell session viewer. Select PowerShell over SSH.",
+      "The selected PowerShell transport is unavailable in the live session viewer.",
     );
   }
 
@@ -160,7 +318,7 @@ export function buildPowerShellSshSessionOptions(
     settings.credential.username.trim() || connection.username?.trim() || "";
   if (!username) throw new Error("A PowerShell SSH username is required.");
 
-  let auth: PowerShellSshSessionOptions["auth"];
+  let auth: PowerShellSshSessionDetails["auth"];
   if (settings.ssh.authMethod === "password") {
     if (!connection.password) {
       throw new Error(
@@ -184,7 +342,7 @@ export function buildPowerShellSshSessionOptions(
     );
   }
 
-  let hostKeyPolicy: PowerShellSshSessionOptions["hostKeyPolicy"];
+  let hostKeyPolicy: PowerShellSshSessionDetails["hostKeyPolicy"];
   if (settings.ssh.hostTrust.mode === "pinned") {
     const fingerprint = settings.ssh.hostTrust.fingerprint?.trim();
     if (!fingerprint) {
@@ -206,20 +364,26 @@ export function buildPowerShellSshSessionOptions(
   }
 
   return {
-    host: connection.hostname,
-    port: settings.ssh.port || connection.port || 22,
-    username,
-    auth,
-    hostKeyPolicy,
-    connectionId: connection.id,
-    subsystem: settings.ssh.subsystem || "powershell",
-    connectTimeoutMs: secondsToMs(settings.session.connectTimeoutSec, 30),
-    requestTimeoutMs: secondsToMs(settings.session.operationTimeoutSec, 180),
-    eventCapacity: 2_048,
-    commandQueueCapacity: 64,
-    queueWaitTimeoutMs: 2_000,
+    transport: "ssh",
+    options: {
+      host: connection.hostname,
+      port: settings.ssh.port || connection.port || 22,
+      username,
+      auth,
+      hostKeyPolicy,
+      connectionId: connection.id,
+      subsystem: settings.ssh.subsystem || "powershell",
+      connectTimeoutMs: secondsToMs(settings.session.connectTimeoutSec, 30),
+      requestTimeoutMs: secondsToMs(settings.session.operationTimeoutSec, 180),
+      eventCapacity: 2_048,
+      commandQueueCapacity: 64,
+      queueWaitTimeoutMs: 2_000,
+    },
   };
 }
+
+/** Compatibility alias for callers compiled against the SSH-only milestone. */
+export const buildPowerShellSshSessionOptions = buildPowerShellSessionOptions;
 
 export class PowerShellSequenceCursor {
   private current = 0;

@@ -4,11 +4,6 @@
 //! so the live row remains ignored and unclaimed. These tests exercise the
 //! real reqwest/auth adapter against a bounded in-process HTTP/SOAP peer.
 
-pub use sorng_powershell::{auth, tls, types};
-
-#[path = "../src/psrp_wsman.rs"]
-mod psrp_wsman;
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -23,10 +18,16 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
-use psrp_wsman::{
+use sorng_powershell::psrp_wsman::{
     canonical_wsman_endpoint, WsmanPsrpLimits, WsmanPsrpTransport, PSRP_WSMAN_LIMITATIONS,
 };
-use types::{PsAuthMethod, PsRemotingConfig, PsTransportProtocol};
+use sorng_powershell::runspace_session::{
+    PowerShellEventEnvelope, PowerShellSessionNetworkPath, PowerShellSessionOptions,
+    PowerShellSessionPhase, PowerShellSessionService, PowerShellSessionSink, PowerShellSinkError,
+    PowerShellStreamKind, PowerShellWsmanAuth, PowerShellWsmanSessionOptions,
+    PowerShellWsmanTrustPolicy,
+};
+use sorng_powershell::types::{PsAuthMethod, PsRemotingConfig, PsTransportProtocol};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FixtureMode {
@@ -121,6 +122,18 @@ struct FixtureSnapshot {
     request_paths: Vec<String>,
     actions: Vec<String>,
     command_count: usize,
+}
+
+#[derive(Default)]
+struct RecordingSink {
+    events: Mutex<Vec<PowerShellEventEnvelope>>,
+}
+
+impl PowerShellSessionSink for RecordingSink {
+    fn send(&self, envelope: &PowerShellEventEnvelope) -> Result<(), PowerShellSinkError> {
+        lock(&self.events).push(envelope.clone());
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -514,6 +527,101 @@ fn test_limits() -> WsmanPsrpLimits {
         connect_timeout: Duration::from_secs(2),
         ..WsmanPsrpLimits::default()
     }
+}
+
+fn service_options(endpoint: String) -> PowerShellSessionOptions {
+    PowerShellSessionOptions::Wsman(PowerShellWsmanSessionOptions {
+        endpoint,
+        username: "alice".into(),
+        password: "do-not-log".into(),
+        domain: Some("LAB".into()),
+        authentication: PowerShellWsmanAuth::Ntlm,
+        tls_trust: PowerShellWsmanTrustPolicy::TrustCenter,
+        network_path: PowerShellSessionNetworkPath::Direct,
+        connection_id: Some("fixture-connection".into()),
+        configuration_name: "Microsoft.PowerShell".into(),
+        culture: "en-US".into(),
+        connect_timeout_ms: 2_000,
+        request_timeout_ms: 5_000,
+        idle_timeout_sec: 60,
+        max_envelope_bytes: 512 * 1024,
+        max_response_bytes: 8 * 1024 * 1024,
+        max_auth_rounds: 3,
+        max_empty_receives: 32,
+        event_capacity: 128,
+        command_queue_capacity: 16,
+        queue_wait_timeout_ms: 500,
+    })
+}
+
+#[tokio::test]
+async fn live_session_service_registers_wsman_actor_replay_and_diagnostics() {
+    let fixture = SoapFixture::start(FixtureMode::Flow).await;
+    let sink = Arc::new(RecordingSink::default());
+    let service = PowerShellSessionService::new();
+    let session_id = service
+        .open_session(service_options(fixture.endpoint.clone()), sink.clone())
+        .await
+        .unwrap();
+
+    let opened = service.session(&session_id).await.unwrap();
+    assert_eq!(opened.phase, PowerShellSessionPhase::Ready);
+    assert_eq!(opened.capabilities.transport, "wsman");
+    assert!(opened.capabilities.wsman_contract_verified);
+    assert!(!opened.capabilities.wsman_live_windows_verified);
+    assert_eq!(opened.diagnostics.transport, "wsman");
+    assert_eq!(
+        opened.diagnostics.contract_verification,
+        "deterministic_contract_verified"
+    );
+    assert_eq!(
+        opened.diagnostics.live_interoperability,
+        "live_windows_unverified"
+    );
+
+    service
+        .start_pipeline(&session_id, "Write-Output fixture".into(), false)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let current = service.session(&session_id).await.unwrap();
+            if current.phase == PowerShellSessionPhase::Ready
+                && current.stats.pipelines_completed == 1
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("fixture pipeline should complete");
+
+    let replay = service.replay(&session_id, None).await.unwrap();
+    for expected in [
+        PowerShellStreamKind::Output,
+        PowerShellStreamKind::Error,
+        PowerShellStreamKind::Warning,
+        PowerShellStreamKind::Verbose,
+        PowerShellStreamKind::Debug,
+        PowerShellStreamKind::Information,
+        PowerShellStreamKind::Progress,
+        PowerShellStreamKind::PipelineState,
+    ] {
+        assert!(
+            replay.events.iter().any(|event| event.kind == expected),
+            "missing {expected:?}"
+        );
+    }
+    assert!(lock(&sink.events).iter().all(|event| !event.replayed));
+
+    service.close_session(&session_id).await.unwrap();
+    let closed = service.session(&session_id).await.unwrap();
+    assert_eq!(closed.phase, PowerShellSessionPhase::Closed);
+    let snapshot = fixture.snapshot();
+    assert!(snapshot.request_paths.iter().all(|path| path == "/wsman"));
+    assert_eq!(snapshot.command_count, 1);
+    fixture.stop().await;
 }
 
 #[tokio::test]
