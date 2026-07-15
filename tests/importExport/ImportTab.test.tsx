@@ -53,16 +53,28 @@ function renderImportTab(overrides?: {
   detectedFormat?: string;
 }) {
   const handleImport = overrides?.handleImport ?? vi.fn<() => void>();
-  const handleFileSelect = overrides?.handleFileSelect ?? vi.fn<(event: React.ChangeEvent<HTMLInputElement>) => void>();
-  const confirmImport = overrides?.confirmImport ?? vi.fn<() => void | Promise<void>>();
+  const handleFileSelect =
+    overrides?.handleFileSelect ??
+    vi.fn<(event: React.ChangeEvent<HTMLInputElement>) => void>();
+  const confirmImport =
+    overrides?.confirmImport ?? vi.fn<() => void | Promise<void>>();
   const cancelImport = overrides?.cancelImport ?? vi.fn<() => void>();
-  const updateImportFilters = overrides?.updateImportFilters ?? vi.fn<(updates: Partial<ImportFilterState>) => void>();
-  const resetImportFilters = overrides?.resetImportFilters ?? vi.fn<() => void>();
-  const updateImportOptions = overrides?.updateImportOptions ?? vi.fn<(updates: Partial<ImportOptions>) => void>();
-  const togglePreviewSelection = overrides?.togglePreviewSelection ?? vi.fn<(itemId: string) => void>();
-  const selectAllVisiblePreviewItems = overrides?.selectAllVisiblePreviewItems ?? vi.fn<() => void>();
-  const deselectAllVisiblePreviewItems = overrides?.deselectAllVisiblePreviewItems ?? vi.fn<() => void>();
-  const selectAllImportablePreviewItems = overrides?.selectAllImportablePreviewItems ?? vi.fn<() => void>();
+  const updateImportFilters =
+    overrides?.updateImportFilters ??
+    vi.fn<(updates: Partial<ImportFilterState>) => void>();
+  const resetImportFilters =
+    overrides?.resetImportFilters ?? vi.fn<() => void>();
+  const updateImportOptions =
+    overrides?.updateImportOptions ??
+    vi.fn<(updates: Partial<ImportOptions>) => void>();
+  const togglePreviewSelection =
+    overrides?.togglePreviewSelection ?? vi.fn<(itemId: string) => void>();
+  const selectAllVisiblePreviewItems =
+    overrides?.selectAllVisiblePreviewItems ?? vi.fn<() => void>();
+  const deselectAllVisiblePreviewItems =
+    overrides?.deselectAllVisiblePreviewItems ?? vi.fn<() => void>();
+  const selectAllImportablePreviewItems =
+    overrides?.selectAllImportablePreviewItems ?? vi.fn<() => void>();
 
   const result = render(
     <ImportTab
@@ -70,6 +82,16 @@ function renderImportTab(overrides?: {
       handleImport={handleImport}
       fileInputRef={React.createRef<HTMLInputElement>()}
       importResult={overrides?.importResult ?? null}
+      importDatabaseOptions={[
+        {
+          id: "db-current",
+          name: "Current DB",
+          isCurrent: true,
+          isEncrypted: false,
+          isUnlocked: true,
+          isExportable: true,
+        },
+      ]}
       importAnalysis={overrides?.importAnalysis}
       importFilters={overrides?.importFilters}
       updateImportFilters={updateImportFilters}
@@ -108,6 +130,15 @@ function renderImportTab(overrides?: {
   };
 }
 
+function advanceImportTo(stepId: string) {
+  for (let index = 0; index < 8; index += 1) {
+    const target = screen.getByTestId(`import-wizard-step-${stepId}`);
+    if (target.getAttribute("aria-current") === "step") return;
+    fireEvent.click(screen.getByTestId("import-wizard-next"));
+  }
+  throw new Error(`Unable to reach import wizard step ${stepId}`);
+}
+
 const makeConnection = (overrides: Partial<Connection>): Connection => ({
   id: "import-1",
   name: "Server A",
@@ -142,6 +173,7 @@ describe("ImportTab", () => {
 
   it("opens the file chooser and forwards file input changes", () => {
     const { handleImport, handleFileSelect } = renderImportTab();
+    advanceImportTo("source");
 
     fireEvent.click(screen.getByRole("button", { name: "Choose File" }));
     expect(handleImport).toHaveBeenCalledTimes(1);
@@ -151,7 +183,10 @@ describe("ImportTab", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     expect(handleFileSelect).toHaveBeenCalledTimes(1);
-    expect(input).toHaveAttribute("accept", ".json,.xml,.csv,.ini,.reg,.rdg,.rtsz,.rtsx,.encrypted");
+    expect(input).toHaveAttribute(
+      "accept",
+      ".json,.xml,.csv,.ini,.reg,.rdg,.rtsz,.rtsx,.encrypted",
+    );
   });
 
   it("downloads CSV and JSON templates and reports the download via toast", () => {
@@ -172,6 +207,7 @@ describe("ImportTab", () => {
 
   it("renders a disabled processing state while an import is being prepared", () => {
     renderImportTab({ isProcessing: true });
+    advanceImportTo("source");
 
     const button = screen.getByRole("button", { name: "Processing..." });
 
@@ -192,14 +228,17 @@ describe("ImportTab", () => {
 
     expect(screen.getByTestId("import-preview")).toBeInTheDocument();
     expect(screen.getByText("Import Successful")).toBeInTheDocument();
-    expect(screen.getByText("Found 3 connections ready to import.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Found 3 connections ready to import."),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("JSON").length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Skipped duplicate connection/, { selector: "li" }),
     ).toBeInTheDocument();
 
+    advanceImportTo("review");
     fireEvent.click(screen.getByTestId("import-confirm"));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change source" }));
 
     expect(confirmImport).toHaveBeenCalledTimes(1);
     expect(cancelImport).toHaveBeenCalledTimes(1);
@@ -314,9 +353,17 @@ describe("ImportTab", () => {
     expect(screen.getByText("sample.json")).toBeInTheDocument();
     expect(screen.getAllByText("Connections").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Conflicts").length).toBeGreaterThan(0);
-    expect(screen.getByText("1 selected | 2 visible after filters | 2 total preview rows")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Select Server A" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Select Server B" })).not.toBeChecked();
+    expect(
+      screen.getByText(
+        "1 selected | 2 visible after filters | 2 total preview rows",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Select Server A" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select Server B" }),
+    ).not.toBeChecked();
     expect(screen.getByText("missing_hostname")).toBeInTheDocument();
     expect(screen.getByText("Full parsed record")).toBeInTheDocument();
 
@@ -325,9 +372,12 @@ describe("ImportTab", () => {
     expect(screen.getByText(/"password": "\[hidden\]"/)).toBeInTheDocument();
     expect(screen.queryByText("plain-secret")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Search name, host, folder, tags, issues"), {
-      target: { value: "server" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Search name, host, folder, tags, issues"),
+      {
+        target: { value: "server" },
+      },
+    );
     fireEvent.change(screen.getByLabelText("Protocol filter"), {
       target: { value: "rdp" },
     });
@@ -339,14 +389,22 @@ describe("ImportTab", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Server B" }));
     fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
     fireEvent.click(screen.getByRole("button", { name: "Clear visible" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select all importable" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select all importable" }),
+    );
 
     expect(updateImportFilters).toHaveBeenCalledWith({ search: "server" });
     expect(updateImportFilters).toHaveBeenCalledWith({ protocol: "rdp" });
     expect(resetImportFilters).toHaveBeenCalledTimes(1);
-    expect(updateImportOptions).toHaveBeenCalledWith({ includeCredentials: false });
-    expect(updateImportOptions).toHaveBeenCalledWith({ conflictPolicy: "rename" });
-    expect(togglePreviewSelection).toHaveBeenCalledWith("connection:import-2:1");
+    expect(updateImportOptions).toHaveBeenCalledWith({
+      includeCredentials: false,
+    });
+    expect(updateImportOptions).toHaveBeenCalledWith({
+      conflictPolicy: "rename",
+    });
+    expect(togglePreviewSelection).toHaveBeenCalledWith(
+      "connection:import-2:1",
+    );
     expect(selectAllVisiblePreviewItems).toHaveBeenCalledTimes(1);
     expect(deselectAllVisiblePreviewItems).toHaveBeenCalledTimes(1);
     expect(selectAllImportablePreviewItems).toHaveBeenCalledTimes(1);
@@ -362,7 +420,7 @@ describe("ImportTab", () => {
       },
     });
 
-    expect(screen.getByText("Import Failed")).toBeInTheDocument();
+    expect(screen.getByText("Import analysis failed")).toBeInTheDocument();
     expect(
       screen.getByText(/Unsupported file format/, { selector: "li" }),
     ).toBeInTheDocument();

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle,
@@ -15,7 +15,7 @@ import {
   Shield,
   Upload,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   ExportDatabaseOption,
   ImportFilterState,
@@ -24,16 +24,18 @@ import {
   ImportResult,
   ImportSourceMetadata,
   ImportTargetMode,
-} from './types';
+} from "./types";
 import {
   IMPORT_FORMAT_COMPATIBILITY,
   IMPORT_FORMAT_ORDER,
   type ImportFormat,
-} from './utils';
-import { useToastContext } from '../../contexts/ToastContext';
-import { useTranslation } from 'react-i18next';
-import { Select, type SelectOption } from '../ui/forms';
-import { DatabasePickerRow } from './DatabasePickerRow';
+} from "./utils";
+import { useToastContext } from "../../contexts/ToastContext";
+import { useTranslation } from "react-i18next";
+import { Select, type SelectOption } from "../ui/forms";
+import { DatabasePickerRow } from "./DatabasePickerRow";
+import { Wizard } from "./Wizard";
+import { useWizardNavigation, type WizardStep } from "./useWizardNavigation";
 
 interface ImportTabProps {
   isProcessing: boolean;
@@ -50,8 +52,10 @@ interface ImportTabProps {
   setImportTargetMode?: (mode: ImportTargetMode) => void | Promise<void>;
   selectedImportDatabaseId?: string;
   setSelectedImportDatabaseId?: (databaseId: string) => void | Promise<void>;
-  importFormatSelection?: 'auto' | ImportFormat;
-  setImportFormatSelection?: (selection: 'auto' | ImportFormat) => void | Promise<void>;
+  importFormatSelection?: "auto" | ImportFormat;
+  setImportFormatSelection?: (
+    selection: "auto" | ImportFormat,
+  ) => void | Promise<void>;
   importAnalysis?: ImportSourceMetadata | null;
   importFilters?: ImportFilterState;
   updateImportFilters?: (updates: Partial<ImportFilterState>) => void;
@@ -71,12 +75,12 @@ interface ImportTabProps {
 }
 
 const FALLBACK_FILTERS: ImportFilterState = {
-  search: '',
-  protocol: 'all',
-  issueSeverity: 'all',
-  itemKind: 'all',
-  selection: 'all',
-  conflict: 'all',
+  search: "",
+  protocol: "all",
+  issueSeverity: "all",
+  itemKind: "all",
+  selection: "all",
+  conflict: "all",
   missingHostnameOnly: false,
   withCredentialsOnly: false,
 };
@@ -87,8 +91,8 @@ const FALLBACK_OPTIONS: ImportOptions = {
   includeVpnData: true,
   includeTunnelChains: true,
   includeSshTunnels: true,
-  conflictPolicy: 'duplicate',
-  addTags: '',
+  conflictPolicy: "duplicate",
+  addTags: "",
   switchToTargetDatabaseAfterImport: false,
 };
 
@@ -101,32 +105,32 @@ const CSV_TEMPLATE = `Name,Protocol,Hostname,Port,Username,Domain,Description,Pa
 "VNC Desktop",VNC,192.168.1.30,5900,,,Remote desktop access,,false,"desktop;vnc"`;
 
 const JSON_TEMPLATE = {
-  version: '1.0',
+  version: "1.0",
   exportDate: new Date().toISOString(),
   connections: [
     {
-      name: 'Web Server 1',
-      protocol: 'SSH',
-      hostname: '192.168.1.10',
+      name: "Web Server 1",
+      protocol: "SSH",
+      hostname: "192.168.1.10",
       port: 22,
-      username: 'admin',
-      domain: '',
-      description: 'Web server in datacenter',
+      username: "admin",
+      domain: "",
+      description: "Web server in datacenter",
       parentId: null,
       isGroup: false,
-      tags: ['production', 'linux'],
+      tags: ["production", "linux"],
     },
     {
-      name: 'Database Server',
-      protocol: 'RDP',
-      hostname: '192.168.1.20',
+      name: "Database Server",
+      protocol: "RDP",
+      hostname: "192.168.1.20",
       port: 3389,
-      username: 'administrator',
-      domain: 'DOMAIN',
-      description: 'SQL Server',
+      username: "administrator",
+      domain: "DOMAIN",
+      description: "SQL Server",
       parentId: null,
       isGroup: false,
-      tags: ['production', 'database'],
+      tags: ["production", "database"],
     },
   ],
 };
@@ -162,7 +166,7 @@ Domain=DOMAIN
 Description=SQL Server
 Tags=production;database`;
 
-type TemplateKind = 'csv' | 'json' | 'xml' | 'ini';
+type TemplateKind = "csv" | "json" | "xml" | "ini";
 
 interface TemplateSpec {
   kind: TemplateKind;
@@ -174,79 +178,79 @@ interface TemplateSpec {
 
 const TEMPLATES: TemplateSpec[] = [
   {
-    kind: 'csv',
-    label: 'CSV Template',
-    filename: 'sortofremoteng-import-template.csv',
-    mimeType: 'text/csv',
+    kind: "csv",
+    label: "CSV Template",
+    filename: "sortofremoteng-import-template.csv",
+    mimeType: "text/csv",
     build: () => CSV_TEMPLATE,
   },
   {
-    kind: 'json',
-    label: 'JSON Template',
-    filename: 'sortofremoteng-import-template.json',
-    mimeType: 'application/json',
+    kind: "json",
+    label: "JSON Template",
+    filename: "sortofremoteng-import-template.json",
+    mimeType: "application/json",
     build: () => JSON.stringify(JSON_TEMPLATE, null, 2),
   },
   {
-    kind: 'xml',
-    label: 'XML Template',
-    filename: 'sortofremoteng-import-template.xml',
-    mimeType: 'application/xml',
+    kind: "xml",
+    label: "XML Template",
+    filename: "sortofremoteng-import-template.xml",
+    mimeType: "application/xml",
     build: () => XML_TEMPLATE,
   },
   {
-    kind: 'ini',
-    label: 'INI Template',
-    filename: 'sortofremoteng-import-template.ini',
-    mimeType: 'text/plain',
+    kind: "ini",
+    label: "INI Template",
+    filename: "sortofremoteng-import-template.ini",
+    mimeType: "text/plain",
     build: () => INI_TEMPLATE,
   },
 ];
 
 function formatBytes(bytes: number | undefined): string {
-  if (!bytes || bytes <= 0) return 'Unknown size';
+  if (!bytes || bytes <= 0) return "Unknown size";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function severityClass(severity: string): string {
-  if (severity === 'error') return 'text-error bg-error/10 border-error/30';
-  if (severity === 'warning') return 'text-warning bg-warning/10 border-warning/30';
-  return 'text-info bg-info/10 border-info/30';
+  if (severity === "error") return "text-error bg-error/10 border-error/30";
+  if (severity === "warning")
+    return "text-warning bg-warning/10 border-warning/30";
+  return "text-info bg-info/10 border-info/30";
 }
 
 const SENSITIVE_DETAIL_KEYS = [
-  'password',
-  'passphrase',
-  'privatekey',
-  'secret',
-  'token',
-  'apikey',
-  'clientsecret',
-  'serviceaccountkey',
+  "password",
+  "passphrase",
+  "privatekey",
+  "secret",
+  "token",
+  "apikey",
+  "clientsecret",
+  "serviceaccountkey",
 ];
 
-function redactDetailValue(value: unknown, keyName = ''): unknown {
+function redactDetailValue(value: unknown, keyName = ""): unknown {
   const normalizedKey = keyName.toLowerCase();
   if (
     value !== null &&
     value !== undefined &&
     SENSITIVE_DETAIL_KEYS.some((key) => normalizedKey.includes(key))
   ) {
-    return '[hidden]';
+    return "[hidden]";
   }
 
   if (Array.isArray(value)) {
     return value.map((item) => redactDetailValue(item));
   }
 
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entryValue]) => [
-        key,
-        redactDetailValue(entryValue, key),
-      ]),
+      Object.entries(value as Record<string, unknown>).map(
+        ([key, entryValue]) => [key, redactDetailValue(entryValue, key)],
+      ),
     );
   }
 
@@ -281,14 +285,20 @@ function buildPreviewDetailJson(item: ImportPreviewItem): string {
 
 /* ── Source header (replaces the old AnalysisSummary banner) ──────── */
 
-const Stat: React.FC<{ label: string; value: React.ReactNode; accent?: string }> = ({
-  label,
-  value,
-  accent,
-}) => (
+const Stat: React.FC<{
+  label: string;
+  value: React.ReactNode;
+  accent?: string;
+}> = ({ label, value, accent }) => (
   <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2">
-    <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">{label}</div>
-    <div className={`text-sm font-semibold ${accent ?? 'text-[var(--color-text)]'}`}>{value}</div>
+    <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+      {label}
+    </div>
+    <div
+      className={`text-sm font-semibold ${accent ?? "text-[var(--color-text)]"}`}
+    >
+      {value}
+    </div>
   </div>
 );
 
@@ -311,7 +321,7 @@ const SourceHeader: React.FC<{
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-[var(--color-text)] truncate">
-                {analysis?.filename ?? 'Imported file'}
+                {analysis?.filename ?? "Imported file"}
               </span>
               {formatLabel && (
                 <span className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary">
@@ -336,11 +346,15 @@ const SourceHeader: React.FC<{
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-1 text-xs text-[var(--color-textMuted)]">
               <CheckCircle size={11} className="text-success" />
-              <span className="text-success font-medium">Import Successful</span>
+              <span className="text-success font-medium">
+                Import Successful
+              </span>
               {importedCount !== undefined && (
                 <>
                   <span aria-hidden>·</span>
-                  <span>Found {importedCount} connections ready to import.</span>
+                  <span>
+                    Found {importedCount} connections ready to import.
+                  </span>
                 </>
               )}
               {analysis?.sizeBytes !== undefined && (
@@ -385,59 +399,76 @@ const SourceHeader: React.FC<{
             className="flex w-full items-center justify-between px-4 py-2 text-xs font-medium uppercase tracking-wide text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
           >
             <span className="flex items-center gap-2">
-              {showDetails ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              {showDetails ? (
+                <ChevronDown size={13} />
+              ) : (
+                <ChevronRight size={13} />
+              )}
               Analysis details
             </span>
             <span className="text-[10px] normal-case text-[var(--color-textMuted)]">
-              {analysis.counts.connections} conn · {analysis.counts.folders} folders ·{' '}
-              {analysis.counts.conflicts} conflicts
+              {analysis.counts.connections} conn · {analysis.counts.folders}{" "}
+              folders · {analysis.counts.conflicts} conflicts
             </span>
           </button>
 
           {showDetails && (
             <div className="space-y-3 px-4 pb-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
-                <Stat label="Connections" value={analysis.counts.connections} accent="text-primary" />
+                <Stat
+                  label="Connections"
+                  value={analysis.counts.connections}
+                  accent="text-primary"
+                />
                 <Stat label="Folders" value={analysis.counts.folders} />
                 <Stat
                   label="Conflicts"
                   value={analysis.counts.conflicts}
-                  accent={analysis.counts.conflicts > 0 ? 'text-warning' : undefined}
+                  accent={
+                    analysis.counts.conflicts > 0 ? "text-warning" : undefined
+                  }
                 />
                 <Stat
                   label="Warnings"
                   value={analysis.counts.warnings}
-                  accent={analysis.counts.warnings > 0 ? 'text-warning' : undefined}
+                  accent={
+                    analysis.counts.warnings > 0 ? "text-warning" : undefined
+                  }
                 />
                 <Stat label="VPN" value={analysis.counts.vpnConnections} />
                 <Stat label="Tunnels" value={analysis.counts.tunnelChains} />
                 <Stat label="SSH tunnels" value={analysis.counts.sshTunnels} />
               </div>
 
-              {(analysis.encryption || analysis.csv || analysis.json || analysis.xml) && (
+              {(analysis.encryption ||
+                analysis.csv ||
+                analysis.json ||
+                analysis.xml) && (
                 <div className="grid gap-1 text-xs text-[var(--color-textSecondary)] md:grid-cols-2">
                   {analysis.encryption && (
                     <div>
-                      Encryption: protected={String(analysis.encryption.protected)}, full-file=
-                      {String(analysis.encryption.fullFileEncryption)}, password required=
+                      Encryption: protected=
+                      {String(analysis.encryption.protected)}, full-file=
+                      {String(analysis.encryption.fullFileEncryption)}, password
+                      required=
                       {String(analysis.encryption.requiresPassword)}
                     </div>
                   )}
                   {analysis.csv && (
                     <div>
-                      CSV: {analysis.csv.dataRows} data row(s), headers{' '}
-                      {analysis.csv.headers.join(', ') || 'none'}
+                      CSV: {analysis.csv.dataRows} data row(s), headers{" "}
+                      {analysis.csv.headers.join(", ") || "none"}
                     </div>
                   )}
                   {analysis.json && (
                     <div>
-                      JSON: {analysis.json.shape}, keys{' '}
-                      {analysis.json.topLevelKeys.join(', ') || 'none'}
+                      JSON: {analysis.json.shape}, keys{" "}
+                      {analysis.json.topLevelKeys.join(", ") || "none"}
                     </div>
                   )}
                   {analysis.xml && (
                     <div>
-                      XML: {analysis.xml.rootElement || 'unknown root'},{' '}
+                      XML: {analysis.xml.rootElement || "unknown root"},{" "}
                       {analysis.xml.nodeCount} source node(s)
                     </div>
                   )}
@@ -463,9 +494,13 @@ const ImportSection: React.FC<{
     <div className="flex items-start gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <Icon size={16} className="mt-0.5 shrink-0 text-primary" />
       <div className="min-w-0">
-        <h4 className="text-sm font-medium text-[var(--color-text)]">{title}</h4>
+        <h4 className="text-sm font-medium text-[var(--color-text)]">
+          {title}
+        </h4>
         {description && (
-          <p className="mt-0.5 text-xs text-[var(--color-textSecondary)]">{description}</p>
+          <p className="mt-0.5 text-xs text-[var(--color-textSecondary)]">
+            {description}
+          </p>
         )}
       </div>
     </div>
@@ -482,15 +517,25 @@ const TargetDatabaseSection: React.FC<{
   selectedDatabaseId: string;
   onSelect: (databaseId: string) => void | Promise<void>;
   onUnlockDatabase?: (databaseId: string) => Promise<boolean> | void;
-}> = ({ options, targetMode, onSelectMode, selectedDatabaseId, onSelect, onUnlockDatabase }) => {
+}> = ({
+  options,
+  targetMode,
+  onSelectMode,
+  selectedDatabaseId,
+  onSelect,
+  onUnlockDatabase,
+}) => {
   const exportableOptions = options.filter((option) => option.isExportable);
   const currentOption = exportableOptions.find((option) => option.isCurrent);
-  const selectedOption = options.find((option) => option.id === selectedDatabaseId);
-  const selectedNames = targetMode === 'all'
-    ? exportableOptions.map((option) => option.name)
-    : targetMode === 'current'
-      ? [currentOption?.name].filter(Boolean)
-      : [selectedOption?.name].filter(Boolean);
+  const selectedOption = options.find(
+    (option) => option.id === selectedDatabaseId,
+  );
+  const selectedNames =
+    targetMode === "all"
+      ? exportableOptions.map((option) => option.name)
+      : targetMode === "current"
+        ? [currentOption?.name].filter(Boolean)
+        : [selectedOption?.name].filter(Boolean);
   const targetModes: Array<{
     value: ImportTargetMode;
     label: string;
@@ -498,22 +543,22 @@ const TargetDatabaseSection: React.FC<{
     disabled?: boolean;
   }> = [
     {
-      value: 'current',
-      label: 'Current database',
+      value: "current",
+      label: "Current database",
       description: currentOption
         ? `Merge into ${currentOption.name}.`
-        : 'Use the open database when one is available.',
+        : "Use the open database when one is available.",
       disabled: !currentOption,
     },
     {
-      value: 'selected',
-      label: 'Choose database',
-      description: 'Pick one unlocked database below.',
+      value: "selected",
+      label: "Choose database",
+      description: "Pick one unlocked database below.",
       disabled: exportableOptions.length === 0,
     },
     {
-      value: 'all',
-      label: 'All unlocked',
+      value: "all",
+      label: "All unlocked",
       description: `Import into ${exportableOptions.length} unlocked database(s).`,
       disabled: exportableOptions.length === 0,
     },
@@ -542,9 +587,9 @@ const TargetDatabaseSection: React.FC<{
           className="text-xs text-[var(--color-textMuted)]"
           data-testid="import-target-count"
         >
-          {targetMode === 'all'
+          {targetMode === "all"
             ? `${exportableOptions.length} target(s)`
-            : selectedNames[0] || 'No target'}
+            : selectedNames[0] || "No target"}
         </div>
       </div>
 
@@ -572,8 +617,8 @@ const TargetDatabaseSection: React.FC<{
               disabled={mode.disabled}
               className={`rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
                 active
-                  ? 'border-primary bg-primary/15 text-[var(--color-text)]'
-                  : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]'
+                  ? "border-primary bg-primary/15 text-[var(--color-text)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]"
               }`}
               aria-pressed={active}
             >
@@ -586,7 +631,7 @@ const TargetDatabaseSection: React.FC<{
         })}
       </div>
 
-      {targetMode === 'selected' && (
+      {targetMode === "selected" && (
         <div className="space-y-2" data-testid="import-database-radio-list">
           {options.map((database) => (
             <DatabasePickerRow
@@ -599,7 +644,9 @@ const TargetDatabaseSection: React.FC<{
                   type="radio"
                   name="import-target-database"
                   value={database.id}
-                  checked={database.isExportable && database.id === selectedDatabaseId}
+                  checked={
+                    database.isExportable && database.id === selectedDatabaseId
+                  }
                   disabled={!database.isExportable}
                   onChange={() => void onSelect(database.id)}
                   className="sor-form-checkbox rounded-full border-[var(--color-border)] bg-[var(--color-input)] text-primary"
@@ -612,8 +659,9 @@ const TargetDatabaseSection: React.FC<{
                     {database.isExportable
                       ? database.connectionCount !== undefined
                         ? `${database.connectionCount} existing item(s)`
-                        : 'Available for import'
-                      : database.lockedReason || 'Unlock this database before importing.'}
+                        : "Available for import"
+                      : database.lockedReason ||
+                        "Unlock this database before importing."}
                   </span>
                   {database.description && (
                     <span className="mt-0.5 block text-[var(--color-textMuted)]">
@@ -632,7 +680,7 @@ const TargetDatabaseSection: React.FC<{
           className="text-xs text-[var(--color-textMuted)]"
           data-testid="import-target-summary"
         >
-          {selectedNames.join(', ')}
+          {selectedNames.join(", ")}
         </div>
       )}
     </section>
@@ -642,14 +690,14 @@ const TargetDatabaseSection: React.FC<{
 /* ── Format selection (forced parser) ───────────────────────────── */
 
 const FormatSelectionSection: React.FC<{
-  selection: 'auto' | ImportFormat;
-  onSelect: (selection: 'auto' | ImportFormat) => void | Promise<void>;
+  selection: "auto" | ImportFormat;
+  onSelect: (selection: "auto" | ImportFormat) => void | Promise<void>;
   analysis?: ImportSourceMetadata | null;
 }> = ({ selection, onSelect, analysis }) => {
   const [open, setOpen] = useState(false);
   const effectiveFormat = analysis?.format as ImportFormat | undefined;
   const selectedCompatibility =
-    selection === 'auto'
+    selection === "auto"
       ? effectiveFormat
         ? IMPORT_FORMAT_COMPATIBILITY[effectiveFormat]
         : undefined
@@ -657,41 +705,41 @@ const FormatSelectionSection: React.FC<{
 
   const formatOptions: SelectOption[] = [
     {
-      value: 'auto',
-      label: 'Auto Detect',
-      title: 'Detect the parser from file content and extension.',
+      value: "auto",
+      label: "Auto Detect",
+      title: "Detect the parser from file content and extension.",
     },
     {
-      value: '__group_native',
-      label: '── Native sortOfRemoteNG ──',
+      value: "__group_native",
+      label: "── Native sortOfRemoteNG ──",
       disabled: true,
     },
-    ...IMPORT_FORMAT_ORDER
-      .filter((format) => IMPORT_FORMAT_COMPATIBILITY[format].group === 'native')
-      .map((format) => ({
-        value: format,
-        label: IMPORT_FORMAT_COMPATIBILITY[format].label,
-        title: IMPORT_FORMAT_COMPATIBILITY[format].description,
-      })),
+    ...IMPORT_FORMAT_ORDER.filter(
+      (format) => IMPORT_FORMAT_COMPATIBILITY[format].group === "native",
+    ).map((format) => ({
+      value: format,
+      label: IMPORT_FORMAT_COMPATIBILITY[format].label,
+      title: IMPORT_FORMAT_COMPATIBILITY[format].description,
+    })),
     {
-      value: '__group_vendor',
-      label: '── Compatible applications ──',
+      value: "__group_vendor",
+      label: "── Compatible applications ──",
       disabled: true,
     },
-    ...IMPORT_FORMAT_ORDER
-      .filter((format) => IMPORT_FORMAT_COMPATIBILITY[format].group === 'vendor')
-      .map((format) => ({
-        value: format,
-        label: IMPORT_FORMAT_COMPATIBILITY[format].label,
-        title: IMPORT_FORMAT_COMPATIBILITY[format].description,
-      })),
+    ...IMPORT_FORMAT_ORDER.filter(
+      (format) => IMPORT_FORMAT_COMPATIBILITY[format].group === "vendor",
+    ).map((format) => ({
+      value: format,
+      label: IMPORT_FORMAT_COMPATIBILITY[format].label,
+      title: IMPORT_FORMAT_COMPATIBILITY[format].description,
+    })),
   ];
 
   const summary =
-    selection === 'auto'
+    selection === "auto"
       ? analysis?.formatName
         ? `Auto-detect (matched ${analysis.formatName})`
-        : 'Auto-detect from file content'
+        : "Auto-detect from file content"
       : `Force ${selectedCompatibility?.label ?? selection}`;
 
   return (
@@ -705,8 +753,12 @@ const FormatSelectionSection: React.FC<{
         <div className="flex items-start gap-3 min-w-0">
           <FileCode size={16} className="mt-0.5 shrink-0 text-primary" />
           <div className="min-w-0">
-            <div className="text-sm font-medium text-[var(--color-text)]">Format</div>
-            <div className="text-xs text-[var(--color-textSecondary)] truncate">{summary}</div>
+            <div className="text-sm font-medium text-[var(--color-text)]">
+              Format
+            </div>
+            <div className="text-xs text-[var(--color-textSecondary)] truncate">
+              {summary}
+            </div>
           </div>
         </div>
         {open ? (
@@ -730,7 +782,9 @@ const FormatSelectionSection: React.FC<{
               data-testid="import-format-select"
               label="Import format"
               value={selection}
-              onChange={(value) => void onSelect(value as 'auto' | ImportFormat)}
+              onChange={(value) =>
+                void onSelect(value as "auto" | ImportFormat)
+              }
               options={formatOptions}
               variant="form"
               className="w-full"
@@ -740,7 +794,9 @@ const FormatSelectionSection: React.FC<{
           <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-xs text-[var(--color-textSecondary)]">
             <div className="flex flex-wrap items-center gap-2 text-[var(--color-text)]">
               <span className="font-medium">
-                {selection === 'auto' ? 'Auto Detect' : selectedCompatibility?.label}
+                {selection === "auto"
+                  ? "Auto Detect"
+                  : selectedCompatibility?.label}
               </span>
               {analysis?.formatName && (
                 <span className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary">
@@ -756,9 +812,13 @@ const FormatSelectionSection: React.FC<{
             {selectedCompatibility && (
               <div className="mt-2 space-y-1">
                 <div>{selectedCompatibility.description}</div>
-                <div>Extensions: {selectedCompatibility.extensions.join(', ')}</div>
-                <div>Data: {selectedCompatibility.dataClasses.join(', ')}</div>
-                <div>Credentials: {selectedCompatibility.credentialSupport}</div>
+                <div>
+                  Extensions: {selectedCompatibility.extensions.join(", ")}
+                </div>
+                <div>Data: {selectedCompatibility.dataClasses.join(", ")}</div>
+                <div>
+                  Credentials: {selectedCompatibility.credentialSupport}
+                </div>
               </div>
             )}
             {analysis?.formatWarning && (
@@ -776,11 +836,11 @@ const FormatSelectionSection: React.FC<{
 /* ── Compact preview filter row ─────────────────────────────────── */
 
 const countActiveFilters = (filters: ImportFilterState): number =>
-  (filters.protocol !== 'all' ? 1 : 0) +
-  (filters.issueSeverity !== 'all' ? 1 : 0) +
-  (filters.itemKind !== 'all' ? 1 : 0) +
-  (filters.selection !== 'all' ? 1 : 0) +
-  (filters.conflict !== 'all' ? 1 : 0) +
+  (filters.protocol !== "all" ? 1 : 0) +
+  (filters.issueSeverity !== "all" ? 1 : 0) +
+  (filters.itemKind !== "all" ? 1 : 0) +
+  (filters.selection !== "all" ? 1 : 0) +
+  (filters.conflict !== "all" ? 1 : 0) +
   (filters.missingHostnameOnly ? 1 : 0) +
   (filters.withCredentialsOnly ? 1 : 0);
 
@@ -797,7 +857,10 @@ const ImportFilters: React.FC<{
     <div className="space-y-2 border-b border-[var(--color-border)] bg-[var(--color-background)]/40 p-3">
       <div className="flex items-center gap-2">
         <label className="flex min-h-8 flex-1 items-center gap-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-xs focus-within:border-primary">
-          <Search size={14} className="shrink-0 text-[var(--color-textMuted)]" />
+          <Search
+            size={14}
+            className="shrink-0 text-[var(--color-textMuted)]"
+          />
           <input
             value={filters.search}
             onChange={(event) => updateFilters({ search: event.target.value })}
@@ -807,7 +870,7 @@ const ImportFilters: React.FC<{
           {filters.search && (
             <button
               type="button"
-              onClick={() => updateFilters({ search: '' })}
+              onClick={() => updateFilters({ search: "" })}
               className="shrink-0 text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
               aria-label="Clear search"
             >
@@ -821,8 +884,8 @@ const ImportFilters: React.FC<{
           aria-expanded={open}
           className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs transition-colors ${
             activeCount > 0
-              ? 'border-primary/50 bg-primary/10 text-primary'
-              : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]'
+              ? "border-primary/50 bg-primary/10 text-primary"
+              : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           }`}
         >
           <Filter size={12} />
@@ -848,7 +911,9 @@ const ImportFilters: React.FC<{
           <select
             value={filters.protocol}
             onChange={(event) =>
-              updateFilters({ protocol: event.target.value as ImportFilterState['protocol'] })
+              updateFilters({
+                protocol: event.target.value as ImportFilterState["protocol"],
+              })
             }
             className="sor-form-input-xs"
             aria-label="Protocol filter"
@@ -864,7 +929,8 @@ const ImportFilters: React.FC<{
             value={filters.issueSeverity}
             onChange={(event) =>
               updateFilters({
-                issueSeverity: event.target.value as ImportFilterState['issueSeverity'],
+                issueSeverity: event.target
+                  .value as ImportFilterState["issueSeverity"],
               })
             }
             className="sor-form-input-xs"
@@ -878,7 +944,9 @@ const ImportFilters: React.FC<{
           <select
             value={filters.itemKind}
             onChange={(event) =>
-              updateFilters({ itemKind: event.target.value as ImportFilterState['itemKind'] })
+              updateFilters({
+                itemKind: event.target.value as ImportFilterState["itemKind"],
+              })
             }
             className="sor-form-input-xs"
             aria-label="Item type filter"
@@ -893,7 +961,9 @@ const ImportFilters: React.FC<{
           <select
             value={filters.selection}
             onChange={(event) =>
-              updateFilters({ selection: event.target.value as ImportFilterState['selection'] })
+              updateFilters({
+                selection: event.target.value as ImportFilterState["selection"],
+              })
             }
             className="sor-form-input-xs"
             aria-label="Selection filter"
@@ -905,7 +975,9 @@ const ImportFilters: React.FC<{
           <select
             value={filters.conflict}
             onChange={(event) =>
-              updateFilters({ conflict: event.target.value as ImportFilterState['conflict'] })
+              updateFilters({
+                conflict: event.target.value as ImportFilterState["conflict"],
+              })
             }
             className="sor-form-input-xs"
             aria-label="Conflict filter"
@@ -967,7 +1039,8 @@ const ImportOptionsPanel: React.FC<{
             value={options.conflictPolicy}
             onChange={(event) =>
               updateOptions({
-                conflictPolicy: event.target.value as ImportOptions['conflictPolicy'],
+                conflictPolicy: event.target
+                  .value as ImportOptions["conflictPolicy"],
               })
             }
             className="sor-form-input-xs w-full"
@@ -996,19 +1069,24 @@ const ImportOptionsPanel: React.FC<{
 
       <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
         {[
-          ['preserveFolders', 'Preserve folders'],
-          ['includeCredentials', 'Include credentials'],
-          ['includeVpnData', 'Import VPN data'],
-          ['includeTunnelChains', 'Import tunnel chains'],
-          ['includeSshTunnels', 'Import SSH tunnels'],
-          ['switchToTargetDatabaseAfterImport', 'Switch to target after import'],
+          ["preserveFolders", "Preserve folders"],
+          ["includeCredentials", "Include credentials"],
+          ["includeVpnData", "Import VPN data"],
+          ["includeTunnelChains", "Import tunnel chains"],
+          ["includeSshTunnels", "Import SSH tunnels"],
+          [
+            "switchToTargetDatabaseAfterImport",
+            "Switch to target after import",
+          ],
         ].map(([key, label]) => (
           <label key={key} className="inline-flex items-center gap-2">
             <input
               type="checkbox"
               checked={Boolean(options[key as keyof ImportOptions])}
               onChange={(event) =>
-                updateOptions({ [key]: event.target.checked } as Partial<ImportOptions>)
+                updateOptions({
+                  [key]: event.target.checked,
+                } as Partial<ImportOptions>)
               }
             />
             {label}
@@ -1033,21 +1111,21 @@ const PreviewDetails: React.FC<{ item: ImportPreviewItem }> = ({ item }) => (
       <span
         className={`rounded border px-2 py-0.5 ${
           item.importable
-            ? 'border-success/30 bg-success/10 text-success'
-            : 'border-error/30 bg-error/10 text-error'
+            ? "border-success/30 bg-success/10 text-success"
+            : "border-error/30 bg-error/10 text-error"
         }`}
       >
-        {item.importable ? 'Importable' : 'Blocked'}
+        {item.importable ? "Importable" : "Blocked"}
       </span>
     </div>
 
     <div className="mb-3 grid grid-cols-1 gap-1 text-[var(--color-textSecondary)] sm:grid-cols-2">
       <div>Path: {item.sourcePath}</div>
-      <div>Parent: {item.parentName || '-'}</div>
-      <div>Host: {item.hostname || '-'}</div>
-      <div>Port: {item.port || '-'}</div>
-      <div>Username: {item.username || '-'}</div>
-      <div>Tags: {item.tags.join(', ') || '-'}</div>
+      <div>Parent: {item.parentName || "-"}</div>
+      <div>Host: {item.hostname || "-"}</div>
+      <div>Port: {item.port || "-"}</div>
+      <div>Username: {item.username || "-"}</div>
+      <div>Tags: {item.tags.join(", ") || "-"}</div>
     </div>
 
     {item.issues.length > 0 && (
@@ -1103,15 +1181,15 @@ const PreviewTable: React.FC<{
                   tabIndex={0}
                   onClick={() => onFocusItem(item.id)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
+                    if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       onFocusItem(item.id);
                     }
                   }}
                   className={`${
-                    selected ? 'bg-primary/10' : 'bg-[var(--color-surface)]'
+                    selected ? "bg-primary/10" : "bg-[var(--color-surface)]"
                   } cursor-pointer outline-none transition-colors hover:bg-[var(--color-surfaceHover)] ${
-                    focused ? 'ring-1 ring-inset ring-primary' : ''
+                    focused ? "ring-1 ring-inset ring-primary" : ""
                   }`}
                 >
                   <td className="px-3 py-2 align-top">
@@ -1134,9 +1212,15 @@ const PreviewTable: React.FC<{
                       className="flex items-center gap-1.5 text-left font-medium text-[var(--color-text)] hover:text-primary"
                     >
                       {focused ? (
-                        <ChevronDown size={11} className="text-[var(--color-textMuted)]" />
+                        <ChevronDown
+                          size={11}
+                          className="text-[var(--color-textMuted)]"
+                        />
                       ) : (
-                        <ChevronRight size={11} className="text-[var(--color-textMuted)]" />
+                        <ChevronRight
+                          size={11}
+                          className="text-[var(--color-textMuted)]"
+                        />
                       )}
                       <span>{item.name}</span>
                     </button>
@@ -1148,18 +1232,18 @@ const PreviewTable: React.FC<{
                   </td>
                   <td className="px-3 py-2 align-top">
                     <span className="rounded border border-[var(--color-border)] px-2 py-0.5 uppercase text-[var(--color-textSecondary)]">
-                      {item.kind === 'connection'
+                      {item.kind === "connection"
                         ? item.protocol
-                        : item.kind === 'tunnelChain'
-                          ? 'tunnel'
-                          : item.kind === 'sshTunnel'
-                            ? 'ssh tunnel'
+                        : item.kind === "tunnelChain"
+                          ? "tunnel"
+                          : item.kind === "sshTunnel"
+                            ? "ssh tunnel"
                             : item.kind}
                     </span>
                   </td>
                   <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
-                    {item.hostname || '-'}
-                    {item.port ? `:${item.port}` : ''}
+                    {item.hostname || "-"}
+                    {item.port ? `:${item.port}` : ""}
                   </td>
                   <td className="px-3 py-2 align-top text-[var(--color-textSecondary)]">
                     {item.sourcePath}
@@ -1236,11 +1320,11 @@ const ImportTab: React.FC<ImportTabProps> = ({
   cancelImport,
   detectedFormat,
   importDatabaseOptions = [],
-  importTargetMode = 'current',
+  importTargetMode = "current",
   setImportTargetMode = () => undefined,
-  selectedImportDatabaseId = '',
+  selectedImportDatabaseId = "",
   setSelectedImportDatabaseId = () => undefined,
-  importFormatSelection = 'auto',
+  importFormatSelection = "auto",
   setImportFormatSelection = () => undefined,
   importAnalysis,
   importFilters = FALLBACK_FILTERS,
@@ -1264,7 +1348,8 @@ const ImportTab: React.FC<ImportTabProps> = ({
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
 
   const focusedItem = useMemo(
-    () => previewItems.find((item) => item.id === focusedItemId) || previewItems[0],
+    () =>
+      previewItems.find((item) => item.id === focusedItemId) || previewItems[0],
     [focusedItemId, previewItems],
   );
   const selectedRows = selectedCount ?? selectedPreviewIds.size;
@@ -1272,12 +1357,13 @@ const ImportTab: React.FC<ImportTabProps> = ({
     (option) => option.id === selectedImportDatabaseId,
   );
   const selectedTargetLocked =
-    importTargetMode === 'selected' && selectedTarget && !selectedTarget.isExportable;
+    importTargetMode === "selected" &&
+    selectedTarget &&
+    !selectedTarget.isExportable;
   const canImport =
     importResult?.success &&
     !selectedTargetLocked &&
     (previewItems.length === 0 || selectedRows > 0);
-  const isReview = !!importResult;
   const isSuccess = !!importResult?.success;
   const isFailure = !!importResult && !importResult.success;
   const previewItemCount = previewItems.length;
@@ -1289,7 +1375,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
 
     const blob = new Blob([spec.build()], { type: spec.mimeType });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = spec.filename;
     document.body.appendChild(link);
@@ -1298,7 +1384,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
     URL.revokeObjectURL(url);
 
     toast.success(
-      t('import.templateDownloaded', {
+      t("import.templateDownloaded", {
         filename: spec.filename,
         defaultValue: `Template "${spec.filename}" downloaded to your Downloads folder`,
       }),
@@ -1319,12 +1405,15 @@ const ImportTab: React.FC<ImportTabProps> = ({
       className="rounded-lg border-2 border-dashed border-[var(--color-border)] p-8 text-center transition-colors hover:border-primary/50"
       onDragOver={(event) => {
         event.preventDefault();
-        event.dataTransfer.dropEffect = 'copy';
+        event.dataTransfer.dropEffect = "copy";
       }}
       onDrop={onDropFile}
       data-testid="import-dropzone"
     >
-      <FolderOpen size={48} className="mx-auto mb-4 text-[var(--color-textSecondary)]" />
+      <FolderOpen
+        size={48}
+        className="mx-auto mb-4 text-[var(--color-textSecondary)]"
+      />
       <p className="mb-4 text-[var(--color-textSecondary)]">
         Drag a file here or click below to choose one
       </p>
@@ -1372,226 +1461,403 @@ const ImportTab: React.FC<ImportTabProps> = ({
     </ImportSection>
   );
 
+  const wizardSteps = useMemo<WizardStep[]>(
+    () => [
+      {
+        id: "template-target",
+        label: "Template & Target",
+        description:
+          "Download a starter template if useful, then choose the destination database.",
+      },
+      {
+        id: "format",
+        label: "Format",
+        description:
+          "Use automatic detection or force the parser for a known source format.",
+      },
+      {
+        id: "source",
+        label: "Source",
+        description:
+          "Choose or drop a file and let it be analysed before continuing.",
+      },
+      {
+        id: "selection-options",
+        label: "Selection & Options",
+        description:
+          "Filter analysed rows, choose what to import, and set merge behavior.",
+      },
+      {
+        id: "review",
+        label: "Preview & Confirm",
+        description:
+          "Review the source, target, options, and selected rows before importing.",
+      },
+    ],
+    [],
+  );
+  const exportableImportTargets = importDatabaseOptions.filter(
+    (option) => option.isExportable,
+  );
+  const currentImportTarget = exportableImportTargets.find(
+    (option) => option.isCurrent,
+  );
+  const selectedImportTarget = exportableImportTargets.find(
+    (option) => option.id === selectedImportDatabaseId,
+  );
+  const validateWizardStep = React.useCallback(
+    (stepId: string): string | undefined => {
+      if (stepId === "template-target") {
+        if (importTargetMode === "current" && !currentImportTarget) {
+          return "Open or unlock a current database before continuing.";
+        }
+        if (importTargetMode === "selected" && !selectedImportTarget) {
+          return "Choose an unlocked target database before continuing.";
+        }
+        if (
+          importTargetMode === "all" &&
+          exportableImportTargets.length === 0
+        ) {
+          return "Unlock at least one target database before continuing.";
+        }
+      }
+      if (stepId === "source" && !importResult?.success) {
+        return isProcessing
+          ? "Wait for the selected file to finish processing."
+          : "Choose a supported file that can be analysed successfully.";
+      }
+      if (
+        stepId === "selection-options" &&
+        previewItems.length > 0 &&
+        selectedRows === 0
+      ) {
+        return "Select at least one importable preview row before continuing.";
+      }
+      return undefined;
+    },
+    [
+      currentImportTarget,
+      exportableImportTargets.length,
+      importResult?.success,
+      importTargetMode,
+      isProcessing,
+      previewItems.length,
+      selectedImportTarget,
+      selectedRows,
+    ],
+  );
+  const wizard = useWizardNavigation(
+    wizardSteps,
+    validateWizardStep,
+    importResult?.success
+      ? "selection-options"
+      : importResult
+        ? "source"
+        : "template-target",
+  );
+  const changeImportSource = () => {
+    cancelImport();
+    wizard.goToStep("source");
+  };
+
+  const previewPanel = previewItemCount > 0 && (
+    <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)]">
+      <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+            <FileText size={16} className="text-primary" />
+            Preview selection
+          </h4>
+          <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+            {selectedRows} selected | {visibleCount} visible after filters |{" "}
+            {previewItemCount} total preview rows
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={selectAllImportablePreviewItems}
+            className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          >
+            Select all importable
+          </button>
+          <button
+            type="button"
+            onClick={selectAllVisiblePreviewItems}
+            className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          >
+            Select visible
+          </button>
+          <button
+            type="button"
+            onClick={deselectAllVisiblePreviewItems}
+            className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          >
+            Clear visible
+          </button>
+        </div>
+      </div>
+      <ImportFilters
+        filters={importFilters}
+        updateFilters={updateImportFilters}
+        resetFilters={resetImportFilters}
+        availableProtocols={availableProtocols}
+      />
+      <PreviewTable
+        items={visiblePreviewItems}
+        selectedIds={selectedPreviewIds}
+        focusedItemId={focusedItem?.id}
+        toggleSelection={togglePreviewSelection}
+        onFocusItem={setFocusedItemId}
+      />
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-[var(--color-text)] mb-2 select-none">
-          {t('importTab.title', { defaultValue: 'Import' })}
+        <h3 className="mb-2 select-none text-lg font-medium text-[var(--color-text)]">
+          {t("importTab.title", { defaultValue: "Import" })}
         </h3>
-        <p className="text-sm text-[var(--color-textSecondary)] select-none">
-          {t('importTab.description', {
+        <p className="select-none text-sm text-[var(--color-textSecondary)]">
+          {t("importTab.description", {
             defaultValue:
-              'Bring connections, tags, VPN profiles, tunnel chains and SSH tunnels into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML).',
+              "Bring connections, tags, VPN profiles, tunnel chains and SSH tunnels into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML).",
           })}
         </p>
       </div>
 
-      {/* ─── Pick-source state ─────────────────────────────────── */}
-      {!isReview && (
-        <>
-          <TargetDatabaseSection
-            options={importDatabaseOptions}
-            targetMode={importTargetMode}
-            onSelectMode={setImportTargetMode}
-            selectedDatabaseId={selectedImportDatabaseId}
-            onSelect={setSelectedImportDatabaseId}
-            onUnlockDatabase={onUnlockDatabase}
-          />
+      <Wizard
+        id="import"
+        steps={wizardSteps}
+        navigation={wizard}
+        finalAction={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={changeImportSource}
+              className="sor-btn-secondary"
+            >
+              Change source
+            </button>
+            <button
+              type="button"
+              onClick={confirmImport}
+              disabled={!canImport}
+              data-testid="import-confirm"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-success px-5 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CheckCircle size={14} />
+              Import{" "}
+              {previewItemCount > 0
+                ? selectedRows
+                : (importResult?.imported ?? 0)}{" "}
+              Selected
+            </button>
+          </div>
+        }
+      >
+        {wizard.currentStepId === "template-target" && (
+          <div className="space-y-4">
+            {templatesRow}
+            <TargetDatabaseSection
+              options={importDatabaseOptions}
+              targetMode={importTargetMode}
+              onSelectMode={setImportTargetMode}
+              selectedDatabaseId={selectedImportDatabaseId}
+              onSelect={setSelectedImportDatabaseId}
+              onUnlockDatabase={onUnlockDatabase}
+            />
+          </div>
+        )}
 
+        {wizard.currentStepId === "format" && (
           <FormatSelectionSection
             selection={importFormatSelection}
             onSelect={setImportFormatSelection}
             analysis={importAnalysis}
           />
+        )}
 
-          <ImportSection
-            title="Source file"
-            description="Choose or drop a supported native or compatible application export."
-            icon={FolderOpen}
-          >
-            {dropZone}
-          </ImportSection>
-
-          {templatesRow}
-        </>
-      )}
-
-      {/* ─── Review state (success or failure) ────────────────── */}
-      {isReview && (
-        <div className="space-y-5" data-testid="import-preview">
-          {isSuccess && (
-            <>
+        {wizard.currentStepId === "source" && (
+          <div className="space-y-4">
+            {isSuccess && (
               <SourceHeader
                 analysis={importAnalysis}
                 detectedFormat={detectedFormat}
                 importedCount={importResult?.imported}
-                onChangeFile={cancelImport}
+                onChangeFile={changeImportSource}
               />
-
-              {previewItemCount > importResult!.imported && (
-                <p className="text-xs text-[var(--color-textMuted)]">
-                  {previewItemCount - importResult!.imported} sidecar row(s) ready to review.
-                </p>
-              )}
-
-              {importResult!.errors.length > 0 && (
-                <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
-                  <p className="text-sm font-medium text-warning">Errors:</p>
-                  <ul className="mt-1 text-sm text-warning">
-                    {importResult!.errors.map((error, index) => (
-                      <li key={`err-${error.slice(0, 50)}-${index}`}>- {error}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <TargetDatabaseSection
-                options={importDatabaseOptions}
-                targetMode={importTargetMode}
-                onSelectMode={setImportTargetMode}
-                selectedDatabaseId={selectedImportDatabaseId}
-                onSelect={setSelectedImportDatabaseId}
-                onUnlockDatabase={onUnlockDatabase}
-              />
-
-              {previewItemCount > 0 && (
-                <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)]">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <h4 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-                        <FileText size={16} className="text-primary" />
-                        Preview
-                      </h4>
-                      <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-                        {selectedRows} selected | {visibleCount} visible after filters |{' '}
-                        {previewItemCount} total preview rows
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={selectAllImportablePreviewItems}
-                        className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                      >
-                        Select all importable
-                      </button>
-                      <button
-                        type="button"
-                        onClick={selectAllVisiblePreviewItems}
-                        className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                      >
-                        Select visible
-                      </button>
-                      <button
-                        type="button"
-                        onClick={deselectAllVisiblePreviewItems}
-                        className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                      >
-                        Clear visible
-                      </button>
-                    </div>
-                  </div>
-
-                  <ImportFilters
-                    filters={importFilters}
-                    updateFilters={updateImportFilters}
-                    resetFilters={resetImportFilters}
-                    availableProtocols={availableProtocols}
-                  />
-
-                  <PreviewTable
-                    items={visiblePreviewItems}
-                    selectedIds={selectedPreviewIds}
-                    focusedItemId={focusedItem?.id}
-                    toggleSelection={togglePreviewSelection}
-                    onFocusItem={setFocusedItemId}
-                  />
-                </div>
-              )}
-
-              <ImportOptionsPanel
-                options={importOptions}
-                updateOptions={updateImportOptions}
-              />
-
-              <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur px-3 py-2 shadow-[0_-6px_16px_-8px_rgba(0,0,0,0.35)]">
-                <div className="text-xs text-[var(--color-textMuted)]">
-                  {previewItemCount > 0
-                    ? `${selectedRows} of ${previewItemCount} selected`
-                    : `${importResult!.imported} ready to import`}
-                </div>
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    onClick={cancelImport}
-                    className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:text-[var(--color-text)]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmImport}
-                    disabled={!canImport}
-                    data-testid="import-confirm"
-                    className="flex items-center gap-2 rounded-lg bg-success px-5 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <CheckCircle size={14} />
-                    Import {previewItemCount > 0 ? selectedRows : importResult!.imported} Selected
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {isFailure && (
-            <>
+            )}
+            {isFailure && (
               <div className="rounded-lg border border-error/40 bg-error/10 p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <AlertCircle size={20} className="text-error" />
-                  <span className="font-medium text-error">Import Failed</span>
+                  <span className="font-medium text-error">
+                    Import analysis failed
+                  </span>
                   {detectedFormat && (
                     <span className="rounded bg-error/20 px-2 py-0.5 text-xs text-error">
                       {detectedFormat}
                     </span>
                   )}
                 </div>
-                {importResult!.errors.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-sm font-medium text-error">Errors:</p>
-                    <ul className="mt-1 text-sm text-error">
-                      {importResult!.errors.map((error, index) => (
-                        <li key={`err-${error.slice(0, 50)}-${index}`}>- {error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                <ul className="space-y-1 text-sm text-error">
+                  {importResult!.errors.map((error, index) => (
+                    <li key={`err-${error.slice(0, 50)}-${index}`}>
+                      - {error}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={changeImportSource}
+                  className="mt-3 rounded-lg border border-error/40 px-3 py-1.5 text-sm text-error transition-colors hover:bg-error/10"
+                >
+                  Try Again
+                </button>
               </div>
-
-              <button
-                onClick={cancelImport}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 text-sm text-[var(--color-textSecondary)] transition-colors hover:border-primary/50 hover:text-[var(--color-text)]"
-              >
-                <Upload size={14} />
-                Try Again
-              </button>
-
-              <FormatSelectionSection
-                selection={importFormatSelection}
-                onSelect={setImportFormatSelection}
-                analysis={importAnalysis}
-              />
-
+            )}
+            {!isSuccess && (
               <ImportSection
-                title="Try a different file"
-                description="Pick another export or drop a file to retry parsing."
+                title={isFailure ? "Try a different file" : "Source file"}
+                description={
+                  isFailure
+                    ? "Pick another export or drop a file to retry parsing."
+                    : "Choose or drop a supported native or compatible application export."
+                }
                 icon={FolderOpen}
               >
                 {dropZone}
               </ImportSection>
+            )}
+            {isSuccess && (
+              <div
+                className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-success"
+                data-testid="import-source-ready"
+              >
+                Analysis is ready:{" "}
+                {previewItemCount || importResult?.imported || 0} row(s) can now
+                be selected and configured.
+              </div>
+            )}
+          </div>
+        )}
 
-              {templatesRow}
-            </>
-          )}
-        </div>
-      )}
+        {wizard.currentStepId === "selection-options" && isSuccess && (
+          <div className="space-y-5" data-testid="import-preview">
+            <SourceHeader
+              analysis={importAnalysis}
+              detectedFormat={detectedFormat}
+              importedCount={importResult?.imported}
+              onChangeFile={changeImportSource}
+            />
+            {importResult!.errors.length > 0 && (
+              <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
+                <p className="text-sm font-medium text-warning">Warnings:</p>
+                <ul className="mt-1 text-sm text-warning">
+                  {importResult!.errors.map((error, index) => (
+                    <li key={`warn-${error.slice(0, 50)}-${index}`}>
+                      - {error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {previewPanel}
+            <ImportOptionsPanel
+              options={importOptions}
+              updateOptions={updateImportOptions}
+            />
+          </div>
+        )}
+
+        {wizard.currentStepId === "review" && isSuccess && (
+          <div className="space-y-5" data-testid="import-final-preview">
+            <SourceHeader
+              analysis={importAnalysis}
+              detectedFormat={detectedFormat}
+              importedCount={importResult?.imported}
+              onChangeFile={changeImportSource}
+            />
+            <div className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-4 text-sm sm:grid-cols-2">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
+                  Target
+                </div>
+                <div className="mt-1 font-medium text-[var(--color-text)]">
+                  {importTargetMode === "all"
+                    ? `${exportableImportTargets.length} unlocked databases`
+                    : importTargetMode === "selected"
+                      ? (selectedImportTarget?.name ?? "No target selected")
+                      : (currentImportTarget?.name ?? "No current target")}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
+                  Selected content
+                </div>
+                <div className="mt-1 font-medium text-[var(--color-text)]">
+                  {previewItemCount > 0
+                    ? `${selectedRows} of ${previewItemCount} preview rows`
+                    : `${importResult?.imported ?? 0} parsed connections`}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
+                  Merge policy
+                </div>
+                <div className="mt-1 font-medium capitalize text-[var(--color-text)]">
+                  {importOptions.conflictPolicy}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
+                  Included data
+                </div>
+                <div className="mt-1 text-[var(--color-textSecondary)]">
+                  {[
+                    importOptions.preserveFolders ? "folders" : null,
+                    importOptions.includeCredentials ? "credentials" : null,
+                    importOptions.includeVpnData ? "VPN" : null,
+                    importOptions.includeTunnelChains ? "tunnel chains" : null,
+                    importOptions.includeSshTunnels ? "SSH tunnels" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "connections only"}
+                </div>
+              </div>
+            </div>
+            {previewItemCount > 0 && (
+              <ul
+                className="max-h-72 space-y-2 overflow-y-auto"
+                aria-label="Selected import preview"
+              >
+                {previewItems
+                  .filter((item) => selectedPreviewIds.has(item.id))
+                  .map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex items-start justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-[var(--color-text)]">
+                          {item.name}
+                        </span>
+                        <span className="block truncate text-xs text-[var(--color-textMuted)]">
+                          {item.sourcePath || item.kind}
+                        </span>
+                      </span>
+                      <span className="shrink-0 rounded bg-primary/10 px-2 py-0.5 text-xs capitalize text-primary">
+                        {item.kind}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </Wizard>
 
       <input
         ref={fileInputRef}

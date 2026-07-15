@@ -15,13 +15,7 @@
  */
 
 import React, { useMemo, useState } from "react";
-import {
-  Copy,
-  Database,
-  Tags,
-  ArrowRight,
-  Server,
-} from "lucide-react";
+import { Copy, Database, Tags, ArrowRight, Server } from "lucide-react";
 import type {
   CloneSourceCatalogItem,
   ExportDatabaseOption,
@@ -42,6 +36,8 @@ import {
 import { Select } from "../ui/forms";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
+import { Wizard, WizardTemplateCard } from "./Wizard";
+import { useWizardNavigation, type WizardStep } from "./useWizardNavigation";
 
 interface CloneTabProps {
   // Source half
@@ -144,7 +140,11 @@ const CloneTab: React.FC<CloneTabProps> = ({
             name: c.name,
             kind: "Tailscale",
           })),
-          ...zerotier.map((c) => ({ id: c.id, name: c.name, kind: "ZeroTier" })),
+          ...zerotier.map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: "ZeroTier",
+          })),
         ]);
       } catch {
         // Keep the picker empty if the native VPN bridge is unavailable.
@@ -186,9 +186,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
   // want the user to clone a database onto itself.
   const targetOptions = useMemo(
     () =>
-      databaseOptions.filter(
-        (option) => !effectiveSourceSet.has(option.id),
-      ),
+      databaseOptions.filter((option) => !effectiveSourceSet.has(option.id)),
     [databaseOptions, effectiveSourceSet],
   );
 
@@ -236,7 +234,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
 
   const availableProtocols = useMemo(
     () =>
-      Array.from(new Set(leafSourceCatalog.map((item) => item.protocol))).sort(),
+      Array.from(
+        new Set(leafSourceCatalog.map((item) => item.protocol)),
+      ).sort(),
     [leafSourceCatalog],
   );
 
@@ -340,7 +340,8 @@ const CloneTab: React.FC<CloneTabProps> = ({
     const selected = inclusion.includedProxyChainIds ?? [];
     if (selected.length === 0) return proxyChainOptions.length;
     const selectedSet = new Set(selected);
-    return proxyChainOptions.filter((option) => selectedSet.has(option.id)).length;
+    return proxyChainOptions.filter((option) => selectedSet.has(option.id))
+      .length;
   }, [
     inclusion.includeTunnelChains,
     inclusion.includedProxyChainIds,
@@ -417,7 +418,8 @@ const CloneTab: React.FC<CloneTabProps> = ({
   const previewCount = previewLeafItems.length;
 
   const folderPreviewCount = useMemo(() => {
-    if (!inclusion.includeConnections || !inclusion.includeFolderItems) return 0;
+    if (!inclusion.includeConnections || !inclusion.includeFolderItems)
+      return 0;
     const includedFolderSet =
       (inclusion.includedFolderIds ?? []).length > 0
         ? new Set(inclusion.includedFolderIds)
@@ -454,12 +456,13 @@ const CloneTab: React.FC<CloneTabProps> = ({
   }, [folderSourceCatalog, inclusion, previewLeafItems]);
 
   const previewItemCount = previewCount + folderPreviewCount;
-  const previewItemLabel = [
-    previewCount > 0 ? `${previewCount} connection(s)` : null,
-    folderPreviewCount > 0 ? `${folderPreviewCount} folder(s)` : null,
-  ]
-    .filter(Boolean)
-    .join(", ") || "0 items";
+  const previewItemLabel =
+    [
+      previewCount > 0 ? `${previewCount} connection(s)` : null,
+      folderPreviewCount > 0 ? `${folderPreviewCount} folder(s)` : null,
+    ]
+      .filter(Boolean)
+      .join(", ") || "0 items";
 
   // Validation gates for the action button.
   const targetOverlapsSource = targetDatabaseIds.some((id) =>
@@ -502,6 +505,126 @@ const CloneTab: React.FC<CloneTabProps> = ({
     } to ${targetDatabaseIds.length} databases`;
   })();
 
+  const wizardSteps = useMemo<WizardStep[]>(
+    () => [
+      {
+        id: "template-source",
+        label: "Template & Source",
+        description:
+          "Start from a useful preset, then choose the source database collection.",
+      },
+      {
+        id: "target",
+        label: "Target",
+        description: "Choose one or more eligible destination databases.",
+      },
+      {
+        id: "scope-content",
+        label: "Scope & Content",
+        description:
+          "Choose the connections, groups, tags, and sidecars to copy.",
+      },
+      {
+        id: "options",
+        label: "Options",
+        description:
+          "Set conflict handling, credentials, folders, and post-clone behavior.",
+      },
+      {
+        id: "review",
+        label: "Preview & Confirm",
+        description:
+          "Review the exact source, targets, and item counts before cloning.",
+      },
+    ],
+    [],
+  );
+
+  const validateWizardStep = React.useCallback(
+    (stepId: string): string | undefined => {
+      if (stepId === "template-source" && effectiveSourceIds.length === 0) {
+        return "Choose at least one unlocked source database before continuing.";
+      }
+      if (stepId === "target") {
+        if (targetDatabaseIds.length === 0) {
+          return "Choose at least one target database before continuing.";
+        }
+        if (targetOverlapsSource) {
+          return "A target database cannot also be one of the clone sources.";
+        }
+        if (!hasEnabledTarget) {
+          return "Unlock an eligible target database before continuing.";
+        }
+      }
+      if (
+        stepId === "scope-content" &&
+        !isSourceCatalogLoading &&
+        previewItemCount === 0 &&
+        sidecarPreviewCount === 0
+      ) {
+        return "The current content filters leave nothing to clone.";
+      }
+      return undefined;
+    },
+    [
+      effectiveSourceIds.length,
+      hasEnabledTarget,
+      isSourceCatalogLoading,
+      previewItemCount,
+      sidecarPreviewCount,
+      targetDatabaseIds.length,
+      targetOverlapsSource,
+    ],
+  );
+  const wizard = useWizardNavigation(wizardSteps, validateWizardStep);
+
+  const applyCloneTemplate = (template: "exact" | "clean") => {
+    if (template === "exact") {
+      updateInclusion({
+        includeConnections: true,
+        includeCredentials: true,
+        includeFolderItems: true,
+        includeEmptyFolders: true,
+        includeTunnelChains: true,
+        includeVpnData: true,
+        includedProtocols: [],
+        includedConnectionIds: [],
+        includedFolderIds: [],
+        includedTextTags: [],
+        includedColorTagIds: [],
+        includedProxyProfileIds: [],
+        includedProxyChainIds: [],
+        includedVpnConnectionIds: [],
+      });
+      setPreserveFolders(true);
+      setIncludeCredentials(true);
+      setConflictPolicy("duplicate");
+      setAddTags("");
+    } else {
+      updateInclusion({
+        includeConnections: true,
+        includeCredentials: false,
+        includeFolderItems: true,
+        includeEmptyFolders: false,
+        includeTunnelChains: false,
+        includeVpnData: false,
+        includedProtocols: [],
+        includedConnectionIds: [],
+        includedFolderIds: [],
+        includedTextTags: [],
+        includedColorTagIds: [],
+        includedProxyProfileIds: [],
+        includedProxyChainIds: [],
+        includedVpnConnectionIds: [],
+      });
+      setPreserveFolders(true);
+      setIncludeCredentials(false);
+      setConflictPolicy("rename");
+      setAddTags("cloned");
+    }
+    wizard.clearStepError("template-source");
+  };
+
   // ─── Render ─────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
@@ -511,477 +634,554 @@ const CloneTab: React.FC<CloneTabProps> = ({
         </h3>
         <p className="text-[var(--color-textSecondary)] mb-4">
           Copy connections from one or more source databases into another
-          database (or several) in this app. Same filters as Export — but
-          the result lands in another database instead of a file. Proxy,
-          VPN, and tunnel-chain definitions can be copied with the clone
-          and cloned connections will point to the copied definitions.
+          database (or several) in this app. Same filters as Export — but the
+          result lands in another database instead of a file. Proxy, VPN, and
+          tunnel-chain definitions can be copied with the clone and cloned
+          connections will point to the copied definitions.
         </p>
       </div>
 
-      {/* ── Source ────────────────────────────────────────────── */}
-      <AccordionSection
-        id="clone-source"
-        title="Source"
-        description="Pick which database(s) to clone connections from."
-        icon={Database}
-        open={openSections.source}
-        onToggle={() => toggle("source")}
-        dataTestId="clone-source-section"
-        badge={
-          <span className="text-[var(--color-textMuted)]">
-            {effectiveSourceIds.length}{' '}
-            {effectiveSourceIds.length === 1 ? 'database' : 'databases'}
-          </span>
+      <Wizard
+        id="clone"
+        steps={wizardSteps}
+        navigation={wizard}
+        finalAction={
+          <button
+            type="button"
+            onClick={onClone}
+            disabled={!canClone}
+            data-testid="clone-action-button"
+            className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              canClone
+                ? "bg-primary text-[var(--color-text)] hover:bg-primary/90"
+                : "cursor-not-allowed bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)]"
+            }`}
+          >
+            <Copy size={16} />
+            {buttonLabel}
+          </button>
         }
       >
-        {/*
+        {/* ── Source ────────────────────────────────────────────── */}
+        {wizard.currentStepId === "template-source" && (
+          <div className="space-y-4">
+            <div
+              className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+              aria-label="Clone templates"
+            >
+              <WizardTemplateCard
+                title="Exact copy"
+                description="Carry all connections, folder structure, credentials, VPN, proxy, and tunnel definitions. Duplicate conflicts safely."
+                onApply={() => applyCloneTemplate("exact")}
+                testId="clone-template-exact"
+              />
+              <WizardTemplateCard
+                title="Clean migration"
+                description="Copy connections and used folders without credentials or sidecars, rename conflicts, and tag the result as cloned."
+                onApply={() => applyCloneTemplate("clean")}
+                testId="clone-template-clean"
+              />
+            </div>
+            <AccordionSection
+              id="clone-source"
+              title="Source"
+              description="Pick which database(s) to clone connections from."
+              icon={Database}
+              open={openSections.source}
+              onToggle={() => toggle("source")}
+              dataTestId="clone-source-section"
+              badge={
+                <span className="text-[var(--color-textMuted)]">
+                  {effectiveSourceIds.length}{" "}
+                  {effectiveSourceIds.length === 1 ? "database" : "databases"}
+                </span>
+              }
+            >
+              {/*
           Button-card row, mirroring ExportTab's scope picker so the
           two halves of the tool feel consistent. Each card is a
           `role=radio` button with a label + a one-line description
           underneath; the active card lights up in the primary colour.
         */}
-        <div
-          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-          role="radiogroup"
-          aria-label="Clone source scope"
-        >
-          {(
-            [
-              {
-                value: "current",
-                label: "Current database",
-                description: "Just the database that's open right now.",
-              },
-              {
-                value: "selected",
-                label: "Selected databases",
-                description: "Pick one or more from the list below.",
-              },
-              {
-                value: "all",
-                label: "All databases",
-                description: "Every unlocked exportable database.",
-              },
-            ] as Array<{
-              value: ExportScopeMode;
-              label: string;
-              description: string;
-            }>
-          ).map((option) => {
-            const active = sourceMode === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                data-testid={`clone-source-mode-${option.value}`}
-                onClick={() => setSourceMode(option.value)}
-                className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                  active
-                    ? "border-primary bg-primary/15 text-[var(--color-text)]"
-                    : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]"
-                }`}
+              <div
+                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+                role="radiogroup"
+                aria-label="Clone source scope"
               >
-                <span className="block text-sm font-medium">
-                  {option.label}
-                </span>
-                <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
-                  {option.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {sourceMode === "selected" && (
-          <div className="mt-2 space-y-2 max-h-72 overflow-y-auto">
-            {databaseOptions.length === 0 ? (
-              <p className="text-xs text-[var(--color-textMuted)]">
-                No databases available.
-              </p>
-            ) : (
-              databaseOptions.map((option) => (
-                <DatabasePickerRow
-                  key={option.id}
-                  option={option}
-                  dataTestId={`clone-source-option-${option.id}`}
-                  onUnlock={onUnlockDatabase}
-                  control={
-                    <input
-                      type="checkbox"
-                      checked={selectedSourceDatabaseIds.includes(option.id)}
-                      disabled={!option.isExportable}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedSourceDatabaseIds([
-                            ...selectedSourceDatabaseIds,
-                            option.id,
-                          ]);
-                        } else {
-                          setSelectedSourceDatabaseIds(
-                            selectedSourceDatabaseIds.filter(
-                              (id) => id !== option.id,
-                            ),
-                          );
+                {(
+                  [
+                    {
+                      value: "current",
+                      label: "Current database",
+                      description: "Just the database that's open right now.",
+                    },
+                    {
+                      value: "selected",
+                      label: "Selected databases",
+                      description: "Pick one or more from the list below.",
+                    },
+                    {
+                      value: "all",
+                      label: "All databases",
+                      description: "Every unlocked exportable database.",
+                    },
+                  ] as Array<{
+                    value: ExportScopeMode;
+                    label: string;
+                    description: string;
+                  }>
+                ).map((option) => {
+                  const active = sourceMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      data-testid={`clone-source-mode-${option.value}`}
+                      onClick={() => setSourceMode(option.value)}
+                      className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                        active
+                          ? "border-primary bg-primary/15 text-[var(--color-text)]"
+                          : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]"
+                      }`}
+                    >
+                      <span className="block text-sm font-medium">
+                        {option.label}
+                      </span>
+                      <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
+                        {option.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {sourceMode === "selected" && (
+                <div className="mt-2 space-y-2 max-h-72 overflow-y-auto">
+                  {databaseOptions.length === 0 ? (
+                    <p className="text-xs text-[var(--color-textMuted)]">
+                      No databases available.
+                    </p>
+                  ) : (
+                    databaseOptions.map((option) => (
+                      <DatabasePickerRow
+                        key={option.id}
+                        option={option}
+                        dataTestId={`clone-source-option-${option.id}`}
+                        onUnlock={onUnlockDatabase}
+                        control={
+                          <input
+                            type="checkbox"
+                            checked={selectedSourceDatabaseIds.includes(
+                              option.id,
+                            )}
+                            disabled={!option.isExportable}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedSourceDatabaseIds([
+                                  ...selectedSourceDatabaseIds,
+                                  option.id,
+                                ]);
+                              } else {
+                                setSelectedSourceDatabaseIds(
+                                  selectedSourceDatabaseIds.filter(
+                                    (id) => id !== option.id,
+                                  ),
+                                );
+                              }
+                            }}
+                            aria-label={option.name}
+                          />
                         }
-                      }}
-                      aria-label={option.name}
-                    />
-                  }
-                />
-              ))
-            )}
-          </div>
-        )}
-      </AccordionSection>
-
-      {/* ── Filter ──────────────────────────────────────────── */}
-      <AccordionSection
-        id="clone-filter"
-        title="Filter"
-        description="Optionally narrow what gets cloned by protocol, folder, tag, color, proxy, chain, or VPN."
-        icon={Tags}
-        open={openSections.filter}
-        onToggle={() => toggle("filter")}
-        dataTestId="clone-filter-section"
-        badge={
-          <span className="text-[var(--color-textMuted)]">
-            {isSourceCatalogLoading
-              ? "loading"
-              : `${previewItemCount} of ${sourceCatalog.length}`}
-          </span>
-        }
-      >
-        <div className="space-y-3">
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              checked={inclusion.includeFolderItems}
-              onChange={(e) =>
-                updateInclusion({ includeFolderItems: e.target.checked })
-              }
-            />
-            Carry folder structure across
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              checked={inclusion.includeEmptyFolders}
-              disabled={!inclusion.includeFolderItems}
-              onChange={(e) =>
-                updateInclusion({ includeEmptyFolders: e.target.checked })
-              }
-            />
-            Include empty folders
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              checked={inclusion.includeTunnelChains}
-              onChange={(e) =>
-                updateInclusion({ includeTunnelChains: e.target.checked })
-              }
-            />
-            Clone proxy profiles, proxy chains, and tunnel chains
-          </label>
-          <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input
-              type="checkbox"
-              checked={inclusion.includeVpnData}
-              onChange={(e) =>
-                updateInclusion({ includeVpnData: e.target.checked })
-              }
-            />
-            Clone VPN connections
-          </label>
-          <InclusionProtocolFilter
-            inclusion={inclusion}
-            updateInclusion={updateInclusion}
-            availableProtocols={availableProtocols}
-            disabled={!inclusion.includeConnections}
-            dataTestId="clone-protocol-filter"
-          />
-          {isSourceCatalogLoading && (
-            <p className="text-xs text-[var(--color-textMuted)]">
-              Loading source database items...
-            </p>
-          )}
-          <InclusionItemPickers
-            inclusion={inclusion}
-            updateInclusion={updateInclusion}
-            sectionsOpen={openSections}
-            onToggleSection={(section) => {
-              if (
-                section === "connections" ||
-                section === "folders" ||
-                section === "textTags" ||
-                section === "colorTags" ||
-                section === "proxyProfiles" ||
-                section === "proxyChains" ||
-                section === "vpnConnections"
-              ) {
-                toggle(section);
-              }
-            }}
-            visibleSections={[
-              "connections",
-              "folders",
-              "textTags",
-              "colorTags",
-              "proxyProfiles",
-              "proxyChains",
-              "vpnConnections",
-            ]}
-            connections={cloneConnectionOptions}
-            folders={cloneFolderOptions}
-            textTags={availableTextTags}
-            colorTagIds={availableColorTagIds}
-            proxyProfiles={inclusion.includeTunnelChains ? proxyProfileOptions : []}
-            proxyChains={inclusion.includeTunnelChains ? proxyChainOptions : []}
-            vpnConnections={inclusion.includeVpnData ? vpnConnectionOptions : []}
-            testIdPrefix="clone"
-            connectionEmptyLabel="No source connections are available for the selected source scope."
-            folderEmptyLabel="No source folders are available for the selected source scope."
-          />
-        </div>
-      </AccordionSection>
-
-      {/* ── Destination ─────────────────────────────────────── */}
-      <AccordionSection
-        id="clone-destination"
-        title="Destination"
-        description="Pick where the cloned connections should land."
-        icon={ArrowRight}
-        open={openSections.destination}
-        onToggle={() => toggle("destination")}
-        dataTestId="clone-destination-section"
-        badge={
-          <span
-            className={
-              targetDatabaseIds.length > 0
-                ? "text-[var(--color-textMuted)]"
-                : "text-warning"
-            }
-          >
-            {targetDatabaseIds.length}{' '}
-            {targetDatabaseIds.length === 1 ? 'target database' : 'target databases'}
-          </span>
-        }
-      >
-        <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1.5">
-            Target databases
-          </label>
-          <div className="space-y-2 max-h-72 overflow-y-auto">
-            {targetOptions.length === 0 ? (
-              <p className="text-xs text-[var(--color-textMuted)]">
-                No eligible target databases. Configure another database
-                first, or pick fewer sources.
-              </p>
-            ) : (
-              targetOptions.map((option) => (
-                <DatabasePickerRow
-                  key={option.id}
-                  option={option}
-                  dataTestId={`clone-target-option-${option.id}`}
-                  onUnlock={onUnlockDatabase}
-                  control={
-                    <input
-                      type="checkbox"
-                      checked={targetDatabaseIds.includes(option.id)}
-                      disabled={!option.isExportable}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setTargetDatabaseIds([
-                            ...targetDatabaseIds,
-                            option.id,
-                          ]);
-                        } else {
-                          setTargetDatabaseIds(
-                            targetDatabaseIds.filter((id) => id !== option.id),
-                          );
-                        }
-                      }}
-                      aria-label={option.name}
-                    />
-                  }
-                />
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label
-            htmlFor="clone-conflict-policy"
-            className="block text-xs text-[var(--color-textSecondary)]"
-          >
-            Conflict policy
-          </label>
-          <Select
-            value={conflictPolicy}
-            onChange={(value: string) =>
-              setConflictPolicy(value as ImportOptions["conflictPolicy"])
-            }
-            options={[
-              { value: "duplicate", label: "Duplicate — write with fresh ids on collision" },
-              { value: "rename", label: "Rename — suffix every conflict, keep both" },
-              { value: "skip", label: "Skip — drop colliding connections" },
-            ]}
-            variant="form"
-            aria-label="Conflict policy"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label
-            htmlFor="clone-add-tags"
-            className="block text-xs text-[var(--color-textSecondary)]"
-          >
-            Add tags to cloned connections
-          </label>
-          <input
-            id="clone-add-tags"
-            value={addTags}
-            onChange={(e) => setAddTags(e.target.value)}
-            placeholder="comma-separated tags"
-            className="sor-form-input-xs w-full"
-          />
-        </div>
-
-        <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={preserveFolders}
-              onChange={(e) => setPreserveFolders(e.target.checked)}
-            />
-            Preserve folders
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={includeCredentials}
-              onChange={(e) => setIncludeCredentials(e.target.checked)}
-            />
-            Include credentials
-          </label>
-          <label className="inline-flex items-center gap-2 sm:col-span-2">
-            <input
-              type="checkbox"
-              checked={switchToTargetAfterClone}
-              onChange={(e) => setSwitchToTargetAfterClone(e.target.checked)}
-            />
-            Switch to the first target database after the clone finishes
-          </label>
-        </div>
-      </AccordionSection>
-
-      {/* ── Preview + action ────────────────────────────────── */}
-      <AccordionSection
-        id="clone-preview"
-        title="Preview"
-        description="What this clone will land on each target."
-        icon={Server}
-        open={openSections.preview}
-        onToggle={() => toggle("preview")}
-        dataTestId="clone-preview-section"
-        badge={
-          <span className="text-[var(--color-textMuted)]">
-            {previewItemLabel}
-          </span>
-        }
-      >
-        <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-textSecondary)] space-y-1">
-          <div>
-            <span className="text-[var(--color-text)]">Source</span>:{" "}
-            {effectiveSourceIds.length === 0 ? (
-              <span className="text-warning">none</span>
-            ) : (
-              effectiveSourceIds
-                .map((id) => targetOptionsById.get(id)?.name ?? id)
-                .join(", ")
-            )}
-          </div>
-          <div>
-            <span className="text-[var(--color-text)]">Target(s)</span>:{" "}
-            {targetDatabaseIds.length === 0 ? (
-              <span className="text-warning">none</span>
-            ) : (
-              targetDatabaseIds
-                .map((id) => targetOptionsById.get(id)?.name ?? id)
-                .join(", ")
-            )}
-          </div>
-          <div>
-            <span className="text-[var(--color-text)]">Filter result</span>:{" "}
-            {previewItemLabel}
-          </div>
-          <div>
-            <span className="text-[var(--color-text)]">Sidecars</span>:{" "}
-            {sidecarPreviewCount} definition(s)
-          </div>
-        </div>
-
-        {cloneResult && (
-          <div
-            className={`rounded border p-3 text-xs ${
-              cloneResult.success
-                ? "border-success/30 bg-success/10 text-success"
-                : "border-error/30 bg-error/10 text-error"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-medium">
-                {cloneResult.success ? "Clone complete" : "Clone failed"}
-              </span>
-              <button
-                type="button"
-                onClick={onClearResult}
-                className="text-[10px] underline opacity-70 hover:opacity-100"
-              >
-                Dismiss
-              </button>
-            </div>
-            <ul className="space-y-0.5">
-              {cloneResult.perTarget.map((row) => (
-                <li key={row.databaseId}>
-                  {row.databaseName}: {row.cloned} cloned
-                  {row.error ? ` — error: ${row.error}` : ""}
-                </li>
-              ))}
-            </ul>
-            {(cloneResult.renamed > 0 || cloneResult.skipped > 0) && (
-              <div className="mt-1 text-[10px] opacity-80">
-                {cloneResult.renamed > 0 && `${cloneResult.renamed} renamed`}
-              {cloneResult.renamed > 0 && cloneResult.skipped > 0 && ", "}
-              {cloneResult.skipped > 0 && `${cloneResult.skipped} skipped`}
-            </div>
-            )}
-            {cloneResult.sidecarsCloned &&
-              cloneResult.sidecarsCloned.total > 0 && (
-                <div className="mt-1 text-[10px] opacity-80">
-                  {cloneResult.sidecarsCloned.total} sidecar definition(s) cloned
+                      />
+                    ))
+                  )}
                 </div>
               )}
+            </AccordionSection>
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={onClone}
-          disabled={!canClone}
-          data-testid="clone-action-button"
-          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            canClone
-              ? "bg-primary text-[var(--color-text)] hover:bg-primary/90"
-              : "bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] cursor-not-allowed"
-          }`}
-        >
-          <Copy size={16} />
-          {buttonLabel}
-        </button>
-      </AccordionSection>
+        {/* ── Filter ──────────────────────────────────────────── */}
+        {wizard.currentStepId === "scope-content" && (
+          <AccordionSection
+            id="clone-filter"
+            title="Filter"
+            description="Optionally narrow what gets cloned by protocol, folder, tag, color, proxy, chain, or VPN."
+            icon={Tags}
+            open={openSections.filter}
+            onToggle={() => toggle("filter")}
+            dataTestId="clone-filter-section"
+            badge={
+              <span className="text-[var(--color-textMuted)]">
+                {isSourceCatalogLoading
+                  ? "loading"
+                  : `${previewItemCount} of ${sourceCatalog.length}`}
+              </span>
+            }
+          >
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+                <input
+                  type="checkbox"
+                  checked={inclusion.includeFolderItems}
+                  onChange={(e) =>
+                    updateInclusion({ includeFolderItems: e.target.checked })
+                  }
+                />
+                Carry folder structure across
+              </label>
+              <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+                <input
+                  type="checkbox"
+                  checked={inclusion.includeEmptyFolders}
+                  disabled={!inclusion.includeFolderItems}
+                  onChange={(e) =>
+                    updateInclusion({ includeEmptyFolders: e.target.checked })
+                  }
+                />
+                Include empty folders
+              </label>
+              <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+                <input
+                  type="checkbox"
+                  checked={inclusion.includeTunnelChains}
+                  onChange={(e) =>
+                    updateInclusion({ includeTunnelChains: e.target.checked })
+                  }
+                />
+                Clone proxy profiles, proxy chains, and tunnel chains
+              </label>
+              <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+                <input
+                  type="checkbox"
+                  checked={inclusion.includeVpnData}
+                  onChange={(e) =>
+                    updateInclusion({ includeVpnData: e.target.checked })
+                  }
+                />
+                Clone VPN connections
+              </label>
+              <InclusionProtocolFilter
+                inclusion={inclusion}
+                updateInclusion={updateInclusion}
+                availableProtocols={availableProtocols}
+                disabled={!inclusion.includeConnections}
+                dataTestId="clone-protocol-filter"
+              />
+              {isSourceCatalogLoading && (
+                <p className="text-xs text-[var(--color-textMuted)]">
+                  Loading source database items...
+                </p>
+              )}
+              <InclusionItemPickers
+                inclusion={inclusion}
+                updateInclusion={updateInclusion}
+                sectionsOpen={openSections}
+                onToggleSection={(section) => {
+                  if (
+                    section === "connections" ||
+                    section === "folders" ||
+                    section === "textTags" ||
+                    section === "colorTags" ||
+                    section === "proxyProfiles" ||
+                    section === "proxyChains" ||
+                    section === "vpnConnections"
+                  ) {
+                    toggle(section);
+                  }
+                }}
+                visibleSections={[
+                  "connections",
+                  "folders",
+                  "textTags",
+                  "colorTags",
+                  "proxyProfiles",
+                  "proxyChains",
+                  "vpnConnections",
+                ]}
+                connections={cloneConnectionOptions}
+                folders={cloneFolderOptions}
+                textTags={availableTextTags}
+                colorTagIds={availableColorTagIds}
+                proxyProfiles={
+                  inclusion.includeTunnelChains ? proxyProfileOptions : []
+                }
+                proxyChains={
+                  inclusion.includeTunnelChains ? proxyChainOptions : []
+                }
+                vpnConnections={
+                  inclusion.includeVpnData ? vpnConnectionOptions : []
+                }
+                testIdPrefix="clone"
+                connectionEmptyLabel="No source connections are available for the selected source scope."
+                folderEmptyLabel="No source folders are available for the selected source scope."
+              />
+            </div>
+          </AccordionSection>
+        )}
+
+        {/* ── Destination ─────────────────────────────────────── */}
+        {(wizard.currentStepId === "target" ||
+          wizard.currentStepId === "options") && (
+          <AccordionSection
+            id="clone-destination"
+            title={
+              wizard.currentStepId === "target"
+                ? "Target databases"
+                : "Clone options"
+            }
+            description={
+              wizard.currentStepId === "target"
+                ? "Pick where the cloned connections should land."
+                : "Choose how collisions, folders, credentials, and navigation are handled."
+            }
+            icon={ArrowRight}
+            open={openSections.destination}
+            onToggle={() => toggle("destination")}
+            dataTestId="clone-destination-section"
+            badge={
+              <span
+                className={
+                  targetDatabaseIds.length > 0
+                    ? "text-[var(--color-textMuted)]"
+                    : "text-warning"
+                }
+              >
+                {targetDatabaseIds.length}{" "}
+                {targetDatabaseIds.length === 1
+                  ? "target database"
+                  : "target databases"}
+              </span>
+            }
+          >
+            {wizard.currentStepId === "target" && (
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1.5">
+                  Target databases
+                </label>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {targetOptions.length === 0 ? (
+                    <p className="text-xs text-[var(--color-textMuted)]">
+                      No eligible target databases. Configure another database
+                      first, or pick fewer sources.
+                    </p>
+                  ) : (
+                    targetOptions.map((option) => (
+                      <DatabasePickerRow
+                        key={option.id}
+                        option={option}
+                        dataTestId={`clone-target-option-${option.id}`}
+                        onUnlock={onUnlockDatabase}
+                        control={
+                          <input
+                            type="checkbox"
+                            checked={targetDatabaseIds.includes(option.id)}
+                            disabled={!option.isExportable}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setTargetDatabaseIds([
+                                  ...targetDatabaseIds,
+                                  option.id,
+                                ]);
+                              } else {
+                                setTargetDatabaseIds(
+                                  targetDatabaseIds.filter(
+                                    (id) => id !== option.id,
+                                  ),
+                                );
+                              }
+                            }}
+                            aria-label={option.name}
+                          />
+                        }
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {wizard.currentStepId === "options" && (
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="clone-conflict-policy"
+                    className="block text-xs text-[var(--color-textSecondary)]"
+                  >
+                    Conflict policy
+                  </label>
+                  <Select
+                    value={conflictPolicy}
+                    onChange={(value: string) =>
+                      setConflictPolicy(
+                        value as ImportOptions["conflictPolicy"],
+                      )
+                    }
+                    options={[
+                      {
+                        value: "duplicate",
+                        label: "Duplicate — write with fresh ids on collision",
+                      },
+                      {
+                        value: "rename",
+                        label: "Rename — suffix every conflict, keep both",
+                      },
+                      {
+                        value: "skip",
+                        label: "Skip — drop colliding connections",
+                      },
+                    ]}
+                    variant="form"
+                    aria-label="Conflict policy"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="clone-add-tags"
+                    className="block text-xs text-[var(--color-textSecondary)]"
+                  >
+                    Add tags to cloned connections
+                  </label>
+                  <input
+                    id="clone-add-tags"
+                    value={addTags}
+                    onChange={(e) => setAddTags(e.target.value)}
+                    placeholder="comma-separated tags"
+                    className="sor-form-input-xs w-full"
+                  />
+                </div>
+
+                <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={preserveFolders}
+                      onChange={(e) => setPreserveFolders(e.target.checked)}
+                    />
+                    Preserve folders
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={includeCredentials}
+                      onChange={(e) => setIncludeCredentials(e.target.checked)}
+                    />
+                    Include credentials
+                  </label>
+                  <label className="inline-flex items-center gap-2 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={switchToTargetAfterClone}
+                      onChange={(e) =>
+                        setSwitchToTargetAfterClone(e.target.checked)
+                      }
+                    />
+                    Switch to the first target database after the clone finishes
+                  </label>
+                </div>
+              </div>
+            )}
+          </AccordionSection>
+        )}
+
+        {/* ── Preview + action ────────────────────────────────── */}
+        {wizard.currentStepId === "review" && (
+          <AccordionSection
+            id="clone-preview"
+            title="Preview"
+            description="What this clone will land on each target."
+            icon={Server}
+            open={openSections.preview}
+            onToggle={() => toggle("preview")}
+            dataTestId="clone-preview-section"
+            badge={
+              <span className="text-[var(--color-textMuted)]">
+                {previewItemLabel}
+              </span>
+            }
+          >
+            <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-textSecondary)] space-y-1">
+              <div>
+                <span className="text-[var(--color-text)]">Source</span>:{" "}
+                {effectiveSourceIds.length === 0 ? (
+                  <span className="text-warning">none</span>
+                ) : (
+                  effectiveSourceIds
+                    .map((id) => targetOptionsById.get(id)?.name ?? id)
+                    .join(", ")
+                )}
+              </div>
+              <div>
+                <span className="text-[var(--color-text)]">Target(s)</span>:{" "}
+                {targetDatabaseIds.length === 0 ? (
+                  <span className="text-warning">none</span>
+                ) : (
+                  targetDatabaseIds
+                    .map((id) => targetOptionsById.get(id)?.name ?? id)
+                    .join(", ")
+                )}
+              </div>
+              <div>
+                <span className="text-[var(--color-text)]">Filter result</span>:{" "}
+                {previewItemLabel}
+              </div>
+              <div>
+                <span className="text-[var(--color-text)]">Sidecars</span>:{" "}
+                {sidecarPreviewCount} definition(s)
+              </div>
+            </div>
+
+            {cloneResult && (
+              <div
+                className={`rounded border p-3 text-xs ${
+                  cloneResult.success
+                    ? "border-success/30 bg-success/10 text-success"
+                    : "border-error/30 bg-error/10 text-error"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium">
+                    {cloneResult.success ? "Clone complete" : "Clone failed"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onClearResult}
+                    className="text-[10px] underline opacity-70 hover:opacity-100"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                <ul className="space-y-0.5">
+                  {cloneResult.perTarget.map((row) => (
+                    <li key={row.databaseId}>
+                      {row.databaseName}: {row.cloned} cloned
+                      {row.error ? ` — error: ${row.error}` : ""}
+                    </li>
+                  ))}
+                </ul>
+                {(cloneResult.renamed > 0 || cloneResult.skipped > 0) && (
+                  <div className="mt-1 text-[10px] opacity-80">
+                    {cloneResult.renamed > 0 &&
+                      `${cloneResult.renamed} renamed`}
+                    {cloneResult.renamed > 0 && cloneResult.skipped > 0 && ", "}
+                    {cloneResult.skipped > 0 &&
+                      `${cloneResult.skipped} skipped`}
+                  </div>
+                )}
+                {cloneResult.sidecarsCloned &&
+                  cloneResult.sidecarsCloned.total > 0 && (
+                    <div className="mt-1 text-[10px] opacity-80">
+                      {cloneResult.sidecarsCloned.total} sidecar definition(s)
+                      cloned
+                    </div>
+                  )}
+              </div>
+            )}
+          </AccordionSection>
+        )}
+      </Wizard>
     </div>
   );
 };

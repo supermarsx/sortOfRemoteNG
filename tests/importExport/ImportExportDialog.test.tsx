@@ -42,7 +42,11 @@ vi.mock("../../src/contexts/ToastContext", () => ({
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
     getInstance: () => ({
-      getCurrentDatabase: () => ({ id: "collection-1", name: "Default", isEncrypted: false }),
+      getCurrentDatabase: () => ({
+        id: "collection-1",
+        name: "Default",
+        isEncrypted: false,
+      }),
       getExportableDatabases: vi.fn().mockResolvedValue([
         {
           id: "collection-1",
@@ -112,23 +116,52 @@ vi.mock("../../src/components/ImportExport/ExportTab", () => ({
         {`${config.format}|${config.scopeMode}|${config.selectedDatabaseIds.join(",")}|${String(config.inclusion.includeConnections)}|${String(config.inclusion.includeSettings)}|${String(config.inclusion.includeExportMetadata)}|${String(config.inclusion.includeDatabaseMetadata)}|${String(config.includePasswords)}|${String(config.encrypted)}|${config.password}`}
       </div>
       <button onClick={handleExport}>run-export</button>
-      <button onClick={() => onConfigChange({ format: "csv" })}>set-format</button>
-      <button onClick={() => onConfigChange({ scopeMode: "all" })}>set-scope</button>
-      <button onClick={() => onConfigChange({ selectedDatabaseIds: ["collection-1"] })}>set-databases</button>
+      <button onClick={() => onConfigChange({ format: "csv" })}>
+        set-format
+      </button>
+      <button onClick={() => onConfigChange({ scopeMode: "all" })}>
+        set-scope
+      </button>
+      <button
+        onClick={() =>
+          onConfigChange({ selectedDatabaseIds: ["collection-1"] })
+        }
+      >
+        set-databases
+      </button>
       <button onClick={() => onConfigChange({ includePasswords: true })}>
         set-include-passwords
       </button>
-      <button onClick={() => onConfigChange({ inclusion: { includeConnections: false, includeSettings: false, includeExportMetadata: false, includeDatabaseMetadata: false } })}>
+      <button
+        onClick={() =>
+          onConfigChange({
+            inclusion: {
+              includeConnections: false,
+              includeSettings: false,
+              includeExportMetadata: false,
+              includeDatabaseMetadata: false,
+            },
+          })
+        }
+      >
         set-inclusion
       </button>
-      <button onClick={() => onConfigChange({ encrypted: true })}>set-encrypted</button>
-      <button onClick={() => onConfigChange({ password: "top-secret" })}>set-password</button>
+      <button onClick={() => onConfigChange({ encrypted: true })}>
+        set-encrypted
+      </button>
+      <button onClick={() => onConfigChange({ password: "top-secret" })}>
+        set-password
+      </button>
     </div>
   ),
 }));
 
 vi.mock("../../src/components/ImportExport/ImportTab", () => ({
-  default: ({ confirmImport }: { confirmImport: () => void | Promise<void> }) => (
+  default: ({
+    confirmImport,
+  }: {
+    confirmImport: () => void | Promise<void>;
+  }) => (
     <div data-testid="import-tab-content">
       import-content
       <button onClick={() => void confirmImport()}>confirm-import</button>
@@ -179,21 +212,15 @@ describe("ImportExport dialog", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Clone" }));
 
-    // The CloneTab structure rendered: source + destination
-    // sections are present.
-    expect(
-      screen.getByTestId("clone-source-section"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("clone-destination-section"),
-    ).toBeInTheDocument();
+    // The wizard opens on Template & Source and keeps the final action out of
+    // the DOM until Preview & Confirm.
+    expect(screen.getByTestId("clone-source-section")).toBeInTheDocument();
+    expect(screen.queryByTestId("clone-action-button")).not.toBeInTheDocument();
 
-    // With only one database in the mock (the current one), the
-    // sole eligible source IS the only available target — so the
-    // action button has to reject the configuration with a clear
-    // disabled state.
-    const action = await screen.findByTestId("clone-action-button");
-    expect(action).toBeDisabled();
+    fireEvent.click(screen.getByTestId("clone-wizard-next"));
+    expect(screen.getByTestId("clone-wizard-error")).toHaveTextContent(
+      /source database/i,
+    );
   });
 
   it("supports keyboard navigation between tabs", () => {
@@ -202,7 +229,9 @@ describe("ImportExport dialog", () => {
     const exportTab = screen.getByRole("tab", { name: "Export" });
     const importTab = screen.getByRole("tab", { name: "Import" });
 
-    expect(screen.getByRole("tablist", { name: /import and export tabs/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tablist", { name: /import and export tabs/i }),
+    ).toBeInTheDocument();
     expect(exportTab).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(exportTab, { key: "ArrowRight" });

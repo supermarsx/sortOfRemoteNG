@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import CloneTab from "../../src/components/ImportExport/CloneTab";
@@ -195,7 +201,7 @@ const sourceCatalog: CloneSourceCatalogItem[] = [
 function renderCloneTab(overrides?: Partial<ComponentProps<typeof CloneTab>>) {
   const updateInclusion = vi.fn();
   const props: ComponentProps<typeof CloneTab> = {
-    sourceMode: "all",
+    sourceMode: "current",
     setSourceMode: vi.fn(),
     selectedSourceDatabaseIds: [],
     setSelectedSourceDatabaseIds: vi.fn(),
@@ -225,34 +231,105 @@ function renderCloneTab(overrides?: Partial<ComponentProps<typeof CloneTab>>) {
   return { ...render(<CloneTab {...props} />), updateInclusion };
 }
 
+function advanceLatestCloneTo(stepId: string) {
+  for (let index = 0; index < 8; index += 1) {
+    const targets = screen.getAllByTestId(`clone-wizard-step-${stepId}`);
+    const target = targets[targets.length - 1];
+    if (target.getAttribute("aria-current") === "step") return;
+    const nextButtons = screen.getAllByTestId("clone-wizard-next");
+    fireEvent.click(nextButtons[nextButtons.length - 1]);
+  }
+  throw new Error(`Unable to reach clone wizard step ${stepId}`);
+}
+
 describe("CloneTab", () => {
+  it("applies clone templates through the existing payload setters", () => {
+    const setPreserveFolders = vi.fn();
+    const setIncludeCredentials = vi.fn();
+    const setConflictPolicy = vi.fn();
+    const setAddTags = vi.fn();
+    const { updateInclusion } = renderCloneTab({
+      setPreserveFolders,
+      setIncludeCredentials,
+      setConflictPolicy,
+      setAddTags,
+    });
+
+    fireEvent.click(screen.getByTestId("clone-template-clean"));
+
+    expect(updateInclusion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeConnections: true,
+        includeCredentials: false,
+        includeFolderItems: true,
+        includeTunnelChains: false,
+        includeVpnData: false,
+      }),
+    );
+    expect(setPreserveFolders).toHaveBeenCalledWith(true);
+    expect(setIncludeCredentials).toHaveBeenCalledWith(false);
+    expect(setConflictPolicy).toHaveBeenCalledWith("rename");
+    expect(setAddTags).toHaveBeenCalledWith("cloned");
+  });
+
+  it("keeps Clone final-only and invokes the existing action handler from review", () => {
+    const onClone = vi.fn();
+    renderCloneTab({ onClone });
+
+    expect(screen.queryByTestId("clone-action-button")).not.toBeInTheDocument();
+    advanceLatestCloneTo("review");
+    fireEvent.click(screen.getByTestId("clone-action-button"));
+
+    expect(onClone).toHaveBeenCalledTimes(1);
+  });
+
   it("renders concrete connection, folder, tag, and color selectors grouped by source database", () => {
     renderCloneTab();
+    advanceLatestCloneTo("scope-content");
 
-    fireEvent.click(within(screen.getByTestId("clone-filter-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-filter-section")).getByRole("button"),
+    );
 
     expect(screen.getByTestId("clone-connections-section")).toBeInTheDocument();
     expect(screen.getByTestId("clone-folders-section")).toBeInTheDocument();
     expect(screen.getByTestId("clone-text-tags-section")).toBeInTheDocument();
     expect(screen.getByTestId("clone-color-tags-section")).toBeInTheDocument();
 
-    fireEvent.click(within(screen.getByTestId("clone-connections-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-connections-section")).getByRole(
+        "button",
+      ),
+    );
 
     expect(screen.getByText("Primary")).toBeInTheDocument();
     expect(screen.getByText("Archive")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Primary SSH" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Archive SSH" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Primary SSH" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Archive SSH" }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(within(screen.getByTestId("clone-folders-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-folders-section")).getByRole("button"),
+    );
     expect(screen.getByRole("checkbox", { name: "Ops" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Archive Root" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Archive Root" }),
+    ).toBeInTheDocument();
   });
 
   it("updates qualified folder ids and clearing returns to all folders", () => {
     const { updateInclusion } = renderCloneTab();
+    advanceLatestCloneTo("scope-content");
 
-    fireEvent.click(within(screen.getByTestId("clone-filter-section")).getByRole("button"));
-    fireEvent.click(within(screen.getByTestId("clone-folders-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-filter-section")).getByRole("button"),
+    );
+    fireEvent.click(
+      within(screen.getByTestId("clone-folders-section")).getByRole("button"),
+    );
     fireEvent.click(screen.getByRole("checkbox", { name: "Ops" }));
 
     expect(updateInclusion).toHaveBeenCalledWith({
@@ -263,8 +340,17 @@ describe("CloneTab", () => {
       inclusion: { ...inclusion, includedFolderIds: ["db-1:folder-ops"] },
       updateInclusion,
     });
-    fireEvent.click(within(screen.getAllByTestId("clone-filter-section")[1]).getByRole("button"));
-    fireEvent.click(within(screen.getAllByTestId("clone-folders-section")[1]).getByRole("button"));
+    advanceLatestCloneTo("scope-content");
+    fireEvent.click(
+      within(screen.getAllByTestId("clone-filter-section")[1]).getByRole(
+        "button",
+      ),
+    );
+    fireEvent.click(
+      within(screen.getAllByTestId("clone-folders-section")[1]).getByRole(
+        "button",
+      ),
+    );
     const clearButtons = screen.getAllByRole("button", {
       name: "Include all folders",
     });
@@ -275,9 +361,16 @@ describe("CloneTab", () => {
 
   it("updates qualified connection ids and clearing returns to all", () => {
     const { updateInclusion } = renderCloneTab();
+    advanceLatestCloneTo("scope-content");
 
-    fireEvent.click(within(screen.getByTestId("clone-filter-section")).getByRole("button"));
-    fireEvent.click(within(screen.getByTestId("clone-connections-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-filter-section")).getByRole("button"),
+    );
+    fireEvent.click(
+      within(screen.getByTestId("clone-connections-section")).getByRole(
+        "button",
+      ),
+    );
     fireEvent.click(screen.getByRole("checkbox", { name: "Archive SSH" }));
 
     expect(updateInclusion).toHaveBeenCalledWith({
@@ -288,8 +381,17 @@ describe("CloneTab", () => {
       inclusion: { ...inclusion, includedConnectionIds: ["db-1:conn-1"] },
       updateInclusion,
     });
-    fireEvent.click(within(screen.getAllByTestId("clone-filter-section")[1]).getByRole("button"));
-    fireEvent.click(within(screen.getAllByTestId("clone-connections-section")[1]).getByRole("button"));
+    advanceLatestCloneTo("scope-content");
+    fireEvent.click(
+      within(screen.getAllByTestId("clone-filter-section")[1]).getByRole(
+        "button",
+      ),
+    );
+    fireEvent.click(
+      within(screen.getAllByTestId("clone-connections-section")[1]).getByRole(
+        "button",
+      ),
+    );
     const clearButtons = screen.getAllByRole("button", {
       name: "Include all connections",
     });
@@ -306,28 +408,51 @@ describe("CloneTab", () => {
         includeVpnData: true,
       },
     });
+    advanceLatestCloneTo("scope-content");
 
-    fireEvent.click(within(screen.getByTestId("clone-filter-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-filter-section")).getByRole("button"),
+    );
 
-    expect(screen.getByTestId("clone-proxy-profiles-section")).toBeInTheDocument();
-    expect(screen.getByTestId("clone-proxy-chains-section")).toBeInTheDocument();
-    expect(screen.getByTestId("clone-vpn-connections-section")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("clone-proxy-profiles-section"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("clone-proxy-chains-section"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("clone-vpn-connections-section"),
+    ).toBeInTheDocument();
 
-    fireEvent.click(within(screen.getByTestId("clone-proxy-profiles-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-proxy-profiles-section")).getByRole(
+        "button",
+      ),
+    );
     fireEvent.click(screen.getByRole("checkbox", { name: "SOCKS Proxy" }));
     expect(updateInclusion).toHaveBeenCalledWith({
       includedProxyProfileIds: ["proxy-http"],
     });
 
-    fireEvent.click(within(screen.getByTestId("clone-proxy-chains-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-proxy-chains-section")).getByRole(
+        "button",
+      ),
+    );
     fireEvent.click(screen.getByRole("checkbox", { name: "Tunnel Chain A" }));
     expect(updateInclusion).toHaveBeenCalledWith({
       includedProxyChainIds: ["proxy-chain-1"],
     });
 
-    fireEvent.click(within(screen.getByTestId("clone-vpn-connections-section")).getByRole("button"));
+    fireEvent.click(
+      within(screen.getByTestId("clone-vpn-connections-section")).getByRole(
+        "button",
+      ),
+    );
     await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "OpenVPN Backup" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("checkbox", { name: "OpenVPN Backup" }),
+      ).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "OpenVPN Backup" }));
     expect(updateInclusion).toHaveBeenCalledWith({

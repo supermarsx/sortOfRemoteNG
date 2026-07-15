@@ -120,9 +120,74 @@ function renderExportTab(overrides?: {
   };
 }
 
+function advanceExportTo(stepId: string) {
+  for (let index = 0; index < 12; index += 1) {
+    const target = screen.getByTestId(`export-wizard-step-${stepId}`);
+    if (target.getAttribute("aria-current") === "step") return;
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+  }
+  throw new Error(`Unable to reach export wizard step ${stepId}`);
+}
+
 describe("ExportTab", () => {
+  it("orders conditional selection pages and renumbers later steps without gaps", () => {
+    const { rerender, onConfigChange, handleExport } = renderExportTab();
+
+    expect(screen.getByTestId("export-wizard-step-group")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Step 4"),
+    );
+    expect(screen.getByTestId("export-wizard-step-connection")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Step 5"),
+    );
+
+    const withoutGroups: ExportConfig = {
+      ...defaultConfig,
+      inclusion: {
+        ...defaultConfig.inclusion,
+        includeFolderItems: false,
+      },
+    };
+    rerender(
+      <ExportTab
+        connections={connections}
+        config={withoutGroups}
+        onConfigChange={onConfigChange}
+        isProcessing={false}
+        handleExport={handleExport}
+      />,
+    );
+    expect(
+      screen.queryByTestId("export-wizard-step-group"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("export-wizard-step-connection")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Step 4"),
+    );
+
+    rerender(
+      <ExportTab
+        connections={connections}
+        config={{ ...withoutGroups, scopeMode: "selected" }}
+        onConfigChange={onConfigChange}
+        isProcessing={false}
+        handleExport={handleExport}
+      />,
+    );
+    expect(screen.getByTestId("export-wizard-step-collection")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Step 4"),
+    );
+    expect(screen.getByTestId("export-wizard-step-connection")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Step 5"),
+    );
+  });
+
   it("shows connection totals and lets the user switch export formats", () => {
     const { onConfigChange } = renderExportTab();
+    advanceExportTo("format");
 
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
     expect(
@@ -134,19 +199,6 @@ describe("ExportTab", () => {
     expect(screen.getByTestId("export-format-details")).toHaveTextContent(
       "exportTab.formatJson",
     );
-    expect(screen.getByTestId("export-counter-total")).toHaveTextContent("2");
-    expect(screen.getByTestId("export-counter-folders")).toHaveTextContent("1");
-    expect(screen.getByTestId("export-counter-leaf")).toHaveTextContent("1");
-    expect(screen.getByTestId("export-counter-credentials")).toHaveTextContent(
-      "1",
-    );
-    expect(screen.getByTestId("export-counter-protocols")).toHaveTextContent(
-      "1",
-    );
-    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "0",
-    );
-
     const selectFormat = (name: string) => {
       fireEvent.click(screen.getByTestId("export-format-select"));
       fireEvent.mouseDown(screen.getByRole("option", { name }));
@@ -167,6 +219,20 @@ describe("ExportTab", () => {
     expect(onConfigChange).toHaveBeenCalledWith({ format: "html" });
     expect(onConfigChange).toHaveBeenCalledWith({ format: "excel" });
     expect(onConfigChange).toHaveBeenCalledWith({ format: "mremoteng" });
+
+    advanceExportTo("review");
+    expect(screen.getByTestId("export-counter-total")).toHaveTextContent("2");
+    expect(screen.getByTestId("export-counter-folders")).toHaveTextContent("1");
+    expect(screen.getByTestId("export-counter-leaf")).toHaveTextContent("1");
+    expect(screen.getByTestId("export-counter-credentials")).toHaveTextContent(
+      "1",
+    );
+    expect(screen.getByTestId("export-counter-protocols")).toHaveTextContent(
+      "1",
+    );
+    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
+      "0",
+    );
   });
 
   it("renders export scope controls and disables locked encrypted databases", () => {
@@ -204,18 +270,22 @@ describe("ExportTab", () => {
     expect(
       screen.getByTestId("export-scope-subsection-mode"),
     ).toHaveTextContent("Choose source mode");
+    expect(screen.getByTestId("export-wizard-step-collection")).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Step 4"),
+    );
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    expect(
+      screen.getByTestId("export-wizard-page-collection"),
+    ).toBeInTheDocument();
     expect(
       screen.getByTestId("export-scope-subsection-databases"),
     ).toHaveTextContent("Review databases");
     expect(
       screen.getByTestId("export-scope-subsection-summary"),
     ).toHaveTextContent("Confirm export set");
-    expect(screen.getByTestId("export-counter-databases")).toHaveTextContent(
-      "2",
-    );
-    expect(
-      screen.getByTestId("export-counter-lockedDatabases"),
-    ).toHaveTextContent("1");
     expect(screen.getByTestId("export-database-list-status")).toHaveTextContent(
       "2 selected",
     );
@@ -274,10 +344,7 @@ describe("ExportTab", () => {
         password: "Correct-Horse-Battery-Staple!",
       },
     });
-
-    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "4",
-    );
+    advanceExportTo("format");
     expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
       "exportTab.warningMRemoteNGLimited",
     );
@@ -290,16 +357,20 @@ describe("ExportTab", () => {
     expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
       "exportTab.warningMRemoteNGEncrypted",
     );
+    advanceExportTo("review");
+    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
+      "4",
+    );
   });
 
   it("propagates include-passwords, encryption, and password changes", () => {
     const { onConfigChange, rerender } = renderExportTab();
+    advanceExportTo("content");
 
     fireEvent.click(
       screen.getByRole("checkbox", { name: "exportTab.includePasswords" }),
     );
-    // The encryption accordion is collapsed by default; open it before
-    // interacting with the encrypt checkbox.
+    advanceExportTo("encryption");
     fireEvent.click(
       within(screen.getByTestId("export-encryption-section")).getByRole(
         "button",
@@ -353,7 +424,11 @@ describe("ExportTab", () => {
       },
     });
 
-    expect(screen.getByTestId("export-confirm")).toBeDisabled();
+    expect(screen.queryByTestId("export-confirm")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    expect(screen.getByTestId("export-wizard-error")).toHaveTextContent(
+      /unlocked database scope/i,
+    );
 
     rerender(
       <ExportTab
@@ -378,7 +453,11 @@ describe("ExportTab", () => {
       />,
     );
 
-    expect(screen.getByTestId("export-confirm")).toBeDisabled();
+    advanceExportTo("encryption");
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    expect(screen.getByTestId("export-wizard-error")).toHaveTextContent(
+      /encryption password/i,
+    );
 
     rerender(
       <ExportTab
@@ -403,6 +482,7 @@ describe("ExportTab", () => {
       />,
     );
 
+    advanceExportTo("review");
     fireEvent.click(screen.getByTestId("export-confirm"));
     expect(handleExport).toHaveBeenCalledTimes(1);
 
@@ -440,6 +520,7 @@ describe("ExportTab", () => {
         password: "Correct-Horse-Battery-Staple!",
       },
     });
+    advanceExportTo("content");
 
     fireEvent.click(
       screen.getByRole("checkbox", { name: /include vpn definitions/i }),
@@ -453,6 +534,7 @@ describe("ExportTab", () => {
     fireEvent.click(
       screen.getByRole("checkbox", { name: /include color tags/i }),
     );
+    advanceExportTo("encryption");
     fireEvent.change(screen.getByTestId("export-kdf-iterations"), {
       target: { value: "500000" },
     });
@@ -474,11 +556,12 @@ describe("ExportTab", () => {
         handleExport={vi.fn<() => void>()}
       />,
     );
-
+    fireEvent.click(screen.getByTestId("export-wizard-step-format"));
     expect(screen.getByTestId("export-format-select")).toHaveTextContent("CSV");
     expect(screen.getByTestId("export-format-details")).toHaveTextContent(
       "exportTab.formatCsv",
     );
+    advanceExportTo("review");
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
       "2",
     );
@@ -501,6 +584,7 @@ describe("ExportTab", () => {
         },
       ],
     });
+    advanceExportTo("group");
 
     fireEvent.click(
       within(screen.getByTestId("export-folders-section")).getByRole("button"),
@@ -527,6 +611,7 @@ describe("ExportTab", () => {
         password: "password1111",
       },
     });
+    advanceExportTo("encryption");
 
     expect(screen.getByTestId("export-password-strength")).toBeInTheDocument();
     expect(screen.getByTestId("export-password-entropy")).toHaveTextContent(
@@ -550,8 +635,13 @@ describe("ExportTab", () => {
         },
       },
     });
+    advanceExportTo("encryption");
 
     expect(screen.getByTestId("export-password-too-weak")).toBeInTheDocument();
-    expect(screen.getByTestId("export-confirm")).toBeDisabled();
+    expect(screen.queryByTestId("export-confirm")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    expect(screen.getByTestId("export-wizard-error")).toHaveTextContent(
+      /minimum strength/i,
+    );
   });
 });
