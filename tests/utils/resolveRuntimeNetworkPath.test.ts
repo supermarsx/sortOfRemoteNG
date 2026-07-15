@@ -71,6 +71,51 @@ describe("buildRuntimeNetworkPath", () => {
     });
   });
 
+  it("allows direct advanced protocols without inventing route material", () => {
+    for (const protocol of [
+      "raw-tcp",
+      "raw-udp",
+      "rlogin",
+      "powershell",
+    ] as const) {
+      const result = buildRuntimeNetworkPath(
+        connection("ssh"),
+        EMPTY_CATALOG,
+        protocol,
+      );
+      expect(result.protocol).toBe(protocol);
+      expect(result.snapshot.transports).toEqual([]);
+      expect(result.transport.mixed_chain).toBeNull();
+    }
+  });
+
+  it("fails closed instead of bypassing configured advanced-protocol hops", () => {
+    const target = connection("ssh", {
+      security: {
+        tunnelChain: [
+          layer("proxy", {
+            proxy: {
+              proxyType: "socks5",
+              host: "proxy.example.test",
+              port: 1080,
+            },
+          }),
+        ],
+      },
+    });
+
+    for (const protocol of [
+      "raw-tcp",
+      "raw-udp",
+      "rlogin",
+      "powershell",
+    ] as const) {
+      expect(() =>
+        buildRuntimeNetworkPath(target, EMPTY_CATALOG, protocol),
+      ).toThrowError(/will not be bypassed|backend.*adapter/i);
+    }
+  });
+
   it("maps an ordered proxy and SSH path to the SSH backend mixed chain", () => {
     const target = connection("ssh", {
       security: {

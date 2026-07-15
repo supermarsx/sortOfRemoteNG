@@ -20,6 +20,7 @@ export function PowerShellRemotingEditor({
   onChange,
   capabilities = CURRENT_POWER_SHELL_REMOTING_CAPABILITIES,
   networkPathSummary,
+  sections,
 }: PowerShellRemotingEditorProps) {
   const issues = validatePowerShellRemotingSettings(
     value,
@@ -27,9 +28,16 @@ export function PowerShellRemotingEditor({
   );
   const blockingIssues = issues.filter((issue) => issue.severity === "error");
   const sectionProps = { value, onChange, capabilities, targetHost };
+  const visible = (
+    section: import("./types").PowerShellRemotingEditorSectionId,
+  ) => !sections || sections.includes(section);
 
   return (
-    <div className="space-y-4" data-testid="powershell-remoting-editor">
+    <div
+      className="space-y-4"
+      data-testid="powershell-remoting-editor"
+      data-editor-search-section="powershell-remoting-options"
+    >
       <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
         <div className="flex items-start gap-2">
           <AlertTriangle
@@ -67,18 +75,23 @@ export function PowerShellRemotingEditor({
         </div>
       )}
 
-      <EndpointSection {...sectionProps} />
-      <AuthenticationSection {...sectionProps} />
-      <SecuritySection {...sectionProps} />
-      <SshSection {...sectionProps} />
-      <NetworkPathSummarySection
-        {...sectionProps}
-        summary={networkPathSummary}
-      />
-      <SessionSection {...sectionProps} />
-      <WindowsToolsSection {...sectionProps} />
+      {visible("endpoint") && <EndpointSection {...sectionProps} />}
+      {visible("authentication") && <AuthenticationSection {...sectionProps} />}
+      {visible("security") && <SecuritySection {...sectionProps} />}
+      {visible("ssh") && <SshSection {...sectionProps} />}
+      {visible("network-path") && (
+        <NetworkPathSummarySection
+          {...sectionProps}
+          summary={networkPathSummary}
+        />
+      )}
+      {visible("session") && <SessionSection {...sectionProps} />}
+      {visible("windows-tools") && <WindowsToolsSection {...sectionProps} />}
     </div>
   );
 }
 
-export type { PowerShellRemotingEditorProps } from "./types";
+export type {
+  PowerShellRemotingEditorProps,
+  PowerShellRemotingEditorSectionId,
+} from "./types";

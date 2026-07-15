@@ -16,11 +16,14 @@ export const DEFAULT_PORTS: Record<string, number> = {
   https: 443,
   winrm: 5985,
   telnet: 23,
+  // Raw Socket has no wire-level standard port; 23 is the conventional
+  // netcat-style plaintext starting point and remains fully editable.
+  raw: 23,
   rlogin: 513,
   gcp: 22,
   azure: 22,
-  'ibm-csp': 22,
-  'digital-ocean': 22,
+  "ibm-csp": 22,
+  "digital-ocean": 22,
   heroku: 22,
   scaleway: 22,
   linode: 22,

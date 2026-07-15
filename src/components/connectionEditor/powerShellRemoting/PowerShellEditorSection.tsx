@@ -21,8 +21,11 @@ export function PowerShellEditorSection({
   const headingId = `powershell-${id}-heading`;
   return (
     <section
+      id={`powershell-${id}-section`}
       data-powershell-section={id}
+      data-editor-search-field={`powershell-${id}`}
       aria-labelledby={headingId}
+      tabIndex={-1}
       className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4"
     >
       <header className="flex items-start justify-between gap-3">

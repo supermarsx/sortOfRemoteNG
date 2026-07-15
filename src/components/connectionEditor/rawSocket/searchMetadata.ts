@@ -1,5 +1,6 @@
 import type {
   ConnectionEditorProtocolSubtabId,
+  ConnectionEditorSearchDescriptor,
   ConnectionEditorSearchFieldDescriptor,
 } from "../../connection/editor/editorRegistry";
 import { RAW_SOCKET_PROTOCOL_ALIASES } from "../../../types/protocols/rawSocket";
@@ -232,3 +233,22 @@ export const RAW_SOCKET_EDITOR_SEARCH_FIELDS = [
     protocolSubtabId: "advanced",
   },
 ] as const satisfies readonly ConnectionEditorSearchFieldDescriptor[];
+
+export const RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR = {
+  id: "raw-socket-options",
+  tabId: "protocol",
+  label: "Raw Socket settings",
+  keywords: [
+    "raw socket",
+    "raw tcp",
+    "raw udp",
+    "netcat",
+    "application payload",
+  ],
+  copy: [
+    "Binary-safe TCP and UDP client settings.",
+    "Unsupported configured routes fail closed.",
+  ],
+  fields: RAW_SOCKET_EDITOR_SEARCH_FIELDS,
+  connectionOnly: true,
+} as const satisfies ConnectionEditorSearchDescriptor;

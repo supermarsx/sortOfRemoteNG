@@ -195,6 +195,68 @@ describe("connection editor search index", () => {
     ).toMatchObject({ protocolSubtabId: "connection" });
   });
 
+  it("indexes Raw, RLogin, and PowerShell settings on their exact subtabs", () => {
+    const rawIndex = buildIndex({
+      isGroup: false,
+      protocol: "raw",
+      rawSocketSettings: {
+        connection: { transport: "udp" },
+        data: { displayEncoding: "base64" },
+      },
+    });
+    expect(
+      rawIndex.find((entry) => entry.fieldId === "raw-socket-transport"),
+    ).toMatchObject({
+      sectionId: "raw-socket-options",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(rawIndex, "base64").find(
+        (entry) => entry.fieldId === "raw-socket-display-encoding",
+      ),
+    ).toMatchObject({ protocolSubtabId: "terminal" });
+    expect(rawIndex.map((entry) => entry.fieldId)).not.toContain("username");
+    expect(rawIndex.map((entry) => entry.fieldId)).not.toContain("password");
+
+    const rloginIndex = buildIndex({
+      isGroup: false,
+      protocol: "rlogin",
+      rloginSettings: { escapeCharacter: "^]" },
+    });
+    expect(
+      searchConnectionEditorIndex(rloginIndex, "plaintext risk").find(
+        (entry) => entry.fieldId === "rlogin-plaintext-acknowledgement",
+      ),
+    ).toMatchObject({
+      sectionId: "rlogin-security",
+      protocolSubtabId: "security",
+    });
+    expect(rloginIndex.map((entry) => entry.fieldId)).not.toContain("username");
+    expect(rloginIndex.map((entry) => entry.fieldId)).not.toContain("password");
+
+    const powershellIndex = buildIndex({
+      isGroup: false,
+      protocol: "winrm",
+      powerShellRemoting: {
+        wsman: { port: 5986 },
+        credential: { username: "ps-admin" },
+      },
+    });
+    expect(
+      powershellIndex.find(
+        (entry) => entry.fieldId === "powershell-wsman-port",
+      ),
+    ).toMatchObject({
+      sectionId: "powershell-remoting-options",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(powershellIndex, "ps-admin").find(
+        (entry) => entry.fieldId === "powershell-username",
+      ),
+    ).toMatchObject({ protocolSubtabId: "authentication" });
+  });
+
   it("excludes exchange fields hidden by the selected environment", () => {
     const onlineFields = buildIndex({
       isGroup: false,

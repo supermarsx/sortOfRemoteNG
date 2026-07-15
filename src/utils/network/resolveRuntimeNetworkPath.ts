@@ -17,7 +17,13 @@ import {
   type NetworkPathResolution,
 } from "./resolveNetworkPath";
 
-export type RuntimeNetworkPathProtocol = "ssh" | "rdp";
+export type RuntimeNetworkPathProtocol =
+  | "ssh"
+  | "rdp"
+  | "raw-tcp"
+  | "raw-udp"
+  | "rlogin"
+  | "powershell";
 
 export type RuntimeNetworkPathErrorCode =
   | "invalid-path"
@@ -74,6 +80,12 @@ const SUPPORTED_VPN_TYPES = new Set([
   "wireguard",
   "tailscale",
   "zerotier",
+]);
+const DIRECT_ONLY_PROTOCOLS = new Set<RuntimeNetworkPathProtocol>([
+  "raw-tcp",
+  "raw-udp",
+  "rlogin",
+  "powershell",
 ]);
 
 let proxyCollectionInitialization: Promise<void> | null = null;
@@ -384,6 +396,17 @@ export function buildRuntimeNetworkPath(
     );
   }
   assertStrictSavedChains(resolution, catalog);
+
+  if (DIRECT_ONLY_PROTOCOLS.has(protocol) && resolution.layers.length > 0) {
+    const firstLayer = resolution.layers[0];
+    const reason =
+      protocol === "powershell"
+        ? "PowerShell Remoting routes are unavailable until the backend exposes a network-path adapter. The configured path will not be bypassed."
+        : protocol === "rlogin"
+          ? "The current RLogin runtime supports direct TCP only. The configured path will not be bypassed."
+          : `The current ${protocol === "raw-udp" ? "Raw UDP" : "Raw TCP"} runtime supports direct connections only. The configured path will not be bypassed.`;
+    unsupported(protocol, firstLayer, reason);
+  }
 
   const transport = emptyTransport();
   const socketHops: SocketHop[] = [];

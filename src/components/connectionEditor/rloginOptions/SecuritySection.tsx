@@ -62,7 +62,10 @@ export function RloginSecuritySection({
         </p>
       </div>
 
-      <div className="rounded-md border border-[var(--color-border)] p-3">
+      <div
+        data-editor-search-field="rlogin-plaintext-acknowledgement"
+        className="rounded-md border border-[var(--color-border)] p-3"
+      >
         <label
           htmlFor="rlogin-plaintext-acknowledgement"
           className="flex cursor-pointer items-start gap-2"

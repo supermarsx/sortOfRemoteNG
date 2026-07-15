@@ -98,6 +98,9 @@ vi.mock("../../src/utils/discovery/defaultPorts", () => ({
       vnc: 5900,
       http: 80,
       https: 443,
+      raw: 23,
+      rlogin: 513,
+      winrm: 5985,
     };
     return ports[protocol] || 3389;
   }),
@@ -359,6 +362,44 @@ describe("ConnectionEditor", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("finds Raw Socket, RLogin, and PowerShell Remoting with accurate defaults", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      const protocolToggle = screen.getByTestId("editor-protocol");
+      fireEvent.click(protocolToggle);
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+
+      fireEvent.change(searchInput, { target: { value: "UDP payload" } });
+      fireEvent.click(screen.getByRole("option", { name: /Raw Socket/i }));
+      expect(protocolToggle).toHaveTextContent("Raw Socket");
+      expect(screen.getByTestId("editor-port")).toHaveValue(23);
+      expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+
+      fireEvent.click(protocolToggle);
+      fireEvent.change(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+        { target: { value: "RFC 1282" } },
+      );
+      fireEvent.click(screen.getByRole("option", { name: /RLogin/i }));
+      expect(protocolToggle).toHaveTextContent("RLogin");
+      expect(screen.getByTestId("editor-port")).toHaveValue(513);
+      expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+
+      fireEvent.click(protocolToggle);
+      fireEvent.change(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+        { target: { value: "WSMan" } },
+      );
+      fireEvent.click(
+        screen.getByRole("option", { name: /PowerShell Remoting/i }),
+      );
+      expect(protocolToggle).toHaveTextContent("PowerShell Remoting");
+      expect(screen.getByTestId("editor-port")).toHaveValue(5985);
+    });
+
     it("should navigate protocol results with Arrow keys and select with Enter", async () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
@@ -404,6 +445,59 @@ describe("ConnectionEditor", () => {
 
       expect(protocolToggle).toHaveTextContent(/SSH/);
       expect(protocolToggle).not.toHaveTextContent(/RDP/);
+    });
+
+    it("saves and reopens normalized Raw Socket settings", async () => {
+      let latestConnections: Connection[] = [];
+      const first = renderWithProviders(
+        { isOpen: true, onClose: vi.fn() },
+        (connections) => {
+          latestConnections = connections;
+        },
+      );
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "UDP collector" },
+      });
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "collector.example.test" },
+      });
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /Raw Socket/i }));
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      fireEvent.change(screen.getByLabelText("Transport"), {
+        target: { value: "udp" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+      await waitFor(() => {
+        expect(latestConnections).toHaveLength(1);
+        expect(latestConnections[0]).toMatchObject({
+          name: "UDP collector",
+          protocol: "raw",
+          port: 23,
+          rawSocketSettings: {
+            version: 1,
+            connection: { transport: "udp" },
+          },
+        });
+      });
+      const saved = latestConnections[0];
+      first.unmount();
+
+      renderWithProviders({
+        connection: saved,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+          "Raw Socket",
+        ),
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(screen.getByLabelText("Transport")).toHaveValue("udp");
+      expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
     });
 
     it("should show an empty state and reset protocol search when closed", async () => {
@@ -852,6 +946,44 @@ describe("ConnectionEditor", () => {
         expect(
           document.querySelector('[data-editor-search-active="true"]'),
         ).toHaveTextContent("Known Hosts Path");
+      });
+    });
+
+    it("navigates to and highlights a protocol-local RLogin field", async () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /RLogin/i }));
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "No password automation" } });
+      expect(
+        screen.getByRole("option", {
+          name: /Protocol \/ RLogin security.*No password automation/i,
+        }),
+      ).toBeInTheDocument();
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("connection-editor-tab-protocol"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(
+          screen.getByTestId("connection-editor-protocol-subtab-security"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(
+          screen.getByRole("checkbox", {
+            name: /I understand and accept the plaintext risk/i,
+          }),
+        ).toHaveFocus();
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveAttribute(
+          "data-editor-search-field",
+          "rlogin-plaintext-acknowledgement",
+        );
       });
     });
 

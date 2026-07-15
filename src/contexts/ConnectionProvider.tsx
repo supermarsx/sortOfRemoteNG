@@ -1,17 +1,25 @@
-import React, { useReducer, useEffect, useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useReducer,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DatabaseManager } from "../utils/connection/databaseManager";
 import { StorageData } from "../utils/storage/storage";
 import { SettingsManager } from "../utils/settings/settingsManager";
 import {
   ConnectionState,
   ConnectionAction,
-  ConnectionContext
+  ConnectionContext,
 } from "./ConnectionContextTypes";
 import { Connection } from "../types/connection/connection";
 import {
   diffConnection,
   formatConnectionDiff,
 } from "../utils/connection/diffConnection";
+import { normalizeAdvancedProtocolConnection } from "../utils/connection/normalizeAdvancedProtocolConnection";
 
 const initialState: ConnectionState = {
   connections: [],
@@ -25,8 +33,8 @@ const initialState: ConnectionState = {
     colorTags: [],
     showRecent: false,
     showFavorites: false,
-    sortBy: 'custom',
-    sortDirection: 'asc',
+    sortBy: "custom",
+    sortDirection: "asc",
   },
   isLoading: false,
   sidebarCollapsed: false,
@@ -56,18 +64,33 @@ const connectionReducer = (
   switch (action.type) {
     case "SET_CONNECTIONS":
       // Replace all connections with a new list
-      return { ...state, connections: action.payload };
+      return {
+        ...state,
+        connections: action.payload.map((connection) =>
+          normalizeAdvancedProtocolConnection(connection),
+        ),
+      };
     case "ADD_CONNECTION":
       // Append a new connection to the list
-      return { ...state, connections: [...state.connections, action.payload] };
-    case "UPDATE_CONNECTION":
+      return {
+        ...state,
+        connections: [
+          ...state.connections,
+          normalizeAdvancedProtocolConnection(action.payload),
+        ],
+      };
+    case "UPDATE_CONNECTION": {
       // Update an existing connection by id
+      const normalizedConnection = normalizeAdvancedProtocolConnection(
+        action.payload,
+      );
       return {
         ...state,
         connections: state.connections.map((conn) =>
-          conn.id === action.payload.id ? action.payload : conn,
+          conn.id === normalizedConnection.id ? normalizedConnection : conn,
         ),
       };
+    }
     case "DELETE_CONNECTION":
       // Remove a connection by id
       return {
@@ -128,7 +151,11 @@ const connectionReducer = (
       };
     }
     case "CLEAR_SELECTION":
-      return { ...state, selectedConnection: null, selectedConnectionIds: new Set() };
+      return {
+        ...state,
+        selectedConnection: null,
+        selectedConnectionIds: new Set(),
+      };
     case "SET_FILTER":
       // Update connection list filters
       return { ...state, filter: { ...state.filter, ...action.payload } };
@@ -139,7 +166,9 @@ const connectionReducer = (
       // sessions for a given host into a chosen tab group.
       let session = action.payload;
       if (!session.tabGroupId && session.connectionId) {
-        const conn = state.connections.find((c) => c.id === session.connectionId);
+        const conn = state.connections.find(
+          (c) => c.id === session.connectionId,
+        );
         const defaultId = conn?.defaultTabGroupId;
         if (defaultId && state.tabGroups.some((g) => g.id === defaultId)) {
           session = { ...session, tabGroupId: defaultId };
@@ -218,99 +247,104 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const hasLoadedRef = useRef(false);
   // Track if this is the first render to skip auto-save on mount
   const isInitialMountRef = useRef(true);
+  // Stable live snapshot used by logging and persistence callbacks.
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
 
   // Wrap dispatch to add action logging.
   // Logging is wrapped in try-catch so a logging failure never blocks state updates.
-  const dispatch = useCallback((action: ConnectionAction) => {
-    try {
-      switch (action.type) {
-        case "ADD_TAB_GROUP":
-        case "UPDATE_TAB_GROUP":
-        case "REMOVE_TAB_GROUP": {
-          // Force a save right after a tab group mutation — belt and
-          // suspenders so persistence does not rely on the state-deps
-          // useEffect alone (which can be subtly bypassed by HMR or
-          // double-dispatch quirks).
-          tabGroupSavePendingRef.current = true;
-          break;
+  const dispatch = useCallback(
+    (action: ConnectionAction) => {
+      try {
+        switch (action.type) {
+          case "ADD_TAB_GROUP":
+          case "UPDATE_TAB_GROUP":
+          case "REMOVE_TAB_GROUP": {
+            // Force a save right after a tab group mutation — belt and
+            // suspenders so persistence does not rely on the state-deps
+            // useEffect alone (which can be subtly bypassed by HMR or
+            // double-dispatch quirks).
+            tabGroupSavePendingRef.current = true;
+            break;
+          }
+          case "ADD_CONNECTION": {
+            const conn = action.payload;
+            settingsManager.logAction(
+              "info",
+              conn.isGroup ? "Folder created" : "Connection created",
+              conn.id,
+              `Name: "${conn.name}"${conn.hostname ? `, Host: ${conn.hostname}` : ""}${conn.protocol ? `, Protocol: ${conn.protocol}` : ""}`,
+            );
+            break;
+          }
+          case "UPDATE_CONNECTION": {
+            const conn = action.payload;
+            // P9: diff the previous snapshot against the incoming one
+            // and log the field-level deltas (with secrets masked) so
+            // the audit trail shows what actually changed, not just
+            // that something did.
+            const prev = connectionsRef.current.find((c) => c.id === conn.id);
+            const deltas = diffConnection(prev, conn);
+            const detail =
+              deltas.length === 0
+                ? `Name: "${conn.name}" — no field changes (save with no edits)`
+                : `Name: "${conn.name}" — ${formatConnectionDiff(deltas)}`;
+            settingsManager.logAction(
+              "info",
+              conn.isGroup ? "Folder edited" : "Connection edited",
+              conn.id,
+              detail,
+            );
+            break;
+          }
+          case "DELETE_CONNECTION": {
+            settingsManager.logAction(
+              "info",
+              "Connection deleted",
+              action.payload,
+              `Connection ID: ${action.payload}`,
+            );
+            break;
+          }
+          case "ADD_SESSION": {
+            const session = action.payload;
+            settingsManager.logAction(
+              "info",
+              "Session opened",
+              session.connectionId,
+              `Session "${session.name}" opened via ${session.protocol}`,
+            );
+            break;
+          }
+          case "REMOVE_SESSION": {
+            settingsManager.logAction(
+              "info",
+              "Session removed",
+              undefined,
+              `Session ID: ${action.payload}`,
+            );
+            break;
+          }
+          case "REORDER_SESSIONS": {
+            settingsManager.logAction(
+              "debug",
+              "Sessions reordered",
+              undefined,
+              `Moved from index ${action.payload.fromIndex} to ${action.payload.toIndex}`,
+            );
+            break;
+          }
         }
-        case "ADD_CONNECTION": {
-          const conn = action.payload;
-          settingsManager.logAction(
-            'info',
-            conn.isGroup ? 'Folder created' : 'Connection created',
-            conn.id,
-            `Name: "${conn.name}"${conn.hostname ? `, Host: ${conn.hostname}` : ''}${conn.protocol ? `, Protocol: ${conn.protocol}` : ''}`
-          );
-          break;
-        }
-        case "UPDATE_CONNECTION": {
-          const conn = action.payload;
-          // P9: diff the previous snapshot against the incoming one
-          // and log the field-level deltas (with secrets masked) so
-          // the audit trail shows what actually changed, not just
-          // that something did.
-          const prev = state.connections.find((c) => c.id === conn.id);
-          const deltas = diffConnection(prev, conn);
-          const detail = deltas.length === 0
-            ? `Name: "${conn.name}" — no field changes (save with no edits)`
-            : `Name: "${conn.name}" — ${formatConnectionDiff(deltas)}`;
-          settingsManager.logAction(
-            'info',
-            conn.isGroup ? 'Folder edited' : 'Connection edited',
-            conn.id,
-            detail,
-          );
-          break;
-        }
-        case "DELETE_CONNECTION": {
-          settingsManager.logAction(
-            'info',
-            'Connection deleted',
-            action.payload,
-            `Connection ID: ${action.payload}`
-          );
-          break;
-        }
-        case "ADD_SESSION": {
-          const session = action.payload;
-          settingsManager.logAction(
-            'info',
-            'Session opened',
-            session.connectionId,
-            `Session "${session.name}" opened via ${session.protocol}`
-          );
-          break;
-        }
-        case "REMOVE_SESSION": {
-          settingsManager.logAction(
-            'info',
-            'Session removed',
-            undefined,
-            `Session ID: ${action.payload}`
-          );
-          break;
-        }
-        case "REORDER_SESSIONS": {
-          settingsManager.logAction(
-            'debug',
-            'Sessions reordered',
-            undefined,
-            `Moved from index ${action.payload.fromIndex} to ${action.payload.toIndex}`
-          );
-          break;
-        }
+      } catch (logErr) {
+        console.error("Action logging failed:", logErr);
       }
-    } catch (logErr) {
-      console.error('Action logging failed:', logErr);
-    }
 
-    baseDispatch(action);
-  }, [settingsManager]);
+      baseDispatch(action);
+    },
+    [settingsManager],
+  );
 
   // Use refs so saveData has a stable identity and doesn't cause effect re-runs
-  const connectionsRef = useRef(state.connections);
-  connectionsRef.current = state.connections;
   const tabGroupsRef = useRef(state.tabGroups);
   tabGroupsRef.current = state.tabGroups;
   // Marker set by the dispatch wrapper whenever a tab-group action runs.
@@ -340,20 +374,29 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       const data = await databaseManager.loadCurrentDatabaseData();
       if (data && data.connections) {
         // Convert date strings back to Date objects (with validation)
-        const toValidDate = (value: unknown, field: string, connId?: string): Date => {
+        const toValidDate = (
+          value: unknown,
+          field: string,
+          connId?: string,
+        ): Date => {
           if (!value) return new Date();
           const d = new Date(value as string | number);
           if (isNaN(d.getTime())) {
-            console.warn(`Invalid ${field} date for connection ${connId}:`, value);
+            console.warn(
+              `Invalid ${field} date for connection ${connId}:`,
+              value,
+            );
             return new Date();
           }
           return d;
         };
-        const connections = data.connections.map((conn: any) => ({
-          ...conn,
-          createdAt: toValidDate(conn.createdAt, 'createdAt', conn.id),
-          updatedAt: toValidDate(conn.updatedAt, 'updatedAt', conn.id),
-        }));
+        const connections = data.connections.map((conn: any) =>
+          normalizeAdvancedProtocolConnection({
+            ...conn,
+            createdAt: toValidDate(conn.createdAt, "createdAt", conn.id),
+            updatedAt: toValidDate(conn.updatedAt, "updatedAt", conn.id),
+          } as Connection),
+        );
         baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
         if (Array.isArray(data.tabGroups)) {
           baseDispatch({ type: "SET_TAB_GROUPS", payload: data.tabGroups });
@@ -424,8 +467,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
     debouncedSave();
     tabGroupSavePendingRef.current = false;
-  // saveData/debouncedSave are stable (depend only on databaseManager) — safe to omit from lint
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // saveData/debouncedSave are stable (depend only on databaseManager) — safe to omit from lint
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.connections, state.tabGroups, databaseManager]);
 
   const contextValue = useMemo(

@@ -59,6 +59,36 @@ vi.mock("../../connectionEditor/WinRMOptions", () => ({
   ),
 }));
 
+vi.mock("../../connectionEditor/rawSocket/RawSocketOptions", () => ({
+  default: ({ sections }: any) => (
+    <div data-testid="raw-options" data-sections={sections?.join(",") ?? "all"}>
+      Raw: {sections?.join(",") ?? "all"}
+    </div>
+  ),
+}));
+
+vi.mock("../../connectionEditor/RloginOptions", () => ({
+  default: ({ section }: any) => (
+    <div data-testid="rlogin-options" data-section={section}>
+      RLogin: {section}
+    </div>
+  ),
+}));
+
+vi.mock(
+  "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor",
+  () => ({
+    PowerShellRemotingEditor: ({ sections }: any) => (
+      <div
+        data-testid="powershell-options"
+        data-sections={sections?.join(",") ?? "all"}
+      >
+        PowerShell: {sections?.join(",") ?? "all"}
+      </div>
+    ),
+  }),
+);
+
 vi.mock("../../connectionEditor/CloudProviderOptions", () => ({
   default: () => <div data-testid="cloud-options">Cloud provider</div>,
 }));
@@ -116,6 +146,30 @@ const Harness: React.FC<{
       >
         Use SSH
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          setFormData((previous) => ({ ...previous, protocol: "raw" }))
+        }
+      >
+        Use Raw
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          setFormData((previous) => ({ ...previous, protocol: "rlogin" }))
+        }
+      >
+        Use RLogin
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          setFormData((previous) => ({ ...previous, protocol: "winrm" }))
+        }
+      >
+        Use PowerShell
+      </button>
       <ProtocolSections mgr={mgr} activeSubtabId={activeSubtabId} />
       <output data-testid="protocol-form-state">
         {JSON.stringify(formData)}
@@ -157,9 +211,22 @@ describe("ProtocolSections", () => {
       "connection",
       "authentication",
       "security",
-      "network",
+      "network-path",
       "advanced",
-      "recovery",
+    ]);
+    expect(idsFor({ protocol: "raw" })).toEqual([
+      "connection",
+      "terminal",
+      "security",
+      "network-path",
+      "advanced",
+    ]);
+    expect(idsFor({ protocol: "rlogin" })).toEqual([
+      "connection",
+      "terminal",
+      "security",
+      "network-path",
+      "advanced",
     ]);
     expect(idsFor({ protocol: "gcp" })).toEqual([
       "provider",
@@ -226,6 +293,54 @@ describe("ProtocolSections", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Network Path" }));
     expect(screen.getByTestId("network-path-section")).toHaveTextContent(
       "Network path for rdp",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Use Raw" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Network Path" }));
+    expect(screen.getByTestId("network-path-section")).toHaveTextContent(
+      "Network path for raw",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Use RLogin" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Network Path" }));
+    expect(screen.getByTestId("network-path-section")).toHaveTextContent(
+      "Network path for rlogin",
+    );
+  });
+
+  it("mounts each standalone advanced protocol editor on its owning subtab", () => {
+    render(<Harness initial={{ protocol: "raw", isGroup: false }} />);
+
+    expect(screen.getByTestId("raw-options")).toHaveAttribute(
+      "data-sections",
+      "connection",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Terminal" }));
+    expect(screen.getByTestId("raw-options")).toHaveAttribute(
+      "data-sections",
+      "data",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Use RLogin" }));
+    expect(screen.getByTestId("rlogin-options")).toHaveAttribute(
+      "data-section",
+      "connection",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Security" }));
+    expect(screen.getByTestId("rlogin-options")).toHaveAttribute(
+      "data-section",
+      "security",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Use PowerShell" }));
+    expect(screen.getByTestId("powershell-options")).toHaveAttribute(
+      "data-sections",
+      "endpoint",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+    expect(screen.getByTestId("powershell-options")).toHaveAttribute(
+      "data-sections",
+      "ssh,session,windows-tools",
     );
   });
 

@@ -1,6 +1,7 @@
 export { RawSocketOptions } from "./RawSocketOptions";
 export type { RawSocketOptionsProps } from "./types";
 export {
+  RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR,
   RAW_SOCKET_EDITOR_SEARCH_FIELDS,
   RAW_SOCKET_EDITOR_SECTIONS,
 } from "./searchMetadata";

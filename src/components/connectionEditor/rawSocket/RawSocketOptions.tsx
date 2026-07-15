@@ -22,7 +22,11 @@ export function RawSocketOptions({
   const common = { settings, update: onChange, disabled };
 
   return (
-    <div aria-label="Raw Socket protocol settings" className="space-y-4">
+    <div
+      aria-label="Raw Socket protocol settings"
+      className="space-y-4"
+      data-editor-search-section="raw-socket-options"
+    >
       {visible("connection") && (
         <ConnectionSection
           {...common}

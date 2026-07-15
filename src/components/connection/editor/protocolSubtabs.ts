@@ -155,6 +155,16 @@ export function getProtocolSubtabs(
     ]);
   }
 
+  if (protocol === "raw" || protocol === "rlogin") {
+    return selectSubtabs([
+      "connection",
+      "terminal",
+      "security",
+      "network-path",
+      "advanced",
+    ]);
+  }
+
   if (protocol === "http" || protocol === "https") {
     return selectSubtabs(
       withWindowsManagement(
@@ -169,9 +179,8 @@ export function getProtocolSubtabs(
       "connection",
       "authentication",
       "security",
-      "network",
+      "network-path",
       "advanced",
-      "recovery",
     ]);
   }
 

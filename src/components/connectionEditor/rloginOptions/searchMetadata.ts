@@ -4,6 +4,7 @@ export const RLOGIN_CONNECTION_SEARCH_DESCRIPTOR = {
   id: "rlogin-connection",
   tabId: "protocol",
   label: "RLogin connection",
+  connectionOnly: true,
   keywords: ["rlogin", "RFC 1282", "port 513", "source port"],
   copy: [
     "Configure the RFC 1282 identity handshake and TCP endpoint.",
@@ -65,6 +66,7 @@ export const RLOGIN_TERMINAL_SEARCH_DESCRIPTOR = {
   id: "rlogin-terminal",
   tabId: "protocol",
   label: "RLogin terminal",
+  connectionOnly: true,
   keywords: ["terminal", "encoding", "flow control", "escape"],
   copy: ["Remote echo", "Eight-bit transparent terminal stream"],
   fields: [
@@ -134,6 +136,7 @@ export const RLOGIN_NETWORK_PATH_SEARCH_DESCRIPTOR = {
   id: "rlogin-network-path",
   tabId: "protocol",
   label: "RLogin Network Path",
+  connectionOnly: true,
   keywords: ["proxy", "VPN", "SSH jump", "strict chain", "route"],
   copy: [
     "Review whether the selected Network Path can deliver a strict RLogin TCP stream.",
@@ -164,6 +167,7 @@ export const RLOGIN_SECURITY_SEARCH_DESCRIPTOR = {
   id: "rlogin-security",
   tabId: "protocol",
   label: "RLogin security",
+  connectionOnly: true,
   keywords: ["plaintext", "legacy", "risk", "acknowledgement"],
   copy: [
     "Usernames and terminal traffic are sent in plaintext.",
@@ -189,6 +193,7 @@ export const RLOGIN_ADVANCED_SEARCH_DESCRIPTOR = {
   id: "rlogin-advanced",
   tabId: "protocol",
   label: "RLogin advanced transport",
+  connectionOnly: true,
   keywords: ["timeout", "TCP", "keepalive", "no-delay"],
   copy: ["Operating-system TCP keepalive", "No application keepalive bytes"],
   fields: [

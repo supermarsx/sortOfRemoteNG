@@ -22,6 +22,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   http: "globe",
   https: "globe",
   telnet: "phone",
+  raw: "cable",
   rlogin: "phone",
   mysql: "database",
   ftp: "folder",

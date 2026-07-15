@@ -6,6 +6,9 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
+import { RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connectionEditor/rawSocket/searchMetadata";
+import { RLOGIN_CONNECTION_EDITOR_SEARCH_DESCRIPTORS } from "../../connectionEditor/rloginOptions/searchMetadata";
+import { POWERSHELL_REMOTING_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connectionEditor/powerShellRemoting/searchMetadata";
 
 export type ConnectionEditorTabId =
   | "general"
@@ -489,7 +492,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Account for WinRM Basic auth",
           "Username for authentication with the remote service",
         ],
-        excludedProtocols: ["ssh", "integration:exchange"],
+        excludedProtocols: ["ssh", "raw", "rlogin", "integration:exchange"],
         valuePaths: ["username", "integration.username"],
       },
       {
@@ -501,7 +504,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Password for WinRM authentication",
           "Password for authentication with the remote service",
         ],
-        excludedProtocols: ["ssh", "integration:exchange"],
+        excludedProtocols: ["ssh", "raw", "rlogin", "integration:exchange"],
       },
       {
         id: "integration-instance-id",
@@ -1253,6 +1256,9 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       },
     ],
   },
+  RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR,
+  ...RLOGIN_CONNECTION_EDITOR_SEARCH_DESCRIPTORS,
+  POWERSHELL_REMOTING_CONNECTION_EDITOR_SEARCH_DESCRIPTOR,
 ] as const satisfies readonly ConnectionEditorSearchDescriptor[];
 
 export function getConnectionEditorTabs(

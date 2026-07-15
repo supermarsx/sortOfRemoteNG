@@ -16,6 +16,12 @@ import {
 } from "../../../utils/network/resolveNetworkPath";
 import type { NormalizedVpnConnection } from "../../../hooks/network/useVpnManager";
 import type { SelectOption } from "../../ui/forms";
+import type {
+  RloginNetworkPathCapability,
+  RloginNetworkPathLayerKind,
+} from "../../../types/connection/rloginSettings";
+import type { RawSocketNetworkRouteKind } from "../../../types/protocols/rawSocket";
+import { getDefaultPort } from "../../../utils/discovery/defaultPorts";
 
 const VPN_TYPES = new Set(["openvpn", "wireguard", "tailscale", "zerotier"]);
 
@@ -36,6 +42,42 @@ export type NetworkPathReferenceField =
   | "proxyChainId"
   | "tunnelChainId";
 
+export function getRuntimeNetworkPathProtocol(
+  formData: Readonly<Partial<Connection>>,
+): RuntimeNetworkPathProtocol {
+  switch (formData.protocol) {
+    case "rdp":
+      return "rdp";
+    case "raw":
+      return formData.rawSocketSettings?.connection.transport === "udp"
+        ? "raw-udp"
+        : "raw-tcp";
+    case "rlogin":
+      return "rlogin";
+    case "winrm":
+      return "powershell";
+    default:
+      return "ssh";
+  }
+}
+
+export function getRuntimeNetworkPathProtocolLabel(
+  protocol: RuntimeNetworkPathProtocol,
+): string {
+  switch (protocol) {
+    case "raw-tcp":
+      return "Raw TCP";
+    case "raw-udp":
+      return "Raw UDP";
+    case "rlogin":
+      return "RLogin";
+    case "powershell":
+      return "PowerShell Remoting";
+    default:
+      return protocol.toUpperCase();
+  }
+}
+
 export function asNetworkPathConnection(
   formData: Readonly<Partial<Connection>>,
 ): Connection {
@@ -44,7 +86,7 @@ export function asNetworkPathConnection(
     name: formData.name || "Draft connection",
     protocol: formData.protocol || "ssh",
     hostname: formData.hostname || "",
-    port: formData.port ?? (formData.protocol === "rdp" ? 3389 : 22),
+    port: formData.port ?? getDefaultPort(formData.protocol ?? "ssh"),
     isGroup: false,
     createdAt: formData.createdAt || "",
     updatedAt: formData.updatedAt || "",
@@ -71,9 +113,21 @@ export function getNetworkPathEditorModel(
   const connection = asNetworkPathConnection(formData);
   const currentCatalog = catalogWithDraft(connection, catalog);
   const resolution = resolveNetworkPath(connection, currentCatalog);
+  const protocolLabel = getRuntimeNetworkPathProtocolLabel(protocol);
 
   try {
     buildRuntimeNetworkPath(connection, currentCatalog, protocol);
+    if (
+      protocol === "powershell" &&
+      formData.powerShellRemoting &&
+      (formData.powerShellRemoting.networkPath.mode === "connectionPath" ||
+        formData.powerShellRemoting.wsman.proxy.mode !== "none")
+    ) {
+      throw new RuntimeNetworkPathError(
+        "unsupported-layer",
+        "PowerShell Remoting has a configured route, but the current backend has no network-path adapter. Connection is blocked instead of falling back to direct.",
+      );
+    }
     return {
       summary: resolution.summary,
       validation: resolution.validation,
@@ -81,8 +135,16 @@ export function getNetworkPathEditorModel(
         supported: true,
         message:
           resolution.summary.status === "direct"
-            ? "Direct connection; no network-path layers will run."
-            : `${protocol.toUpperCase()} can execute this resolved path in the displayed order.`,
+            ? protocol === "raw-tcp"
+              ? "Direct Raw TCP is supported by the native socket runtime."
+              : protocol === "raw-udp"
+                ? "Direct Raw UDP is supported by the native socket runtime."
+                : protocol === "rlogin"
+                  ? "Direct RLogin TCP is supported by the native RFC 1282 runtime."
+                  : protocol === "powershell"
+                    ? "Direct PowerShell Remoting is available; configured routes remain blocked until a backend adapter is available."
+                    : "Direct connection; no network-path layers will run."
+            : `${protocolLabel} can execute this resolved path in the displayed order.`,
       },
     };
   } catch (error) {
@@ -98,6 +160,61 @@ export function getNetworkPathEditorModel(
             },
     };
   }
+}
+
+export function getRawSocketNetworkRoutes(
+  model: Pick<NetworkPathEditorModel, "summary">,
+): readonly RawSocketNetworkRouteKind[] {
+  if (model.summary.layers.length === 0) return ["direct"];
+  return model.summary.layers.map((layer) => {
+    const transport = layer.transport.toLowerCase();
+    if (layer.kind === "ssh") return "ssh_jump";
+    if (transport === "socks4") return "socks4";
+    if (transport === "socks5") return "socks5";
+    if (
+      transport === "http" ||
+      transport === "https" ||
+      transport === "http-connect"
+    ) {
+      return "http_connect";
+    }
+    return "unknown";
+  });
+}
+
+const toRloginLayerKind = (
+  kind: NetworkPathSummary["layers"][number]["kind"],
+  transport: string,
+): RloginNetworkPathLayerKind => {
+  if (kind === "vpn" || kind === "connection") return "vpn";
+  if (kind === "ssh") return "ssh-jump";
+  switch (transport.toLowerCase()) {
+    case "http":
+    case "http-connect":
+      return "http-connect";
+    case "https":
+      return "https-connect";
+    case "socks4":
+      return "socks4";
+    case "socks5":
+      return "socks5";
+    default:
+      return "unsupported";
+  }
+};
+
+export function getRloginNetworkPathCapability(
+  model: NetworkPathEditorModel,
+): RloginNetworkPathCapability {
+  return {
+    configured: model.summary.layers.length > 0,
+    supported: model.runtime.supported,
+    summary: model.runtime.message,
+    layers: model.summary.layers.map((layer) => ({
+      kind: toRloginLayerKind(layer.kind, layer.transport),
+      label: layer.transport,
+    })),
+  };
 }
 
 export function setNetworkPathReference(

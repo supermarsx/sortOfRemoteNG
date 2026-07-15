@@ -19,9 +19,13 @@ export function RloginEditorSectionFrame({
 }: RloginEditorSectionFrameProps) {
   const headingId = `${id}-heading`;
   const descriptionId = `${id}-description`;
+  const searchSectionId = id.endsWith("-section")
+    ? id.slice(0, -"-section".length)
+    : id;
   return (
     <section
       id={id}
+      data-editor-search-section={searchSectionId}
       aria-labelledby={headingId}
       aria-describedby={descriptionId}
       className={`space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 ${className}`}

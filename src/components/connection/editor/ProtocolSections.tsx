@@ -4,11 +4,17 @@ import BackupCodesSection from "../../connectionEditor/BackupCodesSection";
 import CloudProviderOptions from "../../connectionEditor/CloudProviderOptions";
 import HTTPOptions from "../../connectionEditor/HTTPOptions";
 import RDPOptions from "../../connectionEditor/RDPOptions";
+import RloginOptions from "../../connectionEditor/RloginOptions";
+import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
+import { PowerShellRemotingEditor } from "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor";
 import RecoveryInfoSection from "../../connectionEditor/RecoveryInfoSection";
 import SecurityQuestionsSection from "../../connectionEditor/SecurityQuestionsSection";
 import SSHOptions from "../../connectionEditor/SSHOptions";
 import TOTPOptions from "../../connectionEditor/TOTPOptions";
 import WinRMOptions from "../../connectionEditor/WinRMOptions";
+import { normalizeRawSocketSettings } from "../../../types/protocols/rawSocket";
+import { normalizeRloginSettings } from "../../../utils/rlogin/rloginSettings";
+import { normalizePowerShellRemotingSettings } from "../../../utils/powershell/normalizePowerShellRemoting";
 import NetworkPathSection from "./NetworkPathSection";
 import {
   getProtocolSubtabs,
@@ -47,12 +53,84 @@ const ProtocolSubtabContent: React.FC<{
 
   if (
     subtabId === "network-path" &&
-    (protocol === "ssh" || protocol === "rdp")
+    ["ssh", "rdp", "raw", "rlogin", "winrm"].includes(protocol)
   ) {
     return (
       <NetworkPathSection
         formData={mgr.formData}
         setFormData={mgr.setFormData}
+      />
+    );
+  }
+
+  if (protocol === "raw") {
+    const section =
+      subtabId === "connection"
+        ? "connection"
+        : subtabId === "terminal"
+          ? "data"
+          : subtabId === "security"
+            ? "tls"
+            : "advanced";
+    return (
+      <RawSocketOptions
+        value={normalizeRawSocketSettings(mgr.formData.rawSocketSettings)}
+        onChange={(rawSocketSettings) =>
+          mgr.setFormData((previous) => ({
+            ...previous,
+            rawSocketSettings,
+          }))
+        }
+        sections={[section]}
+        targetHost={mgr.formData.hostname}
+        targetPort={mgr.formData.port}
+      />
+    );
+  }
+
+  if (protocol === "rlogin") {
+    return (
+      <RloginOptions
+        settings={normalizeRloginSettings(mgr.formData.rloginSettings)}
+        port={mgr.formData.port ?? 513}
+        onSettingsChange={(rloginSettings) =>
+          mgr.setFormData((previous) => ({ ...previous, rloginSettings }))
+        }
+        onPortChange={(port) =>
+          mgr.setFormData((previous) => ({ ...previous, port }))
+        }
+        section={
+          subtabId as "connection" | "terminal" | "security" | "advanced"
+        }
+      />
+    );
+  }
+
+  if (protocol === "winrm") {
+    const sections =
+      subtabId === "connection"
+        ? (["endpoint"] as const)
+        : subtabId === "authentication"
+          ? (["authentication"] as const)
+          : subtabId === "security"
+            ? (["security"] as const)
+            : (["ssh", "session", "windows-tools"] as const);
+    return (
+      <PowerShellRemotingEditor
+        targetHost={mgr.formData.hostname ?? ""}
+        value={
+          normalizePowerShellRemotingSettings(mgr.formData.powerShellRemoting)
+            .settings
+        }
+        onChange={(powerShellRemoting) =>
+          mgr.setFormData((previous) => ({
+            ...previous,
+            powerShellRemoting,
+            username: powerShellRemoting.credential.username,
+            domain: powerShellRemoting.credential.domain ?? undefined,
+          }))
+        }
+        sections={sections}
       />
     );
   }
@@ -190,41 +268,6 @@ const ProtocolSubtabContent: React.FC<{
         formData={mgr.formData}
         setFormData={mgr.setFormData}
         sections={[subtabId as "authentication" | "security" | "advanced"]}
-      />
-    );
-  }
-
-  if (protocol === "winrm") {
-    if (subtabId === "authentication") {
-      return (
-        <>
-          <SSHOptions
-            formData={mgr.formData}
-            setFormData={mgr.setFormData}
-            sshSecretManager={mgr.sshSecrets}
-            sections={["authentication"]}
-          />
-          <WinRMOptions
-            formData={mgr.formData}
-            setFormData={mgr.setFormData}
-            sections={["authentication"]}
-          />
-        </>
-      );
-    }
-    const winrmSection =
-      subtabId === "connection"
-        ? "connection"
-        : subtabId === "security"
-          ? "security"
-          : subtabId === "network"
-            ? "transport"
-            : "advanced";
-    return (
-      <WinRMOptions
-        formData={mgr.formData}
-        setFormData={mgr.setFormData}
-        sections={[winrmSection]}
       />
     );
   }

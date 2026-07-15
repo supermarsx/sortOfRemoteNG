@@ -1198,7 +1198,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           />
         </div>
       </div>
-      {p !== "ssh" && (
+      {!["ssh", "raw", "rlogin"].includes(p) && (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
@@ -1208,7 +1208,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   p === "rdp"
                     ? "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically)."
                     : p === "winrm"
-                      ? "Account for WinRM Basic auth. Domain accounts use the Domain field below."
+                      ? "Legacy process-shell account used by the current PowerShell Remoting adapter. Domain accounts use the Domain field below."
                       : p === "vnc"
                         ? "VNC authentication usually only needs a password, not a username."
                         : "Username for authentication with the remote service."
@@ -1242,7 +1242,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   p === "rdp"
                     ? "Windows account password. Sent via CredSSP/NLA during the RDP handshake."
                     : p === "winrm"
-                      ? "Password for WinRM authentication. Sent Base64-encoded (use HTTPS for security)."
+                      ? "Legacy process-shell credential used by the current PowerShell Remoting adapter. Use HTTPS for transport confidentiality."
                       : p === "vnc"
                         ? "VNC server password. Most VNC servers only use password authentication."
                         : "Password for authentication with the remote service."

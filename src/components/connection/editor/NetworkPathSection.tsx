@@ -28,8 +28,18 @@ import type {
   NetworkPathSourceKind,
 } from "../../../utils/network/resolveNetworkPath";
 import { Checkbox, NumberInput, Select, TextInput } from "../../ui/forms";
+import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
+import RloginOptions from "../../connectionEditor/RloginOptions";
+import { PowerShellRemotingEditor } from "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor";
+import { normalizeRawSocketSettings } from "../../../types/protocols/rawSocket";
+import { normalizeRloginSettings } from "../../../utils/rlogin/rloginSettings";
+import { normalizePowerShellRemotingSettings } from "../../../utils/powershell/normalizePowerShellRemoting";
 import {
   getNetworkPathEditorModel,
+  getRawSocketNetworkRoutes,
+  getRloginNetworkPathCapability,
+  getRuntimeNetworkPathProtocol,
+  getRuntimeNetworkPathProtocolLabel,
   resetNetworkPath,
   selectedInlineVpnId,
   setInlineVpn,
@@ -123,11 +133,12 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
   vpnLoading = false,
   collectionError,
 }) => {
-  const protocol = formData.protocol === "rdp" ? "rdp" : "ssh";
+  const protocol = getRuntimeNetworkPathProtocol(formData);
   const model = useMemo(
     () => getNetworkPathEditorModel(formData, catalog, protocol),
     [catalog, formData, protocol],
   );
+  const protocolLabel = getRuntimeNetworkPathProtocolLabel(protocol);
 
   const proxyCollection = catalog.proxyCollection ?? EMPTY_COLLECTION;
   const connectionChainOptions = withCurrentOrphanOption(
@@ -526,17 +537,72 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
         </div>
       </section>
 
+      {formData.protocol === "raw" && (
+        <RawSocketOptions
+          value={normalizeRawSocketSettings(formData.rawSocketSettings)}
+          onChange={(rawSocketSettings) =>
+            setFormData((previous) => ({
+              ...previous,
+              rawSocketSettings,
+            }))
+          }
+          sections={["network-path"]}
+          networkRoutes={getRawSocketNetworkRoutes(model)}
+          targetHost={formData.hostname}
+          targetPort={formData.port}
+        />
+      )}
+
+      {formData.protocol === "rlogin" && (
+        <RloginOptions
+          settings={normalizeRloginSettings(formData.rloginSettings)}
+          port={formData.port ?? 513}
+          onSettingsChange={(rloginSettings) =>
+            setFormData((previous) => ({ ...previous, rloginSettings }))
+          }
+          onPortChange={(port) =>
+            setFormData((previous) => ({ ...previous, port }))
+          }
+          networkPath={getRloginNetworkPathCapability(model)}
+          section="network-path"
+        />
+      )}
+
+      {formData.protocol === "winrm" && (
+        <PowerShellRemotingEditor
+          targetHost={formData.hostname ?? ""}
+          value={
+            normalizePowerShellRemotingSettings(formData.powerShellRemoting)
+              .settings
+          }
+          onChange={(powerShellRemoting) =>
+            setFormData((previous) => ({
+              ...previous,
+              powerShellRemoting,
+              username: powerShellRemoting.credential.username,
+              domain: powerShellRemoting.credential.domain ?? undefined,
+            }))
+          }
+          sections={["network-path"]}
+          networkPathSummary={model.runtime.message}
+        />
+      )}
+
       <section className={cardClass} aria-labelledby="path-support-heading">
         <h4
           id="path-support-heading"
           className="text-xs font-semibold text-[var(--color-text)]"
         >
-          {protocol.toUpperCase()} support
+          {protocolLabel} support
         </h4>
         <p className="mt-1 text-[11px] leading-4 text-[var(--color-textMuted)]">
           {protocol === "rdp"
             ? "RDP supports a VPN prefix and socket paths whose final hop is an SSH bastion. A proxy-only path is blocked because it cannot create the required local forward."
-            : "SSH supports a VPN prefix, strict HTTP/HTTPS/SOCKS4/SOCKS5 proxy hops, and SSH jump or tunnel hops. Dynamic routing, ProxyCommand, stdio, and unsupported tunnel transports fail closed."}
+            : protocol === "ssh"
+              ? "SSH supports a VPN prefix, strict HTTP/HTTPS/SOCKS4/SOCKS5 proxy hops, and SSH jump or tunnel hops. Dynamic routing, ProxyCommand, stdio, and unsupported tunnel transports fail closed."
+              : protocol === "powershell"
+                ? "Direct PowerShell Remoting is available. Every configured shared route is blocked until the backend exposes a network-path adapter; the editor never bypasses it."
+                : `${protocolLabel} supports direct connections now. Every configured VPN, proxy, tunnel, or jump-host layer is blocked until a compatible transport adapter is available.`}
         </p>
       </section>
 

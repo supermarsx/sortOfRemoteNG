@@ -5,6 +5,7 @@ import type { Connection } from "../../../types/connection/connection";
 import type { NormalizedVpnConnection } from "../../../hooks/network/useVpnManager";
 import type { NetworkPathCatalog } from "../../../utils/network/resolveNetworkPath";
 import { NetworkPathSectionView } from "./NetworkPathSection";
+import { createDefaultRawSocketSettings } from "../../../types/protocols/rawSocket";
 
 const EMPTY_CATALOG: NetworkPathCatalog = {
   connections: [],
@@ -224,6 +225,92 @@ describe("NetworkPathSectionView", () => {
     expect(container.textContent).not.toContain("top-secret-password");
     expect(container.textContent).not.toContain("private.proxy.test");
     expect(container.textContent).not.toContain("private-user");
+  });
+
+  it("renders explicit Raw TCP and UDP capability summaries", () => {
+    const first = render(
+      <Harness
+        initial={{
+          id: "raw-tcp",
+          protocol: "raw",
+          rawSocketSettings: createDefaultRawSocketSettings("tcp"),
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        /Direct Raw TCP is supported by the native socket runtime/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Raw TCP support")).toBeInTheDocument();
+
+    first.unmount();
+    render(
+      <Harness
+        initial={{
+          id: "raw-udp",
+          protocol: "raw",
+          rawSocketSettings: createDefaultRawSocketSettings("udp"),
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        /Direct Raw UDP is supported by the native socket runtime/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Raw UDP support")).toBeInTheDocument();
+  });
+
+  it("shows RLogin direct support and blocks a configured proxy visibly", () => {
+    render(
+      <Harness
+        initial={{
+          id: "rlogin",
+          protocol: "rlogin",
+          port: 513,
+          security: {
+            proxy: {
+              type: "socks5",
+              host: "proxy.example.test",
+              port: 1080,
+              enabled: true,
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Connect blocked").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/RLogin runtime supports direct TCP only/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("RLogin support")).toBeInTheDocument();
+  });
+
+  it("marks configured PowerShell routes unavailable until an adapter exists", () => {
+    render(
+      <Harness
+        initial={{
+          id: "powershell",
+          protocol: "winrm",
+          security: {
+            proxy: {
+              type: "http",
+              host: "proxy.example.test",
+              port: 8080,
+              enabled: true,
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Connect blocked").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/backend exposes a network-path adapter/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("PowerShell Remoting support")).toBeInTheDocument();
   });
 
   it("renders disabled and cycle diagnostics from the canonical resolver", () => {

@@ -10,6 +10,8 @@ import {
   Folder as FolderIcon,
   Star,
   HardDrive,
+  Cable,
+  Phone,
   LucideIcon,
 } from "lucide-react";
 import {
@@ -41,6 +43,7 @@ import {
   normalizeExchangeConnectionFields,
   toExchangeProviderFields,
 } from "../../utils/integrations/exchangeConnectionFields";
+import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
 
 /* ═══════════════════════════════════════════════════════════════
    Static data
@@ -107,6 +110,20 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     color: "green",
   },
   {
+    value: "raw",
+    label: "Raw Socket",
+    desc: "TCP / UDP Payload Client",
+    icon: Cable,
+    color: "cyan",
+  },
+  {
+    value: "rlogin",
+    label: "RLogin",
+    desc: "RFC 1282 Remote Login",
+    icon: Phone,
+    color: "amber",
+  },
+  {
     value: "vnc",
     label: "VNC",
     desc: "Virtual Network",
@@ -129,9 +146,9 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
   },
   {
     value: "winrm",
-    label: "WinRM",
-    desc: "Windows Remote Management",
-    icon: Server,
+    label: "PowerShell Remoting",
+    desc: "WSMan / WinRM",
+    icon: Terminal,
     color: "amber",
   },
   {
@@ -647,7 +664,9 @@ export function useConnectionEditor(
             )
           : connection.sshConnectionConfigOverride,
       };
-      const normalized = normalizeIntegrationFields(resolved);
+      const normalized = normalizeAdvancedProtocolConnection(
+        normalizeIntegrationFields(resolved),
+      );
       setFormData(normalized);
       originalDataRef.current = buildEditorSnapshot(normalized);
       // Mark as initialized on the *next* effect cycle so the auto-save
@@ -699,8 +718,10 @@ export function useConnectionEditor(
 
   const buildConnectionData = useCallback((): Connection => {
     const now = new Date().toISOString();
-    const effectiveFormData = stripIntegrationSecretsForPersistence(
-      normalizeIntegrationFields(mergeManagedSshSecrets(formData)),
+    const effectiveFormData = normalizeAdvancedProtocolConnection(
+      stripIntegrationSecretsForPersistence(
+        normalizeIntegrationFields(mergeManagedSshSecrets(formData)),
+      ),
     );
 
     // enableWinrmTools, sshConnectionConfigOverride, etc.) are always
@@ -811,20 +832,22 @@ export function useConnectionEditor(
       if (formData.protocol === "ssh" && nextProtocol !== "ssh") {
         const carriedPassword = sshPasswordRef.current;
         clearManagedSshSecrets();
-        setFormData((prev) => ({
-          ...prev,
-          protocol: nextProtocol,
-          port: getDefaultConnectionPort(protocol),
-          authType: nextAuthType,
-          password: isNextIntegration ? "" : carriedPassword,
-          integration: buildIntegrationSettings(protocol, undefined, prev),
-          passphrase: "",
-          privateKey: "",
-          totpSecret: "",
-          sshConnectionConfigOverride: sanitizeSshConnectionOverride(
-            prev.sshConnectionConfigOverride,
-          ),
-        }));
+        setFormData((prev) =>
+          normalizeAdvancedProtocolConnection({
+            ...prev,
+            protocol: nextProtocol,
+            port: getDefaultConnectionPort(protocol),
+            authType: nextAuthType,
+            password: isNextIntegration ? "" : carriedPassword,
+            integration: buildIntegrationSettings(protocol, undefined, prev),
+            passphrase: "",
+            privateKey: "",
+            totpSecret: "",
+            sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+              prev.sshConnectionConfigOverride,
+            ),
+          }),
+        );
         return;
       }
 
@@ -841,30 +864,34 @@ export function useConnectionEditor(
           typeof formData.totpSecret === "string" ? formData.totpSecret : "";
         sshProxyCommandPasswordRef.current =
           formData.sshConnectionConfigOverride?.proxyCommandPassword || "";
-        setFormData((prev) => ({
+        setFormData((prev) =>
+          normalizeAdvancedProtocolConnection({
+            ...prev,
+            protocol: nextProtocol,
+            port: getDefaultConnectionPort(protocol),
+            authType: nextAuthType,
+            password: "",
+            passphrase: "",
+            privateKey: "",
+            totpSecret: "",
+            integration: undefined,
+            sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+              prev.sshConnectionConfigOverride,
+            ),
+          }),
+        );
+        return;
+      }
+
+      setFormData((prev) =>
+        normalizeAdvancedProtocolConnection({
           ...prev,
           protocol: nextProtocol,
           port: getDefaultConnectionPort(protocol),
           authType: nextAuthType,
-          password: "",
-          passphrase: "",
-          privateKey: "",
-          totpSecret: "",
-          integration: undefined,
-          sshConnectionConfigOverride: sanitizeSshConnectionOverride(
-            prev.sshConnectionConfigOverride,
-          ),
-        }));
-        return;
-      }
-
-      setFormData((prev) => ({
-        ...prev,
-        protocol: nextProtocol,
-        port: getDefaultConnectionPort(protocol),
-        authType: nextAuthType,
-        integration: nextIntegration,
-      }));
+          integration: nextIntegration,
+        }),
+      );
     },
     [
       clearManagedSshSecrets,
@@ -876,15 +903,17 @@ export function useConnectionEditor(
 
   const handleResetToDefaults = useCallback(() => {
     clearManagedSshSecrets();
-    setFormData((prev) => ({
-      ...DEFAULT_FORM,
-      id: prev.id,
-      name: prev.name,
-      createdAt: prev.createdAt,
-      protocol: prev.protocol,
-      port: getDefaultConnectionPort(prev.protocol as string),
-      integration: buildIntegrationSettings(prev.protocol, undefined),
-    }));
+    setFormData((prev) =>
+      normalizeAdvancedProtocolConnection({
+        ...DEFAULT_FORM,
+        id: prev.id,
+        name: prev.name,
+        createdAt: prev.createdAt,
+        protocol: prev.protocol,
+        port: getDefaultConnectionPort(prev.protocol as string),
+        integration: buildIntegrationSettings(prev.protocol, undefined),
+      }),
+    );
   }, [clearManagedSshSecrets]);
 
   const sshSecrets = useMemo<ManagedSshSecretsController>(

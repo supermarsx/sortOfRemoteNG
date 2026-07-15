@@ -48,6 +48,13 @@ describe("connection editor registry", () => {
       "organize-icon",
       "organize-tags",
       "notes-description",
+      "raw-socket-options",
+      "rlogin-connection",
+      "rlogin-terminal",
+      "rlogin-network-path",
+      "rlogin-security",
+      "rlogin-advanced",
+      "powershell-remoting-options",
     ]);
 
     for (const descriptor of CONNECTION_EDITOR_SEARCH_DESCRIPTORS) {

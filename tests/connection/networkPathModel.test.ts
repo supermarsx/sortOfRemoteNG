@@ -5,11 +5,16 @@ import { buildRuntimeNetworkPath } from "../../src/utils/network/resolveRuntimeN
 import {
   asNetworkPathConnection,
   getNetworkPathEditorModel,
+  getRawSocketNetworkRoutes,
+  getRloginNetworkPathCapability,
+  getRuntimeNetworkPathProtocol,
   resetNetworkPath,
   setInlineVpn,
   setNetworkPathReference,
   withCurrentOrphanOption,
 } from "../../src/components/connection/editor/networkPathModel";
+import { createDefaultRawSocketSettings } from "../../src/types/protocols/rawSocket";
+import { createDefaultPowerShellRemotingSettings } from "../../src/utils/powershell/normalizePowerShellRemoting";
 
 const EMPTY_CATALOG: NetworkPathCatalog = {
   connections: [],
@@ -188,5 +193,129 @@ describe("networkPathModel", () => {
     );
     expect(dynamic.runtime.supported).toBe(false);
     expect(dynamic.runtime.message).toMatch(/dynamic routing/i);
+  });
+
+  it("reports explicit direct support for Raw TCP, Raw UDP, and RLogin", () => {
+    const rawTcp = draft({
+      protocol: "raw",
+      rawSocketSettings: createDefaultRawSocketSettings("tcp"),
+    });
+    const rawUdp = draft({
+      protocol: "raw",
+      rawSocketSettings: createDefaultRawSocketSettings("udp"),
+    });
+    const rlogin = draft({ protocol: "rlogin", port: 513 });
+    const powershell = draft({ protocol: "winrm", port: 5985 });
+
+    expect(getRuntimeNetworkPathProtocol(rawTcp)).toBe("raw-tcp");
+    expect(getRuntimeNetworkPathProtocol(rawUdp)).toBe("raw-udp");
+    expect(getRuntimeNetworkPathProtocol(rlogin)).toBe("rlogin");
+    expect(getRuntimeNetworkPathProtocol(powershell)).toBe("powershell");
+
+    const tcpModel = getNetworkPathEditorModel(
+      rawTcp,
+      EMPTY_CATALOG,
+      "raw-tcp",
+    );
+    const udpModel = getNetworkPathEditorModel(
+      rawUdp,
+      EMPTY_CATALOG,
+      "raw-udp",
+    );
+    const rloginModel = getNetworkPathEditorModel(
+      rlogin,
+      EMPTY_CATALOG,
+      "rlogin",
+    );
+    const powershellModel = getNetworkPathEditorModel(
+      powershell,
+      EMPTY_CATALOG,
+      "powershell",
+    );
+
+    expect(tcpModel.runtime).toMatchObject({ supported: true });
+    expect(tcpModel.runtime.message).toMatch(/Direct Raw TCP is supported/i);
+    expect(udpModel.runtime.message).toMatch(/Direct Raw UDP is supported/i);
+    expect(rloginModel.runtime.message).toMatch(
+      /Direct RLogin TCP is supported/i,
+    );
+    expect(powershellModel.runtime).toMatchObject({ supported: true });
+    expect(powershellModel.runtime.message).toMatch(
+      /Direct PowerShell Remoting is available/i,
+    );
+    expect(getRawSocketNetworkRoutes(tcpModel)).toEqual(["direct"]);
+    expect(getRloginNetworkPathCapability(rloginModel)).toMatchObject({
+      configured: false,
+      supported: true,
+      layers: [],
+    });
+  });
+
+  it("fails closed for every configured advanced-protocol hop", () => {
+    const routed = {
+      proxy: {
+        type: "socks5" as const,
+        host: "proxy.example.test",
+        port: 1080,
+        enabled: true,
+      },
+    };
+    const cases = [
+      ["raw-tcp", draft({ protocol: "raw", security: routed })],
+      [
+        "raw-udp",
+        draft({
+          protocol: "raw",
+          rawSocketSettings: createDefaultRawSocketSettings("udp"),
+          security: routed,
+        }),
+      ],
+      ["rlogin", draft({ protocol: "rlogin", security: routed })],
+      ["powershell", draft({ protocol: "winrm", security: routed })],
+    ] as const;
+
+    for (const [protocol, formData] of cases) {
+      const model = getNetworkPathEditorModel(
+        formData,
+        EMPTY_CATALOG,
+        protocol,
+      );
+      expect(model.runtime).toMatchObject({
+        supported: false,
+        code: "unsupported-layer",
+      });
+      expect(model.runtime.message).toMatch(/will not be bypassed|adapter/i);
+    }
+
+    const rloginModel = getNetworkPathEditorModel(
+      cases[2][1],
+      EMPTY_CATALOG,
+      "rlogin",
+    );
+    expect(getRloginNetworkPathCapability(rloginModel)).toMatchObject({
+      configured: true,
+      supported: false,
+      layers: [{ kind: "socks5", label: "socks5" }],
+    });
+  });
+
+  it("blocks explicit PowerShell route settings until an adapter exists", () => {
+    const settings = createDefaultPowerShellRemotingSettings();
+    settings.wsman.proxy = {
+      mode: "http",
+      url: "http://proxy.example.test:8080",
+      credentialRef: null,
+    };
+    const model = getNetworkPathEditorModel(
+      draft({ protocol: "winrm", powerShellRemoting: settings }),
+      EMPTY_CATALOG,
+      "powershell",
+    );
+
+    expect(model.runtime).toMatchObject({
+      supported: false,
+      code: "unsupported-layer",
+    });
+    expect(model.runtime.message).toMatch(/no network-path adapter/i);
   });
 });
