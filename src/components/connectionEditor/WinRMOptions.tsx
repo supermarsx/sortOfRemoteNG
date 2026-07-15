@@ -3,7 +3,10 @@ import { CollapsibleSection } from "../ui/CollapsibleSection";
 import { Monitor } from "lucide-react";
 import { InfoTooltip } from "../ui/InfoTooltip";
 import { useSettings } from "../../contexts/SettingsContext";
-import type { Connection, WinrmConnectionSettings } from "../../types/connection/connection";
+import type {
+  Connection,
+  WinrmConnectionSettings,
+} from "../../types/connection/connection";
 import TransportSection from "./winrmOptions/TransportSection";
 import AuthSection from "./winrmOptions/AuthSection";
 import TlsSection from "./winrmOptions/TlsSection";
@@ -44,20 +47,22 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
   setFormData,
 }) => {
   const { settings } = useSettings();
-  const ws: WinrmConnectionSettings = formData.winrmSettings ?? DEFAULT_WINRM;
-  const enableWinrm = formData.enableWinrmTools ?? settings.enableWinrmTools ?? true;
+  const globalDefaults = settings.winrmDefaults ?? DEFAULT_WINRM;
+  const ws: WinrmConnectionSettings = formData.winrmSettings ?? globalDefaults;
+  const enableWinrm =
+    formData.enableWinrmTools ?? settings.enableWinrmTools ?? true;
 
   const update = useCallback(
     (patch: Partial<WinrmConnectionSettings>) => {
       setFormData((prev) => ({
         ...prev,
         winrmSettings: {
-          ...(prev.winrmSettings ?? DEFAULT_WINRM),
+          ...(prev.winrmSettings ?? globalDefaults),
           ...patch,
         },
       }));
     },
-    [setFormData],
+    [globalDefaults, setFormData],
   );
 
   if (!shouldShow(formData)) return null;
@@ -82,7 +87,13 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
               </span>
             )}
             <select
-              value={formData.enableWinrmTools === undefined ? "inherit" : formData.enableWinrmTools ? "on" : "off"}
+              value={
+                formData.enableWinrmTools === undefined
+                  ? "inherit"
+                  : formData.enableWinrmTools
+                    ? "on"
+                    : "off"
+              }
               onChange={(e) => {
                 const v = e.target.value;
                 setFormData((prev) => ({
@@ -101,7 +112,8 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
 
         {!enableWinrm && (
           <p className="text-xs text-warning">
-            WinRM tools are disabled for this connection. The toolbar buttons and context menu entries will be hidden.
+            WinRM tools are disabled for this connection. The toolbar buttons
+            and context menu entries will be hidden.
           </p>
         )}
 
@@ -109,12 +121,15 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
         {formData.protocol !== "rdp" && (
           <div>
             <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-              Domain <InfoTooltip text="NetBIOS domain name for domain-joined accounts. Leave empty for local accounts." />
+              Domain{" "}
+              <InfoTooltip text="NetBIOS domain name for domain-joined accounts. Leave empty for local accounts." />
             </label>
             <input
               type="text"
               value={formData.domain || ""}
-              onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, domain: e.target.value })
+              }
               className="sor-form-input text-sm"
               placeholder="CONTOSO (optional — for domain accounts)"
             />

@@ -130,6 +130,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   colorScheme: "blue",
   primaryAccentColor: "#3b82f6",
   useCustomAccent: false,
+  customCss: "",
   autoSaveEnabled: false,
   autoSaveIntervalMinutes: 5,
   singleWindowMode: false,
@@ -144,6 +145,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   confirmMainAppClose: false,
   hideQuickStartMessage: false,
   hideQuickStartButtons: false,
+  welcomeScreenTitle: undefined,
+  welcomeScreenMessage: undefined,
 
   // Startup Settings
   startMinimized: false,
@@ -350,10 +353,21 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     port: 8080,
     enabled: false,
   },
+  globalProxyPresets: [],
+  openvpn: undefined,
+  vpnSettings: {
+    openvpnBinaryPath: "",
+    wireguardBinaryPath: "",
+    autoConnectOnStartup: [],
+    statusPollingIntervalMs: 5000,
+    defaultVpnType: "openvpn",
+    dnsHandling: "vpn-dns",
+  },
 
   tabGrouping: "none",
   hostnameOverride: false,
   defaultTabLayout: "tabs",
+  tabLayoutState: undefined,
   enableTabDetachment: false,
   enableTabResize: true,
   enableZoom: true,

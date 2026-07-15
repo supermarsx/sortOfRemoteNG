@@ -1,9 +1,14 @@
-import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, Mock } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useAppLifecycle } from "../../src/hooks/window/useAppLifecycle";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { ThemeManager } from "../../src/utils/settings/themeManager";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
 import i18n, { loadLanguage } from "../../src/i18n";
+
+const lifecycleMocks = vi.hoisted(() => ({
+  loadData: vi.fn(),
+}));
 
 // Mock i18next and related modules
 vi.mock("i18next", () => ({
@@ -43,6 +48,7 @@ vi.mock("../../src/contexts/useConnections", () => ({
     addConnection: vi.fn(),
     removeConnection: vi.fn(),
     updateConnection: vi.fn(),
+    loadData: lifecycleMocks.loadData,
   }),
 }));
 
@@ -54,6 +60,8 @@ describe("useAppLifecycle", () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
+    lifecycleMocks.loadData.mockReset();
+    lifecycleMocks.loadData.mockResolvedValue(undefined);
 
     // Setup mock instances
     mockSettingsManager = {
@@ -90,6 +98,11 @@ describe("useAppLifecycle", () => {
     // Replace i18n mock
     (i18n as any).language = "en";
     (i18n as any).changeLanguage = mockI18n.changeLanguage;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.documentElement.removeAttribute("dir");
   });
 
   it("should initialize app successfully", async () => {
@@ -164,6 +177,77 @@ describe("useAppLifecycle", () => {
     });
 
     expect(mockI18n.changeLanguage).not.toHaveBeenCalled();
+  });
+
+  it("applies rtlLayout to the document direction during initialization", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      rtlLayout: true,
+      autoOpenLastCollection: false,
+    });
+
+    const { result } = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isInitialized).toBe(true);
+    });
+
+    expect(document.documentElement.dir).toBe("rtl");
+  });
+
+  it("auto-opens lastOpenedCollectionId when autoOpenLastCollection is enabled", async () => {
+    const collection = {
+      id: "collection-coverage",
+      name: "Coverage Collection",
+      isEncrypted: false,
+    };
+    const databaseManager = {
+      getAllDatabases: vi.fn().mockResolvedValue([collection]),
+      selectDatabase: vi.fn().mockResolvedValue(undefined),
+      getCurrentDatabase: vi.fn().mockReturnValue(collection),
+    };
+    vi.spyOn(DatabaseManager, "getInstance").mockReturnValue(
+      databaseManager as any,
+    );
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      autoOpenLastCollection: true,
+      lastOpenedCollectionId: "collection-coverage",
+    });
+    const setShowDatabasePanel = vi.fn();
+
+    const { result } = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        setShowDatabasePanel,
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.isInitialized).toBe(true);
+    });
+
+    expect(databaseManager.getAllDatabases).toHaveBeenCalled();
+    expect(databaseManager.selectDatabase).toHaveBeenCalledWith(
+      "collection-coverage",
+    );
+    expect(lifecycleMocks.loadData).toHaveBeenCalled();
+    expect(setShowDatabasePanel).not.toHaveBeenCalledWith(true);
   });
 
   it("should handle language change errors gracefully", async () => {

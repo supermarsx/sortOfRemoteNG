@@ -1,0 +1,231 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useSessionManager } from "../../src/hooks/session/useSessionManager";
+import type {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
+import { SettingsManager } from "../../src/utils/settings/settingsManager";
+
+const connectionMocks = vi.hoisted(() => ({
+  state: {
+    sessions: [] as ConnectionSession[],
+    connections: [] as Connection[],
+  },
+  dispatch: vi.fn(),
+  executeScriptsForTrigger: vi.fn(),
+  startChecking: vi.fn(),
+  stopChecking: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
+vi.mock("../../src/contexts/useConnections", () => ({
+  useConnections: () => ({
+    state: connectionMocks.state,
+    dispatch: connectionMocks.dispatch,
+  }),
+}));
+
+vi.mock("../../src/utils/recording/scriptEngine", () => ({
+  ScriptEngine: {
+    getInstance: () => ({
+      executeScriptsForTrigger: connectionMocks.executeScriptsForTrigger,
+    }),
+  },
+}));
+
+vi.mock("../../src/utils/connection/statusChecker", () => ({
+  StatusChecker: {
+    getInstance: () => ({
+      startChecking: connectionMocks.startChecking,
+      stopChecking: connectionMocks.stopChecking,
+      cleanup: vi.fn(),
+    }),
+  },
+}));
+
+function makeConnection(overrides: Partial<Connection> = {}): Connection {
+  return {
+    id: "conn-new",
+    name: "New SSH",
+    protocol: "ssh",
+    hostname: "ssh-new.example.test",
+    port: 22,
+    isGroup: false,
+    ...overrides,
+  } as Connection;
+}
+
+function makeSession(
+  overrides: Partial<ConnectionSession> = {},
+): ConnectionSession {
+  return {
+    id: "session-existing",
+    connectionId: "conn-existing",
+    name: "Existing SSH",
+    status: "connected",
+    startTime: new Date("2026-01-01T00:00:00.000Z"),
+    protocol: "ssh",
+    hostname: "ssh-existing.example.test",
+    ...overrides,
+  };
+}
+
+describe("useSessionManager settings effects", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    SettingsManager.resetInstance();
+    connectionMocks.state = { sessions: [], connections: [] };
+    connectionMocks.executeScriptsForTrigger.mockResolvedValue(undefined);
+    SettingsManager.getInstance().applyInMemory({
+      maxConcurrentConnections: 10,
+      retryAttempts: 0,
+      retryDelay: 1,
+      connectionTimeout: 0,
+      singleConnectionMode: false,
+      openConnectionInBackground: false,
+      notifyOnConnect: false,
+      notifyOnReconnect: false,
+      notifyOnDisconnect: false,
+      notifyOnError: false,
+      notificationSound: false,
+    });
+  });
+
+  it("openConnectionInBackground controls whether a new connection becomes active", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      openConnectionInBackground: true,
+    });
+    const { result, rerender } = renderHook(() => useSessionManager());
+
+    await act(async () => {
+      await result.current.handleConnect(makeConnection());
+    });
+
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({ connectionId: "conn-new" }),
+    });
+    expect(result.current.activeSessionId).toBeUndefined();
+
+    const addedSession = connectionMocks.dispatch.mock.calls.find(
+      ([action]) => action.type === "ADD_SESSION",
+    )?.[0].payload as ConnectionSession;
+    connectionMocks.state = {
+      sessions: [addedSession],
+      connections: [makeConnection()],
+    };
+    SettingsManager.getInstance().applyInMemory({
+      openConnectionInBackground: false,
+    });
+    connectionMocks.dispatch.mockClear();
+    rerender();
+
+    await act(async () => {
+      await result.current.handleConnect(
+        makeConnection({ id: "conn-foreground", hostname: "fg.example.test" }),
+      );
+    });
+
+    const foregroundSession = connectionMocks.dispatch.mock.calls.find(
+      ([action]) =>
+        action.type === "ADD_SESSION" &&
+        action.payload.connectionId === "conn-foreground",
+    )?.[0].payload as ConnectionSession;
+    expect(result.current.activeSessionId).toBe(foregroundSession.id);
+  });
+
+  it("singleConnectionMode confirms and removes existing real sessions before opening a new one", async () => {
+    connectionMocks.state = {
+      sessions: [makeSession()],
+      connections: [makeConnection({ id: "conn-existing" })],
+    };
+    SettingsManager.getInstance().applyInMemory({
+      singleConnectionMode: true,
+    });
+    const { result } = renderHook(() => useSessionManager());
+
+    let connectPromise!: Promise<void>;
+    act(() => {
+      connectPromise = result.current.handleConnect(makeConnection());
+    });
+
+    await waitFor(() => {
+      expect(result.current.confirmDialog).not.toBeNull();
+    });
+
+    act(() => {
+      (result.current.confirmDialog as any).props.onConfirm();
+    });
+    await connectPromise;
+
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "REMOVE_SESSION",
+      payload: "session-existing",
+    });
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({ connectionId: "conn-new" }),
+    });
+  });
+
+  it("notifyOnConnect gates OS notifications for session status changes", async () => {
+    const notificationCtor = vi.fn();
+    Object.assign(notificationCtor, {
+      permission: "granted",
+      requestPermission: vi.fn(),
+    });
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: notificationCtor,
+    });
+    SettingsManager.getInstance().applyInMemory({
+      notifyOnConnect: true,
+      notificationSound: false,
+    });
+    connectionMocks.state = {
+      sessions: [makeSession({ status: "connecting" })],
+      connections: [],
+    };
+    const { rerender } = renderHook(() => useSessionManager());
+
+    connectionMocks.state = {
+      sessions: [makeSession({ status: "connected" })],
+      connections: [],
+    };
+    rerender();
+
+    await waitFor(() => {
+      expect(notificationCtor).toHaveBeenCalledWith(
+        "Session connected",
+        expect.objectContaining({
+          body: "Existing SSH (SSH ssh-existing.example.test)",
+          silent: true,
+          tag: "sortofremoteng:connect:session-existing",
+        }),
+      );
+    });
+
+    notificationCtor.mockClear();
+    SettingsManager.getInstance().applyInMemory({
+      notifyOnConnect: false,
+    });
+    connectionMocks.state = {
+      sessions: [makeSession({ id: "session-second", status: "connecting" })],
+      connections: [],
+    };
+    rerender();
+    connectionMocks.state = {
+      sessions: [makeSession({ id: "session-second", status: "connected" })],
+      connections: [],
+    };
+    rerender();
+
+    expect(notificationCtor).not.toHaveBeenCalled();
+  });
+});
