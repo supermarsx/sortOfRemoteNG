@@ -6,6 +6,7 @@ import ExportTab, {
 import type { ExportConfigUpdate } from "../../src/components/ImportExport/types";
 import type { Connection } from "../../src/types/connection/connection";
 import { defaultExportSecuritySettings } from "../../src/types/settings/settings";
+import { createDefaultRawSocketSettings } from "../../src/types/protocols/rawSocket";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -130,6 +131,31 @@ function advanceExportTo(stepId: string) {
 }
 
 describe("ExportTab", () => {
+  it("labels advanced protocols and warns when mRemoteNG cannot preserve settings", () => {
+    const rawUdp: Connection = {
+      ...connections[0],
+      id: "raw-udp",
+      name: "Datagram endpoint",
+      protocol: "raw",
+      port: 9000,
+      rawSocketSettings: createDefaultRawSocketSettings("udp"),
+    };
+    renderExportTab({
+      connections: [rawUdp],
+      config: { ...defaultConfig, format: "mremoteng" },
+    });
+
+    advanceExportTo("format");
+    expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
+      "mRemoteNG cannot preserve advanced RAW/TCP, RAW/UDP, RLogin, or PowerShell Remoting settings",
+    );
+
+    advanceExportTo("connection");
+    const connectionSection = screen.getByTestId("export-connections-section");
+    fireEvent.click(within(connectionSection).getByRole("button"));
+    expect(connectionSection).toHaveTextContent("RAW/UDP");
+  });
+
   it("orders conditional selection pages and renumbers later steps without gaps", () => {
     const { rerender, onConfigChange, handleExport } = renderExportTab();
 

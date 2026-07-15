@@ -36,6 +36,10 @@ import { proxyCollectionManager } from "../../utils/connection/proxyCollectionMa
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 import { Wizard } from "./Wizard";
 import { useWizardNavigation, type WizardStep } from "./useWizardNavigation";
+import {
+  formatPortableProtocolLabel,
+  hasAdvancedProtocolSettings,
+} from "./advancedProtocolPortability";
 
 export type { ExportConfig } from "./types";
 
@@ -330,6 +334,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
           id: connection.id,
           name: connection.name,
           protocol: connection.protocol,
+          protocolLabel: formatPortableProtocolLabel(connection),
           hostname: connection.hostname,
         })),
     [connections],
@@ -522,6 +527,15 @@ const ExportTab: React.FC<ExportTabProps> = ({
       : []),
     ...(config.format === "mremoteng" && config.encrypted
       ? [t("exportTab.warningMRemoteNGEncrypted")]
+      : []),
+    ...(config.format === "mremoteng" &&
+    previewConnections.some(hasAdvancedProtocolSettings)
+      ? [
+          t("exportTab.warningAdvancedProtocolSettings", {
+            defaultValue:
+              "mRemoteNG cannot preserve advanced RAW/TCP, RAW/UDP, RLogin, or PowerShell Remoting settings; only compatible endpoint fields are exported.",
+          }),
+        ]
       : []),
     ...(singleDatabaseFormatBlocked
       ? [t("exportTab.warningSingleDatabaseFormat")]
@@ -1039,7 +1053,9 @@ const ExportTab: React.FC<ExportTabProps> = ({
             >
               {inclusion.includedProtocols.length > 0
                 ? inclusion.includedProtocols
-                    .map((protocol) => protocol.toUpperCase())
+                    .map((protocol) =>
+                      formatPortableProtocolLabel({ protocol }),
+                    )
                     .join(", ")
                 : t("exportTab.previewAllProtocols", {
                     count: protocolCount,

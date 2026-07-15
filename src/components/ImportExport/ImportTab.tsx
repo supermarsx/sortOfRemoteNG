@@ -36,6 +36,7 @@ import { Select, type SelectOption } from "../ui/forms";
 import { DatabasePickerRow } from "./DatabasePickerRow";
 import { Wizard } from "./Wizard";
 import { useWizardNavigation, type WizardStep } from "./useWizardNavigation";
+import { formatPortableProtocolLabel } from "./advancedProtocolPortability";
 
 interface ImportTabProps {
   isProcessing: boolean;
@@ -921,7 +922,7 @@ const ImportFilters: React.FC<{
             <option value="all">All protocols</option>
             {availableProtocols.map((protocol) => (
               <option key={protocol} value={protocol}>
-                {protocol.toUpperCase()}
+                {formatPortableProtocolLabel({ protocol })}
               </option>
             ))}
           </select>
@@ -1233,7 +1234,9 @@ const PreviewTable: React.FC<{
                   <td className="px-3 py-2 align-top">
                     <span className="rounded border border-[var(--color-border)] px-2 py-0.5 uppercase text-[var(--color-textSecondary)]">
                       {item.kind === "connection"
-                        ? item.protocol
+                        ? item.connection
+                          ? formatPortableProtocolLabel(item.connection)
+                          : item.protocol
                         : item.kind === "tunnelChain"
                           ? "tunnel"
                           : item.kind === "sshTunnel"

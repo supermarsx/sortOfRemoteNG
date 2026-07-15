@@ -61,6 +61,15 @@ import {
   buildApplyItems,
   type ApplyConnectionsItem,
 } from '../../components/ImportExport/applyConnections';
+import {
+  formatPortableProtocolLabel,
+  hasAdvancedProtocolSettings,
+  normalizeImportedAdvancedProtocolConnection,
+  prepareConnectionForClone,
+  prepareConnectionForExport,
+  serializeConnectionsToNativeXml,
+  serializeDatasetsToNativeCsv,
+} from '../../components/ImportExport/advancedProtocolPortability';
 
 const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
   search: '',
@@ -312,6 +321,11 @@ const SECRET_FIELD_NAMES = new Set([
   'authtoken',
   'seedphrase',
   'answer',
+  'savedcredentialid',
+  'vaultref',
+  'clientcertificateref',
+  'credentialref',
+  'privatekeycredentialref',
 ]);
 
 const SECRET_HEADER_NAMES = /authorization|cookie|token|secret|password|api[-_ ]?key/i;
@@ -635,9 +649,12 @@ const prepareConnectionsForExport = (
   inclusion: ExportInclusionConfig,
 ): Connection[] => {
   const filteredConnections = filterConnectionsForExport(connections, inclusion);
+  const portableConnections = filteredConnections.map((connection) =>
+    prepareConnectionForExport(connection, true),
+  );
   return inclusion.includeCredentials
-    ? filteredConnections
-    : filteredConnections.map(redactConnectionSecretsForExport);
+    ? portableConnections
+    : portableConnections.map(redactConnectionSecretsForExport);
 };
 
 const createEmptyCloneSidecarCounts = (): CloneSidecarCounts => ({
@@ -1614,6 +1631,7 @@ export function useImportExport({
             name: safeString(connection.name) || 'Unnamed item',
             path: getConnectionPath(connection, byId),
             protocol: connection.protocol,
+            protocolLabel: formatPortableProtocolLabel(connection),
             hostname: connection.hostname,
             tags: safeTags(connection.tags),
             colorTag: connection.colorTag,
@@ -1682,7 +1700,6 @@ export function useImportExport({
 
       // Loop until the user enters the right password or cancels.
       let attemptError: string | undefined;
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const password = await requestPassword({
           title: `Unlock "${option.name}"`,
@@ -1759,13 +1776,6 @@ export function useImportExport({
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
-  const escapeCsv = (str: string): string => {
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
-
   const escapeHtml = (str: string): string =>
     str
       .replace(/&/g, '&amp;')
@@ -1808,7 +1818,7 @@ export function useImportExport({
       id: safeString(connection.id),
       name: safeString(connection.name),
       kind: connection.isGroup ? 'Folder' : 'Connection',
-      protocol: connection.isGroup ? '' : safeString(connection.protocol).toUpperCase(),
+      protocol: connection.isGroup ? '' : formatPortableProtocolLabel(connection),
       hostname: safeString(connection.hostname),
       port: connection.isGroup ? '' : safeString(connection.port),
       username: safeString(connection.username),
@@ -2422,8 +2432,18 @@ export function useImportExport({
     if (exportInclusion.includedProtocols.length > 0) {
       warnings.push(`Protocol filter active: ${exportInclusion.includedProtocols.join(', ')}.`);
     }
-    if (exportFormat !== 'json') {
+    if (!['json', 'xml', 'csv'].includes(exportFormat)) {
       warnings.push('Selected non-JSON format is an inventory export and may not preserve every app-specific inclusion.');
+    }
+    if (
+      exportFormat === 'mremoteng' &&
+      datasets.some((dataset) =>
+        dataset.connections.some(hasAdvancedProtocolSettings),
+      )
+    ) {
+      warnings.push(
+        'mRemoteNG cannot preserve every advanced Raw Socket, RLogin, or PowerShell Remoting setting; review the imported connections after transfer.',
+      );
     }
     if (datasets.some((dataset) => !dataset.isCurrent)) {
       warnings.push('Counts for non-current databases were calculated when the export ran.');
@@ -2583,73 +2603,11 @@ export function useImportExport({
       : {}),
   });
 
-  const exportToXML = (dataset: ExportDatabaseDataset): string => {
-    const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    const xmlRoot = '<sortOfRemoteNG>\n';
-    const xmlConnections = dataset.connections
-      .map((conn) => {
-        const attributes = [
-          `Id="${conn.id}"`,
-          `Name="${escapeXml(conn.name)}"`,
-          `Type="${conn.protocol.toUpperCase()}"`,
-          `Server="${escapeXml(conn.hostname)}"`,
-          `Port="${conn.port}"`,
-          `Username="${escapeXml(conn.username || '')}"`,
-          `Domain="${escapeXml(conn.domain || '')}"`,
-          `Description="${escapeXml(conn.description || '')}"`,
-          `ParentId="${conn.parentId || ''}"`,
-          `IsGroup="${conn.isGroup}"`,
-          `Tags="${escapeXml((conn.tags || []).join(','))}"`,
-          `CreatedAt="${conn.createdAt}"`,
-          `UpdatedAt="${conn.updatedAt}"`,
-        ].join(' ');
-        return `  <Connection ${attributes} />`;
-      })
-      .join('\n');
-    const xmlFooter = '\n</sortOfRemoteNG>';
-    return xmlHeader + xmlRoot + xmlConnections + xmlFooter;
-  };
+  const exportToXML = (dataset: ExportDatabaseDataset): string =>
+    serializeConnectionsToNativeXml(dataset.connections);
 
-  const exportToCSV = (datasets: ExportDatabaseDataset[]): string => {
-    const includeDatabaseColumns = datasets.length > 1;
-    const headers = [
-      ...(includeDatabaseColumns ? ['Database', 'DatabaseId'] : []),
-      'ID',
-      'Name',
-      'Protocol',
-      'Hostname',
-      'Port',
-      'Username',
-      'Domain',
-      'Description',
-      'ParentId',
-      'IsGroup',
-      'Tags',
-      'CreatedAt',
-      'UpdatedAt',
-    ];
-    const rows = datasets.flatMap((dataset) =>
-      dataset.connections.map((conn) => [
-        ...(includeDatabaseColumns
-          ? [escapeCsv(dataset.databaseName), dataset.databaseId]
-          : []),
-        conn.id,
-        escapeCsv(conn.name),
-        conn.protocol,
-        escapeCsv(conn.hostname),
-        conn.port.toString(),
-        escapeCsv(conn.username || ''),
-        escapeCsv(conn.domain || ''),
-        escapeCsv(conn.description || ''),
-        conn.parentId || '',
-        conn.isGroup.toString(),
-        escapeCsv((conn.tags || []).join(';')),
-        safeString(conn.createdAt),
-        safeString(conn.updatedAt),
-      ]),
-    );
-    return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
-  };
+  const exportToCSV = (datasets: ExportDatabaseDataset[]): string =>
+    serializeDatasetsToNativeCsv(datasets);
 
   const exportToText = (datasets: ExportDatabaseDataset[]): string => {
     const lines = [
@@ -2671,7 +2629,7 @@ export function useImportExport({
       const childIndent = `${indent}  `;
       lines.push(`${indent}- [${connection.isGroup ? 'Folder' : 'Connection'}] ${safeString(connection.name) || 'Unnamed item'}`);
       if (!connection.isGroup) {
-        lines.push(`${childIndent}Protocol: ${safeString(connection.protocol).toUpperCase()}`);
+        lines.push(`${childIndent}Protocol: ${formatPortableProtocolLabel(connection)}`);
         lines.push(`${childIndent}Host: ${safeString(connection.hostname)}${connection.port ? `:${connection.port}` : ''}`);
         if (connection.username) lines.push(`${childIndent}Username: ${safeString(connection.username)}`);
         if (connection.domain) lines.push(`${childIndent}Domain: ${safeString(connection.domain)}`);
@@ -3609,7 +3567,9 @@ ${tableRows}
       const preparedItems: ApplyConnectionsItem[] = selectedItems
         .filter((item) => Boolean(item.connection))
         .map((item) => {
-          const connection = item.connection as Connection;
+          const connection = normalizeImportedAdvancedProtocolConnection(
+            item.connection as Connection,
+          );
           const keepSshTunnels =
             !hasConnectionSshTunnel(connection) ||
             (importOptions.includeSshTunnels &&
@@ -3954,11 +3914,9 @@ ${tableRows}
             existing = snapshot?.connections ?? [];
           }
           const items = buildApplyItems(
-            // Strip credentials per the user's preference. Clone
-            // defaults to keeping them; Import defaults to stripping.
-            cloneIncludeCredentials
-              ? filteredForApply
-              : filteredForApply.map(stripConnectionCredentials),
+            filteredForApply.map((connection) =>
+              prepareConnectionForClone(connection, cloneIncludeCredentials),
+            ),
             existing,
           );
           const applied = remapConnectionsForApply(items, {
@@ -4049,6 +4007,10 @@ ${tableRows}
     } finally {
       setIsCloning(false);
     }
+  // cloneSidecarsForConnections closes over the same manager singletons and
+  // current operation state consumed here; listing the inline helper would
+  // recreate this action on every render without making the inputs safer.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isCloning,
     getEffectiveCloneSourceIds,

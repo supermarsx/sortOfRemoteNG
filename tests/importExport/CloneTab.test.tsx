@@ -243,6 +243,34 @@ function advanceLatestCloneTo(stepId: string) {
 }
 
 describe("CloneTab", () => {
+  it("uses the transport-aware protocol label in clone previews", () => {
+    renderCloneTab({
+      sourceCatalog: [
+        {
+          key: "db-1:ps-1",
+          sourceDatabaseId: "db-1",
+          sourceDatabaseName: "Primary",
+          connectionId: "ps-1",
+          name: "PowerShell endpoint",
+          path: "PowerShell endpoint",
+          protocol: "winrm",
+          protocolLabel: "PowerShell Remoting",
+          hostname: "ps.internal",
+          tags: [],
+          isGroup: false,
+          ancestorKeys: [],
+        },
+      ],
+    });
+    advanceLatestCloneTo("scope-content");
+    fireEvent.click(
+      within(screen.getByTestId("clone-filter-section")).getByRole("button"),
+    );
+    const connectionsSection = screen.getByTestId("clone-connections-section");
+    fireEvent.click(within(connectionsSection).getByRole("button"));
+    expect(connectionsSection).toHaveTextContent("PowerShell Remoting");
+  });
+
   it("applies clone templates through the existing payload setters", () => {
     const setPreserveFolders = vi.fn();
     const setIncludeCredentials = vi.fn();

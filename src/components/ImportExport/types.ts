@@ -269,6 +269,7 @@ export interface CloneSourceCatalogItem {
   name: string;
   path: string;
   protocol: Connection['protocol'];
+  protocolLabel?: string;
   hostname?: string;
   tags: string[];
   colorTag?: string;

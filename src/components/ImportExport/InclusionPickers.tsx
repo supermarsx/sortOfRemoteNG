@@ -11,6 +11,7 @@ import type { Connection } from "../../types/connection/connection";
 import type { ExportInclusionConfig } from "./types";
 import { Checkbox } from "../ui/forms";
 import { AccordionSection } from "./AccordionSection";
+import { formatPortableProtocolLabel } from "./advancedProtocolPortability";
 
 export type InclusionPickerSection =
   | "connections"
@@ -25,6 +26,7 @@ export interface InclusionConnectionOption {
   id: string;
   name: string;
   protocol: Connection["protocol"];
+  protocolLabel?: string;
   hostname?: string;
   sourcePath?: string;
   databaseId?: string;
@@ -82,7 +84,9 @@ const selectedBadge = (count: number) =>
     <span className="text-[var(--color-textMuted)]">all</span>
   );
 
-export const InclusionProtocolFilter: React.FC<InclusionProtocolFilterProps> = ({
+export const InclusionProtocolFilter: React.FC<
+  InclusionProtocolFilterProps
+> = ({
   inclusion,
   updateInclusion,
   availableProtocols,
@@ -146,10 +150,10 @@ export const InclusionProtocolFilter: React.FC<InclusionProtocolFilterProps> = (
                   disabled={disabled}
                   onChange={(value: boolean) => toggleProtocol(protocol, value)}
                   className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                  aria-label={protocol.toUpperCase()}
+                  aria-label={formatPortableProtocolLabel({ protocol })}
                 />
                 <span className="font-medium text-[var(--color-textSecondary)]">
-                  {protocol.toUpperCase()}
+                  {formatPortableProtocolLabel({ protocol })}
                 </span>
               </label>
             );
@@ -218,7 +222,9 @@ export const InclusionItemPickers: React.FC<InclusionItemPickersProps> = ({
   const [proxyChainsSearch, setProxyChainsSearch] = useState("");
   const [vpnSearch, setVpnSearch] = useState("");
 
-  const selectedConnectionIdSet = new Set(inclusion.includedConnectionIds ?? []);
+  const selectedConnectionIdSet = new Set(
+    inclusion.includedConnectionIds ?? [],
+  );
   const selectedFolderIdSet = new Set(inclusion.includedFolderIds ?? []);
   const selectedTextTagSet = new Set(inclusion.includedTextTags ?? []);
   const selectedColorTagIdSet = new Set(inclusion.includedColorTagIds ?? []);
@@ -496,7 +502,10 @@ export const InclusionItemPickers: React.FC<InclusionItemPickersProps> = ({
                             {connection.name}
                           </span>
                           <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                            {connection.protocol.toUpperCase()}
+                            {connection.protocolLabel ??
+                              formatPortableProtocolLabel({
+                                protocol: connection.protocol,
+                              })}
                             {connection.hostname
                               ? ` - ${connection.hostname}`
                               : ""}
@@ -644,15 +653,16 @@ export const InclusionItemPickers: React.FC<InclusionItemPickersProps> = ({
           {textTags.length === 0 ? (
             <p className="text-xs text-[var(--color-textMuted)]">
               {t("exportTab.textTagsEmpty", {
-                defaultValue:
-                  "No text tags are used in the open database yet.",
+                defaultValue: "No text tags are used in the open database yet.",
               })}
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {textTags
                 .filter((tag) =>
-                  tag.toLowerCase().includes(textTagsSearch.trim().toLowerCase()),
+                  tag
+                    .toLowerCase()
+                    .includes(textTagsSearch.trim().toLowerCase()),
                 )
                 .map((tag) => {
                   const checked =
@@ -665,9 +675,7 @@ export const InclusionItemPickers: React.FC<InclusionItemPickersProps> = ({
                     >
                       <Checkbox
                         checked={checked}
-                        onChange={(value: boolean) =>
-                          updateTextTag(tag, value)
-                        }
+                        onChange={(value: boolean) => updateTextTag(tag, value)}
                         className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
                         aria-label={tag}
                       />
@@ -987,7 +995,9 @@ const ListPickerSection: React.FC<{
                     {option.name}
                   </span>
                   <span className="block truncate text-[10px] text-[var(--color-textMuted)]">
-                    {[option.kind, option.description].filter(Boolean).join(" - ")}
+                    {[option.kind, option.description]
+                      .filter(Boolean)
+                      .join(" - ")}
                   </span>
                 </span>
               </label>

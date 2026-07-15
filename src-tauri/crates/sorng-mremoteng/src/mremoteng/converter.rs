@@ -589,7 +589,7 @@ fn mrng_protocol_to_app(protocol: &MrngProtocol) -> &'static str {
         MrngProtocol::SSH1 | MrngProtocol::SSH2 => "ssh",
         MrngProtocol::Telnet => "telnet",
         MrngProtocol::Rlogin => "rlogin",
-        MrngProtocol::RAW => "telnet", // Closest app equivalent
+        MrngProtocol::RAW => "raw", // mRemoteNG RAW is an unnegotiated TCP stream
         MrngProtocol::HTTP => "http",
         MrngProtocol::HTTPS => "https",
         MrngProtocol::PowerShell => "winrm", // PowerShell remoting → WinRM
@@ -606,6 +606,7 @@ fn app_protocol_to_mrng(protocol: &str) -> MrngProtocol {
         "ssh" | "sftp" | "scp" => MrngProtocol::SSH2,
         "telnet" => MrngProtocol::Telnet,
         "rlogin" => MrngProtocol::Rlogin,
+        "raw" | "raw-tcp" | "raw_tcp" => MrngProtocol::RAW,
         "http" => MrngProtocol::HTTP,
         "https" => MrngProtocol::HTTPS,
         "winrm" => MrngProtocol::PowerShell,
@@ -1072,12 +1073,17 @@ mod tests {
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::SSH2), "ssh");
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::VNC), "vnc");
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::Telnet), "telnet");
+        assert_eq!(mrng_protocol_to_app(&MrngProtocol::Rlogin), "rlogin");
+        assert_eq!(mrng_protocol_to_app(&MrngProtocol::RAW), "raw");
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::HTTPS), "https");
         assert_eq!(mrng_protocol_to_app(&MrngProtocol::PowerShell), "winrm");
 
         assert_eq!(app_protocol_to_mrng("rdp"), MrngProtocol::RDP);
         assert_eq!(app_protocol_to_mrng("ssh"), MrngProtocol::SSH2);
         assert_eq!(app_protocol_to_mrng("vnc"), MrngProtocol::VNC);
+        assert_eq!(app_protocol_to_mrng("rlogin"), MrngProtocol::Rlogin);
+        assert_eq!(app_protocol_to_mrng("raw"), MrngProtocol::RAW);
+        assert_eq!(app_protocol_to_mrng("winrm"), MrngProtocol::PowerShell);
     }
 
     // ── SSH tunnel name → id resolution ────────────────────────────

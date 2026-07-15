@@ -10,6 +10,7 @@ import type {
   ImportSourceMetadata,
 } from "../../src/components/ImportExport/types";
 import type { Connection } from "../../src/types/connection/connection";
+import { createDefaultRawSocketSettings } from "../../src/types/protocols/rawSocket";
 
 const toastSuccess = vi.fn();
 
@@ -169,6 +170,48 @@ describe("ImportTab", () => {
     });
 
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  });
+
+  it("labels RAW/UDP in protocol filters and imported connection previews", () => {
+    const connection = makeConnection({
+      id: "raw-udp",
+      name: "Datagram endpoint",
+      protocol: "raw",
+      port: 9000,
+      rawSocketSettings: createDefaultRawSocketSettings("udp"),
+    });
+    const item: ImportPreviewItem = {
+      id: "connection:raw-udp:0",
+      kind: "connection",
+      sourceIndex: 0,
+      sourcePath: "Datagram endpoint",
+      name: connection.name,
+      protocol: "raw",
+      hostname: connection.hostname,
+      port: connection.port,
+      tags: [],
+      connection,
+      importable: true,
+      selectedByDefault: true,
+      conflictStatus: "none",
+      issues: [],
+    };
+
+    renderImportTab({
+      importResult: {
+        success: true,
+        imported: 1,
+        errors: [],
+        connections: [connection],
+      },
+      previewItems: [item],
+      visiblePreviewItems: [item],
+      availableProtocols: ["raw"],
+      selectedPreviewIds: new Set([item.id]),
+      selectedCount: 1,
+    });
+
+    expect(screen.getAllByText("RAW/UDP").length).toBeGreaterThanOrEqual(1);
   });
 
   it("opens the file chooser and forwards file input changes", () => {

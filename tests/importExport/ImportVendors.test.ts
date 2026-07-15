@@ -168,7 +168,8 @@ describe('importFromMRemoteNG', () => {
     const conns = await importFromMRemoteNG(xml);
     const ps = conns.find((c) => c.name === 'PowerShell Host');
     expect(ps).toBeDefined();
-    expect(ps!.protocol).toBe('ssh'); // PowerShell mapped to ssh (no powershell protocol type)
+    expect(ps!.protocol).toBe('winrm');
+    expect(ps!.powerShellRemoting?.transport).toBe('wsman');
     expect(ps!.hostname).toBe('ps.example.com');
   });
 

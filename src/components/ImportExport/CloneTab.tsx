@@ -212,6 +212,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
         id: item.key,
         name: item.name,
         protocol: item.protocol,
+        protocolLabel: item.protocolLabel,
         hostname: item.hostname,
         sourcePath: item.path,
         databaseId: item.sourceDatabaseId,

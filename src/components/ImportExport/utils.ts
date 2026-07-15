@@ -4,6 +4,12 @@ import {
   type TunnelType,
 } from "../../types/connection/connection";
 import { generateId } from "../../utils/core/id";
+import { createDefaultRawSocketSettings } from "../../types/protocols/rawSocket";
+import {
+  mapPortableProtocol,
+  normalizeImportedAdvancedProtocolConnection,
+  parseNativeAdvancedProtocolSettings,
+} from "./advancedProtocolPortability";
 
 export const parseCSVLine = (line: string): string[] => {
   const values: string[] = [];
@@ -39,7 +45,13 @@ const getDefaultPort = (protocol: string): number => {
     SSH2: 22,
     SSH: 22,
     TELNET: 23,
+    RAW: 23,
+    "RAW/TCP": 23,
+    "RAW/UDP": 23,
     RLOGIN: 513,
+    POWERSHELL: 5985,
+    "POWERSHELL-REMOTING": 5985,
+    WINRM: 5985,
     VNC: 5900,
     HTTP: 80,
     HTTPS: 443,
@@ -83,27 +95,30 @@ export const importFromCSV = async (content: string): Promise<Connection[]> => {
       conn[header] = values[index];
     });
 
-    const protocol = (conn.Protocol?.toLowerCase() ||
-      "rdp") as Connection["protocol"];
+    const protocolMapping = mapPortableProtocol(conn.Protocol || "rdp");
+    const protocol = protocolMapping.protocol;
 
-    connections.push({
-      id: conn.ID || generateId(),
-      name: conn.Name || "Imported Connection",
-      protocol,
-      hostname: conn.Hostname || "",
-      port: parsePortOrDefault(conn.Port, protocol),
-      username: conn.Username || undefined,
-      domain: conn.Domain || undefined,
-      description: conn.Description || undefined,
-      parentId: conn.ParentId || undefined,
-      isGroup: conn.IsGroup === "true",
-      tags: conn.Tags?.split(";").filter((t: string) => t.trim()) || [],
-      createdAt: new Date(conn.CreatedAt || Date.now()).toISOString(),
-      updatedAt: new Date(conn.UpdatedAt || Date.now()).toISOString(),
-    });
+    connections.push(
+      normalizeImportedAdvancedProtocolConnection({
+        id: conn.ID || generateId(),
+        name: conn.Name || "Imported Connection",
+        protocol: (conn.Protocol || protocol) as Connection["protocol"],
+        hostname: conn.Hostname || "",
+        port: parsePortOrDefault(conn.Port, protocol),
+        username: conn.Username || undefined,
+        domain: conn.Domain || undefined,
+        description: conn.Description || undefined,
+        parentId: conn.ParentId || undefined,
+        isGroup: conn.IsGroup === "true",
+        tags: conn.Tags?.split(";").filter((t: string) => t.trim()) || [],
+        createdAt: new Date(conn.CreatedAt || Date.now()).toISOString(),
+        updatedAt: new Date(conn.UpdatedAt || Date.now()).toISOString(),
+        ...parseNativeAdvancedProtocolSettings(conn),
+      }),
+    );
   }
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 const parseBooleanAttribute = (value: string | null): boolean =>
@@ -142,19 +157,28 @@ export const importFromXML = async (content: string): Promise<Connection[]> => {
   }
 
   return nodes.map((node) => {
-    const protocol = (
-      node.getAttribute("Type") || "rdp"
-    ).toLowerCase() as Connection["protocol"];
+    const protocolMapping = mapPortableProtocol(
+      node.getAttribute("Type") || "rdp",
+    );
+    const protocol = protocolMapping.protocol;
     const isGroup = parseBooleanAttribute(node.getAttribute("IsGroup"));
     const tags = (node.getAttribute("Tags") || "")
       .split(/[;,]/)
       .map((tag) => tag.trim())
       .filter(Boolean);
 
-    return {
+    const attributes = Object.fromEntries(
+      Array.from(node.attributes).map((attribute) => [
+        attribute.name,
+        attribute.value,
+      ]),
+    );
+
+    return normalizeImportedAdvancedProtocolConnection({
       id: node.getAttribute("Id") || generateId(),
       name: node.getAttribute("Name") || "Imported Connection",
-      protocol,
+      protocol: (node.getAttribute("Type") ||
+        protocol) as Connection["protocol"],
       hostname:
         node.getAttribute("Server") || node.getAttribute("Hostname") || "",
       port: parsePortOrDefault(node.getAttribute("Port"), protocol),
@@ -166,7 +190,8 @@ export const importFromXML = async (content: string): Promise<Connection[]> => {
       tags,
       createdAt: parseIsoOrNow(node.getAttribute("CreatedAt")),
       updatedAt: parseIsoOrNow(node.getAttribute("UpdatedAt")),
-    };
+      ...parseNativeAdvancedProtocolSettings(attributes),
+    });
   });
 };
 
@@ -242,9 +267,10 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     group: "native",
     extensions: [".xml", ".encrypted"],
     signatures: ["<sortOfRemoteNG>", "<Connection ... />"],
-    dataClasses: ["connections", "folders"],
+    dataClasses: ["connections", "folders", "versioned protocol settings"],
     credentialSupport: "partial",
-    description: "Native sortOfRemoteNG XML connection exports.",
+    description:
+      "Native sortOfRemoteNG XML connection exports with versioned RAW, RLogin, and PowerShell Remoting settings.",
   },
   csv: {
     value: "csv",
@@ -252,9 +278,10 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     group: "native",
     extensions: [".csv", ".encrypted"],
     signatures: ["Name,Protocol,Hostname,Port", "ID,Name,Protocol,Hostname"],
-    dataClasses: ["connections", "folders"],
+    dataClasses: ["connections", "folders", "versioned protocol settings"],
     credentialSupport: "partial",
-    description: "Native sortOfRemoteNG CSV exports and templates.",
+    description:
+      "Native sortOfRemoteNG CSV exports with scalar JSON fields for versioned protocol settings.",
   },
   mremoteng: {
     value: "mremoteng",
@@ -267,7 +294,7 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     description:
       "mRemoteNG connection XML, including supported encrypted AES-GCM files.",
     warning:
-      "Only common connection, folder, protocol, and credential fields can be mapped.",
+      "mRemoteNG cannot represent advanced RAW/TCP, RAW/UDP, RLogin, or PowerShell Remoting settings; only compatible endpoint fields are mapped.",
   },
   rdcman: {
     value: "rdcman",
@@ -278,6 +305,7 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     dataClasses: ["RDP connections", "groups"],
     credentialSupport: "partial",
     description: "Remote Desktop Connection Manager server groups.",
+    warning: "RDCMan does not carry sortOfRemoteNG advanced protocol settings.",
   },
   termius: {
     value: "termius",
@@ -288,6 +316,8 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     dataClasses: ["SSH hosts", "groups"],
     credentialSupport: "partial",
     description: "Termius JSON host exports.",
+    warning:
+      "Termius exports do not carry sortOfRemoteNG advanced protocol settings.",
   },
   royalts: {
     value: "royalts",
@@ -298,6 +328,8 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     dataClasses: ["connections", "folders"],
     credentialSupport: "partial",
     description: "Royal TS/TSX object exports.",
+    warning:
+      "Royal TS/TSX protocol mappings preserve compatible endpoints, not sortOfRemoteNG advanced settings.",
   },
   mobaxterm: {
     value: "mobaxterm",
@@ -308,6 +340,8 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     dataClasses: ["sessions", "folders"],
     credentialSupport: "none",
     description: "MobaXterm bookmark INI files.",
+    warning:
+      "MobaXterm bookmarks do not carry sortOfRemoteNG advanced protocol settings.",
   },
   putty: {
     value: "putty",
@@ -318,6 +352,8 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     dataClasses: ["sessions"],
     credentialSupport: "none",
     description: "PuTTY registry session exports.",
+    warning:
+      "PuTTY RAW and RLogin endpoints are mapped, but application-specific advanced settings are unavailable.",
   },
   securecrt: {
     value: "securecrt",
@@ -328,6 +364,8 @@ export const IMPORT_FORMAT_COMPATIBILITY: Record<
     dataClasses: ["sessions"],
     credentialSupport: "partial",
     description: "SecureCRT XML session exports.",
+    warning:
+      "SecureCRT protocol mappings preserve compatible endpoints, not sortOfRemoteNG advanced settings.",
   },
 };
 
@@ -450,21 +488,25 @@ export const detectImportFormat = (
  */
 const mapMRemoteNGProtocol = (protocol: string): Connection["protocol"] => {
   const protocolMap: Record<string, Connection["protocol"]> = {
-    RDP: "rdp",
-    SSH1: "ssh",
-    SSH2: "ssh",
-    Telnet: "telnet",
-    Rlogin: "rlogin",
-    VNC: "vnc",
-    HTTP: "http",
-    HTTPS: "https",
-    ICA: "rdp", // Citrix ICA mapped to RDP
-    RAW: "telnet",
-    IntApp: "rdp",
-    PowerShell: "ssh", // mRemoteNG PowerShell remoting → ssh
-    Winbox: "rdp", // MikroTik Winbox → rdp
+    rdp: "rdp",
+    ssh1: "ssh",
+    ssh2: "ssh",
+    ssh: "ssh",
+    telnet: "telnet",
+    rlogin: "rlogin",
+    vnc: "vnc",
+    http: "http",
+    https: "https",
+    ica: "rdp", // Citrix ICA mapped to RDP
+    raw: "raw",
+    "raw/tcp": "raw",
+    "raw/udp": "raw",
+    intapp: "rdp",
+    powershell: "winrm",
+    winrm: "winrm",
+    winbox: "rdp", // MikroTik Winbox → rdp
   };
-  return protocolMap[protocol] || "rdp";
+  return protocolMap[protocol.trim().toLowerCase()] || "rdp";
 };
 
 const getMRemoteNGAttribute = (
@@ -1185,6 +1227,7 @@ export const importFromMRemoteNG = async (
     } else {
       // This is a connection
       const protocol = node.getAttribute("Protocol") || "RDP";
+      const portableProtocol = mapPortableProtocol(protocol);
       // Resolve credential/host/port honouring container inheritance (R7).
       const hostname =
         resolveMRemoteNGInheritedProp(
@@ -1255,6 +1298,13 @@ export const importFromMRemoteNG = async (
         ...(colors && { colorDepth: colors }),
         ...(useCredSsp !== undefined && { useCredSsp }),
         ...(renderingEngine && { renderingEngine }),
+        ...(portableProtocol.rawTransport
+          ? {
+              rawSocketSettings: createDefaultRawSocketSettings(
+                portableProtocol.rawTransport,
+              ),
+            }
+          : {}),
       });
 
       if (sshTunnelConnectionName) {
@@ -1349,7 +1399,7 @@ export const importFromMRemoteNG = async (
     };
   });
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 /**
@@ -1409,7 +1459,7 @@ export const importFromRDCMan = async (
     parseRDCManServer(serverEl, connections);
   });
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 /** Extract a single RDCMan server element into a Connection. */
@@ -1541,7 +1591,7 @@ export const importFromMobaXterm = async (
     }
   }
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 /**
@@ -1589,7 +1639,7 @@ export const importFromPuTTY = async (
     connections.push(createPuTTYConnection(currentSession, currentProps));
   }
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 const createPuTTYConnection = (
@@ -1601,10 +1651,19 @@ const createPuTTYConnection = (
     serial: "telnet",
     telnet: "telnet",
     rlogin: "rlogin",
-    raw: "telnet",
+    raw: "raw",
+    "raw/tcp": "raw",
+    "raw/udp": "raw",
+    powershell: "winrm",
+    winrm: "winrm",
   };
 
-  const protocol = protocolMap[props.Protocol?.toLowerCase() || "ssh"] || "ssh";
+  const sourceProtocol = props.Protocol?.toLowerCase() || "ssh";
+  const portableProtocol = mapPortableProtocol(sourceProtocol);
+  const protocol =
+    portableProtocol.rawTransport || portableProtocol.protocol === "winrm"
+      ? portableProtocol.protocol
+      : protocolMap[sourceProtocol] || "ssh";
 
   return {
     id: generateId(),
@@ -1617,6 +1676,13 @@ const createPuTTYConnection = (
     tags: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    ...(portableProtocol.rawTransport
+      ? {
+          rawSocketSettings: createDefaultRawSocketSettings(
+            portableProtocol.rawTransport,
+          ),
+        }
+      : {}),
   };
 };
 
@@ -1671,7 +1737,7 @@ export const importFromTermius = async (
     }
   }
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 /**
@@ -1692,6 +1758,9 @@ export const importFromRoyalTS = async (
       RoyalSFTPConnection: "ssh",
       RoyalFTPConnection: "ftp",
       RoyalTelnetConnection: "telnet",
+      RoyalRLoginConnection: "rlogin",
+      RoyalRawConnection: "raw",
+      RoyalPowerShellConnection: "winrm",
       RoyalWebConnection: "https",
     };
     return map[type] || "rdp";
@@ -1740,7 +1809,7 @@ export const importFromRoyalTS = async (
 
   const objects = data.Objects || (Array.isArray(data) ? data : []);
   parseObjects(objects);
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 /**
@@ -1778,10 +1847,15 @@ export const importFromSecureCRT = async (
       if (key === "Hostname") hostname = value;
       else if (key === "Username") username = value;
       else if (key === "Protocol Name") {
-        const lower = value.toLowerCase();
+        const lower = value.trim().toLowerCase();
         if (lower.includes("ssh")) protocol = "ssh";
         else if (lower.includes("telnet")) protocol = "telnet";
-        else if (lower.includes("rlogin")) protocol = "rlogin";
+        else if (lower === "rlogin" || lower === "r-login") protocol = "rlogin";
+        else if (["raw", "raw/tcp", "raw tcp"].includes(lower))
+          protocol = "raw";
+        else if (["raw/udp", "raw udp"].includes(lower)) protocol = "raw";
+        else if (lower.includes("powershell") || lower === "winrm")
+          protocol = "winrm";
       }
     }
 
@@ -1799,6 +1873,14 @@ export const importFromSecureCRT = async (
     const port = parsePortOrDefault(rawPort, protocol);
 
     if (hostname || name) {
+      const portableProtocol = mapPortableProtocol(
+        protocol === "raw"
+          ? body.toLowerCase().includes("raw/udp") ||
+            body.toLowerCase().includes("raw udp")
+            ? "raw/udp"
+            : "raw/tcp"
+          : protocol,
+      );
       connections.push({
         id: generateId(),
         name: name || hostname,
@@ -1810,11 +1892,18 @@ export const importFromSecureCRT = async (
         tags: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        ...(portableProtocol.rawTransport
+          ? {
+              rawSocketSettings: createDefaultRawSocketSettings(
+                portableProtocol.rawTransport,
+              ),
+            }
+          : {}),
       });
     }
   }
 
-  return connections;
+  return connections.map(normalizeImportedAdvancedProtocolConnection);
 };
 
 const dropImportedProxyCommandConfirmation = (
@@ -1830,6 +1919,34 @@ const dropImportedProxyCommandConfirmation = (
 /**
  * Parse generic JSON format
  */
+const normalizeJsonConnection = (conn: any): Connection => {
+  const protocolMapping = mapPortableProtocol(conn.protocol || "rdp");
+  return normalizeImportedAdvancedProtocolConnection({
+    ...conn,
+    protocol: (conn.protocol ||
+      protocolMapping.protocol) as Connection["protocol"],
+    id: conn.id || generateId(),
+    name: conn.name || "Imported Connection",
+    hostname: conn.hostname || conn.host || "",
+    port: parsePortOrDefault(
+      conn.port,
+      conn.protocol || protocolMapping.protocol,
+    ),
+    username: conn.username || undefined,
+    password: conn.password || undefined,
+    domain: conn.domain || undefined,
+    description: conn.description || undefined,
+    parentId: conn.parentId || undefined,
+    isGroup: conn.isGroup || conn.isFolder || false,
+    tags: conn.tags || [],
+    createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
+    updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
+    sshConnectionConfigOverride: dropImportedProxyCommandConfirmation(
+      conn.sshConnectionConfigOverride,
+    ),
+  } as Connection);
+};
+
 export const importFromJSON = async (
   content: string,
 ): Promise<Connection[]> => {
@@ -1837,31 +1954,7 @@ export const importFromJSON = async (
 
   // Handle array format
   if (Array.isArray(data)) {
-    return data.map((conn) => {
-      const protocol = (conn.protocol?.toLowerCase() ||
-        "rdp") as Connection["protocol"];
-
-      return {
-        ...conn,
-        protocol,
-        id: conn.id || generateId(),
-        name: conn.name || "Imported Connection",
-        hostname: conn.hostname || conn.host || "",
-        port: parsePortOrDefault(conn.port, protocol),
-        username: conn.username || undefined,
-        password: conn.password || undefined,
-        domain: conn.domain || undefined,
-        description: conn.description || undefined,
-        parentId: conn.parentId || undefined,
-        isGroup: conn.isGroup || conn.isFolder || false,
-        tags: conn.tags || [],
-        createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
-        updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
-        sshConnectionConfigOverride: dropImportedProxyCommandConfirmation(
-          conn.sshConnectionConfigOverride,
-        ),
-      } as Connection;
-    });
+    return data.map(normalizeJsonConnection);
   }
 
   // Handle native multi-database export package format.
@@ -1870,31 +1963,7 @@ export const importFromJSON = async (
       .flatMap((database: any) =>
         Array.isArray(database?.connections) ? database.connections : [],
       )
-      .map((conn: any) => {
-        const protocol = (conn.protocol?.toLowerCase() ||
-          "rdp") as Connection["protocol"];
-
-        return {
-          ...conn,
-          protocol,
-          id: conn.id || generateId(),
-          name: conn.name || "Imported Connection",
-          hostname: conn.hostname || conn.host || "",
-          port: parsePortOrDefault(conn.port, protocol),
-          username: conn.username || undefined,
-          password: conn.password || undefined,
-          domain: conn.domain || undefined,
-          description: conn.description || undefined,
-          parentId: conn.parentId || undefined,
-          isGroup: conn.isGroup || conn.isFolder || false,
-          tags: conn.tags || [],
-          createdAt: new Date(conn.createdAt || Date.now()).toISOString(),
-          updatedAt: new Date(conn.updatedAt || Date.now()).toISOString(),
-          sshConnectionConfigOverride: dropImportedProxyCommandConfirmation(
-            conn.sshConnectionConfigOverride,
-          ),
-        } as Connection;
-      });
+      .map(normalizeJsonConnection);
   }
 
   // Handle object with connections array

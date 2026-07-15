@@ -4,26 +4,123 @@
 
 use serde_json::{json, Value};
 
-const TOP_LEVEL_SECRETS: &[&str] = &[
+const SECRET_KEYS: &[&str] = &[
     "password",
-    "privateKey",
+    "basicauthpassword",
+    "rustdeskpassword",
+    "proxypassword",
+    "privatekey",
     "passphrase",
-    "totpSecret",
-    "basicAuthPassword",
-    "rustdeskPassword",
+    "totpsecret",
+    "apikey",
+    "accesstoken",
+    "clientsecret",
+    "serviceaccountkey",
+    "presharedkey",
+    "authkey",
+    "authtoken",
+    "seedphrase",
+    "answer",
 ];
 
-const NESTED_CONTAINERS: &[&str] = &["cloudProvider", "gatewaySettings", "gateway", "proxyConfig"];
-
-const NESTED_SECRET_KEYS: &[&str] = &[
-    "password",
-    "apiKey",
-    "accessToken",
-    "clientSecret",
-    "privateKey",
-    "passphrase",
-    "proxyPassword",
+const SENSITIVE_REFERENCE_KEYS: &[&str] = &[
+    "savedcredentialid",
+    "vaultref",
+    "clientcertificateref",
+    "credentialref",
+    "privatekeycredentialref",
+    "privatekeypath",
+    "agentsocket",
 ];
+
+const RUNTIME_KEYS: &[&str] = &[
+    "backendsessionid",
+    "shellid",
+    "runtimesessionid",
+    "detachedsessionid",
+    "channelid",
+    "terminalbuffer",
+    "transcript",
+    "transcripts",
+    "replay",
+    "replaybuffer",
+    "outputsnapshot",
+    "lastoutput",
+    "commandhistory",
+    "runtimestate",
+    "backendstate",
+];
+
+fn normalized_key(key: &str) -> String {
+    key.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn is_sensitive_header(name: &str) -> bool {
+    let normalized = normalized_key(name);
+    normalized.contains("authorization")
+        || normalized.contains("cookie")
+        || normalized.contains("token")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+        || normalized.contains("apikey")
+}
+
+fn sanitize_clone_value(value: &mut Value, include_credentials: bool) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                sanitize_clone_value(item, include_credentials);
+            }
+        }
+        Value::Object(object) => {
+            let keys_to_remove: Vec<String> = object
+                .keys()
+                .filter(|key| {
+                    let normalized = normalized_key(key);
+                    RUNTIME_KEYS.contains(&normalized.as_str())
+                        || (!include_credentials
+                            && (SECRET_KEYS.contains(&normalized.as_str())
+                                || SENSITIVE_REFERENCE_KEYS.contains(&normalized.as_str())))
+                })
+                .cloned()
+                .collect();
+            for key in keys_to_remove {
+                object.remove(&key);
+            }
+
+            if !include_credentials {
+                if let Some(Value::Object(headers)) = object.get_mut("httpHeaders") {
+                    headers.retain(|name, _| !is_sensitive_header(name));
+                }
+                if object.contains_key("totpConfigs") {
+                    object.insert("totpConfigs".into(), json!([]));
+                }
+            }
+
+            for nested in object.values_mut() {
+                sanitize_clone_value(nested, include_credentials);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn reset_rlogin_plaintext_acknowledgement(object: &mut serde_json::Map<String, Value>) {
+    let Some(Value::Object(settings)) = object.get_mut("rloginSettings") else {
+        return;
+    };
+    settings.insert(
+        "plaintextAcknowledgement".into(),
+        json!({
+            "version": 1,
+            "scope": "rlogin-plaintext-v1",
+            "acknowledged": false
+        }),
+    );
+}
 
 pub fn clone_connection_value(
     mut connection: Value,
@@ -54,23 +151,8 @@ pub fn clone_connection_value(
     obj.insert("createdAt".into(), Value::String(now.clone()));
     obj.insert("updatedAt".into(), Value::String(now));
 
-    if !include_credentials {
-        for k in TOP_LEVEL_SECRETS {
-            obj.remove(*k);
-        }
-        for container in NESTED_CONTAINERS {
-            if let Some(child) = obj.get_mut(*container) {
-                if let Some(child_obj) = child.as_object_mut() {
-                    for k in NESTED_SECRET_KEYS {
-                        child_obj.remove(*k);
-                    }
-                }
-            }
-        }
-        if obj.contains_key("totpConfigs") {
-            obj.insert("totpConfigs".into(), json!([]));
-        }
-    }
+    reset_rlogin_plaintext_acknowledgement(obj);
+    sanitize_clone_value(&mut connection, include_credentials);
 
     tracing::info!(
         target: "audit",
@@ -127,6 +209,27 @@ mod tests {
             "totpConfigs": [{"label": "main", "secret": "..."}],
             "cloudProvider": {"kind": "aws", "apiKey": "AKIA...", "accessToken": "tok", "region": "us-east-1"},
             "proxyConfig": {"type": "http", "host": "proxy.local", "proxyPassword": "pp"},
+            "httpHeaders": {"Accept": "application/json", "Authorization": "Bearer secret"},
+            "powerShellRemoting": {
+                "credential": {"source": "vault", "vaultRef": {"integrationId": "vault", "secretId": "secret"}},
+                "ssh": {"privateKeyCredentialRef": "key-ref", "keepaliveSec": 30},
+                "session": {"idleTimeoutSec": 900}
+            },
+            "rloginSettings": {
+                "version": 1,
+                "remoteUsername": "operator",
+                "plaintextAcknowledgement": {
+                    "version": 1,
+                    "scope": "rlogin-plaintext-v1",
+                    "acknowledged": true,
+                    "acknowledgedAt": "2026-07-15T10:02:00.000Z"
+                }
+            },
+            "backendSessionId": "backend-1",
+            "terminalBuffer": "sensitive output",
+            "transcript": ["Get-Secret"],
+            "replay": {"frames": ["secret frame"]},
+            "rawSocketSettings": {"advanced": {"replayFrames": 512, "replayBytes": 2097152}},
             "createdAt": "2024-01-01T00:00:00.000Z",
             "updatedAt": "2024-01-01T00:00:00.000Z",
         })
@@ -136,8 +239,15 @@ mod tests {
     fn strips_secrets_by_default() {
         let out = clone_connection_value(sample(), None, false).unwrap();
         let o = out.as_object().unwrap();
-        for k in TOP_LEVEL_SECRETS {
-            assert!(!o.contains_key(*k), "{k} should be stripped");
+        for k in [
+            "password",
+            "privateKey",
+            "passphrase",
+            "totpSecret",
+            "basicAuthPassword",
+            "rustdeskPassword",
+        ] {
+            assert!(!o.contains_key(k), "{k} should be stripped");
         }
         assert_eq!(o.get("totpConfigs").unwrap(), &json!([]));
         let cloud = o.get("cloudProvider").and_then(|v| v.as_object()).unwrap();
@@ -150,6 +260,21 @@ mod tests {
             proxy.get("host").and_then(|v| v.as_str()),
             Some("proxy.local")
         );
+        let headers = o.get("httpHeaders").and_then(Value::as_object).unwrap();
+        assert!(headers.contains_key("Accept"));
+        assert!(!headers.contains_key("Authorization"));
+        let powershell = o
+            .get("powerShellRemoting")
+            .and_then(Value::as_object)
+            .unwrap();
+        let credential = powershell
+            .get("credential")
+            .and_then(Value::as_object)
+            .unwrap();
+        assert!(!credential.contains_key("vaultRef"));
+        let ssh = powershell.get("ssh").and_then(Value::as_object).unwrap();
+        assert!(!ssh.contains_key("privateKeyCredentialRef"));
+        assert_eq!(ssh.get("keepaliveSec"), Some(&json!(30)));
     }
 
     #[test]
@@ -162,6 +287,35 @@ mod tests {
                 .and_then(|v| v.get("apiKey"))
                 .and_then(|v| v.as_str()),
             Some("AKIA...")
+        );
+        let headers = o.get("httpHeaders").and_then(Value::as_object).unwrap();
+        assert_eq!(
+            headers.get("Authorization").and_then(Value::as_str),
+            Some("Bearer secret")
+        );
+        let vault = out
+            .pointer("/powerShellRemoting/credential/vaultRef/secretId")
+            .and_then(Value::as_str);
+        assert_eq!(vault, Some("secret"));
+    }
+
+    #[test]
+    fn always_resets_local_consent_and_runtime_artifacts() {
+        let out = clone_connection_value(sample(), None, true).unwrap();
+        for key in ["backendSessionId", "terminalBuffer", "transcript", "replay"] {
+            assert!(out.get(key).is_none(), "{key} should never be cloned");
+        }
+        assert_eq!(
+            out.pointer("/rloginSettings/plaintextAcknowledgement"),
+            Some(&json!({
+                "version": 1,
+                "scope": "rlogin-plaintext-v1",
+                "acknowledged": false
+            }))
+        );
+        assert_eq!(
+            out.pointer("/rawSocketSettings/advanced/replayFrames"),
+            Some(&json!(512))
         );
     }
 
