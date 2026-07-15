@@ -1,6 +1,6 @@
 [package]
 name = "sorng-netbird"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "Extensive NetBird integration for SortOfRemoteNG — daemon management, peer-to-peer WireGuard mesh, management API, routes, DNS, ACLs, relay (TURN/STUN), setup keys, groups, rules, posture checks, and network diagnostics."

@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-mac"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Linux Mandatory Access Control (SELinux, AppArmor, TOMOYO, SMACK) integration for SortOfRemote NG — manage security policies, contexts, profiles, modes, booleans, audit logs, and compliance across remote Linux servers via SSH."
 

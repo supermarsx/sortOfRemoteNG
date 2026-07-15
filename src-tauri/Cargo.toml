@@ -210,6 +210,10 @@ members = [
   "crates/sorng-tls-trust",
 ]
 
+[workspace.package]
+# Machine-only SemVer projection of the public YY.N release in ../version.json.
+version = "26.1.0"
+
 [workspace.dependencies]
 # ── Serialisation ─────────────────────────────────────────────────────
 serde = { version = "1.0", features = ["derive"] }
@@ -291,7 +295,7 @@ tempfile = "3.0"
 [package]
 publish = false
 name = "app"
-version = "0.1.0"
+version.workspace = true
 description = "A Tauri App"
 authors = ["you"]
 license = ""

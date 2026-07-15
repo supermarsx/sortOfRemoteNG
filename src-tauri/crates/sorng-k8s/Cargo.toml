@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-k8s"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Kubernetes cluster management (contexts, namespaces, pods, deployments, services, configmaps, secrets, ingress, jobs, RBAC, Helm, logs, exec, port-forward, events, metrics)"
 

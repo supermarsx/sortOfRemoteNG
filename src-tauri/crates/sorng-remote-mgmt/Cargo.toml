@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-remote-mgmt"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Remote management tools (WMI, RPC, MeshCentral, Agent, Commander, AnyDesk, RustDesk)"
 

@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-gcp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive Google Cloud Platform integration crate with OAuth2/JWT auth, Compute Engine, Cloud Storage, IAM, Cloud SQL, Cloud Functions, GKE, Cloud DNS, Pub/Sub, Cloud Run, Secret Manager, Logging, and Monitoring"
 

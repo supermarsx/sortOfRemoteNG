@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-kafka"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Apache Kafka integration — cluster management, topic operations, consumer groups, producer/consumer, ACLs, Schema Registry, Kafka Connect, quotas, reassignment, and performance monitoring"
 

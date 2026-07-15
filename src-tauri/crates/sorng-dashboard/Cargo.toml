@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-dashboard"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Connection health dashboard engine for SortOfRemote NG — background threaded health monitoring with widgets, status aggregation, sparkline data, alert feeds, quick stats computation, and low-overhead periodic polling"
 

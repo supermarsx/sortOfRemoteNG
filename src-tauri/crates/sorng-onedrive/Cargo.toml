@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-onedrive"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Microsoft OneDrive / SharePoint integration for SortOfRemote NG – OAuth2 auth, file CRUD, large-file upload (resumable), download, sharing links, permissions, delta sync, search, webhooks (subscriptions), thumbnails, drives, special folders, and trash management via the Microsoft Graph v1.0 API."
 

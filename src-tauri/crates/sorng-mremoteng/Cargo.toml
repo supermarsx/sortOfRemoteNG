@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-mremoteng"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Full mRemoteNG connection import/export — XML confCons.xml, CSV, RDP files, PuTTY sessions, encryption/decryption (AES-256-GCM, PBKDF2)"
 

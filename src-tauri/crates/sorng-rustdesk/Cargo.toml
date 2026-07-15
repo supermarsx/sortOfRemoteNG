@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-rustdesk"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive RustDesk remote desktop integration: sessions, Server Pro API, address books, audits, file transfer, diagnostics"
 

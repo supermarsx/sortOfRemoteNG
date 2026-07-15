@@ -1,6 +1,6 @@
 [package]
 name = "sorng-zabbix"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "Zabbix monitoring integration for SortOfRemote NG — hosts, templates, items, triggers, actions, alerts, graphs, discovery, maintenance, user management, and Tauri integration"

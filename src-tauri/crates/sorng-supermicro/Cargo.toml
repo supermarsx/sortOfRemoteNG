@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-supermicro"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Supermicro BMC/IPMI management with Redfish (X11+), legacy CGI web API, and IPMI support"
 

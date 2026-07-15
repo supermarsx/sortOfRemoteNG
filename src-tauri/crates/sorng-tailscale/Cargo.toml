@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-tailscale"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Dedicated extensive Tailscale integration for SortOfRemote NG — daemon management, MagicDNS, Funnel, Serve, SSH, exit nodes, Taildrop, ACLs, peer path quality and DERP relay monitoring."
 

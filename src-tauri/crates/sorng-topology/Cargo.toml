@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-topology"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Connection topology and network map engine for SortOfRemote NG — graph-based network visualization, dependency analysis, geographic mapping, tunnel/proxy chain tracing, blast-radius calculation, auto-layout with force-directed placement, and topology diff/change detection"
 

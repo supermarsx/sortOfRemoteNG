@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-scheduler"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Scheduled tasks and cron-like automation engine for SortOfRemote NG — cron expression parsing, one-shot and recurring schedules, task pipelines, connection auto-connect/disconnect, script scheduling, health check scheduling, report generation, calendar view, execution history, and retry policies"
 

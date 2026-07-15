@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-lastpass"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "LastPass password manager integration with web vault API client, PBKDF2 authentication, vault decryption, AES-CBC/ECB item parsing, folder management, sharing centers, emergency access, MFA support, security challenge scoring, and import/export."
 

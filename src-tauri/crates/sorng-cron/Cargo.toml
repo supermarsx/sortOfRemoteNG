@@ -1,6 +1,6 @@
 [package]
 name = "sorng-cron"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "Cron, at, and anacron job management for SortOfRemoteNG — crontab editing per user, system cron.d management, at/batch job scheduling, anacron configuration, cron expression validation/preview, environment variables, and job execution history."

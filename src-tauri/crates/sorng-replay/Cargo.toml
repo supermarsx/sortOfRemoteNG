@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-replay"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Session replay engine for SortOfRemote NG — timeline scrubbing, multi-protocol playback (SSH terminal asciicast, RDP/VNC video frames, HTTP HAR waterfall), searchable transcripts, bookmarks/annotations, speed control, frame-accurate seeking, and export"
 

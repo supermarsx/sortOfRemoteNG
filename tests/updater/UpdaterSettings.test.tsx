@@ -36,7 +36,7 @@ const settings: UpdaterSettings = {
 
 const idleStatus: UpdaterStatusSnapshot = {
   status: "idle",
-  currentVersion: "1.5.0",
+  currentVersion: "25.5.0",
   availableUpdate: null,
   lastCheckedAt: null,
   lastError: null,

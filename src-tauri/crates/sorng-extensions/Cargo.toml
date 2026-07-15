@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-extensions"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Extensions engine — manifest-driven plugin system with sandboxed script runtime, permission model, hook/event system, per-extension storage, and full lifecycle management"
 

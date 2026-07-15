@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-ssh-agent"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Full OpenSSH agent implementation for SortOfRemote NG — built-in agent, system agent bridge, key management, agent forwarding, key constraints, and PKCS#11/FIDO2 support"
 

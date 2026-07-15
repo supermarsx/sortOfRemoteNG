@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-gpo"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Windows Group Policy Object (GPO) management for SortOfRemote NG"
 

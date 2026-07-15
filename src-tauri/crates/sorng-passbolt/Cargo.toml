@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-passbolt"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Passbolt password manager integration with REST API client, GPGAuth/JWT authentication, OpenPGP crypto, resource/folder/user/group management, sharing, tags, comments, metadata, and MFA support."
 

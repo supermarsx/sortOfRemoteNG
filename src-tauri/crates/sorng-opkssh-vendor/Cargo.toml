@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-opkssh-vendor"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Workspace dylib contract wrapper for optional OPKSSH metadata and bundle staging"
 

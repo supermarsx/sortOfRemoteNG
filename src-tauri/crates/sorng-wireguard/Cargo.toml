@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-wireguard"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive WireGuard tunnel management for SortOfRemoteNG"
 

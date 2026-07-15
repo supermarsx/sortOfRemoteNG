@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { APP_VERSION } from "../../../generated/version";
 import {
   Archive,
   Code,
@@ -52,6 +53,7 @@ interface AppDescriptionHighlight {
 
 const SUMMARY_ITEMS = [
   { label: "Application", value: "sortOfRemoteNG" },
+  { label: "Version", value: APP_VERSION },
   { label: "Author", value: "Mariana Mota" },
   { label: "License", value: "MIT" },
   { label: "Core stack", value: "Tauri, Rust, React, Next.js" },

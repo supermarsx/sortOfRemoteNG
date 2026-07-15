@@ -1,6 +1,6 @@
 [package]
 name = "sorng-syslog"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "Syslog management crate for SortOfRemote NG — rsyslog, syslog-ng, journald configuration, logrotate, centralized log collection, and Tauri integration"

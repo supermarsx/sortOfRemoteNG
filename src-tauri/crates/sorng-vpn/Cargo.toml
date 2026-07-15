@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-vpn"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "VPN (OpenVPN, WireGuard, ZeroTier, Tailscale), proxy, and connection chaining"
 

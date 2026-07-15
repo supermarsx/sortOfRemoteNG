@@ -27,6 +27,7 @@ import type {
   UpdaterSettingsPatch,
   UpdaterStatusValue,
 } from "../../../types/updater/updater";
+import { formatAppVersion } from "../../../generated/version";
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -248,8 +249,12 @@ export const UpdaterSettings: React.FC = () => {
         />
         <Card>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-[var(--color-textMuted)]">
-              {t("updater.currentVersion", "Current version")}: {updater.currentVersion ?? "-"}
+            <p
+              className="text-xs text-[var(--color-textMuted)]"
+              data-testid="updater-current-version"
+            >
+              {t("updater.currentVersion", "Current version")}: {" "}
+              {formatAppVersion(updater.currentVersion)}
             </p>
             <div
               className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium ${statusTone}`}
@@ -324,8 +329,12 @@ export const UpdaterSettings: React.FC = () => {
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-medium text-[var(--color-text)]">
-                    {t("updater.newVersionAvailable", "New version available")}: {available.version}
+                  <p
+                    className="text-sm font-medium text-[var(--color-text)]"
+                    data-testid="updater-available-version"
+                  >
+                    {t("updater.newVersionAvailable", "New version available")}
+                    : {formatAppVersion(available.version)}
                   </p>
                   {available.date && (
                     <p className="text-xs text-[var(--color-textMuted)]">

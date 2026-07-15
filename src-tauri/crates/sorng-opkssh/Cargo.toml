@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-opkssh"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Full OpenPubkey SSH (opkssh) integration for SortOfRemote NG — OIDC-based SSH authentication, key lifecycle, server policy management, provider configuration, audit logging, and binary management."
 

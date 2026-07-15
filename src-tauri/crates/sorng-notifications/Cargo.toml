@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-notifications"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Notification rules engine for SortOfRemote NG — rule-based alerting with multi-channel delivery (in-app, desktop, webhook, email, Slack, Discord, Teams), template rendering, throttling, escalation chains, and notification history"
 

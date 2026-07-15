@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-dropbox"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Dropbox API v2 integration — files, folders, sharing, team, paper, sync, backup and account management for SortOfRemote NG"
 

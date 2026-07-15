@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-p2p"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Peer-to-peer connectivity engine — STUN/TURN/ICE, NAT traversal, hole-punching, signaling, peer discovery, and encrypted data channels"
 

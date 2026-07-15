@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-azure"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Azure Resource Manager integration — VMs, resource groups, storage, networking, app service, SQL, Key Vault, container instances, monitoring, cost management"
 

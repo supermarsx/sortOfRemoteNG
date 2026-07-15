@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-meshcentral"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive MeshCentral remote device management integration — REST/WebSocket API client with device management, remote control, file transfer, power actions, user/group management, event streaming, sharing, and agent provisioning"
 

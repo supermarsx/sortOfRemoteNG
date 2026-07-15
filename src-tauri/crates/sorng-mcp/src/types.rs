@@ -16,8 +16,8 @@ pub const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 /// Server name as reported in the initialize response.
 pub const MCP_SERVER_NAME: &str = "SortOfRemote NG";
 
-/// Server version string.
-pub const MCP_SERVER_VERSION: &str = "0.1.0";
+/// Machine-only SemVer package projection used by the MCP protocol response.
+pub const MCP_SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // ── JSON-RPC 2.0 ───────────────────────────────────────────────────
 

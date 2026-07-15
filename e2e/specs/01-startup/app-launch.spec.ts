@@ -1,4 +1,5 @@
 import { S } from '../../helpers/selectors';
+import { APP_VERSION } from '../../../src/generated/version';
 
 describe('App Launch', () => {
   it('should display the splash screen during initialization', async () => {
@@ -45,9 +46,8 @@ describe('App Launch', () => {
   });
 
   it('should display the app version in splash or status bar', async () => {
-    // The version "v0.1.0" should appear somewhere in the app
     const body = await $('body');
     const html = await body.getHTML();
-    expect(html).toContain('0.1.0');
+    expect(html).toContain(APP_VERSION);
   });
 });

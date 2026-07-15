@@ -1,6 +1,6 @@
 [package]
 name = "sorng-teleport"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "Extensive Teleport (Gravitational) integration for SortOfRemoteNG — proxy service management, SSH/Kubernetes/database/application/desktop access, RBAC, session recording, audit log, certificates, MFA, hardware key support, joined clusters, and diagnostics."

@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-nginx"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 
 [dependencies]

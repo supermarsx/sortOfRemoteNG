@@ -1,6 +1,6 @@
 [package]
 name = "sorng-netutils"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "Comprehensive network utility crate for SortOfRemoteNG — ping, traceroute, mtr, nmap, netstat/ss, arp, dig/nslookup, whois, ethtool, ip/ifconfig, tcpdump/Wireshark capture, iperf/bandwidth testing, curl/wget, route management, neighbor discovery, wake-on-LAN, speedtest, and packet generation."

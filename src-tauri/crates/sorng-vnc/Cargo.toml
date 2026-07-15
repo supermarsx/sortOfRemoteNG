@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-vnc"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "VNC/RFB protocol engine with authentication, framebuffer updates, input handling, and session management."
 

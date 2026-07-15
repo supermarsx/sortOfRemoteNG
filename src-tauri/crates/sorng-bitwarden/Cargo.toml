@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-bitwarden"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Bitwarden password manager integration with CLI bridge, REST API client, vault operations, and credential sync."
 

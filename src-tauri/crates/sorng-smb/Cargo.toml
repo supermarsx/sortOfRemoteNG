@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-smb"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "SMB/CIFS client — platform-split implementation. Windows uses native UNC paths (\\\\server\\share) with std::fs + `net view` for share enumeration. Unix uses smbclient subprocess. The `pavao` crate was evaluated but rejected because pavao-sys links to libsmbclient (Samba's C library), unavailable on Windows without bundling Samba dev libs."
 

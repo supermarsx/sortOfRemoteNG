@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-ftp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive FTP/FTPS client — full RFC 959/2228/4217/3659 implementation with TLS, transfer queuing, progress tracking, and LIST parsing"
 

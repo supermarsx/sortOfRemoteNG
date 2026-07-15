@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-llm"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Unified LLM backend management — provider registry, model catalog, rate limiting, caching, cost tracking, load balancing, and agent tool-calling normalization"
 

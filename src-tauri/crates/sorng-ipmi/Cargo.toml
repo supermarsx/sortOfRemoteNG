@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-ipmi"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive IPMI 1.5/2.0 integration — authenticated sessions, raw commands, SOL, SDR, SEL, chassis control, FRU, sensor monitoring, watchdog timer, LAN configuration, user management, firewall, and PEF alerting"
 

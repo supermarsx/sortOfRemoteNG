@@ -2,6 +2,7 @@ import React from "react";
 import { Monitor, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSplashScreen } from "../../hooks/window/useSplashScreen";
+import { APP_VERSION } from "../../generated/version";
 
 interface SplashScreenProps {
   isLoading: boolean;
@@ -77,7 +78,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
         {/* Version */}
         <p className="absolute bottom-8 text-[var(--color-textMuted)] text-xs">
-          v0.1.0
+          v{APP_VERSION}
         </p>
       </div>
     </div>

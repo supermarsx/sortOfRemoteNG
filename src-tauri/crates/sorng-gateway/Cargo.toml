@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-gateway"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Headless gateway server for SortOfRemote NG — connection proxying, access policies, session management, and health monitoring"
 

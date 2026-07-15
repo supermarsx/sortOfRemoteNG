@@ -21,6 +21,7 @@ vi.mock("react-i18next", () => ({
 
 import { UpdaterPanel } from "../../src/components/updater/UpdaterPanel";
 
+// Updater transport values are machine-only SemVer; rendered copy remains YY.N.
 const settings: UpdaterSettings = {
   autoCheckEnabled: true,
   checkIntervalHours: 24,
@@ -35,19 +36,19 @@ const settings: UpdaterSettings = {
 };
 
 const update: AvailableUpdate = {
-  currentVersion: "1.5.0",
-  version: "1.6.0",
+  currentVersion: "25.5.0",
+  version: "25.6.0",
   date: "2026-03-30T00:00:00Z",
   body: "Bug fixes and improvements",
   target: "x86_64-pc-windows-msvc",
-  downloadUrl: "https://example.test/update-1.6.0.msi",
+  downloadUrl: "https://example.test/update-25.6.0.msi",
   signaturePresent: true,
   rawJson: {},
 };
 
 const idleStatus: UpdaterStatusSnapshot = {
   status: "idle",
-  currentVersion: "1.5.0",
+  currentVersion: "25.5.0",
   availableUpdate: null,
   lastCheckedAt: null,
   lastError: null,
@@ -118,12 +119,24 @@ describe("UpdaterPanel", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_check", { force: true });
       expect(screen.getByTestId("updater-install-btn")).toBeInTheDocument();
+      expect(screen.getByTestId("updater-current-version")).toHaveTextContent(
+        "Current version: 25.5",
+      );
+      expect(screen.getByTestId("updater-available-version")).toHaveTextContent(
+        "New version available: 25.6",
+      );
+      expect(screen.getByTestId("updater-current-version")).not.toHaveTextContent(
+        "25.5.0",
+      );
+      expect(screen.getByTestId("updater-available-version")).not.toHaveTextContent(
+        "25.6.0",
+      );
     });
 
     fireEvent.click(screen.getByTestId("updater-install-btn"));
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_download_and_install", {
-        version: "1.6.0",
+        version: "25.6.0",
       });
     });
   });

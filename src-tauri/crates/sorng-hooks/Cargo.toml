@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-hooks"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Hook and event engine for SortOfRemote NG — lifecycle event dispatch, subscriber management, async hook pipelines, event filtering, priority ordering, and cross-crate event bus"
 

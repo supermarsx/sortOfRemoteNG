@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-ai-agent"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "AI Agent engine for SortOfRemote NG – multi-provider LLM backends, conversation management, tool/function calling, RAG, embeddings, streaming, prompt templates, workflow automation, and connection-aware AI assistance."
 

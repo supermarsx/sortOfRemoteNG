@@ -1,6 +1,6 @@
 [package]
 name = "sorng-terraform"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "Terraform infrastructure-as-code management – init, plan, apply, state, workspaces, modules, providers, drift detection, and HCL analysis"

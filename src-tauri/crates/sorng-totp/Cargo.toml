@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-totp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive TOTP/HOTP authenticator — RFC 6238/4226 code generation, otpauth:// URI handling, QR support, multi-format import (Google Authenticator, Aegis, 2FAS, andOTP, Authy, FreeOTP+, Bitwarden, RAIVO), encrypted vault storage, backup/restore, and Tauri command bindings"
 

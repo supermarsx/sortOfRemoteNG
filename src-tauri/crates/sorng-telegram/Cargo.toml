@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-telegram"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Telegram Bot API integration — messaging, notifications, monitoring alerts, file sharing, chat management, inline keyboards, webhooks"
 

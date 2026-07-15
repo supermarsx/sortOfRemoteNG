@@ -1,10 +1,13 @@
 {
   "name": "sortofremoteng",
   "private": true,
-  "version": "0.1.0",
+  "version": "26.1.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "version:check": "node ./scripts/sync-version.mjs --check",
+    "version:sync": "node ./scripts/sync-version.mjs --write",
+    "version:test": "node --test ./tests/versioning/versioning.test.mjs",
     "dev": "node ./scripts/dev-server.mjs",
     "dev:check": "node ./scripts/dev-server.mjs --check",
     "build": "next build",

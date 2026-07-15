@@ -1,6 +1,6 @@
 [package]
 name = "sorng-fail2ban"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "Fail2ban management crate for SortOfRemote NG — jail management, ban/unban operations, filter rules, log monitoring, whitelist/blacklist, status, statistics, and Tauri integration"

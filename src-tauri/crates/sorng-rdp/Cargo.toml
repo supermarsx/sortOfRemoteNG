@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-rdp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "RDP connectivity, graphics pipeline, and H.264 decoding"
 

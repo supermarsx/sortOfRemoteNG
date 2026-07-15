@@ -1,6 +1,6 @@
 [package]
 name = "sorng-spice"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "SPICE (Simple Protocol for Independent Computing Environments) remote display client – channel management, display/input/USB/clipboard support, TLS, streaming, and Tauri command bindings."

@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-secure-clip"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Secure clipboard with auto-clear, one-time paste, credential field copying, and paste-to-terminal for sortOfRemoteNG"
 

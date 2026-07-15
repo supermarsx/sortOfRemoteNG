@@ -5,6 +5,7 @@ import MacroSettings from "../../src/components/SettingsDialog/sections/MacroSet
 import RecordingSettings from "../../src/components/SettingsDialog/sections/RecordingSettings";
 import WebBrowserSettings from "../../src/components/SettingsDialog/sections/WebBrowserSettings";
 import AboutSettings from "../../src/components/SettingsDialog/sections/AboutSettings";
+import { APP_VERSION } from "../../src/generated/version";
 
 vi.mock("../../src/utils/recording/macroService", () => ({
   loadMacros: vi.fn().mockResolvedValue([{ id: "m1" }]),
@@ -149,6 +150,7 @@ describe("Settings sections centralization", () => {
     render(<AboutSettings />);
 
     expect(screen.getByText("About")).toBeInTheDocument();
+    expect(screen.getByText(APP_VERSION)).toBeInTheDocument();
     expect(screen.getByText("Application Description")).toBeInTheDocument();
     expect(screen.getByText(/desktop remote-operations workbench/i)).toBeInTheDocument();
     expect(screen.getByText("Remote Session Hub")).toBeInTheDocument();

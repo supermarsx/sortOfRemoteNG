@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-rabbitmq"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "RabbitMQ message broker integration — vhost, exchange, queue, binding, user, permission, policy, shovel, federation, cluster, and monitoring management via the HTTP Management API"
 

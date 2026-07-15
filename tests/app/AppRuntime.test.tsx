@@ -196,6 +196,7 @@ import { useConnections } from "../../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../../src/types/connection/connection";
 import { generateId } from "../../src/utils/core/id";
 import { SplashScreen } from "../../src/components/app/SplashScreen";
+import { APP_VERSION } from "../../src/generated/version";
 import {
   isToolProtocol,
   getToolKeyFromProtocol,
@@ -1015,6 +1016,7 @@ describe("SplashScreen runtime", () => {
   it("renders when isLoading is true", () => {
     const { container } = render(<SplashScreen isLoading={true} progress={0} status="Loading..." />);
     expect(container.querySelector('[class*="fixed"]')).toBeTruthy();
+    expect(container).toHaveTextContent(`v${APP_VERSION}`);
   });
 
   it("calls onLoadComplete after loading finishes", async () => {

@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-ilo"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "HP/HPE Integrated Lights-Out (iLO) management — iLO 1 through 7 with RIBCL, Redfish, IPMI, and HTML5 console support"
 

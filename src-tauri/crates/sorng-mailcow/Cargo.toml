@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-mailcow"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Mailcow (mailcow-dockerized) administration via REST API"
 

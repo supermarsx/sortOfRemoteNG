@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { APP_VERSION } from "../../generated/version";
 
 /**
  * BSOD-style screen shown when the application critically fails to initialize
@@ -390,7 +391,9 @@ export const CriticalErrorScreen: React.FC<CriticalErrorScreenProps> = ({
             {t("criticalError.platform", "Platform")}:{" "}
             {navigator.userAgent.split(" ").slice(-3).join(" ")}
           </div>
-          <div>{t("criticalError.version", "Version")}: v0.1.0</div>
+          <div>
+            {t("criticalError.version", "Version")}: v{APP_VERSION}
+          </div>
         </div>
       </div>
     </div>

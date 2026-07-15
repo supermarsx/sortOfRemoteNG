@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-credentials"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Credential lifecycle management for SortOfRemote NG — password age tracking, certificate expiry monitoring, SSH key rotation reminders, linked credential groups, audit reports, policy enforcement, and expiry alerting"
 

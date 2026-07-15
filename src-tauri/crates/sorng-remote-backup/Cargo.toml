@@ -1,6 +1,6 @@
 [package]
 name = "sorng-remote-backup"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "SSH-based remote backup and sync crate for SortOfRemote NG — rsync, rclone, restic, borg, sftp, scp, unison, and duplicity integration with scheduling, progress tracking, bandwidth limiting, integrity verification, and retention policies"

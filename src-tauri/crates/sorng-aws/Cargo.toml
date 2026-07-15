@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-aws"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Comprehensive AWS integration crate with SigV4 signing, EC2, S3, IAM, STS, Lambda, RDS, CloudWatch, SSM, Secrets Manager, Route 53, ECS, SNS, SQS, and CloudFormation"
 

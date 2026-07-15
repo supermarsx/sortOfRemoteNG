@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-synology"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Synology NAS management — DSM 6.x/7.x via the SYNO.API REST interface (system, storage, file station, docker, surveillance, backup, and more)"
 

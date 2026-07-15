@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-yubikey"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "YubiKey hardware token support for SortOfRemote NG — PIV, FIDO2/WebAuthn, OATH TOTP/HOTP, OTP, device management, attestation"
 

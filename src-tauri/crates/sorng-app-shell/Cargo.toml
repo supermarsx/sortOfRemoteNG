@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-app-shell"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Tauri shell and desktop integration commands for the app crate"
 

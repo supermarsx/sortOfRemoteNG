@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-idrac"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Dell iDRAC management with Redfish (modern), WS-Management (legacy iDRAC 6/7), and IPMI support"
 

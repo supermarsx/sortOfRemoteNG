@@ -1,6 +1,6 @@
 [package]
 name = "sorng-packages"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "Package manager abstraction for SortOfRemoteNG — apt, yum/dnf, pacman, zypper, snap, flatpak."

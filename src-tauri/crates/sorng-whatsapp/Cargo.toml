@@ -1,7 +1,7 @@
 [package]
 publish = false
 name = "sorng-whatsapp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "WhatsApp Business Cloud API + unofficial WhatsApp Web multi-device integration for SortOfRemote NG – messaging, media, templates, contacts, webhooks, groups, business profiles, interactive messages, QR pairing, and phone-number linking."
 

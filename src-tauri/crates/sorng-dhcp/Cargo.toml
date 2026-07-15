@@ -1,6 +1,6 @@
 [package]
 name = "sorng-dhcp"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
 description = "DHCP server management for SortOfRemoteNG — ISC dhcpd, dnsmasq, Kea DHCP, leases, subnets, reservations."
