@@ -5,6 +5,12 @@ version.workspace = true
 edition = "2021"
 description = "PowerShell Remoting (WinRM, PSSession, CIM, DSC, JEA) services"
 
+[features]
+default = []
+# The live contract is ignored and opt-in because it builds a pinned Docker
+# fixture. The strict SSH transport and its unit tests are always compiled.
+psrp-ssh-e2e = []
+
 [dependencies]
 sorng-core = { path = "../sorng-core" }
 serde = { workspace = true }
@@ -27,6 +33,9 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 dirs = { workspace = true }
+psrp-rs = { path = "../../vendor/psrp-rs-core", default-features = false }
+russh = { version = "=0.49.2", default-features = false }
+ssh-key = { version = "0.6", features = ["ed25519", "encryption", "std"] }
 
 # Route WinRM/PowerShell TLS certificate decisions through the backend Trust
 # Center with TOFU as the default (replaces blind danger_accept_invalid_certs).
@@ -38,3 +47,6 @@ sorng-storage = { path = "../sorng-storage" }
 # crypto provider globally — disable defaults since sorng-app installs
 # the ring provider.  We only need base SSPI + Kerberos builder types.
 sspi = { version = "0.18", default-features = false }
+
+[dev-dependencies]
+tokio-util = { workspace = true }

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 default-members = ["."]
+exclude = ["vendor/psrp-rs-core"]
 members = [
   "crates/sorng-app-auth",
   "crates/sorng-app-domains",

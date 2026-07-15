@@ -1,0 +1,10 @@
+name: sorng-powershell-ssh-e2e
+
+services:
+  powershell-ssh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${PSRP_SSH_TEST_PORT:-2223}:22"
+    restart: "no"
