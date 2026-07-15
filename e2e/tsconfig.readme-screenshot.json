@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "./helpers/app.ts",
+    "./helpers/forms.ts",
+    "./helpers/readme-screenshot.ts",
+    "./helpers/selectors.ts",
+    "./helpers/ssh.ts",
+    "./helpers/tauri-service.ts",
+    "./specs/readme-screenshot/readme-screenshot.spec.ts",
+    "./wdio.readme-screenshot.conf.ts"
+  ]
+}

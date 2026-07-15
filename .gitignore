@@ -49,8 +49,9 @@ coverage_output.txt
 test_toolbar_output.txt
 target/reports/
 /.orchestration
+/.artifacts/
 .wdio-drivers/
-e2e/screenshots/failure-*.png
+/e2e/screenshots/**/failure-*.png
 /.kilo/
 /generate_fixture.rs
 /test_encryption.rs

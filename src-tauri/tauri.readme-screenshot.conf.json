@@ -1,0 +1,32 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "identifier": "com.sortofremote.ng.readme-capture",
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "sortOfRemoteNG",
+        "width": 1280,
+        "height": 720,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "maxWidth": 1280,
+        "maxHeight": 720,
+        "resizable": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true,
+        "dragDropEnabled": false,
+        "visible": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

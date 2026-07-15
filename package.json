@@ -35,7 +35,10 @@
     "e2e:docker:up": "docker compose -f e2e/docker-compose.yml --env-file e2e/.env up -d",
     "e2e:docker:down": "docker compose -f e2e/docker-compose.yml --env-file e2e/.env down -v",
     "e2e:docker:extended:up": "docker compose -f e2e/docker-compose.yml -f docker/compose.e2e.yml --env-file e2e/.env up -d",
-    "e2e:docker:extended:down": "docker compose -f e2e/docker-compose.yml -f docker/compose.e2e.yml --env-file e2e/.env down -v --remove-orphans"
+    "e2e:docker:extended:down": "docker compose -f e2e/docker-compose.yml -f docker/compose.e2e.yml --env-file e2e/.env down -v --remove-orphans",
+    "screenshot:readme": "node ./scripts/readme-screenshot.mjs",
+    "screenshot:readme:validate": "node ./scripts/readme-screenshot-validation.mjs",
+    "screenshot:readme:test": "node --test ./tests/readme-screenshot/*.test.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

@@ -1,0 +1,9 @@
+services:
+  test-ssh:
+    # Pin the native README fixture so upstream OpenSSH defaults cannot change
+    # the generated application preview between runs.
+    image: lscr.io/linuxserver/openssh-server@sha256:204b64775f7dfb17761ed0644df348ba3cd811628334cc723aa69d61f4db893d
+    ports: !override
+      - "127.0.0.1:2222:2222"
+    volumes:
+      - ./fixtures/readme-ssh-server-init.sh:/custom-cont-init.d/10-readme-ssh-server:ro
