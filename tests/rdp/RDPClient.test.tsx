@@ -189,6 +189,10 @@ describe("RDPClient", () => {
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
     localStorage.clear();
+    delete (mockConnection as any).security;
+    delete (mockConnection as any).proxyChainId;
+    delete (mockConnection as any).tunnelChainId;
+    delete (mockConnection as any).connectionChainId;
     // Default mock: list_rdp_sessions returns empty array (no existing session),
     // then connect_rdp returns a session ID.
     mockInvoke.mockImplementation(async (cmd: string) => {
@@ -228,6 +232,111 @@ describe("RDPClient", () => {
           }),
         );
       });
+    });
+
+    it("creates the resolved final SSH bastion before connecting RDP", async () => {
+      (mockConnection as any).security = {
+        tunnelChain: [
+          {
+            id: "proxy-hop",
+            type: "proxy",
+            enabled: true,
+            proxy: {
+              proxyType: "socks5",
+              host: "proxy.example.test",
+              port: 1080,
+              password: "proxy-secret",
+            },
+          },
+          {
+            id: "bastion-hop",
+            type: "ssh-tunnel",
+            enabled: true,
+            sshTunnel: {
+              host: "bastion.example.test",
+              port: 2200,
+              username: "jump-user",
+              password: "jump-secret",
+              forwardType: "local",
+            },
+          },
+        ],
+      };
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "list_rdp_sessions") return [];
+        if (cmd === "detect_keyboard_layout") return 0x0409;
+        if (cmd === "connect_ssh") return "ssh-path-session";
+        if (cmd === "setup_rdp_tunnel") {
+          return { tunnel_id: "rdp-path-tunnel", local_port: 43189 };
+        }
+        if (cmd === "connect_rdp") return "rdp-session-123";
+        return undefined;
+      });
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("connect_ssh", {
+          config: expect.objectContaining({
+            host: "bastion.example.test",
+            port: 2200,
+            username: "jump-user",
+            password: "jump-secret",
+            proxy_config: expect.objectContaining({
+              proxy_type: "socks5",
+              host: "proxy.example.test",
+              port: 1080,
+              password: "proxy-secret",
+            }),
+          }),
+        });
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "setup_rdp_tunnel",
+          expect.objectContaining({
+            sessionId: "ssh-path-session",
+            config: expect.objectContaining({
+              remote_rdp_host: "192.168.1.100",
+              remote_rdp_port: 3389,
+            }),
+          }),
+        );
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.objectContaining({
+            host: "127.0.0.1",
+            port: 43189,
+          }),
+        );
+      });
+    });
+
+    it("blocks proxy-only RDP paths instead of bypassing them", async () => {
+      (mockConnection as any).security = {
+        tunnelChain: [
+          {
+            id: "proxy-only",
+            type: "proxy",
+            enabled: true,
+            proxy: {
+              proxyType: "socks5",
+              host: "proxy.example.test",
+              port: 1080,
+            },
+          },
+        ],
+      };
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connection Failed")).toBeInTheDocument();
+      });
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_rdp"),
+      ).toBe(false);
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_ssh"),
+      ).toBe(false);
     });
 
     it("should display connecting status initially", () => {

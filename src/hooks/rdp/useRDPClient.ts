@@ -24,7 +24,11 @@ import { useRdpFrameBackpressure } from './useRdpFrameBackpressure';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
 import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent, RDPLifecycleEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
-import { resolveChainConfig } from '../../utils/ssh/resolveChainConfig';
+import {
+  formatRuntimeNetworkPathError,
+  resolveRuntimeNetworkPath,
+  type RuntimeNetworkPath,
+} from '../../utils/network/resolveRuntimeNetworkPath';
 
 const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
   data as Uint8ClampedArray<ArrayBuffer>;
@@ -486,9 +490,8 @@ export function useRDPClient(session: ConnectionSession) {
   teardownRdpTunnelRef.current = teardownRdpTunnel;
 
   /**
-   * If the connection carries an enabled imported SSH-tunnel / jump-host layer
-   * (mRemoteNG `SSHTunnelConnectionName`), establish an SSH session to the
-   * bastion and forward the real RDP target through it via `setup_rdp_tunnel`.
+   * If the strict runtime path ends at an SSH bastion, establish an SSH session
+   * and forward the real RDP target through it via `setup_rdp_tunnel`.
    * Returns the local `{ host, port }` that RDP should dial (127.0.0.1:<port>),
    * or null when no tunnel is needed (direct connect). Throws on tunnel failure
    * so the caller surfaces a connection error rather than silently bypassing
@@ -496,24 +499,15 @@ export function useRDPClient(session: ConnectionSession) {
    */
   const establishRdpTunnel = useCallback(
     async (
+      runtimePath: RuntimeNetworkPath,
       conn: Connection,
       targetHost: string,
       targetPort: number,
     ): Promise<{ host: string; port: number } | null> => {
-      // Cheap gate: only proceed when an enabled ssh-tunnel/ssh-jump layer exists.
-      const hasTunnelLayer = (conn.security?.tunnelChain ?? []).some(
-        (l) => l.enabled !== false && (l.type === 'ssh-tunnel' || l.type === 'ssh-jump'),
-      );
-      if (!hasTunnelLayer) return null;
+      if (!runtimePath.rdpTunnel) return null;
 
-      const resolved = await resolveChainConfig(conn, connectionsRef.current);
-      const jumps = resolved.jump_hosts;
-      if (!jumps.length || !jumps[0].host) return null;
-
-      // The bastion adjacent to the RDP target is the LAST resolved jump host;
-      // any preceding hops become pre-jumps for the SSH connection itself.
-      const bastion = jumps[jumps.length - 1];
-      const preJumps = jumps.slice(0, -1);
+      const bastion = runtimePath.rdpTunnel.bastion;
+      const resolved = runtimePath.transport;
 
       const sshConfig: Record<string, unknown> = {
         host: bastion.host,
@@ -523,11 +517,11 @@ export function useRDPClient(session: ConnectionSession) {
         private_key_path: bastion.private_key_path ?? null,
         private_key_passphrase: bastion.private_key_passphrase ?? null,
         agent_forwarding: bastion.agent_forwarding ?? false,
-        jump_hosts: preJumps,
-        proxy_config: resolved.proxy_config ?? null,
-        proxy_chain: resolved.proxy_chain ?? null,
-        mixed_chain: resolved.mixed_chain ?? null,
-        openvpn_config: resolved.openvpn_config ?? null,
+        jump_hosts: resolved.jump_hosts,
+        proxy_config: resolved.proxy_config,
+        proxy_chain: resolved.proxy_chain,
+        mixed_chain: resolved.mixed_chain,
+        openvpn_config: resolved.openvpn_config,
       };
 
       const sshSessionId = await invoke<string>('connect_ssh', { config: sshConfig });
@@ -575,6 +569,7 @@ export function useRDPClient(session: ConnectionSession) {
     // null but backendSessionId is set.  We still proceed to attempt reattach.
     if (!conn && !sess.backendSessionId) return;
 
+    let runtimePath: RuntimeNetworkPath | null = null;
     try {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
@@ -707,6 +702,37 @@ export function useRDPClient(session: ConnectionSession) {
 
       if (stale()) { console.log(`[RDP init gen=${gen}] STALE before connect, aborting`); return; }
 
+      // Resolve all configured network-path sources from one live snapshot.
+      // Missing or unsupported layers abort here instead of silently dialing
+      // the RDP target directly.
+      setStatusMessage('Resolving network path...');
+      runtimePath = await resolveRuntimeNetworkPath(
+        conn,
+        connectionsRef.current,
+        'rdp',
+      );
+      if (stale()) return;
+
+      if (runtimePath.transport.vpnPreSteps.length > 0) {
+        setStatusMessage('Establishing VPN network path...');
+        for (const step of runtimePath.transport.vpnPreSteps) {
+          const result = await invoke<{
+            is_now_connected: boolean;
+            error: string | null;
+          }>('ensure_vpn_connected', {
+            vpnType: step.vpnType,
+            connectionId: step.connectionId,
+            autoConnect: true,
+          });
+          if (!result.is_now_connected) {
+            throw new Error(
+              `VPN ${step.vpnType} failed: ${result.error || 'unknown error'}`,
+            );
+          }
+          if (stale()) return;
+        }
+      }
+
       // Auto-detect keyboard layout from the OS if configured
       let effectiveSettings = rdpCfg;
       if (rdpCfg.input?.autoDetectLayout !== false) {
@@ -752,16 +778,19 @@ export function useRDPClient(session: ConnectionSession) {
       const resW = display?.width ?? 1920;
       const resH = display?.height ?? 1080;
 
-      // If this connection was imported with an SSH tunnel (mRemoteNG
-      // SSHTunnelConnectionName), establish the SSH local forward first and
-      // redirect the RDP dial to 127.0.0.1:<bound port>. Direct connections
-      // return null and dial the target host as before.
+      // A supported socket path for RDP always terminates in an SSH bastion;
+      // the adapter has already rejected paths that cannot be represented.
       const targetHost = sess.hostname;
       const targetPort = conn.port || 3389;
       let dialHost = targetHost;
       let dialPort = targetPort;
       try {
-        const tunnel = await establishRdpTunnel(conn, targetHost, targetPort);
+        const tunnel = await establishRdpTunnel(
+          runtimePath,
+          conn,
+          targetHost,
+          targetPort,
+        );
         if (tunnel) {
           if (stale()) {
             // A newer init started while we were setting up the tunnel — tear it
@@ -775,10 +804,7 @@ export function useRDPClient(session: ConnectionSession) {
         }
       } catch (tunnelErr) {
         if (stale()) return;
-        setConnectionStatus('error');
-        setStatusMessage(`SSH tunnel failed: ${tunnelErr}`);
-        toast.error('SSH tunnel for RDP failed', 5000);
-        return;
+        throw tunnelErr;
       }
 
       const connectionDetails = {
@@ -823,6 +849,7 @@ export function useRDPClient(session: ConnectionSession) {
           backendSessionId: sessionId,
           name: conn.name || sess.name,
           status: 'connecting',
+          networkPath: runtimePath.snapshot,
         },
       });
 
@@ -832,9 +859,13 @@ export function useRDPClient(session: ConnectionSession) {
       // *new* blank renderer, discarding any frames already painted.
     } catch (error) {
       if (stale()) return; // Don't clobber error state from a newer init
+      const safeError = formatRuntimeNetworkPathError(error, runtimePath, [
+        conn?.password,
+        conn?.passphrase,
+      ]);
       setConnectionStatus('error');
-      setStatusMessage(`Connection failed: ${error}`);
-      console.error('RDP initialization failed:', error);
+      setStatusMessage(`Connection failed: ${safeError}`);
+      console.error('RDP initialization failed:', safeError);
       toast.error('RDP connection failed', 5000);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- all mutable values read from refs

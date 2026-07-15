@@ -1323,6 +1323,16 @@ export interface ConnectionSession {
   protocol: string;
   hostname: string;
 
+  /**
+   * Safe dependency snapshot for reconnect/detach. Runtime hosts, credentials,
+   * and raw transport configs must never be persisted on the session.
+   */
+  networkPath?: {
+    version: 1;
+    transports: string[];
+    connectionIds: string[];
+  };
+
   // Tab Layout
   layout?: {
     x: number;

@@ -34,9 +34,10 @@ import {
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
 import {
-  resolveChainConfig,
-  type ResolvedChainConfig,
-} from "../../utils/ssh/resolveChainConfig";
+  formatRuntimeNetworkPathError,
+  resolveRuntimeNetworkPath,
+  type RuntimeNetworkPath,
+} from "../../utils/network/resolveRuntimeNetworkPath";
 import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 
@@ -165,6 +166,8 @@ export function useWebTerminal(
   const sessionRef = useRef(session);
   const connectionRef = useRef(connection);
   const settingsRef = useRef(settings);
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
   const isSsh = session.protocol === "ssh";
 
   useEffect(() => {
@@ -502,25 +505,36 @@ export function useWebTerminal(
 
   /* ── Error helpers ── */
 
-  const formatErrorDetails = useCallback((err: unknown) => {
-    if (err instanceof Error)
-      return {
-        message: redactSecrets(err.message || "Unknown error"),
-        name: err.name || "Error",
-        stack: redactSecrets(err.stack || ""),
-      };
-    if (typeof err === "string")
-      return { message: redactSecrets(err), name: "Error", stack: "" };
-    try {
-      return {
-        message: redactSecrets(JSON.stringify(err)),
-        name: "Error",
-        stack: "",
-      };
-    } catch {
-      return { message: redactSecrets(String(err)), name: "Error", stack: "" };
-    }
-  }, []);
+  const formatErrorDetails = useCallback(
+    (err: unknown, secrets: readonly string[] = []) => {
+      if (err instanceof Error)
+        return {
+          message: redactSecrets(err.message || "Unknown error", secrets),
+          name: err.name || "Error",
+          stack: redactSecrets(err.stack || "", secrets),
+        };
+      if (typeof err === "string")
+        return {
+          message: redactSecrets(err, secrets),
+          name: "Error",
+          stack: "",
+        };
+      try {
+        return {
+          message: redactSecrets(JSON.stringify(err), secrets),
+          name: "Error",
+          stack: "",
+        };
+      } catch {
+        return {
+          message: redactSecrets(String(err), secrets),
+          name: "Error",
+          stack: "",
+        };
+      }
+    },
+    [],
+  );
 
   const classifySshError = useCallback((message: string) => {
     const lower = message.toLowerCase();
@@ -682,6 +696,7 @@ export function useWebTerminal(
       let privateKeyPassphrase: string | null = null;
       let totpSecret: string | null = null;
       let proxyCommandPassword: string | null = null;
+      let runtimePath: RuntimeNetworkPath | null = null;
 
       // ── ProxyCommand config (snake_case, mirrors Rust ProxyCommandConfig) ──
       // Built once and reused for connect, expand, and confirm so the backend
@@ -768,18 +783,18 @@ export function useWebTerminal(
 
         disconnectSsh();
 
-        // ── Resolve chain/tunnel/VPN associations ──
-        let resolved: ResolvedChainConfig | null = null;
-        try {
-          resolved = await resolveChainConfig(currentConnection);
-        } catch (err) {
-          writeLine(
-            `\x1b[33mWarning: Failed to resolve chain config: ${err}\x1b[0m`,
-          );
-        }
+        // Resolve every configured source against one live snapshot. Resolution
+        // is deliberately fail-closed: an invalid/missing/unsupported layer must
+        // never degrade into a direct connection.
+        runtimePath = await resolveRuntimeNetworkPath(
+          currentConnection,
+          connectionsRef.current,
+          "ssh",
+        );
+        const resolved = runtimePath.transport;
 
         // ── Ensure VPN pre-layers are connected ──
-        if (resolved?.vpnPreSteps.length) {
+        if (resolved.vpnPreSteps.length) {
           writeLine("\x1b[36mEstablishing VPN tunnel(s)...\x1b[0m");
           for (const step of resolved.vpnPreSteps) {
             writeLine(
@@ -931,11 +946,11 @@ export function useWebTerminal(
           host: currentSession.hostname,
           port: currentConnection.port || 22,
           username: currentConnection.username || "",
-          jump_hosts: resolved?.jump_hosts ?? [],
-          proxy_config: resolved?.proxy_config ?? null,
-          proxy_chain: resolved?.proxy_chain ?? null,
-          mixed_chain: resolved?.mixed_chain ?? null,
-          openvpn_config: resolved?.openvpn_config ?? null,
+          jump_hosts: resolved.jump_hosts,
+          proxy_config: resolved.proxy_config,
+          proxy_chain: resolved.proxy_chain,
+          mixed_chain: resolved.mixed_chain,
+          openvpn_config: resolved.openvpn_config,
           connect_timeout:
             tcpOptions?.connectionTimeout ??
             currentConnection.sshConnectTimeout ??
@@ -1027,7 +1042,11 @@ export function useWebTerminal(
         sshSessionId.current = sessionId;
         dispatch({
           type: "UPDATE_SESSION",
-          payload: { ...currentSession, backendSessionId: sessionId },
+          payload: {
+            ...currentSession,
+            backendSessionId: sessionId,
+            networkPath: runtimePath.snapshot,
+          },
         });
         writeLine("\x1b[32mSSH connection established\x1b[0m");
 
@@ -1040,6 +1059,7 @@ export function useWebTerminal(
             shellId,
             status: "connected",
             errorMessage: undefined,
+            networkPath: runtimePath.snapshot,
           },
         });
         writeLine("\x1b[32mShell started successfully\x1b[0m");
@@ -1140,7 +1160,17 @@ export function useWebTerminal(
             setProxyCommandPrompt(null);
           }
         }
-        const details = formatErrorDetails(err);
+        const secrets = [
+          ...(runtimePath?.redactionSecrets ?? []),
+          currentConnection.password,
+          currentConnection.passphrase,
+          currentConnection.totpSecret,
+          sshConnectionConfig.proxyCommandPassword,
+        ].filter((value): value is string => Boolean(value));
+        const details = formatErrorDetails(
+          formatRuntimeNetworkPathError(err, runtimePath, secrets),
+          secrets,
+        );
         const classification = classifySshError(details.message);
         console.error("SSH connection failed:", {
           kind: classification.kind,

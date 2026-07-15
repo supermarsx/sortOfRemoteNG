@@ -149,6 +149,10 @@ describe("WebTerminal", () => {
     mockDispatch.mockClear();
     hostKeyPromptListener = undefined;
     localStorage.clear();
+    delete (mockConnection as any).security;
+    delete (mockConnection as any).proxyChainId;
+    delete (mockConnection as any).tunnelChainId;
+    delete (mockConnection as any).connectionChainId;
     mockInvoke.mockResolvedValue("test-session-id");
     mockListen.mockImplementation(async (event, callback) => {
       if (event === "ssh://host-key-prompt") {
@@ -208,6 +212,111 @@ describe("WebTerminal", () => {
           }),
         });
       });
+    });
+
+    it("passes the strict per-connection path to connect_ssh", async () => {
+      (mockConnection as any).security = {
+        tunnelChain: [
+          {
+            id: "proxy-hop",
+            type: "proxy",
+            enabled: true,
+            proxy: {
+              proxyType: "socks5",
+              host: "proxy.example.test",
+              port: 1080,
+              password: "proxy-secret",
+            },
+          },
+          {
+            id: "jump-hop",
+            type: "ssh-jump",
+            enabled: true,
+            sshTunnel: {
+              host: "jump.example.test",
+              port: 2200,
+              username: "jump-user",
+              password: "jump-secret",
+              forwardType: "local",
+            },
+          },
+        ],
+      };
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("connect_ssh", {
+          config: expect.objectContaining({
+            mixed_chain: {
+              hops: [
+                expect.objectContaining({
+                  type: "proxy",
+                  proxy_type: "socks5",
+                  host: "proxy.example.test",
+                  port: 1080,
+                  password: "proxy-secret",
+                }),
+                expect.objectContaining({
+                  type: "ssh_jump",
+                  host: "jump.example.test",
+                  port: 2200,
+                  username: "jump-user",
+                  password: "jump-secret",
+                }),
+              ],
+            },
+            jump_hosts: [],
+            proxy_config: null,
+            proxy_chain: null,
+          }),
+        });
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          networkPath: {
+            version: 1,
+            transports: ["socks5", "ssh-jump"],
+            connectionIds: [],
+          },
+        }),
+      });
+    });
+
+    it("blocks unsupported path layers instead of connecting directly", async () => {
+      (mockConnection as any).security = {
+        tunnelChain: [
+          {
+            id: "unsupported-command-hop",
+            type: "ssh-proxycmd",
+            enabled: true,
+            sshTunnel: {
+              host: "jump.example.test",
+              username: "jump-user",
+              forwardType: "local",
+              proxyCommand: { command: "nc %h %p" },
+            },
+          },
+        ],
+      };
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Error")).toBeInTheDocument();
+      });
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_ssh"),
+      ).toBe(false);
+      expect(
+        mockTerminal.writeln.mock.calls.some(
+          ([value]) =>
+            typeof value === "string" &&
+            value.includes("SSH cannot use network-path layer 1"),
+        ),
+      ).toBe(true);
     });
 
     it("should handle authentication failure", async () => {
