@@ -291,7 +291,7 @@ configuration fields persisted in `sorng-storage` and read through
 
 ## 7. Feature-parity matrix
 
-Legend: ● full / ◐ partial / ○ roadmap or out-of-scope / — not applicable.
+Legend: ● full / ◐ partial / ○ scaffold, roadmap, or out-of-scope / — not applicable.
 
 | Capability                                                                                               |                               sortOfRemoteNG                                |     mRemoteNG     |       Royal TS       |
 | -------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------: | :---------------: | :------------------: |
@@ -300,8 +300,9 @@ Legend: ● full / ◐ partial / ○ roadmap or out-of-scope / — not applicabl
 | VNC                                                                                                      |                           ● `sorng-vnc` (vnc-rs)                            |         ●         |          ●           |
 | SFTP / SCP                                                                                               |                         ● `sorng-sftp`, `sorng-scp`                         |  ◐ (via WinSCP)   |          ●           |
 | FTP / FTPS                                                                                               |                          ● `sorng-ftp` (suppaftp)                           |         ◐         |          ●           |
-| SMB file share                                                                                           |        ● `sorng-smb` (platform-native: Windows UNC / Unix `smbclient`)      |         ○         |          ●           |
-| Telnet / rlogin                                                                                          |                              ● `sorng-telnet`                               |         ●         |          ●           |
+| SMB file share                                                                                           |       ● `sorng-smb` (platform-native: Windows UNC / Unix `smbclient`)       |         ○         |          ●           |
+| Telnet                                                                                                   |             ◐ `sorng-telnet` backend and terminal presentation              |         ●         |          ●           |
+| RLogin                                                                                                   | ○ Scaffold: saved/import identity; commands disabled, sending unimplemented |         ●         |          ●           |
 | Serial console                                                                                           |        ● `sorng-serial` (serialport-rs) — static + dynamic dispatch         |         ○         |          ●           |
 | RustDesk                                                                                                 |                             ● `sorng-rustdesk`                              |         ○         |          ○           |
 | Spice / NX / x2go / XDMCP                                                                                |          ● `sorng-spice`, `sorng-nx`, `sorng-x2go`, `sorng-xdmcp`           |         ○         |          ◐           |

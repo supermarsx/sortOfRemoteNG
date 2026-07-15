@@ -42,7 +42,7 @@ The matrix is intentionally conservative. Repository breadth includes protocol c
 
 <div class="callout callout--danger">
   <strong>Do not infer support from import compatibility.</strong>
-  <p>Importers preserve recognizable protocol identity where possible. For example, vendor RAW entries may map to Telnet metadata, and PowerShell entries may map to SSH. That conversion does not create a native RAW or complete PowerShell Remoting session.</p>
+  <p>Importers preserve recognizable protocol identity where possible. Vendor RAW entries may map to Telnet metadata. PowerShell conversion is currently path-dependent: the frontend import path maps PowerShell entries to SSH, while the Rust mRemoteNG converter maps PowerShell entries to WinRM. These compatibility conversions do not create a native RAW client, and neither PowerShell mapping creates a complete end-user PowerShell Remoting session.</p>
 </div>
 
 ## Cloud and integration entries

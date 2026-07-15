@@ -222,6 +222,162 @@ for (const file of files) {
   }
 }
 
+function markdownTableRow(source, label) {
+  return source.split(/\r?\n/).find((line) => {
+    if (!line.startsWith("|")) return false;
+    const cells = line.split("|").map((cell) => cell.trim());
+    return cells[1]?.toLowerCase() === label.toLowerCase();
+  });
+}
+
+function projectStatusCell(row) {
+  return row?.split("|").map((cell) => cell.trim())[2] ?? "";
+}
+
+async function checkProtocolSupportDocumentation() {
+  const architecturePath = path.join(root, "architecture.md");
+  const protocolsPath = path.join(docsRoot, "protocols.md");
+  const handlerPath = path.join(
+    root,
+    "src-tauri",
+    "crates",
+    "sorng-commands-core",
+    "src",
+    "core_handler.rs",
+  );
+  const rloginPath = path.join(
+    root,
+    "src-tauri",
+    "crates",
+    "sorng-protocols",
+    "src",
+    "rlogin.rs",
+  );
+  const frontendImporterPath = path.join(
+    root,
+    "src",
+    "components",
+    "ImportExport",
+    "utils.ts",
+  );
+  const rustImporterPath = path.join(
+    root,
+    "src-tauri",
+    "crates",
+    "sorng-mremoteng",
+    "src",
+    "mremoteng",
+    "converter.rs",
+  );
+
+  const requiredFiles = [
+    architecturePath,
+    protocolsPath,
+    handlerPath,
+    rloginPath,
+    frontendImporterPath,
+    rustImporterPath,
+  ];
+  const missingFiles = requiredFiles.filter((file) => !existsSync(file));
+  if (missingFiles.length > 0) {
+    for (const file of missingFiles) {
+      errors.push(
+        `${toPosix(path.relative(root, file))}:1: protocol support assertion input is missing`,
+      );
+    }
+    return;
+  }
+
+  const [
+    architecture,
+    protocols,
+    handler,
+    rlogin,
+    frontendImporter,
+    rustImporter,
+  ] = await Promise.all(requiredFiles.map((file) => readFile(file, "utf8")));
+
+  const rloginCommandsDisabled =
+    /^\s*\/\/\s*rlogin::connect_rlogin,/m.test(handler) &&
+    /^\s*\/\/\s*rlogin::send_rlogin_command,/m.test(handler);
+  const rloginSendMissing =
+    /send_rlogin_command[\s\S]*?Command sending not implemented/i.test(rlogin);
+  if (!rloginCommandsDisabled || !rloginSendMissing) {
+    errors.push(
+      "architecture.md:1: RLogin source support changed; review the documentation support contract",
+    );
+    return;
+  }
+
+  if (/^\|\s*Telnet\s*\/\s*rlogin\b/im.test(architecture)) {
+    errors.push(
+      "architecture.md:1: Telnet and RLogin must have separate support rows",
+    );
+  }
+
+  const architectureTelnet = markdownTableRow(architecture, "Telnet");
+  if (!projectStatusCell(architectureTelnet).startsWith("◐")) {
+    errors.push("architecture.md:1: Telnet must remain labelled partial");
+  }
+
+  const architectureRlogin = markdownTableRow(architecture, "RLogin");
+  const architectureRloginStatus = projectStatusCell(architectureRlogin);
+  if (
+    !architectureRloginStatus.startsWith("○") ||
+    !/scaffold/i.test(architectureRloginStatus)
+  ) {
+    const line = architectureRlogin
+      ? lineAt(architecture, architecture.indexOf(architectureRlogin))
+      : 1;
+    errors.push(
+      `architecture.md:${line}: RLogin must remain an explicit scaffold, not full support`,
+    );
+  }
+
+  const requiredStatuses = [
+    ["RLogin", "Scaffold"],
+    ["RAW socket", "Scaffold"],
+    ["PowerShell Remoting", "Partial"],
+  ];
+  for (const [label, status] of requiredStatuses) {
+    const row = markdownTableRow(protocols, label);
+    if (!row || !row.includes(`>${status}<`)) {
+      errors.push(
+        `docs/protocols.md:1: ${label} must remain labelled ${status}`,
+      );
+    }
+  }
+
+  const frontendTarget = frontendImporter.match(
+    /\bPowerShell:\s*["']([^"']+)["']/,
+  )?.[1];
+  const rustTarget = rustImporter.match(
+    /MrngProtocol::PowerShell\s*=>\s*["']([^"']+)["']/,
+  )?.[1];
+  if (!frontendTarget || !rustTarget) {
+    errors.push(
+      "docs/protocols.md:1: PowerShell importer mappings changed; review the documentation support contract",
+    );
+    return;
+  }
+
+  const importerContracts = [
+    `frontend import path maps PowerShell entries to ${frontendTarget}`,
+    `Rust mRemoteNG converter maps PowerShell entries to ${rustTarget}`,
+    "neither PowerShell mapping creates a complete end-user PowerShell Remoting session",
+  ];
+  const normalizedProtocols = protocols.toLowerCase();
+  for (const statement of importerContracts) {
+    if (!normalizedProtocols.includes(statement.toLowerCase())) {
+      errors.push(
+        `docs/protocols.md:1: importer support boundary is missing: ${statement}`,
+      );
+    }
+  }
+}
+
+await checkProtocolSupportDocumentation();
+
 function checkAnchor(document, fragment, context) {
   if (!fragment) return;
   let decoded = fragment;
