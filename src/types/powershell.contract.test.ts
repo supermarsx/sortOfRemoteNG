@@ -67,12 +67,12 @@ describe("sorng-powershell JSON contracts", () => {
       JSON.stringify(CURRENT_POWER_SHELL_REMOTING_CAPABILITIES),
     );
 
-    expect(capabilities.implementation).toBe("legacyWinRsProcessShell");
+    expect(capabilities.implementation).toBe("strictSshPsrpRunspace");
     expect(capabilities.transports).toHaveLength(3);
     expect(capabilities.authentication).toHaveLength(8);
     expect(capabilities.features).toHaveLength(8);
     expect(capabilities.transports).toContainEqual(
-      expect.objectContaining({ transport: "ssh", status: "unsupported" }),
+      expect.objectContaining({ transport: "ssh", status: "supported" }),
     );
     expect(capabilities.authentication).toEqual(
       expect.arrayContaining([
@@ -84,6 +84,12 @@ describe("sorng-powershell JSON contracts", () => {
           authMethod: "credSsp",
           status: "unsupported",
         }),
+      ]),
+    );
+    expect(capabilities.transports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ transport: "http", status: "unsupported" }),
+        expect.objectContaining({ transport: "https", status: "unsupported" }),
       ]),
     );
   });

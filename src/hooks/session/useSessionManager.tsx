@@ -39,6 +39,7 @@ const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
   "anydesk",
   "raw",
   "rlogin",
+  "winrm",
 ]);
 
 const UNSUPPORTED_DIRECT_SESSION_PROTOCOLS = new Set<string>(["ftp", "scp"]);
@@ -752,6 +753,16 @@ export const useSessionManager = () => {
         });
       } catch (error) {
         console.error("Failed to disconnect RLogin session:", error);
+      }
+    }
+
+    if (session.protocol === "winrm" && session.backendSessionId) {
+      try {
+        await invoke("close_powershell_session", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to close PowerShell session:", error);
       }
     }
 

@@ -42,7 +42,7 @@ describe("PowerShellRemotingEditor", () => {
     expect(
       document.querySelector("[data-powershell-section] button[aria-controls]"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/legacy WinRS process shell/i)).toBeInTheDocument();
+    expect(screen.getByText(/strict PSRP over SSH/i)).toBeInTheDocument();
   });
 
   it("blocks Basic over HTTP in both the field and page validation", () => {
@@ -60,32 +60,40 @@ describe("PowerShellRemotingEditor", () => {
     );
   });
 
-  it("disables unsupported SSH, CredSSP, and certificate choices with reasons", () => {
+  it("enables strict SSH while unavailable WSMan, agent, and TOFU choices fail closed", () => {
     render(<Harness />);
 
+    const transport = screen.getByRole("combobox", {
+      name: "PowerShell remoting transport",
+    });
+    fireEvent.click(transport);
     expect(
-      screen.getByRole("group", { name: "PowerShell over SSH settings" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("group", { name: "WSMan proxy settings" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByLabelText("Client certificate credential reference"),
-    ).toBeDisabled();
-    expect(
-      screen.getByText(/SSH is unavailable.*placeholder/i),
-    ).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("combobox", {
-        name: "PowerShell authentication method",
-      }),
-    );
-    expect(
-      screen.getByRole("option", { name: /CredSSP — unavailable/i }),
+      screen.getByRole("option", { name: /WSMan — unavailable/i }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(
-      screen.getByRole("option", { name: /Client certificate — unavailable/i }),
+      screen.getByRole("option", { name: "PowerShell over SSH" }),
+    ).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "PowerShell over SSH" }),
+    );
+    expect(
+      screen.getByRole("group", { name: "PowerShell over SSH settings" }),
+    ).not.toBeDisabled();
+
+    const sshAuth = screen.getByRole("combobox", {
+      name: "PowerShell SSH authentication",
+    });
+    fireEvent.click(sshAuth);
+    expect(
+      screen.getByRole("option", { name: /SSH agent — unavailable/i }),
+    ).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(sshAuth);
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "SSH host-key trust mode" }),
+    );
+    expect(
+      screen.getByRole("option", { name: /Trust on first use — unavailable/i }),
     ).toHaveAttribute("aria-disabled", "true");
   });
 

@@ -82,7 +82,13 @@ export function SshSection({
                 })
               }
               options={[
-                { value: "agent", label: "SSH agent" },
+                {
+                  value: "agent",
+                  label: "SSH agent — unavailable",
+                  disabled: true,
+                  title:
+                    "The strict adapter does not consume agent identities yet.",
+                },
                 { value: "privateKey", label: "Private key" },
                 { value: "password", label: "Password from credential source" },
               ]}
@@ -152,7 +158,13 @@ export function SshSection({
               }
               options={[
                 { value: "strict", label: "Strict known-hosts verification" },
-                { value: "tofu", label: "Trust on first use" },
+                {
+                  value: "tofu",
+                  label: "Trust on first use — unavailable",
+                  disabled: true,
+                  title:
+                    "The strict adapter requires known_hosts or a pinned SHA256 fingerprint.",
+                },
                 { value: "pinned", label: "Pinned host-key fingerprint" },
               ]}
               variant="form"

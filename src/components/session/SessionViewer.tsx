@@ -39,6 +39,10 @@ const RawSocketClient = dynamic(() => import("../protocol/RawSocketClient"), {
 const RloginClient = dynamic(() => import("../protocol/RloginClient"), {
   ssr: false,
 });
+const PowerShellSessionViewer = dynamic(
+  () => import("../protocol/PowerShellSessionViewer"),
+  { ssr: false },
+);
 const WebBrowser = dynamic(
   () => import("../protocol/WebBrowser").then((module) => module.WebBrowser),
   { ssr: false },
@@ -216,6 +220,15 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return <RloginClient session={session} />;
+    }
+
+    if (
+      session.protocol === "winrm" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <PowerShellSessionViewer session={session} />;
     }
 
     if (

@@ -2,7 +2,10 @@ import { KeyRound } from "lucide-react";
 import { FormField, Select, TextInput } from "../../ui/forms";
 import type { PsAuthMethod } from "../../../types/powershell";
 import type { PowerShellCredentialSource } from "../../../types/powershellRemoting";
-import { getPowerShellAuthCapability } from "../../../utils/powershell/currentPowerShellCapabilities";
+import {
+  getPowerShellAuthCapability,
+  getPowerShellTransportCapability,
+} from "../../../utils/powershell/currentPowerShellCapabilities";
 import {
   CapabilityBadge,
   CapabilityNotice,
@@ -41,6 +44,11 @@ export function AuthenticationSection({
     capabilities,
     value.wsman.authMethod,
   );
+  const sshCapability = getPowerShellTransportCapability(capabilities, "ssh");
+  const sectionStatus =
+    value.transport === "ssh"
+      ? (sshCapability?.status ?? "unsupported")
+      : (selected?.status ?? "unsupported");
   const basicOverHttp =
     value.transport === "wsman" &&
     value.wsman.scheme === "http" &&
@@ -52,7 +60,7 @@ export function AuthenticationSection({
       title="Authentication"
       description="Select an identity source and an authentication mechanism independently."
       icon={<KeyRound size={16} />}
-      status={<CapabilityBadge status={selected?.status ?? "unsupported"} />}
+      status={<CapabilityBadge status={sectionStatus} />}
     >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <FormField
@@ -224,12 +232,20 @@ export function AuthenticationSection({
           not have transport confidentiality. Change the endpoint to HTTPS.
         </CapabilityNotice>
       )}
-      <CapabilityNotice
-        tone={selected?.status === "unsupported" ? "error" : "warning"}
-      >
-        {selected?.reason ??
-          "This authentication method is not reported by the current backend."}
-      </CapabilityNotice>
+      {value.transport === "ssh" ? (
+        <CapabilityNotice tone="warning">
+          The shipping SSH adapter supports password and private-key
+          authentication. Agent identities remain unavailable and host keys must
+          match known_hosts or a pinned SHA256 fingerprint.
+        </CapabilityNotice>
+      ) : (
+        <CapabilityNotice
+          tone={selected?.status === "unsupported" ? "error" : "warning"}
+        >
+          {selected?.reason ??
+            "This authentication method is not reported by the current backend."}
+        </CapabilityNotice>
+      )}
     </PowerShellEditorSection>
   );
 }

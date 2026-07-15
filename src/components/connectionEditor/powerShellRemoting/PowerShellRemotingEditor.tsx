@@ -47,12 +47,12 @@ export function PowerShellRemotingEditor({
           />
           <div>
             <p className="text-sm font-medium text-[var(--color-text)]">
-              Current backend: legacy WinRS process shell
+              Live sessions: strict PSRP over SSH
             </p>
             <p className="mt-0.5 text-xs text-[var(--color-textMuted)]">
-              Commands launch independent powershell.exe processes. This is not
-              a persistent PSRP runspace, and unavailable capabilities remain
-              disabled below.
+              The session viewer uses a persistent runspace with all standard
+              streams, input, cancellation, and bounded replay. WSMan remains
+              disabled until its adapter joins this shipping service.
             </p>
           </div>
         </div>

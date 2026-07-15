@@ -19,7 +19,7 @@ import type {
  * command registry does not expose one. Keeping this fixture explicit makes
  * unsupported UI choices fail closed until that registry gains a real query.
  */
-export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
+export const LEGACY_POWER_SHELL_REMOTING_CAPABILITIES = {
   implementation: "legacyWinRsProcessShell",
   transports: [
     {
@@ -141,6 +141,94 @@ export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
       feature: "networkPath",
       status: "unsupported",
       reason: "serialized proxy settings are not materialized by this backend",
+    },
+  ],
+} as const satisfies PsRemotingCapabilities;
+
+/** Shipping live-session capabilities exposed by the strict PSRP service. */
+export const CURRENT_POWER_SHELL_REMOTING_CAPABILITIES = {
+  implementation: "strictSshPsrpRunspace",
+  transports: [
+    {
+      transport: "http",
+      status: "unsupported",
+      reason:
+        "WSMan is not registered in the live PowerShell session service yet",
+    },
+    {
+      transport: "https",
+      status: "unsupported",
+      reason:
+        "WSMan is not registered in the live PowerShell session service yet",
+    },
+    {
+      transport: "ssh",
+      status: "supported",
+      reason:
+        "strict PowerShell OutOfProcess remoting over a verified SSH subsystem and persistent PSRP runspace",
+    },
+  ],
+  authentication: [
+    "basic",
+    "ntlm",
+    "negotiate",
+    "kerberos",
+    "credSsp",
+    "certificate",
+    "default",
+    "digest",
+  ].map((authMethod) => ({
+    authMethod,
+    status: "unsupported" as const,
+    requiresTls:
+      authMethod === "basic" ||
+      authMethod === "credSsp" ||
+      authMethod === "certificate",
+    reason:
+      "this authentication method belongs to the unavailable WSMan adapter",
+  })) as PsAuthCapability[],
+  features: [
+    {
+      feature: "legacyWinRsProcessShell",
+      status: "unsupported",
+      reason: "the live viewer uses PSRP rather than the legacy process shell",
+    },
+    {
+      feature: "persistentRunspace",
+      status: "supported",
+      reason: "sequential pipelines reuse one remote runspace",
+    },
+    {
+      feature: "standardPowerShellStreams",
+      status: "supported",
+      reason:
+        "output, error, warning, verbose, debug, information, and progress are delivered separately",
+    },
+    {
+      feature: "pipelineInput",
+      status: "supported",
+      reason: "streaming input and explicit end-input are wired",
+    },
+    {
+      feature: "commandCancellation",
+      status: "supported",
+      reason: "the per-session actor sends a real transport stop signal",
+    },
+    {
+      feature: "disconnectReconnect",
+      status: "partial",
+      reason:
+        "viewer detach and bounded replay are supported; SSH transport reconnect creates a new runspace",
+    },
+    {
+      feature: "interactiveState",
+      status: "supported",
+      reason: "sequential commands preserve runspace state",
+    },
+    {
+      feature: "networkPath",
+      status: "unsupported",
+      reason: "the strict SSH adapter currently connects directly",
     },
   ],
 } as const satisfies PsRemotingCapabilities;

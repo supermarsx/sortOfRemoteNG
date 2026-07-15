@@ -29,7 +29,7 @@ import type {
   SetSessionConfigurationParams,
   WinRmServiceStatus,
 } from "../../types/powershell";
-import { CURRENT_POWER_SHELL_REMOTING_CAPABILITIES } from "../../utils/powershell/currentPowerShellCapabilities";
+import { LEGACY_POWER_SHELL_REMOTING_CAPABILITIES } from "../../utils/powershell/currentPowerShellCapabilities";
 
 /**
  * React hook wrapping the 53 `ps_*` Tauri commands exposed by
@@ -408,7 +408,7 @@ export function usePowerShellClient() {
   const cleanup = useCallback(() => invoke<void>("ps_cleanup"), []);
 
   return {
-    capabilities: CURRENT_POWER_SHELL_REMOTING_CAPABILITIES,
+    capabilities: LEGACY_POWER_SHELL_REMOTING_CAPABILITIES,
     // Sessions
     newSession,
     getSession,

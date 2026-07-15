@@ -22,6 +22,11 @@ export function EndpointSection({
     value.wsman.scheme,
   );
   const sshCapability = getPowerShellTransportCapability(capabilities, "ssh");
+  const wsmanCapability = getPowerShellTransportCapability(
+    capabilities,
+    "wsman",
+    value.wsman.scheme,
+  );
 
   let endpointPreview: string;
   let endpointError: string | undefined;
@@ -60,16 +65,13 @@ export function EndpointSection({
             options={[
               {
                 value: "wsman",
-                label: "WSMan (WinRS process shell)",
-                title: getPowerShellTransportCapability(
-                  capabilities,
-                  "wsman",
-                  value.wsman.scheme,
-                )?.reason,
+                label: "WSMan — unavailable",
+                disabled: wsmanCapability?.status === "unsupported",
+                title: wsmanCapability?.reason,
               },
               {
                 value: "ssh",
-                label: "PowerShell over SSH — unavailable",
+                label: `PowerShell over SSH${sshCapability?.status === "unsupported" ? " — unavailable" : ""}`,
                 disabled: sshCapability?.status === "unsupported",
                 title: sshCapability?.reason,
               },
