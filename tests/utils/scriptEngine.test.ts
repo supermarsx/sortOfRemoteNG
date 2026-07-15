@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 // @ts-expect-error - no type declarations for jsdom
 import { JSDOM } from "jsdom";
-import { ScriptEngine, ScriptExecutionContext } from "../../src/utils/recording/scriptEngine";
+import {
+  ScriptEngine,
+  ScriptExecutionContext,
+} from "../../src/utils/recording/scriptEngine";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
 import { CustomScript } from "../../src/types/settings/settings";
 
@@ -27,28 +30,43 @@ beforeEach(async () => {
       if (args.code.includes("typeof document")) {
         return { success: true, result: "undefined" };
       }
-      if (args.code.includes("typeof globalThis") && args.code.includes("typeof process")) {
+      if (
+        args.code.includes("typeof globalThis") &&
+        args.code.includes("typeof process")
+      ) {
         return { success: true, result: ["undefined", "undefined"] };
       }
       if (args.code.includes("setSetting('colorScheme', 'purple')")) {
         // Actually call setSetting for this test
         const engine = ScriptEngine.getInstance();
-        await (engine as any).setSetting('colorScheme', 'purple');
+        await (engine as any).setSetting("colorScheme", "purple");
         return { success: true, result: undefined };
       }
       if (args.code.includes("throw new Error")) {
+        if (args.code.includes("leak-secret")) {
+          return {
+            success: false,
+            error: "password=leak-secret token=abcdef",
+          };
+        }
         return { success: false, error: "boom" };
       }
       if (args.code.includes("while(true)")) {
         // Simulate timeout
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         return { success: false, error: "Script execution timed out" };
       }
-      if (args.code.includes("const n = 1; return n;") || args.code.includes("const n: number = 1; return n;")) {
+      if (
+        args.code.includes("const n = 1; return n;") ||
+        args.code.includes("const n: number = 1; return n;")
+      ) {
         return { success: true, result: 1 };
       }
       if (args.code.includes("TypeScript compilation failed")) {
-        return { success: false, error: "TypeScript compilation failed in ts-error: test error" };
+        return {
+          success: false,
+          error: "TypeScript compilation failed in ts-error: test error",
+        };
       }
       // Default success
       return { success: true, result: 1 };
@@ -158,6 +176,34 @@ describe("ScriptEngine error handling", () => {
     await expect(engine.executeScript<void>(script, context)).rejects.toThrow(
       "boom",
     );
+  });
+
+  it("redacts secrets from persisted script failure details", async () => {
+    const settingsManager = SettingsManager.getInstance();
+    const logAction = vi.spyOn(settingsManager, "logAction");
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: "s-secret-error",
+      name: "secret error script",
+      type: "javascript",
+      content: "throw new Error('leak-secret');",
+      trigger: "manual",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await expect(
+      engine.executeScript<void>(script, { trigger: "manual" }),
+    ).rejects.toThrow("password=leak-secret token=abcdef");
+
+    const failure = logAction.mock.calls.find(
+      ([, action]) => action === "Script execution failed",
+    );
+    expect(failure?.[3]).toContain("password=[redacted]");
+    expect(failure?.[3]).toContain("token=[redacted]");
+    expect(failure?.[3]).not.toContain("leak-secret");
+    expect(failure?.[3]).not.toContain("abcdef");
   });
 
   it("enforces execution timeout", async () => {

@@ -137,6 +137,7 @@ export class ConnectionBehaviorDispatcher {
   private readonly onActionError?: ConnectionBehaviorDispatcherDependencies["onActionError"];
   private readonly activeEvents = new Map<string, AbortController>();
   private readonly activeEventDepths = new Map<string, number>();
+  private readonly rememberedEventDepths = new Map<string, number>();
   private readonly sessionEvents = new Map<string, Set<string>>();
   private readonly seenEvents = new Set<string>();
   private readonly seenEventQueue: string[] = [];
@@ -156,12 +157,16 @@ export class ConnectionBehaviorDispatcher {
     this.onActionError = dependencies.onActionError;
   }
 
-  private rememberEvent(eventId: string): void {
+  private rememberEvent(eventId: string, depth: number): void {
     this.seenEvents.add(eventId);
+    this.rememberedEventDepths.set(eventId, depth);
     this.seenEventQueue.push(eventId);
     while (this.seenEventQueue.length > this.maxRememberedEvents) {
       const forgotten = this.seenEventQueue.shift();
-      if (forgotten) this.seenEvents.delete(forgotten);
+      if (forgotten) {
+        this.seenEvents.delete(forgotten);
+        this.rememberedEventDepths.delete(forgotten);
+      }
     }
   }
 
@@ -238,7 +243,9 @@ export class ConnectionBehaviorDispatcher {
     }
 
     const parentDepth = context.parentEventId
-      ? (this.activeEventDepths.get(context.parentEventId) ?? 0)
+      ? (this.activeEventDepths.get(context.parentEventId) ??
+        this.rememberedEventDepths.get(context.parentEventId) ??
+        0)
       : 0;
     const depth = parentDepth + 1;
     if (depth > this.maxRecursionDepth) {
@@ -256,7 +263,7 @@ export class ConnectionBehaviorDispatcher {
     this.activeEvents.set(context.eventId, controller);
     this.activeEventDepths.set(context.eventId, depth);
     this.registerSessionEvent(context.session?.id, context.eventId);
-    this.rememberEvent(context.eventId);
+    this.rememberEvent(context.eventId, depth);
 
     const result = this.eventResult("completed", normalization);
     try {

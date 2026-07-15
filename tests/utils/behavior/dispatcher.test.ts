@@ -402,6 +402,46 @@ describe("ConnectionBehaviorDispatcher", () => {
     expect(nestedStatuses).toContain("recursion-blocked");
   });
 
+  it("retains bounded parent depth after the parent dispatch has completed", async () => {
+    const dispatcher = new ConnectionBehaviorDispatcher({
+      maxRecursionDepth: 2,
+      handlers: { writeLog: vi.fn() },
+    });
+    const config = behaviorConfig([
+      {
+        id: "deferred-recursive",
+        name: "Deferred recursive",
+        event: "session.disconnected",
+        actions: [{ type: "writeLog" }],
+      },
+    ]);
+
+    expect(
+      await dispatcher.dispatch(
+        config,
+        behaviorContext({ eventId: "deferred-root" }),
+      ),
+    ).toMatchObject({ status: "completed" });
+    expect(
+      await dispatcher.dispatch(
+        config,
+        behaviorContext({
+          eventId: "deferred-child",
+          parentEventId: "deferred-root",
+        }),
+      ),
+    ).toMatchObject({ status: "completed" });
+    expect(
+      await dispatcher.dispatch(
+        config,
+        behaviorContext({
+          eventId: "deferred-grandchild",
+          parentEventId: "deferred-child",
+        }),
+      ),
+    ).toMatchObject({ status: "recursion-blocked" });
+  });
+
   it("does not execute absent, malformed, or future-version configurations", async () => {
     const writeLog = vi.fn();
     const dispatcher = new ConnectionBehaviorDispatcher({

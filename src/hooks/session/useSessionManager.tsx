@@ -23,6 +23,12 @@ import {
   resolveConnectionRetryDelay,
   resolveConnectionWarnOnClose,
 } from "../../utils/behavior/legacyBehavior";
+import { sanitizeBehaviorText } from "../../utils/behavior/template";
+import {
+  useSessionLifecycleEvents,
+  type SessionLifecycleNotification,
+  type SessionReconnectRequest,
+} from "./useSessionLifecycleEvents";
 
 const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
   "ssh",
@@ -68,21 +74,8 @@ export const useSessionManager = () => {
   stateRef.current = state;
   // Store active timeout IDs so they can be cleared on unmount
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const notificationStatusRef = useRef<
-    Map<
-      string,
-      {
-        id: string;
-        name: string;
-        protocol: string;
-        hostname: string;
-        status: ConnectionSession["status"];
-        errorMessage?: string;
-        reconnectAttempts?: number;
-      }
-    >
-  >(new Map());
-  const notificationsPrimedRef = useRef(false);
+  const pendingReconnectsRef = useRef(new Set<string>());
+  const reconnectsInFlightRef = useRef(new Set<string>());
   const permissionRequestRef = useRef<Promise<NotificationPermission> | null>(
     null,
   );
@@ -117,48 +110,18 @@ export const useSessionManager = () => {
     };
   }, []);
 
-  const sendSessionNotification = useCallback(
-    (
-      kind: "connect" | "reconnect" | "disconnect" | "error",
-      session: {
-        id: string;
-        name: string;
-        protocol: string;
-        hostname: string;
-        errorMessage?: string;
-      },
-    ) => {
-      const settings = settingsManager.getSettings();
-      const enabled =
-        (kind === "connect" && settings.notifyOnConnect) ||
-        (kind === "reconnect" && settings.notifyOnReconnect) ||
-        (kind === "disconnect" && settings.notifyOnDisconnect) ||
-        (kind === "error" && settings.notifyOnError);
-
-      if (!enabled || typeof window === "undefined") return;
-
+  const showNotification = useCallback(
+    (notification: SessionLifecycleNotification) => {
+      if (typeof window === "undefined") return;
       const NotificationCtor = window.Notification;
       if (!NotificationCtor) return;
 
-      const title =
-        kind === "connect"
-          ? "Session connected"
-          : kind === "reconnect"
-            ? "Session reconnected"
-            : kind === "disconnect"
-              ? "Session disconnected"
-              : "Session error";
-      const body =
-        kind === "error"
-          ? `${session.name}: ${session.errorMessage || "Connection failed"}`
-          : `${session.name} (${session.protocol.toUpperCase()} ${session.hostname})`;
-
       const notify = () => {
         try {
-          new NotificationCtor(title, {
-            body,
-            silent: !settings.notificationSound,
-            tag: `sortofremoteng:${kind}:${session.id}`,
+          new NotificationCtor(notification.title, {
+            body: notification.body,
+            silent: notification.silent,
+            tag: notification.tag,
           });
         } catch {
           // Notification support varies by shell/webview. This setting must not
@@ -182,68 +145,45 @@ export const useSessionManager = () => {
           permissionRequestRef.current = null;
         });
     },
-    [settingsManager],
+    [],
   );
 
-  useEffect(() => {
-    const current = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        protocol: string;
-        hostname: string;
-        status: ConnectionSession["status"];
-        errorMessage?: string;
-        reconnectAttempts?: number;
-      }
-    >();
+  const sendSessionNotification = useCallback(
+    (
+      kind: "connect" | "reconnect" | "disconnect" | "error",
+      session: ConnectionSession,
+    ) => {
+      const settings = settingsManager.getSettings();
+      const enabled =
+        (kind === "connect" && settings.notifyOnConnect) ||
+        (kind === "reconnect" && settings.notifyOnReconnect) ||
+        (kind === "disconnect" && settings.notifyOnDisconnect) ||
+        (kind === "error" && settings.notifyOnError);
+      if (!enabled) return;
 
-    for (const session of state.sessions) {
-      if (!isRealConnectionSession(session)) continue;
-      current.set(session.id, {
-        id: session.id,
-        name: session.name,
-        protocol: session.protocol,
-        hostname: session.hostname,
-        status: session.status,
-        errorMessage: session.errorMessage,
-        reconnectAttempts: session.reconnectAttempts,
+      const title =
+        kind === "connect"
+          ? "Session connected"
+          : kind === "reconnect"
+            ? "Session reconnected"
+            : kind === "disconnect"
+              ? "Session disconnected"
+              : "Session error";
+      const body =
+        kind === "error"
+          ? `${session.name}: ${sanitizeBehaviorText(
+              session.errorMessage || "Connection failed",
+            )}`
+          : `${session.name} (${session.protocol.toUpperCase()} ${session.hostname})`;
+      showNotification({
+        title,
+        body,
+        silent: !settings.notificationSound,
+        tag: `sortofremoteng:${kind}:${session.id}`,
       });
-    }
-
-    if (!notificationsPrimedRef.current) {
-      notificationStatusRef.current = current;
-      notificationsPrimedRef.current = true;
-      return;
-    }
-
-    const previous = notificationStatusRef.current;
-
-    for (const [id, session] of current) {
-      const prev = previous.get(id);
-      if (!prev || prev.status === session.status) continue;
-
-      if (session.status === "connected") {
-        const reconnected =
-          prev.status === "reconnecting" ||
-          (session.reconnectAttempts ?? 0) > 0;
-        sendSessionNotification(reconnected ? "reconnect" : "connect", session);
-      } else if (session.status === "disconnected") {
-        sendSessionNotification("disconnect", session);
-      } else if (session.status === "error") {
-        sendSessionNotification("error", session);
-      }
-    }
-
-    for (const [id, prev] of previous) {
-      if (!current.has(id) && prev.status === "connected") {
-        sendSessionNotification("disconnect", prev);
-      }
-    }
-
-    notificationStatusRef.current = current;
-  }, [sendSessionNotification, state.sessions]);
+    },
+    [settingsManager, showNotification],
+  );
 
   const connectSession = async (
     session: ConnectionSession,
@@ -348,11 +288,14 @@ export const useSessionManager = () => {
     try {
       await raced;
     } catch (error) {
+      const safeError = sanitizeBehaviorText(
+        error instanceof Error ? error.message : "Unknown error",
+      );
       const cur = stateRef.current.sessions.find((s) => s.id === session.id);
       if (cur) {
         dispatch({
           type: "UPDATE_SESSION",
-          payload: { ...cur, status: "error" },
+          payload: { ...cur, status: "error", errorMessage: safeError },
         });
       }
 
@@ -360,25 +303,25 @@ export const useSessionManager = () => {
         "error",
         "Connection failed",
         connection.id,
-        error instanceof Error ? error.message : "Unknown error",
+        safeError,
       );
 
-      if (
-        (session.reconnectAttempts || 0) < (session.maxReconnectAttempts || 0)
-      ) {
-        // Schedule another attempt when the retry delay expires
-        startTimer(
-          () => {
-            // This path has already observed the configured retry delay. Calling
-            // handleReconnect would add its separate manual-reconnect delay too.
-            reconnectSession(session, connection);
-          },
-          resolveConnectionRetryDelay(
+      await requestReconnect({
+        session: cur
+          ? { ...cur, status: "error", errorMessage: safeError }
+          : session,
+        connection,
+        action: {
+          type: "reconnect",
+          delayMs: resolveConnectionRetryDelay(
             connection.retryDelay,
             settings.retryDelay,
           ),
-        );
-      }
+          maxAttempts: session.maxReconnectAttempts,
+          backoff: "fixed",
+        },
+        reason: "error",
+      });
     }
   };
 
@@ -469,6 +412,7 @@ export const useSessionManager = () => {
     };
 
     dispatch({ type: "ADD_SESSION", payload: session });
+    await lifecycle.emitStarted(session, connection, { reason: "user" });
 
     // Per-connection focusOnConnect overrides the global setting
     const shouldFocus =
@@ -484,10 +428,14 @@ export const useSessionManager = () => {
         connection.id,
         unsupportedMessage,
       );
+      await lifecycle.emitInitialStatus(session, connection, {
+        reason: "error",
+      });
       return;
     }
 
     await connectSession(session, connection);
+    await lifecycle.emitInitialStatus(session, connection);
   };
 
   const reconnectSession = async (
@@ -497,7 +445,7 @@ export const useSessionManager = () => {
     const updatedSession: ConnectionSession = {
       ...session,
       status: "reconnecting",
-      reconnectAttempts: (session.reconnectAttempts || 0) + 1,
+      reconnectAttempts: (session.reconnectAttempts ?? 0) + 1,
       startTime: new Date(),
     };
 
@@ -512,6 +460,66 @@ export const useSessionManager = () => {
     await connectSession(updatedSession, connection);
   };
 
+  type ManagedReconnectRequest = SessionReconnectRequest & {
+    ignoreAttemptLimit?: boolean;
+    reason?: "user" | "error" | "network" | "restore";
+  };
+
+  const requestReconnect = async (
+    request: ManagedReconnectRequest,
+  ): Promise<boolean> => {
+    const latest =
+      stateRef.current.sessions.find(
+        (candidate) => candidate.id === request.session.id,
+      ) ?? request.session;
+    const attempts = latest.reconnectAttempts ?? 0;
+    const maxAttempts =
+      request.action.maxAttempts ?? latest.maxReconnectAttempts ?? 0;
+    if (!request.ignoreAttemptLimit && attempts >= maxAttempts) return false;
+    if (
+      pendingReconnectsRef.current.has(latest.id) ||
+      (reconnectsInFlightRef.current.has(latest.id) &&
+        request.reason !== "error")
+    ) {
+      return false;
+    }
+
+    const baseDelay = request.action.delayMs ?? 0;
+    const delay = Math.min(
+      request.action.backoff === "exponential"
+        ? baseDelay * 2 ** attempts
+        : baseDelay,
+      2_147_483_647,
+    );
+    lifecycle.prepareEvent(latest.id, "session.reconnectStarted", {
+      parentEventId: request.parentEventId,
+      reason: request.reason ?? "user",
+    });
+    pendingReconnectsRef.current.add(latest.id);
+    startTimer(() => {
+      pendingReconnectsRef.current.delete(latest.id);
+      const current = stateRef.current.sessions.find(
+        (candidate) => candidate.id === latest.id,
+      );
+      if (!current) {
+        return;
+      }
+      const currentAttempts = current.reconnectAttempts ?? 0;
+      if (!request.ignoreAttemptLimit && currentAttempts >= maxAttempts) {
+        return;
+      }
+      const currentConnection =
+        stateRef.current.connections.find(
+          (candidate) => candidate.id === current.connectionId,
+        ) ?? request.connection;
+      reconnectsInFlightRef.current.add(latest.id);
+      void reconnectSession(current, currentConnection).finally(() => {
+        reconnectsInFlightRef.current.delete(latest.id);
+      });
+    }, delay);
+    return true;
+  };
+
   /**
    * Initiates a reconnect for a given session.
    * @param session - Session to re-establish.
@@ -522,10 +530,13 @@ export const useSessionManager = () => {
     );
     if (!connection) return;
 
-    // Retry the connection after a short delay
-    startTimer(() => {
-      reconnectSession(session, connection);
-    }, 2000);
+    await requestReconnect({
+      session,
+      connection,
+      action: { type: "reconnect", delayMs: 2000, backoff: "fixed" },
+      ignoreAttemptLimit: true,
+      reason: "user",
+    });
   };
 
   /**
@@ -594,11 +605,10 @@ export const useSessionManager = () => {
     const session = state.sessions.find((s) => s.id === sessionId);
     if (!session) return;
 
-    // Tool/winmgmt tabs just get removed — no connection lifecycle
+    // Tool/winmgmt tabs just get removed — no connection lifecycle.
     if (
       isToolProtocol(session.protocol) ||
-      isWinmgmtProtocol(session.protocol) ||
-      isIntegrationConnectionProtocol(session.protocol)
+      isWinmgmtProtocol(session.protocol)
     ) {
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return;
@@ -608,6 +618,28 @@ export const useSessionManager = () => {
       (c) => c.id === session.connectionId,
     );
     const settings = settingsManager.getSettings();
+
+    // Integration tabs have no transport cleanup or legacy disconnect script,
+    // but still own a real per-connection lifecycle.
+    if (isIntegrationConnectionProtocol(session.protocol)) {
+      lifecycle.beginEnding(sessionId);
+      dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+      if (connection) {
+        statusChecker.stopChecking(connection.id);
+        settingsManager.logAction(
+          "info",
+          "Session closed",
+          connection.id,
+          `Session "${session.name}" closed`,
+        );
+        await lifecycle.emitEnded(session, connection, { reason: "user" });
+      }
+      if (activeSessionId === sessionId) {
+        const remaining = state.sessions.filter((s) => s.id !== sessionId);
+        setActiveSessionId(remaining.length > 0 ? remaining[0].id : undefined);
+      }
+      return;
+    }
 
     // Global "confirm before closing an active tab" check —
     // applies to any connected session regardless of protocol.
@@ -670,6 +702,10 @@ export const useSessionManager = () => {
         if (!confirmed) return;
       }
     }
+
+    // From this point onward every user-facing close policy has been accepted.
+    // Cancelling in-flight rules here cannot bypass a confirmation dialog.
+    lifecycle.beginEnding(sessionId);
 
     if (connection) {
       try {
@@ -743,7 +779,22 @@ export const useSessionManager = () => {
       const remaining = state.sessions.filter((s) => s.id !== sessionId);
       setActiveSessionId(remaining.length > 0 ? remaining[0].id : undefined);
     }
+
+    if (connection) {
+      await lifecycle.emitEnded(session, connection, { reason: "user" });
+    }
   };
+
+  const lifecycle = useSessionLifecycleEvents({
+    sessions: state.sessions,
+    connections: state.connections,
+    activeSessionId,
+    settingsManager,
+    scriptEngine,
+    showNotification,
+    requestReconnect: (request) => requestReconnect(request),
+    onTransition: sendSessionNotification,
+  });
 
   const activeSession = state.sessions.find((s) => s.id === activeSessionId);
 
@@ -815,6 +866,13 @@ export const useSessionManager = () => {
 
     dispatch({ type: "ADD_SESSION", payload: restoredSession });
     setActiveSessionId(restoredSession.id);
+
+    await lifecycle.emitStarted(restoredSession, connection, {
+      reason: "restore",
+    });
+    await lifecycle.emitInitialStatus(restoredSession, connection, {
+      reason: "restore",
+    });
 
     // For protocols that need backend reconnection, attempt to re-establish
     await connectSession(restoredSession, connection);

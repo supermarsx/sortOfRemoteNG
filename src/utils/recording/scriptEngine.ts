@@ -1,7 +1,11 @@
 import { CustomScript } from "../../types/settings/settings";
-import { Connection, ConnectionSession } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 import { SettingsManager } from "../settings/settingsManager";
 import { generateId } from "../core/id";
+import { sanitizeBehaviorText } from "../behavior/template";
 import * as ts from "typescript";
 
 export interface ScriptExecutionContext extends Record<string, unknown> {
@@ -76,7 +80,9 @@ export class ScriptEngine {
         "error",
         "Script execution failed",
         context.connection?.id,
-        `Script: ${script.name}, Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        sanitizeBehaviorText(
+          `Script: ${script.name}, Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        ),
         duration,
       );
       throw error;
@@ -226,7 +232,10 @@ export class ScriptEngine {
       } else {
         const errorMessage = result.error || "Script execution failed";
         if (errorMessage.startsWith("AbortError:")) {
-          throw new DOMException(errorMessage.substring("AbortError:".length).trim(), "AbortError");
+          throw new DOMException(
+            errorMessage.substring("AbortError:".length).trim(),
+            "AbortError",
+          );
         }
         throw new Error(errorMessage);
       }
@@ -267,7 +276,10 @@ export class ScriptEngine {
       } else {
         const errorMessage = result.error || "Script execution failed";
         if (errorMessage.startsWith("AbortError:")) {
-          throw new DOMException(errorMessage.substring("AbortError:".length).trim(), "AbortError");
+          throw new DOMException(
+            errorMessage.substring("AbortError:".length).trim(),
+            "AbortError",
+          );
         }
         throw new Error(errorMessage);
       }
@@ -316,7 +328,7 @@ export class ScriptEngine {
     const looksLikeJson =
       trimmed.startsWith("{") ||
       trimmed.startsWith("[") ||
-      trimmed.startsWith("\"");
+      trimmed.startsWith('"');
 
     if (looksLikeJson) {
       try {
@@ -366,7 +378,9 @@ export class ScriptEngine {
       hostname.startsWith("169.254.") ||
       /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
     ) {
-      throw new Error(`Access to private/internal network addresses is not allowed`);
+      throw new Error(
+        `Access to private/internal network addresses is not allowed`,
+      );
     }
   }
 

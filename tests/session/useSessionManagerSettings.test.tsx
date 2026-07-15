@@ -292,6 +292,85 @@ describe("useSessionManager settings effects", () => {
     });
   });
 
+  it("emits ended only after legacy disconnect work and removal without reporting a remote disconnect", async () => {
+    const notificationCtor = vi.fn();
+    Object.assign(notificationCtor, {
+      permission: "granted",
+      requestPermission: vi.fn(),
+    });
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: notificationCtor,
+    });
+    const connection = makeConnection({
+      id: "conn-existing",
+      warnOnClose: false,
+      behaviorAutomation: {
+        version: 1,
+        rules: [
+          {
+            id: "ended-notification",
+            name: "Ended notification",
+            event: "session.ended",
+            actions: [
+              {
+                type: "notify",
+                title: "Automation ended",
+                message: "Cleanup complete",
+                sound: "off",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const session = makeSession();
+    connectionMocks.state = {
+      sessions: [session],
+      connections: [connection],
+    };
+    SettingsManager.getInstance().applyInMemory({
+      warnOnClose: true,
+      confirmCloseActiveTab: false,
+      notifyOnDisconnect: true,
+    });
+    const { result } = renderHook(() => useSessionManager());
+
+    await act(async () => {
+      await result.current.handleSessionClose(session.id);
+    });
+
+    expect(connectionMocks.executeScriptsForTrigger).toHaveBeenCalledWith(
+      "onDisconnect",
+      { connection, session },
+    );
+    const removeCall = connectionMocks.dispatch.mock.calls.find(
+      ([action]) => action.type === "REMOVE_SESSION",
+    );
+    expect(removeCall?.[0]).toEqual({
+      type: "REMOVE_SESSION",
+      payload: session.id,
+    });
+    expect(notificationCtor).toHaveBeenCalledWith(
+      "Automation ended",
+      expect.objectContaining({
+        body: "Cleanup complete",
+        silent: true,
+      }),
+    );
+    expect(
+      notificationCtor.mock.calls.some(([title]) =>
+        String(title).includes("Session disconnected"),
+      ),
+    ).toBe(false);
+    expect(
+      connectionMocks.executeScriptsForTrigger.mock.invocationCallOrder[0],
+    ).toBeLessThan(connectionMocks.dispatch.mock.invocationCallOrder[0]);
+    expect(connectionMocks.dispatch.mock.invocationCallOrder[0]).toBeLessThan(
+      notificationCtor.mock.invocationCallOrder[0],
+    );
+  });
+
   it("starts an automatic retry after exactly the configured delay", async () => {
     vi.useFakeTimers();
     try {
@@ -351,6 +430,43 @@ describe("useSessionManager settings effects", () => {
           reconnectAttempts: 1,
         }),
       });
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces duplicate manual reconnect requests through one pending primitive", async () => {
+    vi.useFakeTimers();
+    try {
+      const connection = makeConnection({ id: "conn-existing" });
+      const session = makeSession({ maxReconnectAttempts: 0 });
+      connectionMocks.state = {
+        sessions: [session],
+        connections: [connection],
+      };
+      const { result, unmount } = renderHook(() => useSessionManager());
+
+      await act(async () => {
+        await Promise.all([
+          result.current.handleReconnect(session),
+          result.current.handleReconnect(session),
+        ]);
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
+      const reconnectUpdates = connectionMocks.dispatch.mock.calls.filter(
+        ([action]) =>
+          action.type === "UPDATE_SESSION" &&
+          action.payload.status === "reconnecting",
+      );
+      expect(reconnectUpdates).toHaveLength(1);
+      expect(reconnectUpdates[0][0].payload).toEqual(
+        expect.objectContaining({
+          id: session.id,
+          reconnectAttempts: 1,
+        }),
+      );
       unmount();
     } finally {
       vi.useRealTimers();
