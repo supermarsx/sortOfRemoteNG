@@ -14,7 +14,7 @@ export type ConnectionEditorTabId =
   | "organize"
   | "notes";
 
-export type ConnectionEditorExpandableSectionId = "advanced" | "description";
+export type ConnectionEditorExpandableSectionId = "advanced";
 
 export interface ConnectionEditorTabDescriptor {
   id: ConnectionEditorTabId;
@@ -146,7 +146,6 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
     label: "Description & Notes",
     keywords: ["notes", "description", "documentation", "comments"],
     fields: [{ id: "description", label: "Description & Notes" }],
-    expandableSectionId: "description",
   },
 ] as const satisfies readonly ConnectionEditorSearchDescriptor[];
 

@@ -30,10 +30,9 @@ import { useToastContext } from "../../contexts/ToastContext";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import { generateId } from "../../utils/core/id";
 import {
-  getConnectionDepth,
-  getMaxDescendantDepth,
-  MAX_NESTING_DEPTH,
-} from "../../utils/window/dragDropManager";
+  buildParentFolderProjection,
+  canSelectParentFolder,
+} from "../../utils/connection/parentFolderTree";
 import {
   EXCHANGE_INTEGRATION_KEY,
   exchangeConnectionHost,
@@ -401,7 +400,6 @@ export function useConnectionEditor(
   const [formData, setFormData] = useState<Partial<Connection>>(DEFAULT_FORM);
   const [expandedSections, setExpandedSections] = useState({
     advanced: false,
-    description: false,
   });
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     "idle" | "pending" | "saved"
@@ -585,52 +583,28 @@ export function useConnectionEditor(
     [state.connections],
   );
 
-  const availableGroups = useMemo(
-    () => state.connections.filter((conn) => conn.isGroup),
-    [state.connections],
+  const parentFolderProjection = useMemo(
+    () =>
+      buildParentFolderProjection({
+        connections: state.connections,
+        currentConnectionId: formData.id,
+        currentIsGroup: !!formData.isGroup,
+        selectedParentId: formData.parentId,
+      }),
+    [formData.id, formData.isGroup, formData.parentId, state.connections],
   );
 
-  const selectableGroups = useMemo(() => {
-    const currentId = formData.id;
-    const isGroup = formData.isGroup;
-    const descendantDepth =
-      currentId && isGroup
-        ? getMaxDescendantDepth(currentId, state.connections)
-        : 0;
-
-    return availableGroups.map((group) => {
-      if (currentId && group.id === currentId) {
-        return { group, disabled: true, reason: "Cannot be its own parent" };
-      }
-
-      if (currentId) {
-        let checkId: string | undefined = group.id;
-        while (checkId) {
-          const parent = state.connections.find((c) => c.id === checkId);
-          if (parent?.parentId === currentId) {
-            return {
-              group,
-              disabled: true,
-              reason: "Cannot move into own descendant",
-            };
-          }
-          checkId = parent?.parentId;
-        }
-      }
-
-      const groupDepth = getConnectionDepth(group.id, state.connections) + 1;
-      const wouldExceedDepth =
-        groupDepth + descendantDepth >= MAX_NESTING_DEPTH;
-
-      return {
-        group,
-        disabled: wouldExceedDepth,
-        reason: wouldExceedDepth
-          ? `Max depth (${MAX_NESTING_DEPTH}) exceeded`
-          : undefined,
-      };
-    });
-  }, [availableGroups, state.connections, formData.id, formData.isGroup]);
+  const handleParentFolderChange = useCallback(
+    (value: string): boolean => {
+      if (!canSelectParentFolder(parentFolderProjection, value)) return false;
+      setFormData((previous) => ({
+        ...previous,
+        parentId: value || undefined,
+      }));
+      return true;
+    },
+    [parentFolderProjection],
+  );
 
   const isNewConnection = !connection;
 
@@ -963,8 +937,7 @@ export function useConnectionEditor(
     expandedSections,
     autoSaveStatus,
     allTags,
-    availableGroups,
-    selectableGroups,
+    parentFolderProjection,
     isNewConnection,
     sshSecrets,
     settings,
@@ -972,6 +945,7 @@ export function useConnectionEditor(
     handleSubmit,
     handleTagsChange,
     handleProtocolChange,
+    handleParentFolderChange,
     handleResetToDefaults,
     toggleSection,
     expandSection,

@@ -107,10 +107,18 @@ const mockConnection: Connection = {
 
 const ConnectionStateProbe = ({
   onConnections,
+  initialConnections,
 }: {
   onConnections?: (connections: Connection[]) => void;
+  initialConnections?: Connection[];
 }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
+
+  useEffect(() => {
+    if (initialConnections) {
+      dispatch({ type: "SET_CONNECTIONS", payload: initialConnections });
+    }
+  }, [dispatch, initialConnections]);
 
   useEffect(() => {
     onConnections?.(state.connections);
@@ -122,10 +130,14 @@ const ConnectionStateProbe = ({
 const renderWithProviders = (
   props: any,
   onConnections?: (connections: Connection[]) => void,
+  initialConnections?: Connection[],
 ) => {
   return render(
     <ConnectionProvider>
-      <ConnectionStateProbe onConnections={onConnections} />
+      <ConnectionStateProbe
+        onConnections={onConnections}
+        initialConnections={initialConnections}
+      />
       <ConnectionEditor {...props} />
     </ConnectionProvider>,
   );
@@ -438,6 +450,115 @@ describe("ConnectionEditor", () => {
         },
         { timeout: 3000 },
       );
+    });
+  });
+
+  describe("Notes and Parent Folder", () => {
+    it("shows Notes directly and persists edited content without an accordion", async () => {
+      let latestConnections: Connection[] = [];
+      renderWithProviders({ isOpen: true, onClose: vi.fn() }, (connections) => {
+        latestConnections = connections;
+      });
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "Documented Server" },
+      });
+      fireEvent.click(screen.getByTestId("connection-editor-tab-notes"));
+
+      const description = screen.getByTestId("editor-description");
+      expect(description).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: /Description & Notes/i }),
+      ).not.toBeInTheDocument();
+      fireEvent.change(description, {
+        target: { value: "Production owner: Platform" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+      await waitFor(() => {
+        expect(latestConnections).toHaveLength(1);
+        expect(latestConnections[0].description).toBe(
+          "Production owner: Platform",
+        );
+      });
+    });
+
+    it("keeps the direct Notes editor available for folders", async () => {
+      const folder: Connection = {
+        ...mockConnection,
+        id: "folder-notes",
+        name: "Folder Notes",
+        hostname: "",
+        isGroup: true,
+        description: "Shared folder context",
+      };
+      renderWithProviders({
+        connection: folder,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      fireEvent.click(screen.getByTestId("connection-editor-tab-notes"));
+      await waitFor(() =>
+        expect(screen.getByTestId("editor-description")).toHaveValue(
+          "Shared folder context",
+        ),
+      );
+    });
+
+    it("searches folder breadcrumbs and persists the selected nested parent", async () => {
+      const infrastructure: Connection = {
+        ...mockConnection,
+        id: "folder-infrastructure",
+        name: "Infrastructure",
+        hostname: "",
+        isGroup: true,
+      };
+      const production: Connection = {
+        ...infrastructure,
+        id: "folder-production",
+        name: "Production",
+        parentId: infrastructure.id,
+      };
+      const editable: Connection = {
+        ...mockConnection,
+        id: "nested-parent-target",
+        name: "Nested Parent Target",
+        parentId: undefined,
+      };
+      let latestConnections: Connection[] = [];
+
+      renderWithProviders(
+        { connection: editable, isOpen: true, onClose: vi.fn() },
+        (connections) => {
+          latestConnections = connections;
+        },
+        [infrastructure, production, editable],
+      );
+
+      const parentPicker = screen.getByRole("combobox", {
+        name: "Parent Folder",
+      });
+      await waitFor(() => expect(parentPicker).toHaveValue("Root (No parent)"));
+      fireEvent.focus(parentPicker);
+      fireEvent.change(parentPicker, {
+        target: { value: "INFRASTRUCTURE / production" },
+      });
+      fireEvent.click(
+        screen.getByRole("option", {
+          name: /Production.*Infrastructure \/ Production/i,
+        }),
+      );
+
+      expect(parentPicker).toHaveValue("Infrastructure / Production");
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(
+          latestConnections.find((connection) => connection.id === editable.id)
+            ?.parentId,
+        ).toBe(production.id);
+      });
     });
   });
 

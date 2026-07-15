@@ -73,7 +73,7 @@ describe("connection editor registry", () => {
     ]);
   });
 
-  it("navigates through the descriptor contract in tab, expansion, field order", () => {
+  it("navigates directly to the always-visible Notes field", () => {
     const calls: string[] = [];
     const didNavigate = navigateToConnectionEditorSearchDescriptor(
       "notes-description",
@@ -87,11 +87,7 @@ describe("connection editor registry", () => {
     );
 
     expect(didNavigate).toBe(true);
-    expect(calls).toEqual([
-      "tab:notes",
-      "expand:description",
-      "field:notes-description:description",
-    ]);
+    expect(calls).toEqual(["tab:notes", "field:notes-description:description"]);
   });
 
   it("rejects unavailable sections and unknown fields without navigating", () => {
