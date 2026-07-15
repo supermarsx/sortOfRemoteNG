@@ -40,6 +40,20 @@ pub mod commands {
                         i += 1;
                     }
                 }
+                arg if arg.starts_with("--collection=") => {
+                    if let Some(value) = arg.strip_prefix("--collection=").filter(|v| !v.is_empty())
+                    {
+                        collection_id = Some(value.to_string());
+                    }
+                    i += 1;
+                }
+                arg if arg.starts_with("--connection=") => {
+                    if let Some(value) = arg.strip_prefix("--connection=").filter(|v| !v.is_empty())
+                    {
+                        connection_id = Some(value.to_string());
+                    }
+                    i += 1;
+                }
                 _ => {
                     i += 1;
                 }
@@ -49,6 +63,70 @@ pub mod commands {
         LaunchArgs {
             collection_id,
             connection_id,
+        }
+    }
+
+    #[cfg(test)]
+    mod launch_args_tests {
+        use super::parse_launch_args;
+
+        fn args(values: &[&str]) -> Vec<String> {
+            values.iter().map(|value| (*value).to_string()).collect()
+        }
+
+        #[test]
+        fn parses_spaced_long_and_short_launch_arguments() {
+            let parsed = parse_launch_args(args(&[
+                "sortofremoteng",
+                "--collection",
+                "collection-long",
+                "-n",
+                "connection-short",
+            ]));
+
+            assert_eq!(parsed.collection_id.as_deref(), Some("collection-long"));
+            assert_eq!(parsed.connection_id.as_deref(), Some("connection-short"));
+        }
+
+        #[test]
+        fn parses_equals_style_launch_arguments() {
+            let parsed = parse_launch_args(args(&[
+                "sortofremoteng",
+                "--collection=collection-webview",
+                "--connection=connection-webview",
+            ]));
+
+            assert_eq!(parsed.collection_id.as_deref(), Some("collection-webview"));
+            assert_eq!(parsed.connection_id.as_deref(), Some("connection-webview"));
+        }
+
+        #[test]
+        fn last_valid_launch_argument_wins_across_supported_styles() {
+            let parsed = parse_launch_args(args(&[
+                "sortofremoteng",
+                "--collection=collection-first",
+                "--collection",
+                "collection-last",
+                "--connection",
+                "connection-first",
+                "--connection=connection-last",
+            ]));
+
+            assert_eq!(parsed.collection_id.as_deref(), Some("collection-last"));
+            assert_eq!(parsed.connection_id.as_deref(), Some("connection-last"));
+        }
+
+        #[test]
+        fn ignores_empty_or_missing_launch_argument_values() {
+            let parsed = parse_launch_args(args(&[
+                "sortofremoteng",
+                "--collection=",
+                "--connection=",
+                "--collection",
+            ]));
+
+            assert!(parsed.collection_id.is_none());
+            assert!(parsed.connection_id.is_none());
         }
     }
 
