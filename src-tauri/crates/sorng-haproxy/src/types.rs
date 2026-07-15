@@ -28,6 +28,8 @@ pub struct HaproxyConnectionConfig {
     /// Config file path (default: /etc/haproxy/haproxy.cfg)
     pub config_path: Option<String>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

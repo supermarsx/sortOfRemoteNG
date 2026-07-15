@@ -25,6 +25,9 @@ pub struct VsphereConfig {
     /// Request timeout in seconds
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    /// Optional HTTP proxy URL for vSphere REST API calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 fn default_port() -> u16 {
@@ -43,6 +46,7 @@ impl Default for VsphereConfig {
             port: 443,
             insecure: false,
             timeout_secs: 30,
+            proxy_url: None,
         }
     }
 }

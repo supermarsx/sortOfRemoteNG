@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   AccessLogEntry,
   ConfigTestResult,
@@ -168,7 +169,7 @@ export function useNginx() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await nginxApi.connect(id, config);
+        const s = await nginxApi.connect(id, withGlobalHttpProxy(config));
         setConnectionId(id);
         setSummary(s);
         return true;

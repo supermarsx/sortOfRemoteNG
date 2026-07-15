@@ -19,9 +19,20 @@ pub struct MailcowClient {
 impl MailcowClient {
     /// Build a new client from the supplied config.
     pub fn new(config: MailcowConnectionConfig) -> MailcowResult<Self> {
-        let http = HttpClient::builder()
+        let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
-            .danger_accept_invalid_certs(config.tls_skip_verify)
+            .danger_accept_invalid_certs(config.tls_skip_verify);
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| MailcowError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
             .map_err(|e| MailcowError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })

@@ -16,6 +16,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   Alert,
   ConfigReloadResult,
@@ -39,14 +40,17 @@ export const prometheusApi = {
   // Connection lifecycle
   connect: (id: string, config: PrometheusConnectionConfig) =>
     invoke<PrometheusConnectionSummary>("prometheus_connect", { id, config }),
-  disconnect: (id: string) =>
-    invoke<void>("prometheus_disconnect", { id }),
-  listConnections: () =>
-    invoke<string[]>("prometheus_list_connections"),
+  disconnect: (id: string) => invoke<void>("prometheus_disconnect", { id }),
+  listConnections: () => invoke<string[]>("prometheus_list_connections"),
 
   // Queries
   instantQuery: (id: string, query: string, time?: string, timeout?: string) =>
-    invoke<QueryResult>("prometheus_instant_query", { id, query, time, timeout }),
+    invoke<QueryResult>("prometheus_instant_query", {
+      id,
+      query,
+      time,
+      timeout,
+    }),
   rangeQuery: (
     id: string,
     query: string,
@@ -63,7 +67,12 @@ export const prometheusApi = {
       step,
       timeout,
     }),
-  series: (id: string, matchSelectors: string[], start?: string, end?: string) =>
+  series: (
+    id: string,
+    matchSelectors: string[],
+    start?: string,
+    end?: string,
+  ) =>
     invoke<Record<string, string>[]>("prometheus_series", {
       id,
       matchSelectors,
@@ -108,8 +117,7 @@ export const prometheusApi = {
     invoke<RuleGroup[]>("prometheus_list_rules", { id, ruleType }),
   listRecordingRules: (id: string) =>
     invoke<RuleGroup[]>("prometheus_list_recording_rules", { id }),
-  listAlerts: (id: string) =>
-    invoke<Alert[]>("prometheus_list_alerts", { id }),
+  listAlerts: (id: string) => invoke<Alert[]>("prometheus_list_alerts", { id }),
 
   // Silences
   listSilences: (id: string, filter?: string) =>
@@ -177,23 +185,20 @@ export function usePrometheus() {
   // Guards against overlapping in-flight ops flipping isLoading incorrectly.
   const inflight = useRef(0);
 
-  const run = useCallback(
-    async <T>(op: () => Promise<T>): Promise<T> => {
-      inflight.current += 1;
-      setIsLoading(true);
-      setError(null);
-      try {
-        return await op();
-      } catch (e) {
-        setError(errMsg(e));
-        throw e;
-      } finally {
-        inflight.current -= 1;
-        if (inflight.current === 0) setIsLoading(false);
-      }
-    },
-    [],
-  );
+  const run = useCallback(async <T>(op: () => Promise<T>): Promise<T> => {
+    inflight.current += 1;
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await op();
+    } catch (e) {
+      setError(errMsg(e));
+      throw e;
+    } finally {
+      inflight.current -= 1;
+      if (inflight.current === 0) setIsLoading(false);
+    }
+  }, []);
 
   const connect = useCallback(
     async (
@@ -203,7 +208,7 @@ export function usePrometheus() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await prometheusApi.connect(id, config);
+        const s = await prometheusApi.connect(id, withGlobalHttpProxy(config));
         setConnectionId(id);
         setSummary(s);
         return true;

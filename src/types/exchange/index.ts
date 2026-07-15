@@ -68,6 +68,8 @@ export interface ExchangeConnectionConfig {
   onPrem?: ExchangeOnPremCredentials | null;
   /** Request timeout in seconds (default 120). */
   timeoutSecs?: number | null;
+  /** Optional HTTP proxy URL used for Exchange Online Graph/EXO HTTP calls. */
+  proxyUrl?: string | null;
 }
 
 /** Mirror of `ExchangeConnectionSummary` — returned by `exchange_connect` /

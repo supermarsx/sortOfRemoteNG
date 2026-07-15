@@ -12,6 +12,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   TraefikConnectionConfig,
   TraefikConnectionSummary,
@@ -143,7 +144,7 @@ export function useTraefik() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await traefikApi.connect(id, config);
+        const s = await traefikApi.connect(id, withGlobalHttpProxy(config));
         setConnectionId(id);
         setSummary(s);
         return true;

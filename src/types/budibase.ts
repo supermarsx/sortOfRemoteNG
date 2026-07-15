@@ -24,6 +24,8 @@ export interface BudibaseConnectionConfig {
   timeoutSeconds?: number | null;
   /** Whether to skip TLS certificate verification. */
   skipTlsVerify?: boolean;
+  /** Optional HTTP proxy URL supplied from the app-wide proxy setting. */
+  proxyUrl?: string | null;
 }
 
 export interface BudibaseConnectionStatus {

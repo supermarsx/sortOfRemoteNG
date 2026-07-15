@@ -40,6 +40,8 @@ pub struct CpanelConnectionConfig {
     pub api_token: Option<String>,
     /// Connection timeout in seconds (default 30).
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

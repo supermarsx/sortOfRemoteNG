@@ -23,6 +23,7 @@ export interface NetboxConnectionConfig {
   acceptInvalidCerts?: boolean | null;
   apiToken: string;
   timeoutSecs?: number | null;
+  proxyUrl?: string | null;
 }
 
 /** Mirror of `NetboxConnectionSummary` — returned by `netbox_ping`. */

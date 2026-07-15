@@ -15,9 +15,20 @@ pub struct PfsenseClient {
 
 impl PfsenseClient {
     pub fn new(config: PfsenseConnectionConfig) -> PfsenseResult<Self> {
-        let http = HttpClient::builder()
+        let mut builder = HttpClient::builder()
             .danger_accept_invalid_certs(config.accept_invalid_certs)
-            .timeout(Duration::from_secs(config.timeout_secs))
+            .timeout(Duration::from_secs(config.timeout_secs));
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| PfsenseError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
             .map_err(|e| PfsenseError::connection(format!("HTTP client build: {e}")))?;
         Ok(Self { config, http })

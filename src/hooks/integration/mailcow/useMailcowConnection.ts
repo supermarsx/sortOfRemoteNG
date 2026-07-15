@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 
 import type {
   MailcowConnectionConfig,
@@ -41,7 +42,10 @@ export function useMailcowConnection() {
       setConnecting(true);
       setError(null);
       try {
-        const result = await mailcowConnectionApi.connect(id, config);
+        const result = await mailcowConnectionApi.connect(
+          id,
+          withGlobalHttpProxy(config),
+        );
         setConnectionId(id);
         setSummary(result);
         return result;

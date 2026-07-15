@@ -18,6 +18,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxyArgs } from "./httpProxy";
 import type {
   BatchResult,
   DriveAbout,
@@ -44,12 +45,15 @@ export const gdriveApi = {
     redirectUri: string,
     scopes: string[],
   ) =>
-    invoke<void>("gdrive_set_credentials", {
-      clientId,
-      clientSecret,
-      redirectUri,
-      scopes,
-    }),
+    invoke<void>(
+      "gdrive_set_credentials",
+      withGlobalHttpProxyArgs({
+        clientId,
+        clientSecret,
+        redirectUri,
+        scopes,
+      }),
+    ),
   getAuthUrl: () => invoke<string>("gdrive_get_auth_url"),
   exchangeCode: (code: string) =>
     invoke<void>("gdrive_exchange_code", { code }),
@@ -204,8 +208,7 @@ export const gdriveApi = {
     invoke<void>("gdrive_delete_drive", { driveId }),
 
   // ── Changes ──
-  getStartPageToken: () =>
-    invoke<string>("gdrive_get_start_page_token"),
+  getStartPageToken: () => invoke<string>("gdrive_get_start_page_token"),
   pollChanges: () => invoke<DriveChange[]>("gdrive_poll_changes"),
 
   // ── Search ──

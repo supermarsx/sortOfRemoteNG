@@ -16,9 +16,21 @@ pub struct OsticketClient {
 #[allow(dead_code)]
 impl OsticketClient {
     pub fn from_config(cfg: &OsticketConnectionConfig) -> OsticketResult<Self> {
-        let http = Client::builder()
+        let mut builder = Client::builder()
             .danger_accept_invalid_certs(cfg.skip_tls_verify)
-            .timeout(std::time::Duration::from_secs(cfg.timeout_seconds))
+            .timeout(std::time::Duration::from_secs(cfg.timeout_seconds));
+        if let Some(proxy_url) = cfg
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url).map_err(|e| {
+                OsticketError::new(OsticketErrorKind::ConnectionFailed, e.to_string())
+            })?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
             .map_err(|e| OsticketError::new(OsticketErrorKind::ConnectionFailed, e.to_string()))?;
 

@@ -21,9 +21,20 @@ pub struct VsphereClient {
 impl VsphereClient {
     /// Build a new client from config (does NOT create a session yet).
     pub fn new(config: &VsphereConfig) -> VmwareResult<Self> {
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .danger_accept_invalid_certs(config.insecure)
-            .timeout(Duration::from_secs(config.timeout_secs))
+            .timeout(Duration::from_secs(config.timeout_secs));
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| VmwareError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let client = builder
             .build()
             .map_err(|e| VmwareError::connection(format!("Failed to build HTTP client: {e}")))?;
 

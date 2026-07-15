@@ -35,6 +35,7 @@ export interface HaproxyConnectionConfig {
   /** Config file path (default: /etc/haproxy/haproxy.cfg). */
   config_path?: string;
   timeout_secs?: number;
+  proxy_url?: string;
 }
 
 export interface HaproxyConnectionSummary {

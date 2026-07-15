@@ -11,13 +11,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import {
-  ShieldCheck,
-  Loader2,
-  Plug,
-  PlugZap,
-  RefreshCw,
-} from "lucide-react";
+import { ShieldCheck, Loader2, Plug, PlugZap, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -26,6 +20,7 @@ import type {
   PfsenseConnectionConfig,
   PfsenseConnectionSummary,
 } from "../../../types/pfsense";
+import { withGlobalHttpProxy } from "../../../hooks/integration/httpProxy";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { pfsenseCategoryTabs } from "./registry";
 
@@ -179,7 +174,10 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
         id = created.id;
       }
 
-      const result = await pfsenseConnectionApi.connect(id, config);
+      const result = await pfsenseConnectionApi.connect(
+        id,
+        withGlobalHttpProxy(config, "camel"),
+      );
       setConnectionId(id);
       setSummary(result);
       setActiveTab(pfsenseCategoryTabs[0]?.categoryKey ?? null);

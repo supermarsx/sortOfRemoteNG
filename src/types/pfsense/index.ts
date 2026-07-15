@@ -22,6 +22,7 @@ export interface PfsenseConnectionConfig {
   useTls: boolean;
   acceptInvalidCerts: boolean;
   timeoutSecs: number;
+  proxyUrl?: string | null;
 }
 
 /** Result of `pfsense_connect` / `pfsense_ping` — appliance identity summary. */

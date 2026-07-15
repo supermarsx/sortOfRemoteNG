@@ -14,6 +14,8 @@ pub struct OsticketConnectionConfig {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub skip_tls_verify: bool,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 fn default_timeout() -> u64 {

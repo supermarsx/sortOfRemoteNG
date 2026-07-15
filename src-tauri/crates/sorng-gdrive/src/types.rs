@@ -1110,6 +1110,9 @@ pub struct GDriveConfig {
     pub default_page_size: u32,
     /// Default fields to include in file responses.
     pub default_file_fields: String,
+    /// Optional HTTP proxy URL for Drive API and OAuth token calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 impl Default for GDriveConfig {
@@ -1122,6 +1125,7 @@ impl Default for GDriveConfig {
             rate_limit_ms: 100,
             default_page_size: 100,
             default_file_fields: "id,name,mimeType,size,parents,createdTime,modifiedTime,trashed,starred,webViewLink,webContentLink,owners,permissions,capabilities".to_string(),
+            proxy_url: None,
         }
     }
 }

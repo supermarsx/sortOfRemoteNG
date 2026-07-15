@@ -21,6 +21,7 @@ pub async fn vmwd_connect(
     vmrest_skip_tls_verify: Option<bool>,
     auto_start_vmrest: Option<bool>,
     timeout_secs: Option<u64>,
+    proxy_url: Option<String>,
 ) -> Result<VmwConnectionSummary, String> {
     let config = VmwDesktopConfig {
         vmrun_path,
@@ -31,6 +32,7 @@ pub async fn vmwd_connect(
         vmrest_skip_tls_verify: vmrest_skip_tls_verify.unwrap_or(false),
         auto_start_vmrest: auto_start_vmrest.unwrap_or(false),
         timeout_secs: timeout_secs.unwrap_or(60),
+        proxy_url,
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())

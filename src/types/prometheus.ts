@@ -29,6 +29,8 @@ export interface PrometheusConnectionConfig {
   bearer_token?: string;
   /** Connection timeout in seconds (default 30). */
   timeout_secs?: number;
+  /** Optional HTTP proxy URL supplied from the app-wide proxy setting. */
+  proxy_url?: string;
 }
 
 export interface PrometheusConnectionSummary {

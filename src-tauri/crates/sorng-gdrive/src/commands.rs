@@ -23,15 +23,19 @@ pub async fn gdrive_set_credentials(
     client_secret: String,
     redirect_uri: String,
     scopes: Vec<String>,
+    proxy_url: Option<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.set_credentials(OAuthCredentials {
-        client_id,
-        client_secret,
-        redirect_uri,
-        scopes,
-    });
-    Ok(())
+    svc.set_credentials_with_proxy(
+        OAuthCredentials {
+            client_id,
+            client_secret,
+            redirect_uri,
+            scopes,
+        },
+        proxy_url,
+    )
+    .map_err(err_str)
 }
 
 /// Build the OAuth2 authorization URL.

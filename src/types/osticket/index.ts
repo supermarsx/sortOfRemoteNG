@@ -33,6 +33,7 @@ export interface OsticketConnectionConfig {
   api_key: string;
   timeout_seconds?: number;
   skip_tls_verify?: boolean;
+  proxy_url?: string;
 }
 
 /** Result of `osticket_connect` / `osticket_ping`. Unlike host-oriented crates,

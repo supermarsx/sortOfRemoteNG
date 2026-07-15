@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 
 import type {
   OsticketConnectionConfig,
@@ -41,7 +42,10 @@ export function useOsticketConnection() {
       setConnecting(true);
       setError(null);
       try {
-        const result = await osticketConnectionApi.connect(id, config);
+        const result = await osticketConnectionApi.connect(
+          id,
+          withGlobalHttpProxy(config),
+        );
         setConnectionId(id);
         setStatus(result);
         return result;

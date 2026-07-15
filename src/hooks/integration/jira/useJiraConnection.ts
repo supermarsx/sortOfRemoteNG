@@ -9,6 +9,7 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 
 import type {
   JiraConnectionConfig,
@@ -41,7 +42,10 @@ export function useJiraConnection() {
       setConnecting(true);
       setError(null);
       try {
-        const result = await jiraConnectionApi.connect(id, config);
+        const result = await jiraConnectionApi.connect(
+          id,
+          withGlobalHttpProxy(config),
+        );
         setConnectionId(id);
         setStatus(result);
         return result;

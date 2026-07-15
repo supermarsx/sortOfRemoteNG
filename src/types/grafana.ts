@@ -28,6 +28,7 @@ export interface GrafanaConnectionConfig {
   password?: string;
   org_id?: number;
   timeout_secs?: number;
+  proxy_url?: string;
 }
 
 /** Response of `grafana_connect`. No serde rename → snake_case wire. */

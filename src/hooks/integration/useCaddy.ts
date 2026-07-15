@@ -10,6 +10,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   CaddyCertificate,
   CaddyConfig,
@@ -33,14 +34,12 @@ export const caddyApi = {
     invoke<CaddyConnectionSummary>("caddy_connect", { id, config }),
   disconnect: (id: string) => invoke<void>("caddy_disconnect", { id }),
   listConnections: () => invoke<string[]>("caddy_list_connections"),
-  ping: (id: string) =>
-    invoke<CaddyConnectionSummary>("caddy_ping", { id }),
+  ping: (id: string) => invoke<CaddyConnectionSummary>("caddy_ping", { id }),
 
   // Config
   getFullConfig: (id: string) =>
     invoke<CaddyConfig>("caddy_get_full_config", { id }),
-  getRawConfig: (id: string) =>
-    invoke<unknown>("caddy_get_raw_config", { id }),
+  getRawConfig: (id: string) => invoke<unknown>("caddy_get_raw_config", { id }),
   getConfigPath: (id: string, path: string) =>
     invoke<unknown>("caddy_get_config_path", { id, path }),
   setConfigPath: (id: string, path: string, value: unknown) =>
@@ -157,7 +156,7 @@ export function useCaddy() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await caddyApi.connect(id, config);
+        const s = await caddyApi.connect(id, withGlobalHttpProxy(config));
         setConnectionId(id);
         setSummary(s);
         return true;

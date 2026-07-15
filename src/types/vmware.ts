@@ -23,6 +23,7 @@ export interface VmwareConnectArgs {
   password: string;
   insecure?: boolean;
   timeoutSecs?: number;
+  proxyUrl?: string;
 }
 
 /** Full config shape (`VsphereConfig`). Password included — used only in memory. */
@@ -33,6 +34,7 @@ export interface VsphereConfig {
   password: string;
   insecure: boolean;
   timeoutSecs: number;
+  proxyUrl?: string | null;
 }
 
 /** Config without the password, returned by `vmware_get_config`. */

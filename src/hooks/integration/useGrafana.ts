@@ -16,6 +16,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   AlertRule,
   Annotation,
@@ -88,7 +89,8 @@ export const grafanaApi = {
     invoke<unknown>("grafana_delete_org", { id, orgId }),
 
   // Users
-  listUsers: (id: string) => invoke<GrafanaUser[]>("grafana_list_users", { id }),
+  listUsers: (id: string) =>
+    invoke<GrafanaUser[]>("grafana_list_users", { id }),
   getUser: (id: string, userId: number) =>
     invoke<GrafanaUser>("grafana_get_user", { id, userId }),
   createUser: (
@@ -128,7 +130,11 @@ export const grafanaApi = {
 
   // Alerts
   listAlertRules: (id: string, folderUid?: string, ruleGroup?: string) =>
-    invoke<AlertRule[]>("grafana_list_alert_rules", { id, folderUid, ruleGroup }),
+    invoke<AlertRule[]>("grafana_list_alert_rules", {
+      id,
+      folderUid,
+      ruleGroup,
+    }),
   getAlertRule: (id: string, uid: string) =>
     invoke<AlertRule>("grafana_get_alert_rule", { id, uid }),
   createAlertRule: (id: string, rule: AlertRule) =>
@@ -179,7 +185,12 @@ export const grafanaApi = {
     name?: string,
     expires?: number,
   ) =>
-    invoke<unknown>("grafana_create_snapshot", { id, dashboard, name, expires }),
+    invoke<unknown>("grafana_create_snapshot", {
+      id,
+      dashboard,
+      name,
+      expires,
+    }),
   deleteSnapshot: (id: string, key: string) =>
     invoke<unknown>("grafana_delete_snapshot", { id, key }),
 };
@@ -227,7 +238,7 @@ export function useGrafana() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await grafanaApi.connect(id, config);
+        const s = await grafanaApi.connect(id, withGlobalHttpProxy(config));
         setConnectionId(id);
         setSummary(s);
         return true;

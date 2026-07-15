@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   AclEntry,
   ConfigValidationResult,
@@ -176,7 +177,7 @@ export function useHaproxy() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await haproxyApi.connect(id, config);
+        const s = await haproxyApi.connect(id, withGlobalHttpProxy(config));
         setConnectionId(id);
         setSummary(s);
         return true;

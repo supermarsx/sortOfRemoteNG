@@ -84,8 +84,14 @@ impl VmwDesktopService {
             let url = format!("http://{}:{}", host, port);
             let user = config.vmrest_username.clone().unwrap_or_default();
             let pass = config.vmrest_password.clone().unwrap_or_default();
-            let client =
-                VmRestClient::new(host, port, &user, &pass, config.vmrest_skip_tls_verify)?;
+            let client = VmRestClient::new(
+                host,
+                port,
+                &user,
+                &pass,
+                config.vmrest_skip_tls_verify,
+                config.proxy_url.as_deref(),
+            )?;
             // Verify connectivity
             match client.ping().await {
                 Ok(_) => Some(client),

@@ -70,6 +70,27 @@ impl GDriveService {
         self.credentials = credentials;
     }
 
+    /// Update OAuth credentials and rebuild the HTTP client with an optional proxy.
+    pub fn set_credentials_with_proxy(
+        &mut self,
+        credentials: OAuthCredentials,
+        proxy_url: Option<String>,
+    ) -> GDriveResult<()> {
+        let mut config = self.client.config().clone();
+        config.credentials = credentials.clone();
+        config.proxy_url = proxy_url
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let token = self.client.token().cloned();
+        let mut client = GDriveClient::new(config)?;
+        if let Some(token) = token {
+            client.set_token(token);
+        }
+        self.client = client;
+        self.credentials = credentials;
+        Ok(())
+    }
+
     /// Get current credentials (without secret).
     pub fn credentials_summary(&self) -> OAuthCredentials {
         OAuthCredentials {

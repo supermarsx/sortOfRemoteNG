@@ -15,6 +15,8 @@ pub struct NetboxConnectionConfig {
     pub accept_invalid_certs: Option<bool>,
     pub api_token: String,
     pub timeout_secs: Option<u64>,
+    #[serde(default, alias = "proxyUrl")]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

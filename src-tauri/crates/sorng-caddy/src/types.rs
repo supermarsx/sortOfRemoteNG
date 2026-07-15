@@ -16,6 +16,8 @@ pub struct CaddyConnectionConfig {
     pub password: Option<String>,
     pub tls_skip_verify: Option<bool>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

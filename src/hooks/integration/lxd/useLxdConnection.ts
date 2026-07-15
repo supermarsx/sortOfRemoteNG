@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 import type {
   LxdConnectionConfig,
   LxdConnectionSummary,
@@ -52,11 +53,15 @@ export function useLxdConnection() {
   }, []);
 
   const connect = useCallback(
-    async (config: LxdConnectionConfig): Promise<LxdConnectionSummary | null> => {
+    async (
+      config: LxdConnectionConfig,
+    ): Promise<LxdConnectionSummary | null> => {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await lxdConnectionApi.connect(config);
+        const result = await lxdConnectionApi.connect(
+          withGlobalHttpProxy(config, "camel"),
+        );
         if (mounted.current) {
           setSummary(result);
           setConnected(result.connected);

@@ -11,6 +11,7 @@
 
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 import type {
   NetboxConnectionConfig,
   NetboxConnectionSummary,
@@ -24,8 +25,7 @@ export const netboxConnectionApi = {
     invoke<string>("netbox_connect", { id, config }),
   disconnect: (id: string) => invoke<void>("netbox_disconnect", { id }),
   listConnections: () => invoke<string[]>("netbox_list_connections"),
-  ping: (id: string) =>
-    invoke<NetboxConnectionSummary>("netbox_ping", { id }),
+  ping: (id: string) => invoke<NetboxConnectionSummary>("netbox_ping", { id }),
 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -58,7 +58,10 @@ export function useNetboxConnection(): UseNetboxConnection {
       setIsConnecting(true);
       setError(null);
       try {
-        await netboxConnectionApi.connect(id, config);
+        await netboxConnectionApi.connect(
+          id,
+          withGlobalHttpProxy(config, "camel"),
+        );
         setConnectionId(id);
         // Best-effort summary; a failed ping should not undo a live connection.
         try {

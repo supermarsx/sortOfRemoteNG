@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxyArgs } from "./httpProxy";
 import type {
   ClusterSummary,
   ConsoleSession,
@@ -52,6 +53,7 @@ export const vmwareApi = {
       password: args.password,
       insecure: args.insecure,
       timeoutSecs: args.timeoutSecs,
+      proxyUrl: args.proxyUrl ?? null,
     }),
   disconnect: () => invoke<void>("vmware_disconnect"),
   checkSession: () => invoke<boolean>("vmware_check_session"),
@@ -116,8 +118,7 @@ export const vmwareApi = {
   reconnectHost: (hostId: string) =>
     invoke<void>("vmware_reconnect_host", { hostId }),
   listClusters: () => invoke<ClusterSummary[]>("vmware_list_clusters"),
-  listDatacenters: () =>
-    invoke<DatacenterSummary[]>("vmware_list_datacenters"),
+  listDatacenters: () => invoke<DatacenterSummary[]>("vmware_list_datacenters"),
   listFolders: () => invoke<FolderSummary[]>("vmware_list_folders"),
   listResourcePools: () =>
     invoke<ResourcePoolSummary[]>("vmware_list_resource_pools"),
@@ -151,8 +152,7 @@ export const vmwareApi = {
   listVmrcSessions: () => invoke<VmrcSession[]>("vmware_list_vmrc_sessions"),
   closeVmrcSession: (sessionId: string) =>
     invoke<void>("vmware_close_vmrc_session", { sessionId }),
-  closeAllVmrcSessions: () =>
-    invoke<number>("vmware_close_all_vmrc_sessions"),
+  closeAllVmrcSessions: () => invoke<number>("vmware_close_all_vmrc_sessions"),
   isVmrcAvailable: () => invoke<boolean>("vmware_is_vmrc_available"),
   isHorizonAvailable: () => invoke<boolean>("vmware_is_horizon_available"),
 };
@@ -179,27 +179,26 @@ export function useVmware() {
   // Guards against overlapping in-flight ops flipping isLoading incorrectly.
   const inflight = useRef(0);
 
-  const run = useCallback(
-    async <T>(op: () => Promise<T>): Promise<T> => {
-      inflight.current += 1;
-      setIsLoading(true);
-      setError(null);
-      try {
-        return await op();
-      } catch (e) {
-        setError(errMsg(e));
-        throw e;
-      } finally {
-        inflight.current -= 1;
-        if (inflight.current === 0) setIsLoading(false);
-      }
-    },
-    [],
-  );
+  const run = useCallback(async <T>(op: () => Promise<T>): Promise<T> => {
+    inflight.current += 1;
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await op();
+    } catch (e) {
+      setError(errMsg(e));
+      throw e;
+    } finally {
+      inflight.current -= 1;
+      if (inflight.current === 0) setIsLoading(false);
+    }
+  }, []);
 
   const connect = useCallback(
     async (args: VmwareConnectArgs): Promise<string> => {
-      const sessionId = await run(() => vmwareApi.connect(args));
+      const sessionId = await run(() =>
+        vmwareApi.connect(withGlobalHttpProxyArgs(args)),
+      );
       setIsConnected(true);
       try {
         setConfig(await vmwareApi.getConfig());

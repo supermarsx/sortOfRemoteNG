@@ -52,6 +52,7 @@ export interface JiraConnectionConfig {
   api_version?: string;
   timeout_seconds?: number;
   skip_tls_verify?: boolean;
+  proxy_url?: string;
 }
 
 /** Result of `jira_connect` / `jira_ping` — server identity + reachability

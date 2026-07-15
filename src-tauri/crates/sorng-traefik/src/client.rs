@@ -17,9 +17,20 @@ pub struct TraefikClient {
 
 impl TraefikClient {
     pub fn new(config: TraefikConnectionConfig) -> TraefikResult<Self> {
-        let http = HttpClient::builder()
+        let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
-            .danger_accept_invalid_certs(config.tls_skip_verify.unwrap_or(false))
+            .danger_accept_invalid_certs(config.tls_skip_verify.unwrap_or(false));
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| TraefikError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
             .map_err(|e| TraefikError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })

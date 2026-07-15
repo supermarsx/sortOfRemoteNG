@@ -18,6 +18,8 @@ pub struct PfsenseConnectionConfig {
     pub accept_invalid_certs: bool,
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    #[serde(default, alias = "proxyUrl")]
+    pub proxy_url: Option<String>,
 }
 
 fn default_true() -> bool {

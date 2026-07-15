@@ -8,6 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 
 import type {
   CpanelConnectionConfig,
@@ -19,8 +20,7 @@ export const cpanelConnectionApi = {
   connect: (id: string, config: CpanelConnectionConfig) =>
     invoke<CpanelConnectionSummary>("cpanel_connect", { id, config }),
   disconnect: (id: string) => invoke<void>("cpanel_disconnect", { id }),
-  ping: (id: string) =>
-    invoke<CpanelConnectionSummary>("cpanel_ping", { id }),
+  ping: (id: string) => invoke<CpanelConnectionSummary>("cpanel_ping", { id }),
   listConnections: () => invoke<string[]>("cpanel_list_connections"),
 };
 
@@ -41,7 +41,10 @@ export function useCpanelConnection() {
       setConnecting(true);
       setError(null);
       try {
-        const result = await cpanelConnectionApi.connect(id, config);
+        const result = await cpanelConnectionApi.connect(
+          id,
+          withGlobalHttpProxy(config),
+        );
         setConnectionId(id);
         setSummary(result);
         return result;

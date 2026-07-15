@@ -20,9 +20,20 @@ pub struct CpanelClient {
 impl CpanelClient {
     pub fn new(config: CpanelConnectionConfig) -> CpanelResult<Self> {
         let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
-        let http = HttpClient::builder()
+        let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
-            .danger_accept_invalid_certs(accept_invalid)
+            .danger_accept_invalid_certs(accept_invalid);
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| CpanelError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
             .map_err(|e| CpanelError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })

@@ -34,11 +34,17 @@ impl VmRestClient {
         username: &str,
         password: &str,
         skip_tls_verify: bool,
+        proxy_url: Option<&str>,
     ) -> VmwResult<Self> {
         let mut builder = HttpClient::builder().timeout(std::time::Duration::from_secs(60));
         if skip_tls_verify {
             // Opt-in only: vmrest ships a self-signed cert when run over HTTPS.
             builder = builder.danger_accept_invalid_certs(true);
+        }
+        if let Some(proxy_url) = proxy_url.map(str::trim).filter(|s| !s.is_empty()) {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| VmwError::http(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
         }
         let http = builder.build().map_err(VmwError::http)?;
         Ok(Self {

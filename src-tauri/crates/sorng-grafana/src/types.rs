@@ -17,6 +17,8 @@ pub struct GrafanaConnectionConfig {
     pub password: Option<String>,
     pub org_id: Option<u64>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

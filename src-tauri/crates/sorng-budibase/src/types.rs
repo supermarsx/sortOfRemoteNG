@@ -27,6 +27,9 @@ pub struct BudibaseConnectionConfig {
     /// Whether to skip TLS certificate verification.
     #[serde(default)]
     pub skip_tls_verify: bool,
+    /// Optional HTTP proxy URL for API calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 /// Connection health / status.

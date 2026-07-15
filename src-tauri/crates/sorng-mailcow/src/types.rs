@@ -19,6 +19,8 @@ pub struct MailcowConnectionConfig {
     /// Skip TLS certificate verification
     #[serde(default)]
     pub tls_skip_verify: bool,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 fn default_timeout() -> u64 {

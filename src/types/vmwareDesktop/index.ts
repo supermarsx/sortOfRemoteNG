@@ -50,6 +50,8 @@ export interface VmwDesktopConfig {
   autoStartVmrest: boolean;
   /** Timeout for CLI commands (seconds). */
   timeoutSecs: number;
+  /** Optional HTTP proxy URL used for vmrest API calls. */
+  proxyUrl?: string | null;
 }
 
 /** Summary returned after a successful connection / detection. */

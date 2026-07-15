@@ -32,6 +32,8 @@ export interface LxdConnectionConfig {
   project: string;
   /** Request timeout in seconds. */
   timeoutSecs: number;
+  /** Optional HTTP proxy URL supplied from the app-wide proxy setting. */
+  proxyUrl?: string | null;
 }
 
 /** Mirror of `LxdConnectionSummary` — returned by `lxd_connect`. */

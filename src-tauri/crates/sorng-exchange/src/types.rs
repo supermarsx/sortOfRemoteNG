@@ -217,6 +217,9 @@ pub struct ExchangeConnectionConfig {
     /// Request timeout in seconds
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    /// Optional HTTP proxy URL for Graph and Exchange Online HTTP calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 fn default_timeout() -> u64 {

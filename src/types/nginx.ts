@@ -33,6 +33,7 @@ export interface NginxConnectionConfig {
   /** stub_status URL (e.g. http://host/nginx_status). */
   status_url?: string;
   timeout_secs?: number;
+  proxy_url?: string;
 }
 
 export interface NginxConnectionSummary {

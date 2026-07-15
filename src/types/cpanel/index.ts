@@ -39,6 +39,7 @@ export interface CpanelConnectionConfig {
   /** Present when `auth_mode = "api_token"` or `"user_api_token"`. */
   api_token?: string;
   timeout_secs?: number;
+  proxy_url?: string;
 }
 
 /** Result of `cpanel_connect` / `cpanel_ping` — server identity summary. */

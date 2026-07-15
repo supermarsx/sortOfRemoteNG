@@ -21,8 +21,8 @@ pub struct ExchangeClient {
 }
 
 impl ExchangeClient {
-    pub fn new(config: ExchangeConnectionConfig) -> Self {
-        let http = HttpClient::builder()
+    pub fn new(config: ExchangeConnectionConfig) -> ExchangeResult<Self> {
+        let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .danger_accept_invalid_certs(
                 config
@@ -30,17 +30,28 @@ impl ExchangeClient {
                     .as_ref()
                     .map(|c| c.skip_cert_check)
                     .unwrap_or(false),
-            )
+            );
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| ExchangeError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
-            .unwrap_or_default();
+            .map_err(|e| ExchangeError::connection(format!("http client build: {e}")))?;
 
-        Self {
+        Ok(Self {
             http,
             config,
             graph_token: None,
             exo_token: None,
             ps_connected: false,
-        }
+        })
     }
 
     // ─── Token management ────────────────────────────────────────────────

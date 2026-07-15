@@ -49,7 +49,7 @@ impl ExchangeService {
             .clone()
             .ok_or_else(|| ExchangeError::validation("connection config not set"))?;
 
-        let mut c = ExchangeClient::new(config.clone());
+        let mut c = ExchangeClient::new(config.clone())?;
 
         match config.environment {
             ExchangeEnvironment::Online | ExchangeEnvironment::Hybrid => {

@@ -45,8 +45,18 @@ impl GDriveClient {
 
     /// Create a new client from config.
     pub fn new(config: GDriveConfig) -> GDriveResult<Self> {
-        let inner = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_seconds))
+        let mut builder = Client::builder().timeout(Duration::from_secs(config.timeout_seconds));
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| GDriveError::network(format!("Invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let inner = builder
             .build()
             .map_err(|e| GDriveError::network(format!("Failed to build HTTP client: {e}")))?;
 

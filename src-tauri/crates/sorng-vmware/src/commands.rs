@@ -19,6 +19,7 @@ pub async fn vmware_connect(
     password: String,
     insecure: Option<bool>,
     timeout_secs: Option<u64>,
+    proxy_url: Option<String>,
 ) -> Result<String, String> {
     let config = VsphereConfig {
         host,
@@ -27,6 +28,7 @@ pub async fn vmware_connect(
         password,
         insecure: insecure.unwrap_or(true),
         timeout_secs: timeout_secs.unwrap_or(30),
+        proxy_url,
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())

@@ -136,6 +136,9 @@ pub struct LxdConnectionConfig {
     /// Request timeout in seconds
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    /// Optional HTTP proxy URL for REST API calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 fn default_project() -> String {
@@ -156,6 +159,7 @@ impl Default for LxdConnectionConfig {
             skip_tls_verify: true,
             project: default_project(),
             timeout_secs: default_timeout(),
+            proxy_url: None,
         }
     }
 }

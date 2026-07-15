@@ -22,6 +22,7 @@ export interface CaddyConnectionConfig {
   password?: string;
   tls_skip_verify?: boolean;
   timeout_secs?: number;
+  proxy_url?: string;
 }
 
 /** Response of `caddy_connect` / `caddy_ping`. */

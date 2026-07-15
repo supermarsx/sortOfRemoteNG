@@ -28,6 +28,8 @@ pub struct NginxConnectionConfig {
     /// stub_status URL (e.g. http://host/nginx_status)
     pub status_url: Option<String>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

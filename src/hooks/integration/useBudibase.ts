@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "./httpProxy";
 import type {
   AppPublishResponse,
   AutomationLogSearchRequest,
@@ -109,7 +110,11 @@ export const budibaseApi = {
     invoke<void>("budibase_delete_row", { id, tableId, rowId }),
   bulkCreateRows: (id: string, tableId: string, rows: BudibaseRow[]) =>
     invoke<BulkRowResponse>("budibase_bulk_create_rows", { id, tableId, rows }),
-  bulkDeleteRows: (id: string, tableId: string, request: BulkRowDeleteRequest) =>
+  bulkDeleteRows: (
+    id: string,
+    tableId: string,
+    request: BulkRowDeleteRequest,
+  ) =>
     invoke<BulkRowResponse>("budibase_bulk_delete_rows", {
       id,
       tableId,
@@ -270,7 +275,10 @@ export function useBudibase() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await budibaseApi.connect(id, config);
+        const s = await budibaseApi.connect(
+          id,
+          withGlobalHttpProxy(config, "camel"),
+        );
         setConnectionId(id);
         setStatus(s);
         return true;

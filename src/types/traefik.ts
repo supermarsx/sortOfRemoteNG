@@ -26,6 +26,7 @@ export interface TraefikConnectionConfig {
   api_key?: string;
   tls_skip_verify?: boolean;
   timeout_secs?: number;
+  proxy_url?: string;
 }
 
 /** Wire shape of `TraefikConnectionSummary` (snake_case). */

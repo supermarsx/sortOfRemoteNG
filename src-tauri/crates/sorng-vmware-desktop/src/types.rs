@@ -58,6 +58,9 @@ pub struct VmwDesktopConfig {
     /// Timeout for CLI commands (seconds).
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+    /// Optional HTTP proxy URL for vmrest API calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
 }
 
 fn default_timeout() -> u64 {
@@ -75,6 +78,7 @@ impl Default for VmwDesktopConfig {
             vmrest_skip_tls_verify: false,
             auto_start_vmrest: false,
             timeout_secs: default_timeout(),
+            proxy_url: None,
         }
     }
 }

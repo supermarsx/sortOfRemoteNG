@@ -27,6 +27,7 @@ export interface MailcowConnectionConfig {
   api_key: string;
   timeout_secs?: number;
   tls_skip_verify?: boolean;
+  proxy_url?: string;
 }
 
 /** Result of `mailcow_connect` / `mailcow_ping` — server identity summary. */

@@ -21,8 +21,22 @@ impl BudibaseClient {
             .timeout(Duration::from_secs(config.timeout_seconds.unwrap_or(30)));
 
         if config.skip_tls_verify {
-            log::warn!("TLS certificate verification disabled for Budibase connection to {}", config.host);
+            log::warn!(
+                "TLS certificate verification disabled for Budibase connection to {}",
+                config.host
+            );
             builder = builder.danger_accept_invalid_certs(true);
+        }
+
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| BudibaseError::connection(&format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
         }
 
         let http = builder

@@ -15,6 +15,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxy } from "../httpProxy";
 import type {
   ExchangeConnectionConfig,
   ExchangeConnectionSummary,
@@ -54,7 +55,9 @@ export interface UseExchangeConnection {
  * live connection on mount (a panel reopened after connecting elsewhere).
  */
 export function useExchangeConnection(): UseExchangeConnection {
-  const [summary, setSummary] = useState<ExchangeConnectionSummary | null>(null);
+  const [summary, setSummary] = useState<ExchangeConnectionSummary | null>(
+    null,
+  );
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,7 +84,9 @@ export function useExchangeConnection(): UseExchangeConnection {
       setIsConnecting(true);
       setError(null);
       try {
-        await exchangeConnectionApi.setConfig(config);
+        await exchangeConnectionApi.setConfig(
+          withGlobalHttpProxy(config, "camel"),
+        );
         const s = await exchangeConnectionApi.connect();
         setSummary(s);
         return true;

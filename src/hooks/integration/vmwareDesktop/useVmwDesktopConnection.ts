@@ -9,6 +9,7 @@
 
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { withGlobalHttpProxyArgs } from "../httpProxy";
 import type {
   VmwConnectionSummary,
   VmwHostInfo,
@@ -28,6 +29,7 @@ export interface VmwDesktopConnectArgs {
   vmrestSkipTlsVerify?: boolean;
   autoStartVmrest?: boolean;
   timeoutSecs?: number;
+  proxyUrl?: string;
 }
 
 // ─── Low-level invoke wrappers ────────────────────────────────────────────────
@@ -43,6 +45,7 @@ export const vmwDesktopConnectionApi = {
       vmrestSkipTlsVerify: args.vmrestSkipTlsVerify ?? false,
       autoStartVmrest: args.autoStartVmrest ?? false,
       timeoutSecs: args.timeoutSecs ?? null,
+      proxyUrl: args.proxyUrl ?? null,
     }),
   disconnect: () => invoke<void>("vmwd_disconnect"),
   isConnected: () => invoke<boolean>("vmwd_is_connected"),
@@ -68,7 +71,9 @@ export function useVmwDesktopConnection() {
     setIsConnecting(true);
     setError(null);
     try {
-      const result = await vmwDesktopConnectionApi.connect(args);
+      const result = await vmwDesktopConnectionApi.connect(
+        withGlobalHttpProxyArgs(args),
+      );
       setSummary(result);
       setConnected(true);
       // Host detection is best-effort; a failure here must not fail connect.

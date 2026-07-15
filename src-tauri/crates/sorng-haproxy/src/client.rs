@@ -17,8 +17,19 @@ pub struct HaproxyClient {
 
 impl HaproxyClient {
     pub fn new(config: HaproxyConnectionConfig) -> HaproxyResult<Self> {
-        let http = HttpClient::builder()
-            .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
+        let mut builder =
+            HttpClient::builder().timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)));
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| HaproxyError::connection(format!("invalid proxy URL: {e}")))?;
+            builder = builder.proxy(proxy);
+        }
+        let http = builder
             .build()
             .map_err(|e| HaproxyError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })
