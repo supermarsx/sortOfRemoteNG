@@ -1,41 +1,25 @@
 import React from "react";
 import { Tag } from "lucide-react";
-import {
-  ICON_OPTIONS,
-  type ConnectionEditorMgr,
-} from "../../../hooks/connection/useConnectionEditor";
+import type { ConnectionEditorMgr } from "../../../hooks/connection/useConnectionEditor";
 import { TagManager } from "../TagManager";
+import { ConnectionIconPicker } from "./ConnectionIconPicker";
 
 export const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div
     data-editor-search-section="organize-icon"
     data-editor-search-field="icon"
   >
-    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-      Custom Icon
-    </label>
-    <div className="flex flex-wrap gap-1.5">
-      {ICON_OPTIONS.map(({ value, label, icon: Icon }) => {
-        const isActive = (mgr.formData.icon || "") === value;
-        return (
-          <button
-            key={value || "default"}
-            type="button"
-            onClick={() =>
-              mgr.setFormData({ ...mgr.formData, icon: value || undefined })
-            }
-            className={`p-2 rounded-lg border transition-all ${
-              isActive
-                ? "border-primary/60 bg-primary/20 text-primary"
-                : "border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]"
-            }`}
-            title={label}
-          >
-            <Icon size={18} />
-          </button>
-        );
-      })}
-    </div>
+    <h3 className="mb-2 text-xs font-semibold text-[var(--color-textSecondary)]">
+      Connection Icon
+    </h3>
+    <ConnectionIconPicker
+      connection={{
+        icon: mgr.formData.icon,
+        protocol: mgr.formData.protocol ?? "",
+        integration: mgr.formData.integration,
+      }}
+      onChange={(icon) => mgr.setFormData((current) => ({ ...current, icon }))}
+    />
   </div>
 );
 

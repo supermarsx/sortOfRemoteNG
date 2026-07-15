@@ -71,10 +71,10 @@ export interface EffectiveConnectionIcon {
   keywords: readonly string[];
 }
 
-type ConnectionIconInput = Pick<
-  Connection,
-  "icon" | "protocol" | "integration"
->;
+export type ConnectionIconInput = Pick<Connection, "icon" | "integration"> & {
+  /** Accept unknown future protocol strings so callers can reach the fallback. */
+  protocol: string;
+};
 
 /** Return the stable integration key encoded by the current connection. */
 export function getConnectionIntegrationKey(

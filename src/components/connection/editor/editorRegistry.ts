@@ -1096,10 +1096,21 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
   {
     id: "organize-icon",
     tabId: "organize",
-    label: "Custom Icon",
-    keywords: ["organize", "icon", "appearance", "symbol"],
-    copy: ["Choose a symbol for this connection or folder."],
-    fields: [{ id: "icon", label: "Custom Icon", valuePaths: ["icon"] }],
+    label: "Connection Icon",
+    keywords: [
+      "organize",
+      "icon",
+      "appearance",
+      "symbol",
+      "automatic",
+      "manual override",
+      "palette",
+    ],
+    copy: [
+      "Search icons by label, key, category, protocol, or integration.",
+      "Use the automatic protocol or integration icon.",
+    ],
+    fields: [{ id: "icon", label: "Connection Icon", valuePaths: ["icon"] }],
   },
   {
     id: "organize-tags",

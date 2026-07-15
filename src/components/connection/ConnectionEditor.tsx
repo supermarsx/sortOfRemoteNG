@@ -24,7 +24,6 @@ import {
   PROTOCOL_OPTIONS,
   INTEGRATION_PROTOCOL_OPTIONS,
   CLOUD_OPTIONS,
-  ICON_OPTIONS,
   PROTOCOL_COLOR_MAP,
   getIntegrationKeyFromProtocol,
   type ConnectionEditorMgr,
@@ -51,6 +50,7 @@ import {
   type ConnectionEditorTabId,
 } from "./editor/editorRegistry";
 import { ConnectionEditorSearchBar } from "./editor/ConnectionEditorSearchBar";
+import { CONNECTION_ICON_SEARCH_TERMS } from "./editor/connectionIconPickerModel";
 import { NotesSection } from "./editor/NotesSection";
 import { OrganizeSection } from "./editor/OrganizeSection";
 import { ParentSelector } from "./editor/ParentSelector";
@@ -1383,7 +1383,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       "parent-folder": mgr.parentFolderProjection.options
         .flatMap((option) => [option.name, option.path, option.reason])
         .filter((value): value is string => !!value),
-      icon: ICON_OPTIONS.map((option) => option.label),
+      icon: CONNECTION_ICON_SEARCH_TERMS,
       tags: mgr.allTags,
     }),
     [mgr.allTags, mgr.parentFolderProjection.options],
