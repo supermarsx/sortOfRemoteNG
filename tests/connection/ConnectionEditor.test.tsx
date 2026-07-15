@@ -77,6 +77,19 @@ vi.mock("../../src/components/connectionEditor/CloudProviderOptions", () => ({
   default: () => <div data-testid="cloud-options">Cloud Options</div>,
 }));
 
+vi.mock("../../src/components/connection/editor/NetworkPathSection", () => ({
+  default: () => (
+    <div
+      id="network-path-section"
+      data-testid="network-path-section"
+      data-editor-search-field="network-path"
+      tabIndex={-1}
+    >
+      Network Path
+    </div>
+  ),
+}));
+
 vi.mock("../../src/utils/discovery/defaultPorts", () => ({
   getDefaultPort: vi.fn((protocol) => {
     const ports: Record<string, number> = {
@@ -947,6 +960,37 @@ describe("ConnectionEditor", () => {
         ).toHaveTextContent("Gateway");
       });
       expect(document.activeElement).toHaveTextContent("Gateway");
+    });
+
+    it("opens Network Path directly from settings search", async () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "Resolved ordered path" } });
+      expect(
+        screen.getByRole("option", {
+          name: /Protocol \/ Protocol Options.*Network Path/i,
+        }),
+      ).toBeInTheDocument();
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      await waitFor(() => {
+        const networkPathTab = screen.getByTestId(
+          "connection-editor-protocol-subtab-network-path",
+        );
+        expect(networkPathTab).toHaveAttribute("aria-selected", "true");
+        expect(networkPathTab).toHaveFocus();
+        expect(networkPathTab).toHaveAttribute(
+          "data-editor-search-active",
+          "true",
+        );
+      });
     });
 
     it("should expose integration registry entries as protocol options", () => {

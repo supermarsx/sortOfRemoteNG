@@ -12,7 +12,6 @@ import AuthSection from "./sshOverrides/AuthSection";
 import ProtocolSection from "./sshOverrides/ProtocolSection";
 import TcpIpSection from "./sshOverrides/TcpIpSection";
 import ForwardingSection from "./sshOverrides/ForwardingSection";
-import VpnChainSection from "./sshOverrides/VpnChainSection";
 import FileTransferSection from "./sshOverrides/FileTransferSection";
 import CiphersSection from "./sshOverrides/CiphersSection";
 import BannerSection from "./sshOverrides/BannerSection";
@@ -75,7 +74,6 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
           <ProtocolSection mgr={mgr} />
           <TcpIpSection mgr={mgr} />
           <ForwardingSection mgr={mgr} />
-          <VpnChainSection formData={formData} setFormData={setFormData} />
           <FileTransferSection mgr={mgr} />
           <CiphersSection mgr={mgr} />
           <BannerSection mgr={mgr} />

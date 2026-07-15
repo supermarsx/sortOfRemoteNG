@@ -22,6 +22,7 @@ export type ConnectionEditorProtocolSubtabId =
   | "security"
   | "display-input"
   | "resources"
+  | "network-path"
   | "network"
   | "advanced"
   | "provider"
@@ -90,6 +91,7 @@ type SearchFormData = Readonly<Record<string, unknown>>;
 export const PROTOCOL_SEARCH_FIELD_SUBTABS: Readonly<
   Record<string, ConnectionEditorProtocolSubtabId>
 > = {
+  "network-path": "network-path",
   "ssh-username": "authentication",
   "ssh-authentication": "authentication",
   "ssh-host-key-trust": "authentication",
@@ -669,6 +671,51 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
     ],
     copy: ["Settings shown for the selected connection protocol."],
     fields: [
+      {
+        id: "network-path",
+        focusId: "network-path-section",
+        label: "Network Path",
+        protocols: ["ssh", "rdp"],
+        protocolSubtabId: "network-path",
+        keywords: [
+          "route",
+          "routing",
+          "bastion",
+          "jump host",
+          "vpn chain",
+          "proxy chain",
+          "tunnel chain",
+        ],
+        copy: [
+          "Connection chain",
+          "Proxy chain",
+          "Tunnel chain",
+          "Inline VPN",
+          "Per-connection proxy",
+          "Resolved ordered path",
+          "Deterministic path policy",
+          "Fail closed",
+        ],
+        optionText: [
+          "OpenVPN",
+          "WireGuard",
+          "Tailscale",
+          "ZeroTier",
+          "HTTP",
+          "HTTPS",
+          "SOCKS4",
+          "SOCKS5",
+          "SSH jump",
+          "SSH tunnel",
+        ],
+        valuePaths: [
+          "connectionChainId",
+          "proxyChainId",
+          "tunnelChainId",
+          "security.tunnelChain",
+          "security.proxy",
+        ],
+      },
       {
         id: "ssh-username",
         focusId: "username",

@@ -6,6 +6,7 @@ import {
   MonitorUp,
   Network,
   PlugZap,
+  Route,
   Settings2,
   ShieldCheck,
   TerminalSquare,
@@ -59,6 +60,13 @@ const SUBTABS: Record<ProtocolSubtabId, ProtocolSubtabDescriptor> = {
     label: "Network",
     description: "Gateway, transport, and protocol networking controls.",
     icon: Network,
+  },
+  "network-path": {
+    id: "network-path",
+    label: "Network Path",
+    description:
+      "Ordered VPN, proxy, and SSH-hop routing applied before the target.",
+    icon: Route,
   },
   advanced: {
     id: "advanced",
@@ -130,6 +138,7 @@ export function getProtocolSubtabs(
       "display-input",
       "resources",
       "security",
+      "network-path",
       "network",
       "advanced",
       "recovery",
@@ -137,7 +146,13 @@ export function getProtocolSubtabs(
   }
 
   if (protocol === "ssh") {
-    return selectSubtabs(["authentication", "terminal", "network", "recovery"]);
+    return selectSubtabs([
+      "authentication",
+      "terminal",
+      "network-path",
+      "network",
+      "recovery",
+    ]);
   }
 
   if (protocol === "http" || protocol === "https") {

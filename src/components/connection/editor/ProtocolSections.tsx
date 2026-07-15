@@ -9,6 +9,7 @@ import SecurityQuestionsSection from "../../connectionEditor/SecurityQuestionsSe
 import SSHOptions from "../../connectionEditor/SSHOptions";
 import TOTPOptions from "../../connectionEditor/TOTPOptions";
 import WinRMOptions from "../../connectionEditor/WinRMOptions";
+import NetworkPathSection from "./NetworkPathSection";
 import {
   getProtocolSubtabs,
   isCloudProtocol,
@@ -43,6 +44,18 @@ const ProtocolSubtabContent: React.FC<{
   const protocol = mgr.formData.protocol ?? "";
 
   if (subtabId === "recovery") return <RecoverySections mgr={mgr} />;
+
+  if (
+    subtabId === "network-path" &&
+    (protocol === "ssh" || protocol === "rdp")
+  ) {
+    return (
+      <NetworkPathSection
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+      />
+    );
+  }
 
   if (protocol === "rdp") {
     if (subtabId === "connection") {

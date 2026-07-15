@@ -108,6 +108,27 @@ describe("connection editor search index", () => {
       isSensitiveConnectionEditorSearchPath("cloudProvider.serviceAccountKey"),
     ).toBe(true);
     expect(isSensitiveConnectionEditorSearchPath("tags.0")).toBe(false);
+
+    const networkPathIndex = buildIndex({
+      isGroup: false,
+      protocol: "ssh",
+      security: {
+        proxy: {
+          type: "socks5",
+          host: "proxy.example.test",
+          port: 1080,
+          username: "visible-proxy-user",
+          password: "network-path-password-never-searchable",
+          enabled: true,
+        },
+      },
+    });
+    expect(
+      searchConnectionEditorIndex(
+        networkPathIndex,
+        "network-path-password-never-searchable",
+      ),
+    ).toEqual([]);
   });
 
   it("keeps group and protocol-dependent fields accurate", () => {
@@ -151,6 +172,14 @@ describe("connection editor search index", () => {
     expect(
       rdpIndex.find((entry) => entry.fieldId === "rdp-performance"),
     ).toMatchObject({ protocolSubtabId: "resources" });
+    expect(
+      rdpIndex.find((entry) => entry.fieldId === "network-path"),
+    ).toMatchObject({ protocolSubtabId: "network-path" });
+
+    const sshIndex = buildIndex({ isGroup: false, protocol: "ssh" });
+    expect(
+      sshIndex.find((entry) => entry.fieldId === "network-path"),
+    ).toMatchObject({ protocolSubtabId: "network-path" });
 
     const httpsIndex = buildIndex({ isGroup: false, protocol: "https" });
     expect(

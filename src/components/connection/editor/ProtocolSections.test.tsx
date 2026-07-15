@@ -63,6 +63,14 @@ vi.mock("../../connectionEditor/CloudProviderOptions", () => ({
   default: () => <div data-testid="cloud-options">Cloud provider</div>,
 }));
 
+vi.mock("./NetworkPathSection", () => ({
+  default: ({ formData }: any) => (
+    <div data-testid="network-path-section">
+      Network path for {formData.protocol}
+    </div>
+  ),
+}));
+
 vi.mock("../../connectionEditor/TOTPOptions", () => ({
   default: () => <div data-testid="totp-options">totp-options</div>,
 }));
@@ -127,6 +135,7 @@ describe("ProtocolSections", () => {
       "display-input",
       "resources",
       "security",
+      "network-path",
       "network",
       "advanced",
       "recovery",
@@ -134,6 +143,7 @@ describe("ProtocolSections", () => {
     expect(idsFor({ protocol: "ssh" })).toEqual([
       "authentication",
       "terminal",
+      "network-path",
       "network",
       "recovery",
     ]);
@@ -200,6 +210,22 @@ describe("ProtocolSections", () => {
     expect(screen.getByTestId("winrm-options")).toHaveAttribute(
       "data-sections",
       "transport",
+    );
+  });
+
+  it("uses one dedicated Network Path section for both SSH and RDP", () => {
+    render(<Harness initial={{ protocol: "ssh", isGroup: false }} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Network Path" }));
+    expect(screen.getByTestId("network-path-section")).toHaveTextContent(
+      "Network path for ssh",
+    );
+    expect(screen.queryByTestId("ssh-options")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use RDP" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Network Path" }));
+    expect(screen.getByTestId("network-path-section")).toHaveTextContent(
+      "Network path for rdp",
     );
   });
 
