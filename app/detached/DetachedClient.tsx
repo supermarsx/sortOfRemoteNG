@@ -21,7 +21,7 @@ import {
   ChevronRight, ClipboardCopy, Copy, CornerUpLeft, Eye, ExternalLink,
   FolderMinus, FolderPlus, Globe, Info, Layers, Loader2, Minus, Monitor,
   Palette, Pencil, Phone, Pin, PinOff, RefreshCw, Send, Server, Square,
-  Terminal, X, XCircle,
+  Terminal, X, XCircle, Network,
 } from "lucide-react";
 import { useSettings } from "../../src/contexts/SettingsContext";
 import { generateId } from "../../src/utils/core/id";
@@ -43,6 +43,7 @@ const SessionIcon: React.FC<{ protocol: string }> = ({ protocol }) => {
     case "vnc": return <Eye size={14} className="mr-2 flex-shrink-0" />;
     case "http": case "https": return <Globe size={14} className="mr-2 flex-shrink-0" />;
     case "telnet": case "rlogin": return <Phone size={14} className="mr-2 flex-shrink-0" />;
+    case "raw": return <Network size={14} className="mr-2 flex-shrink-0" />;
     case "winrm": return <Server size={14} className="mr-2 flex-shrink-0" />;
     default: return <Monitor size={14} className="mr-2 flex-shrink-0" />;
   }
@@ -563,19 +564,34 @@ const DetachedSessionContent: React.FC<{
     const s = activeSessionRef.current;
     if (!s || closingRef.current) return;
     closingRef.current = true;
-    try {
-      if (s.protocol === "ssh" && s.backendSessionId) {
-        await invoke("disconnect_ssh", { sessionId: s.backendSessionId });
+    const ownedSessions =
+      sessionsRef.current.length > 0 ? sessionsRef.current : [s];
+    for (const owned of ownedSessions) {
+      try {
+        if (owned.protocol === "ssh" && owned.backendSessionId) {
+          await invoke("disconnect_ssh", {
+            sessionId: owned.backendSessionId,
+          });
+        }
+        if (owned.protocol === "raw" && owned.backendSessionId) {
+          await invoke("disconnect_raw_socket", {
+            sessionId: owned.backendSessionId,
+          });
+        }
+        if (owned.protocol === "rlogin" && owned.backendSessionId) {
+          await invoke("disconnect_rlogin", {
+            sessionId: owned.backendSessionId,
+          });
+        }
+        if (isTauri) {
+          await emit("detached-session-closed", { sessionId: owned.id });
+        }
+        localStorage.removeItem(`detached-session-${owned.id}`);
+      } catch (err) {
+        console.error("Failed to disconnect detached session:", err);
       }
-      if (isTauri) {
-        await emit("detached-session-closed", { sessionId: s.id });
-      }
-      if (sessionId) {
-        localStorage.removeItem(`detached-session-${sessionId}`);
-      }
-    } catch (err) {
-      console.error("Failed to disconnect detached session:", err);
     }
+    if (sessionId) localStorage.removeItem(`detached-session-${sessionId}`);
   }, [isTauri, sessionId]);
 
   const handleReattach = useCallback(async () => {
@@ -593,7 +609,11 @@ const DetachedSessionContent: React.FC<{
           });
         } catch { /* ignore */ }
       }
-      if (!terminalBuffer) {
+      if (
+        !terminalBuffer &&
+        s.protocol !== "raw" &&
+        s.protocol !== "rlogin"
+      ) {
         try {
           const bufferPromise = new Promise<string>((resolve) => {
             const timeout = setTimeout(() => resolve(""), 1000);

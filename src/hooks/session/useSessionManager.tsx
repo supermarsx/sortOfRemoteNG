@@ -37,6 +37,8 @@ const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
   "http",
   "https",
   "anydesk",
+  "raw",
+  "rlogin",
 ]);
 
 const UNSUPPORTED_DIRECT_SESSION_PROTOCOLS = new Set<string>(["ftp", "scp"]);
@@ -730,6 +732,26 @@ export const useSessionManager = () => {
         await invoke("disconnect_ssh", { sessionId: session.backendSessionId });
       } catch (error) {
         console.error("Failed to disconnect SSH session:", error);
+      }
+    }
+
+    if (session.protocol === "raw" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_raw_socket", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect Raw Socket session:", error);
+      }
+    }
+
+    if (session.protocol === "rlogin" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_rlogin", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect RLogin session:", error);
       }
     }
 

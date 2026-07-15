@@ -1,6 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useSessionManager } from "../../src/hooks/session/useSessionManager";
+import {
+  useSessionManager,
+  usesGenericSessionTimer,
+} from "../../src/hooks/session/useSessionManager";
 import type {
   Connection,
   ConnectionSession,
@@ -95,6 +98,12 @@ describe("useSessionManager settings effects", () => {
       notifyOnError: false,
       notificationSound: false,
     });
+  });
+
+  it("keeps Raw Socket and RLogin out of the simulated timer/metrics path", () => {
+    expect(usesGenericSessionTimer("raw")).toBe(false);
+    expect(usesGenericSessionTimer("rlogin")).toBe(false);
+    expect(usesGenericSessionTimer("telnet")).toBe(true);
   });
 
   it("openConnectionInBackground controls whether a new connection becomes active", async () => {

@@ -13,6 +13,8 @@ const mockState = vi.hoisted(() => ({
   anyDeskClientProps: vi.fn(),
   rdpErrorScreenProps: vi.fn(),
   integrationPanelHostProps: vi.fn(),
+  rawSocketClientProps: vi.fn(),
+  rloginClientProps: vi.fn(),
 }));
 
 vi.mock("../../src/components/app/ToolPanel", () => ({
@@ -65,6 +67,22 @@ vi.mock("../../src/components/protocol/WebBrowser", () => ({
   WebBrowser: (props: any) => {
     mockState.webBrowserProps(props);
     return <div data-testid="mock-web-browser">Web Browser</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/RawSocketClient", () => ({
+  __esModule: true,
+  default: (props: any) => {
+    mockState.rawSocketClientProps(props);
+    return <div data-testid="mock-raw-socket-client">Raw Socket Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/RloginClient", () => ({
+  __esModule: true,
+  default: (props: any) => {
+    mockState.rloginClientProps(props);
+    return <div data-testid="mock-rlogin-client">RLogin Client</div>;
   },
 }));
 
@@ -234,6 +252,23 @@ describe("SessionViewer", () => {
     expect(screen.getByTestId("mock-web-terminal")).toBeInTheDocument();
     expect(mockState.webTerminalProps).toHaveBeenCalled();
   });
+
+  it.each([
+    ["raw", "mock-raw-socket-client"],
+    ["rlogin", "mock-rlogin-client"],
+  ])(
+    "routes %s reconnecting sessions to the real protocol client",
+    async (protocol, testId) => {
+      render(
+        <SessionViewer
+          session={createSession({ protocol, status: "reconnecting" })}
+        />,
+      );
+
+      expect(await screen.findByTestId(testId)).toBeInTheDocument();
+      expect(screen.queryByTestId("mock-web-terminal")).not.toBeInTheDocument();
+    },
+  );
 
   it("renders generic error view for non-RDP error sessions", () => {
     render(

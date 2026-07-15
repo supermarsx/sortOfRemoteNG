@@ -33,6 +33,12 @@ const IntegrationPanelHost = dynamic(
   { ssr: false },
 );
 const WebTerminal = dynamic(() => import("../ssh/WebTerminal"), { ssr: false });
+const RawSocketClient = dynamic(() => import("../protocol/RawSocketClient"), {
+  ssr: false,
+});
+const RloginClient = dynamic(() => import("../protocol/RloginClient"), {
+  ssr: false,
+});
 const WebBrowser = dynamic(
   () => import("../protocol/WebBrowser").then((module) => module.WebBrowser),
   { ssr: false },
@@ -195,6 +201,24 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
     }
 
     if (
+      session.protocol === "raw" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <RawSocketClient session={session} />;
+    }
+
+    if (
+      session.protocol === "rlogin" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <RloginClient session={session} />;
+    }
+
+    if (
       (session.protocol === "http" || session.protocol === "https") &&
       (session.status === "connecting" || session.status === "connected")
     ) {
@@ -250,7 +274,6 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         switch (session.protocol) {
           case "ssh":
           case "telnet":
-          case "rlogin":
             return <WebTerminal session={session} />;
 
           case "http":

@@ -34,6 +34,15 @@ export function useSessionDetach(
         `[detach] session=${session.id}, protocol=${session.protocol}, backendSessionId=${session.backendSessionId}, connectionId=${session.connectionId}`,
       );
 
+      // Protocol clients use this synchronous signal to preserve their native
+      // backend before the main viewer unmounts. The persisted layout below is
+      // also marked detached so the detached viewer can later reattach safely.
+      window.dispatchEvent(
+        new CustomEvent("sorng:session-will-detach", {
+          detail: { sessionId: session.id },
+        }),
+      );
+
       // For RDP sessions, explicitly detach the viewer from the backend
       // *before* opening the new window. This ensures the backend session
       // is in "detached" state so the new window can reattach without a
@@ -47,9 +56,24 @@ export function useSessionDetach(
         }
       }
 
+      if (session.protocol === "raw" && session.backendSessionId) {
+        try {
+          await invoke("detach_raw_socket", {
+            sessionId: session.backendSessionId,
+          });
+        } catch (error) {
+          console.warn("[detach] detach_raw_socket failed:", error);
+        }
+      }
+
       // Request terminal buffer before detaching (only for terminal-based protocols)
       let terminalBuffer = "";
-      if (session.protocol !== "rdp" && !isWinmgmtProtocol(session.protocol)) {
+      if (
+        session.protocol !== "rdp" &&
+        session.protocol !== "raw" &&
+        session.protocol !== "rlogin" &&
+        !isWinmgmtProtocol(session.protocol)
+      ) {
         try {
           let resolveBuffer: (value: string) => void;
           const bufferPromise = new Promise<string>((resolve) => {
@@ -81,9 +105,19 @@ export function useSessionDetach(
       }
 
       try {
+        const detachedLayout = {
+          x: session.layout?.x ?? 0,
+          y: session.layout?.y ?? 0,
+          width: session.layout?.width ?? 100,
+          height: session.layout?.height ?? 100,
+          zIndex: session.layout?.zIndex ?? 1,
+          isDetached: true,
+          windowId: windowLabel,
+        };
         const sessionWithBuffer = {
           ...session,
           terminalBuffer,
+          layout: detachedLayout,
         };
         const payload = {
           session: sessionWithBuffer,

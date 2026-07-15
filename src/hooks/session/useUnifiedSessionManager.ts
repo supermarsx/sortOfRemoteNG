@@ -47,6 +47,7 @@ export type FrontendSessionKind =
   | "sftp"
   | "telnet"
   | "rlogin"
+  | "raw"
   | "winrm"
   | "tool"
   | "winmgmt"
@@ -133,6 +134,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   https: "HTTPS",
   rdp: "RDP",
   rlogin: "RLogin",
+  raw: "Raw Socket",
   rustdesk: "RustDesk",
   sftp: "SFTP",
   ssh: "SSH",

@@ -25,13 +25,11 @@ const mockSetFocus = vi.fn().mockResolvedValue(undefined);
 const mockOnce = vi.fn((_event, cb) => cb());
 
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  WebviewWindow: Object.assign(
-    vi.fn().mockImplementation(() => ({
-      once: mockOnce,
-      setFocus: mockSetFocus,
-    })),
-    { getByLabel: vi.fn().mockResolvedValue(null) },
-  ),
+  WebviewWindow: class MockWebviewWindow {
+    static getByLabel = vi.fn().mockResolvedValue(null);
+    once = mockOnce;
+    setFocus = mockSetFocus;
+  },
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -151,6 +149,12 @@ describe("useSessionDetach", () => {
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored!);
     expect(parsed.session.id).toBe("s1");
+    expect(parsed.session.layout).toEqual(
+      expect.objectContaining({
+        isDetached: true,
+        windowId: "detached-s1",
+      }),
+    );
     expect(parsed.savedAt).toBeTypeOf("number");
   });
 
@@ -231,6 +235,51 @@ describe("useSessionDetach", () => {
     });
     expect(mockEmit).not.toHaveBeenCalledWith(
       "request-terminal-buffer",
+      expect.anything(),
+    );
+  });
+
+  it("detaches Raw Socket before transfer and relies on backend replay", async () => {
+    const raw = makeSession("raw1", "raw");
+    const preserveSignal = vi.fn();
+    window.addEventListener("sorng:session-will-detach", preserveSignal);
+    const { result } = renderDetach({
+      sessions: [raw],
+      connections: [makeConnection("conn-raw1", "raw")],
+      visibleSessions: [raw],
+      activeSessionId: "raw1",
+    });
+
+    await act(async () => result.current.handleSessionDetach("raw1"));
+
+    expect(invoke).toHaveBeenCalledWith("detach_raw_socket", {
+      sessionId: "be-raw1",
+    });
+    expect(mockEmit).not.toHaveBeenCalledWith(
+      "request-terminal-buffer",
+      expect.anything(),
+    );
+    expect(preserveSignal).toHaveBeenCalledOnce();
+    window.removeEventListener("sorng:session-will-detach", preserveSignal);
+  });
+
+  it("preserves RLogin for snapshot reattach without requesting a fake terminal buffer", async () => {
+    const rlogin = makeSession("rlogin1", "rlogin");
+    const { result } = renderDetach({
+      sessions: [rlogin],
+      connections: [makeConnection("conn-rlogin1", "rlogin")],
+      visibleSessions: [rlogin],
+      activeSessionId: "rlogin1",
+    });
+
+    await act(async () => result.current.handleSessionDetach("rlogin1"));
+
+    expect(mockEmit).not.toHaveBeenCalledWith(
+      "request-terminal-buffer",
+      expect.anything(),
+    );
+    expect(invoke).not.toHaveBeenCalledWith(
+      "disconnect_rlogin",
       expect.anything(),
     );
   });

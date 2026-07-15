@@ -123,6 +123,8 @@ const getProtocolIcon = (protocol: string) => {
     case "telnet":
     case "rlogin":
       return Phone;
+    case "raw":
+      return Network;
     case "winrm":
       return Server;
     default:
