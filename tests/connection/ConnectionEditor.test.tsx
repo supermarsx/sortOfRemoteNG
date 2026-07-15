@@ -1075,6 +1075,122 @@ describe("ConnectionEditor", () => {
       expect(saveButton).toBeInTheDocument();
     });
 
+    it("persists connection behavior overrides and automation when reopened", async () => {
+      let latestConnections: Connection[] = [];
+      const firstRender = renderWithProviders(
+        { isOpen: true, onClose: vi.fn() },
+        (connections) => {
+          latestConnections = connections;
+        },
+      );
+
+      fireEvent.change(screen.getByTestId("editor-name"), {
+        target: { value: "Automated Production" },
+      });
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "automated.example.test" },
+      });
+      fireEvent.click(screen.getByTestId("connection-editor-tab-behavior"));
+
+      fireEvent.change(screen.getByLabelText("Retry attempts"), {
+        target: { value: "0" },
+      });
+      fireEvent.change(screen.getByLabelText("Retry delay (ms)"), {
+        target: { value: "1500" },
+      });
+      fireEvent.click(screen.getByRole("combobox", { name: "Warn on Close" }));
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "Close without warning" }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Add automation rule" }),
+      );
+      fireEvent.change(screen.getByLabelText("Rule 1 name"), {
+        target: { value: "Log initial failures" },
+      });
+      fireEvent.click(screen.getByRole("combobox", { name: "Rule 1 event" }));
+      fireEvent.mouseDown(
+        screen.getByRole("option", { name: "Initial connection failed" }),
+      );
+      fireEvent.click(screen.getByLabelText("Rule 1 reason Error"));
+      fireEvent.change(screen.getByLabelText("Rule 1 delay (ms)"), {
+        target: { value: "75" },
+      });
+      fireEvent.change(screen.getByLabelText("Rule 1 cooldown (ms)"), {
+        target: { value: "1000" },
+      });
+      fireEvent.click(screen.getByLabelText("Rule 1 once per session"));
+      fireEvent.change(screen.getByLabelText("Action 1 log message"), {
+        target: { value: "Failure: {{error.message}}" },
+      });
+
+      expect(screen.getByTestId("connection-editor")).toBeValid();
+
+      fireEvent.click(screen.getByRole("button", { name: "Create" }));
+      await waitFor(() => expect(latestConnections).toHaveLength(1));
+
+      const saved = latestConnections[0];
+      expect(saved).toMatchObject({
+        retryAttempts: 0,
+        retryDelay: 1500,
+        warnOnClose: false,
+        behaviorAutomation: {
+          version: 1,
+          rules: [
+            {
+              id: "behavior-rule-1",
+              name: "Log initial failures",
+              event: "session.connectFailed",
+              when: { reasons: ["error"] },
+              options: {
+                delayMs: 75,
+                cooldownMs: 1000,
+                oncePerSession: true,
+                stopOnActionError: false,
+              },
+              actions: [
+                {
+                  type: "writeLog",
+                  level: "info",
+                  message: "Failure: {{error.message}}",
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      firstRender.unmount();
+      renderWithProviders(
+        { connection: saved, isOpen: true, onClose: vi.fn() },
+        undefined,
+        [saved],
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("editor-name")).toHaveValue(
+          "Automated Production",
+        ),
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-behavior"));
+
+      expect(screen.getByLabelText("Retry attempts")).toHaveValue(0);
+      expect(screen.getByLabelText("Retry delay (ms)")).toHaveValue(1500);
+      expect(
+        screen.getByRole("combobox", { name: "Warn on Close" }),
+      ).toHaveTextContent("Close without warning");
+      expect(screen.getByLabelText("Rule 1 name")).toHaveValue(
+        "Log initial failures",
+      );
+      expect(
+        screen.getByRole("combobox", { name: "Rule 1 event" }),
+      ).toHaveTextContent("Initial connection failed");
+      expect(screen.getByLabelText("Rule 1 reason Error")).toBeChecked();
+      expect(screen.getByLabelText("Rule 1 once per session")).toBeChecked();
+      expect(screen.getByLabelText("Action 1 log message")).toHaveValue(
+        "Failure: {{error.message}}",
+      );
+    });
+
     it("should not persist integration token, API key, or password in connection data", async () => {
       const mockOnClose = vi.fn();
       let latestConnections: Connection[] = [];
