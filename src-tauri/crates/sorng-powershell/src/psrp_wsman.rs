@@ -257,14 +257,10 @@ fn validate_auth_and_trust(config: &PsRemotingConfig) -> Result<SupportedAuth, P
         ));
     }
     match config.auth_method {
-        PsAuthMethod::Basic => {
-            if !config.uses_tls() {
-                return Err(protocol(
-                    "Basic authentication is rejected over HTTP; use HTTPS with Trust Center verification",
-                ));
-            }
-            Ok(SupportedAuth::Basic)
-        }
+        PsAuthMethod::Basic | PsAuthMethod::Ntlm if !config.uses_tls() => Err(protocol(
+            "WSMan authentication is rejected over HTTP; use HTTPS with Trust Center verification",
+        )),
+        PsAuthMethod::Basic => Ok(SupportedAuth::Basic),
         PsAuthMethod::Ntlm => Ok(SupportedAuth::Ntlm),
         PsAuthMethod::Negotiate | PsAuthMethod::Default => Err(protocol(
             "Negotiate is not claimed by the WSMan adapter; select NTLM explicitly",

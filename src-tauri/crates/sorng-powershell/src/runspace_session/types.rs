@@ -293,10 +293,11 @@ impl PowerShellWsmanSessionOptions {
             return Err(PowerShellSessionError::invalid("credential"));
         }
         match self.authentication {
-            PowerShellWsmanAuth::Basic if endpoint.scheme() != "https" => {
-                return Err(PowerShellSessionError::TransportSecurityRequired);
+            PowerShellWsmanAuth::Basic | PowerShellWsmanAuth::Ntlm => {
+                if endpoint.scheme() != "https" {
+                    return Err(PowerShellSessionError::TransportSecurityRequired);
+                }
             }
-            PowerShellWsmanAuth::Basic | PowerShellWsmanAuth::Ntlm => {}
             _ => return Err(PowerShellSessionError::AuthenticationUnsupported),
         }
         if self.tls_trust != PowerShellWsmanTrustPolicy::TrustCenter {
