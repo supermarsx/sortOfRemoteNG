@@ -604,16 +604,12 @@ export function validatePowerShellRemotingSettings(
       message: "The SSH port must be between 1 and 65535.",
     });
   }
-  if (
-    settings.transport === "wsman" &&
-    settings.wsman.authMethod === "basic" &&
-    settings.wsman.scheme === "http"
-  ) {
+  if (settings.transport === "wsman" && settings.wsman.scheme === "http") {
     add({
       path: "wsman.authMethod",
       code: "basicRequiresTls",
       severity: "error",
-      message: "Basic authentication is blocked over HTTP. Select HTTPS first.",
+      message: "WSMan authentication is blocked over HTTP. Select HTTPS first.",
     });
   }
   if (

@@ -251,9 +251,9 @@ export function buildPowerShellSessionOptions(
     }
     const endpoint = canonicalPowerShellEndpoint(settings, connection.hostname);
     const endpointScheme = new URL(endpoint).protocol.replace(/:$/, "");
-    if (settings.wsman.authMethod === "basic" && endpointScheme !== "https") {
+    if (endpointScheme !== "https") {
       throw new Error(
-        "Basic authentication is blocked unless the canonical WSMan endpoint uses HTTPS.",
+        "WSMan authentication is blocked unless the canonical endpoint uses HTTPS.",
       );
     }
     const username =

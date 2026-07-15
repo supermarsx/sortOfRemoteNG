@@ -688,12 +688,14 @@ fn canonical_endpoint_and_security_policy_fail_closed() {
         "http://server.example:5985/wsman"
     );
 
-    config.auth_method = PsAuthMethod::Basic;
-    let error = WsmanPsrpTransport::new(&config, test_limits())
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("Basic authentication is rejected over HTTP"));
-    assert!(!error.contains("do-not-log"));
+    for auth_method in [PsAuthMethod::Basic, PsAuthMethod::Ntlm] {
+        config.auth_method = auth_method;
+        let error = WsmanPsrpTransport::new(&config, test_limits())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("WSMan authentication is rejected over HTTP"));
+        assert!(!error.contains("do-not-log"));
+    }
 
     config.auth_method = PsAuthMethod::Ntlm;
     config.skip_ca_check = true;

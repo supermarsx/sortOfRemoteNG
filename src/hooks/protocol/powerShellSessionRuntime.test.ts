@@ -117,7 +117,12 @@ describe("PowerShell live-session runtime", () => {
     settings.wsman.scheme = "http";
     settings.wsman.port = 5985;
     expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
-      /Basic authentication.*HTTPS/i,
+      /WSMan authentication.*HTTPS/i,
+    );
+
+    settings.wsman.authMethod = "ntlm";
+    expect(() => buildPowerShellSessionOptions(connection(), settings)).toThrow(
+      /WSMan authentication.*HTTPS/i,
     );
 
     settings.wsman.scheme = "https";
