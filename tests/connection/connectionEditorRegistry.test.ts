@@ -43,6 +43,8 @@ describe("connection editor registry", () => {
       "general-connection",
       "protocol-options",
       "behavior-focus",
+      "behavior-connection",
+      "behavior-automation",
       "organize-icon",
       "organize-tags",
       "notes-description",
@@ -66,7 +68,6 @@ describe("connection editor registry", () => {
     ).toEqual([
       "general-basics",
       "general-parent",
-      "general-connection",
       "organize-icon",
       "organize-tags",
       "notes-description",
@@ -88,6 +89,25 @@ describe("connection editor registry", () => {
 
     expect(didNavigate).toBe(true);
     expect(calls).toEqual(["tab:notes", "field:notes-description:description"]);
+  });
+
+  it("uses a field's exact focus target while preserving its visible label", () => {
+    const calls: string[] = [];
+    const didNavigate = navigateToConnectionEditorSearchDescriptor(
+      "protocol-options",
+      {
+        activateTab: (tabId) => calls.push(`tab:${tabId}`),
+        focusField: (fieldId, sectionId, fieldLabel) =>
+          calls.push(`field:${sectionId}:${fieldId}:${fieldLabel}`),
+      },
+      "ssh-known-hosts",
+    );
+
+    expect(didNavigate).toBe(true);
+    expect(calls).toEqual([
+      "tab:protocol",
+      "field:protocol-options:protocol-options:Known Hosts Path",
+    ]);
   });
 
   it("rejects unavailable sections and unknown fields without navigating", () => {

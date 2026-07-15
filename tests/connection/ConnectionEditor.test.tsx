@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useEffect } from "react";
 import { ConnectionEditor } from "../../src/components/connection/ConnectionEditor";
+import { scrollConnectionEditorSearchTargetIntoView } from "../../src/components/connection/editor/useConnectionEditorSearch";
 import { Connection } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
@@ -57,7 +58,11 @@ vi.mock("../../src/components/connection/TagManager", () => ({
 vi.mock("../../src/components/connectionEditor/SSHOptions", () => ({
   default: ({ formData }: any) =>
     formData.protocol === "ssh" ? (
-      <div data-testid="ssh-options">SSH Options</div>
+      <div data-testid="ssh-options">
+        SSH Options
+        <label htmlFor="test-ssh-known-hosts">Known Hosts Path</label>
+        <input id="test-ssh-known-hosts" defaultValue="" />
+      </div>
     ) : null,
 }));
 
@@ -559,6 +564,305 @@ describe("ConnectionEditor", () => {
             ?.parentId,
         ).toBe(production.id);
       });
+    });
+  });
+
+  describe("Cross-tab settings search", () => {
+    it("scrolls only the editor pane and clamps targets above or below its padded viewport", () => {
+      const pane = document.createElement("div");
+      pane.dataset.editorScrollPane = "true";
+      const container = document.createElement("div");
+      const target = document.createElement("label");
+      pane.append(container);
+      container.append(target);
+      document.body.append(pane);
+
+      Object.defineProperties(pane, {
+        clientHeight: { configurable: true, value: 400 },
+        scrollHeight: { configurable: true, value: 1200 },
+      });
+      pane.scrollTop = 250;
+      pane.scrollLeft = 31;
+      pane.getBoundingClientRect = vi.fn(
+        () =>
+          ({
+            top: 100,
+            bottom: 500,
+            left: 40,
+            right: 640,
+            width: 600,
+            height: 400,
+          }) as DOMRect,
+      );
+      target.getBoundingClientRect = vi.fn(
+        () =>
+          ({
+            top: 520,
+            bottom: 560,
+            left: 80,
+            right: 280,
+            width: 200,
+            height: 40,
+          }) as DOMRect,
+      );
+      const bodyScrollTop = document.body.scrollTop;
+      const documentScrollTop = document.documentElement.scrollTop;
+      const windowScroll = vi
+        .spyOn(window, "scrollTo")
+        .mockImplementation(() => {});
+
+      expect(
+        scrollConnectionEditorSearchTargetIntoView(container, target),
+      ).toBe(true);
+      expect(pane.scrollTop).toBe(326);
+      expect(pane.scrollLeft).toBe(31);
+
+      target.getBoundingClientRect = vi.fn(
+        () =>
+          ({
+            top: 60,
+            bottom: 90,
+            left: 80,
+            right: 280,
+            width: 200,
+            height: 30,
+          }) as DOMRect,
+      );
+      scrollConnectionEditorSearchTargetIntoView(container, target);
+      expect(pane.scrollTop).toBe(270);
+      expect(pane.scrollLeft).toBe(31);
+      expect(document.body.scrollTop).toBe(bodyScrollTop);
+      expect(document.documentElement.scrollTop).toBe(documentScrollTop);
+      expect(windowScroll).not.toHaveBeenCalled();
+
+      windowScroll.mockRestore();
+      pane.remove();
+    });
+
+    it("focuses the exact field even when it is a sibling of the registered section", async () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "192.168.1.100" } });
+      expect(
+        screen.getByRole("option", {
+          name: /Basics \/ Connection.*Hostname \/ IP.*192\.168\.1\.100/i,
+        }),
+      ).toBeInTheDocument();
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("editor-hostname")).toHaveFocus();
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent("Hostname / IP");
+      });
+      expect(screen.getByTestId("editor-hostname")).toHaveValue(
+        "192.168.1.100",
+      );
+    });
+
+    it("finds a saved Notes value, navigates across tabs, and highlights without changing it", async () => {
+      renderWithProviders({
+        connection: {
+          ...mockConnection,
+          description: "Owned by Platform Engineering",
+        },
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, {
+        target: { value: "Owned by Platform Engineering" },
+      });
+
+      const result = screen.getByRole("option", {
+        name: /Notes \/ Description & Notes.*Owned by Platform Engineering/i,
+      });
+      expect(result.querySelector("mark")).toHaveTextContent(
+        "Owned by Platform Engineering",
+      );
+
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("connection-editor-tab-notes"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(screen.getByTestId("editor-description")).toHaveFocus();
+      });
+      expect(screen.getByTestId("editor-description")).toHaveValue(
+        "Owned by Platform Engineering",
+      );
+      expect(
+        document.querySelector('[data-editor-search-active="true"]'),
+      ).toHaveTextContent("Description & Notes");
+    });
+
+    it("supports deterministic keyboard and button navigation, then Escape clears", async () => {
+      const windowScroll = vi
+        .spyOn(window, "scrollTo")
+        .mockImplementation(() => {});
+      const bodyScrollTop = document.body.scrollTop;
+      const documentScrollTop = document.documentElement.scrollTop;
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "Focus Behavior" } });
+
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+      fireEvent.keyDown(search, { key: "End" });
+      expect(search).toHaveAttribute(
+        "aria-activedescendant",
+        "connection-editor-search-result-1",
+      );
+      fireEvent.keyDown(search, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("connection-editor-tab-behavior"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent(/On Windows Management Tool/i);
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Previous search result" }),
+      );
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent("On Connect"),
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Next search result" }),
+      );
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent(/On Windows Management Tool/i),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Next search result" }),
+      );
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent("On Connect"),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Previous search result" }),
+      );
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent(/On Windows Management Tool/i),
+      );
+      expect(document.body.scrollTop).toBe(bodyScrollTop);
+      expect(document.documentElement.scrollTop).toBe(documentScrollTop);
+      expect(windowScroll).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(search, { key: "Escape" });
+      await waitFor(() => {
+        expect(search).toHaveValue("");
+        expect(
+          screen.queryByRole("listbox", {
+            name: "Connection setting search results",
+          }),
+        ).not.toBeInTheDocument();
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toBeNull();
+      });
+      windowScroll.mockRestore();
+    });
+
+    it("does not search secret values and updates protocol-dependent results", async () => {
+      const onClose = vi.fn();
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose,
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "testpass" } });
+      expect(screen.getByRole("status")).toHaveTextContent("No settings found");
+      fireEvent.keyDown(search, { key: "Enter" });
+      expect(onClose).not.toHaveBeenCalled();
+
+      fireEvent.change(search, { target: { value: "Known Hosts Path" } });
+      expect(screen.getByRole("status")).toHaveTextContent("No settings found");
+      fireEvent.keyDown(search, { key: "Escape" });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(
+        screen.getByRole("option", { name: /SSH.*Secure Shell/i }),
+      );
+      fireEvent.change(search, { target: { value: "Known Hosts Path" } });
+      expect(
+        screen.getByRole("option", {
+          name: /Protocol \/ Protocol Options.*Known Hosts Path/i,
+        }),
+      ).toBeInTheDocument();
+
+      fireEvent.keyDown(search, { key: "Enter" });
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("connection-editor-tab-protocol"),
+        ).toHaveAttribute("aria-selected", "true");
+        expect(screen.getByLabelText("Known Hosts Path")).toHaveFocus();
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent("Known Hosts Path");
+      });
+    });
+
+    it("keeps connection-only sections out of folder search", () => {
+      const folder: Connection = {
+        ...mockConnection,
+        id: "search-folder",
+        name: "Infrastructure",
+        hostname: "",
+        isGroup: true,
+      };
+      renderWithProviders({
+        connection: folder,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "Focus Behavior" } });
+      expect(screen.getByRole("status")).toHaveTextContent("No settings found");
+
+      fireEvent.change(search, { target: { value: "Description & Notes" } });
+      expect(
+        screen.getByRole("option", {
+          name: /Notes \/ Description & Notes/i,
+        }),
+      ).toBeInTheDocument();
     });
   });
 

@@ -24,6 +24,7 @@ import {
   PROTOCOL_OPTIONS,
   INTEGRATION_PROTOCOL_OPTIONS,
   CLOUD_OPTIONS,
+  ICON_OPTIONS,
   PROTOCOL_COLOR_MAP,
   getIntegrationKeyFromProtocol,
   type ConnectionEditorMgr,
@@ -54,6 +55,7 @@ import { OrganizeSection } from "./editor/OrganizeSection";
 import { ParentSelector } from "./editor/ParentSelector";
 import { ProtocolSections } from "./editor/ProtocolSections";
 import { useConnectionEditorSearch } from "./editor/useConnectionEditorSearch";
+import type { ConnectionEditorSearchFormData } from "./editor/connectionEditorSearchIndex";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -1356,13 +1358,40 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     () => getConnectionEditorSearchDescriptors(!!mgr.formData.isGroup),
     [mgr.formData.isGroup],
   );
+  const searchDynamicValues = React.useMemo(
+    () => ({
+      protocol: ALL_PROTOCOL_OPTIONS.flatMap((option) => [
+        option.label,
+        option.desc,
+        option.value,
+      ]),
+      "parent-folder": mgr.parentFolderProjection.options
+        .flatMap((option) => [option.name, option.path, option.reason])
+        .filter((value): value is string => !!value),
+      icon: ICON_OPTIONS.map((option) => option.label),
+      tags: mgr.allTags,
+    }),
+    [mgr.allTags, mgr.parentFolderProjection.options],
+  );
   const formContentRef = useRef<HTMLDivElement>(null);
-  const { query, setQuery, matchCount, currentIndex, goNext, goPrev } =
-    useConnectionEditorSearch(formContentRef, activeTab, {
-      descriptors: searchDescriptors,
-      activateTab: setActiveTab,
-      expandSection: mgr.expandSection,
-    });
+  const {
+    query,
+    setQuery,
+    results,
+    currentIndex,
+    setCurrentIndex,
+    selectCurrent,
+    selectResult,
+    goNext,
+    goPrev,
+  } = useConnectionEditorSearch(formContentRef, {
+    descriptors: searchDescriptors,
+    tabs,
+    formData: mgr.formData as ConnectionEditorSearchFormData,
+    dynamicValues: searchDynamicValues,
+    activateTab: setActiveTab,
+    expandSection: mgr.expandSection,
+  });
 
   useEffect(() => {
     if (isOpen) setActiveTab("general");
@@ -1389,8 +1418,11 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
           <ConnectionEditorSearchBar
             query={query}
             setQuery={setQuery}
-            matchCount={matchCount}
+            results={results}
             currentIndex={currentIndex}
+            setCurrentIndex={setCurrentIndex}
+            selectCurrent={selectCurrent}
+            selectResult={selectResult}
             goNext={goNext}
             goPrev={goPrev}
           />
@@ -1401,7 +1433,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div data-editor-scroll-pane className="flex-1 overflow-y-auto min-h-0">
         <div ref={formContentRef} className="max-w-2xl mx-auto w-full p-6">
           <div
             role="tabpanel"
