@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PowerShellRemotingSettings } from "../../../types/powershellRemoting";
 import { createDefaultPowerShellRemotingSettings } from "../../../utils/powershell/normalizePowerShellRemoting";
 import { PowerShellRemotingEditor } from "./PowerShellRemotingEditor";
@@ -25,6 +25,46 @@ function Harness({
 }
 
 describe("PowerShellRemotingEditor", () => {
+  it("composes rapid nested endpoint, credential, and session edits before rerender", () => {
+    const onChange = vi.fn();
+    render(
+      <PowerShellRemotingEditor
+        targetHost="server.example.test"
+        value={createDefaultPowerShellRemotingSettings()}
+        onChange={onChange}
+      />,
+    );
+
+    const changeRapidly = (label: string, values: readonly string[]) => {
+      const input = screen.getByLabelText(label);
+      values.forEach((value) => fireEvent.change(input, { target: { value } }));
+    };
+
+    changeRapidly("PowerShell username", ["a", "al", "ali", "alice"]);
+    changeRapidly("PowerShell domain", ["E", "EX", "EXAMPLE"]);
+    changeRapidly("WSMan path", ["/", "/c", "/custom-wsman"]);
+    fireEvent.change(screen.getByLabelText("WSMan port"), {
+      target: { value: "15986" },
+    });
+    fireEvent.change(screen.getByLabelText("Operation timeout seconds"), {
+      target: { value: "240" },
+    });
+
+    expect(onChange.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        credential: expect.objectContaining({
+          username: "alice",
+          domain: "EXAMPLE",
+        }),
+        wsman: expect.objectContaining({
+          path: "/custom-wsman",
+          port: 15_986,
+        }),
+        session: expect.objectContaining({ operationTimeoutSec: 240 }),
+      }),
+    );
+  });
+
   it("renders flat, separately named sections without accordion controls", () => {
     render(<Harness />);
 

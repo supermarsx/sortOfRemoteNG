@@ -15,6 +15,7 @@ import { RloginNetworkPathSection } from "./rloginOptions/NetworkPathSection";
 import { RloginSecuritySection } from "./rloginOptions/SecuritySection";
 import { RloginTerminalSection } from "./rloginOptions/TerminalSection";
 import type { RloginEditorSectionId } from "./rloginOptions/types";
+import { useComposedControlledValue } from "./useComposedControlledValue";
 
 export interface RloginOptionsProps {
   settings: RloginSettings;
@@ -37,12 +38,16 @@ export function RloginOptions({
   disabled,
   now,
 }: RloginOptionsProps) {
+  const [liveSettings, emitSettings] = useComposedControlledValue(
+    settings,
+    onSettingsChange,
+  );
   const validation = useMemo(
     () => validateRloginSettings(settings, { port, networkPath }),
     [networkPath, port, settings],
   );
   const onChange = (patch: RloginSettingsPatch) =>
-    onSettingsChange(patchRloginSettings(settings, patch));
+    emitSettings(patchRloginSettings(liveSettings, patch));
   const shows = (candidate: RloginEditorSectionId) =>
     section === "all" || section === candidate;
 

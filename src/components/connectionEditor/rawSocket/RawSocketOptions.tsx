@@ -1,4 +1,5 @@
 import { normalizeRawSocketSettings } from "../../../types/protocols/rawSocket";
+import { useComposedControlledValue } from "../useComposedControlledValue";
 import { AdvancedSection } from "./AdvancedSection";
 import { ConnectionSection } from "./ConnectionSection";
 import { DataSection } from "./DataSection";
@@ -17,9 +18,10 @@ export function RawSocketOptions({
   disabled = false,
 }: RawSocketOptionsProps) {
   const settings = normalizeRawSocketSettings(value);
+  const [liveSettings, update] = useComposedControlledValue(settings, onChange);
   const visible = (id: (typeof RAW_SOCKET_EDITOR_SECTIONS)[number]["id"]) =>
     !sections || sections.includes(id);
-  const common = { settings, update: onChange, disabled };
+  const common = { settings: liveSettings, update, disabled };
 
   return (
     <div

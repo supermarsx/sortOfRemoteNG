@@ -14,6 +14,15 @@ import {
 import type { RawSocketSectionProps } from "./types";
 
 type FramingMode = RawSocketTcpFraming["mode"];
+type DelimiterFraming = Extract<RawSocketTcpFraming, { mode: "delimiter" }>;
+type FixedLengthFraming = Extract<
+  RawSocketTcpFraming,
+  { mode: "fixed_length" }
+>;
+type LengthPrefixFraming = Extract<
+  RawSocketTcpFraming,
+  { mode: "length_prefix" }
+>;
 
 const framingForMode = (mode: FramingMode): RawSocketTcpFraming => {
   if (mode === "delimiter") {
@@ -52,6 +61,24 @@ export function DataSection({
         data: { ...settings.data, ...patch },
       }),
     );
+  const patchDelimiterFraming = (patch: Partial<DelimiterFraming>) => {
+    const current = settings.data.tcpFraming;
+    if (current.mode === "delimiter") {
+      patchData({ tcpFraming: { ...current, ...patch } });
+    }
+  };
+  const patchFixedLengthFraming = (patch: Partial<FixedLengthFraming>) => {
+    const current = settings.data.tcpFraming;
+    if (current.mode === "fixed_length") {
+      patchData({ tcpFraming: { ...current, ...patch } });
+    }
+  };
+  const patchLengthPrefixFraming = (patch: Partial<LengthPrefixFraming>) => {
+    const current = settings.data.tcpFraming;
+    if (current.mode === "length_prefix") {
+      patchData({ tcpFraming: { ...current, ...patch } });
+    }
+  };
   const framing = settings.data.tcpFraming;
 
   return (
@@ -171,11 +198,8 @@ export function DataSection({
                   disabled={disabled}
                   spellCheck={false}
                   onChange={(event) =>
-                    patchData({
-                      tcpFraming: {
-                        ...framing,
-                        delimiterHex: event.target.value,
-                      },
+                    patchDelimiterFraming({
+                      delimiterHex: event.target.value,
                     })
                   }
                   className={rawSocketInputClass}
@@ -193,11 +217,8 @@ export function DataSection({
                   value={framing.maxFrameBytes}
                   disabled={disabled}
                   onChange={(event) =>
-                    patchData({
-                      tcpFraming: {
-                        ...framing,
-                        maxFrameBytes: Number(event.target.value),
-                      },
+                    patchDelimiterFraming({
+                      maxFrameBytes: Number(event.target.value),
                     })
                   }
                   className={rawSocketInputClass}
@@ -209,11 +230,8 @@ export function DataSection({
                   checked={framing.includeDelimiter}
                   disabled={disabled}
                   onChange={(event) =>
-                    patchData({
-                      tcpFraming: {
-                        ...framing,
-                        includeDelimiter: event.target.checked,
-                      },
+                    patchDelimiterFraming({
+                      includeDelimiter: event.target.checked,
                     })
                   }
                   className="sor-form-checkbox"
@@ -236,11 +254,8 @@ export function DataSection({
                 value={framing.frameBytes}
                 disabled={disabled}
                 onChange={(event) =>
-                  patchData({
-                    tcpFraming: {
-                      ...framing,
-                      frameBytes: Number(event.target.value),
-                    },
+                  patchFixedLengthFraming({
+                    frameBytes: Number(event.target.value),
                   })
                 }
                 className={rawSocketInputClass}
@@ -259,11 +274,8 @@ export function DataSection({
                   value={framing.prefixBytes}
                   disabled={disabled}
                   onChange={(event) =>
-                    patchData({
-                      tcpFraming: {
-                        ...framing,
-                        prefixBytes: Number(event.target.value) as 1 | 2 | 4,
-                      },
+                    patchLengthPrefixFraming({
+                      prefixBytes: Number(event.target.value) as 1 | 2 | 4,
                     })
                   }
                   className={rawSocketSelectClass}
@@ -279,11 +291,8 @@ export function DataSection({
                   value={framing.endian}
                   disabled={disabled}
                   onChange={(event) =>
-                    patchData({
-                      tcpFraming: {
-                        ...framing,
-                        endian: event.target.value as "big" | "little",
-                      },
+                    patchLengthPrefixFraming({
+                      endian: event.target.value as "big" | "little",
                     })
                   }
                   className={rawSocketSelectClass}
@@ -304,11 +313,8 @@ export function DataSection({
                   value={framing.maxFrameBytes}
                   disabled={disabled}
                   onChange={(event) =>
-                    patchData({
-                      tcpFraming: {
-                        ...framing,
-                        maxFrameBytes: Number(event.target.value),
-                      },
+                    patchLengthPrefixFraming({
+                      maxFrameBytes: Number(event.target.value),
                     })
                   }
                   className={rawSocketInputClass}
@@ -321,11 +327,8 @@ export function DataSection({
                     checked={framing.lengthIncludesPrefix}
                     disabled={disabled}
                     onChange={(event) =>
-                      patchData({
-                        tcpFraming: {
-                          ...framing,
-                          lengthIncludesPrefix: event.target.checked,
-                        },
+                      patchLengthPrefixFraming({
+                        lengthIncludesPrefix: event.target.checked,
                       })
                     }
                     className="sor-form-checkbox"
@@ -338,11 +341,8 @@ export function DataSection({
                     checked={framing.includePrefix}
                     disabled={disabled}
                     onChange={(event) =>
-                      patchData({
-                        tcpFraming: {
-                          ...framing,
-                          includePrefix: event.target.checked,
-                        },
+                      patchLengthPrefixFraming({
+                        includePrefix: event.target.checked,
                       })
                     }
                     className="sor-form-checkbox"

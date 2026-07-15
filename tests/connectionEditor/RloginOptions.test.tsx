@@ -63,6 +63,38 @@ function StatefulRloginOptions({
 }
 
 describe("RloginOptions", () => {
+  it("composes rapid identity and terminal edits before the parent rerenders", () => {
+    const onSettingsChange = vi.fn();
+    render(
+      <RloginOptions
+        settings={createDefaultRloginSettings()}
+        port={513}
+        onSettingsChange={onSettingsChange}
+        onPortChange={vi.fn()}
+        networkPath={directPath}
+      />,
+    );
+
+    const changeRapidly = (label: string, values: readonly string[]) => {
+      const input = screen.getByLabelText(label);
+      values.forEach((value) => fireEvent.change(input, { target: { value } }));
+    };
+
+    changeRapidly("Local username", ["a", "al", "ali", "alic", "alice"]);
+    changeRapidly("Remote username", ["r", "ro", "roo", "root"]);
+    changeRapidly("Terminal type", ["x", "xt", "xte", "xter", "xterm"]);
+    changeRapidly("Terminal speed", ["9", "96", "960", "9600"]);
+
+    expect(onSettingsChange.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        localUsername: "alice",
+        remoteUsername: "root",
+        terminalType: "xterm",
+        terminalSpeed: 9600,
+      }),
+    );
+  });
+
   it("renders five semantic sections with the required safety copy", () => {
     const { container } = render(<StatefulRloginOptions />);
     for (const heading of [

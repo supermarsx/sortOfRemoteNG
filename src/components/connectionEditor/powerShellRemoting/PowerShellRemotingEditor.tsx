@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { useComposedControlledValue } from "../useComposedControlledValue";
 import { CURRENT_POWER_SHELL_REMOTING_CAPABILITIES } from "../../../utils/powershell/currentPowerShellCapabilities";
 import { validatePowerShellRemotingSettings } from "../../../utils/powershell/normalizePowerShellRemoting";
 import { AuthenticationSection } from "./AuthenticationSection";
@@ -22,12 +23,18 @@ export function PowerShellRemotingEditor({
   networkPathSummary,
   sections,
 }: PowerShellRemotingEditorProps) {
+  const [liveValue, emitValue] = useComposedControlledValue(value, onChange);
   const issues = validatePowerShellRemotingSettings(
     value,
     targetHost || "host.invalid",
   );
   const blockingIssues = issues.filter((issue) => issue.severity === "error");
-  const sectionProps = { value, onChange, capabilities, targetHost };
+  const sectionProps = {
+    value: liveValue,
+    onChange: emitValue,
+    capabilities,
+    targetHost,
+  };
   const visible = (
     section: import("./types").PowerShellRemotingEditorSectionId,
   ) => !sections || sections.includes(section);

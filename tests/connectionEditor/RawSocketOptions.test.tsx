@@ -13,6 +13,50 @@ function Harness({ initial }: { initial: RawSocketSettingsV1 }) {
 }
 
 describe("RawSocketOptions", () => {
+  it("composes rapid cross-section and nested framing edits before rerender", () => {
+    const onChange = vi.fn();
+    const initial = createDefaultRawSocketSettings();
+    initial.tls.mode = "direct";
+    initial.data.tcpFraming = {
+      mode: "delimiter",
+      delimiterHex: "0a",
+      includeDelimiter: false,
+      maxFrameBytes: 65_536,
+    };
+    render(<RawSocketOptions value={initial} onChange={onChange} />);
+
+    const changeRapidly = (label: string, values: readonly string[]) => {
+      const input = screen.getByLabelText(label);
+      values.forEach((value) => fireEvent.change(input, { target: { value } }));
+    };
+
+    changeRapidly("Local bind address", ["1", "12", "127", "127.0.0.1"]);
+    changeRapidly("TLS server name", ["e", "ec", "echo.example.test"]);
+    changeRapidly("Delimiter bytes (hex)", ["0d", "0d0a"]);
+    fireEvent.change(screen.getByLabelText("Maximum frame bytes"), {
+      target: { value: "8192" },
+    });
+    fireEvent.change(screen.getByLabelText("Connect timeout (ms)"), {
+      target: { value: "45000" },
+    });
+
+    expect(onChange.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        connection: expect.objectContaining({
+          localBindAddress: "127.0.0.1",
+        }),
+        tls: expect.objectContaining({ serverName: "echo.example.test" }),
+        data: expect.objectContaining({
+          tcpFraming: expect.objectContaining({
+            delimiterHex: "0d0a",
+            maxFrameBytes: 8192,
+          }),
+        }),
+        advanced: expect.objectContaining({ connectTimeoutMs: 45_000 }),
+      }),
+    );
+  });
+
   it("renders five named, non-accordion regions with an honest payload-socket boundary", () => {
     render(
       <RawSocketOptions
