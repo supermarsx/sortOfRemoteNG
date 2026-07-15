@@ -1,296 +1,135 @@
 # sortOfRemoteNG
 
-[![CI Status](https://img.shields.io/github/actions/workflow/status/supermarsx/sortOfRemoteNG/ci.yml?label=CI&logo=github&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/actions)
-[![Coverage](https://img.shields.io/badge/coverage-34.73%25-red?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/supermarsx/sortOfRemoteNG/ci.yml?branch=main&label=CI&logo=github&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-26.1-2563eb?style=flat-square)](version.json)
 [![Downloads](https://img.shields.io/github/downloads/supermarsx/sortOfRemoteNG/total?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/releases)
-[![Stars](https://img.shields.io/github/stars/supermarsx/sortOfRemoteNG?style=social&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/stargazers)
-[![Forks](https://img.shields.io/github/forks/supermarsx/sortOfRemoteNG?style=social&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/network/members)
+[![Stars](https://img.shields.io/github/stars/supermarsx/sortOfRemoteNG?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG)
 [![License](https://img.shields.io/github/license/supermarsx/sortOfRemoteNG?style=flat-square)](license.md)
 
-**sortOfRemoteNG** is a powerful, next-generation remote connection manager and utility suite for system administrators and developers. Built on the **Tauri** framework, it leverages **Rust** for a secure, high-performance backend and **React** for a responsive, modern frontend.
+A desktop workspace for remote connections, infrastructure tools, and day-to-day administration. sortOfRemoteNG combines a Tauri and Rust backend with a Next.js and React interface, so connections and supporting tools can live in one organized application.
 
-This project aims to provide a unified interface for all your remote management needs, replacing multiple disparate tools with a single, extensible application.
+[![sortOfRemoteNG showing a Prototype SSH session](docs/assets/readme-screenshot.png)](docs/assets/readme-screenshot.png)
 
-## ✨ Key Features
+_The real application running the seeded Prototype SSH connection._
 
-### 🔌 Multi-Protocol Connectivity
+## Contents
 
-- **Remote Desktop**: RDP, VNC, and RustDesk integration (all wired end-to-end, including invoke-handler registration).
-- **Shell & Terminal**: Full-featured SSH client and Web Terminal.
-- **File Transfer**: FTP and SFTP (backend and invoke-handler registration shipped). SMB/CIFS support is provided by the native `sorng-smb` crate, which uses platform-native backends (Windows UNC / `net use`, Unix `smbclient`).
-- **Web**: Integrated browser for HTTP/HTTPS management interfaces.
-- **Databases**: Built-in MySQL client.
+- [Overview](#overview)
+- [What works today](#what-works-today)
+- [Quick start](#quick-start)
+- [Security](#security)
+- [Releases](#releases)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
-### 🛠️ Network Utilities
+## Overview
 
-- **Network Discovery**: Scan local networks to automatically find and add hosts.
-- **Wake-on-LAN (WoL)**: Wake devices on demand or set up **scheduled wake tasks**.
-- **Port Monitoring**: Check status and availability of services.
+sortOfRemoteNG is built for people who manage more than one machine or service and want a single place to:
 
-### 🔒 Security & Authentication
+- save, group, tag, search, import, and export connection definitions;
+- open remote sessions in tabs, layouts, or detached windows;
+- keep connection-specific settings and credentials together;
+- use diagnostics, discovery, Wake-on-LAN, recordings, scripts, and administration tools without switching applications; and
+- automate session and window lifecycle events with per-connection behavior rules.
 
-- **Secure Storage**: AES-256 encryption for all stored credentials.
-- **TOTP Manager**: Integrated Time-based One-Time Password generator for 2FA.
-- **SSH Key Management**: Manage and use SSH keys effortlessly.
-- **Access Control**: User authentication system with Argon2id password hashing (bcrypt hashes from older builds are verified and transparently upgraded).
+The project is under active development. Features that depend on an external service, native client, VPN provider, or host package still require that dependency to be installed and configured.
 
-### 🚀 Advanced Capabilities
+## What works today
 
-- **Script Engine**: Automate tasks using a sandboxed TypeScript/JavaScript engine powered by `rquickjs`, enabled via `sorng-ssh`'s `script-engine` feature flag.
-- **VPN Management**: Integrations for OpenVPN, WireGuard, ZeroTier, and Tailscale. IKEv2, IPsec, SSTP, L2TP, and PPTP ship behind a native Rust VPN crate; SoftEther is fully ported behind the `vpn-softether` feature flag (live-tunnel validation is host-gated).
-- **AI Agent**: Chat, agentic workflows, and code-assist dispatch through real LLM providers (OpenAI, Anthropic, Google, Ollama, local). Providers are wired end-to-end — configure them in-app or via environment variables before use.
-- **Connection Chaining**: Route connections through proxies or other hosts.
-- **Customization**: Themed interface with flexible tab layouts and tagging.
+| Area            | Current capability                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Remote sessions | SSH terminal sessions, RDP, HTTP/HTTPS views, AnyDesk and RustDesk session panels, and VNC through WebSocket-enabled endpoints |
+| Files           | An SFTP backend and directory-browser scaffold; upload/download controls and saved-credential flow remain incomplete           |
+| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                      |
+| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                        |
+| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels            |
+| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                            |
+| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                              |
 
-### 📨 Kafka support (opt-in)
+### Capability boundaries
 
-Apache Kafka integration (topic admin, producer/consumer, ACLs, consumer groups, Schema Registry, Kafka Connect) is **off by default**. The backend crate `sorng-kafka` depends on `rdkafka`, which links against the C library `librdkafka`.
+The data model and importers recognize more protocol names than the application currently exposes as complete interactive clients. In particular:
 
-**Runtime requirement (shipping Kafka baseline):** `librdkafka ≥ 2.x` must be installed on the host. Release artifacts dynamic-link against the system library — at service-init time a `dlopen` probe surfaces a typed `LibraryMissing` error with a per-OS install hint (apt / dnf / pacman / brew / vcpkg / winget / MSYS2) if it is absent.
+- RLogin and RAW socket support are **scaffolds only**; neither is a finished interactive connection client.
+- PowerShell Remoting is **partial**: its Rust command surface and typed frontend hook exist, but there is no complete end-user remoting session UI. The connection-scoped Windows management panel runs WMI/WQL queries; it is **not** a general-purpose PowerShell terminal.
+- The mounted VNC client expects a WebSocket-capable endpoint; it does not currently bridge a standard raw-RFB endpoint itself.
+- SFTP has native commands and a directory browser, but the active session UI does not yet provide a complete credential and transfer workflow.
+- An entry in an import format, backend crate, or settings screen does not by itself mean that the full user workflow is production-ready.
 
-Build flags:
+These boundaries are intentional: this page describes usable application paths, not every protocol or experimental module present in the source tree.
 
-- `--features kafka` (shipping default) — dynamic-link against a system-installed librdkafka. Install via `apt install librdkafka-dev`, `dnf install librdkafka-devel`, `pacman -S librdkafka`, `brew install librdkafka`, `vcpkg install librdkafka:x64-windows`, or `winget install librdkafka`.
-- `--features kafka-dynamic` — explicit alias of `--features kafka` (kept for CI compatibility).
-- `--features kafka-static` — compiles librdkafka from source via CMake. Developer/CI only; fails on Windows/MSYS64 due to a known cmake path-mangling issue.
+## Quick start
 
-Example:
+### Install a published release
+
+Published installers and application bundles appear on [GitHub Releases](https://github.com/supermarsx/sortOfRemoteNG/releases). If a bundle is available for your platform, download it, launch the application, and create or import your first connection. If no bundle has been published for the current source version, use the source workflow below.
+
+Public bundles are unsigned at the operating-system level by default. Windows SmartScreen or macOS Gatekeeper may therefore show an unknown-publisher warning on first launch. Update downloads are separately verified against the updater key embedded in the application.
+
+### Run from source
+
+You need Node.js 18 or newer, the Rust toolchain pinned by [rust-toolchain.toml](rust-toolchain.toml), and your platform's Tauri build dependencies. Node.js 20 LTS is recommended because it matches CI. Windows builds require the MSVC host toolchain.
 
 ```bash
-# Shipping default (install librdkafka first — see per-OS commands above):
-cargo build --features kafka
-
-# No Kafka — default dev loop:
-cargo check --workspace --exclude sorng-kafka
+git clone https://github.com/supermarsx/sortOfRemoteNG.git
+cd sortOfRemoteNG
+npm install
+npm run tauri:dev
 ```
 
-Full platform install instructions, the runtime-probe diagnostic flow, and the MSYS64 cmake workaround live in [`src-tauri/crates/sorng-kafka/README.md`](src-tauri/crates/sorng-kafka/README.md).
-
-## 💻 Tech Stack
-
-- **Frontend**: Next.js, React, TypeScript, Tailwind CSS
-- **Backend**: Rust, Tauri
-- **Data Storage**: IndexedDB (Frontend), SQLite/JSON (Backend configurations)
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (v18+)
-- [Rust](https://rustup.rs/) (Stable)
-- **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload)
-- **macOS**: Xcode Command Line Tools
-- **Linux**: GCC and development libraries (gtk3, webkit2gtk, etc.)
-
-### Toolchain
-
-The workspace pins its Rust toolchain via [`rust-toolchain.toml`](rust-toolchain.toml)
-at the repo root. `rustup` picks this up automatically: `channel = "stable"`
-with `rustfmt` and `clippy` components, plus the `x86_64-pc-windows-msvc`
-target.
-
-**Windows contributors MUST use the MSVC host toolchain.** The GNU host
-triggers `LNK1189: export ordinal too large` link errors in several crates
-in this workspace (`rdkafka-sys`, `ironrdp-*`, `sspi-rs`). To switch:
-
-```powershell
-# One-time: install MSVC Build Tools with the "Desktop development with C++"
-# workload (ships the MSVC linker and Windows 10/11 SDK):
-#   https://visualstudio.microsoft.com/visual-cpp-build-tools/
-
-# Pin rustup's default host to MSVC and install the matching stable:
-rustup set default-host x86_64-pc-windows-msvc
-rustup default stable-x86_64-pc-windows-msvc
-rustup component add rustfmt clippy
-
-# Sanity check — `Host: x86_64-pc-windows-msvc` should appear:
-rustc -vV
-```
-
-macOS and Linux developers get the normal host-matched `stable` toolchain —
-no extra steps.
-
-CI enforces the Windows MSVC host explicitly in the `rust-check-windows`
-job (see `.github/workflows/ci.yml`). See [`contributing.md`](contributing.md)
-for the full dev-loop.
-
-### Installation
-
-1.  **Clone the repository**
-
-    ```bash
-    git clone https://github.com/supermarsx/sortOfRemoteNG.git
-    cd sortOfRemoteNG
-    ```
-
-2.  **Install dependencies**
-
-    ```bash
-    npm install
-    ```
-
-3.  **Run in Development Mode**
-    Start the Next.js dev server and the Tauri application window:
-    ```bash
-    npm run tauri:dev
-    ```
-
-### Building for Production
-
-Create an optimized executable/installer for your current OS:
+Build an installer or application bundle for the current platform with:
 
 ```bash
 npm run tauri:build
 ```
 
-Artifacts will be generated in `src-tauri/target/release/bundle/`.
+Build output is written under `src-tauri/target/release/bundle/`. See the [contributing guide](contributing.md) for platform packages, the Windows MSVC setup, tests, linting, and the Rust workspace commands.
 
-### 🔓 Releases are unsigned (open-source)
+## Security
 
-sortOfRemoteNG is an open-source project and ships **unsigned** release
-artifacts — there is no paid Apple Developer ID or Windows Authenticode code-
-signing identity. Because of this, the OS will show an "unknown / unidentified
-publisher" warning the **first** time you launch a downloaded build. This is
-**normal and expected** for unsigned open-source desktop apps; it does not
-indicate the build is unsafe and does not affect functionality.
+sortOfRemoteNG handles credentials and privileged remote operations, so its security controls and current limitations should both be explicit:
 
-How to run a release build:
+- connection storage supports authenticated encryption at rest and refuses a plaintext downgrade after encrypted production state is installed, but application settings can remain in plaintext until encryption is initialized and unlocked;
+- password-based unlock uses Argon2id, while supported systems can use the OS credential vault;
+- TLS certificate and hostname verification are enabled by default, but users can override trust verification globally or per connection, and warning/acceptance UX is not universal;
+- privileged work crosses a validated Tauri IPC boundary into Rust;
+- the REST API is off by default and binds to loopback unless remote access is deliberately enabled; and
+- application updates require a valid Ed25519/minisign signature from the key pinned in the app.
 
-- **macOS (Gatekeeper):** right-click (or Control-click) the app and choose
-  **Open**, then confirm in the dialog. Alternatively, clear the quarantine
-  flag from a terminal: `xattr -dr com.apple.quarantine /path/to/sortOfRemoteNG.app`.
-- **Windows (SmartScreen):** on the "Windows protected your PC" prompt, click
-  **More info → Run anyway**.
+Read the [security policy](security.md) for vulnerability reporting and the [encryption design](docs/security.md) for the at-rest threat model. Never publish credentials, private keys, tokens, or unredacted logs in an issue.
 
-**Auto-updates are still integrity-verified.** Although the OS bundles are not
-code-signed, the auto-updater verifies every downloaded update against a free
-[minisign](https://jedisct1.github.io/minisign/) (Ed25519) signature whose
-public key is embedded in the app. This is a separate mechanism from OS code-
-signing: dropping paid code-signing does **not** weaken update integrity — a
-tampered or corrupted update is rejected before it is installed.
+## Releases
 
-## ⚙️ Configuration & Auth
+Public releases use the rolling `YY.N` format:
 
-The application supports local user authentication backed by a file-based user
-store (`users.json`). Passwords are hashed with **Argon2id**; legacy bcrypt
-hashes from older builds are still verified and transparently re-hashed to
-Argon2id on the next successful login.
+- `YY` is the two-digit release year.
+- `N` is that year's release sequence, starting at 1.
+- The current source version is **26.1**.
 
-**Example `users.json` structure:**
+Package managers and native manifests use the machine-readable SemVer projection `26.1.0`, while the application and release title show `26.1`. The root [version.json](version.json) file is the source of truth, and CI verifies that every projection remains synchronized.
 
-```json
-[
-  {
-    "username": "admin",
-    "passwordHash": "$argon2id$v=19$m=19456,t=2,p=1$...",
-    "role": "admin"
-  }
-]
-```
+The release workflow builds bundles for Windows, macOS, and Linux. See the [release guide](docs/releases.md) for the publication path and the [updater setup](docs/release/updater-setup.md) for signature and feed details.
 
-By default the store lives at `users.json` under the app-data directory; set
-`USER_STORE_PATH` (see below) to relocate it.
+## Documentation
 
-## 🌐 REST API (opt-in, off by default)
+- [Documentation home](docs/index.md) and [getting started](docs/getting-started.md)
+- [Connections and editor](docs/connections-editor.md), [protocol status](docs/protocols.md), [network paths](docs/network-paths.md), [behaviors](docs/behaviors.md), and [import, export, and clone](docs/import-export-clone.md)
+- [Architecture](docs/architecture.md), [security](docs/security-overview.md), [testing](docs/testing.md), [releases](docs/releases.md), and [contributing](docs/contributing.md)
+- [Vulnerability reporting policy](security.md), [encryption-at-rest design](docs/security.md), and [license](license.md)
 
-sortOfRemoteNG ships an embedded REST API for **remote control and automation**
-of the connection manager (open/list sessions, run curated operations, query
-status). It is a control surface for your own devices, so it is treated
-accordingly:
+## Contributing
 
-- **Off by default.** The API server does **not** run until you enable it in
-  **Settings → API** (or via the environment, below). Nothing is exposed on a
-  fresh install.
-- **Loopback-only unless you opt in.** When enabled it binds `127.0.0.1` only.
-  It binds a routable address (`0.0.0.0`) **only** when you explicitly turn on
-  _Allow remote connections_.
-- **Authentication is forced when remote.** With _Allow remote connections_ on,
-  authentication cannot be turned off — the server refuses to start without a
-  resolvable API key (fail-closed).
-
-### Authentication
-
-Every route requires authentication **except** `GET /health` (liveness probe)
-and `POST /auth/login`. A request authenticates with **either**:
-
-- `X-API-Key: <key>` — a static key for external callers / automation, or
-- `Authorization: Bearer <jwt>` — a short-lived token from an interactive login.
-
-`POST /auth/login` takes a username/password from the user store and returns a
-short-lived **HS256 JWT**:
-
-```json
-{ "token": "<jwt>", "expires_at": "2026-07-12T14:30:00Z", "role": "admin" }
-```
-
-- `POST /auth/logout` revokes the presented token.
-- `GET  /auth/whoami` echoes the authenticated principal and role (diagnostics).
-
-**Roles:** `admin` has full access; `readonly` may call read/status routes but
-mutating requests are rejected. The role is carried as a claim in the JWT.
-
-### Configuration & environment variables
-
-Settings you configure in **Settings → API** are the source of truth. The
-following environment variables **override** the stored settings when present —
-useful for headless/automation deployments and first-run bootstrap:
-
-- `API_KEY` — static bearer key accepted via `X-API-Key` for external callers.
-- `JWT_SECRET` — HS256 signing secret for issued tokens (must be ≥ 256-bit /
-  32 bytes). **Auto-generated on first enable if unset.**
-- `USER_STORE_PATH` — path to the `users.json` auth store (default:
-  `users.json` under the app-data directory).
-
-**Precedence:** stored Settings JSON is the baseline; a present environment
-variable overrides it; if neither supplies a secret, the API key and
-`JWT_SECRET` are **auto-generated on first enable** so the server never comes up
-with an empty credential.
-
-### TLS
-
-TLS is governed by the SSL settings in **Settings → API**:
-
-- **Manual** — supply certificate and private-key file paths.
-- **Self-signed** — a certificate is auto-generated (clearly labeled as
-  self-signed; browsers/clients will warn on the untrusted chain).
-- **Let's Encrypt** — scaffolded but host-gated and currently **deferred**; live
-  ACME issuance is not enabled in this release. Use manual or self-signed for
-  now.
-
-### Rate limiting & CORS
-
-Request rate limiting (per client, `0` = off) and CORS are configurable in
-**Settings → API**. Rate limiting plus account lockout also defend
-`POST /auth/login` against brute force.
-
-### Security note
-
-The API never returns stored credentials, private keys, or secrets from any
-endpoint — there is no credential-read or export route by design. Audit logs
-record request metadata (method, path, principal, client IP, status, latency)
-with secrets and credential-bearing bodies redacted; the API key and JWTs are
-never logged.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please ensure you run tests and linting before submitting a PR.
+Issues, focused fixes, tests, documentation improvements, and well-scoped features are welcome. Before opening a pull request, run the checks that apply to your change:
 
 ```bash
-# Run tests
 npm test
-
-# Lint code
 npm run lint
+npm run format
 ```
 
-For end-to-end coverage, the repository now uses a tiered model instead of
-trying to gate every environment-sensitive test on every change. The required
-PR gate is a narrow Docker-backed SSH/SFTP smoke suite; broader Docker, WDIO,
-and specialty integration coverage stays opt-in, nightly, or lab-only.
+The required Docker-backed SSH/SFTP smoke commands and Rust workspace checks are documented in [contributing.md](contributing.md). Report security issues through the private process in [security.md](security.md), not through a public issue.
 
-See [`docs/testing/e2e-runbook.md`](docs/testing/e2e-runbook.md) for the
-current E2E tiers, local commands, and CI expectations.
+## License
 
-## 📄 License
-
-Distributed under the MIT License. See [license.md](license.md) for details.
+sortOfRemoteNG is available under the [MIT License](license.md).
