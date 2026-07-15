@@ -1,24 +1,41 @@
-import React, { useState } from 'react';
-import { Download, FileText, Database, Settings, Lock, ShieldCheck, AlertTriangle, KeyRound, FolderTree, Tags, SlidersHorizontal, Gauge } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { PasswordInput, Checkbox, NumberInput, Select } from '../ui/forms';
-import { Connection } from '../../types/connection/connection';
-import type { ExportConfig, ExportConfigUpdate, ExportInclusionConfig } from './types';
-import { AccordionSection } from './AccordionSection';
-import { DatabasePickerRow } from './DatabasePickerRow';
+import React, { useState } from "react";
+import {
+  Download,
+  FileText,
+  Database,
+  Settings,
+  Lock,
+  ShieldCheck,
+  AlertTriangle,
+  KeyRound,
+  FolderTree,
+  Tags,
+  SlidersHorizontal,
+  Gauge,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { PasswordInput, Checkbox, NumberInput, Select } from "../ui/forms";
+import { Connection } from "../../types/connection/connection";
+import type {
+  ExportConfig,
+  ExportConfigUpdate,
+  ExportInclusionConfig,
+} from "./types";
+import { AccordionSection } from "./AccordionSection";
+import { DatabasePickerRow } from "./DatabasePickerRow";
 import {
   InclusionItemPickers,
   InclusionProtocolFilter,
   type InclusionConnectionOption,
   type InclusionFolderOption,
   type InclusionListOption,
-} from './InclusionPickers';
-import { analyzePasswordStrength } from '../../hooks/security/usePasswordStrength';
-import { SettingsManager } from '../../utils/settings/settingsManager';
-import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
-import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
+} from "./InclusionPickers";
+import { analyzePasswordStrength } from "../../hooks/security/usePasswordStrength";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
+import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 
-export type { ExportConfig } from './types';
+export type { ExportConfig } from "./types";
 
 interface ExportTabProps {
   connections: Connection[];
@@ -35,21 +52,23 @@ interface ExportTabProps {
 const hasExportableCredentials = (connection: Connection): boolean =>
   Boolean(
     connection.password ||
-      connection.privateKey ||
-      connection.passphrase ||
-      connection.totpSecret ||
-      connection.basicAuthPassword ||
-      connection.rustdeskPassword,
+    connection.privateKey ||
+    connection.passphrase ||
+    connection.totpSecret ||
+    connection.basicAuthPassword ||
+    connection.rustdeskPassword,
   );
 
 const getEffectiveExportDatabaseIds = (config: ExportConfig): string[] => {
-  const exportableOptions = config.databaseOptions.filter((option) => option.isExportable);
-  if (config.scopeMode === 'current') {
+  const exportableOptions = config.databaseOptions.filter(
+    (option) => option.isExportable,
+  );
+  if (config.scopeMode === "current") {
     const currentOption = exportableOptions.find((option) => option.isCurrent);
     return currentOption ? [currentOption.id] : [];
   }
 
-  if (config.scopeMode === 'all') {
+  if (config.scopeMode === "all") {
     return exportableOptions.map((option) => option.id);
   }
 
@@ -80,7 +99,7 @@ const getConnectionDisplayPath = (
   connection: Connection,
   connectionsById: Map<string, Connection>,
 ): string => {
-  const names = [connection.name || 'Unnamed item'];
+  const names = [connection.name || "Unnamed item"];
   const visited = new Set<string>();
   let parentId = connection.parentId;
 
@@ -88,11 +107,11 @@ const getConnectionDisplayPath = (
     visited.add(parentId);
     const parent = connectionsById.get(parentId);
     if (!parent) break;
-    names.unshift(parent.name || 'Unnamed folder');
+    names.unshift(parent.name || "Unnamed folder");
     parentId = parent.parentId;
   }
 
-  return names.join(' / ');
+  return names.join(" / ");
 };
 
 const filterPreviewConnections = (
@@ -101,22 +120,29 @@ const filterPreviewConnections = (
 ): Connection[] => {
   if (!inclusion.includeConnections) return [];
 
-  const includedProtocolSet = inclusion.includedProtocols.length > 0
-    ? new Set(inclusion.includedProtocols)
-    : null;
-  const includedConnectionSet = (inclusion.includedConnectionIds ?? []).length > 0
-    ? new Set(inclusion.includedConnectionIds)
-    : null;
-  const includedTextTagSet = (inclusion.includedTextTags ?? []).length > 0
-    ? new Set(inclusion.includedTextTags)
-    : null;
-  const includedColorTagSet = (inclusion.includedColorTagIds ?? []).length > 0
-    ? new Set(inclusion.includedColorTagIds)
-    : null;
-  const includedFolderSet = (inclusion.includedFolderIds ?? []).length > 0
-    ? new Set(inclusion.includedFolderIds)
-    : null;
-  const byId = new Map(connections.map((connection) => [connection.id, connection]));
+  const includedProtocolSet =
+    inclusion.includedProtocols.length > 0
+      ? new Set(inclusion.includedProtocols)
+      : null;
+  const includedConnectionSet =
+    (inclusion.includedConnectionIds ?? []).length > 0
+      ? new Set(inclusion.includedConnectionIds)
+      : null;
+  const includedTextTagSet =
+    (inclusion.includedTextTags ?? []).length > 0
+      ? new Set(inclusion.includedTextTags)
+      : null;
+  const includedColorTagSet =
+    (inclusion.includedColorTagIds ?? []).length > 0
+      ? new Set(inclusion.includedColorTagIds)
+      : null;
+  const includedFolderSet =
+    (inclusion.includedFolderIds ?? []).length > 0
+      ? new Set(inclusion.includedFolderIds)
+      : null;
+  const byId = new Map(
+    connections.map((connection) => [connection.id, connection]),
+  );
   const leaves = connections.filter(
     (connection) =>
       !connection.isGroup &&
@@ -125,9 +151,12 @@ const filterPreviewConnections = (
       (!includedTextTagSet ||
         (connection.tags ?? []).some((tag) => includedTextTagSet.has(tag))) &&
       (!includedColorTagSet ||
-        (connection.colorTag != null && includedColorTagSet.has(connection.colorTag))) &&
+        (connection.colorTag != null &&
+          includedColorTagSet.has(connection.colorTag))) &&
       (!includedFolderSet ||
-        getAncestorFolderIds(connection, byId).some((id) => includedFolderSet.has(id))),
+        getAncestorFolderIds(connection, byId).some((id) =>
+          includedFolderSet.has(id),
+        )),
   );
   const leafIds = new Set(leaves.map((connection) => connection.id));
   const folderIds = new Set<string>();
@@ -224,10 +253,18 @@ const ExportTab: React.FC<ExportTabProps> = ({
         ]);
         if (cancelled) return;
         setVpnConnections([
-          ...ovpn.map((c) => ({ id: c.id, name: c.name, kind: 'OpenVPN' })),
-          ...wg.map((c) => ({ id: c.id, name: c.name, kind: 'WireGuard' })),
-          ...tailscale.map((c) => ({ id: c.id, name: c.name, kind: 'Tailscale' })),
-          ...zerotier.map((c) => ({ id: c.id, name: c.name, kind: 'ZeroTier' })),
+          ...ovpn.map((c) => ({ id: c.id, name: c.name, kind: "OpenVPN" })),
+          ...wg.map((c) => ({ id: c.id, name: c.name, kind: "WireGuard" })),
+          ...tailscale.map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: "Tailscale",
+          })),
+          ...zerotier.map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: "ZeroTier",
+          })),
         ]);
       } catch {
         // ignore — keep list empty
@@ -242,7 +279,10 @@ const ExportTab: React.FC<ExportTabProps> = ({
     () => proxyCollectionManager.getProfiles(),
     [],
   );
-  const proxyChains = React.useMemo(() => proxyCollectionManager.getChains(), []);
+  const proxyChains = React.useMemo(
+    () => proxyCollectionManager.getChains(),
+    [],
+  );
   const tunnelChains = React.useMemo(
     () => proxyCollectionManager.getTunnelChains(),
     [],
@@ -294,7 +334,9 @@ const ExportTab: React.FC<ExportTabProps> = ({
   );
 
   const selectableFolders: InclusionFolderOption[] = React.useMemo(() => {
-    const byId = new Map(connections.map((connection) => [connection.id, connection]));
+    const byId = new Map(
+      connections.map((connection) => [connection.id, connection]),
+    );
     return connections
       .filter((connection) => connection.isGroup)
       .map((folder) => ({
@@ -309,7 +351,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       proxyProfiles.map((profile) => ({
         id: profile.id,
         name: profile.name,
-        kind: (profile.config?.type ?? '').toUpperCase(),
+        kind: (profile.config?.type ?? "").toUpperCase(),
         description: profile.config?.host,
         searchText: [
           profile.name,
@@ -318,7 +360,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
           profile.description,
         ]
           .filter(Boolean)
-          .join(' '),
+          .join(" "),
       })),
     [proxyProfiles],
   );
@@ -329,25 +371,25 @@ const ExportTab: React.FC<ExportTabProps> = ({
         id: chain.id,
         key: `proxy:${chain.id}`,
         name: chain.name,
-        kind: 'Proxy chain',
+        kind: "Proxy chain",
         description: `${chain.layers?.length ?? 0} ${
-          (chain.layers?.length ?? 0) === 1 ? 'layer' : 'layers'
+          (chain.layers?.length ?? 0) === 1 ? "layer" : "layers"
         }`,
         searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
           .filter(Boolean)
-          .join(' '),
+          .join(" "),
       })),
       ...tunnelChains.map((chain) => ({
         id: chain.id,
         key: `tunnel:${chain.id}`,
         name: chain.name,
-        kind: 'Tunnel chain',
+        kind: "Tunnel chain",
         description: `${chain.layers?.length ?? 0} ${
-          (chain.layers?.length ?? 0) === 1 ? 'layer' : 'layers'
+          (chain.layers?.length ?? 0) === 1 ? "layer" : "layers"
         }`,
         searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
           .filter(Boolean)
-          .join(' '),
+          .join(" "),
       })),
     ],
     [proxyChains, tunnelChains],
@@ -368,19 +410,28 @@ const ExportTab: React.FC<ExportTabProps> = ({
     setBenchmarkError(null);
     setIsBenchmarking(true);
     try {
-      const optimal = await SettingsManager.getInstance().benchmarkKeyDerivation(10);
+      const optimal =
+        await SettingsManager.getInstance().benchmarkKeyDerivation(10);
       onConfigChange({ keyDerivationIterations: optimal });
     } catch (err) {
-      setBenchmarkError(err instanceof Error ? err.message : 'Benchmark failed');
+      setBenchmarkError(
+        err instanceof Error ? err.message : "Benchmark failed",
+      );
     } finally {
       setIsBenchmarking(false);
     }
   };
 
   const previewConnections = filterPreviewConnections(connections, inclusion);
-  const folderCount = previewConnections.filter((connection) => connection.isGroup).length;
-  const leafConnectionCount = previewConnections.filter((connection) => !connection.isGroup).length;
-  const credentialConnectionCount = previewConnections.filter(hasExportableCredentials).length;
+  const folderCount = previewConnections.filter(
+    (connection) => connection.isGroup,
+  ).length;
+  const leafConnectionCount = previewConnections.filter(
+    (connection) => !connection.isGroup,
+  ).length;
+  const credentialConnectionCount = previewConnections.filter(
+    hasExportableCredentials,
+  ).length;
   const protocolCount = new Set(
     previewConnections
       .filter((connection) => !connection.isGroup)
@@ -395,7 +446,9 @@ const ExportTab: React.FC<ExportTabProps> = ({
   ).sort();
   const effectiveDatabaseIds = getEffectiveExportDatabaseIds(config);
   const effectiveDatabaseCount = effectiveDatabaseIds.length;
-  const exportableDatabaseCount = config.databaseOptions.filter((option) => option.isExportable).length;
+  const exportableDatabaseCount = config.databaseOptions.filter(
+    (option) => option.isExportable,
+  ).length;
   const lockedDatabaseCount = config.databaseOptions.filter(
     (option) => option.isEncrypted && !option.isExportable,
   ).length;
@@ -406,64 +459,76 @@ const ExportTab: React.FC<ExportTabProps> = ({
     (option) => !option.isCurrent && option.connectionCount === undefined,
   );
   const connectionsPreviewLabel = hasUnknownSelectedCounts
-    ? t('exportTab.previewConnectionsLoadedOnly', {
+    ? t("exportTab.previewConnectionsLoadedOnly", {
         count: leafConnectionCount,
         defaultValue: `${leafConnectionCount} from the open database; other selected databases are counted during export`,
       })
-    : t('exportTab.previewConnectionsCount', {
+    : t("exportTab.previewConnectionsCount", {
         count: leafConnectionCount,
         defaultValue: `${leafConnectionCount} connection(s)`,
       });
   const multiDatabaseExport = effectiveDatabaseCount > 1;
   const singleDatabaseFormatBlocked =
-    multiDatabaseExport && (config.format === 'xml' || config.format === 'mremoteng');
+    multiDatabaseExport &&
+    (config.format === "xml" || config.format === "mremoteng");
   const compatibilityWarnings = [
-    ...(config.format === 'json'
+    ...(config.format === "json"
       ? []
       : [
-          config.format === 'xml'
-            ? t('exportTab.warningXmlLimited')
-            : config.format === 'mremoteng'
-              ? t('exportTab.warningMRemoteNGLimited')
-              : t('exportTab.warningInventoryOnly'),
+          config.format === "xml"
+            ? t("exportTab.warningXmlLimited")
+            : config.format === "mremoteng"
+              ? t("exportTab.warningMRemoteNGLimited")
+              : t("exportTab.warningInventoryOnly"),
         ]),
-    ...(config.format !== 'json' && inclusion.includeCredentials
-      ? [t('exportTab.warningPasswordsSkipped')]
+    ...(config.format !== "json" && inclusion.includeCredentials
+      ? [t("exportTab.warningPasswordsSkipped")]
       : []),
-    ...(config.format !== 'json' && (
-      inclusion.includeVpnData ||
+    ...(config.format !== "json" &&
+    (inclusion.includeVpnData ||
       inclusion.includeTunnelChains ||
       inclusion.includeTabGroups ||
       inclusion.includeColorTags ||
       inclusion.includeSettings ||
       inclusion.includeExportMetadata ||
-      inclusion.includeDatabaseMetadata
-    )
-      ? [t('exportTab.warningSidecarsLimited')]
+      inclusion.includeDatabaseMetadata)
+      ? [t("exportTab.warningSidecarsLimited")]
       : []),
     ...(!inclusion.includeConnections
-      ? [t('exportTab.warningConnectionsExcluded', { defaultValue: 'Connections are excluded; this export can still carry settings and metadata.' })]
+      ? [
+          t("exportTab.warningConnectionsExcluded", {
+            defaultValue:
+              "Connections are excluded; this export can still carry settings and metadata.",
+          }),
+        ]
       : []),
     ...(inclusion.includedProtocols.length > 0
-      ? [t('exportTab.warningProtocolFilter', {
-          protocols: inclusion.includedProtocols.join(', '),
-          defaultValue: `Protocol filter active: ${inclusion.includedProtocols.join(', ')}`,
-        })]
+      ? [
+          t("exportTab.warningProtocolFilter", {
+            protocols: inclusion.includedProtocols.join(", "),
+            defaultValue: `Protocol filter active: ${inclusion.includedProtocols.join(", ")}`,
+          }),
+        ]
       : []),
     ...(hasUnknownSelectedCounts
-      ? [t('exportTab.warningUnknownDatabaseCounts', { defaultValue: 'Counts for non-open databases are checked when the export runs.' })]
+      ? [
+          t("exportTab.warningUnknownDatabaseCounts", {
+            defaultValue:
+              "Counts for non-open databases are checked when the export runs.",
+          }),
+        ]
       : []),
-    ...(config.format === 'mremoteng' && config.encrypted
-      ? [t('exportTab.warningMRemoteNGEncrypted')]
+    ...(config.format === "mremoteng" && config.encrypted
+      ? [t("exportTab.warningMRemoteNGEncrypted")]
       : []),
     ...(singleDatabaseFormatBlocked
-      ? [t('exportTab.warningSingleDatabaseFormat')]
+      ? [t("exportTab.warningSingleDatabaseFormat")]
       : []),
   ];
-  type FormatGroup = 'native' | 'readable' | 'mremoteng';
-  type EncryptionScheme = 'aes-gcm' | 'aes-cbc' | 'office' | 'mremoteng';
+  type FormatGroup = "native" | "readable" | "mremoteng";
+  type EncryptionScheme = "aes-gcm" | "aes-cbc" | "office" | "mremoteng";
   interface FormatOption {
-    value: ExportConfig['format'];
+    value: ExportConfig["format"];
     label: string;
     icon: React.ComponentType<{ size?: number; className?: string }>;
     desc: string;
@@ -473,19 +538,77 @@ const ExportTab: React.FC<ExportTabProps> = ({
 
   const formatOptions: FormatOption[] = [
     // Native sortOfRemoteNG file formats — full-fidelity, AES-GCM envelope.
-    { value: 'json', label: 'JSON', icon: FileText, desc: t('exportTab.formatJson'), group: 'native', encryption: 'aes-gcm' },
-    { value: 'xml', label: 'XML', icon: Database, desc: t('exportTab.formatXml'), group: 'native', encryption: 'aes-gcm' },
-    { value: 'csv', label: 'CSV', icon: Settings, desc: t('exportTab.formatCsv'), group: 'native', encryption: 'aes-gcm' },
+    {
+      value: "json",
+      label: "JSON",
+      icon: FileText,
+      desc: t("exportTab.formatJson"),
+      group: "native",
+      encryption: "aes-gcm",
+    },
+    {
+      value: "xml",
+      label: "XML",
+      icon: Database,
+      desc: t("exportTab.formatXml"),
+      group: "native",
+      encryption: "aes-gcm",
+    },
+    {
+      value: "csv",
+      label: "CSV",
+      icon: Settings,
+      desc: t("exportTab.formatCsv"),
+      group: "native",
+      encryption: "aes-gcm",
+    },
     // Readable / inventory formats — simple AES-CBC for the text outputs,
     // OOXML password protection for Excel.
-    { value: 'txt', label: 'TXT', icon: FileText, desc: t('exportTab.formatTxt'), group: 'readable', encryption: 'aes-cbc' },
-    { value: 'markdown', label: 'Markdown', icon: FileText, desc: t('exportTab.formatMarkdown'), group: 'readable', encryption: 'aes-cbc' },
-    { value: 'html', label: 'HTML', icon: FileText, desc: t('exportTab.formatHtml'), group: 'readable', encryption: 'aes-cbc' },
-    { value: 'excel', label: 'Excel', icon: Settings, desc: t('exportTab.formatExcel'), group: 'readable', encryption: 'office' },
+    {
+      value: "txt",
+      label: "TXT",
+      icon: FileText,
+      desc: t("exportTab.formatTxt"),
+      group: "readable",
+      encryption: "aes-cbc",
+    },
+    {
+      value: "markdown",
+      label: "Markdown",
+      icon: FileText,
+      desc: t("exportTab.formatMarkdown"),
+      group: "readable",
+      encryption: "aes-cbc",
+    },
+    {
+      value: "html",
+      label: "HTML",
+      icon: FileText,
+      desc: t("exportTab.formatHtml"),
+      group: "readable",
+      encryption: "aes-cbc",
+    },
+    {
+      value: "excel",
+      label: "Excel",
+      icon: Settings,
+      desc: t("exportTab.formatExcel"),
+      group: "readable",
+      encryption: "office",
+    },
     // Foreign-tool target.
-    { value: 'mremoteng', label: 'XML - mRemoteNG compatible', icon: Database, desc: t('exportTab.formatMRemoteNG'), group: 'mremoteng', encryption: 'mremoteng' },
+    {
+      value: "mremoteng",
+      label: "XML - mRemoteNG compatible",
+      icon: Database,
+      desc: t("exportTab.formatMRemoteNG"),
+      group: "mremoteng",
+      encryption: "mremoteng",
+    },
   ];
-  const selectedFormat = formatOptions.find((format) => format.value === config.format) ?? formatOptions[0];
+  const selectedFormat =
+    formatOptions.find((format) => format.value === config.format) ??
+    formatOptions[0];
   const SelectedFormatIcon = selectedFormat.icon;
 
   const formatGroups: Array<{
@@ -494,32 +617,55 @@ const ExportTab: React.FC<ExportTabProps> = ({
     description: string;
   }> = [
     {
-      id: 'native',
-      label: t('exportTab.formatGroupNativeTitle', { defaultValue: 'Native sortOfRemoteNG formats' }) as string,
-      description: t('exportTab.formatGroupNativeDescription', { defaultValue: 'Full-fidelity round-trip. Supports the full AES-GCM + PBKDF2 envelope when encrypted.' }) as string,
+      id: "native",
+      label: t("exportTab.formatGroupNativeTitle", {
+        defaultValue: "Native sortOfRemoteNG formats",
+      }) as string,
+      description: t("exportTab.formatGroupNativeDescription", {
+        defaultValue:
+          "Full-fidelity round-trip. Supports the full AES-GCM + PBKDF2 envelope when encrypted.",
+      }) as string,
     },
     {
-      id: 'readable',
-      label: t('exportTab.formatGroupReadableTitle', { defaultValue: 'Readable / plain exports' }) as string,
-      description: t('exportTab.formatGroupReadableDescription', { defaultValue: 'Inventory list only, intended for humans or spreadsheets. Text outputs use a simple AES envelope; Excel uses the standard XLSX password (OOXML).' }) as string,
+      id: "readable",
+      label: t("exportTab.formatGroupReadableTitle", {
+        defaultValue: "Readable / plain exports",
+      }) as string,
+      description: t("exportTab.formatGroupReadableDescription", {
+        defaultValue:
+          "Inventory list only, intended for humans or spreadsheets. Text outputs use a simple AES envelope; Excel uses the standard XLSX password (OOXML).",
+      }) as string,
     },
     {
-      id: 'mremoteng',
-      label: t('exportTab.formatGroupMRemoteNGTitle', { defaultValue: 'mRemoteNG native' }) as string,
-      description: t('exportTab.formatGroupMRemoteNGDescription', { defaultValue: 'Targets mRemoteNG\'s own .xml format. Uses mRemoteNG\'s native password scheme when encrypted, so the file imports back into mRemoteNG cleanly.' }) as string,
+      id: "mremoteng",
+      label: t("exportTab.formatGroupMRemoteNGTitle", {
+        defaultValue: "mRemoteNG native",
+      }) as string,
+      description: t("exportTab.formatGroupMRemoteNGDescription", {
+        defaultValue:
+          "Targets mRemoteNG's own .xml format. Uses mRemoteNG's native password scheme when encrypted, so the file imports back into mRemoteNG cleanly.",
+      }) as string,
     },
   ];
 
   const encryptionSchemeLabel = (scheme: EncryptionScheme): string => {
     switch (scheme) {
-      case 'aes-gcm':
-        return t('exportTab.encScheme.aesGcm', { defaultValue: 'AES-GCM + PBKDF2' }) as string;
-      case 'aes-cbc':
-        return t('exportTab.encScheme.aesCbc', { defaultValue: 'AES (simple)' }) as string;
-      case 'office':
-        return t('exportTab.encScheme.office', { defaultValue: 'XLSX password (OOXML)' }) as string;
-      case 'mremoteng':
-        return t('exportTab.encScheme.mremoteng', { defaultValue: 'mRemoteNG native' }) as string;
+      case "aes-gcm":
+        return t("exportTab.encScheme.aesGcm", {
+          defaultValue: "AES-GCM + PBKDF2",
+        }) as string;
+      case "aes-cbc":
+        return t("exportTab.encScheme.aesCbc", {
+          defaultValue: "AES (simple)",
+        }) as string;
+      case "office":
+        return t("exportTab.encScheme.office", {
+          defaultValue: "XLSX password (OOXML)",
+        }) as string;
+      case "mremoteng":
+        return t("exportTab.encScheme.mremoteng", {
+          defaultValue: "mRemoteNG native",
+        }) as string;
     }
   };
   const strength = analyzePasswordStrength(config.password, {
@@ -543,30 +689,42 @@ const ExportTab: React.FC<ExportTabProps> = ({
   const scorePercent = Math.max(8, ((strength.score + 1) / 5) * 100);
   const scoreColor =
     strength.score >= 3
-      ? 'bg-success'
+      ? "bg-success"
       : strength.score === 2
-        ? 'bg-warning'
-        : 'bg-danger';
+        ? "bg-warning"
+        : "bg-danger";
   const selectedDatabaseIdSet = new Set(config.selectedDatabaseIds);
+  const exportableDatabaseIds = config.databaseOptions
+    .filter((option) => option.isExportable)
+    .map((option) => option.id);
+  const selectedExportableDatabaseCount = config.databaseOptions.filter(
+    (option) => option.isExportable && selectedDatabaseIdSet.has(option.id),
+  ).length;
+  const displayedDatabaseOptions =
+    config.scopeMode === "selected"
+      ? config.databaseOptions
+      : config.scopeMode === "all"
+        ? config.databaseOptions
+        : config.databaseOptions.filter((option) => option.isCurrent);
   const scopeOptions: Array<{
-    value: ExportConfig['scopeMode'];
+    value: ExportConfig["scopeMode"];
     label: string;
     description: string;
   }> = [
     {
-      value: 'current',
-      label: t('exportTab.scopeCurrent'),
-      description: t('exportTab.scopeCurrentDescription'),
+      value: "current",
+      label: t("exportTab.scopeCurrent"),
+      description: t("exportTab.scopeCurrentDescription"),
     },
     {
-      value: 'selected',
-      label: t('exportTab.scopeSelected'),
-      description: t('exportTab.scopeSelectedDescription'),
+      value: "selected",
+      label: t("exportTab.scopeSelected"),
+      description: t("exportTab.scopeSelectedDescription"),
     },
     {
-      value: 'all',
-      label: t('exportTab.scopeAll'),
-      description: t('exportTab.scopeAllDescription'),
+      value: "all",
+      label: t("exportTab.scopeAll"),
+      description: t("exportTab.scopeAllDescription"),
     },
   ];
 
@@ -580,6 +738,59 @@ const ExportTab: React.FC<ExportTabProps> = ({
     onConfigChange({ selectedDatabaseIds: Array.from(next) });
   };
 
+  const selectAllExportableDatabases = () => {
+    onConfigChange({ selectedDatabaseIds: exportableDatabaseIds });
+  };
+
+  const clearDatabaseSelection = () => {
+    onConfigChange({ selectedDatabaseIds: [] });
+  };
+
+  const getDatabaseDetail = (
+    database: (typeof config.databaseOptions)[number],
+  ) => {
+    if (!database.isExportable) {
+      return (
+        database.lockedReason ||
+        t("exportTab.databaseLockedSkipped", {
+          defaultValue: "Locked; skipped until unlocked.",
+        })
+      );
+    }
+
+    if (database.connectionCount !== undefined) {
+      return t("exportTab.databaseConnectionCount", {
+        count: database.connectionCount,
+        defaultValue: `${database.connectionCount} connection(s)`,
+      });
+    }
+
+    return t("exportTab.databaseCountDeferred", {
+      defaultValue:
+        "Available for export; contents are counted when export runs.",
+    });
+  };
+
+  const renderScopeSubsectionHeading = (
+    number: number,
+    title: React.ReactNode,
+    description: React.ReactNode,
+  ) => (
+    <div className="flex items-start gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+        {number}
+      </span>
+      <div className="min-w-0">
+        <h5 className="text-sm font-semibold text-[var(--color-text)]">
+          {title}
+        </h5>
+        <p className="mt-0.5 text-xs text-[var(--color-textSecondary)]">
+          {description}
+        </p>
+      </div>
+    </div>
+  );
+
   const updateInclusion = (updates: Partial<ExportInclusionConfig>) => {
     onConfigChange({ inclusion: updates });
   };
@@ -590,68 +801,118 @@ const ExportTab: React.FC<ExportTabProps> = ({
   };
 
   const inclusionOptions: Array<{
-    id: keyof Omit<ExportInclusionConfig, 'includedProtocols'>;
+    id: keyof Omit<ExportInclusionConfig, "includedProtocols">;
     label: string;
     description: string;
     disabled?: boolean;
   }> = [
     {
-      id: 'includeConnections',
-      label: t('exportTab.includeConnections', { defaultValue: 'Include connections' }),
-      description: t('exportTab.includeConnectionsDescription', { defaultValue: 'Export connection records from the selected databases.' }),
+      id: "includeConnections",
+      label: t("exportTab.includeConnections", {
+        defaultValue: "Include connections",
+      }),
+      description: t("exportTab.includeConnectionsDescription", {
+        defaultValue: "Export connection records from the selected databases.",
+      }),
     },
     {
-      id: 'includeCredentials',
-      label: t('exportTab.includePasswords'),
-      description: t('exportTab.includeCredentialsDescription', { defaultValue: 'Keep passwords, keys, tokens, and other private fields in JSON exports.' }),
+      id: "includeCredentials",
+      label: t("exportTab.includePasswords"),
+      description: t("exportTab.includeCredentialsDescription", {
+        defaultValue:
+          "Keep passwords, keys, tokens, and other private fields in JSON exports.",
+      }),
       disabled: !inclusion.includeConnections,
     },
     {
-      id: 'includeSettings',
-      label: t('exportTab.includeSettings', { defaultValue: 'Include settings' }),
-      description: t('exportTab.includeSettingsDescription', { defaultValue: 'Include database/app settings stored with each exported database.' }),
+      id: "includeSettings",
+      label: t("exportTab.includeSettings", {
+        defaultValue: "Include settings",
+      }),
+      description: t("exportTab.includeSettingsDescription", {
+        defaultValue:
+          "Include database/app settings stored with each exported database.",
+      }),
     },
     {
-      id: 'includeFolderItems',
-      label: t('exportTab.includeFolderItems', { defaultValue: 'Include folders/groups' }),
-      description: t('exportTab.includeFolderItemsDescription', { defaultValue: 'Keep folder records and parent relationships for included connections.' }),
+      id: "includeFolderItems",
+      label: t("exportTab.includeFolderItems", {
+        defaultValue: "Include folders/groups",
+      }),
+      description: t("exportTab.includeFolderItemsDescription", {
+        defaultValue:
+          "Keep folder records and parent relationships for included connections.",
+      }),
       disabled: !inclusion.includeConnections,
     },
     {
-      id: 'includeEmptyFolders',
-      label: t('exportTab.includeEmptyFolders', { defaultValue: 'Include empty folders' }),
-      description: t('exportTab.includeEmptyFoldersDescription', { defaultValue: 'Keep folders even when no exported connection is inside them.' }),
+      id: "includeEmptyFolders",
+      label: t("exportTab.includeEmptyFolders", {
+        defaultValue: "Include empty folders",
+      }),
+      description: t("exportTab.includeEmptyFoldersDescription", {
+        defaultValue:
+          "Keep folders even when no exported connection is inside them.",
+      }),
       disabled: !inclusion.includeConnections || !inclusion.includeFolderItems,
     },
     {
-      id: 'includeTabGroups',
-      label: t('exportTab.includeTabGroups', { defaultValue: 'Include tab groups' }),
-      description: t('exportTab.includeTabGroupsDescription', { defaultValue: 'Include saved tab group definitions when the format supports them.' }),
+      id: "includeTabGroups",
+      label: t("exportTab.includeTabGroups", {
+        defaultValue: "Include tab groups",
+      }),
+      description: t("exportTab.includeTabGroupsDescription", {
+        defaultValue:
+          "Include saved tab group definitions when the format supports them.",
+      }),
     },
     {
-      id: 'includeColorTags',
-      label: t('exportTab.includeColorTags', { defaultValue: 'Include color tags' }),
-      description: t('exportTab.includeColorTagsDescription', { defaultValue: 'Include the color tag palette and tag metadata.' }),
+      id: "includeColorTags",
+      label: t("exportTab.includeColorTags", {
+        defaultValue: "Include color tags",
+      }),
+      description: t("exportTab.includeColorTagsDescription", {
+        defaultValue: "Include the color tag palette and tag metadata.",
+      }),
     },
     {
-      id: 'includeVpnData',
-      label: t('exportTab.includeVpnData', { defaultValue: 'Include VPN definitions' }),
-      description: t('exportTab.includeVpnDataDescription', { defaultValue: 'Include saved OpenVPN, WireGuard, Tailscale, and ZeroTier definitions.' }),
+      id: "includeVpnData",
+      label: t("exportTab.includeVpnData", {
+        defaultValue: "Include VPN definitions",
+      }),
+      description: t("exportTab.includeVpnDataDescription", {
+        defaultValue:
+          "Include saved OpenVPN, WireGuard, Tailscale, and ZeroTier definitions.",
+      }),
     },
     {
-      id: 'includeTunnelChains',
-      label: t('exportTab.includeTunnelChains', { defaultValue: 'Include tunnel chains' }),
-      description: t('exportTab.includeTunnelChainsDescription', { defaultValue: 'Include reusable tunnel chain templates.' }),
+      id: "includeTunnelChains",
+      label: t("exportTab.includeTunnelChains", {
+        defaultValue: "Include tunnel chains",
+      }),
+      description: t("exportTab.includeTunnelChainsDescription", {
+        defaultValue: "Include reusable tunnel chain templates.",
+      }),
     },
     {
-      id: 'includeExportMetadata',
-      label: t('exportTab.includeExportMetadata', { defaultValue: 'Include export metadata' }),
-      description: t('exportTab.includeExportMetadataDescription', { defaultValue: 'Include export id, timestamp, selected databases, inclusion flags, totals, and client id.' }),
+      id: "includeExportMetadata",
+      label: t("exportTab.includeExportMetadata", {
+        defaultValue: "Include export metadata",
+      }),
+      description: t("exportTab.includeExportMetadataDescription", {
+        defaultValue:
+          "Include export id, timestamp, selected databases, inclusion flags, totals, and client id.",
+      }),
     },
     {
-      id: 'includeDatabaseMetadata',
-      label: t('exportTab.includeDatabaseMetadata', { defaultValue: 'Include database metadata' }),
-      description: t('exportTab.includeDatabaseMetadataDescription', { defaultValue: 'Include non-secret database ids, names, descriptions, encryption state, and counts.' }),
+      id: "includeDatabaseMetadata",
+      label: t("exportTab.includeDatabaseMetadata", {
+        defaultValue: "Include database metadata",
+      }),
+      description: t("exportTab.includeDatabaseMetadataDescription", {
+        defaultValue:
+          "Include non-secret database ids, names, descriptions, encryption state, and counts.",
+      }),
     },
   ];
 
@@ -663,120 +924,260 @@ const ExportTab: React.FC<ExportTabProps> = ({
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h4 id="export-preview-heading" className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+          <h4
+            id="export-preview-heading"
+            className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]"
+          >
             <SlidersHorizontal size={16} className="text-primary" />
-            {t('exportTab.previewTitle', { defaultValue: 'Export preview' })}
+            {t("exportTab.previewTitle", { defaultValue: "Export preview" })}
           </h4>
           <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
-            {t('exportTab.previewDescription', { defaultValue: 'What will be written with the current scope, format, and inclusion settings.' })}
+            {t("exportTab.previewDescription", {
+              defaultValue:
+                "What will be written with the current scope, format, and inclusion settings.",
+            })}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-sm bg-primary/15 px-2 py-1 text-primary" data-testid="export-counter-databases">
-            {t('exportTab.previewDatabaseBadge', { count: effectiveDatabaseCount, defaultValue: `${effectiveDatabaseCount} database(s)` })}
+          <span
+            className="rounded-sm bg-primary/15 px-2 py-1 text-primary"
+            data-testid="export-counter-databases"
+          >
+            {t("exportTab.previewDatabaseBadge", {
+              count: effectiveDatabaseCount,
+              defaultValue: `${effectiveDatabaseCount} database(s)`,
+            })}
           </span>
           <span className="rounded-sm bg-[var(--color-surface)] px-2 py-1 text-[var(--color-textSecondary)]">
             {selectedFormat.label}
           </span>
-          <span className={`rounded-sm px-2 py-1 ${config.encrypted ? 'bg-warning/15 text-warning' : 'bg-[var(--color-surface)] text-[var(--color-textSecondary)]'}`}>
+          <span
+            className={`rounded-sm px-2 py-1 ${config.encrypted ? "bg-warning/15 text-warning" : "bg-[var(--color-surface)] text-[var(--color-textSecondary)]"}`}
+          >
             {config.encrypted
-              ? t('exportTab.previewEncrypted', { defaultValue: 'Encrypted' })
-              : t('exportTab.previewNotEncrypted', { defaultValue: 'Not encrypted' })}
+              ? t("exportTab.previewEncrypted", { defaultValue: "Encrypted" })
+              : t("exportTab.previewNotEncrypted", {
+                  defaultValue: "Not encrypted",
+                })}
           </span>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-          <div className="space-y-3">
-            <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm" data-testid="export-preview-summary">
-              <span className="text-[var(--color-textMuted)]">{t('exportTab.previewDatabases', { defaultValue: 'Databases' })}</span>
-              <span className="font-medium text-[var(--color-text)]">
-                {t('exportTab.previewDatabaseSummary', {
-                  selected: effectiveDatabaseCount,
-                  exportable: exportableDatabaseCount,
-                  locked: lockedDatabaseCount,
-                  defaultValue: `${effectiveDatabaseCount} selected, ${exportableDatabaseCount} exportable, ${lockedDatabaseCount} locked skipped`,
+        <div className="space-y-3">
+          <div
+            className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm"
+            data-testid="export-preview-summary"
+          >
+            <span className="text-[var(--color-textMuted)]">
+              {t("exportTab.previewDatabases", { defaultValue: "Databases" })}
+            </span>
+            <span className="font-medium text-[var(--color-text)]">
+              {t("exportTab.previewDatabaseSummary", {
+                selected: effectiveDatabaseCount,
+                exportable: exportableDatabaseCount,
+                locked: lockedDatabaseCount,
+                defaultValue: `${effectiveDatabaseCount} selected, ${exportableDatabaseCount} exportable, ${lockedDatabaseCount} locked skipped`,
+              })}
+            </span>
+            <span className="text-[var(--color-textMuted)]">
+              {t("exportTab.previewConnections", {
+                defaultValue: "Connections",
+              })}
+            </span>
+            <span
+              className="font-medium text-[var(--color-text)]"
+              data-testid="export-counter-leaf"
+            >
+              {connectionsPreviewLabel}
+            </span>
+            <span className="text-[var(--color-textMuted)]">
+              {t("exportTab.previewFolders", {
+                defaultValue: "Folders/groups",
+              })}
+            </span>
+            <span
+              className="font-medium text-[var(--color-text)]"
+              data-testid="export-counter-folders"
+            >
+              {inclusion.includeFolderItems
+                ? t("exportTab.previewFolderSummary", {
+                    count: folderCount,
+                    defaultValue: `${folderCount} included`,
+                  })
+                : t("exportTab.previewFoldersOff", {
+                    defaultValue: "Folder records excluded; parents normalized",
+                  })}
+            </span>
+            <span className="text-[var(--color-textMuted)]">
+              {t("exportTab.previewCredentials", {
+                defaultValue: "Credentials",
+              })}
+            </span>
+            <span
+              className="font-medium text-[var(--color-text)]"
+              data-testid="export-counter-credentials"
+            >
+              {inclusion.includeCredentials
+                ? t("exportTab.previewCredentialsIncluded", {
+                    count: credentialConnectionCount,
+                    defaultValue: `${credentialConnectionCount} credential-bearing connection(s) included`,
+                  })
+                : t("exportTab.previewCredentialsRedacted", {
+                    count: credentialConnectionCount,
+                    defaultValue: `${credentialConnectionCount} credential-bearing connection(s) redacted`,
+                  })}
+            </span>
+            <span className="text-[var(--color-textMuted)]">
+              {t("exportTab.previewProtocols", { defaultValue: "Protocols" })}
+            </span>
+            <span
+              className="font-medium text-[var(--color-text)]"
+              data-testid="export-counter-protocols"
+            >
+              {inclusion.includedProtocols.length > 0
+                ? inclusion.includedProtocols
+                    .map((protocol) => protocol.toUpperCase())
+                    .join(", ")
+                : t("exportTab.previewAllProtocols", {
+                    count: protocolCount,
+                    defaultValue: `All current protocols (${protocolCount})`,
+                  })}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-3 text-sm">
+          <div className="flex items-start gap-2">
+            <FileText
+              size={16}
+              className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]"
+            />
+            <div>
+              <div className="font-medium text-[var(--color-text)]">
+                {t("exportTab.previewContent", {
+                  defaultValue: "Included content",
                 })}
-              </span>
-              <span className="text-[var(--color-textMuted)]">{t('exportTab.previewConnections', { defaultValue: 'Connections' })}</span>
-              <span className="font-medium text-[var(--color-text)]" data-testid="export-counter-leaf">{connectionsPreviewLabel}</span>
-              <span className="text-[var(--color-textMuted)]">{t('exportTab.previewFolders', { defaultValue: 'Folders/groups' })}</span>
-              <span className="font-medium text-[var(--color-text)]" data-testid="export-counter-folders">
-                {inclusion.includeFolderItems
-                  ? t('exportTab.previewFolderSummary', { count: folderCount, defaultValue: `${folderCount} included` })
-                  : t('exportTab.previewFoldersOff', { defaultValue: 'Folder records excluded; parents normalized' })}
-              </span>
-              <span className="text-[var(--color-textMuted)]">{t('exportTab.previewCredentials', { defaultValue: 'Credentials' })}</span>
-              <span className="font-medium text-[var(--color-text)]" data-testid="export-counter-credentials">
-                {inclusion.includeCredentials
-                  ? t('exportTab.previewCredentialsIncluded', { count: credentialConnectionCount, defaultValue: `${credentialConnectionCount} credential-bearing connection(s) included` })
-                  : t('exportTab.previewCredentialsRedacted', { count: credentialConnectionCount, defaultValue: `${credentialConnectionCount} credential-bearing connection(s) redacted` })}
-              </span>
-              <span className="text-[var(--color-textMuted)]">{t('exportTab.previewProtocols', { defaultValue: 'Protocols' })}</span>
-              <span className="font-medium text-[var(--color-text)]" data-testid="export-counter-protocols">
-                {inclusion.includedProtocols.length > 0
-                  ? inclusion.includedProtocols.map((protocol) => protocol.toUpperCase()).join(', ')
-                  : t('exportTab.previewAllProtocols', { count: protocolCount, defaultValue: `All current protocols (${protocolCount})` })}
-              </span>
+              </div>
+              <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
+                {[
+                  inclusion.includeSettings
+                    ? t("exportTab.previewSettingsOn", {
+                        defaultValue: "settings",
+                      })
+                    : undefined,
+                  inclusion.includeExportMetadata
+                    ? t("exportTab.previewExportMetadataOn", {
+                        defaultValue: "export metadata",
+                      })
+                    : undefined,
+                  inclusion.includeDatabaseMetadata
+                    ? t("exportTab.previewDatabaseMetadataOn", {
+                        defaultValue: "database metadata",
+                      })
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(", ") ||
+                  t("exportTab.previewMetadataOff", {
+                    defaultValue: "metadata and settings excluded",
+                  })}
+              </div>
             </div>
           </div>
-
-          <div className="space-y-3 text-sm">
-            <div className="flex items-start gap-2">
-              <FileText size={16} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
-              <div>
-                <div className="font-medium text-[var(--color-text)]">{t('exportTab.previewContent', { defaultValue: 'Included content' })}</div>
-                <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
-                  {[
-                    inclusion.includeSettings ? t('exportTab.previewSettingsOn', { defaultValue: 'settings' }) : undefined,
-                    inclusion.includeExportMetadata ? t('exportTab.previewExportMetadataOn', { defaultValue: 'export metadata' }) : undefined,
-                    inclusion.includeDatabaseMetadata ? t('exportTab.previewDatabaseMetadataOn', { defaultValue: 'database metadata' }) : undefined,
-                  ].filter(Boolean).join(', ') || t('exportTab.previewMetadataOff', { defaultValue: 'metadata and settings excluded' })}
-                </div>
+          <div className="flex items-start gap-2">
+            <FolderTree
+              size={16}
+              className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]"
+            />
+            <div>
+              <div className="font-medium text-[var(--color-text)]">
+                {t("exportTab.previewStructure", { defaultValue: "Structure" })}
+              </div>
+              <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
+                {inclusion.includeFolderItems
+                  ? inclusion.includeEmptyFolders
+                    ? t("exportTab.previewStructureAllFolders", {
+                        defaultValue:
+                          "Folders and empty folders are preserved.",
+                      })
+                    : t("exportTab.previewStructureAncestors", {
+                        defaultValue:
+                          "Only folders that contain exported connections are preserved.",
+                      })
+                  : t("exportTab.previewStructureFlat", {
+                      defaultValue: "Connections are exported at the root.",
+                    })}
               </div>
             </div>
-            <div className="flex items-start gap-2">
-              <FolderTree size={16} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
-              <div>
-                <div className="font-medium text-[var(--color-text)]">{t('exportTab.previewStructure', { defaultValue: 'Structure' })}</div>
-                <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
-                  {inclusion.includeFolderItems
-                    ? inclusion.includeEmptyFolders
-                      ? t('exportTab.previewStructureAllFolders', { defaultValue: 'Folders and empty folders are preserved.' })
-                      : t('exportTab.previewStructureAncestors', { defaultValue: 'Only folders that contain exported connections are preserved.' })
-                    : t('exportTab.previewStructureFlat', { defaultValue: 'Connections are exported at the root.' })}
-                </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <Tags
+              size={16}
+              className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]"
+            />
+            <div>
+              <div className="font-medium text-[var(--color-text)]">
+                {t("exportTab.previewSidecars", { defaultValue: "Sidecars" })}
               </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <Tags size={16} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
-              <div>
-                <div className="font-medium text-[var(--color-text)]">{t('exportTab.previewSidecars', { defaultValue: 'Sidecars' })}</div>
-                <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
-                  {[
-                    inclusion.includeTabGroups ? t('exportTab.includeTabGroups', { defaultValue: 'tab groups' }) : undefined,
-                    inclusion.includeColorTags ? t('exportTab.includeColorTags', { defaultValue: 'color tags' }) : undefined,
-                    inclusion.includeVpnData ? t('exportTab.includeVpnData', { defaultValue: 'VPN definitions' }) : undefined,
-                    inclusion.includeTunnelChains ? t('exportTab.includeTunnelChains', { defaultValue: 'tunnel chains' }) : undefined,
-                  ].filter(Boolean).join(', ') || t('exportTab.previewSidecarsOff', { defaultValue: 'No sidecars selected' })}
-                </div>
+              <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
+                {[
+                  inclusion.includeTabGroups
+                    ? t("exportTab.includeTabGroups", {
+                        defaultValue: "tab groups",
+                      })
+                    : undefined,
+                  inclusion.includeColorTags
+                    ? t("exportTab.includeColorTags", {
+                        defaultValue: "color tags",
+                      })
+                    : undefined,
+                  inclusion.includeVpnData
+                    ? t("exportTab.includeVpnData", {
+                        defaultValue: "VPN definitions",
+                      })
+                    : undefined,
+                  inclusion.includeTunnelChains
+                    ? t("exportTab.includeTunnelChains", {
+                        defaultValue: "tunnel chains",
+                      })
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(", ") ||
+                  t("exportTab.previewSidecarsOff", {
+                    defaultValue: "No sidecars selected",
+                  })}
               </div>
             </div>
           </div>
         </div>
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-textMuted)]">
         <span data-testid="export-counter-total">
-          {t('exportTab.previewTotalItems', { count: previewConnections.length, defaultValue: `${previewConnections.length} item(s) from the open database preview` })}
+          {t("exportTab.previewTotalItems", {
+            count: previewConnections.length,
+            defaultValue: `${previewConnections.length} item(s) from the open database preview`,
+          })}
         </span>
         <span data-testid="export-counter-exportableDatabases">
-          {t('exportTab.previewExportableDatabases', { count: exportableDatabaseCount, defaultValue: `${exportableDatabaseCount} exportable database(s)` })}
+          {t("exportTab.previewExportableDatabases", {
+            count: exportableDatabaseCount,
+            defaultValue: `${exportableDatabaseCount} exportable database(s)`,
+          })}
         </span>
         <span data-testid="export-counter-lockedDatabases">
-          {t('exportTab.previewLockedDatabases', { count: lockedDatabaseCount, defaultValue: `${lockedDatabaseCount} locked skipped` })}
+          {t("exportTab.previewLockedDatabases", {
+            count: lockedDatabaseCount,
+            defaultValue: `${lockedDatabaseCount} locked skipped`,
+          })}
         </span>
         <span data-testid="export-counter-warnings">
-          {t('exportTab.previewWarnings', { count: compatibilityWarnings.length, defaultValue: `${compatibilityWarnings.length} warning(s)` })}
+          {t("exportTab.previewWarnings", {
+            count: compatibilityWarnings.length,
+            defaultValue: `${compatibilityWarnings.length} warning(s)`,
+          })}
         </span>
       </div>
     </section>
@@ -785,103 +1186,281 @@ const ExportTab: React.FC<ExportTabProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">{t('exportTab.title')}</h3>
+        <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+          {t("exportTab.title")}
+        </h3>
         <p className="text-[var(--color-textSecondary)] mb-4">
-          {t('exportTab.description')}
+          {t("exportTab.description")}
         </p>
       </div>
 
       <section
         aria-labelledby="export-scope-heading"
-        className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-4"
+        className="space-y-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-4"
         data-testid="export-scope-section"
       >
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h4 id="export-scope-heading" className="text-sm font-medium text-[var(--color-text)]">
-              {t('exportTab.scopeTitle')}
+            <h4
+              id="export-scope-heading"
+              className="text-sm font-medium text-[var(--color-text)]"
+            >
+              {t("exportTab.scopeTitle")}
             </h4>
             <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
-              {t('exportTab.scopeDescription')}
+              {t("exportTab.scopeDescription")}
             </p>
           </div>
-          <div className="text-xs text-[var(--color-textMuted)]" data-testid="export-scope-count">
-            {t('exportTab.scopeCount', { count: effectiveDatabaseCount })}
+          <div
+            className="text-xs text-[var(--color-textMuted)]"
+            data-testid="export-scope-count"
+          >
+            {t("exportTab.scopeCount", { count: effectiveDatabaseCount })}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label={t('exportTab.scopeTitle')}>
-          {scopeOptions.map((scope) => {
-            const active = config.scopeMode === scope.value;
-            return (
-              <button
-                key={scope.value}
-                type="button"
-                data-testid={`export-scope-${scope.value}`}
-                onClick={() => onConfigChange({ scopeMode: scope.value })}
-                className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                  active
-                    ? 'border-primary bg-primary/15 text-[var(--color-text)]'
-                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]'
-                }`}
-                aria-pressed={active}
-              >
-                <span className="block text-sm font-medium">{scope.label}</span>
-                <span className="mt-1 block text-xs text-[var(--color-textMuted)]">{scope.description}</span>
-              </button>
-            );
-          })}
-        </div>
+        <div className="space-y-5">
+          <div className="space-y-3" data-testid="export-scope-subsection-mode">
+            {renderScopeSubsectionHeading(
+              1,
+              t("exportTab.scopeModeSubsectionTitle", {
+                defaultValue: "Choose source mode",
+              }),
+              t("exportTab.scopeModeSubsectionDescription", {
+                defaultValue:
+                  "Pick whether the export uses only the open database, selected databases, or every exportable database.",
+              }),
+            )}
+            <div
+              className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+              role="group"
+              aria-label={t("exportTab.scopeTitle")}
+            >
+              {scopeOptions.map((scope) => {
+                const active = config.scopeMode === scope.value;
+                return (
+                  <button
+                    key={scope.value}
+                    type="button"
+                    data-testid={`export-scope-${scope.value}`}
+                    onClick={() => onConfigChange({ scopeMode: scope.value })}
+                    className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                      active
+                        ? "border-primary bg-primary/15 text-[var(--color-text)]"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-textSecondary)] hover:border-primary/60 hover:text-[var(--color-text)]"
+                    }`}
+                    aria-pressed={active}
+                  >
+                    <span className="block text-sm font-medium">
+                      {scope.label}
+                    </span>
+                    <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
+                      {scope.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-        {config.scopeMode === 'selected' && (
-          <div className="space-y-2" data-testid="export-database-checklist">
-            {config.databaseOptions.map((database) => (
-              <DatabasePickerRow
-                key={database.id}
-                option={database}
-                dataTestId={`export-database-option-${database.id}`}
-                onUnlock={onUnlockDatabase}
-                control={
-                  <Checkbox
-                    checked={database.isExportable && selectedDatabaseIdSet.has(database.id)}
-                    disabled={!database.isExportable}
-                    onChange={(checked: boolean) => toggleDatabaseSelection(database.id, checked)}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
-                    aria-label={database.name}
+          <div
+            className="space-y-3"
+            data-testid="export-scope-subsection-databases"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              {renderScopeSubsectionHeading(
+                2,
+                t("exportTab.scopeDatabaseSubsectionTitle", {
+                  defaultValue: "Review databases",
+                }),
+                t("exportTab.scopeDatabaseSubsectionDescription", {
+                  defaultValue:
+                    "Confirm which collections are exportable, selected, locked, or skipped.",
+                }),
+              )}
+              {config.scopeMode === "selected" && (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="sor-btn-secondary-sm"
+                    onClick={selectAllExportableDatabases}
+                    disabled={exportableDatabaseIds.length === 0}
+                    data-testid="export-database-select-all"
+                  >
+                    {t("exportTab.selectAllExportableDatabases", {
+                      defaultValue: "Select exportable",
+                    })}
+                  </button>
+                  <button
+                    type="button"
+                    className="sor-btn-secondary-sm"
+                    onClick={clearDatabaseSelection}
+                    disabled={config.selectedDatabaseIds.length === 0}
+                    data-testid="export-database-clear-selection"
+                  >
+                    {t("exportTab.clearDatabaseSelection", {
+                      defaultValue: "Clear",
+                    })}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div
+              className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-textMuted)]"
+              data-testid="export-database-list-status"
+            >
+              <span className="rounded-sm bg-[var(--color-surface)] px-2 py-1">
+                {t("exportTab.databaseListSelectedCount", {
+                  selected: effectiveDatabaseCount,
+                  defaultValue: `${effectiveDatabaseCount} selected`,
+                })}
+              </span>
+              <span className="rounded-sm bg-[var(--color-surface)] px-2 py-1">
+                {t("exportTab.databaseListExportableCount", {
+                  count: exportableDatabaseCount,
+                  defaultValue: `${exportableDatabaseCount} exportable`,
+                })}
+              </span>
+              <span className="rounded-sm bg-[var(--color-surface)] px-2 py-1">
+                {t("exportTab.databaseListLockedCount", {
+                  count: lockedDatabaseCount,
+                  defaultValue: `${lockedDatabaseCount} locked`,
+                })}
+              </span>
+              {config.scopeMode === "selected" && (
+                <span className="rounded-sm bg-primary/15 px-2 py-1 text-primary">
+                  {t("exportTab.databaseListManualSelectionCount", {
+                    count: selectedExportableDatabaseCount,
+                    defaultValue: `${selectedExportableDatabaseCount} manually selected`,
+                  })}
+                </span>
+              )}
+            </div>
+
+            <div
+              className="max-h-72 space-y-2 overflow-y-auto pr-1"
+              data-testid="export-database-checklist"
+            >
+              {displayedDatabaseOptions.length > 0 ? (
+                displayedDatabaseOptions.map((database) => (
+                  <DatabasePickerRow
+                    key={database.id}
+                    option={database}
+                    dataTestId={`export-database-option-${database.id}`}
+                    onUnlock={onUnlockDatabase}
+                    control={
+                      config.scopeMode === "selected" ? (
+                        <Checkbox
+                          checked={
+                            database.isExportable &&
+                            selectedDatabaseIdSet.has(database.id)
+                          }
+                          disabled={!database.isExportable}
+                          onChange={(checked: boolean) =>
+                            toggleDatabaseSelection(database.id, checked)
+                          }
+                          className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
+                          aria-label={database.name}
+                        />
+                      ) : (
+                        <span
+                          className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] ${
+                            database.isExportable
+                              ? "border-primary/50 bg-primary/10 text-primary"
+                              : "border-warning/40 bg-warning/10 text-warning"
+                          }`}
+                          aria-hidden="true"
+                        >
+                          <Database size={12} />
+                        </span>
+                      )
+                    }
+                    detail={getDatabaseDetail(database)}
                   />
-                }
-                detail={
-                  database.isExportable
-                    ? database.connectionCount !== undefined
-                      ? t('exportTab.currentDatabaseCount', { count: database.connectionCount })
-                      : t('exportTab.databaseExportable')
-                    : database.lockedReason || t('exportTab.databaseLockedReason')
-                }
-              />
-            ))}
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm text-[var(--color-textSecondary)]">
+                  {t("exportTab.noDatabasesAvailable", {
+                    defaultValue: "No databases are available for this scope.",
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        )}
 
-        {effectiveDatabaseCount > 0 && (
-          <div className="text-xs text-[var(--color-textMuted)]" data-testid="export-scope-summary">
-            {selectedExportableOptions.map((database) => database.name).join(', ')}
+          <div
+            className="space-y-3"
+            data-testid="export-scope-subsection-summary"
+          >
+            {renderScopeSubsectionHeading(
+              3,
+              t("exportTab.scopeSummarySubsectionTitle", {
+                defaultValue: "Confirm export set",
+              }),
+              t("exportTab.scopeSummarySubsectionDescription", {
+                defaultValue:
+                  "This is the final database set the export will use after locked databases are skipped.",
+              }),
+            )}
+            <div
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+              data-testid="export-scope-summary"
+            >
+              {selectedExportableOptions.length > 0 ? (
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  data-testid="export-selected-database-list"
+                >
+                  {selectedExportableOptions.map((database) => (
+                    <span
+                      key={database.id}
+                      className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
+                    >
+                      <span className="truncate">{database.name}</span>
+                      {database.connectionCount !== undefined && (
+                        <span className="text-primary/70">
+                          {t("exportTab.databaseChipCount", {
+                            count: database.connectionCount,
+                            defaultValue: `${database.connectionCount}`,
+                          })}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-warning">
+                  {t("exportTab.noExportableDatabasesSelected", {
+                    defaultValue: "No exportable databases are selected.",
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </section>
 
       <div data-testid="export-format">
-        <label htmlFor="export-format-select" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-          {t('exportTab.exportFormat')}
+        <label
+          htmlFor="export-format-select"
+          className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+        >
+          {t("exportTab.exportFormat")}
         </label>
         <Select
           id="export-format-select"
           data-testid="export-format-select"
-          label={t('exportTab.exportFormat')}
+          label={t("exportTab.exportFormat")}
           value={config.format}
-          onChange={(format) => onConfigChange({ format: format as ExportConfig['format'] })}
+          onChange={(format) =>
+            onConfigChange({ format: format as ExportConfig["format"] })
+          }
           options={
             formatGroups.flatMap((group) => {
-              const optionsInGroup = formatOptions.filter((option) => option.group === group.id);
+              const optionsInGroup = formatOptions.filter(
+                (option) => option.group === group.id,
+              );
               if (optionsInGroup.length === 0) return [];
               return [
                 {
@@ -897,22 +1476,33 @@ const ExportTab: React.FC<ExportTabProps> = ({
                   title: `${option.desc} • ${encryptionSchemeLabel(option.encryption)}`,
                 })),
               ];
-            }) as unknown as Parameters<typeof Select>[0]['options']
+            }) as unknown as Parameters<typeof Select>[0]["options"]
           }
           variant="form"
           className="w-full sm:max-w-md"
         />
 
-        <div id="export-format-details" data-testid="export-format-details" className="mt-3 flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3">
-          <SelectedFormatIcon size={20} className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]" />
+        <div
+          id="export-format-details"
+          data-testid="export-format-details"
+          className="mt-3 flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-3"
+        >
+          <SelectedFormatIcon
+            size={20}
+            className="mt-0.5 shrink-0 text-[var(--color-textSecondary)]"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-medium text-[var(--color-text)]">{selectedFormat.label}</div>
+              <div className="text-sm font-medium text-[var(--color-text)]">
+                {selectedFormat.label}
+              </div>
               <span className="rounded-sm bg-[var(--color-surface)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--color-textSecondary)]">
                 {formatGroups.find((g) => g.id === selectedFormat.group)?.label}
               </span>
             </div>
-            <div className="mt-1 text-xs text-[var(--color-textSecondary)]">{selectedFormat.desc}</div>
+            <div className="mt-1 text-xs text-[var(--color-textSecondary)]">
+              {selectedFormat.desc}
+            </div>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-[var(--color-surface)] px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--color-textSecondary)]">
               <Lock size={10} />
               {encryptionSchemeLabel(selectedFormat.encryption)}
@@ -921,7 +1511,10 @@ const ExportTab: React.FC<ExportTabProps> = ({
         </div>
 
         {compatibilityWarnings.length > 0 && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning" data-testid="export-format-warnings">
+          <div
+            className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning"
+            data-testid="export-format-warnings"
+          >
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <ul className="space-y-1">
               {compatibilityWarnings.map((warning) => (
@@ -935,40 +1528,55 @@ const ExportTab: React.FC<ExportTabProps> = ({
       <div className="space-y-4">
         <AccordionSection
           id="export-inclusion"
-          title={t('exportTab.inclusionTitle', { defaultValue: 'Content to include' })}
-          description={t('exportTab.inclusionDescription', { defaultValue: 'Choose exactly which export parts are written. JSON keeps full fidelity; inventory formats use the filtered connection list.' })}
+          title={t("exportTab.inclusionTitle", {
+            defaultValue: "Content to include",
+          })}
+          description={t("exportTab.inclusionDescription", {
+            defaultValue:
+              "Choose exactly which export parts are written. JSON keeps full fidelity; inventory formats use the filtered connection list.",
+          })}
           icon={SlidersHorizontal}
           open={sectionsOpen.inclusion}
-          onToggle={() => toggleSection('inclusion')}
+          onToggle={() => toggleSection("inclusion")}
           dataTestId="export-inclusion-section"
         >
           <div className="grid grid-cols-1 gap-3">
             {inclusionOptions.map((option) => (
               <label
                 key={option.id}
-                className={`flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${option.disabled ? 'opacity-60' : 'cursor-pointer'}`}
+                className={`flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${option.disabled ? "opacity-60" : "cursor-pointer"}`}
                 data-testid={`export-inclusion-${option.id}`}
               >
                 <Checkbox
                   checked={Boolean(inclusion[option.id])}
                   disabled={option.disabled}
                   onChange={(value: boolean) => {
-                    if (option.id === 'includeCredentials') {
+                    if (option.id === "includeCredentials") {
                       updateCredentialInclusion(value);
                       return;
                     }
-                    updateInclusion({ [option.id]: value } as Partial<ExportInclusionConfig>);
-                    if (option.id === 'includeTabGroups') onConfigChange({ includeTabGroups: value });
-                    if (option.id === 'includeColorTags') onConfigChange({ includeColorTags: value });
-                    if (option.id === 'includeVpnData') onConfigChange({ includeVpnData: value });
-                    if (option.id === 'includeTunnelChains') onConfigChange({ includeTunnelChains: value });
+                    updateInclusion({
+                      [option.id]: value,
+                    } as Partial<ExportInclusionConfig>);
+                    if (option.id === "includeTabGroups")
+                      onConfigChange({ includeTabGroups: value });
+                    if (option.id === "includeColorTags")
+                      onConfigChange({ includeColorTags: value });
+                    if (option.id === "includeVpnData")
+                      onConfigChange({ includeVpnData: value });
+                    if (option.id === "includeTunnelChains")
+                      onConfigChange({ includeTunnelChains: value });
                   }}
                   className="mt-0.5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
                   aria-label={option.label}
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-[var(--color-text)]">{option.label}</span>
-                  <span className="mt-1 block text-xs text-[var(--color-textMuted)]">{option.description}</span>
+                  <span className="block text-sm font-medium text-[var(--color-text)]">
+                    {option.label}
+                  </span>
+                  <span className="mt-1 block text-xs text-[var(--color-textMuted)]">
+                    {option.description}
+                  </span>
                 </span>
               </label>
             ))}
@@ -1000,20 +1608,25 @@ const ExportTab: React.FC<ExportTabProps> = ({
 
         <AccordionSection
           id="export-encryption"
-          title={t('exportTab.encryptionTitle', { defaultValue: 'Encryption' })}
-          description={t('exportTab.encryptionDescription', { defaultValue: 'Optionally protect the export file with a password. AES-GCM with PBKDF2 key derivation; tune iterations for the speed/strength trade-off you want.' })}
+          title={t("exportTab.encryptionTitle", { defaultValue: "Encryption" })}
+          description={t("exportTab.encryptionDescription", {
+            defaultValue:
+              "Optionally protect the export file with a password. AES-GCM with PBKDF2 key derivation; tune iterations for the speed/strength trade-off you want.",
+          })}
           icon={Lock}
           open={sectionsOpen.encryption || config.encrypted}
-          onToggle={() => toggleSection('encryption')}
+          onToggle={() => toggleSection("encryption")}
           dataTestId="export-encryption-section"
           badge={
             config.encrypted ? (
               <span className="rounded-sm bg-warning/15 px-2 py-0.5 text-warning">
-                {t('exportTab.previewEncrypted', { defaultValue: 'Encrypted' })}
+                {t("exportTab.previewEncrypted", { defaultValue: "Encrypted" })}
               </span>
             ) : (
               <span className="text-[var(--color-textMuted)]">
-                {t('exportTab.previewNotEncrypted', { defaultValue: 'Plaintext' })}
+                {t("exportTab.previewNotEncrypted", {
+                  defaultValue: "Plaintext",
+                })}
               </span>
             )
           }
@@ -1027,10 +1640,10 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-primary"
               />
               <span className="text-sm text-[var(--color-text)]">
-                {t('exportTab.encryptExport')}
+                {t("exportTab.encryptExport")}
               </span>
               <span className="rounded-sm bg-success/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-success">
-                {t('exportTab.recommended', { defaultValue: 'Recommended' })}
+                {t("exportTab.recommended", { defaultValue: "Recommended" })}
               </span>
             </label>
             <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
@@ -1039,20 +1652,23 @@ const ExportTab: React.FC<ExportTabProps> = ({
             </span>
           </div>
           <p className="text-xs text-[var(--color-textMuted)]">
-            {t('exportTab.encryptionAlwaysOptional', { defaultValue: 'Always optional, always recommended. The scheme used adapts to the chosen export format.' })}
+            {t("exportTab.encryptionAlwaysOptional", {
+              defaultValue:
+                "Always optional, always recommended. The scheme used adapts to the chosen export format.",
+            })}
           </p>
 
           {config.encrypted && (
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
-                  {t('exportTab.encryptionPassword')}
+                  {t("exportTab.encryptionPassword")}
                 </label>
                 <PasswordInput
                   value={config.password}
-                  onChange={e => onConfigChange({ password: e.target.value })}
+                  onChange={(e) => onConfigChange({ password: e.target.value })}
                   className="sor-form-input w-full"
-                  placeholder={t('exportTab.enterPassword')}
+                  placeholder={t("exportTab.enterPassword")}
                   autoComplete="new-password"
                   data-testid="export-password"
                   aria-describedby="export-password-strength"
@@ -1062,19 +1678,27 @@ const ExportTab: React.FC<ExportTabProps> = ({
               <div className="space-y-1">
                 <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-textSecondary)]">
                   <KeyRound size={14} />
-                  <span>{t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}</span>
+                  <span>
+                    {t("exportTab.keyDerivationIterations", {
+                      defaultValue: "PBKDF2 iterations",
+                    })}
+                  </span>
                 </label>
                 <div className="flex items-center gap-2">
                   <NumberInput
                     value={config.keyDerivationIterations}
-                    onChange={(value: number) => onConfigChange({ keyDerivationIterations: value })}
+                    onChange={(value: number) =>
+                      onConfigChange({ keyDerivationIterations: value })
+                    }
                     min={10000}
                     max={5000000}
                     step={10000}
                     variant="form"
                     className="flex-1"
                     data-testid="export-kdf-iterations"
-                    aria-label={t('exportTab.keyDerivationIterations', { defaultValue: 'PBKDF2 iterations' })}
+                    aria-label={t("exportTab.keyDerivationIterations", {
+                      defaultValue: "PBKDF2 iterations",
+                    })}
                   />
                   <button
                     type="button"
@@ -1082,64 +1706,109 @@ const ExportTab: React.FC<ExportTabProps> = ({
                     disabled={isBenchmarking}
                     data-testid="export-kdf-benchmark"
                     className="sor-btn-secondary-sm flex-shrink-0"
-                    title={t('exportTab.benchmarkHint', { defaultValue: 'Run a 10-second benchmark to find the highest iteration count that completes in roughly 10 seconds on this machine.' }) as string}
+                    title={
+                      t("exportTab.benchmarkHint", {
+                        defaultValue:
+                          "Run a 10-second benchmark to find the highest iteration count that completes in roughly 10 seconds on this machine.",
+                      }) as string
+                    }
                   >
                     <Gauge size={14} />
                     <span>
                       {isBenchmarking
-                        ? t('exportTab.benchmarking', { defaultValue: 'Benchmarking…' })
-                        : t('exportTab.benchmark10s', { defaultValue: 'Benchmark (10s)' })}
+                        ? t("exportTab.benchmarking", {
+                            defaultValue: "Benchmarking…",
+                          })
+                        : t("exportTab.benchmark10s", {
+                            defaultValue: "Benchmark (10s)",
+                          })}
                     </span>
                   </button>
                 </div>
                 <p className="text-xs text-[var(--color-textMuted)]">
-                  {t('exportTab.iterationsHelp', { defaultValue: 'Higher values make password guessing slower, but export and import take longer. The benchmark picks the count that runs for ~10 seconds on this machine.' })}
+                  {t("exportTab.iterationsHelp", {
+                    defaultValue:
+                      "Higher values make password guessing slower, but export and import take longer. The benchmark picks the count that runs for ~10 seconds on this machine.",
+                  })}
                 </p>
                 {benchmarkError && (
-                  <p className="text-xs text-danger" data-testid="export-kdf-benchmark-error">
+                  <p
+                    className="text-xs text-danger"
+                    data-testid="export-kdf-benchmark-error"
+                  >
                     {benchmarkError}
                   </p>
                 )}
               </div>
 
               {config.strengthSettings.showPasswordStrength && (
-                <div id="export-password-strength" data-testid="export-password-strength" className="space-y-3 rounded-md bg-[var(--color-surface)] p-3">
+                <div
+                  id="export-password-strength"
+                  data-testid="export-password-strength"
+                  className="space-y-3 rounded-md bg-[var(--color-surface)] p-3"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
                       <ShieldCheck size={16} />
                       <span>{strength.label}</span>
                     </div>
                     {config.strengthSettings.showEntropyBits && (
-                      <span className="text-xs text-[var(--color-textMuted)]" data-testid="export-password-entropy">
+                      <span
+                        className="text-xs text-[var(--color-textMuted)]"
+                        data-testid="export-password-entropy"
+                      >
                         {strength.entropy} bits
                       </span>
                     )}
                   </div>
-                  <div className="h-2 rounded-full bg-[var(--color-border)] overflow-hidden" aria-hidden="true">
-                    <div className={`h-full ${scoreColor}`} style={{ width: `${scorePercent}%` }} />
+                  <div
+                    className="h-2 rounded-full bg-[var(--color-border)] overflow-hidden"
+                    aria-hidden="true"
+                  >
+                    <div
+                      className={`h-full ${scoreColor}`}
+                      style={{ width: `${scorePercent}%` }}
+                    />
                   </div>
                   {passwordTooWeak && (
-                    <div className="flex items-start gap-2 text-xs text-danger" data-testid="export-password-too-weak">
+                    <div
+                      className="flex items-start gap-2 text-xs text-danger"
+                      data-testid="export-password-too-weak"
+                    >
                       <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                      <span>{t('exportTab.passwordTooWeak', { defaultValue: 'This password is below the configured minimum strength.' })}</span>
+                      <span>
+                        {t("exportTab.passwordTooWeak", {
+                          defaultValue:
+                            "This password is below the configured minimum strength.",
+                        })}
+                      </span>
                     </div>
                   )}
                   {strength.warnings.length > 0 && (
-                    <ul className="space-y-1 text-xs text-warning" data-testid="export-password-warnings">
+                    <ul
+                      className="space-y-1 text-xs text-warning"
+                      data-testid="export-password-warnings"
+                    >
                       {strength.warnings.map((warning) => (
                         <li key={warning}>{warning}</li>
                       ))}
                     </ul>
                   )}
                   {strength.positiveSignals.length > 0 && (
-                    <ul className="space-y-1 text-xs text-success" data-testid="export-password-positive-signals">
+                    <ul
+                      className="space-y-1 text-xs text-success"
+                      data-testid="export-password-positive-signals"
+                    >
                       {strength.positiveSignals.map((signal) => (
                         <li key={signal}>{signal}</li>
                       ))}
                     </ul>
                   )}
                   {strength.suggestions.length > 0 && (
-                    <ul className="space-y-1 text-xs text-[var(--color-textMuted)]" data-testid="export-password-suggestions">
+                    <ul
+                      className="space-y-1 text-xs text-[var(--color-textMuted)]"
+                      data-testid="export-password-suggestions"
+                    >
                       {strength.suggestions.map((suggestion) => (
                         <li key={suggestion}>{suggestion}</li>
                       ))}
@@ -1163,12 +1832,12 @@ const ExportTab: React.FC<ExportTabProps> = ({
         {isProcessing ? (
           <>
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[var(--color-border)]"></div>
-            <span>{t('exportTab.exporting')}</span>
+            <span>{t("exportTab.exporting")}</span>
           </>
         ) : (
           <>
             <Download size={16} />
-            <span>{t('exportTab.exportButton')}</span>
+            <span>{t("exportTab.exportButton")}</span>
           </>
         )}
       </button>

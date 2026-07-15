@@ -73,7 +73,8 @@ const defaultConfig: ExportConfig = {
   includePasswords: false,
   encrypted: false,
   password: "",
-  keyDerivationIterations: defaultExportSecuritySettings.keyDerivationIterations,
+  keyDerivationIterations:
+    defaultExportSecuritySettings.keyDerivationIterations,
   includeVpnData: true,
   includeTunnelChains: true,
   includeTabGroups: true,
@@ -98,15 +99,14 @@ function renderExportTab(overrides?: {
   onConfigChange?: (update: ExportConfigUpdate) => void;
   handleExport?: () => void;
 }) {
-  const onConfigChange = overrides?.onConfigChange ?? vi.fn<(update: ExportConfigUpdate) => void>();
+  const onConfigChange =
+    overrides?.onConfigChange ?? vi.fn<(update: ExportConfigUpdate) => void>();
   const handleExport = overrides?.handleExport ?? vi.fn<() => void>();
 
   const result = render(
     <ExportTab
       connections={overrides?.connections ?? connections}
-      config={
-        overrides?.config ?? defaultConfig
-      }
+      config={overrides?.config ?? defaultConfig}
       onConfigChange={onConfigChange}
       isProcessing={overrides?.isProcessing ?? false}
       handleExport={handleExport}
@@ -125,15 +125,27 @@ describe("ExportTab", () => {
     const { onConfigChange } = renderExportTab();
 
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
-    expect(screen.getByRole("combobox", { name: "exportTab.exportFormat" })).toBeInTheDocument();
-    expect(screen.getByTestId("export-format-details")).toHaveTextContent("JSON");
-    expect(screen.getByTestId("export-format-details")).toHaveTextContent("exportTab.formatJson");
+    expect(
+      screen.getByRole("combobox", { name: "exportTab.exportFormat" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("export-format-details")).toHaveTextContent(
+      "JSON",
+    );
+    expect(screen.getByTestId("export-format-details")).toHaveTextContent(
+      "exportTab.formatJson",
+    );
     expect(screen.getByTestId("export-counter-total")).toHaveTextContent("2");
     expect(screen.getByTestId("export-counter-folders")).toHaveTextContent("1");
     expect(screen.getByTestId("export-counter-leaf")).toHaveTextContent("1");
-    expect(screen.getByTestId("export-counter-credentials")).toHaveTextContent("1");
-    expect(screen.getByTestId("export-counter-protocols")).toHaveTextContent("1");
-    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent("0");
+    expect(screen.getByTestId("export-counter-credentials")).toHaveTextContent(
+      "1",
+    );
+    expect(screen.getByTestId("export-counter-protocols")).toHaveTextContent(
+      "1",
+    );
+    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
+      "0",
+    );
 
     const selectFormat = (name: string) => {
       fireEvent.click(screen.getByTestId("export-format-select"));
@@ -186,17 +198,67 @@ describe("ExportTab", () => {
       },
     });
 
-    expect(screen.getByTestId("export-scope-section")).toHaveTextContent("exportTab.scopeTitle");
-    expect(screen.getByTestId("export-counter-databases")).toHaveTextContent("2");
-    expect(screen.getByTestId("export-counter-lockedDatabases")).toHaveTextContent("1");
+    expect(screen.getByTestId("export-scope-section")).toHaveTextContent(
+      "exportTab.scopeTitle",
+    );
+    expect(
+      screen.getByTestId("export-scope-subsection-mode"),
+    ).toHaveTextContent("Choose source mode");
+    expect(
+      screen.getByTestId("export-scope-subsection-databases"),
+    ).toHaveTextContent("Review databases");
+    expect(
+      screen.getByTestId("export-scope-subsection-summary"),
+    ).toHaveTextContent("Confirm export set");
+    expect(screen.getByTestId("export-counter-databases")).toHaveTextContent(
+      "2",
+    );
+    expect(
+      screen.getByTestId("export-counter-lockedDatabases"),
+    ).toHaveTextContent("1");
+    expect(screen.getByTestId("export-database-list-status")).toHaveTextContent(
+      "2 selected",
+    );
+    expect(screen.getByTestId("export-database-list-status")).toHaveTextContent(
+      "2 exportable",
+    );
+    expect(screen.getByTestId("export-database-list-status")).toHaveTextContent(
+      "1 locked",
+    );
+    expect(screen.getByTestId("export-database-list-status")).toHaveTextContent(
+      "2 manually selected",
+    );
+    expect(
+      screen.getByTestId("export-selected-database-list"),
+    ).toHaveTextContent("Current DB");
+    expect(
+      screen.getByTestId("export-selected-database-list"),
+    ).toHaveTextContent("Archive DB");
 
     const lockedOption = screen.getByTestId("export-database-option-db-locked");
     expect(lockedOption).toHaveTextContent("Locked DB");
     expect(lockedOption).toHaveTextContent("Unlock this database first.");
-    expect(within(lockedOption).getByRole("checkbox", { name: "Locked DB" })).toBeDisabled();
+    expect(
+      within(lockedOption).getByRole("checkbox", { name: "Locked DB" }),
+    ).toBeDisabled();
 
-    fireEvent.click(within(screen.getByTestId("export-database-option-db-archive")).getByRole("checkbox", { name: "Archive DB" }));
-    expect(onConfigChange).toHaveBeenCalledWith({ selectedDatabaseIds: ["db-current"] });
+    fireEvent.click(screen.getByTestId("export-database-select-all"));
+    expect(onConfigChange).toHaveBeenCalledWith({
+      selectedDatabaseIds: ["db-current", "db-archive"],
+    });
+
+    fireEvent.click(screen.getByTestId("export-database-clear-selection"));
+    expect(onConfigChange).toHaveBeenCalledWith({ selectedDatabaseIds: [] });
+
+    fireEvent.click(
+      within(screen.getByTestId("export-database-option-db-archive")).getByRole(
+        "checkbox",
+        { name: "Archive DB" },
+      ),
+    );
+    expect(onConfigChange).toHaveBeenCalledWith({
+      selectedDatabaseIds: ["db-current"],
+    });
 
     fireEvent.click(screen.getByTestId("export-scope-all"));
     expect(onConfigChange).toHaveBeenCalledWith({ scopeMode: "all" });
@@ -213,7 +275,9 @@ describe("ExportTab", () => {
       },
     });
 
-    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent("4");
+    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
+      "4",
+    );
     expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
       "exportTab.warningMRemoteNGLimited",
     );
@@ -237,9 +301,12 @@ describe("ExportTab", () => {
     // The encryption accordion is collapsed by default; open it before
     // interacting with the encrypt checkbox.
     fireEvent.click(
-      within(screen.getByTestId("export-encryption-section")).getByRole("button", {
-        expanded: false,
-      }),
+      within(screen.getByTestId("export-encryption-section")).getByRole(
+        "button",
+        {
+          expanded: false,
+        },
+      ),
     );
     fireEvent.click(screen.getByTestId("export-encrypt"));
 
@@ -255,7 +322,8 @@ describe("ExportTab", () => {
           includePasswords: false,
           encrypted: true,
           password: "",
-          keyDerivationIterations: defaultExportSecuritySettings.keyDerivationIterations,
+          keyDerivationIterations:
+            defaultExportSecuritySettings.keyDerivationIterations,
           includeVpnData: true,
           includeTunnelChains: true,
           includeTabGroups: true,
@@ -278,7 +346,11 @@ describe("ExportTab", () => {
   it("disables export until the config is valid and then submits", () => {
     const { handleExport, rerender } = renderExportTab({
       connections: [],
-      config: { ...defaultConfig, databaseOptions: [], selectedDatabaseIds: [] },
+      config: {
+        ...defaultConfig,
+        databaseOptions: [],
+        selectedDatabaseIds: [],
+      },
     });
 
     expect(screen.getByTestId("export-confirm")).toBeDisabled();
@@ -292,7 +364,8 @@ describe("ExportTab", () => {
           includePasswords: false,
           encrypted: true,
           password: "",
-          keyDerivationIterations: defaultExportSecuritySettings.keyDerivationIterations,
+          keyDerivationIterations:
+            defaultExportSecuritySettings.keyDerivationIterations,
           includeVpnData: true,
           includeTunnelChains: true,
           includeTabGroups: true,
@@ -316,7 +389,8 @@ describe("ExportTab", () => {
           includePasswords: false,
           encrypted: true,
           password: "top-secret",
-          keyDerivationIterations: defaultExportSecuritySettings.keyDerivationIterations,
+          keyDerivationIterations:
+            defaultExportSecuritySettings.keyDerivationIterations,
           includeVpnData: true,
           includeTunnelChains: true,
           includeTabGroups: true,
@@ -341,7 +415,8 @@ describe("ExportTab", () => {
           includePasswords: false,
           encrypted: false,
           password: "",
-          keyDerivationIterations: defaultExportSecuritySettings.keyDerivationIterations,
+          keyDerivationIterations:
+            defaultExportSecuritySettings.keyDerivationIterations,
           includeVpnData: true,
           includeTunnelChains: true,
           includeTabGroups: true,
@@ -366,10 +441,18 @@ describe("ExportTab", () => {
       },
     });
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /include vpn definitions/i }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /include tunnel chains/i }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /include tab groups/i }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /include color tags/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /include vpn definitions/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /include tunnel chains/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /include tab groups/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /include color tags/i }),
+    );
     fireEvent.change(screen.getByTestId("export-kdf-iterations"), {
       target: { value: "500000" },
     });
@@ -378,7 +461,9 @@ describe("ExportTab", () => {
     expect(onConfigChange).toHaveBeenCalledWith({ includeTunnelChains: false });
     expect(onConfigChange).toHaveBeenCalledWith({ includeTabGroups: false });
     expect(onConfigChange).toHaveBeenCalledWith({ includeColorTags: false });
-    expect(onConfigChange).toHaveBeenCalledWith({ keyDerivationIterations: 500000 });
+    expect(onConfigChange).toHaveBeenCalledWith({
+      keyDerivationIterations: 500000,
+    });
 
     rerender(
       <ExportTab
@@ -391,8 +476,12 @@ describe("ExportTab", () => {
     );
 
     expect(screen.getByTestId("export-format-select")).toHaveTextContent("CSV");
-    expect(screen.getByTestId("export-format-details")).toHaveTextContent("exportTab.formatCsv");
-    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent("2");
+    expect(screen.getByTestId("export-format-details")).toHaveTextContent(
+      "exportTab.formatCsv",
+    );
+    expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
+      "2",
+    );
   });
 
   it("renders a specific folder filter and updates included folder ids", () => {
@@ -416,8 +505,12 @@ describe("ExportTab", () => {
     fireEvent.click(
       within(screen.getByTestId("export-folders-section")).getByRole("button"),
     );
-    expect(screen.getByRole("checkbox", { name: "Group A" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Group B" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Group A" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Group B" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Group A" }));
 
@@ -436,7 +529,9 @@ describe("ExportTab", () => {
     });
 
     expect(screen.getByTestId("export-password-strength")).toBeInTheDocument();
-    expect(screen.getByTestId("export-password-entropy")).toHaveTextContent(/bits/);
+    expect(screen.getByTestId("export-password-entropy")).toHaveTextContent(
+      /bits/,
+    );
     expect(screen.getByTestId("export-password-warnings")).toHaveTextContent(
       "Repeated characters are easier to guess",
     );
