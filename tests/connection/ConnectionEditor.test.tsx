@@ -251,10 +251,162 @@ describe("ConnectionEditor", () => {
       // Open protocol dropdown and click SSH
       const protocolToggle = screen.getByTestId("editor-protocol");
       fireEvent.click(protocolToggle);
-      fireEvent.click(screen.getByRole("button", { name: /^SSH/i }));
+      fireEvent.click(screen.getByRole("option", { name: /^SSH/i }));
 
       // Dropdown toggle should now show SSH
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/SSH/);
+    });
+
+    it("should search protocol names and descriptions, then select with the keyboard", async () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      const protocolToggle = screen.getByTestId("editor-protocol");
+      fireEvent.click(protocolToggle);
+
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+      await waitFor(() => expect(searchInput).toHaveFocus());
+
+      fireEvent.change(searchInput, { target: { value: "secure shell" } });
+
+      expect(screen.getByRole("option", { name: /^SSH/i })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("option", { name: /^RDP/i }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.keyDown(searchInput, { key: "Enter" });
+
+      expect(protocolToggle).toHaveTextContent(/SSH/);
+      expect(
+        screen.queryByRole("combobox", { name: "Search protocols" }),
+      ).not.toBeInTheDocument();
+      await waitFor(() => expect(protocolToggle).toHaveFocus());
+    });
+
+    it("should filter protocol labels and value tokens across groups", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+
+      fireEvent.change(searchInput, { target: { value: "NetBox" } });
+      expect(
+        screen.getByRole("option", { name: /NetBox/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Integrations" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("group", { name: "Cloud Providers" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.change(searchInput, { target: { value: "digital-ocean" } });
+      expect(screen.getByRole("option", { name: /^DO/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Cloud Providers" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("group", { name: "Integrations" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.change(searchInput, { target: { value: "integrations" } });
+      expect(
+        screen.getByRole("group", { name: "Integrations" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("group", { name: "Protocols" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.change(searchInput, { target: { value: "cloud providers" } });
+      expect(
+        screen.getByRole("group", { name: "Cloud Providers" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("group", { name: "Integrations" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("should navigate protocol results with Arrow keys and select with Enter", async () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      const protocolToggle = screen.getByTestId("editor-protocol");
+      fireEvent.click(protocolToggle);
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+      await waitFor(() => expect(searchInput).toHaveFocus());
+
+      fireEvent.keyDown(searchInput, { key: "ArrowDown" });
+      expect(searchInput).toHaveAttribute(
+        "aria-activedescendant",
+        "editor-protocol-option-1",
+      );
+      fireEvent.keyDown(searchInput, { key: "Enter" });
+
+      expect(protocolToggle).toHaveTextContent(/SSH/);
+      expect(
+        screen.queryByRole("combobox", { name: "Search protocols" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("should preserve the selected protocol when opening and pressing Enter", async () => {
+      renderWithProviders({
+        connection: { ...mockConnection, protocol: "ssh", port: 22 },
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const protocolToggle = screen.getByTestId("editor-protocol");
+      await waitFor(() => expect(protocolToggle).toHaveTextContent(/SSH/));
+      fireEvent.click(protocolToggle);
+
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+      expect(searchInput).toHaveAttribute(
+        "aria-activedescendant",
+        "editor-protocol-option-1",
+      );
+      fireEvent.keyDown(searchInput, { key: "Enter" });
+
+      expect(protocolToggle).toHaveTextContent(/SSH/);
+      expect(protocolToggle).not.toHaveTextContent(/RDP/);
+    });
+
+    it("should show an empty state and reset protocol search when closed", async () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      const protocolToggle = screen.getByTestId("editor-protocol");
+      fireEvent.click(protocolToggle);
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+
+      fireEvent.change(searchInput, {
+        target: { value: "not-a-real-protocol" },
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "No protocols found",
+      );
+      expect(screen.getByRole("status").closest('[role="listbox"]')).toBeNull();
+
+      fireEvent.keyDown(searchInput, { key: "Escape" });
+      expect(
+        screen.queryByRole("combobox", { name: "Search protocols" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.click(protocolToggle);
+      expect(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+      ).toHaveValue("");
+      expect(screen.getByRole("option", { name: /^RDP/i })).toBeInTheDocument();
+
+      fireEvent.mouseDown(document.body);
+      expect(protocolToggle).toHaveAttribute("aria-expanded", "false");
+      expect(protocolToggle).not.toHaveAttribute("aria-controls");
     });
   });
 
@@ -294,7 +446,7 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("button", { name: /NetBox/i }));
+      fireEvent.click(screen.getByRole("option", { name: /NetBox/i }));
 
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/NetBox/);
       expect(
@@ -384,7 +536,7 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("button", { name: /Exchange/i }));
+      fireEvent.click(screen.getByRole("option", { name: /Exchange/i }));
 
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
         /Exchange/,
@@ -424,7 +576,7 @@ describe("ConnectionEditor", () => {
 
       // Open protocol dropdown and click SSH
       fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("button", { name: /^SSH/i }));
+      fireEvent.click(screen.getByRole("option", { name: /^SSH/i }));
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
       expect(screen.getByTestId("ssh-options")).toBeInTheDocument();
@@ -433,15 +585,11 @@ describe("ConnectionEditor", () => {
     it("should show HTTP options for HTTP protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      // Open protocol dropdown and click HTTP (accessible name is "HTTPWeb Service" without space)
+      // Open protocol dropdown and click HTTP by its combined label and description.
       fireEvent.click(screen.getByTestId("editor-protocol"));
-      const allButtons = screen.getAllByRole("button");
-      const httpButton = allButtons.find(
-        (btn) =>
-          btn.textContent?.includes("HTTPWeb Service") ||
-          btn.textContent?.match(/HTTP\s*Web Service/),
+      fireEvent.click(
+        screen.getByRole("option", { name: /^HTTP\s+Web Service/i }),
       );
-      fireEvent.click(httpButton!);
       fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
 
       expect(screen.getByTestId("http-options")).toBeInTheDocument();
@@ -517,7 +665,7 @@ describe("ConnectionEditor", () => {
         target: { value: "NetBox Production" },
       });
       fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("button", { name: /NetBox/i }));
+      fireEvent.click(screen.getByRole("option", { name: /NetBox/i }));
       fireEvent.change(screen.getByTestId("editor-hostname"), {
         target: { value: "netbox.internal" },
       });
@@ -581,7 +729,7 @@ describe("ConnectionEditor", () => {
         target: { value: "Exchange Hybrid" },
       });
       fireEvent.click(screen.getByTestId("editor-protocol"));
-      fireEvent.click(screen.getByRole("button", { name: /Exchange/i }));
+      fireEvent.click(screen.getByRole("option", { name: /Exchange/i }));
       fireEvent.change(screen.getByTestId("editor-exchange-environment"), {
         target: { value: "hybrid" },
       });

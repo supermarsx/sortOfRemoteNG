@@ -540,46 +540,268 @@ const ALL_PROTOCOL_OPTIONS = [
   })),
 ];
 
+type ProtocolPickerOption = (typeof ALL_PROTOCOL_OPTIONS)[number];
+
+const PROTOCOL_GROUP_SEARCH_TERMS: Record<
+  ProtocolPickerOption["group"],
+  string
+> = {
+  protocol: "protocol protocols",
+  cloud: "cloud clouds provider providers cloud provider cloud providers",
+  integration: "integration integrations",
+};
+
+const matchesProtocolSearch = (
+  option: ProtocolPickerOption,
+  normalizedQuery: string,
+) =>
+  `${option.label} ${option.desc} ${option.value} ${PROTOCOL_GROUP_SEARCH_TERMS[option.group]}`
+    .toLowerCase()
+    .includes(normalizedQuery);
+
 const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   const [open, setOpen] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [activeIndex, setActiveIndex] = React.useState(0);
   const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const optionRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const visibleOptions = React.useMemo(() => {
+    if (!normalizedQuery) return ALL_PROTOCOL_OPTIONS;
+    return ALL_PROTOCOL_OPTIONS.filter((option) =>
+      matchesProtocolSearch(option, normalizedQuery),
+    );
+  }, [normalizedQuery]);
+
+  const firstVisibleGroup = (
+    ["protocol", "cloud", "integration"] as const
+  ).find((group) => visibleOptions.some((option) => option.group === group));
+
+  const closeDropdown = React.useCallback((restoreFocus = false) => {
+    setOpen(false);
+    setSearchQuery("");
+    setActiveIndex(0);
+    if (restoreFocus) {
+      requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+  }, []);
+
+  const openDropdown = React.useCallback(() => {
+    const selectedIndex = ALL_PROTOCOL_OPTIONS.findIndex(
+      (option) => option.value === mgr.formData.protocol,
+    );
+    setSearchQuery("");
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    setOpen(true);
+  }, [mgr.formData.protocol]);
 
   // Close on outside click
   React.useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
+        closeDropdown();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, [open, closeDropdown]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
   }, [open]);
+
+  React.useEffect(() => {
+    if (!open || activeIndex < 0) return;
+    optionRefs.current[activeIndex]?.scrollIntoView?.({ block: "nearest" });
+  }, [open, activeIndex]);
 
   const current = ALL_PROTOCOL_OPTIONS.find(
     (p) => p.value === mgr.formData.protocol,
   );
   const CurrentIcon = current?.icon ?? Cloud;
 
+  const selectProtocol = React.useCallback(
+    (value: string) => {
+      mgr.handleProtocolChange(value);
+      closeDropdown(true);
+    },
+    [mgr, closeDropdown],
+  );
+
+  const updateSearchQuery = (nextQuery: string) => {
+    const nextNormalizedQuery = nextQuery.trim().toLowerCase();
+    const hasMatches =
+      !nextNormalizedQuery ||
+      ALL_PROTOCOL_OPTIONS.some((option) =>
+        matchesProtocolSearch(option, nextNormalizedQuery),
+      );
+    setSearchQuery(nextQuery);
+    setActiveIndex(hasMatches ? 0 : -1);
+  };
+
+  const handleSearchKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDropdown(true);
+      return;
+    }
+
+    if (visibleOptions.length === 0) return;
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((currentIndex) => {
+        const start = currentIndex < 0 ? 0 : currentIndex;
+        return (start + delta + visibleOptions.length) % visibleOptions.length;
+      });
+      return;
+    }
+
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : visibleOptions.length - 1);
+      return;
+    }
+
+    if (event.key === "Enter" && activeIndex >= 0) {
+      event.preventDefault();
+      selectProtocol(visibleOptions[activeIndex].value);
+    }
+  };
+
+  const renderProtocolGroup = (
+    group: "protocol" | "cloud" | "integration",
+    label: string,
+  ) => {
+    const options = visibleOptions.filter((option) => option.group === group);
+    if (options.length === 0) return null;
+
+    return (
+      <div
+        key={group}
+        role="group"
+        aria-label={label}
+        className={`${group === firstVisibleGroup ? "" : "border-t border-[var(--color-border)]"} py-1`}
+      >
+        <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
+          {label}
+        </p>
+        {options.map(({ value, label: optionLabel, desc, icon: Icon }) => {
+          const optionIndex = visibleOptions.findIndex(
+            (option) => option.value === value,
+          );
+          const isSelected = mgr.formData.protocol === value;
+          const isHighlighted = activeIndex === optionIndex;
+          return (
+            <button
+              key={value}
+              ref={(node) => {
+                optionRefs.current[optionIndex] = node;
+              }}
+              id={`editor-protocol-option-${optionIndex}`}
+              type="button"
+              role="option"
+              aria-selected={isSelected}
+              tabIndex={-1}
+              onMouseEnter={() => setActiveIndex(optionIndex)}
+              onClick={() => selectProtocol(value)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                isSelected
+                  ? "bg-primary/15 text-primary"
+                  : isHighlighted
+                    ? "bg-[var(--color-surfaceHover)] text-[var(--color-text)]"
+                    : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+              }`}
+            >
+              <Icon
+                size={16}
+                className={`flex-shrink-0 ${
+                  isSelected
+                    ? "text-primary"
+                    : "text-[var(--color-textSecondary)]"
+                }`}
+              />
+              <span
+                className="min-w-0 flex-1 truncate"
+                title={`${optionLabel} — ${desc}`}
+              >
+                <span className="font-medium">{optionLabel}</span>{" "}
+                <span
+                  className={`text-xs ${isSelected ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
+                >
+                  {desc}
+                </span>
+              </span>
+              {isSelected && (
+                <Check
+                  size={14}
+                  className="ml-auto flex-shrink-0 text-primary"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    <div ref={ref} className="relative">
-      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+    <div
+      ref={ref}
+      className="relative"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget as Node | null;
+        if (nextTarget && !event.currentTarget.contains(nextTarget)) {
+          closeDropdown();
+        }
+      }}
+    >
+      <label
+        id="editor-protocol-label"
+        className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1"
+      >
         Protocol
       </label>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? closeDropdown() : openDropdown())}
+        onKeyDown={(event) => {
+          if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            openDropdown();
+          }
+        }}
         data-testid="editor-protocol"
+        aria-labelledby="editor-protocol-label editor-protocol-value"
         aria-expanded={open}
         aria-haspopup="listbox"
+        aria-controls={open ? "editor-protocol-options" : undefined}
         className="w-full flex items-center gap-2.5 px-3 py-1.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm hover:border-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 transition-all"
       >
         <CurrentIcon
           size={16}
           className="text-[var(--color-textSecondary)] flex-shrink-0"
         />
-        <span className="font-medium">{current?.label ?? "Select"}</span>
-        <span className="text-[var(--color-textMuted)] text-xs">
-          {current?.desc ?? ""}
+        <span
+          id="editor-protocol-value"
+          className="min-w-0 flex-1 truncate text-left"
+          title={
+            current ? `${current.label} — ${current.desc}` : "Select protocol"
+          }
+        >
+          <span className="font-medium">{current?.label ?? "Select"}</span>{" "}
+          <span className="text-xs text-[var(--color-textMuted)]">
+            {current?.desc ?? ""}
+          </span>
         </span>
         <ChevronDown
           size={14}
@@ -589,136 +811,82 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       </button>
 
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden max-h-72 overflow-y-auto">
-          {/* Main protocols */}
-          <div className="py-1">
-            {PROTOCOL_OPTIONS.map(({ value, label, desc, icon: Icon }) => {
-              const isActive = mgr.formData.protocol === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    mgr.handleProtocolChange(value);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
-                    isActive
-                      ? "bg-primary/15 text-primary"
-                      : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
-                  }`}
-                >
-                  <Icon
-                    size={16}
-                    className={
-                      isActive
-                        ? "text-primary"
-                        : "text-[var(--color-textSecondary)]"
-                    }
-                  />
-                  <span className="font-medium">{label}</span>
-                  <span
-                    className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
-                  >
-                    {desc}
-                  </span>
-                  {isActive && (
-                    <Check size={14} className="ml-auto text-primary" />
-                  )}
-                </button>
-              );
-            })}
+        <div className="absolute z-50 left-0 right-0 mt-1 flex max-h-72 flex-col bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+            <Search
+              size={15}
+              aria-hidden="true"
+              className="flex-shrink-0 text-[var(--color-textMuted)]"
+            />
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={searchQuery}
+              onChange={(event) => updateSearchQuery(event.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              data-testid="editor-protocol-search"
+              role="combobox"
+              aria-label="Search protocols"
+              aria-autocomplete="list"
+              aria-expanded="true"
+              aria-controls="editor-protocol-options"
+              aria-activedescendant={
+                activeIndex >= 0
+                  ? `editor-protocol-option-${activeIndex}`
+                  : undefined
+              }
+              autoComplete="off"
+              placeholder="Search protocols, clouds, integrations…"
+              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  updateSearchQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Clear protocol search"
+                className="rounded p-0.5 text-[var(--color-textMuted)] transition-colors hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
-          {/* Cloud providers */}
-          <div className="border-t border-[var(--color-border)] py-1">
-            <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
-              Cloud Providers
-            </p>
-            {CLOUD_OPTIONS.map(({ value, label, desc }) => {
-              const isActive = mgr.formData.protocol === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    mgr.handleProtocolChange(value);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
-                    isActive
-                      ? "bg-primary/15 text-primary"
-                      : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
-                  }`}
-                >
-                  <Cloud
-                    size={16}
-                    className={
-                      isActive
-                        ? "text-primary"
-                        : "text-[var(--color-textSecondary)]"
-                    }
-                  />
-                  <span className="font-medium">{label}</span>
-                  <span
-                    className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
-                  >
-                    {desc}
-                  </span>
-                  {isActive && (
-                    <Check size={14} className="ml-auto text-primary" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Integrations */}
-          {INTEGRATION_PROTOCOL_OPTIONS.length > 0 && (
-            <div className="border-t border-[var(--color-border)] py-1">
-              <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
-                Integrations
-              </p>
-              {INTEGRATION_PROTOCOL_OPTIONS.map(
-                ({ value, label, desc, icon: Icon }) => {
-                  const isActive = mgr.formData.protocol === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => {
-                        mgr.handleProtocolChange(value);
-                        setOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
-                        isActive
-                          ? "bg-primary/15 text-primary"
-                          : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
-                      }`}
-                    >
-                      <Icon
-                        size={16}
-                        className={
-                          isActive
-                            ? "text-primary"
-                            : "text-[var(--color-textSecondary)]"
-                        }
-                      />
-                      <span className="font-medium">{label}</span>
-                      <span
-                        className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
-                      >
-                        {desc}
-                      </span>
-                      {isActive && (
-                        <Check size={14} className="ml-auto text-primary" />
-                      )}
-                    </button>
-                  );
-                },
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div
+              id="editor-protocol-options"
+              role="listbox"
+              aria-label="Available protocols"
+            >
+              {visibleOptions.length > 0 && (
+                <>
+                  {renderProtocolGroup("protocol", "Protocols")}
+                  {renderProtocolGroup("cloud", "Cloud Providers")}
+                  {renderProtocolGroup("integration", "Integrations")}
+                </>
               )}
             </div>
-          )}
+            {visibleOptions.length === 0 && (
+              <div
+                role="status"
+                className="flex flex-col items-center gap-1 px-4 py-6 text-center"
+              >
+                <Search
+                  size={20}
+                  aria-hidden="true"
+                  className="text-[var(--color-textMuted)]"
+                />
+                <span className="text-sm font-medium text-[var(--color-textSecondary)]">
+                  No protocols found
+                </span>
+                <span className="text-xs text-[var(--color-textMuted)]">
+                  Try a protocol name or description.
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
