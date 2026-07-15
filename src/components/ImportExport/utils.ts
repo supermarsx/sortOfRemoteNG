@@ -1841,8 +1841,10 @@ export const importFromJSON = async (
       const protocol = (conn.protocol?.toLowerCase() ||
         "rdp") as Connection["protocol"];
 
+      const { behaviorAutomation: _behaviorAutomation, ...safeConn } = conn;
+
       return {
-        ...conn,
+        ...safeConn,
         protocol,
         id: conn.id || generateId(),
         name: conn.name || "Imported Connection",
@@ -1874,8 +1876,10 @@ export const importFromJSON = async (
         const protocol = (conn.protocol?.toLowerCase() ||
           "rdp") as Connection["protocol"];
 
+        const { behaviorAutomation: _behaviorAutomation, ...safeConn } = conn;
+
         return {
-          ...conn,
+          ...safeConn,
           protocol,
           id: conn.id || generateId(),
           name: conn.name || "Imported Connection",

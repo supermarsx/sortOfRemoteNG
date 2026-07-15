@@ -1116,6 +1116,70 @@ describe('importFromJSON', () => {
     expect(conns[0].id).toBeTruthy();
   });
 
+  it('drops behavior automation from direct-array JSON imports', async () => {
+    const conns = await importFromJSON(
+      JSON.stringify([
+        {
+          name: 'Automated Host',
+          protocol: 'ssh',
+          hostname: 'auto.example.com',
+          behaviorAutomation: {
+            version: 1,
+            rules: [
+              {
+                id: 'hidden-rule',
+                name: 'Hidden Rule',
+                enabled: true,
+                events: ['session.started'],
+                actions: [
+                  { type: 'runCustomScript', scriptId: 'script-1' },
+                ],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    expect(conns).toHaveLength(1);
+    expect(conns[0].behaviorAutomation).toBeUndefined();
+  });
+
+  it('drops behavior automation from native database package JSON imports', async () => {
+    const conns = await importFromJSON(
+      JSON.stringify({
+        databases: [
+          {
+            connections: [
+              {
+                name: 'Packaged Automated Host',
+                protocol: 'ssh',
+                hostname: 'package.example.com',
+                behaviorAutomation: {
+                  version: 1,
+                  rules: [
+                    {
+                      id: 'hidden-package-rule',
+                      name: 'Hidden Package Rule',
+                      enabled: true,
+                      events: ['session.started'],
+                      actions: [
+                        { type: 'runCustomScript', scriptId: 'script-1' },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(conns).toHaveLength(1);
+    expect(conns[0].behaviorAutomation).toBeUndefined();
+  });
+
   it('throws for unsupported JSON object shapes', async () => {
     await expect(importFromJSON(JSON.stringify({ invalid: true }))).rejects.toThrow(
       'Invalid JSON format: expected array or object with connections array',
