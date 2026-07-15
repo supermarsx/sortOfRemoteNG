@@ -10,6 +10,7 @@ pub mod dsc;
 pub mod execution;
 pub mod interactive;
 pub mod jea;
+pub mod runspace_session;
 pub mod serialization;
 pub mod service;
 pub mod session;

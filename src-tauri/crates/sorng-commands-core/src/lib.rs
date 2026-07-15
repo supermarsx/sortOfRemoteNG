@@ -98,6 +98,9 @@ mod passkey_commands;
 #[cfg(feature = "ops")]
 #[path = "../../../src/powershell_commands.rs"]
 mod powershell_commands;
+#[cfg(feature = "ops")]
+#[path = "../../../src/powershell_session_commands.rs"]
+mod powershell_session_commands;
 #[path = "../../../src/pptp_commands.rs"]
 mod pptp_commands;
 #[path = "../../../src/proxy_commands.rs"]

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::clixml::PsObject;
 use crate::clixml::{PsValue, parse_clixml};
 use crate::error::{PsrpError, Result};
-use crate::message::MessageType;
+use crate::message::{MessageType, PsrpMessage};
 use crate::records::{
     ErrorRecord, FromPsObject, InformationRecord, ProgressRecord, TraceRecord, WarningRecord,
 };
@@ -643,6 +643,17 @@ impl<T: PsrpTransport> std::fmt::Debug for PipelineHandle<'_, T> {
 }
 
 impl<T: PsrpTransport> PipelineHandle<'_, T> {
+    /// Receive the next decoded PSRP message while retaining control of this
+    /// live pipeline.
+    ///
+    /// This is the low-level counterpart to [`collect`](Self::collect) for
+    /// callers that need to multiplex output with input, cancellation, or UI
+    /// event delivery. A runspace pool permits only one live pipeline handle,
+    /// so the returned message belongs to the active pipeline or its pool.
+    pub async fn next_message(&mut self) -> Result<PsrpMessage> {
+        self.pool.next_message().await
+    }
+
     /// Send one input object to the pipeline.
     ///
     /// Errors if the pipeline was configured with `no_input = true`
@@ -1035,6 +1046,34 @@ mod tests {
         // Two outgoing frames for open + 1 CreatePipeline + 3 PipelineInput
         // + 1 EndOfPipelineInput = 7.
         assert_eq!(t.sent().len(), 7);
+        let _ = pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn pipeline_handle_receives_one_message_without_consuming_handle() {
+        let t = MockTransport::new();
+        t.push_incoming(encode_message(
+            10,
+            &make_data_message(MessageType::PipelineOutput, "<S>first</S>".into()),
+        ));
+        t.push_incoming(encode_message(
+            11,
+            &make_state_message(
+                MessageType::PipelineState,
+                "PipelineState",
+                PipelineState::Completed as i32,
+            ),
+        ));
+
+        let mut pool = opened_pool_with(&t).await;
+        let mut handle = Pipeline::new("'first'").start(&mut pool).await.unwrap();
+
+        let message = handle.next_message().await.unwrap();
+        assert_eq!(message.message_type, MessageType::PipelineOutput);
+        assert_eq!(message.data, "<S>first</S>");
+
+        let result = handle.collect().await.unwrap();
+        assert_eq!(result.state, PipelineState::Completed);
         let _ = pool.close().await;
     }
 

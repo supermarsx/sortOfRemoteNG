@@ -77,6 +77,11 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let ps_remoting_state: PsRemotingServiceState = Arc::new(Mutex::new(PsRemotingService::new()));
     app.manage(ps_remoting_state);
 
+    // Shipping PSRP runspace service. Each session owns its own actor and SSH
+    // transport; this state intentionally has no global I/O mutex.
+    let powershell_session_state: PowerShellSessionServiceState = PowerShellSessionService::new();
+    app.manage(powershell_session_state);
+
     let gpg_agent_state: gpg_agent::types::GpgServiceState =
         Arc::new(Mutex::new(gpg_agent::service::GpgAgentService::new()));
     app.manage(gpg_agent_state);

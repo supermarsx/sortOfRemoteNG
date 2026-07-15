@@ -222,6 +222,10 @@ pub(crate) use postfix::service::PostfixServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use powershell::service::{PsRemotingService, PsRemotingServiceState};
 #[cfg(feature = "ops")]
+pub(crate) use powershell::runspace_session::{
+    PowerShellSessionService, PowerShellSessionServiceState,
+};
+#[cfg(feature = "ops")]
 pub(crate) use proc_mgmt::service::ProcServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use procmail::service::ProcmailServiceState;

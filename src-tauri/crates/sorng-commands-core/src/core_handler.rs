@@ -1129,6 +1129,35 @@ pub fn is_command(command: &str) -> bool {
             false
         }
     } || {
+        // ── Live PowerShell PSRP sessions (15) ───────────────────────
+        // This shipping SSH/runspace surface is intentionally separate
+        // from the legacy 53-command administrative facade above.
+        #[cfg(feature = "ops")]
+        {
+            matches!(
+                command,
+                "open_powershell_session"
+                    | "attach_powershell_session"
+                    | "detach_powershell_session"
+                    | "close_powershell_session"
+                    | "close_all_powershell_sessions"
+                    | "start_powershell_pipeline"
+                    | "write_powershell_pipeline_input"
+                    | "end_powershell_pipeline_input"
+                    | "cancel_powershell_pipeline"
+                    | "get_powershell_session"
+                    | "get_powershell_session_replay"
+                    | "list_powershell_sessions"
+                    | "get_powershell_session_capabilities"
+                    | "get_powershell_session_stats"
+                    | "get_powershell_session_diagnostics"
+            )
+        }
+        #[cfg(not(feature = "ops"))]
+        {
+            false
+        }
+    } || {
         // ── Backup (8) ───────────────────────────────────────────────
         matches!(
             command,
@@ -2458,6 +2487,37 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         powershell_commands::ps_clear_events,
         #[cfg(feature = "ops")]
         powershell_commands::ps_cleanup,
+        // ── Live PowerShell PSRP sessions (SSH, 15) ──────────────────
+        #[cfg(feature = "ops")]
+        powershell_session_commands::open_powershell_session,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::attach_powershell_session,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::detach_powershell_session,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::close_powershell_session,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::close_all_powershell_sessions,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::start_powershell_pipeline,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::write_powershell_pipeline_input,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::end_powershell_pipeline_input,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::cancel_powershell_pipeline,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::get_powershell_session,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::get_powershell_session_replay,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::list_powershell_sessions,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::get_powershell_session_capabilities,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::get_powershell_session_stats,
+        #[cfg(feature = "ops")]
+        powershell_session_commands::get_powershell_session_diagnostics,
         // ── Backup Verify (35) — t40-e3-F1 ────────────────────────────
         // Gated behind `ops` (module declared `#[cfg(feature = "ops")]`
         // in lib.rs). Mirrors the `backup_verify_*` arm in `is_command`
@@ -2564,6 +2624,25 @@ mod tests {
         "list_raw_socket_sessions",
     ];
 
+    #[cfg(feature = "ops")]
+    const POWERSHELL_SESSION_COMMANDS: &[&str] = &[
+        "open_powershell_session",
+        "attach_powershell_session",
+        "detach_powershell_session",
+        "close_powershell_session",
+        "close_all_powershell_sessions",
+        "start_powershell_pipeline",
+        "write_powershell_pipeline_input",
+        "end_powershell_pipeline_input",
+        "cancel_powershell_pipeline",
+        "get_powershell_session",
+        "get_powershell_session_replay",
+        "list_powershell_sessions",
+        "get_powershell_session_capabilities",
+        "get_powershell_session_stats",
+        "get_powershell_session_diagnostics",
+    ];
+
     #[test]
     fn raw_and_rlogin_command_recognition_matches_handler_registration() {
         let source = include_str!("core_handler.rs");
@@ -2580,5 +2659,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[cfg(feature = "ops")]
+    #[test]
+    fn powershell_session_commands_are_recognized_and_registered_separately() {
+        let source = include_str!("core_handler.rs");
+        for command in POWERSHELL_SESSION_COMMANDS {
+            assert!(is_command(command), "{command} missing from is_command");
+            let registration = format!("powershell_session_commands::{command},");
+            assert!(
+                source.contains(&registration),
+                "{command} missing from generate_handler"
+            );
+        }
+        assert_eq!(POWERSHELL_SESSION_COMMANDS.len(), 15);
     }
 }
