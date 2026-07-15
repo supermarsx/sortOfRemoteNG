@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   CimInstance,
   CimMethodParams,
@@ -28,7 +28,8 @@ import type {
   PsSessionConfiguration,
   SetSessionConfigurationParams,
   WinRmServiceStatus,
-} from '../../types/powershell';
+} from "../../types/powershell";
+import { CURRENT_POWER_SHELL_REMOTING_CAPABILITIES } from "../../utils/powershell/currentPowerShellCapabilities";
 
 /**
  * React hook wrapping the 53 `ps_*` Tauri commands exposed by
@@ -43,130 +44,131 @@ export function usePowerShellClient() {
   // ─── Session lifecycle ───────────────────────────────────────────
   const newSession = useCallback(
     (config: PsRemotingConfig, name?: string) =>
-      invoke<PsSession>('ps_new_session', { config, name }),
+      invoke<PsSession>("ps_new_session", { config, name }),
     [],
   );
 
   const getSession = useCallback(
-    (sessionId: string) =>
-      invoke<PsSession>('ps_get_session', { sessionId }),
+    (sessionId: string) => invoke<PsSession>("ps_get_session", { sessionId }),
     [],
   );
 
   const listSessions = useCallback(
-    () => invoke<PsSession[]>('ps_list_sessions'),
+    () => invoke<PsSession[]>("ps_list_sessions"),
     [],
   );
 
   const disconnectSession = useCallback(
-    (sessionId: string) =>
-      invoke<void>('ps_disconnect_session', { sessionId }),
+    (sessionId: string) => invoke<void>("ps_disconnect_session", { sessionId }),
     [],
   );
 
   const reconnectSession = useCallback(
-    (sessionId: string) =>
-      invoke<void>('ps_reconnect_session', { sessionId }),
+    (sessionId: string) => invoke<void>("ps_reconnect_session", { sessionId }),
     [],
   );
 
   const removeSession = useCallback(
-    (sessionId: string) => invoke<void>('ps_remove_session', { sessionId }),
+    (sessionId: string) => invoke<void>("ps_remove_session", { sessionId }),
     [],
   );
 
   const removeAllSessions = useCallback(
-    () => invoke<number>('ps_remove_all_sessions'),
+    () => invoke<number>("ps_remove_all_sessions"),
     [],
   );
 
   // ─── Command execution ───────────────────────────────────────────
   const invokeCommand = useCallback(
     (sessionId: string, params: PsInvokeCommandParams) =>
-      invoke<PsCommandOutput>('ps_invoke_command', { sessionId, params }),
+      invoke<PsCommandOutput>("ps_invoke_command", { sessionId, params }),
     [],
   );
 
   const invokeCommandFanout = useCallback(
     (sessionIds: string[], params: PsInvokeCommandParams) =>
       invoke<Array<PsCommandOutput | { error: string }>>(
-        'ps_invoke_command_fanout',
+        "ps_invoke_command_fanout",
         { sessionIds, params },
       ),
     [],
   );
 
   const stopCommand = useCallback(
-    (sessionId: string, commandId: string) =>
-      invoke<void>('ps_stop_command', { sessionId, commandId }),
+    (sessionId: string, invocationId: string) =>
+      invoke<void>("ps_stop_command", {
+        sessionId,
+        // Keep the registered Tauri argument name until the backend command
+        // surface is versioned; the value itself is an invocation ID.
+        commandId: invocationId,
+      }),
     [],
   );
 
   // ─── Interactive sessions ────────────────────────────────────────
   const enterSession = useCallback(
-    (sessionId: string) => invoke<string>('ps_enter_session', { sessionId }),
+    (sessionId: string) => invoke<string>("ps_enter_session", { sessionId }),
     [],
   );
 
   const executeInteractiveLine = useCallback(
     (sessionId: string, line: string) =>
-      invoke<string>('ps_execute_interactive_line', { sessionId, line }),
+      invoke<string>("ps_execute_interactive_line", { sessionId, line }),
     [],
   );
 
   const tabComplete = useCallback(
     (sessionId: string, partial: string) =>
-      invoke<string[]>('ps_tab_complete', { sessionId, partial }),
+      invoke<string[]>("ps_tab_complete", { sessionId, partial }),
     [],
   );
 
   const exitSession = useCallback(
-    (sessionId: string) => invoke<void>('ps_exit_session', { sessionId }),
+    (sessionId: string) => invoke<void>("ps_exit_session", { sessionId }),
     [],
   );
 
   // ─── File transfer ───────────────────────────────────────────────
   const copyToSession = useCallback(
     (sessionId: string, params: PsFileCopyParams) =>
-      invoke<string>('ps_copy_to_session', { sessionId, params }),
+      invoke<string>("ps_copy_to_session", { sessionId, params }),
     [],
   );
 
   const copyFromSession = useCallback(
     (sessionId: string, params: PsFileCopyParams) =>
-      invoke<string>('ps_copy_from_session', { sessionId, params }),
+      invoke<string>("ps_copy_from_session", { sessionId, params }),
     [],
   );
 
   const getTransferProgress = useCallback(
     (transferId: string) =>
-      invoke<PsFileTransferProgress>('ps_get_transfer_progress', {
+      invoke<PsFileTransferProgress>("ps_get_transfer_progress", {
         transferId,
       }),
     [],
   );
 
   const cancelTransfer = useCallback(
-    (transferId: string) =>
-      invoke<void>('ps_cancel_transfer', { transferId }),
+    (transferId: string) => invoke<void>("ps_cancel_transfer", { transferId }),
     [],
   );
 
   const listTransfers = useCallback(
-    () => invoke<PsFileTransferProgress[]>('ps_list_transfers'),
+    () => invoke<PsFileTransferProgress[]>("ps_list_transfers"),
     [],
   );
 
   // ─── CIM ─────────────────────────────────────────────────────────
   const newCimSession = useCallback(
     (sessionId: string, config: CimSessionConfig) =>
-      invoke<string>('ps_new_cim_session', { sessionId, config }),
+      invoke<string>("ps_new_cim_session", { sessionId, config }),
     [],
   );
 
   const getCimInstances = useCallback(
     (sessionId: string, cimSessionId: string, params: CimQueryParams) =>
-      invoke<CimInstance[]>('ps_get_cim_instances', {
+      invoke<CimInstance[]>("ps_get_cim_instances", {
         sessionId,
         cimSessionId,
         params,
@@ -176,7 +178,7 @@ export function usePowerShellClient() {
 
   const invokeCimMethod = useCallback(
     (sessionId: string, cimSessionId: string, params: CimMethodParams) =>
-      invoke<unknown>('ps_invoke_cim_method', {
+      invoke<unknown>("ps_invoke_cim_method", {
         sessionId,
         cimSessionId,
         params,
@@ -186,26 +188,26 @@ export function usePowerShellClient() {
 
   const removeCimSession = useCallback(
     (sessionId: string, cimSessionId: string) =>
-      invoke<void>('ps_remove_cim_session', { sessionId, cimSessionId }),
+      invoke<void>("ps_remove_cim_session", { sessionId, cimSessionId }),
     [],
   );
 
   // ─── DSC ─────────────────────────────────────────────────────────
   const testDscConfiguration = useCallback(
     (sessionId: string) =>
-      invoke<DscResult>('ps_test_dsc_configuration', { sessionId }),
+      invoke<DscResult>("ps_test_dsc_configuration", { sessionId }),
     [],
   );
 
   const getDscConfiguration = useCallback(
     (sessionId: string) =>
-      invoke<DscResourceState[]>('ps_get_dsc_configuration', { sessionId }),
+      invoke<DscResourceState[]>("ps_get_dsc_configuration", { sessionId }),
     [],
   );
 
   const startDscConfiguration = useCallback(
     (sessionId: string, configuration: DscConfiguration) =>
-      invoke<DscResult>('ps_start_dsc_configuration', {
+      invoke<DscResult>("ps_start_dsc_configuration", {
         sessionId,
         configuration,
       }),
@@ -214,32 +216,32 @@ export function usePowerShellClient() {
 
   const getDscResources = useCallback(
     (sessionId: string) =>
-      invoke<unknown[]>('ps_get_dsc_resources', { sessionId }),
+      invoke<unknown[]>("ps_get_dsc_resources", { sessionId }),
     [],
   );
 
   // ─── JEA ─────────────────────────────────────────────────────────
   const registerJeaEndpoint = useCallback(
     (sessionId: string, endpoint: JeaEndpoint) =>
-      invoke<void>('ps_register_jea_endpoint', { sessionId, endpoint }),
+      invoke<void>("ps_register_jea_endpoint", { sessionId, endpoint }),
     [],
   );
 
   const unregisterJeaEndpoint = useCallback(
     (sessionId: string, endpointName: string) =>
-      invoke<void>('ps_unregister_jea_endpoint', { sessionId, endpointName }),
+      invoke<void>("ps_unregister_jea_endpoint", { sessionId, endpointName }),
     [],
   );
 
   const listJeaEndpoints = useCallback(
     (sessionId: string) =>
-      invoke<PsSessionConfiguration[]>('ps_list_jea_endpoints', { sessionId }),
+      invoke<PsSessionConfiguration[]>("ps_list_jea_endpoints", { sessionId }),
     [],
   );
 
   const createJeaRoleCapability = useCallback(
     (sessionId: string, roleName: string, capability: JeaRoleCapability) =>
-      invoke<string>('ps_create_jea_role_capability', {
+      invoke<string>("ps_create_jea_role_capability", {
         sessionId,
         roleName,
         capability,
@@ -249,14 +251,13 @@ export function usePowerShellClient() {
 
   // ─── PowerShell Direct (Hyper-V VM) ──────────────────────────────
   const listVms = useCallback(
-    (sessionId: string) =>
-      invoke<HyperVVmInfo[]>('ps_list_vms', { sessionId }),
+    (sessionId: string) => invoke<HyperVVmInfo[]>("ps_list_vms", { sessionId }),
     [],
   );
 
   const invokeCommandVm = useCallback(
     (sessionId: string, config: PsDirectConfig, script: string) =>
-      invoke<PsCommandOutput>('ps_invoke_command_vm', {
+      invoke<PsCommandOutput>("ps_invoke_command_vm", {
         sessionId,
         config,
         script,
@@ -271,7 +272,7 @@ export function usePowerShellClient() {
       source: string,
       destination: string,
     ) =>
-      invoke<void>('ps_copy_to_vm', {
+      invoke<void>("ps_copy_to_vm", {
         sessionId,
         config,
         source,
@@ -283,7 +284,7 @@ export function usePowerShellClient() {
   // ─── Session configuration ───────────────────────────────────────
   const getSessionConfigurations = useCallback(
     (sessionId: string) =>
-      invoke<PsSessionConfiguration[]>('ps_get_session_configurations', {
+      invoke<PsSessionConfiguration[]>("ps_get_session_configurations", {
         sessionId,
       }),
     [],
@@ -291,13 +292,13 @@ export function usePowerShellClient() {
 
   const registerSessionConfiguration = useCallback(
     (sessionId: string, config: NewSessionConfigurationParams) =>
-      invoke<void>('ps_register_session_configuration', { sessionId, config }),
+      invoke<void>("ps_register_session_configuration", { sessionId, config }),
     [],
   );
 
   const unregisterSessionConfiguration = useCallback(
     (sessionId: string, configName: string) =>
-      invoke<void>('ps_unregister_session_configuration', {
+      invoke<void>("ps_unregister_session_configuration", {
         sessionId,
         configName,
       }),
@@ -306,7 +307,7 @@ export function usePowerShellClient() {
 
   const enableSessionConfiguration = useCallback(
     (sessionId: string, configName: string) =>
-      invoke<void>('ps_enable_session_configuration', {
+      invoke<void>("ps_enable_session_configuration", {
         sessionId,
         configName,
       }),
@@ -315,7 +316,7 @@ export function usePowerShellClient() {
 
   const disableSessionConfiguration = useCallback(
     (sessionId: string, configName: string) =>
-      invoke<void>('ps_disable_session_configuration', {
+      invoke<void>("ps_disable_session_configuration", {
         sessionId,
         configName,
       }),
@@ -328,7 +329,7 @@ export function usePowerShellClient() {
       configName: string,
       params: SetSessionConfigurationParams,
     ) =>
-      invoke<void>('ps_set_session_configuration', {
+      invoke<void>("ps_set_session_configuration", {
         sessionId,
         configName,
         params,
@@ -338,79 +339,76 @@ export function usePowerShellClient() {
 
   const getWinrmConfig = useCallback(
     (sessionId: string) =>
-      invoke<unknown>('ps_get_winrm_config', { sessionId }),
+      invoke<unknown>("ps_get_winrm_config", { sessionId }),
     [],
   );
 
   const getTrustedHosts = useCallback(
     (sessionId: string) =>
-      invoke<string[]>('ps_get_trusted_hosts', { sessionId }),
+      invoke<string[]>("ps_get_trusted_hosts", { sessionId }),
     [],
   );
 
   const setTrustedHosts = useCallback(
     (sessionId: string, hosts: string[]) =>
-      invoke<void>('ps_set_trusted_hosts', { sessionId, hosts }),
+      invoke<void>("ps_set_trusted_hosts", { sessionId, hosts }),
     [],
   );
 
   // ─── Diagnostics ─────────────────────────────────────────────────
   const testWsman = useCallback(
     (config: PsRemotingConfig) =>
-      invoke<PsDiagnosticResult>('ps_test_wsman', { config }),
+      invoke<PsDiagnosticResult>("ps_test_wsman", { config }),
     [],
   );
 
   const diagnoseConnection = useCallback(
     (config: PsRemotingConfig) =>
-      invoke<PsDiagnosticResult>('ps_diagnose_connection', { config }),
+      invoke<PsDiagnosticResult>("ps_diagnose_connection", { config }),
     [],
   );
 
   const checkWinrmService = useCallback(
     (sessionId: string) =>
-      invoke<WinRmServiceStatus>('ps_check_winrm_service', { sessionId }),
+      invoke<WinRmServiceStatus>("ps_check_winrm_service", { sessionId }),
     [],
   );
 
   const checkFirewallRules = useCallback(
     (sessionId: string) =>
-      invoke<FirewallRuleInfo[]>('ps_check_firewall_rules', { sessionId }),
+      invoke<FirewallRuleInfo[]>("ps_check_firewall_rules", { sessionId }),
     [],
   );
 
   const measureLatency = useCallback(
     (sessionId: string, iterations?: number) =>
-      invoke<LatencyResult>('ps_measure_latency', { sessionId, iterations }),
+      invoke<LatencyResult>("ps_measure_latency", { sessionId, iterations }),
     [],
   );
 
   const getCertificateInfo = useCallback(
     (sessionId: string) =>
-      invoke<PsCertificateInfo[]>('ps_get_certificate_info', { sessionId }),
+      invoke<PsCertificateInfo[]>("ps_get_certificate_info", { sessionId }),
     [],
   );
 
   // ─── Service stats / events ──────────────────────────────────────
   const getStats = useCallback(
-    () => invoke<PsRemotingStats>('ps_get_stats'),
+    () => invoke<PsRemotingStats>("ps_get_stats"),
     [],
   );
 
   const getEvents = useCallback(
-    (limit?: number) =>
-      invoke<PsRemotingEvent[]>('ps_get_events', { limit }),
+    (limit?: number) => invoke<PsRemotingEvent[]>("ps_get_events", { limit }),
     [],
   );
 
-  const clearEvents = useCallback(
-    () => invoke<void>('ps_clear_events'),
-    [],
-  );
+  const clearEvents = useCallback(() => invoke<void>("ps_clear_events"), []);
 
-  const cleanup = useCallback(() => invoke<void>('ps_cleanup'), []);
+  const cleanup = useCallback(() => invoke<void>("ps_cleanup"), []);
 
   return {
+    capabilities: CURRENT_POWER_SHELL_REMOTING_CAPABILITIES,
     // Sessions
     newSession,
     getSession,

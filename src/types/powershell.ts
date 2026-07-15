@@ -10,17 +10,57 @@
 
 // ─── Transport / auth ────────────────────────────────────────────────
 
-export type PsTransportProtocol = 'http' | 'https' | 'ssh';
+export type PsTransportProtocol = "http" | "https" | "ssh";
 
 export type PsAuthMethod =
-  | 'basic'
-  | 'ntlm'
-  | 'negotiate'
-  | 'kerberos'
-  | 'credSsp'
-  | 'certificate'
-  | 'default'
-  | 'digest';
+  | "basic"
+  | "ntlm"
+  | "negotiate"
+  | "kerberos"
+  | "credSsp"
+  | "certificate"
+  | "default"
+  | "digest";
+
+// ─── Truthful backend capabilities ─────────────────────────────────
+
+export type PsCapabilityStatus = "supported" | "partial" | "unsupported";
+
+export interface PsTransportCapability {
+  transport: PsTransportProtocol;
+  status: PsCapabilityStatus;
+  reason: string;
+}
+
+export interface PsAuthCapability {
+  authMethod: PsAuthMethod;
+  status: PsCapabilityStatus;
+  requiresTls: boolean;
+  reason: string;
+}
+
+export type PsFeature =
+  | "legacyWinRsProcessShell"
+  | "persistentRunspace"
+  | "standardPowerShellStreams"
+  | "pipelineInput"
+  | "commandCancellation"
+  | "disconnectReconnect"
+  | "interactiveState"
+  | "networkPath";
+
+export interface PsFeatureCapability {
+  feature: PsFeature;
+  status: PsCapabilityStatus;
+  reason: string;
+}
+
+export interface PsRemotingCapabilities {
+  implementation: string;
+  transports: PsTransportCapability[];
+  authentication: PsAuthCapability[];
+  features: PsFeatureCapability[];
+}
 
 export interface PsCredential {
   username: string;
@@ -36,7 +76,7 @@ export interface PsProxyConfig {
   [key: string]: unknown;
 }
 
-export type OutputBufferingMode = 'none' | 'drop' | 'block';
+export type OutputBufferingMode = "none" | "drop" | "block";
 
 export interface PsSessionOption {
   operationTimeoutSec?: number;
@@ -82,14 +122,14 @@ export interface PsRemotingConfig {
 // ─── Session ─────────────────────────────────────────────────────────
 
 export type PsSessionState =
-  | 'opening'
-  | 'opened'
-  | 'disconnected'
-  | 'closing'
-  | 'closed'
-  | 'broken';
+  | "opening"
+  | "opened"
+  | "disconnected"
+  | "closing"
+  | "closed"
+  | "broken";
 
-export type PsSessionAvailability = 'available' | 'busy' | 'none';
+export type PsSessionAvailability = "available" | "busy" | "none";
 
 export interface PsSession {
   id: string;
@@ -116,22 +156,22 @@ export interface PsSession {
 // ─── Command execution ───────────────────────────────────────────────
 
 export type PsInvocationState =
-  | 'notStarted'
-  | 'running'
-  | 'stopping'
-  | 'stopped'
-  | 'completed'
-  | 'failed'
-  | 'disconnected';
+  | "notStarted"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "completed"
+  | "failed"
+  | "disconnected";
 
 export type PsStreamType =
-  | 'output'
-  | 'error'
-  | 'warning'
-  | 'verbose'
-  | 'debug'
-  | 'information'
-  | 'progress';
+  | "output"
+  | "error"
+  | "warning"
+  | "verbose"
+  | "debug"
+  | "information"
+  | "progress";
 
 export interface PsErrorRecord {
   exceptionType: string;
@@ -152,7 +192,7 @@ export interface PsProgressRecord {
   currentOperation?: string | null;
   parentActivityId: number;
   activityId: number;
-  recordType: string;
+  recordType: "processing" | "completed";
 }
 
 export interface PsStreamRecord {
@@ -164,27 +204,41 @@ export interface PsStreamRecord {
 }
 
 export interface PsInvokeCommandParams {
-  script?: string | null;
-  scriptBlock?: string | null;
-  scriptPath?: string | null;
-  commandName?: string | null;
-  arguments?: string[];
+  sessionId?: string | null;
+  scriptBlock: string;
+  argumentList?: unknown[];
   parameters?: Record<string, unknown>;
   asJob?: boolean;
-  noNewScope?: boolean;
-  useRunspace?: boolean;
-  [key: string]: unknown;
+  throttleLimit?: number;
+  inputObject?: unknown[];
+  invokeAndDisconnect?: boolean;
+  hideComputerName?: boolean;
+  filePath?: string | null;
+  commandName?: string | null;
+  timeoutSec?: number;
 }
 
 export interface PsCommandOutput {
-  commandId: string;
+  invocationId: string;
+  sessionId: string;
+  command: string;
   state: PsInvocationState;
-  exitCode?: number | null;
   streams: PsStreamRecord[];
-  startedAt: string;
-  finishedAt?: string | null;
+  output: unknown[];
+  errors: PsErrorRecord[];
   hadErrors: boolean;
-  [key: string]: unknown;
+  startedAt: string;
+  completedAt?: string | null;
+  durationMs: number;
+  rawClixml?: string | null;
+}
+
+/** Actor-control contract; no public Tauri cancellation command exists yet. */
+export type PsCancelOutcome = "requested" | "notRunning";
+
+export interface PsCancelInvocationRequest {
+  sessionId: string;
+  invocationId: string;
 }
 
 // ─── File transfer ───────────────────────────────────────────────────
@@ -200,7 +254,7 @@ export interface PsFileCopyParams {
 export interface PsFileTransferProgress {
   transferId: string;
   sessionId: string;
-  direction: 'toSession' | 'fromSession' | string;
+  direction: "toSession" | "fromSession" | string;
   source: string;
   destination: string;
   totalBytes: number;
@@ -313,7 +367,11 @@ export interface SetSessionConfigurationParams {
 
 export interface PsDiagnosticResult {
   ok: boolean;
-  diagnostics: Array<{ name: string; passed: boolean; details?: string | null }>;
+  diagnostics: Array<{
+    name: string;
+    passed: boolean;
+    details?: string | null;
+  }>;
   [key: string]: unknown;
 }
 
@@ -345,9 +403,14 @@ export interface PsCertificateInfo {
 // ─── Service stats / events ──────────────────────────────────────────
 
 export interface PsRemotingStats {
+  totalSessions: number;
   activeSessions: number;
-  totalCommandsExecuted: number;
-  [key: string]: unknown;
+  disconnectedSessions: number;
+  interactiveSessions: number;
+  activeTransfers: number;
+  cimSessions: number;
+  vmSessions: number;
+  totalEvents: number;
 }
 
 export interface PsRemotingEvent {

@@ -1,0 +1,84 @@
+import { AlertTriangle } from "lucide-react";
+import { CURRENT_POWER_SHELL_REMOTING_CAPABILITIES } from "../../../utils/powershell/currentPowerShellCapabilities";
+import { validatePowerShellRemotingSettings } from "../../../utils/powershell/normalizePowerShellRemoting";
+import { AuthenticationSection } from "./AuthenticationSection";
+import { EndpointSection } from "./EndpointSection";
+import { NetworkPathSummarySection } from "./NetworkPathSummarySection";
+import { SecuritySection } from "./SecuritySection";
+import { SessionSection } from "./SessionSection";
+import { SshSection } from "./SshSection";
+import type { PowerShellRemotingEditorProps } from "./types";
+import { WindowsToolsSection } from "./WindowsToolsSection";
+
+/**
+ * Standalone, flat PowerShell Remoting editor. Shared protocol routing can
+ * mount these sections later without coupling the schema to WMI/WinRM tools.
+ */
+export function PowerShellRemotingEditor({
+  targetHost,
+  value,
+  onChange,
+  capabilities = CURRENT_POWER_SHELL_REMOTING_CAPABILITIES,
+  networkPathSummary,
+}: PowerShellRemotingEditorProps) {
+  const issues = validatePowerShellRemotingSettings(
+    value,
+    targetHost || "host.invalid",
+  );
+  const blockingIssues = issues.filter((issue) => issue.severity === "error");
+  const sectionProps = { value, onChange, capabilities, targetHost };
+
+  return (
+    <div className="space-y-4" data-testid="powershell-remoting-editor">
+      <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <AlertTriangle
+            size={16}
+            className="mt-0.5 shrink-0 text-warning"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="text-sm font-medium text-[var(--color-text)]">
+              Current backend: legacy WinRS process shell
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--color-textMuted)]">
+              Commands launch independent powershell.exe processes. This is not
+              a persistent PSRP runspace, and unavailable capabilities remain
+              disabled below.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {blockingIssues.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-lg border border-error/30 bg-error/5 px-4 py-3"
+        >
+          <p className="text-sm font-medium text-error">
+            Fix {blockingIssues.length} blocking PowerShell setting
+            {blockingIssues.length === 1 ? "" : "s"}
+          </p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-error">
+            {blockingIssues.map((issue) => (
+              <li key={`${issue.path}:${issue.code}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <EndpointSection {...sectionProps} />
+      <AuthenticationSection {...sectionProps} />
+      <SecuritySection {...sectionProps} />
+      <SshSection {...sectionProps} />
+      <NetworkPathSummarySection
+        {...sectionProps}
+        summary={networkPathSummary}
+      />
+      <SessionSection {...sectionProps} />
+      <WindowsToolsSection {...sectionProps} />
+    </div>
+  );
+}
+
+export type { PowerShellRemotingEditorProps } from "./types";
