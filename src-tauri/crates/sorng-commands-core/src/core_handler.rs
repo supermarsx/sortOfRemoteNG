@@ -596,6 +596,27 @@ pub fn is_command(command: &str) -> bool {
             | "list_telnet_sessions"
             | "disconnect_all_telnet"
             | "is_telnet_connected"
+            // ── RLogin (9) ─────────────────────────────────────────
+            | "connect_rlogin"
+            | "send_rlogin_input"
+            | "resize_rlogin"
+            | "get_rlogin_output_snapshot"
+            | "get_rlogin_session_info"
+            | "list_rlogin_sessions"
+            | "disconnect_rlogin"
+            | "disconnect_all_rlogin_sessions"
+            | "diagnose_rlogin_connection"
+            // ── Raw TCP/UDP sockets (10) ───────────────────────────
+            | "connect_raw_socket"
+            | "attach_raw_socket"
+            | "detach_raw_socket"
+            | "disconnect_raw_socket"
+            | "disconnect_all_raw_sockets"
+            | "send_raw_socket_data"
+            | "shutdown_raw_socket_write"
+            | "get_raw_socket_session_info"
+            | "get_raw_socket_replay"
+            | "list_raw_socket_sessions"
             | "close_splash"
             // ── SFTP (62) ────────────────────────────────────────────
             | "sftp_connect"
@@ -2298,16 +2319,27 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         totp_commands::totp_deduplicate,
         totp_commands::totp_vault_stats,
         totp_commands::totp_all_tags,
-        // rlogin::connect_rlogin,
-        // rlogin::disconnect_rlogin,
-        // rlogin::send_rlogin_command,
-        // rlogin::get_rlogin_session_info,
-        // rlogin::list_rlogin_sessions,
-        // raw_socket::connect_raw_socket,
-        // raw_socket::disconnect_raw_socket,
-        // raw_socket::send_raw_socket_data,
-        // raw_socket::get_raw_socket_session_info,
-        // raw_socket::list_raw_socket_sessions,
+        // ── RLogin ──────────────────────────────────────────────────
+        rlogin_commands::connect_rlogin,
+        rlogin_commands::send_rlogin_input,
+        rlogin_commands::resize_rlogin,
+        rlogin_commands::get_rlogin_output_snapshot,
+        rlogin_commands::get_rlogin_session_info,
+        rlogin_commands::list_rlogin_sessions,
+        rlogin_commands::disconnect_rlogin,
+        rlogin_commands::disconnect_all_rlogin_sessions,
+        rlogin_commands::diagnose_rlogin_connection,
+        // ── Raw TCP/UDP sockets ─────────────────────────────────────
+        raw_socket_commands::connect_raw_socket,
+        raw_socket_commands::attach_raw_socket,
+        raw_socket_commands::detach_raw_socket,
+        raw_socket_commands::disconnect_raw_socket,
+        raw_socket_commands::disconnect_all_raw_sockets,
+        raw_socket_commands::send_raw_socket_data,
+        raw_socket_commands::shutdown_raw_socket_write,
+        raw_socket_commands::get_raw_socket_session_info,
+        raw_socket_commands::get_raw_socket_replay,
+        raw_socket_commands::list_raw_socket_sessions,
         // ── t5-e7: Connection Clone ────────────────────────────────
         crate::connection_clone_cmds::clone_connection,
         // ── t5-e7b: Probes ─────────────────────────────────────────
@@ -2501,4 +2533,52 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         #[cfg(feature = "ops")]
         backup_verify_commands::backup_verify_test_channel,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_command;
+
+    const RLOGIN_COMMANDS: &[&str] = &[
+        "connect_rlogin",
+        "send_rlogin_input",
+        "resize_rlogin",
+        "get_rlogin_output_snapshot",
+        "get_rlogin_session_info",
+        "list_rlogin_sessions",
+        "disconnect_rlogin",
+        "disconnect_all_rlogin_sessions",
+        "diagnose_rlogin_connection",
+    ];
+
+    const RAW_SOCKET_COMMANDS: &[&str] = &[
+        "connect_raw_socket",
+        "attach_raw_socket",
+        "detach_raw_socket",
+        "disconnect_raw_socket",
+        "disconnect_all_raw_sockets",
+        "send_raw_socket_data",
+        "shutdown_raw_socket_write",
+        "get_raw_socket_session_info",
+        "get_raw_socket_replay",
+        "list_raw_socket_sessions",
+    ];
+
+    #[test]
+    fn raw_and_rlogin_command_recognition_matches_handler_registration() {
+        let source = include_str!("core_handler.rs");
+        for (module, commands) in [
+            ("rlogin_commands", RLOGIN_COMMANDS),
+            ("raw_socket_commands", RAW_SOCKET_COMMANDS),
+        ] {
+            for command in commands {
+                assert!(is_command(command), "{command} missing from is_command");
+                let registration = format!("{module}::{command},");
+                assert!(
+                    source.contains(&registration),
+                    "{command} missing from generate_handler"
+                );
+            }
+        }
+    }
 }

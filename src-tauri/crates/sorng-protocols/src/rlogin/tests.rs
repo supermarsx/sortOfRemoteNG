@@ -1,6 +1,33 @@
 use super::*;
+use sorng_socket_transport::Route;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
+
+#[derive(Default)]
+struct MemoryRloginSink {
+    frames: Mutex<Vec<(OutputFrame, bool)>>,
+    events: Mutex<Vec<RloginEvent>>,
+}
+
+impl RloginSink for MemoryRloginSink {
+    fn send_frame(
+        &self,
+        _session_id: &str,
+        frame: &OutputFrame,
+        replayed: bool,
+    ) -> Result<(), RloginSinkError> {
+        self.frames.lock().unwrap().push((frame.clone(), replayed));
+        Ok(())
+    }
+
+    fn send_event(&self, event: &RloginEvent) -> Result<(), RloginSinkError> {
+        self.events.lock().unwrap().push(event.clone());
+        Ok(())
+    }
+}
 
 fn test_config() -> RloginConfig {
     RloginConfig {
@@ -484,59 +511,123 @@ async fn remote_eof_transitions_to_closed_and_cleanup_is_idempotent() {
 #[tokio::test]
 async fn service_requires_resolved_transport_and_accepts_injected_streams() {
     let state = RloginService::new();
-    let error = state
-        .lock()
-        .await
-        .connect_rlogin(
-            "fixture.invalid".to_string(),
-            513,
-            "alice".to_string(),
-            "root".to_string(),
-            "xterm".to_string(),
-        )
-        .await
-        .unwrap_err();
-    assert!(error.contains("transport adapter"));
+    let unacknowledged = RloginConnectOptions {
+        config: test_config(),
+        ..RloginConnectOptions::default()
+    };
+    assert_eq!(
+        unacknowledged.validate(),
+        Err(RloginError::PlaintextAcknowledgementRequired)
+    );
+    assert!(!state.diagnose_rlogin(&unacknowledged).compatible);
 
     let config = test_config();
     let expected_handshake = encode_handshake(&config).unwrap();
     let (client, server) = duplex(4096);
     let fixture = spawn_accepting_fixture(server, expected_handshake);
-    let session_id = state
-        .lock()
-        .await
-        .connect_with_stream(config, client)
-        .await
-        .unwrap();
+    let session_id = state.connect_with_stream(config, client).await.unwrap();
     let mut server = fixture.await.unwrap();
 
     state
-        .lock()
-        .await
-        .send_rlogin_input(&session_id, b"hello")
+        .send_rlogin_input(&session_id, b"hello".to_vec())
         .await
         .unwrap();
     let mut input = [0; 5];
     server.read_exact(&mut input).await.unwrap();
     assert_eq!(&input, b"hello");
 
-    let info = state
-        .lock()
-        .await
-        .get_rlogin_session_info(&session_id)
-        .await
-        .unwrap();
+    let info = state.get_rlogin_session_info(&session_id).await.unwrap();
     assert!(info.connected);
-    state
-        .lock()
-        .await
-        .disconnect_rlogin(&session_id)
+    state.disconnect_rlogin(&session_id).await.unwrap();
+    state.disconnect_rlogin(&session_id).await.unwrap();
+}
+
+#[test]
+fn production_diagnostics_fail_closed_for_unavailable_transport_features() {
+    let mut options = RloginConnectOptions {
+        config: test_config(),
+        plaintext_acknowledged: true,
+        ..RloginConnectOptions::default()
+    };
+    let capabilities = options.capabilities();
+    assert!(capabilities.direct_route);
+    assert!(!capabilities.proxy_routes);
+    assert!(!capabilities.reserved_source_port);
+    assert!(!capabilities.out_of_band_control);
+
+    options.source_port_mode = RloginSourcePortMode::Reserved;
+    assert_eq!(
+        options.validate(),
+        Err(RloginError::ReservedSourcePortUnavailable)
+    );
+    assert!(!RloginDiagnosis::for_options(&options).compatible);
+
+    options.source_port_mode = RloginSourcePortMode::Ephemeral;
+    options.route = Route::Socks5;
+    assert_eq!(
+        options.validate(),
+        Err(RloginError::UnsupportedRoute(
+            sorng_socket_transport::RouteKind::Socks5
+        ))
+    );
+}
+
+#[tokio::test]
+async fn actor_delivers_sequence_replay_and_never_fakes_oob_from_stream_bytes() {
+    let state = RloginService::new();
+    let config = test_config();
+    let expected_handshake = encode_handshake(&config).unwrap();
+    let (client, server) = duplex(4096);
+    let fixture = spawn_accepting_fixture(server, expected_handshake);
+    let sink = Arc::new(MemoryRloginSink::default());
+    let session_id = state
+        .connect_with_stream_and_sink(config, client, sink.clone())
         .await
         .unwrap();
-    state
-        .lock()
-        .await
-        .disconnect_rlogin(&session_id)
+    let mut server = fixture.await.unwrap();
+
+    // These bytes resemble protocol control data but arrived on the ordinary
+    // stream. Without a real platform MSG_OOB extractor they must remain
+    // byte-for-byte terminal output and must not change urgent state.
+    let payload = b"\xff\x10ordinary\0bytes";
+    server.write_all(payload).await.unwrap();
+    server.flush().await.unwrap();
+    timeout(Duration::from_secs(2), async {
+        while sink.frames.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("actor should deliver ordinary TCP output");
+
+    let frames = sink.frames.lock().unwrap().clone();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].0.sequence, 1);
+    assert_eq!(frames[0].0.data, payload);
+    assert!(!frames[0].1);
+
+    let snapshot = state
+        .get_rlogin_output_snapshot(&session_id, 0)
         .await
         .unwrap();
+    assert_eq!(snapshot.frames[0].data, payload);
+    let info = state.get_rlogin_session_info(&session_id).await.unwrap();
+    assert_eq!(info.stats.urgent_controls_received, 0);
+    assert!(!info.window_updates_enabled);
+    assert!(!info.capabilities.out_of_band_control);
+    assert_eq!(
+        state
+            .resize_rlogin(
+                &session_id,
+                WindowSize {
+                    rows: 40,
+                    columns: 120,
+                    ..WindowSize::default()
+                }
+            )
+            .await
+            .unwrap(),
+        ResizeOutcome::Deferred
+    );
+    state.disconnect_rlogin(&session_id).await.unwrap();
 }

@@ -105,7 +105,7 @@ mod proxy_commands;
 #[path = "../../../src/qr_commands.rs"]
 mod qr_commands;
 #[path = "../../../src/raw_socket_commands.rs"]
-mod raw_socket_commands;
+pub mod raw_socket_commands;
 #[cfg(not(feature = "rdp"))]
 #[path = "../../../src/rdp.rs"]
 mod rdp_commands;
@@ -113,7 +113,7 @@ mod rdp_commands;
 #[path = "../../../src/rdp_commands.rs"]
 mod rdp_commands;
 #[path = "../../../src/rlogin_commands.rs"]
-mod rlogin_commands;
+pub mod rlogin_commands;
 #[path = "../../../src/rpc_commands.rs"]
 mod rpc_commands;
 #[path = "../../../src/rustdesk_commands.rs"]

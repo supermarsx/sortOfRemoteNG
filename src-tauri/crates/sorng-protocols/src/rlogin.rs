@@ -11,6 +11,7 @@ mod protocol;
 mod replay;
 mod service;
 mod session;
+mod sink;
 mod types;
 mod urgent;
 
@@ -18,13 +19,19 @@ pub use codec::{encode_handshake, encode_window_update, read_server_ack};
 pub use io::{BoxedRloginStream, RloginByteStream, RloginIoFuture};
 pub use protocol::{InputProcessor, ProcessedInput};
 pub use replay::{OutputFrame, ReplayBuffer, ReplaySnapshot};
-pub use service::{RloginService, RloginServiceState, RloginSession};
+pub use service::{
+    RloginEvent, RloginOutputMetadata, RloginService, RloginServiceState, RloginSession,
+    RloginTerminalReason,
+};
 pub use session::{
     InputOutcome, OutputDisposition, ResizeOutcome, RloginCancellation, RloginEngine, UrgentOutcome,
 };
+pub use sink::{output_metadata, DynRloginSink, NoopRloginSink, RloginSink, RloginSinkError};
 pub use types::{
-    LocalFlowAction, RloginConfig, RloginError, RloginLifecycle, RloginStats, TerminalMode,
-    WindowSize, DEFAULT_REPLAY_CAPACITY_BYTES, DEFAULT_RLOGIN_PORT,
+    LocalFlowAction, RloginCapabilities, RloginConfig, RloginConnectOptions, RloginDiagnosis,
+    RloginError, RloginLifecycle, RloginSourcePortMode, RloginStats, TerminalMode, WindowSize,
+    DEFAULT_REPLAY_CAPACITY_BYTES, DEFAULT_RLOGIN_PORT, MAX_ACTIVE_RLOGIN_SESSIONS,
+    MAX_RLOGIN_INPUT_BYTES,
 };
 pub use urgent::{
     UrgentAction, UrgentState, UrgentUpdate, URGENT_COOKED_MODE, URGENT_DISCARD_OUTPUT,
