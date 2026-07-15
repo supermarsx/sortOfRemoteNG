@@ -16,6 +16,7 @@ import {
   TabLayout,
   TabLayoutMode,
 } from "./types/connection/connection";
+import { resolveConnectionWarnOnClose } from "./utils/behavior/legacyBehavior";
 import {
   buildTabLayout,
   clampGridDim,
@@ -897,10 +898,12 @@ const AppContent: React.FC = () => {
       }
     }
 
-    const confirmMessage =
-      connection.warnOnClose || settings.warnOnClose
-        ? t(isFolder ? "dialogs.confirmDeleteFolder" : "dialogs.confirmDelete")
-        : null;
+    const confirmMessage = resolveConnectionWarnOnClose(
+      connection.warnOnClose,
+      settings.warnOnClose,
+    )
+      ? t(isFolder ? "dialogs.confirmDeleteFolder" : "dialogs.confirmDelete")
+      : null;
 
     if (!confirmMessage) {
       performDelete([connection.id], noun);

@@ -8,6 +8,7 @@ import type {
   InheritableTrustPolicy,
   TrustPolicy,
 } from "../../utils/auth/trustStore";
+import type { ConnectionBehaviorAutomationV1 } from "./behavior";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -130,6 +131,8 @@ export interface Connection {
   focusOnWinmgmtTool?: boolean;
   /** Enable Windows Remote Management tools for this connection (undefined = use global) */
   enableWinrmTools?: boolean;
+  /** Versioned per-connection event/action rules. Missing means no automation. */
+  behaviorAutomation?: ConnectionBehaviorAutomationV1;
 
   // Advanced Connection Settings
   timeout?: number;

@@ -7,13 +7,21 @@ export function raceWithTimeout<T>(
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       onTimeout?.();
-      reject(new Error('Operation timed out'));
+      reject(new Error("Operation timed out"));
     }, timeoutMs);
   });
 
   const raced = Promise.race([promise, timeoutPromise]) as Promise<T>;
-  raced.finally(() => {
-    if (timer) clearTimeout(timer);
-  });
+  // Handle both branches directly. Calling `finally()` without retaining its
+  // returned promise creates a second rejected promise when the timeout wins,
+  // which surfaces as an unhandled rejection even if callers catch `raced`.
+  void raced.then(
+    () => {
+      if (timer) clearTimeout(timer);
+    },
+    () => {
+      if (timer) clearTimeout(timer);
+    },
+  );
   return { promise: raced, timer: timer! };
 }

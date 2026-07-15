@@ -228,4 +228,132 @@ describe("useSessionManager settings effects", () => {
 
     expect(notificationCtor).not.toHaveBeenCalled();
   });
+
+  it("preserves an explicit zero retry-attempt override on new and restored sessions", async () => {
+    SettingsManager.getInstance().applyInMemory({ retryAttempts: 5 });
+    const connection = makeConnection({ retryAttempts: 0 });
+    const { result } = renderHook(() => useSessionManager());
+
+    await act(async () => {
+      await result.current.handleConnect(connection);
+    });
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({ maxReconnectAttempts: 0 }),
+    });
+
+    connectionMocks.dispatch.mockClear();
+    await act(async () => {
+      await result.current.restoreSession(
+        {
+          id: "restored-session",
+          connectionId: connection.id,
+          name: connection.name,
+          protocol: connection.protocol,
+          hostname: connection.hostname,
+          status: "connected",
+        },
+        connection,
+      );
+    });
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({
+        id: "restored-session",
+        maxReconnectAttempts: 0,
+      }),
+    });
+  });
+
+  it("allows per-connection warnOnClose=false to override a global warning", async () => {
+    const connection = makeConnection({
+      id: "conn-existing",
+      warnOnClose: false,
+    });
+    const session = makeSession();
+    connectionMocks.state = {
+      sessions: [session],
+      connections: [connection],
+    };
+    SettingsManager.getInstance().applyInMemory({
+      warnOnClose: true,
+      confirmCloseActiveTab: false,
+    });
+    const { result } = renderHook(() => useSessionManager());
+
+    await act(async () => {
+      await result.current.handleSessionClose(session.id);
+    });
+
+    expect(result.current.confirmDialog).toBeNull();
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "REMOVE_SESSION",
+      payload: session.id,
+    });
+  });
+
+  it("starts an automatic retry after exactly the configured delay", async () => {
+    vi.useFakeTimers();
+    try {
+      SettingsManager.getInstance().applyInMemory({
+        retryAttempts: 1,
+        retryDelay: 100,
+        connectionTimeout: 1,
+      });
+      const connection = makeConnection({
+        protocol: "telnet",
+        port: 23,
+        timeout: 0.001,
+        retryAttempts: 1,
+        retryDelay: 100,
+      });
+      const { result, rerender, unmount } = renderHook(() =>
+        useSessionManager(),
+      );
+
+      let connectPromise!: Promise<void>;
+      act(() => {
+        connectPromise = result.current.handleConnect(connection);
+      });
+      const addedSession = connectionMocks.dispatch.mock.calls.find(
+        ([action]) => action.type === "ADD_SESSION",
+      )?.[0].payload as ConnectionSession;
+      connectionMocks.state = {
+        sessions: [addedSession],
+        connections: [connection],
+      };
+      rerender();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+        await connectPromise;
+      });
+      connectionMocks.dispatch.mockClear();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(99);
+      });
+      expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({ status: "reconnecting" }),
+        }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          id: addedSession.id,
+          status: "reconnecting",
+          reconnectAttempts: 1,
+        }),
+      });
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

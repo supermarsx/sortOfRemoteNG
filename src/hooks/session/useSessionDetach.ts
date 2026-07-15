@@ -1,12 +1,16 @@
-import { useCallback } from 'react';
-import { listen, emit } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
-import { Connection, ConnectionSession } from '../../types/connection/connection';
-import { isWinmgmtProtocol } from '../../components/windows/WindowsToolPanel.helpers';
-import { generateId } from '../../utils/core/id';
-import type { WindowId } from '../../types/windowManager';
+import { useCallback } from "react";
+import { listen, emit } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { resolveConnectionRetryAttempts } from "../../utils/behavior/legacyBehavior";
+import { availableMonitors, currentMonitor } from "@tauri-apps/api/window";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
+import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
+import { generateId } from "../../utils/core/id";
+import type { WindowId } from "../../types/windowManager";
 
 export function useSessionDetach(
   sessions: ConnectionSession[],
@@ -26,27 +30,31 @@ export function useSessionDetach(
       );
       const windowLabel = `detached-${session.id}`;
 
-      console.log(`[detach] session=${session.id}, protocol=${session.protocol}, backendSessionId=${session.backendSessionId}, connectionId=${session.connectionId}`);
+      console.log(
+        `[detach] session=${session.id}, protocol=${session.protocol}, backendSessionId=${session.backendSessionId}, connectionId=${session.connectionId}`,
+      );
 
       // For RDP sessions, explicitly detach the viewer from the backend
       // *before* opening the new window. This ensures the backend session
       // is in "detached" state so the new window can reattach without a
       // race against the main window's component cleanup.
-      if (session.protocol === 'rdp' && connection) {
+      if (session.protocol === "rdp" && connection) {
         try {
-          await invoke('detach_rdp_session', { connectionId: connection.id });
-          console.log('[detach] detach_rdp_session succeeded');
+          await invoke("detach_rdp_session", { connectionId: connection.id });
+          console.log("[detach] detach_rdp_session succeeded");
         } catch (err) {
-          console.warn('[detach] detach_rdp_session failed:', err);
+          console.warn("[detach] detach_rdp_session failed:", err);
         }
       }
 
       // Request terminal buffer before detaching (only for terminal-based protocols)
       let terminalBuffer = "";
-      if (session.protocol !== 'rdp' && !isWinmgmtProtocol(session.protocol)) {
+      if (session.protocol !== "rdp" && !isWinmgmtProtocol(session.protocol)) {
         try {
           let resolveBuffer: (value: string) => void;
-          const bufferPromise = new Promise<string>((resolve) => { resolveBuffer = resolve; });
+          const bufferPromise = new Promise<string>((resolve) => {
+            resolveBuffer = resolve;
+          });
           const timeout = setTimeout(() => resolveBuffer(""), 1000);
 
           // Store the listen promise so cleanup always works even if component
@@ -66,7 +74,7 @@ export function useSessionDetach(
 
           // Guaranteed cleanup: chain on the promise so unlisten is called
           // whether listen() resolved before or after bufferPromise.
-          listenPromise.then(fn => fn()).catch(() => {});
+          listenPromise.then((fn) => fn()).catch(() => {});
         } catch (error) {
           console.warn("Failed to get terminal buffer:", error);
         }
@@ -86,7 +94,9 @@ export function useSessionDetach(
           `detached-session-${session.id}`,
           JSON.stringify(payload),
         );
-        console.log(`[detach] saved to localStorage, backendSessionId=${sessionWithBuffer.backendSessionId}`);
+        console.log(
+          `[detach] saved to localStorage, backendSessionId=${sessionWithBuffer.backendSessionId}`,
+        );
       } catch (error) {
         console.error("Failed to persist detached session payload:", error);
       }
@@ -113,9 +123,10 @@ export function useSessionDetach(
             try {
               const monitors = await availableMonitors();
               const current = await currentMonitor();
-              const secondary = monitors.find(m =>
-                m.name !== current?.name ||
-                m.position.x !== current?.position.x
+              const secondary = monitors.find(
+                (m) =>
+                  m.name !== current?.name ||
+                  m.position.x !== current?.position.x,
               );
               if (secondary) {
                 winX = secondary.position.x + 50;
@@ -192,13 +203,19 @@ export function useSessionDetach(
         : undefined;
 
       const existing = sessions.find(
-        (s) => s.backendSessionId === backendSessionId ||
-          (connectionId && s.connectionId === connectionId && s.protocol === 'rdp')
+        (s) =>
+          s.backendSessionId === backendSessionId ||
+          (connectionId &&
+            s.connectionId === connectionId &&
+            s.protocol === "rdp"),
       );
       if (existing) {
         // Re-activate and ensure it's marked as connecting so the RDP client re-initialises
-        if (existing.status === 'disconnected') {
-          dispatch({ type: 'UPDATE_SESSION', payload: { ...existing, status: 'connecting' } });
+        if (existing.status === "disconnected") {
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: { ...existing, status: "connecting" },
+          });
         }
         setActiveSessionId(existing.id);
         return;
@@ -209,15 +226,18 @@ export function useSessionDetach(
         connectionId: connection?.id || connectionId || backendSessionId,
         backendSessionId,
         name: connection?.name || connectionId || backendSessionId.slice(0, 8),
-        status: 'connecting',
+        status: "connecting",
         startTime: new Date(),
-        protocol: 'rdp',
-        hostname: connection?.hostname || '',
+        protocol: "rdp",
+        hostname: connection?.hostname || "",
         reconnectAttempts: 0,
-        maxReconnectAttempts: connection?.retryAttempts || 3,
+        maxReconnectAttempts: resolveConnectionRetryAttempts(
+          connection?.retryAttempts,
+          3,
+        ),
       };
 
-      dispatch({ type: 'ADD_SESSION', payload: newSession });
+      dispatch({ type: "ADD_SESSION", payload: newSession });
       setActiveSessionId(newSession.id);
     },
     [connections, sessions, dispatch, setActiveSessionId],

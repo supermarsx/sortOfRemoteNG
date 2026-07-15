@@ -18,6 +18,11 @@ import { raceWithTimeout } from "../../utils/core/raceWithTimeout";
 import { generateId } from "../../utils/core/id";
 import { ConfirmDialog } from "../../components/ui/dialogs/ConfirmDialog";
 import { recordRdpSessionHistory } from "../../utils/rdp/rdpSessionHistory";
+import {
+  resolveConnectionRetryAttempts,
+  resolveConnectionRetryDelay,
+  resolveConnectionWarnOnClose,
+} from "../../utils/behavior/legacyBehavior";
 
 const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
   "ssh",
@@ -362,9 +367,17 @@ export const useSessionManager = () => {
         (session.reconnectAttempts || 0) < (session.maxReconnectAttempts || 0)
       ) {
         // Schedule another attempt when the retry delay expires
-        startTimer(() => {
-          handleReconnect(session);
-        }, connection.retryDelay || settings.retryDelay);
+        startTimer(
+          () => {
+            // This path has already observed the configured retry delay. Calling
+            // handleReconnect would add its separate manual-reconnect delay too.
+            reconnectSession(session, connection);
+          },
+          resolveConnectionRetryDelay(
+            connection.retryDelay,
+            settings.retryDelay,
+          ),
+        );
       }
     }
   };
@@ -446,7 +459,10 @@ export const useSessionManager = () => {
         : undefined,
       integration: isIntegrationSession ? connection.integration : undefined,
       reconnectAttempts: 0,
-      maxReconnectAttempts: connection.retryAttempts || settings.retryAttempts,
+      maxReconnectAttempts: resolveConnectionRetryAttempts(
+        connection.retryAttempts,
+        settings.retryAttempts,
+      ),
       ...(unsupportedMessage
         ? { status: "error" as const, errorMessage: unsupportedMessage }
         : {}),
@@ -624,7 +640,10 @@ export const useSessionManager = () => {
         // Tab closes, RDPClient unmount calls detach_rdp_session, backend stays alive
       } else if (closePolicy === "disconnect") {
         // Fully disconnect — ask for confirmation if warnOnClose is on
-        const shouldWarn = connection?.warnOnClose || settings.warnOnClose;
+        const shouldWarn = resolveConnectionWarnOnClose(
+          connection?.warnOnClose,
+          settings.warnOnClose,
+        );
         if (shouldWarn) {
           const confirmed = await showConfirm(
             "Disconnect this RDP session? The remote session will be ended.",
@@ -642,7 +661,10 @@ export const useSessionManager = () => {
       // 'detach' policy: silently close the tab; RDPClient unmount calls detach_rdp_session
     } else {
       // Non-RDP protocols: original warnOnClose flow
-      const shouldWarn = connection?.warnOnClose || settings.warnOnClose;
+      const shouldWarn = resolveConnectionWarnOnClose(
+        connection?.warnOnClose,
+        settings.warnOnClose,
+      );
       if (shouldWarn) {
         const confirmed = await showConfirm(t("dialogs.confirmClose"));
         if (!confirmed) return;
@@ -777,7 +799,10 @@ export const useSessionManager = () => {
       protocol: sessionData.protocol as Connection["protocol"],
       hostname: sessionData.hostname,
       reconnectAttempts: 0,
-      maxReconnectAttempts: connection.retryAttempts || settings.retryAttempts,
+      maxReconnectAttempts: resolveConnectionRetryAttempts(
+        connection.retryAttempts,
+        settings.retryAttempts,
+      ),
       backendSessionId: sessionData.backendSessionId,
       shellId: sessionData.shellId,
       zoomLevel: sessionData.zoomLevel,
