@@ -5,14 +5,11 @@ import {
   Plus,
   Sparkles,
   ChevronDown,
-  ChevronUp,
   Cloud,
   Folder as FolderIcon,
   Star,
   Zap,
   Settings2,
-  FileText,
-  Tag,
   RotateCcw,
   Search,
   X,
@@ -22,22 +19,11 @@ import {
   type Connection,
   type IntegrationConnectionSettings,
 } from "../../types/connection/connection";
-import { TagManager } from "./TagManager";
-import SSHOptions from "../connectionEditor/SSHOptions";
-import HTTPOptions from "../connectionEditor/HTTPOptions";
-import CloudProviderOptions from "../connectionEditor/CloudProviderOptions";
-import RDPOptions from "../connectionEditor/RDPOptions";
-import WinRMOptions from "../connectionEditor/WinRMOptions";
-import TOTPOptions from "../connectionEditor/TOTPOptions";
-import BackupCodesSection from "../connectionEditor/BackupCodesSection";
-import SecurityQuestionsSection from "../connectionEditor/SecurityQuestionsSection";
-import RecoveryInfoSection from "../connectionEditor/RecoveryInfoSection";
 import {
   useConnectionEditor,
   PROTOCOL_OPTIONS,
   INTEGRATION_PROTOCOL_OPTIONS,
   CLOUD_OPTIONS,
-  ICON_OPTIONS,
   PROTOCOL_COLOR_MAP,
   getIntegrationKeyFromProtocol,
   type ConnectionEditorMgr,
@@ -53,14 +39,21 @@ import {
   toExchangeProviderFields,
   type ExchangeConnectionProviderFields,
 } from "../../utils/integrations/exchangeConnectionFields";
-import {
-  Checkbox,
-  NumberInput,
-  PasswordInput,
-  Select,
-  Textarea,
-} from "../ui/forms";
+import { Checkbox, NumberInput, PasswordInput } from "../ui/forms";
 import { InfoTooltip } from "../ui/InfoTooltip";
+import { BehaviorSection } from "./editor/BehaviorSection";
+import {
+  getConnectionEditorSearchDescriptors,
+  getConnectionEditorTabs,
+  type ConnectionEditorTabDescriptor,
+  type ConnectionEditorTabId,
+} from "./editor/editorRegistry";
+import { ConnectionEditorSearchBar } from "./editor/ConnectionEditorSearchBar";
+import { NotesSection } from "./editor/NotesSection";
+import { OrganizeSection } from "./editor/OrganizeSection";
+import { ParentSelector } from "./editor/ParentSelector";
+import { ProtocolSections } from "./editor/ProtocolSections";
+import { useConnectionEditorSearch } from "./editor/useConnectionEditorSearch";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -71,247 +64,6 @@ interface ConnectionEditorProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-type ConnectionEditorTabId =
-  | "general"
-  | "protocol"
-  | "behavior"
-  | "organize"
-  | "notes";
-
-interface ConnectionEditorTab {
-  id: ConnectionEditorTabId;
-  label: string;
-  icon: React.ElementType<{ size?: number; className?: string }>;
-  connectionOnly?: boolean;
-}
-
-const CONNECTION_EDITOR_TABS: ConnectionEditorTab[] = [
-  { id: "general", label: "Basics", icon: Settings2 },
-  { id: "protocol", label: "Protocol", icon: Cloud, connectionOnly: true },
-  { id: "behavior", label: "Behavior", icon: Zap, connectionOnly: true },
-  { id: "organize", label: "Organize", icon: Tag },
-  { id: "notes", label: "Notes", icon: FileText },
-];
-
-const getConnectionEditorTabs = (isGroup: boolean) =>
-  CONNECTION_EDITOR_TABS.filter((tab) => !isGroup || !tab.connectionOnly);
-
-/* ═══════════════════════════════════════════════════════════════
-   Settings Search — highlights matching labels and counts results
-   ═══════════════════════════════════════════════════════════════ */
-
-const SKIP_TAGS = new Set([
-  "INPUT",
-  "TEXTAREA",
-  "SCRIPT",
-  "STYLE",
-  "SELECT",
-  "OPTION",
-]);
-
-function clearAllMarks(container: HTMLElement) {
-  const marks = container.querySelectorAll("mark[data-sh]");
-  marks.forEach((mark) => {
-    const text = document.createTextNode(mark.textContent || "");
-    mark.parentNode?.replaceChild(text, mark);
-  });
-  container.normalize();
-}
-
-function applyHighlights(container: HTMLElement, q: string): number {
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => {
-      const p = node.parentElement;
-      if (!p) return NodeFilter.FILTER_REJECT;
-      if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-      if (p.closest("[data-search-bar]")) return NodeFilter.FILTER_REJECT;
-      if (p.hasAttribute("data-sh")) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
-
-  const nodes: Text[] = [];
-  let n: Node | null;
-  while ((n = walker.nextNode())) nodes.push(n as Text);
-
-  let count = 0;
-  for (const tn of nodes) {
-    const text = tn.textContent || "";
-    const idx = text.toLowerCase().indexOf(q);
-    if (idx === -1) continue;
-    count++;
-
-    const frag = document.createDocumentFragment();
-    if (idx > 0) frag.appendChild(document.createTextNode(text.slice(0, idx)));
-    const mark = document.createElement("mark");
-    mark.setAttribute("data-sh", "1");
-    mark.className = "bg-warning/40 text-[var(--color-text)] rounded-sm px-0.5";
-    mark.textContent = text.slice(idx, idx + q.length);
-    frag.appendChild(mark);
-    if (idx + q.length < text.length)
-      frag.appendChild(document.createTextNode(text.slice(idx + q.length)));
-    tn.parentNode!.replaceChild(frag, tn);
-  }
-  return count;
-}
-
-function focusMatch(container: HTMLElement, index: number) {
-  const marks = container.querySelectorAll("mark[data-sh]");
-  marks.forEach((m, i) => {
-    if (i === index) {
-      m.className =
-        "bg-warning text-[var(--color-text)] rounded-sm px-0.5 ring-1 ring-warning";
-      // Scroll the overflow-y-auto parent, not the viewport
-      const scroller = container.parentElement;
-      if (scroller) {
-        const markRect = (m as HTMLElement).getBoundingClientRect();
-        const scrollerRect = scroller.getBoundingClientRect();
-        const offset =
-          markRect.top -
-          scrollerRect.top -
-          scroller.clientHeight / 2 +
-          markRect.height / 2;
-        scroller.scrollBy({ top: offset, behavior: "smooth" });
-      }
-    } else {
-      m.className = "bg-warning/30 text-[var(--color-text)] rounded-sm px-0.5";
-    }
-  });
-}
-
-function useSettingsSearch(
-  containerRef: React.RefObject<HTMLElement | null>,
-  refreshKey?: unknown,
-) {
-  const [query, setQuery] = useState("");
-  const [matchCount, setMatchCount] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    clearAllMarks(el);
-
-    const q = query.trim().toLowerCase();
-    if (!q) {
-      setMatchCount(0);
-      setCurrentIndex(0);
-      return;
-    }
-
-    const count = applyHighlights(el, q);
-    setMatchCount(count);
-    setCurrentIndex(count > 0 ? 0 : -1);
-
-    if (count > 0) focusMatch(el, 0);
-  }, [query, containerRef, refreshKey]);
-
-  const goNext = useCallback(() => {
-    if (matchCount <= 0) return;
-    const next = (currentIndex + 1) % matchCount;
-    setCurrentIndex(next);
-    if (containerRef.current) focusMatch(containerRef.current, next);
-  }, [currentIndex, matchCount, containerRef]);
-
-  const goPrev = useCallback(() => {
-    if (matchCount <= 0) return;
-    const prev = (currentIndex - 1 + matchCount) % matchCount;
-    setCurrentIndex(prev);
-    if (containerRef.current) focusMatch(containerRef.current, prev);
-  }, [currentIndex, matchCount, containerRef]);
-
-  return { query, setQuery, matchCount, currentIndex, goNext, goPrev };
-}
-
-const SearchBar: React.FC<{
-  query: string;
-  setQuery: (q: string) => void;
-  matchCount: number;
-  currentIndex: number;
-  goNext: () => void;
-  goPrev: () => void;
-}> = ({ query, setQuery, matchCount, currentIndex, goNext, goPrev }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  return (
-    <div
-      data-search-bar
-      className="flex items-center gap-1 bg-[var(--color-border)]/60 rounded-lg px-2 py-1 min-w-[180px] max-w-[300px]"
-    >
-      <Search
-        size={13}
-        className="text-[var(--color-textMuted)] flex-shrink-0"
-      />
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setQuery("");
-            inputRef.current?.blur();
-          }
-          if (e.key === "Enter" && matchCount > 0) {
-            if (e.shiftKey) {
-              goPrev();
-            } else {
-              goNext();
-            }
-            e.preventDefault();
-          }
-          if (e.key === "F3" || (e.key === "g" && (e.ctrlKey || e.metaKey))) {
-            if (e.shiftKey) {
-              goPrev();
-            } else {
-              goNext();
-            }
-            e.preventDefault();
-          }
-        }}
-        placeholder="Search settings..."
-        className="bg-transparent border-none outline-none text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)] w-full min-w-0"
-      />
-      {query && (
-        <>
-          <span className="text-[10px] font-medium text-[var(--color-textSecondary)] whitespace-nowrap tabular-nums">
-            {matchCount > 0 ? `${currentIndex + 1}/${matchCount}` : "0"}
-          </span>
-          <button
-            type="button"
-            onClick={goPrev}
-            disabled={matchCount === 0}
-            className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] disabled:opacity-30 transition-colors flex-shrink-0"
-            title="Previous (Shift+Enter)"
-          >
-            <ChevronUp size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={matchCount === 0}
-            className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] disabled:opacity-30 transition-colors flex-shrink-0"
-            title="Next (Enter)"
-          >
-            <ChevronDown size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setQuery("");
-              inputRef.current?.focus();
-            }}
-            className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors flex-shrink-0"
-          >
-            <X size={12} />
-          </button>
-        </>
-      )}
-    </div>
-  );
-};
 
 /* ═══════════════════════════════════════════════════════════════
    EditorHeader
@@ -416,8 +168,12 @@ const EditorHeader: React.FC<{
    ═══════════════════════════════════════════════════════════════ */
 
 const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div className="flex flex-wrap gap-3">
+  <div
+    data-editor-search-section="general-basics"
+    className="flex flex-wrap gap-3"
+  >
     <label
+      data-editor-search-field="isGroup"
       className={`sor-option-chip ${
         mgr.formData.isGroup
           ? "sor-option-chip-active bg-primary/20 border-accent/50 text-primary"
@@ -436,6 +192,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     </label>
     {!mgr.formData.isGroup && (
       <label
+        data-editor-search-field="favorite"
         className={`sor-option-chip ${
           mgr.formData.favorite
             ? "sor-option-chip-active bg-warning/20 border-warning/50 text-warning"
@@ -464,7 +221,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
    ═══════════════════════════════════════════════════════════════ */
 
 const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div>
+  <div data-editor-search-field="name">
     <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
       {mgr.formData.isGroup ? "Folder Name" : "Connection Name"}{" "}
       <span className="text-error">*</span>
@@ -483,42 +240,6 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     />
   </div>
 );
-
-/* ═══════════════════════════════════════════════════════════════
-   ParentSelector
-   ═══════════════════════════════════════════════════════════════ */
-
-const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
-  if (mgr.availableGroups.length === 0) return null;
-  return (
-    <div>
-      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-        Parent Folder
-      </label>
-      <Select
-        value={mgr.formData.parentId || ""}
-        data-testid="editor-parent-folder"
-        onChange={(v: string) =>
-          mgr.setFormData({
-            ...mgr.formData,
-            parentId: v || undefined,
-          })
-        }
-        options={[
-          { value: "", label: "Root (No parent)" },
-          ...mgr.selectableGroups.map(({ group, disabled, reason }) => ({
-            value: group.id,
-            label: `${group.name}
-            ${disabled ? ` (${reason})` : ""}`,
-            disabled: disabled,
-            title: reason,
-          })),
-        ]}
-        className="w-full px-4 py-2.5 bg-[var(--color-input)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-      />
-    </div>
-  );
-};
 
 /* ═══════════════════════════════════════════════════════════════
    ProtocolSelector — dropdown with icons
@@ -756,6 +477,8 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   return (
     <div
       ref={ref}
+      data-editor-search-section="general-connection"
+      data-editor-search-field="protocol"
       className="relative"
       onBlur={(event) => {
         const nextTarget = event.relatedTarget as Node | null;
@@ -1541,216 +1264,6 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════
-   ProtocolSections — renders all protocol-specific sub-editors
-   ═══════════════════════════════════════════════════════════════ */
-
-const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-3 space-y-2">
-    <SSHOptions
-      formData={mgr.formData}
-      setFormData={mgr.setFormData}
-      sshSecretManager={mgr.sshSecrets}
-    />
-    <HTTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
-    <CloudProviderOptions
-      formData={mgr.formData}
-      setFormData={mgr.setFormData}
-    />
-    <RDPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
-    <WinRMOptions formData={mgr.formData} setFormData={mgr.setFormData} />
-    <TOTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
-    <BackupCodesSection formData={mgr.formData} setFormData={mgr.setFormData} />
-    <SecurityQuestionsSection
-      formData={mgr.formData}
-      setFormData={mgr.setFormData}
-    />
-    <RecoveryInfoSection
-      formData={mgr.formData}
-      setFormData={mgr.setFormData}
-    />
-  </div>
-);
-
-/* ═══════════════════════════════════════════════════════════════
-   BehaviorSection — per-connection focus behaviors
-   ═══════════════════════════════════════════════════════════════ */
-
-const FOCUS_OPTIONS = [
-  { value: "", label: "Use global setting" },
-  { value: "true", label: "Focus tab" },
-  { value: "false", label: "Open in background" },
-] as const;
-
-const parseFocusBool = (v: string): boolean | undefined =>
-  v === "true" ? true : v === "false" ? false : undefined;
-
-const BehaviorSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
-  const isWindows =
-    mgr.formData.osType === "windows" ||
-    (!mgr.formData.osType &&
-      (mgr.formData.protocol === "rdp" || mgr.formData.protocol === "winrm"));
-  return (
-    <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
-      <h3 className="text-xs font-semibold text-[var(--color-textSecondary)] flex items-center gap-1.5">
-        <Zap size={12} /> Focus Behavior
-      </h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-            On Connect
-          </label>
-          <Select
-            value={
-              mgr.formData.focusOnConnect === true
-                ? "true"
-                : mgr.formData.focusOnConnect === false
-                  ? "false"
-                  : ""
-            }
-            onChange={(v: string) =>
-              mgr.setFormData({
-                ...mgr.formData,
-                focusOnConnect: parseFocusBool(v),
-              })
-            }
-            options={FOCUS_OPTIONS.map((o) => ({
-              value: o.value,
-              label: o.label,
-            }))}
-            variant="form"
-          />
-        </div>
-        {isWindows && (
-          <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-              On Windows Management Tool
-            </label>
-            <Select
-              value={
-                mgr.formData.focusOnWinmgmtTool === true
-                  ? "true"
-                  : mgr.formData.focusOnWinmgmtTool === false
-                    ? "false"
-                    : ""
-              }
-              onChange={(v: string) =>
-                mgr.setFormData({
-                  ...mgr.formData,
-                  focusOnWinmgmtTool: parseFocusBool(v),
-                })
-              }
-              options={FOCUS_OPTIONS.map((o) => ({
-                value: o.value,
-                label: o.label,
-              }))}
-              variant="form"
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════
-   IconPicker
-   ═══════════════════════════════════════════════════════════════ */
-
-const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div>
-    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-      Custom Icon
-    </label>
-    <div className="flex flex-wrap gap-1.5">
-      {ICON_OPTIONS.map(({ value, label, icon: Icon }) => {
-        const isActive = (mgr.formData.icon || "") === value;
-        return (
-          <button
-            key={value || "default"}
-            type="button"
-            onClick={() =>
-              mgr.setFormData({ ...mgr.formData, icon: value || undefined })
-            }
-            className={`p-2 rounded-lg border transition-all ${
-              isActive
-                ? "border-primary/60 bg-primary/20 text-primary"
-                : "border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]"
-            }`}
-            title={label}
-          >
-            <Icon size={18} />
-          </button>
-        );
-      })}
-    </div>
-  </div>
-);
-
-/* ═══════════════════════════════════════════════════════════════
-   TagsSection
-   ═══════════════════════════════════════════════════════════════ */
-
-const TagsSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div>
-    <div className="flex items-center gap-1.5 mb-1">
-      <Tag size={12} className="text-[var(--color-textSecondary)]" />
-      <label className="text-xs font-medium text-[var(--color-textSecondary)]">
-        Tags
-      </label>
-    </div>
-    <TagManager
-      tags={mgr.formData.tags || []}
-      availableTags={mgr.allTags}
-      onChange={mgr.handleTagsChange}
-      onCreateTag={() => {}}
-    />
-  </div>
-);
-
-/* ═══════════════════════════════════════════════════════════════
-   DescriptionSection — collapsible
-   ═══════════════════════════════════════════════════════════════ */
-
-const DescriptionSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({
-  mgr,
-}) => (
-  <div className="border border-[var(--color-border)] rounded-xl overflow-hidden">
-    <button
-      type="button"
-      onClick={() => mgr.toggleSection("description")}
-      aria-expanded={mgr.expandedSections.description}
-      className="w-full flex items-center justify-between px-3 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] transition-colors"
-    >
-      <div className="flex items-center gap-2 text-[var(--color-textSecondary)]">
-        <FileText size={16} />
-        <span className="text-sm font-medium">Description & Notes</span>
-        {mgr.formData.description && (
-          <span className="text-xs text-[var(--color-textMuted)] ml-2">
-            ({mgr.formData.description.length} chars)
-          </span>
-        )}
-      </div>
-      {mgr.expandedSections.description ? (
-        <ChevronUp size={16} className="text-[var(--color-textSecondary)]" />
-      ) : (
-        <ChevronDown size={16} className="text-[var(--color-textSecondary)]" />
-      )}
-    </button>
-    {mgr.expandedSections.description && (
-      <div className="p-4 border-t border-[var(--color-border)]">
-        <Textarea
-          value={mgr.formData.description || ""}
-          onChange={(v) => mgr.setFormData({ ...mgr.formData, description: v })}
-          rows={4}
-          className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-          placeholder="Add notes about this connection..."
-        />
-      </div>
-    )}
-  </div>
-);
-
-/* ═══════════════════════════════════════════════════════════════
    EditorFooter
    ═══════════════════════════════════════════════════════════════ */
 
@@ -1785,7 +1298,7 @@ const EditorFooter: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
    ═══════════════════════════════════════════════════════════════ */
 
 const EditorTabs: React.FC<{
-  tabs: ConnectionEditorTab[];
+  tabs: readonly ConnectionEditorTabDescriptor[];
   activeTab: ConnectionEditorTabId;
   onTabChange: (tab: ConnectionEditorTabId) => void;
 }> = ({ tabs, activeTab, onTabChange }) => (
@@ -1839,9 +1352,17 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     () => getConnectionEditorTabs(!!mgr.formData.isGroup),
     [mgr.formData.isGroup],
   );
+  const searchDescriptors = React.useMemo(
+    () => getConnectionEditorSearchDescriptors(!!mgr.formData.isGroup),
+    [mgr.formData.isGroup],
+  );
   const formContentRef = useRef<HTMLDivElement>(null);
   const { query, setQuery, matchCount, currentIndex, goNext, goPrev } =
-    useSettingsSearch(formContentRef, activeTab);
+    useConnectionEditorSearch(formContentRef, activeTab, {
+      descriptors: searchDescriptors,
+      activateTab: setActiveTab,
+      expandSection: mgr.expandSection,
+    });
 
   useEffect(() => {
     if (isOpen) setActiveTab("general");
@@ -1865,7 +1386,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         mgr={mgr}
         onClose={onClose}
         searchBar={
-          <SearchBar
+          <ConnectionEditorSearchBar
             query={query}
             setQuery={setQuery}
             matchCount={matchCount}
@@ -1887,6 +1408,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             id={`connection-editor-panel-${activeTab}`}
             aria-labelledby={`connection-editor-tab-${activeTab}`}
             data-testid={`connection-editor-panel-${activeTab}`}
+            data-editor-search-tab={activeTab}
             className="flex flex-col gap-4"
           >
             {activeTab === "general" && (
@@ -1912,14 +1434,9 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
               <BehaviorSection mgr={mgr} />
             )}
 
-            {activeTab === "organize" && (
-              <>
-                <IconPicker mgr={mgr} />
-                <TagsSection mgr={mgr} />
-              </>
-            )}
+            {activeTab === "organize" && <OrganizeSection mgr={mgr} />}
 
-            {activeTab === "notes" && <DescriptionSection mgr={mgr} />}
+            {activeTab === "notes" && <NotesSection mgr={mgr} />}
           </div>
         </div>
       </div>

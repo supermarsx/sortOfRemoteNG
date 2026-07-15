@@ -948,6 +948,15 @@ export function useConnectionEditor(
     [],
   );
 
+  const expandSection = useCallback(
+    (section: keyof typeof expandedSections) => {
+      setExpandedSections((prev) =>
+        prev[section] ? prev : { ...prev, [section]: true },
+      );
+    },
+    [],
+  );
+
   return {
     formData,
     setFormData,
@@ -965,6 +974,7 @@ export function useConnectionEditor(
     handleProtocolChange,
     handleResetToDefaults,
     toggleSection,
+    expandSection,
   };
 }
 
