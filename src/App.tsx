@@ -1532,7 +1532,7 @@ const AppContent: React.FC = () => {
   return (
     <div
       data-testid="app-shell"
-      className={`h-full text-[var(--color-text)] flex flex-col overflow-hidden app-shell ${
+      className={`relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden text-[var(--color-text)] app-shell ${
         appSettings.backgroundGlowEnabled ? "app-glow" : ""
       } ${
         appSettings.windowTransparencyEnabled
@@ -1614,10 +1614,13 @@ const AppContent: React.FC = () => {
         setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
       />
 
-      <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
+      <div
+        className="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
+        ref={layoutRef}
+      >
         {renderSidebar("left")}
 
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
           <SessionTabs
             activeSessionId={activeSessionId}
             onSessionSelect={setActiveSessionId}
@@ -1650,7 +1653,7 @@ const AppContent: React.FC = () => {
 
           {/* Session viewer */}
           <div
-            className="flex-1 overflow-hidden"
+            className="relative min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
             id="session-main-panel"
             role="tabpanel"
             aria-labelledby={

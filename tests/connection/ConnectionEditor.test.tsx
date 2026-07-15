@@ -675,6 +675,34 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Cross-tab settings search", () => {
+    it("keeps the editor shrinkable with a single contained scrolling pane", () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      expect(screen.getByTestId("connection-editor")).toHaveClass(
+        "min-h-0",
+        "min-w-0",
+        "max-w-full",
+        "overflow-hidden",
+      );
+      const pane = document.querySelector("[data-editor-scroll-pane]");
+      expect(pane).toHaveClass(
+        "min-h-0",
+        "min-w-0",
+        "max-w-full",
+        "overflow-x-hidden",
+        "overflow-y-auto",
+        "overscroll-contain",
+      );
+      expect(document.querySelector("[data-search-bar]")).toHaveClass(
+        "min-w-0",
+        "w-full",
+      );
+    });
+
     it("scrolls only the editor pane and clamps targets above or below its padded viewport", () => {
       const pane = document.createElement("div");
       pane.dataset.editorScrollPane = "true";
@@ -686,7 +714,9 @@ describe("ConnectionEditor", () => {
 
       Object.defineProperties(pane, {
         clientHeight: { configurable: true, value: 400 },
+        clientWidth: { configurable: true, value: 600 },
         scrollHeight: { configurable: true, value: 1200 },
+        scrollWidth: { configurable: true, value: 900 },
       });
       pane.scrollTop = 250;
       pane.scrollLeft = 31;
@@ -899,6 +929,127 @@ describe("ConnectionEditor", () => {
         ).toBeNull();
       });
       windowScroll.mockRestore();
+    });
+
+    it("cancels stale cross-tab navigation and re-clamps the active result after resize", async () => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let frameId = 0;
+      let resizeCallback: ResizeObserverCallback | undefined;
+      const observe = vi.fn();
+      const disconnect = vi.fn();
+      class TestResizeObserver {
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallback = callback;
+        }
+
+        observe = observe;
+        unobserve = vi.fn();
+        disconnect = disconnect;
+      }
+      vi.stubGlobal("ResizeObserver", TestResizeObserver);
+      const requestFrame = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          frameId += 1;
+          frames.set(frameId, callback);
+          return frameId;
+        });
+      const cancelFrame = vi
+        .spyOn(window, "cancelAnimationFrame")
+        .mockImplementation((id) => {
+          frames.delete(id);
+        });
+      const flushFrames = () => {
+        while (frames.size > 0) {
+          const pending = [...frames.entries()];
+          frames.clear();
+          pending.forEach(([, callback]) => callback(performance.now()));
+        }
+      };
+      const windowScroll = vi
+        .spyOn(window, "scrollTo")
+        .mockImplementation(() => undefined);
+
+      const { unmount } = renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const search = screen.getByRole("combobox", {
+        name: "Search connection settings",
+      });
+      fireEvent.change(search, { target: { value: "Focus Behavior" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Next search result" }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Next search result" }),
+      );
+      flushFrames();
+
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-editor-search-active="true"]'),
+        ).toHaveTextContent(/On Windows Management Tool/i),
+      );
+
+      const pane = document.querySelector<HTMLElement>(
+        "[data-editor-scroll-pane]",
+      );
+      const activeTarget = document.querySelector<HTMLElement>(
+        '[data-editor-search-active="true"]',
+      );
+      expect(pane).not.toBeNull();
+      expect(activeTarget).not.toBeNull();
+      Object.defineProperties(pane!, {
+        clientHeight: { configurable: true, value: 300 },
+        clientWidth: { configurable: true, value: 500 },
+        scrollHeight: { configurable: true, value: 900 },
+        scrollWidth: { configurable: true, value: 900 },
+      });
+      pane!.scrollTop = 100;
+      pane!.scrollLeft = 30;
+      pane!.getBoundingClientRect = vi.fn(
+        () =>
+          ({
+            top: 100,
+            bottom: 400,
+            left: 50,
+            right: 550,
+            width: 500,
+            height: 300,
+          }) as DOMRect,
+      );
+      activeTarget!.getBoundingClientRect = vi.fn(
+        () =>
+          ({
+            top: 430,
+            bottom: 470,
+            left: 580,
+            right: 660,
+            width: 80,
+            height: 40,
+          }) as DOMRect,
+      );
+      const bodyTop = document.body.scrollTop;
+      const documentTop = document.documentElement.scrollTop;
+
+      resizeCallback?.([], {} as ResizeObserver);
+      flushFrames();
+
+      expect(pane!.scrollTop).toBe(186);
+      expect(pane!.scrollLeft).toBe(156);
+      expect(document.body.scrollTop).toBe(bodyTop);
+      expect(document.documentElement.scrollTop).toBe(documentTop);
+      expect(windowScroll).not.toHaveBeenCalled();
+      expect(observe).toHaveBeenCalledWith(pane);
+      unmount();
+      expect(disconnect).toHaveBeenCalledOnce();
+      requestFrame.mockRestore();
+      cancelFrame.mockRestore();
+      windowScroll.mockRestore();
+      vi.unstubAllGlobals();
     });
 
     it("does not search secret values and updates protocol-dependent results", async () => {

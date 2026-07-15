@@ -78,15 +78,15 @@ const EditorHeader: React.FC<{
   searchBar: React.ReactNode;
 }> = ({ mgr, onClose, searchBar }) => (
   <div
-    className="relative border-b border-[var(--color-border)] px-5 py-3"
+    className="relative min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] px-5 py-3"
     style={{
       background: mgr.isNewConnection
         ? "linear-gradient(to right, rgb(var(--color-success-rgb) / 0.15), var(--color-surface))"
         : "linear-gradient(to right, rgb(var(--color-primary-rgb) / 0.15), var(--color-surface))",
     }}
   >
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
+    <div className="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <div
           className={`p-2 rounded-lg ${
             mgr.isNewConnection ? "bg-success/20" : "bg-primary/20"
@@ -98,21 +98,21 @@ const EditorHeader: React.FC<{
             <Settings2 size={18} className="text-primary" />
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2">
             {mgr.isNewConnection ? "New Connection" : "Edit Connection"}
             {mgr.isNewConnection && (
               <Sparkles size={14} className="text-success" />
             )}
           </h2>
-          <p className="text-xs text-[var(--color-textSecondary)]">
+          <p className="truncate text-xs text-[var(--color-textSecondary)]">
             {mgr.isNewConnection
               ? "Add a new server or service"
               : `Editing "${mgr.formData.name || "connection"}"`}
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 max-w-full flex-1 flex-wrap items-center justify-end gap-2">
         {searchBar}
         {mgr.connection && mgr.settings.autoSaveEnabled && (
           <div className="flex items-center gap-1.5 text-xs mr-2">
@@ -1271,8 +1271,8 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
    ═══════════════════════════════════════════════════════════════ */
 
 const EditorFooter: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div className="border-t border-[var(--color-border)] px-6 py-3 bg-[var(--color-surface)]">
-    <div className="flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
+  <div className="min-w-0 max-w-full shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-textSecondary)]">
       <div className="flex items-center gap-4">
         <span className="flex items-center gap-1">
           <Zap size={12} />
@@ -1305,11 +1305,11 @@ const EditorTabs: React.FC<{
   activeTab: ConnectionEditorTabId;
   onTabChange: (tab: ConnectionEditorTabId) => void;
 }> = ({ tabs, activeTab, onTabChange }) => (
-  <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5">
+  <div className="min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5">
     <div
       role="tablist"
       aria-label="Connection editor sections"
-      className="max-w-2xl mx-auto flex items-center gap-1 overflow-x-auto py-2"
+      className="mx-auto flex w-full min-w-0 max-w-2xl items-center gap-1 overflow-x-auto py-2"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
@@ -1428,7 +1428,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     <form
       data-testid="connection-editor"
       onSubmit={mgr.handleSubmit}
-      className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden"
+      className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--color-surface)]"
     >
       <EditorHeader
         mgr={mgr}
@@ -1452,15 +1452,21 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />
-      <div data-editor-scroll-pane className="flex-1 overflow-y-auto min-h-0">
-        <div ref={formContentRef} className="max-w-2xl mx-auto w-full p-6">
+      <div
+        data-editor-scroll-pane
+        className="relative min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+      >
+        <div
+          ref={formContentRef}
+          className="mx-auto w-full min-w-0 max-w-2xl p-6"
+        >
           <div
             role="tabpanel"
             id={`connection-editor-panel-${activeTab}`}
             aria-labelledby={`connection-editor-tab-${activeTab}`}
             data-testid={`connection-editor-panel-${activeTab}`}
             data-editor-search-tab={activeTab}
-            className="flex flex-col gap-4"
+            className="flex min-w-0 max-w-full flex-col gap-4"
           >
             {activeTab === "general" && (
               <>

@@ -201,7 +201,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
   // the .tool-tab-embedded class strips the backdrop, makes the outer wrapper
   // fill the tab, and forces the inner dialog to fill it too.
   return (
-    <div className="tool-tab-embedded h-full relative overflow-hidden">
+    <div className="tool-tab-embedded relative h-full min-h-0 min-w-0 max-w-full overflow-hidden">
       {toolKey === "performanceMonitor" && (
         <PerformanceMonitor isOpen onClose={onClose} />
       )}

@@ -20,6 +20,7 @@ import {
   type ConnectionEditorTabDescriptor,
   type ConnectionEditorTabId,
 } from "./editorRegistry";
+import { scrollElementWithinContainer } from "./scrollWithinContainer";
 
 const ACTIVE_HIGHLIGHT_CLASSES = [
   "ring-2",
@@ -186,27 +187,7 @@ export function scrollConnectionEditorSearchTargetIntoView(
   const pane =
     target.closest<HTMLElement>("[data-editor-scroll-pane]") ??
     container.closest<HTMLElement>("[data-editor-scroll-pane]");
-  if (!pane) return false;
-
-  const paneRect = pane.getBoundingClientRect();
-  const targetRect = target.getBoundingClientRect();
-  const visibleTop = paneRect.top + padding;
-  const visibleBottom = paneRect.bottom - padding;
-  let delta = 0;
-
-  if (targetRect.top < visibleTop) {
-    delta = targetRect.top - visibleTop;
-  } else if (targetRect.bottom > visibleBottom) {
-    delta = targetRect.bottom - visibleBottom;
-  }
-
-  if (delta === 0) return true;
-  const maximumScrollTop = Math.max(0, pane.scrollHeight - pane.clientHeight);
-  pane.scrollTop = Math.min(
-    maximumScrollTop,
-    Math.max(0, pane.scrollTop + delta),
-  );
-  return true;
+  return !!pane && !!scrollElementWithinContainer(pane, target, { padding });
 }
 
 function focusAndHighlightSearchTarget({
@@ -255,21 +236,36 @@ function focusAndHighlightSearchTarget({
   return true;
 }
 
-function scheduleAfterTabRender(callback: () => boolean) {
+function scheduleAfterTabRender(callback: () => boolean): () => void {
+  let cancelled = false;
+  let scheduledFrame: number | undefined;
+  let scheduledTimeout: number | undefined;
+
   const schedule = (next: () => void) => {
     if (typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(next);
+      scheduledFrame = window.requestAnimationFrame(next);
     } else {
-      window.setTimeout(next, 0);
+      scheduledTimeout = window.setTimeout(next, 0);
     }
   };
 
   let attempts = 0;
   const tryResolve = () => {
+    if (cancelled) return;
     attempts += 1;
     if (!callback() && attempts < 3) schedule(tryResolve);
   };
   schedule(tryResolve);
+
+  return () => {
+    cancelled = true;
+    if (scheduledFrame !== undefined) {
+      window.cancelAnimationFrame(scheduledFrame);
+    }
+    if (scheduledTimeout !== undefined) {
+      window.clearTimeout(scheduledTimeout);
+    }
+  };
 }
 
 interface ConnectionEditorSearchNavigationOptions {
@@ -289,6 +285,7 @@ export function useConnectionEditorSearch(
   const [query, setQuery] = useState("");
   const [currentIndex, setCurrentIndex] = useState(-1);
   const lastNavigatedResultId = useRef<string | undefined>(undefined);
+  const cancelPendingNavigation = useRef<() => void>(() => {});
 
   const index = useMemo(
     () =>
@@ -311,6 +308,7 @@ export function useConnectionEditorSearch(
   );
 
   useEffect(() => {
+    cancelPendingNavigation.current();
     setCurrentIndex(results.length > 0 ? 0 : -1);
     lastNavigatedResultId.current = undefined;
     const container = containerRef.current;
@@ -319,11 +317,49 @@ export function useConnectionEditorSearch(
 
   useEffect(
     () => () => {
+      cancelPendingNavigation.current();
       const container = containerRef.current;
       if (container) clearSearchHighlight(container);
     },
     [containerRef],
   );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const pane = container?.closest<HTMLElement>("[data-editor-scroll-pane]");
+    if (!container || !pane) return;
+
+    let scheduledFrame: number | undefined;
+    const keepActiveTargetContained = () => {
+      if (scheduledFrame !== undefined) {
+        window.cancelAnimationFrame(scheduledFrame);
+      }
+      scheduledFrame = window.requestAnimationFrame(() => {
+        scheduledFrame = undefined;
+        const activeTarget = container.querySelector<HTMLElement>(
+          '[data-editor-search-active="true"]',
+        );
+        if (activeTarget) {
+          scrollConnectionEditorSearchTargetIntoView(container, activeTarget);
+        }
+      });
+    };
+
+    window.addEventListener("resize", keepActiveTargetContained);
+    const resizeObserver =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(keepActiveTargetContained)
+        : undefined;
+    resizeObserver?.observe(pane);
+
+    return () => {
+      window.removeEventListener("resize", keepActiveTargetContained);
+      resizeObserver?.disconnect();
+      if (scheduledFrame !== undefined) {
+        window.cancelAnimationFrame(scheduledFrame);
+      }
+    };
+  }, [containerRef]);
 
   const focusField = useCallback(
     (
@@ -332,7 +368,8 @@ export function useConnectionEditorSearch(
       fieldLabel?: string,
       protocolSubtabId?: ConnectionEditorProtocolSubtabId,
     ) => {
-      scheduleAfterTabRender(() => {
+      cancelPendingNavigation.current();
+      cancelPendingNavigation.current = scheduleAfterTabRender(() => {
         const container = containerRef.current;
         if (!container) return false;
         return focusAndHighlightSearchTarget({
