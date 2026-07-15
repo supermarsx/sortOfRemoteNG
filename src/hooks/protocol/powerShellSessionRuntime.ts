@@ -145,6 +145,27 @@ export type PowerShellSshSessionOptions = {
 const secondsToMs = (value: number, fallback: number): number =>
   Math.max(1_000, Math.min(300_000, Math.round((value || fallback) * 1_000)));
 
+function assertConnectionSecretSource(
+  settings: PowerShellRemotingSettings,
+  secretDescription: string,
+): void {
+  if (settings.credential.source === "prompt") {
+    throw new Error(
+      `${secretDescription} must be prompted at connect time; refusing to reuse a saved connection secret.`,
+    );
+  }
+  if (settings.credential.source === "vault") {
+    throw new Error(
+      `${secretDescription} must be resolved from the selected vault reference; refusing to reuse a saved connection secret.`,
+    );
+  }
+  if (settings.credential.savedCredentialId) {
+    throw new Error(
+      `${secretDescription} must be resolved from the selected saved credential; refusing to reuse the connection-level secret.`,
+    );
+  }
+}
+
 /** Build the strict, secret-bearing invoke payload without retaining it. */
 export function buildPowerShellSshSessionOptions(
   connection: Connection,
@@ -162,6 +183,7 @@ export function buildPowerShellSshSessionOptions(
 
   let auth: PowerShellSshSessionOptions["auth"];
   if (settings.ssh.authMethod === "password") {
+    assertConnectionSecretSource(settings, "The PowerShell SSH password");
     if (!connection.password) {
       throw new Error(
         "A saved or prompted password is required for PowerShell SSH authentication.",
@@ -169,14 +191,30 @@ export function buildPowerShellSshSessionOptions(
     }
     auth = { type: "password", password: connection.password };
   } else if (settings.ssh.authMethod === "privateKey") {
-    const path = settings.ssh.privateKeyPath?.trim() || connection.privateKey;
+    if (settings.ssh.privateKeyCredentialRef) {
+      throw new Error(
+        "The PowerShell SSH private-key credential reference must be resolved at connect time; refusing to reuse the connection-level private key.",
+      );
+    }
+    let path = settings.ssh.privateKeyPath?.trim();
+    if (!path && connection.privateKey) {
+      assertConnectionSecretSource(settings, "The PowerShell SSH private key");
+      path = connection.privateKey;
+    }
     if (!path) {
       throw new Error("A private-key path is required for PowerShell SSH.");
+    }
+    const passphrase = connection.passphrase || null;
+    if (passphrase) {
+      assertConnectionSecretSource(
+        settings,
+        "The PowerShell SSH private-key passphrase",
+      );
     }
     auth = {
       type: "private_key",
       path,
-      passphrase: connection.passphrase || null,
+      passphrase,
     };
   } else {
     throw new Error(

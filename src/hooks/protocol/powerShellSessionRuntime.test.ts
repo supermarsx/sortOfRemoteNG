@@ -24,6 +24,7 @@ describe("PowerShell live-session runtime", () => {
   it("builds a strict pinned password payload without changing protocol identity", () => {
     const settings = createDefaultPowerShellRemotingSettings();
     settings.transport = "ssh";
+    settings.credential.source = "saved";
     settings.credential.username = "ps-admin";
     settings.ssh.authMethod = "password";
     settings.ssh.hostTrust = {
@@ -50,6 +51,7 @@ describe("PowerShell live-session runtime", () => {
   it("uses an explicit known_hosts file and fails closed for unavailable modes", () => {
     const settings = createDefaultPowerShellRemotingSettings();
     settings.transport = "ssh";
+    settings.credential.source = "saved";
     settings.ssh.authMethod = "privateKey";
     settings.ssh.privateKeyPath = "C:\\Keys\\id_ed25519";
     settings.ssh.hostTrust.mode = "strict";
@@ -78,6 +80,74 @@ describe("PowerShell live-session runtime", () => {
     expect(() =>
       buildPowerShellSshSessionOptions(connection(), settings),
     ).toThrow(/Trust-on-first-use is not available/i);
+  });
+
+  it("refuses to reuse connection passwords for prompt, vault, or explicit saved references", () => {
+    const settings = createDefaultPowerShellRemotingSettings();
+    settings.transport = "ssh";
+    settings.ssh.authMethod = "password";
+    settings.ssh.hostTrust = {
+      mode: "pinned",
+      fingerprint: "SHA256:abc123",
+    };
+
+    expect(() =>
+      buildPowerShellSshSessionOptions(connection(), settings),
+    ).toThrow(/must be prompted at connect time/i);
+
+    settings.credential.source = "vault";
+    settings.credential.vaultRef = { secretId: "vault/password" };
+    expect(() =>
+      buildPowerShellSshSessionOptions(connection(), settings),
+    ).toThrow(/selected vault reference/i);
+
+    settings.credential.source = "saved";
+    settings.credential.savedCredentialId = "ps-credential-record";
+    expect(() =>
+      buildPowerShellSshSessionOptions(connection(), settings),
+    ).toThrow(/selected saved credential/i);
+  });
+
+  it("refuses to ignore private-key credential references or leak prompt passphrases", () => {
+    const settings = createDefaultPowerShellRemotingSettings();
+    settings.transport = "ssh";
+    settings.ssh.authMethod = "privateKey";
+    settings.ssh.privateKeyPath = "C:\\Keys\\id_ed25519";
+    settings.ssh.hostTrust = {
+      mode: "pinned",
+      fingerprint: "SHA256:abc123",
+    };
+
+    expect(() =>
+      buildPowerShellSshSessionOptions(
+        { ...connection(), passphrase: "key-passphrase" },
+        settings,
+      ),
+    ).toThrow(/private-key passphrase must be prompted/i);
+
+    settings.ssh.privateKeyPath = null;
+    expect(() =>
+      buildPowerShellSshSessionOptions(
+        {
+          ...connection(),
+          privateKey: "C:\\Users\\operator\\.ssh\\id_ed25519",
+        },
+        settings,
+      ),
+    ).toThrow(/private key must be prompted/i);
+
+    settings.ssh.privateKeyPath = "C:\\Keys\\id_ed25519";
+    settings.credential.source = "saved";
+    settings.ssh.privateKeyCredentialRef = "key-record";
+    expect(() =>
+      buildPowerShellSshSessionOptions(
+        {
+          ...connection(),
+          privateKey: "C:\\Users\\operator\\.ssh\\id_ed25519",
+        },
+        settings,
+      ),
+    ).toThrow(/private-key credential reference/i);
   });
 
   it("deduplicates replay and rejects invalid sequence numbers", () => {
