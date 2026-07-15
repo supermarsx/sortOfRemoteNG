@@ -1,3 +1,10 @@
+---
+title: E2E runbook
+description: Operational guidance for required, opt-in, nightly, and lab-only end-to-end testing.
+permalink: /testing/e2e-runbook/
+hide_page_header: true
+---
+
 # E2E Runbook
 
 ## Purpose

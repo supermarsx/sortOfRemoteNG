@@ -1,0 +1,65 @@
+<aside
+  class="site-sidebar"
+  id="site-navigation"
+  aria-label="Documentation navigation"
+>
+  <div class="sidebar-topline">
+    <a
+      class="brand"
+      href="{{ '/' | relative_url }}"
+      aria-label="sortOfRemoteNG documentation home"
+    >
+      <span class="brand-mark" aria-hidden="true">sR</span>
+      <span class="brand-copy">
+        <strong>sortOfRemoteNG</strong>
+        <small>Documentation</small>
+      </span>
+    </a>
+    <button
+      class="nav-close"
+      type="button"
+      data-nav-close
+      aria-label="Close documentation navigation"
+    >
+      <span aria-hidden="true">×</span>
+    </button>
+  </div>
+
+  <!-- prettier-ignore -->
+  <nav class="sidebar-nav" aria-label="Primary">
+    {% for section in site.data.navigation %}
+      <section class="nav-section" aria-labelledby="nav-section-{{ forloop.index }}">
+        <h2 id="nav-section-{{ forloop.index }}">{{ section.label }}</h2>
+        <ul>
+          {% for item in section.items %}
+            {% assign item_url = item.url | relative_url %}
+            {% assign is_current = false %}
+            {% if page.url == item.url %}
+              {% assign is_current = true %}
+            {% elsif item.url != '/' and page.url contains item.url %}
+              {% assign is_current = true %}
+            {% endif %}
+            <li>
+              <a
+                href="{{ item_url }}"
+                class="{% if is_current %}is-current{% endif %}"
+                aria-current="{% if is_current %}page{% else %}false{% endif %}"
+              >
+                <span>{{ item.title }}</span>
+                <span class="nav-arrow" aria-hidden="true">›</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </nav>
+
+  <div class="sidebar-footer">
+    <a href="{{ site.repository_url }}" rel="noreferrer">View repository</a>
+    <span aria-hidden="true">·</span>
+    <a href="{{ site.repository_url }}/issues" rel="noreferrer"
+      >Report an issue</a
+    >
+  </div>
+</aside>

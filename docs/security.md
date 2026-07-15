@@ -1,3 +1,10 @@
+---
+title: Encryption at rest
+description: Design choices and threat model for sortOfRemoteNG's encrypted application data and artifacts.
+permalink: /security/encryption-at-rest/
+hide_page_header: true
+---
+
 # Encryption-at-rest — design & threat model
 
 This document captures the design choices behind sortOfRemoteNG's
@@ -69,10 +76,10 @@ or the artifact codecs.
 
 ### Key storage modes
 
-| Mode | Where the master DEK lives | When chosen |
-|---|---|---|
-| **Vault** | OS keychain entry. Transparent unlock on app start. | Default when the keychain is reachable. |
-| **Password** | `dek.enc` — Argon2id-wrapped (OWASP 64 MiB / 3 / 4). | Vault unreachable; user enters password at every start. |
+| Mode                 | Where the master DEK lives                                          | When chosen                                                                |
+| -------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **Vault**            | OS keychain entry. Transparent unlock on app start.                 | Default when the keychain is reachable.                                    |
+| **Password**         | `dek.enc` — Argon2id-wrapped (OWASP 64 MiB / 3 / 4).                | Vault unreachable; user enters password at every start.                    |
 | **Vault + password** | Both — keychain holds plaintext DEK, `dek.enc` holds Argon2id wrap. | User wants vault transparency plus a password fallback for vault eviction. |
 
 `MasterKeyStorage` is recorded in every v2 envelope's 64-byte
@@ -81,15 +88,15 @@ render before any sub-key is derived.
 
 ## On-disk artifacts
 
-| Artifact | Codec | Filename pattern | Format |
-|---|---|---|---|
-| Connections | `artifacts::connections` | `storage.json` (despite the name, v2 envelope) | whole-file envelope, JSON object |
-| Settings | `artifacts::settings` | `settings.enc` | whole-file envelope, JSON object |
-| Recording metadata | `artifacts::recording_meta` | `<recordings>/recordings/<id>.json.enc` | whole-file envelope, JSON object |
-| Recording media | `artifacts::recording_media` | `<recordings>/recordings/<id>.media.enc` | chunked stream (see below) |
-| Backups | `artifacts::backups` | `<destination>/backup_*.json[.gz]` | whole-file envelope, opaque bytes |
-| Logs | `artifacts::logs` | (wired in Commit H — see deferred items) | whole-file envelope, opaque bytes |
-| Macros | `artifacts::macros` | `<recordings>/macros/<id>.json.enc` | whole-file envelope, JSON object |
+| Artifact           | Codec                        | Filename pattern                               | Format                            |
+| ------------------ | ---------------------------- | ---------------------------------------------- | --------------------------------- |
+| Connections        | `artifacts::connections`     | `storage.json` (despite the name, v2 envelope) | whole-file envelope, JSON object  |
+| Settings           | `artifacts::settings`        | `settings.enc`                                 | whole-file envelope, JSON object  |
+| Recording metadata | `artifacts::recording_meta`  | `<recordings>/recordings/<id>.json.enc`        | whole-file envelope, JSON object  |
+| Recording media    | `artifacts::recording_media` | `<recordings>/recordings/<id>.media.enc`       | chunked stream (see below)        |
+| Backups            | `artifacts::backups`         | `<destination>/backup_*.json[.gz]`             | whole-file envelope, opaque bytes |
+| Logs               | `artifacts::logs`            | (wired in Commit H — see deferred items)       | whole-file envelope, opaque bytes |
+| Macros             | `artifacts::macros`          | `<recordings>/macros/<id>.json.enc`            | whole-file envelope, JSON object  |
 
 ### v2 whole-file envelope
 

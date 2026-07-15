@@ -1,3 +1,10 @@
+---
+title: OPKSSH library contract
+description: Wrapper-facing ownership and compatibility contract for the in-process OPKSSH integration.
+permalink: /architecture/opkssh-lib-contract/
+hide_page_header: true
+---
+
 # OPKSSH Library Contract
 
 ## Status

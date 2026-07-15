@@ -1,8 +1,15 @@
-# 1. Title
+---
+title: OPKSSH in-process boundary and dylink requirement
+description: Architecture decision for the extracted OPKSSH library seam, CLI fallback, and deferred shared-library ABI.
+permalink: /architecture/opkssh-dylink-adr/
+hide_page_header: false
+---
+
+## 1. Title
 
 OPKSSH in-process boundary and dylink requirement
 
-# 2. Status
+## 2. Status
 
 Phase B complete.
 
@@ -10,7 +17,7 @@ The final Phase B decision is: freeze the minimal `libopkssh` host boundary that
 
 This ADR now records the Phase B boundary that Phase C may wrap. It does not freeze a cross-language ABI or a bundled shared-library artifact.
 
-# 3. Context
+## 3. Context
 
 SortOfRemoteNG currently shells out to a local `opkssh` CLI for runtime detection and login and then consumes CLI-shaped results. Task `t8` exists to replace that subprocess-first local integration with a library-backed path only if Phase 0 proves that the host ownership model is safe and maintainable.
 
@@ -20,13 +27,13 @@ Phase A evidence came from `t8-e1` through `t8-e4`. `t8-e4` executed against a r
 
 Phase B evidence came from `t8-e6` through `t8-e8`. That work extracted a reusable login core into `libopkssh`, added a narrow host seam for browser, home-directory, and log ownership, and split typed client-config and audit helpers away from CLI formatting.
 
-# 4. Problem statement
+## 4. Problem statement
 
 SortOfRemoteNG needs a local client integration boundary that removes subprocess text parsing and binary-path dependence without importing server-side verify, permissions, and install concerns into the desktop app.
 
 The repo also needs an answer to a narrower architectural question: should it require a hard shared-library or dylink artifact as part of the first approved design, or keep that packaging requirement flexible until the fork-side proof and later bundle validation exist?
 
-# 5. Upstream reality discovered in Phases 0 and B
+## 5. Upstream reality discovered in Phases 0 and B
 
 - `libopkssh/login.go` now exposes a real reusable login core through `StartLogin(...)`, `RunLogin(...)`, and `RunLoginWithHost(...)`, with typed `LoginRequest` and `LoginResult` data.
 - `libopkssh/host.go` proves a narrow host seam for home-directory ownership, log sink ownership, optional browser opening, and optional browser-URL capture.
@@ -39,7 +46,7 @@ The repo also needs an answer to a narrower architectural question: should it re
 - SortOfRemoteNG's first app seam is still narrow: Phase C only needs a login-oriented wrapper plus minimal client-config handling. Mirroring the CLI remains explicitly out of scope.
 - Phase B proved the library seam, but it did not prove a shared-library artifact form, cross-language ABI shape, or host-supplied callback server model.
 
-# 6. Options considered
+## 6. Options considered
 
 - Option A: proceed with Go library plus narrow C ABI shim and keep hard dylink or shared-library packaging as a requirement now.
   - Rejected because the fork-side proof validates the seam, not the artifact form, and shared-library packaging would still be a guess.
@@ -48,7 +55,7 @@ The repo also needs an answer to a narrower architectural question: should it re
 - Option C: stop and keep CLI as the production path.
   - Rejected for now because Phase A did not uncover a structural blocker at the upstream login and config seam or the local app seam, and the proof spike passed.
 
-# 7. Chosen boundary
+## 7. Chosen boundary
 
 Choose Option B: relax the hard dylink requirement while keeping the same seam.
 
@@ -78,7 +85,7 @@ This choice preserves the extracted-library direction without prematurely commit
 - no host-supplied callback listener API;
 - no secure-store replacement for plaintext config secrets.
 
-# 8. Host ownership model
+## 8. Host ownership model
 
 ## browser open
 
@@ -112,7 +119,7 @@ Frozen now: login returns structured certificate bytes, private-key PEM, identit
 
 Current caveat: the client-config surface still permits plaintext `client_secret` because the upstream file format has not changed. The repo-side wrapper now redacts provider secrets from app-facing config reads, blocks new plaintext client-config secret writes, and avoids retaining raw login or audit output in the long-lived service contract. Existing secrets already on disk remain plaintext until removed externally, and the CLI fallback still accepts custom-provider `client_secret` input at the immediate login invocation boundary. The returned session state should still be treated as opaque by downstream wrappers until a later ABI or wrapper layer defines handle ownership more explicitly.
 
-# 9. Packaging and distribution model
+## 9. Packaging and distribution model
 
 Phase B still does not approve a hard dylink or shared-library distribution requirement.
 
@@ -130,7 +137,7 @@ Current repo wiring keeps that decision truthful:
 
 If shared libraries are later reintroduced, they must preserve the same narrow seam and pass separate Windows, macOS, and Linux bundling, signing, updater, and rollback validation.
 
-# 10. Compatibility plan
+## 10. Compatibility plan
 
 - Preserve existing Tauri command names where possible, especially `opkssh_get_status` and `opkssh_login`.
 - Change the local runtime contract from binary-first status to backend and runtime-first status.
@@ -139,7 +146,7 @@ If shared libraries are later reintroduced, they must preserve the same narrow s
 - Treat audit as an optional admin bridge rather than part of the first critical login path.
 - Leave keys, server-policy helpers, and broader admin flows on their current paths in the first integration slice unless later work proves a smaller stable contract for them. For the current repo slice, that means backend-built remote shell wrappers over SSH, not a library-backed admin API.
 
-# 11. Security constraints
+## 11. Security constraints
 
 - System browser only. No OIDC token handling in the Tauri webview.
 - No process-global logger mutation and no raw stdout or stderr contract in the embedded login path.
@@ -148,7 +155,7 @@ If shared libraries are later reintroduced, they must preserve the same narrow s
 - No new app-side secret regression: provider secrets and raw OPKSSH output should be redacted at the repo wrapper boundary. New plaintext client-config secret writes are blocked, but existing on-disk secrets and CLI custom-provider secret arguments remain residual risks until the upstream format or backend invocation path changes.
 - Server verify, permissions, install, audit, and policy-edit commands remain outside the first local-client library boundary. In v1 they still depend on a remote shell hop over SSH; the repo-side requirement is only to keep those command builders narrow, quoted, and explicit about staying CLI-backed.
 
-# 12. Stop conditions and fallback plan
+## 12. Stop conditions and fallback plan
 
 Stop and keep CLI as the production path if any of the following remain true after the fork-side proof work:
 
@@ -160,7 +167,7 @@ Stop and keep CLI as the production path if any of the following remain true aft
 
 Until those conditions are cleared, the existing CLI integration remains the production path and the extracted-library direction remains an R&D track only.
 
-# 13. Consequences
+## 13. Consequences
 
 Positive consequences:
 
@@ -183,7 +190,7 @@ Operational consequence:
 
 - the next approved action is Phase C app-side wrapping against this small contract, with CLI fallback intact and packaging decisions still deferred.
 
-# 14. Follow-on tasks
+## 14. Follow-on tasks
 
 - In Phase C, wrap only the frozen login core and the smallest necessary client-config helpers inside `sorng-opkssh`.
 - Keep CLI fallback in place while the wrapper path proves runtime behavior on at least one platform. Current repo wiring only proves metadata linkage, not a callable embedded runtime.

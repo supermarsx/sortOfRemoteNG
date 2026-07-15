@@ -1,0 +1,32 @@
+- label: Start here
+  items:
+    - title: Home
+      url: /
+    - title: Getting started
+      url: /getting-started/
+
+- label: Use the app
+  items:
+    - title: Connections & Editor
+      url: /connections-editor/
+    - title: Protocols
+      url: /protocols/
+    - title: Network Paths
+      url: /network-paths/
+    - title: Behaviors
+      url: /behaviors/
+    - title: Import, Export & Clone
+      url: /import-export-clone/
+
+- label: Project guide
+  items:
+    - title: Architecture
+      url: /architecture/
+    - title: Security
+      url: /security-overview/
+    - title: Testing
+      url: /testing/
+    - title: Releases
+      url: /releases/
+    - title: Contributing
+      url: /contributing/

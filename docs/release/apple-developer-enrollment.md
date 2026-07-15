@@ -1,3 +1,10 @@
+---
+title: Apple Developer enrollment
+description: Maintainer runbook for macOS signing and notarization enrollment prerequisites.
+permalink: /release/apple-developer-enrollment/
+hide_page_header: true
+---
+
 # Apple Developer Program Enrollment — Action Package (t3-e37, B3/Q3)
 
 _Status: DECISION + ACTION package. Produced 2026-04-20. Does **not** enroll._

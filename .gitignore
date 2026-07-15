@@ -87,6 +87,7 @@ target/reports/
 /target-copilot-rdp-session-state
 
 # Local verification build directories
+/_site/
 /target-fv-*
 /target-t*
 /target-verify-*

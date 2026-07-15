@@ -1,3 +1,10 @@
+---
+title: Tauri updater signing and feed setup
+description: Signing-key custody, feed schema, publication, validation, and rotation for Tauri updater artifacts.
+permalink: /release/updater-setup/
+hide_page_header: true
+---
+
 # Tauri Updater — Signing & Feed Setup
 
 This document covers the **Tauri updater plugin** wiring for
@@ -16,7 +23,7 @@ The old custom downloader, copy installer, scheduler, channel, history, and
 rollback paths are not production update mechanisms. P1 installs are signed
 Tauri updater installs only. Private feed configuration is managed by
 Settings > Updater and documented in
-[`private-updater-endpoint.md`](./private-updater-endpoint.md).
+[private updater endpoint guide]({{ '/release/private-updater-endpoint/' | relative_url }}).
 
 ---
 

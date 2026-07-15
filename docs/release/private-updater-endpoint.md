@@ -1,8 +1,15 @@
+---
+title: Private updater endpoint
+description: Runtime policy for a Settings-managed private Tauri updater feed and public fallback.
+permalink: /release/private-updater-endpoint/
+hide_page_header: true
+---
+
 # Private Updater Endpoint — Enterprise Deployment Guide
 
 This document covers the **Settings-managed private update feed** that
 supplements the public GitHub Releases feed wired in
-[`updater-setup.md`](./updater-setup.md). It lets an enterprise admin or
+[updater setup guide]({{ '/release/updater-setup/' | relative_url }}). It lets an enterprise admin or
 field-support user configure a private HTTPS endpoint (typically an S3 bucket
 behind CloudFront, or any TLS-terminated static host) while keeping the public
 feed available as a fallback.
@@ -217,7 +224,7 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
 ## 7. Deploy steps — release maintainer runbook
 
 1. **Build** the bundle with signing env vars set (see
-   [`updater-setup.md`](./updater-setup.md) § 2). `tauri build` emits
+   [updater setup guide]({{ '/release/updater-setup/' | relative_url }}) § 2). `tauri build` emits
    installers + `.sig` files under `src-tauri/target/release/bundle/`.
 2. **Assemble `latest.json`** with the base64 `.sig` values and the
    CloudFront URLs for each platform (see § 5 above). The release CI

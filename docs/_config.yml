@@ -1,0 +1,34 @@
+title: sortOfRemoteNG
+description: Cross-platform remote connections, session tooling, and operations in one desktop workspace.
+url: https://supermarsx.github.io
+baseurl: /sortOfRemoteNG
+repository_url: https://github.com/supermarsx/sortOfRemoteNG
+lang: en
+timezone: Europe/London
+
+markdown: kramdown
+highlighter: rouge
+permalink: pretty
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+exclude:
+  - cedar-reference
+  - plans
+  - assets/readme-screenshot.png
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
