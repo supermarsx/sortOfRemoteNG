@@ -11,8 +11,10 @@ tls-cert-details = ["dep:x509-parser"]
 
 [dependencies]
 sorng-core = { path = "../sorng-core" }
+sorng-socket-transport = { path = "../sorng-socket-transport" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 vnc-rs = "0.5"
 suppaftp = "4.5"

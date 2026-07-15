@@ -643,6 +643,14 @@ impl TcpConnection {
         self.cancellation.clone()
     }
 
+    /// Return the connected Tokio stream for protocol engines that require a
+    /// single `AsyncRead + AsyncWrite` duplex object.  Such engines become
+    /// responsible for applying their own read, write, and cancellation
+    /// policy after taking ownership of the stream.
+    pub fn into_stream(self) -> TcpStream {
+        self.stream
+    }
+
     pub fn into_split(self) -> (TcpReader, TcpWriter) {
         let (reader, writer) = self.stream.into_split();
         (
