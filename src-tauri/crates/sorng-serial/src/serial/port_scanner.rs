@@ -330,49 +330,14 @@ pub fn generate_display_name(port: &SerialPortInfo) -> String {
     port.port_name.clone()
 }
 
-/// Enumerate serial ports on Windows using registry information.
-/// This is a simulated scanner that returns well-known ports.
-#[cfg(target_os = "windows")]
-pub fn enumerate_windows_ports() -> Vec<String> {
-    // In a real implementation, we'd query the registry at
-    // HKLM\HARDWARE\DEVICEMAP\SERIALCOMM
-    // For now, return common COM port names
-    (1..=32).map(|i| format!("COM{}", i)).collect()
-}
-
-/// Enumerate serial ports on Linux/macOS.
-#[cfg(not(target_os = "windows"))]
-pub fn enumerate_unix_ports() -> Vec<String> {
-    let mut ports = Vec::new();
-    // USB-serial adapters
-    for i in 0..16 {
-        ports.push(format!("/dev/ttyUSB{}", i));
-    }
-    // ACM (Abstract Control Model) — Arduino, etc.
-    for i in 0..16 {
-        ports.push(format!("/dev/ttyACM{}", i));
-    }
-    // Native serial
-    for i in 0..4 {
-        ports.push(format!("/dev/ttyS{}", i));
-    }
-    // macOS
-    #[cfg(target_os = "macos")]
-    {
-        ports.push("/dev/cu.usbserial".to_string());
-        ports.push("/dev/cu.usbmodem".to_string());
-    }
-    ports
-}
-
 /// Enumerate serial ports using the `serialport` crate for real hardware
 /// discovery.  Returns fully-populated `SerialPortInfo` entries with
 /// VID/PID, manufacturer, and serial number metadata from the OS.
-///
-/// Falls back to the platform-specific stub functions if the `serialport`
-/// crate reports an error.
-pub fn enumerate_native_ports() -> Vec<SerialPortInfo> {
-    match serialport::available_ports() {
+fn map_available_ports<E>(result: Result<Vec<serialport::SerialPortInfo>, E>) -> Vec<SerialPortInfo>
+where
+    E: std::fmt::Display,
+{
+    match result {
         Ok(sp_ports) => sp_ports
             .into_iter()
             .map(|sp| {
@@ -409,21 +374,16 @@ pub fn enumerate_native_ports() -> Vec<SerialPortInfo> {
             })
             .collect(),
         Err(e) => {
-            log::warn!(
-                "serialport::available_ports() failed: {}; using fallback",
-                e
-            );
-            // Fallback to stub-based enumeration
-            #[cfg(target_os = "windows")]
-            let names = enumerate_windows_ports();
-            #[cfg(not(target_os = "windows"))]
-            let names = enumerate_unix_ports();
-            names
-                .into_iter()
-                .map(|name| build_port_info(&name, None, None, None, None, None))
-                .collect()
+            log::warn!("serialport::available_ports() failed: {}", e);
+            Vec::new()
         }
     }
+}
+
+/// Query the operating system for serial ports. A discovery failure returns an
+/// empty list instead of inventing device names that may not exist.
+pub fn enumerate_native_ports() -> Vec<SerialPortInfo> {
+    map_available_ports(serialport::available_ports())
 }
 
 /// Probe whether a port can be opened (is available, not in use).
@@ -673,6 +633,12 @@ mod tests {
     fn test_build_port_info_no_metadata() {
         let info = build_port_info("COM1", None, None, None, None, None);
         assert_eq!(info.display_name, "COM1");
+    }
+
+    #[test]
+    fn discovery_failure_does_not_invent_serial_ports() {
+        let ports = map_available_ports::<&str>(Err("probe failed"));
+        assert!(ports.is_empty());
     }
 
     #[test]

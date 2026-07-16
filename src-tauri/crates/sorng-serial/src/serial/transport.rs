@@ -562,9 +562,11 @@ mod tests {
     #[tokio::test]
     async fn test_simulated_transport_control_lines() {
         let t = SimulatedTransport::new("COM1");
-        let mut cfg = SerialConfig::default();
-        cfg.dtr_on_open = true;
-        cfg.rts_on_open = false;
+        let cfg = SerialConfig {
+            dtr_on_open: true,
+            rts_on_open: false,
+            ..Default::default()
+        };
         t.open(&cfg).await.unwrap();
 
         let cl = t.read_control_lines().await.unwrap();
