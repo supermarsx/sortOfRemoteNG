@@ -422,7 +422,8 @@ pub struct SpiceTlsConfig {
     pub client_key: Option<String>,
     /// Accept self-signed server certificates.
     pub allow_self_signed: bool,
-    /// Specific hostname to verify against (overrides connection host).
+    /// Certificate subject to verify (passed to remote-viewer's
+    /// `host-subject` connection-file key).
     pub verify_hostname: Option<String>,
     /// Cipher suite specification (OpenSSL format).
     pub ciphers: Option<String>,
@@ -453,6 +454,13 @@ pub struct SpiceConfig {
     pub password: Option<String>,
     /// Connection label / friendly name.
     pub label: Option<String>,
+    /// Optional path to the native `remote-viewer` executable.
+    /// When omitted, the executable is discovered on PATH and in standard
+    /// virt-viewer installation locations.
+    pub native_client_path: Option<String>,
+    /// Ask the native viewer to start fullscreen.
+    #[serde(default)]
+    pub fullscreen: bool,
 
     // ── Display ───────────────────────────────────────────────────
     /// Preferred image compression.
@@ -567,6 +575,8 @@ impl Default for SpiceConfig {
             tls_port: None,
             password: None,
             label: None,
+            native_client_path: None,
+            fullscreen: false,
             image_compression: None,
             video_codec: None,
             preferred_width: None,

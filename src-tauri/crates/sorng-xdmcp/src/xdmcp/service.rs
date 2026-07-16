@@ -40,10 +40,9 @@ impl XdmcpService {
 
     /// Disconnect a specific session.
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), XdmcpError> {
-        let handle = self
-            .sessions
-            .remove(session_id)
-            .ok_or_else(|| XdmcpError::not_found(format!("session '{}' not found", session_id)))?;
+        let Some(handle) = self.sessions.remove(session_id) else {
+            return Ok(());
+        };
         let _ = handle.disconnect().await;
         Ok(())
     }

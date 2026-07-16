@@ -32,8 +32,13 @@ pub fn find_x_server(
     custom_path: Option<&str>,
 ) -> Result<PathBuf, XdmcpError> {
     if let Some(p) = custom_path {
+        if p.is_empty() || p.chars().any(char::is_control) {
+            return Err(XdmcpError::x_server(
+                "The configured X server path is empty or contains control characters",
+            ));
+        }
         let path = PathBuf::from(p);
-        if path.exists() {
+        if path.is_file() {
             return Ok(path);
         }
         return Err(XdmcpError::x_server(format!(
@@ -92,6 +97,8 @@ pub fn build_x_server_args(
     depth: u8,
     xdmcp_host: &str,
     xdmcp_port: u16,
+    query_type: QueryType,
+    fullscreen: bool,
     extra_args: &[String],
 ) -> Vec<String> {
     let mut args = Vec::new();
@@ -99,16 +106,29 @@ pub fn build_x_server_args(
     // Display number
     args.push(format!(":{}", display_number));
 
+    // Xserver(1) requires the alternate port option to precede the query
+    // selector.
+    if xdmcp_port != XDMCP_PORT {
+        args.push("-port".into());
+        args.push(xdmcp_port.to_string());
+    }
+
+    match query_type {
+        QueryType::Direct => {
+            args.push("-query".into());
+            args.push(xdmcp_host.into());
+        }
+        QueryType::Broadcast => args.push("-broadcast".into()),
+        QueryType::Indirect => {
+            args.push("-indirect".into());
+            args.push(xdmcp_host.into());
+        }
+    }
+
     match server_type {
         XServerType::Xephyr => {
             args.push("-screen".into());
             args.push(format!("{}x{}", width, height));
-            args.push("-query".into());
-            args.push(xdmcp_host.into());
-            if xdmcp_port != XDMCP_PORT {
-                args.push("-port".into());
-                args.push(xdmcp_port.to_string());
-            }
             args.push("-resizeable".into());
         }
         XServerType::Xvfb => {
@@ -117,15 +137,14 @@ pub fn build_x_server_args(
             args.push(format!("{}x{}x{}", width, height, depth));
         }
         XServerType::VcXsrv | XServerType::Xming => {
-            args.push("-query".into());
-            args.push(xdmcp_host.into());
             args.push("-screen".into());
             args.push(format!("0 {}x{}", width, height));
         }
-        _ => {
-            args.push("-query".into());
-            args.push(xdmcp_host.into());
-        }
+        _ => {}
+    }
+
+    if fullscreen {
+        args.push("-fullscreen".into());
     }
 
     args.extend(extra_args.iter().cloned());
@@ -160,6 +179,8 @@ mod tests {
             24,
             "192.168.1.100",
             177,
+            QueryType::Direct,
+            false,
             &[],
         );
         assert!(args.contains(&":10".to_string()));
@@ -170,17 +191,41 @@ mod tests {
 
     #[test]
     fn xvfb_args() {
-        let args =
-            build_x_server_args(&XServerType::Xvfb, 20, 1920, 1080, 24, "10.0.0.1", 177, &[]);
+        let args = build_x_server_args(
+            &XServerType::Xvfb,
+            20,
+            1920,
+            1080,
+            24,
+            "10.0.0.1",
+            177,
+            QueryType::Direct,
+            false,
+            &[],
+        );
         assert!(args.contains(&":20".to_string()));
         assert!(args.contains(&"1920x1080x24".to_string()));
     }
 
     #[test]
     fn custom_port() {
-        let args = build_x_server_args(&XServerType::Xephyr, 10, 1024, 768, 24, "host", 1177, &[]);
+        let args = build_x_server_args(
+            &XServerType::Xephyr,
+            10,
+            1024,
+            768,
+            24,
+            "host",
+            1177,
+            QueryType::Direct,
+            false,
+            &[],
+        );
         assert!(args.contains(&"-port".to_string()));
         assert!(args.contains(&"1177".to_string()));
+        let port_index = args.iter().position(|arg| arg == "-port").unwrap();
+        let query_index = args.iter().position(|arg| arg == "-query").unwrap();
+        assert!(port_index < query_index);
     }
 
     #[test]
@@ -193,10 +238,47 @@ mod tests {
             24,
             "host",
             177,
+            QueryType::Direct,
+            false,
             &["-ac".into(), "-noreset".into()],
         );
         assert!(args.contains(&"-ac".to_string()));
         assert!(args.contains(&"-noreset".to_string()));
+    }
+
+    #[test]
+    fn query_modes_are_exact() {
+        let broadcast = build_x_server_args(
+            &XServerType::Xephyr,
+            10,
+            1024,
+            768,
+            24,
+            "ignored.example",
+            177,
+            QueryType::Broadcast,
+            true,
+            &[],
+        );
+        assert!(broadcast.contains(&"-broadcast".to_string()));
+        assert!(!broadcast.contains(&"-query".to_string()));
+        assert!(broadcast.contains(&"-fullscreen".to_string()));
+
+        let indirect = build_x_server_args(
+            &XServerType::VcXsrv,
+            11,
+            1280,
+            720,
+            24,
+            "chooser.example",
+            177,
+            QueryType::Indirect,
+            false,
+            &[],
+        );
+        assert!(indirect
+            .windows(2)
+            .any(|pair| { pair == ["-indirect".to_string(), "chooser.example".to_string()] }));
     }
 
     #[test]

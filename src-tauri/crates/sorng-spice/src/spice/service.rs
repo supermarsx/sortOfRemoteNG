@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::spice::session::{SessionCommand, SpiceSessionHandle};
+use crate::spice::native_viewer::NativeSpiceSessionHandle;
 use crate::spice::types::*;
 
 /// Thread-safe wrapper for the SPICE service state (used as Tauri managed state).
@@ -15,7 +15,7 @@ pub type SpiceServiceState = Arc<Mutex<SpiceService>>;
 
 /// Multi-session SPICE service.
 pub struct SpiceService {
-    sessions: HashMap<String, SpiceSessionHandle>,
+    sessions: HashMap<String, NativeSpiceSessionHandle>,
 }
 
 impl Default for SpiceService {
@@ -45,7 +45,7 @@ impl SpiceService {
         for session in self.sessions.values() {
             if session.config.host == config.host && session.config.port == config.port {
                 let st = session.state.lock().await;
-                if st.connected {
+                if st.running {
                     return Err(SpiceError::new(
                         SpiceErrorKind::AlreadyConnected,
                         format!("Already connected to {}:{}", config.host, config.port),
@@ -54,7 +54,7 @@ impl SpiceService {
             }
         }
 
-        let handle = SpiceSessionHandle::connect(id.clone(), config).await?;
+        let handle = NativeSpiceSessionHandle::connect(id.clone(), config).await?;
         self.sessions.insert(id.clone(), handle);
 
         Ok(id)
@@ -68,11 +68,6 @@ impl SpiceService {
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
 
         session.disconnect().await?;
-
-        {
-            let mut st = session.state.lock().await;
-            st.connected = false;
-        }
 
         Ok(())
     }
@@ -106,44 +101,44 @@ impl SpiceService {
     pub async fn send_key_event(
         &self,
         session_id: &str,
-        scancode: u32,
-        down: bool,
+        _scancode: u32,
+        _down: bool,
     ) -> Result<(), SpiceError> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::KeyEvent { scancode, down })
-            .await
+        Err(SpiceError::unsupported(
+            "Embedded SPICE key injection is unavailable because the interactive session is owned by the native remote-viewer window",
+        ))
     }
 
     /// Send a pointer (mouse) event to a session.
     pub async fn send_pointer_event(
         &self,
         session_id: &str,
-        x: i32,
-        y: i32,
-        button_mask: u8,
+        _x: i32,
+        _y: i32,
+        _button_mask: u8,
     ) -> Result<(), SpiceError> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::PointerEvent { x, y, button_mask })
-            .await
+        Err(SpiceError::unsupported(
+            "Embedded SPICE pointer injection is unavailable because the interactive session is owned by the native remote-viewer window",
+        ))
     }
 
     /// Send clipboard text to a session.
-    pub async fn send_clipboard(&self, session_id: &str, text: String) -> Result<(), SpiceError> {
-        let session = self
+    pub async fn send_clipboard(&self, session_id: &str, _text: String) -> Result<(), SpiceError> {
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::SendClipboard(text))
-            .await
+        Err(SpiceError::unsupported(
+            "Clipboard synchronization is owned by the native remote-viewer window and cannot be injected through the embedded command API",
+        ))
     }
 
     /// Request a display update for a session.
@@ -161,61 +156,55 @@ impl SpiceService {
     pub async fn set_resolution(
         &self,
         session_id: &str,
-        width: u32,
-        height: u32,
+        _width: u32,
+        _height: u32,
     ) -> Result<(), SpiceError> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::SetResolution { width, height })
-            .await
+        Err(SpiceError::unsupported(
+            "Resolution changes must be made in the native remote-viewer window",
+        ))
     }
 
     /// Redirect a USB device to the guest.
     pub async fn redirect_usb(
         &self,
         session_id: &str,
-        vendor_id: u16,
-        product_id: u16,
+        _vendor_id: u16,
+        _product_id: u16,
     ) -> Result<(), SpiceError> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::RedirectUsb {
-                vendor_id,
-                product_id,
-            })
-            .await
+        Err(SpiceError::unsupported(
+            "USB device selection is owned by the native remote-viewer window",
+        ))
     }
 
     /// Un-redirect a USB device.
     pub async fn unredirect_usb(
         &self,
         session_id: &str,
-        vendor_id: u16,
-        product_id: u16,
+        _vendor_id: u16,
+        _product_id: u16,
     ) -> Result<(), SpiceError> {
-        let session = self
+        let _session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::UnredirectUsb {
-                vendor_id,
-                product_id,
-            })
-            .await
+        Err(SpiceError::unsupported(
+            "USB device selection is owned by the native remote-viewer window",
+        ))
     }
 
     /// Check if a session is connected.
     pub async fn is_connected(&self, session_id: &str) -> bool {
         if let Some(session) = self.sessions.get(session_id) {
             let st = session.state.lock().await;
-            st.connected
+            st.running
         } else {
             false
         }
@@ -233,7 +222,7 @@ impl SpiceService {
         Ok(SpiceSession::from_config(
             &session.config,
             session.id.clone(),
-            st.connected,
+            st.running,
         ))
     }
 
@@ -245,7 +234,7 @@ impl SpiceService {
             list.push(SpiceSession::from_config(
                 &session.config,
                 session.id.clone(),
-                st.connected,
+                st.running,
             ));
         }
         list
@@ -262,27 +251,19 @@ impl SpiceService {
 
         Ok(SpiceStats {
             session_id: session.id.clone(),
-            bytes_sent: st.bytes_sent,
-            bytes_received: st.bytes_received,
-            frame_count: st.frame_count,
-            connected_at: st.last_activity.clone(),
+            // The complete protocol is owned by remote-viewer. The process API
+            // does not expose byte/frame counters, so report no invented data.
+            bytes_sent: 0,
+            bytes_received: 0,
+            frame_count: 0,
+            connected_at: st.started_at.clone(),
             last_activity: st.last_activity.clone(),
             uptime_secs: 0,
-            display_width: st.display_width,
-            display_height: st.display_height,
-            channels_open: st.channels_open.len() as u32,
-            mouse_mode: st.mouse_mode.clone(),
-            channels: st
-                .channels_open
-                .iter()
-                .map(|c| ChannelStats {
-                    channel_type: *c,
-                    messages_sent: 0,
-                    messages_received: 0,
-                    bytes_sent: 0,
-                    bytes_received: 0,
-                })
-                .collect(),
+            display_width: 0,
+            display_height: 0,
+            channels_open: 0,
+            mouse_mode: "native-viewer".into(),
+            channels: vec![],
         })
     }
 
@@ -296,7 +277,7 @@ impl SpiceService {
         let mut to_remove = Vec::new();
         for (id, session) in &self.sessions {
             let st = session.state.lock().await;
-            if !st.connected {
+            if !st.running {
                 to_remove.push(id.clone());
             }
         }
@@ -310,7 +291,7 @@ impl SpiceService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spice::session::SharedSessionState;
+    use crate::spice::native_viewer::NativeSpiceSessionHandle;
 
     #[test]
     fn service_new() {
@@ -327,34 +308,21 @@ mod tests {
     #[tokio::test]
     async fn request_update_returns_unsupported_for_registered_session() {
         let mut svc = SpiceService::new();
-        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(1);
-        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(1);
         let id = "test-session".to_string();
-        let state = Arc::new(Mutex::new(SharedSessionState {
-            connected: true,
-            display_width: 1024,
-            display_height: 768,
-            server_name: String::new(),
-            channels_open: Vec::new(),
-            bytes_sent: 0,
-            bytes_received: 0,
-            frame_count: 0,
-            last_activity: chrono::Utc::now().to_rfc3339(),
-            mouse_mode: "server".into(),
-        }));
-
         svc.sessions.insert(
             id.clone(),
-            SpiceSessionHandle {
-                id: id.clone(),
-                config: SpiceConfig::default(),
-                cmd_tx,
-                event_rx,
-                state,
-            },
+            NativeSpiceSessionHandle::test_handle(&id, SpiceConfig::default()),
         );
 
         let err = svc.request_update(&id).await.unwrap_err();
         assert_eq!(err.kind, SpiceErrorKind::UnsupportedFeature);
+    }
+
+    #[tokio::test]
+    async fn command_level_disconnect_is_idempotent() {
+        let mut svc = SpiceService::new();
+        svc.disconnect_and_remove("already-gone").await.unwrap();
+        svc.disconnect_and_remove("already-gone").await.unwrap();
+        assert_eq!(svc.session_count(), 0);
     }
 }

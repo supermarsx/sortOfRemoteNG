@@ -206,6 +206,11 @@ pub struct XdmcpConfig {
     pub host: String,
     pub port: u16,
     pub label: Option<String>,
+    /// XDMCP has no transport encryption and its common mode has no client
+    /// authentication. Interactive launch is refused until the user explicitly
+    /// acknowledges that security boundary.
+    #[serde(default)]
+    pub acknowledge_insecure_transport: bool,
 
     // Query
     pub query_type: Option<QueryType>,
@@ -243,10 +248,16 @@ pub enum QueryType {
 
 impl Default for XdmcpConfig {
     fn default() -> Self {
+        #[cfg(target_os = "windows")]
+        let default_x_server = XServerType::VcXsrv;
+        #[cfg(not(target_os = "windows"))]
+        let default_x_server = XServerType::Xephyr;
+
         Self {
             host: String::new(),
             port: XDMCP_PORT,
             label: None,
+            acknowledge_insecure_transport: false,
             query_type: Some(QueryType::Direct),
             broadcast_address: None,
             auth_type: Some(XdmcpAuthType::None),
@@ -256,7 +267,7 @@ impl Default for XdmcpConfig {
             resolution_height: Some(768),
             color_depth: Some(24),
             fullscreen: Some(false),
-            x_server_type: Some(XServerType::Xephyr),
+            x_server_type: Some(default_x_server),
             x_server_path: None,
             x_server_extra_args: None,
             connect_timeout: Some(30),

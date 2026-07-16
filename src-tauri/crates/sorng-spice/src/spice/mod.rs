@@ -4,6 +4,7 @@ pub mod channels;
 pub mod clipboard;
 pub mod display;
 pub mod input;
+pub mod native_viewer;
 pub mod protocol;
 pub mod service;
 pub mod session;

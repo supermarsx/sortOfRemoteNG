@@ -14,12 +14,19 @@ pub async fn connect_spice(
     tls_port: Option<u16>,
     password: Option<String>,
     label: Option<String>,
+    native_client_path: Option<String>,
+    fullscreen: Option<bool>,
     view_only: Option<bool>,
     share_clipboard: Option<bool>,
     usb_redirection: Option<bool>,
     audio_playback: Option<bool>,
     preferred_width: Option<u32>,
     preferred_height: Option<u32>,
+    proxy: Option<String>,
+    require_tls: Option<bool>,
+    ca_cert: Option<String>,
+    verify_hostname: Option<String>,
+    allow_self_signed: Option<bool>,
 ) -> Result<String, String> {
     let config = SpiceConfig {
         host,
@@ -27,12 +34,22 @@ pub async fn connect_spice(
         tls_port,
         password,
         label,
+        native_client_path,
+        fullscreen: fullscreen.unwrap_or(false),
         view_only: view_only.unwrap_or(false),
         share_clipboard: share_clipboard.unwrap_or(true),
         usb_redirection: usb_redirection.unwrap_or(false),
         audio_playback: audio_playback.unwrap_or(true),
         preferred_width,
         preferred_height,
+        proxy,
+        tls: SpiceTlsConfig {
+            require_tls: require_tls.unwrap_or(false),
+            ca_cert,
+            allow_self_signed: allow_self_signed.unwrap_or(false),
+            verify_hostname,
+            ..SpiceTlsConfig::default()
+        },
         ..SpiceConfig::default()
     };
     let mut svc = state.lock().await;

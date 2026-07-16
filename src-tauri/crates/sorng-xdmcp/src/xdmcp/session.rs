@@ -1,37 +1,22 @@
-//! XDMCP session — async lifecycle: discovery → request → accept → manage → keepalive loop.
-
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+//! Native XDMCP session lifecycle.
+//!
+//! XDMCP is initiated by an X server, not by a framebuffer widget. The session
+//! therefore launches a real local X server (`Xephyr`, `VcXsrv`, `Xming`, or an
+//! explicitly configured compatible binary) and lets that implementation own
+//! the complete RFC 1198 exchange and rendering lifecycle.
 
 use crate::xdmcp::types::*;
+use crate::xdmcp::xserver::{build_x_server_args, find_available_display, find_x_server};
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::process::Command;
+use tokio::sync::{mpsc, oneshot, Mutex};
 
-// ── Commands & Events ───────────────────────────────────────────────────────
+const STARTUP_PROBE_MILLIS: u64 = 650;
 
-/// Commands from the service to the session task.
-#[derive(Debug)]
-pub enum SessionCommand {
-    /// Disconnect gracefully.
-    Disconnect,
-    /// Resize the display.
-    Resize { width: u32, height: u32 },
+enum SessionCommand {
+    Disconnect(oneshot::Sender<()>),
 }
-
-/// Events from the session task.
-#[derive(Debug)]
-pub enum SessionEvent {
-    /// Discovery found a willing host.
-    HostFound { hostname: String, status: String },
-    /// Session accepted by the display manager.
-    Accepted { session_id: u32 },
-    /// Session is now running (X server started).
-    Running { display_number: u32 },
-    /// Session state changed.
-    StateChanged(XdmcpSessionState),
-    /// Session disconnected.
-    Disconnected(Option<String>),
-}
-
-// ── Shared State ────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct SharedSessionState {
@@ -46,305 +31,258 @@ pub struct SharedSessionState {
     pub packets_sent: u64,
     pub packets_received: u64,
     pub keepalive_count: u64,
+    pub started_at: String,
     pub last_activity: String,
     pub x_server_pid: Option<u32>,
 }
 
 pub type SharedState = Arc<Mutex<SharedSessionState>>;
 
-// ── Session Handle ──────────────────────────────────────────────────────────
-
 pub struct XdmcpSessionHandle {
     pub id: String,
     pub config: XdmcpConfig,
-    pub cmd_tx: mpsc::Sender<SessionCommand>,
-    pub event_rx: mpsc::Receiver<SessionEvent>,
+    command_tx: mpsc::Sender<SessionCommand>,
     pub state: SharedState,
+}
+
+fn validate_host(host: &str) -> Result<(), XdmcpError> {
+    let host = host.trim();
+    if host.is_empty() {
+        return Err(XdmcpError::connection_failed(
+            "An XDMCP display-manager host is required",
+        ));
+    }
+    if host.chars().any(|character| {
+        character.is_whitespace() || character == '\0' || character == '\r' || character == '\n'
+    }) {
+        return Err(XdmcpError::connection_failed(
+            "The XDMCP display-manager host contains unsupported characters",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_native_launch(config: &XdmcpConfig) -> Result<(), XdmcpError> {
+    if !config.acknowledge_insecure_transport {
+        return Err(XdmcpError::new(
+            XdmcpErrorKind::AuthenticationFailed,
+            "XDMCP is unauthenticated and unencrypted. Explicitly acknowledge the insecure transport before launching this session.",
+        ));
+    }
+    validate_host(&config.host)?;
+    if config.port == 0 {
+        return Err(XdmcpError::connection_failed(
+            "The XDMCP UDP port must be between 1 and 65535",
+        ));
+    }
+    if !matches!(config.auth_type, None | Some(XdmcpAuthType::None))
+        || config
+            .auth_data
+            .as_ref()
+            .is_some_and(|data| !data.is_empty())
+    {
+        return Err(XdmcpError::new(
+            XdmcpErrorKind::AuthenticationFailed,
+            "XDM-AUTHORIZATION and MIT-MAGIC-COOKIE launch data are not supported because placing their secret material in process arguments would expose it",
+        ));
+    }
+    if config.broadcast_address.is_some() {
+        return Err(XdmcpError::x_server(
+            "A specific XDMCP broadcast address cannot be enforced by the native X server; use its standard broadcast mode or a direct host",
+        ));
+    }
+    if config
+        .x_server_extra_args
+        .as_ref()
+        .is_some_and(|args| !args.is_empty())
+    {
+        return Err(XdmcpError::x_server(
+            "Arbitrary X server arguments are disabled for saved sessions because process arguments are system-visible",
+        ));
+    }
+    if config.connect_timeout.unwrap_or(30) != 30 {
+        return Err(XdmcpError::x_server(
+            "A custom XDMCP connect timeout cannot be observed through the native X server process contract",
+        ));
+    }
+    if config.keepalive_interval.unwrap_or(60) != 60 {
+        return Err(XdmcpError::x_server(
+            "A custom XDMCP keepalive interval cannot be enforced by the native X server handoff",
+        ));
+    }
+    if config.retry_count.unwrap_or(3) != 3 {
+        return Err(XdmcpError::x_server(
+            "A custom XDMCP retry count cannot be enforced by the native X server handoff",
+        ));
+    }
+
+    let server_type = config
+        .x_server_type
+        .as_ref()
+        .unwrap_or(&XServerType::Xephyr);
+    match server_type {
+        XServerType::Xephyr => {
+            #[cfg(target_os = "windows")]
+            return Err(XdmcpError::x_server(
+                "Xephyr is not supported on Windows; select VcXsrv, Xming, or a compatible custom X server",
+            ));
+        }
+        XServerType::VcXsrv | XServerType::Xming => {
+            #[cfg(not(target_os = "windows"))]
+            return Err(XdmcpError::x_server(
+                "VcXsrv and Xming are Windows X servers; select Xephyr or a compatible custom X server on this platform",
+            ));
+        }
+        XServerType::Custom(_) => {}
+        XServerType::Xorg => {
+            return Err(XdmcpError::x_server(
+                "Launching a full Xorg server requires privileged display-device ownership and is not supported by the in-app session lifecycle",
+            ));
+        }
+        XServerType::XWayland => {
+            return Err(XdmcpError::x_server(
+                "XWayland does not provide the required XDMCP query lifecycle",
+            ));
+        }
+        XServerType::Xvfb => {
+            return Err(XdmcpError::x_server(
+                "Xvfb is headless and cannot provide the required user-visible XDMCP session",
+            ));
+        }
+        XServerType::MobaXterm => {
+            return Err(XdmcpError::x_server(
+                "MobaXterm does not expose a stable standalone XDMCP process contract; use VcXsrv, Xming, or a compatible custom X server",
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl XdmcpSessionHandle {
     pub async fn connect(id: String, config: XdmcpConfig) -> Result<Self, XdmcpError> {
-        let (cmd_tx, cmd_rx) = mpsc::channel(64);
-        let (event_tx, event_rx) = mpsc::channel(128);
+        validate_native_launch(&config)?;
 
+        let server_type = config.x_server_type.clone().unwrap_or(XServerType::Xephyr);
+        let executable = find_x_server(&server_type, config.x_server_path.as_deref())?;
+        let display_number = config
+            .display_number
+            .unwrap_or_else(|| find_available_display(10));
+        let width = config.resolution_width.unwrap_or(1024).clamp(320, 16_384);
+        let height = config.resolution_height.unwrap_or(768).clamp(200, 16_384);
+        let depth = config.color_depth.unwrap_or(24);
+        if !matches!(depth, 8 | 16 | 24 | 32) {
+            return Err(XdmcpError::x_server(
+                "XDMCP colour depth must be 8, 16, 24, or 32 bits",
+            ));
+        }
+        let query_type = config.query_type.unwrap_or(QueryType::Direct);
+        let args = build_x_server_args(
+            &server_type,
+            display_number,
+            width,
+            height,
+            depth,
+            config.host.trim(),
+            config.port,
+            query_type,
+            config.fullscreen.unwrap_or(false),
+            &[],
+        );
+
+        // Arguments contain only display geometry, host, and port. Secrets are
+        // categorically rejected above and are never placed in argv or logs.
+        let mut child = Command::new(executable)
+            .args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|error| {
+                XdmcpError::x_server(format!("Unable to launch the local X server: {error}"))
+            })?;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(STARTUP_PROBE_MILLIS)).await;
+        if let Some(status) = child.try_wait().map_err(XdmcpError::from)? {
+            return Err(XdmcpError::x_server(format!(
+                "The local X server exited during startup ({status}); verify the selected binary, local display environment, and XDMCP target"
+            )));
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
         let state = Arc::new(Mutex::new(SharedSessionState {
-            state: XdmcpSessionState::Discovering,
-            display_number: config.display_number,
+            state: XdmcpSessionState::Running,
+            display_number: Some(display_number),
+            // The native X server owns the XDMCP Accept session id and does not
+            // expose it through the process contract.
             session_id: None,
-            display_manager: None,
-            display_width: config.resolution_width.unwrap_or(1024),
-            display_height: config.resolution_height.unwrap_or(768),
+            display_manager: Some(config.host.trim().to_string()),
+            display_width: width,
+            display_height: height,
+            // Native process telemetry is intentionally not fabricated.
             bytes_sent: 0,
             bytes_received: 0,
             packets_sent: 0,
             packets_received: 0,
             keepalive_count: 0,
-            last_activity: chrono::Utc::now().to_rfc3339(),
-            x_server_pid: None,
+            started_at: now.clone(),
+            last_activity: now,
+            x_server_pid: child.id(),
         }));
-
-        let shared = state.clone();
-        let session_config = config.clone();
+        let shared_state = state.clone();
+        let (command_tx, mut command_rx) = mpsc::channel(2);
 
         tokio::spawn(async move {
-            let result = session_task(session_config, cmd_rx, event_tx.clone(), shared).await;
-            if let Err(e) = result {
-                let _ = event_tx
-                    .send(SessionEvent::Disconnected(Some(e.message)))
-                    .await;
+            tokio::select! {
+                status = child.wait() => {
+                    let mut current = shared_state.lock().await;
+                    current.state = match status {
+                        Ok(exit) if exit.success() => XdmcpSessionState::Ended,
+                        _ => XdmcpSessionState::Failed,
+                    };
+                    current.x_server_pid = None;
+                    current.last_activity = chrono::Utc::now().to_rfc3339();
+                }
+                command = command_rx.recv() => {
+                    if let Some(SessionCommand::Disconnect(response)) = command {
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+                        let mut current = shared_state.lock().await;
+                        current.state = XdmcpSessionState::Ended;
+                        current.x_server_pid = None;
+                        current.last_activity = chrono::Utc::now().to_rfc3339();
+                        let _ = response.send(());
+                    } else {
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+                    }
+                }
             }
         });
 
         Ok(Self {
             id,
             config,
-            cmd_tx,
-            event_rx,
+            command_tx,
             state,
         })
     }
 
-    pub async fn send_command(&self, cmd: SessionCommand) -> Result<(), XdmcpError> {
-        self.cmd_tx
-            .send(cmd)
-            .await
-            .map_err(|_| XdmcpError::disconnected("session task is gone"))
-    }
-
     pub async fn disconnect(&self) -> Result<(), XdmcpError> {
-        self.send_command(SessionCommand::Disconnect).await
-    }
-}
-
-// ── Session Task ────────────────────────────────────────────────────────────
-
-async fn session_task(
-    config: XdmcpConfig,
-    mut cmd_rx: mpsc::Receiver<SessionCommand>,
-    event_tx: mpsc::Sender<SessionEvent>,
-    state: SharedState,
-) -> Result<(), XdmcpError> {
-    use tokio::net::UdpSocket;
-    use tokio::time::{interval, timeout, Duration};
-
-    let connect_timeout = Duration::from_secs(config.connect_timeout.unwrap_or(30) as u64);
-
-    // 1. Bind UDP socket
-    let socket = UdpSocket::bind("0.0.0.0:0")
-        .await
-        .map_err(XdmcpError::from)?;
-
-    let target = format!("{}:{}", config.host, config.port);
-
-    // 2. Send Query
-    let query = crate::xdmcp::protocol::build_query(&[]);
-    socket
-        .send_to(&query, &target)
-        .await
-        .map_err(XdmcpError::from)?;
-    {
-        let mut st = state.lock().await;
-        st.bytes_sent += query.len() as u64;
-        st.packets_sent += 1;
-    }
-
-    // 3. Wait for Willing
-    let mut buf = vec![0u8; 1024];
-    let (n, _from) = timeout(connect_timeout, socket.recv_from(&mut buf))
-        .await
-        .map_err(|_| XdmcpError::timeout("no Willing response received"))?
-        .map_err(XdmcpError::from)?;
-
-    {
-        let mut st = state.lock().await;
-        st.bytes_received += n as u64;
-        st.packets_received += 1;
-    }
-
-    // Parse header
-    let header = crate::xdmcp::protocol::XdmcpHeader::decode(&buf[..n])
-        .ok_or_else(|| XdmcpError::protocol("invalid XDMCP header"))?;
-
-    if header.opcode == XdmcpOpcode::Unwilling {
-        return Err(XdmcpError::declined("display manager is unwilling"));
-    }
-
-    if header.opcode != XdmcpOpcode::Willing {
-        return Err(XdmcpError::protocol(format!(
-            "expected Willing, got {:?}",
-            header.opcode
-        )));
-    }
-
-    let willing = crate::xdmcp::protocol::parse_willing(&buf[6..n])
-        .ok_or_else(|| XdmcpError::protocol("failed to parse Willing response"))?;
-
-    let _ = event_tx
-        .send(SessionEvent::HostFound {
-            hostname: willing.hostname.clone(),
-            status: willing.status.clone(),
-        })
-        .await;
-
-    {
-        let mut st = state.lock().await;
-        st.state = XdmcpSessionState::Requesting;
-        st.display_manager = Some(willing.hostname);
-    }
-
-    // 4. Send Request
-    let display_num = config
-        .display_number
-        .unwrap_or(crate::xdmcp::xserver::find_available_display(10)) as u16;
-
-    let local_addr = socket.local_addr().map_err(XdmcpError::from)?;
-    let ip_bytes: Vec<u8> = match local_addr.ip() {
-        std::net::IpAddr::V4(ip) => ip.octets().to_vec(),
-        std::net::IpAddr::V6(ip) => ip.octets().to_vec(),
-    };
-
-    let request = crate::xdmcp::protocol::build_request(
-        display_num,
-        &[0], // Internet
-        &[&ip_bytes],
-        "",
-        &[],
-        "sorng-xdmcp",
-    );
-    socket
-        .send_to(&request, &target)
-        .await
-        .map_err(XdmcpError::from)?;
-    {
-        let mut st = state.lock().await;
-        st.bytes_sent += request.len() as u64;
-        st.packets_sent += 1;
-    }
-
-    // 5. Wait for Accept/Decline
-    let (n, _) = timeout(connect_timeout, socket.recv_from(&mut buf))
-        .await
-        .map_err(|_| XdmcpError::timeout("no Accept/Decline response"))?
-        .map_err(XdmcpError::from)?;
-
-    {
-        let mut st = state.lock().await;
-        st.bytes_received += n as u64;
-        st.packets_received += 1;
-    }
-
-    let resp_header = crate::xdmcp::protocol::XdmcpHeader::decode(&buf[..n])
-        .ok_or_else(|| XdmcpError::protocol("invalid response header"))?;
-
-    if resp_header.opcode == XdmcpOpcode::Decline {
-        let decline = crate::xdmcp::protocol::parse_decline(&buf[6..n]);
-        let reason = decline
-            .map(|d| d.status)
-            .unwrap_or_else(|| "declined".into());
-        return Err(XdmcpError::declined(reason));
-    }
-
-    if resp_header.opcode != XdmcpOpcode::Accept {
-        return Err(XdmcpError::protocol(format!(
-            "expected Accept, got {:?}",
-            resp_header.opcode
-        )));
-    }
-
-    let accept = crate::xdmcp::protocol::parse_accept(&buf[6..n])
-        .ok_or_else(|| XdmcpError::protocol("failed to parse Accept"))?;
-
-    {
-        let mut st = state.lock().await;
-        st.state = XdmcpSessionState::Accepted;
-        st.session_id = Some(accept.session_id);
-        st.display_number = Some(display_num as u32);
-    }
-
-    let _ = event_tx
-        .send(SessionEvent::Accepted {
-            session_id: accept.session_id,
-        })
-        .await;
-
-    // 6. Send Manage
-    let manage =
-        crate::xdmcp::protocol::build_manage(accept.session_id, display_num, "MIT-unspecified");
-    socket
-        .send_to(&manage, &target)
-        .await
-        .map_err(XdmcpError::from)?;
-
-    // 7. Mark running
-    {
-        let mut st = state.lock().await;
-        st.state = XdmcpSessionState::Running;
-        st.last_activity = chrono::Utc::now().to_rfc3339();
-    }
-
-    let _ = event_tx
-        .send(SessionEvent::Running {
-            display_number: display_num as u32,
-        })
-        .await;
-
-    // 8. KeepAlive loop
-    let keepalive_secs = config.keepalive_interval.unwrap_or(60);
-    let mut keepalive_timer = interval(Duration::from_secs(keepalive_secs as u64));
-
-    loop {
-        tokio::select! {
-            _ = keepalive_timer.tick() => {
-                let ka = crate::xdmcp::protocol::build_keepalive(
-                    display_num,
-                    accept.session_id,
-                );
-                if socket.send_to(&ka, &target).await.is_ok() {
-                    let mut st = state.lock().await;
-                    st.bytes_sent += ka.len() as u64;
-                    st.packets_sent += 1;
-                    st.keepalive_count += 1;
-                    st.last_activity = chrono::Utc::now().to_rfc3339();
-                }
-            }
-
-            result = socket.recv_from(&mut buf) => {
-                match result {
-                    Ok((n, _)) => {
-                        let mut st = state.lock().await;
-                        st.bytes_received += n as u64;
-                        st.packets_received += 1;
-                        st.last_activity = chrono::Utc::now().to_rfc3339();
-                        // Parse Alive/Refuse/Failed responses
-                    }
-                    Err(e) => {
-                        let mut st = state.lock().await;
-                        st.state = XdmcpSessionState::Failed;
-                        let _ = event_tx.send(SessionEvent::Disconnected(Some(e.to_string()))).await;
-                        break;
-                    }
-                }
-            }
-
-            cmd = cmd_rx.recv() => {
-                match cmd {
-                    Some(SessionCommand::Disconnect) | None => {
-                        let mut st = state.lock().await;
-                        st.state = XdmcpSessionState::Ended;
-                        let _ = event_tx.send(SessionEvent::Disconnected(None)).await;
-                        break;
-                    }
-                    Some(SessionCommand::Resize { width, height }) => {
-                        let mut st = state.lock().await;
-                        st.display_width = width;
-                        st.display_height = height;
-                    }
-                }
-            }
+        if !matches!(self.state.lock().await.state, XdmcpSessionState::Running) {
+            return Ok(());
         }
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(SessionCommand::Disconnect(response_tx))
+            .await
+            .map_err(|_| XdmcpError::disconnected("the local X server process is already gone"))?;
+        tokio::time::timeout(tokio::time::Duration::from_secs(5), response_rx)
+            .await
+            .map_err(|_| XdmcpError::timeout("timed out while stopping the local X server"))?
+            .map_err(|_| XdmcpError::disconnected("the local X server stopped unexpectedly"))?;
+        Ok(())
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -352,31 +290,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_command_variants() {
-        let _ = SessionCommand::Disconnect;
-        let _ = SessionCommand::Resize {
-            width: 1920,
-            height: 1080,
+    fn refuses_silent_insecure_launch() {
+        let config = XdmcpConfig {
+            host: "display.example.test".into(),
+            ..Default::default()
         };
+        let error = validate_native_launch(&config).unwrap_err();
+        assert_eq!(error.kind, XdmcpErrorKind::AuthenticationFailed);
+        assert!(error.message.contains("unauthenticated and unencrypted"));
     }
 
     #[test]
-    fn shared_state_init() {
-        let state = SharedSessionState {
-            state: XdmcpSessionState::Discovering,
-            display_number: None,
-            session_id: None,
-            display_manager: None,
-            display_width: 1024,
-            display_height: 768,
-            bytes_sent: 0,
-            bytes_received: 0,
-            packets_sent: 0,
-            packets_received: 0,
-            keepalive_count: 0,
-            last_activity: String::new(),
-            x_server_pid: None,
+    fn rejects_secret_auth_and_system_visible_extra_arguments() {
+        let auth = XdmcpConfig {
+            host: "display.example.test".into(),
+            acknowledge_insecure_transport: true,
+            auth_type: Some(XdmcpAuthType::XdmAuthorization),
+            auth_data: Some(vec![1, 2, 3]),
+            ..Default::default()
         };
-        assert_eq!(state.state, XdmcpSessionState::Discovering);
+        assert_eq!(
+            validate_native_launch(&auth).unwrap_err().kind,
+            XdmcpErrorKind::AuthenticationFailed
+        );
+
+        let args = XdmcpConfig {
+            host: "display.example.test".into(),
+            acknowledge_insecure_transport: true,
+            x_server_extra_args: Some(vec!["-cookie".into(), "secret".into()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_native_launch(&args).unwrap_err().kind,
+            XdmcpErrorKind::XServerError
+        );
+    }
+
+    #[test]
+    fn rejects_headless_and_unsupported_servers() {
+        for server_type in [
+            XServerType::Xvfb,
+            XServerType::Xorg,
+            XServerType::XWayland,
+            XServerType::MobaXterm,
+        ] {
+            let config = XdmcpConfig {
+                host: "display.example.test".into(),
+                acknowledge_insecure_transport: true,
+                x_server_type: Some(server_type),
+                ..Default::default()
+            };
+            assert_eq!(
+                validate_native_launch(&config).unwrap_err().kind,
+                XdmcpErrorKind::XServerError
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unenforceable_native_process_tuning() {
+        let base = || XdmcpConfig {
+            host: "display.example.test".into(),
+            acknowledge_insecure_transport: true,
+            x_server_type: Some(XServerType::Custom("test-xserver".into())),
+            ..Default::default()
+        };
+
+        let mut broadcast_address = base();
+        broadcast_address.broadcast_address = Some("192.0.2.255".into());
+        assert!(validate_native_launch(&broadcast_address).is_err());
+
+        let mut timeout = base();
+        timeout.connect_timeout = Some(12);
+        assert!(validate_native_launch(&timeout).is_err());
+
+        let mut keepalive = base();
+        keepalive.keepalive_interval = Some(15);
+        assert!(validate_native_launch(&keepalive).is_err());
+
+        let mut retries = base();
+        retries.retry_count = Some(9);
+        assert!(validate_native_launch(&retries).is_err());
     }
 }
