@@ -1,16 +1,48 @@
 ---
-title: Apple Screen Sharing authentication
+title: Apple Screen Sharing and portable ARD access
 eyebrow: Use the app
-description: Choose the truthful ARD authentication path without exposing an Apple Account password or confusing Apple identity with RFB credentials.
+description: Build one portable remote-Mac profile with a native Apple Account handoff on macOS and an explicit embedded fallback on Windows and Linux.
 permalink: /apple-screen-sharing/
 ---
 
-Apple Remote Desktop, VNC compatibility, and Apple Account (formerly Apple ID) screen-sharing requests reach similar-looking remote desktops through different authentication systems. sortOfRemoteNG keeps those systems separate so a credential is never sent to a protocol that cannot accept it.
+Apple Remote Desktop, VNC compatibility, and Apple Account (formerly Apple ID) screen-sharing requests reach similar-looking remote desktops through different authentication systems. sortOfRemoteNG keeps those systems separate while allowing one saved connection to choose a supported path for the current operating system.
 
 <div class="callout">
   <strong>Never enter an Apple Account password or verification code in sortOfRemoteNG.</strong>
   <p>Apple Account authentication stays in Screen Sharing.app. The saved Apple Account identifier is routing and identity metadata, not a password and not an ARD/RFB credential.</p>
 </div>
+
+## Cross-platform profile
+
+A portable ARD profile combines two independent routes to the same saved target:
+
+1. **Native Apple Account handoff on macOS.** sortOfRemoteNG opens Screen Sharing.app. Apple owns the account password, two-factor authentication, connection approval, and remote-session state.
+2. **Embedded fallback when the native handoff is unavailable.** On Windows and Linux—and on a Mac where Screen Sharing.app cannot be opened—sortOfRemoteNG connects to the same saved host and port using either an account authorized by the remote Mac or a dedicated VNC-viewer password.
+
+The fallback makes the connection definition portable; it does not make Apple Account authentication cross-platform. Apple documents Apple Account entry in [Screen Sharing.app on Mac](https://support.apple.com/guide/mac-help/mh14066/mac), but does not publish a Windows/Linux Screen Sharing client or an Apple Account-to-ARD/RFB credential exchange. The app therefore never replays an Apple Account password, verification code, Sign in with Apple token, or app-specific password.
+
+| Running sortOfRemoteNG on | Selected path                                   | Required saved data                                                    | Result when the path is unavailable                                                         |
+| ------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| macOS                     | Native Apple Account handoff                    | Apple Account identifier                                               | Uses the enabled embedded fallback if native handoff is unavailable; otherwise fails closed |
+| macOS                     | Embedded remote-Mac account or VNC fallback     | Target host/port and the selected embedded credential                  | Reports the real ARD/RFB connection error                                                   |
+| Windows or Linux          | Embedded fallback from a portable Apple profile | Target host/port plus a configured remote-Mac or dedicated VNC account | Fails closed with setup guidance when no valid fallback is configured                       |
+| Any supported platform    | Explicit embedded-only profile                  | Target host/port and the selected embedded credential                  | Reports the real ARD/RFB connection error; no Apple handoff is involved                     |
+
+The platform resolver is deterministic: native capability takes precedence on macOS; static native unavailability or a failed app launch selects the enabled fallback. A successful app launch never triggers the fallback because it proves neither Apple authentication nor a remote connection. The resolver does not silently substitute one password type for another.
+
+### Create or migrate a portable profile
+
+1. Confirm that the remote Mac has Screen Sharing or Remote Management enabled and that the intended user is allowed access.
+2. Keep a reachable hostname or IP address and ARD/RFB port on the saved connection. The embedded fallback always needs a network target even if the macOS path is normally reached by Apple Account.
+3. Select the Apple Account native-handoff option and save the account email address or phone number as the handoff reference.
+4. Enable **Cross-platform fallback**, then select one explicit fallback authentication mode:
+   - **Remote Mac account:** save the username and credential of a local or directory-backed account authorized on the target Mac.
+   - **Dedicated VNC password:** enable VNC-viewer access on the target and create a unique VNC-only password.
+5. Save the profile, then test it on every operating system you plan to use. A macOS handoff test does not test the embedded fallback, and an embedded test does not verify Apple Account approval.
+
+Existing embedded-only ARD connections continue to use their selected embedded authentication path. To make one portable, edit it and add the Apple Account handoff plus a deliberate fallback; do not copy an Apple Account password into the existing password field.
+
+Existing Apple Account handoff profiles migrate with the fallback disabled. This prevents an old generic username or password from being silently reinterpreted as a fallback credential. Enabling the fallback is a deliberate setup step; disabling it again clears those generic embedded credentials. A dedicated-VNC fallback does not use or preserve a username.
 
 ## Choose an authentication path
 
@@ -45,7 +77,18 @@ Apple's [Screen Sharing guide](https://support.apple.com/guide/mac-help/mh14066/
 
 Apple documents `vnc://` addresses for host or DNS-based screen-sharing endpoints in its [network-address guide](https://support.apple.com/guide/mac-help/mchlp1177/mac). It does not document an Apple Account URL scheme, public target-prefill API, or third-party token exchange for Screen Sharing.app. The handoff therefore opens Apple's app without trying to inject the identifier, password, or approval response into its UI.
 
-On Windows and Linux, Apple Account mode fails closed because Apple's Screen Sharing app and its account-mediated connection service are unavailable. Use an embedded remote-Mac account or dedicated VNC password instead.
+On Windows and Linux, the Apple Account handoff is unavailable. A portable profile uses its explicitly configured embedded remote-Mac-account or dedicated-VNC fallback; a profile without one fails closed instead of asking for or reinterpreting the Apple Account password.
+
+## Network reachability
+
+Embedded ARD/RFB connects directly to the saved hostname or IP address and port. Apple identifies TCP port 5900 for Remote Desktop control and observation in its [Remote Desktop port reference](https://support.apple.com/guide/remote-desktop/tcp-and-udp-port-reference-apd0c903fec/mac), and its troubleshooting guidance begins by checking that the computers are on a reachable network and that sharing permissions are enabled.
+
+- A system VPN may make the target address reachable, but the ARD client does not start, stop, or verify that VPN.
+- App-level proxy chains, SSH hops, and tunnel-chain routes are not applied to embedded ARD. Configure a directly reachable endpoint or establish the required system network path first.
+- The Apple Account handoff uses Screen Sharing.app and that app's network environment. sortOfRemoteNG can confirm only that the handoff opened, not that Apple established or approved a session.
+- Do not expose an RFB/VNC listener to an untrusted network merely to make a profile portable. Apple warns that third-party VNC viewers may not encrypt keystrokes and that screen control grants extensive access. Prefer a trusted private network or a separately secured system VPN.
+
+See [Network Paths]({{ '/network-paths/' | relative_url }}) for protocols whose proxy, VPN, and tunnel lifecycle is managed inside sortOfRemoteNG.
 
 ## What Apple identity features do not provide
 
@@ -63,11 +106,12 @@ Using an app-specific password in the ARD password field would therefore be both
 
 ## Saved data and exports
 
-The Apple Account identifier is non-secret connection metadata, but it can still identify a person:
+The portable profile keeps its native identity reference and embedded fallback separate:
 
-- Normal and full exports preserve it so the saved connection remains portable.
-- Credential-free exports omit it as sensitive identity metadata.
+- Normal and full exports preserve the Apple Account identifier, fallback mode, host, and the data allowed by the selected export/storage policy so the profile can be restored deliberately.
+- Credential-free exports omit the Apple Account identifier and generic embedded credentials while retaining the non-secret enabled state and fallback mode. The imported profile may therefore require both identity and fallback credential setup before it can connect.
 - Apple Account passwords, verification codes, approval responses, and Sign in with Apple tokens cannot appear in any export because sortOfRemoteNG never receives or stores them for ARD.
+- Switching platforms does not copy, transform, or reuse a credential between the Apple and embedded paths.
 
 Inspect full exports before sharing them, just as you would inspect hostnames and usernames. Apple recommends that users never share their Apple Account password, verification codes, recovery key, or other account-security details in its [Apple Account security guidance](https://support.apple.com/102614).
 
@@ -75,6 +119,7 @@ Inspect full exports before sharing them, just as you would inspect hostnames an
 
 - If embedded authentication fails, verify that the chosen local or directory account is allowed by the target Mac's Screen Sharing or Remote Management settings.
 - If VNC authentication fails, confirm that VNC viewers are enabled and that the dedicated password—not a local-user or Apple Account password—was saved.
+- If a portable profile opens on Windows or Linux without connecting, verify that a fallback is selected, its credential is available under the current storage policy, and the saved host is reachable directly.
 - If Apple Account handoff does not start, confirm that sortOfRemoteNG is running on macOS and Screen Sharing.app is available.
 - If Screen Sharing.app requests authentication or approval, complete it there. A launched native app proves only that the handoff started, not that Apple authenticated the account or that the remote person approved control.
 
