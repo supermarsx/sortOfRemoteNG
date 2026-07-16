@@ -1,10 +1,11 @@
 //! PostgreSQL service – multi-session, SSH tunnel, schema introspection, export/import.
 
 use crate::postgres::types::*;
+use crate::postgres::value::row_to_map;
 use chrono::Utc;
 use log::{info, warn};
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::{Column, Row};
+use sqlx::{Column, Executor, Row};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -70,13 +71,22 @@ impl PostgresService {
 
     fn validate_where_clause(clause: &str) -> Result<(), PgError> {
         if clause.is_empty() {
-            return Err(PgError::new(PgErrorKind::QueryFailed, "WHERE clause cannot be empty"));
+            return Err(PgError::new(
+                PgErrorKind::QueryFailed,
+                "WHERE clause cannot be empty",
+            ));
         }
         if clause.contains(';') {
-            return Err(PgError::new(PgErrorKind::QueryFailed, "WHERE clause must not contain semicolons"));
+            return Err(PgError::new(
+                PgErrorKind::QueryFailed,
+                "WHERE clause must not contain semicolons",
+            ));
         }
         if clause.contains("--") || clause.contains("/*") {
-            return Err(PgError::new(PgErrorKind::QueryFailed, "WHERE clause must not contain SQL comments"));
+            return Err(PgError::new(
+                PgErrorKind::QueryFailed,
+                "WHERE clause must not contain SQL comments",
+            ));
         }
         let upper = clause.to_uppercase();
         for kw in ["UNION", "DROP", "ALTER", "CREATE", "INSERT", "EXEC", "XP_"] {
@@ -179,9 +189,13 @@ impl PostgresService {
             (None, None)
         };
 
-        let url = config.to_url(local_port);
+        let url = config.to_url(local_port)?;
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            // A UI session must retain PostgreSQL connection-local state
+            // (transactions, temporary tables, SET values, advisory locks).
+            // Multiple app sessions still run independently, but each owns a
+            // single physical database connection.
+            .max_connections(1)
             .acquire_timeout(std::time::Duration::from_secs(
                 config.connection_timeout_secs.unwrap_or(10),
             ))
@@ -266,6 +280,11 @@ impl PostgresService {
         let pool = self.get_pool(id)?.clone();
         let start = std::time::Instant::now();
 
+        let description = pool
+            .describe(sql)
+            .await
+            .map_err(|error| PgError::new(PgErrorKind::QueryFailed, format!("{error}")))?;
+
         let rows: Vec<PgRow> = sqlx::query(sql)
             .fetch_all(&pool)
             .await
@@ -273,33 +292,20 @@ impl PostgresService {
 
         let elapsed = start.elapsed().as_millis();
 
-        let columns: Vec<ColumnInfo> = if !rows.is_empty() {
-            rows[0]
-                .columns()
-                .iter()
-                .enumerate()
-                .map(|(i, c)| ColumnInfo {
-                    name: c.name().to_string(),
-                    type_name: c.type_info().to_string(),
-                    ordinal: i,
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+        let columns: Vec<ColumnInfo> = description
+            .columns()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| ColumnInfo {
+                name: c.name().to_string(),
+                type_name: c.type_info().to_string(),
+                ordinal: i,
+            })
+            .collect();
 
         let mut result_rows: Vec<RowMap> = Vec::with_capacity(rows.len());
         for row in &rows {
-            let mut map = RowMap::new();
-            for (i, col) in row.columns().iter().enumerate() {
-                let val: Option<String> = row.try_get::<Option<String>, _>(i).unwrap_or(None);
-                map.insert(
-                    col.name().to_string(),
-                    val.map(serde_json::Value::String)
-                        .unwrap_or(serde_json::Value::Null),
-                );
-            }
-            result_rows.push(map);
+            result_rows.push(row_to_map(row)?);
         }
 
         let sess = self.get_session_mut(id)?;
@@ -341,7 +347,10 @@ impl PostgresService {
         sql: &str,
     ) -> Result<Vec<ExplainNode>, PgError> {
         if sql.contains(';') {
-            return Err(PgError::new(PgErrorKind::QueryFailed, "EXPLAIN query must not contain semicolons"));
+            return Err(PgError::new(
+                PgErrorKind::QueryFailed,
+                "EXPLAIN query must not contain semicolons",
+            ));
         }
         let pool = self.get_pool(id)?.clone();
         let explain_sql = format!("EXPLAIN (FORMAT JSON) {sql}");

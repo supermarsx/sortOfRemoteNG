@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use url::Url;
 
 // ── Row alias ───────────────────────────────────────────────────────
 
@@ -130,32 +131,65 @@ impl PgConnectionConfig {
         self
     }
 
-    /// Build a `postgres://` connection URL.
-    pub fn to_url(&self, override_port: Option<u16>) -> String {
+    /// Build a percent-encoded `postgres://` connection URL.
+    ///
+    /// Keep the raw values on `PgConnectionConfig`: they are also used for
+    /// safe session metadata. `Url` owns encoding at the transport boundary so
+    /// usernames, passwords, database names, and TLS paths containing URL
+    /// delimiters cannot corrupt the connection string.
+    pub fn to_url(&self, override_port: Option<u16>) -> Result<String, PgError> {
         let port = override_port.unwrap_or(self.port);
-        let userinfo = match &self.password {
-            Some(pw) => format!("{}:{}", self.username, pw),
-            None => self.username.clone(),
-        };
         let db = self.database.as_deref().unwrap_or("postgres");
-        let mut url = format!("postgres://{userinfo}@{}:{port}/{db}", self.host);
-        let mut params: Vec<String> = Vec::new();
-        if let Some(ref app) = self.application_name {
-            params.push(format!("application_name={app}"));
-        }
-        if let Some(t) = self.connection_timeout_secs {
-            params.push(format!("connect_timeout={t}"));
-        }
-        if let Some(ref extra) = self.extra_params {
-            for (k, v) in extra {
-                params.push(format!("{k}={v}"));
+        let mut url = Url::parse("postgres://localhost/postgres").map_err(|error| {
+            PgError::new(
+                PgErrorKind::InvalidInput,
+                format!("Unable to initialize PostgreSQL URL: {error}"),
+            )
+        })?;
+        let url_host = if self.host.contains(':')
+            && !(self.host.starts_with('[') && self.host.ends_with(']'))
+        {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
+        url.set_host(Some(&url_host)).map_err(|error| {
+            PgError::new(
+                PgErrorKind::InvalidInput,
+                format!("Invalid PostgreSQL host: {error}"),
+            )
+        })?;
+        url.set_port(Some(port))
+            .map_err(|_| PgError::new(PgErrorKind::InvalidInput, "Invalid PostgreSQL port"))?;
+        url.set_username(&self.username)
+            .map_err(|_| PgError::new(PgErrorKind::InvalidInput, "Invalid PostgreSQL username"))?;
+        url.set_password(self.password.as_deref())
+            .map_err(|_| PgError::new(PgErrorKind::InvalidInput, "Invalid PostgreSQL password"))?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                PgError::new(
+                    PgErrorKind::InvalidInput,
+                    "Unable to encode PostgreSQL database name",
+                )
+            })?
+            .clear()
+            .push(db);
+
+        {
+            let mut query = url.query_pairs_mut();
+            if let Some(ref app) = self.application_name {
+                query.append_pair("application_name", app);
+            }
+            if let Some(timeout) = self.connection_timeout_secs {
+                query.append_pair("connect_timeout", &timeout.to_string());
+            }
+            if let Some(ref extra) = self.extra_params {
+                for (key, value) in extra {
+                    query.append_pair(key, value);
+                }
             }
         }
-        if !params.is_empty() {
-            url.push('?');
-            url.push_str(&params.join("&"));
-        }
-        url
+        Ok(url.into())
     }
 }
 
@@ -466,7 +500,7 @@ mod tests {
     #[test]
     fn config_to_url_simple() {
         let c = PgConnectionConfig::new("localhost", 5432, "postgres");
-        let url = c.to_url(None);
+        let url = c.to_url(None).unwrap();
         assert!(url.starts_with("postgres://postgres@localhost:5432/postgres"));
     }
 
@@ -475,7 +509,7 @@ mod tests {
         let c = PgConnectionConfig::new("localhost", 5432, "admin")
             .with_password("pass")
             .with_database("shop");
-        let url = c.to_url(None);
+        let url = c.to_url(None).unwrap();
         assert!(url.contains("admin:pass@"));
         assert!(url.contains("/shop"));
     }
@@ -483,7 +517,7 @@ mod tests {
     #[test]
     fn config_to_url_override_port() {
         let c = PgConnectionConfig::new("localhost", 5432, "u");
-        let url = c.to_url(Some(15432));
+        let url = c.to_url(Some(15432)).unwrap();
         assert!(url.contains(":15432/"));
     }
 
@@ -491,8 +525,50 @@ mod tests {
     fn config_to_url_application_name() {
         let mut c = PgConnectionConfig::new("localhost", 5432, "u");
         c.application_name = Some("myapp".to_string());
-        let url = c.to_url(None);
+        let url = c.to_url(None).unwrap();
         assert!(url.contains("application_name=myapp"));
+    }
+
+    #[test]
+    fn config_to_url_percent_encodes_credentials_database_and_parameters() {
+        let mut c = PgConnectionConfig::new("::1", 5432, "user@example.com")
+            .with_password("p@ss?word#42")
+            .with_database("sales data/2026");
+        c.extra_params = Some(HashMap::from([
+            ("sslmode".to_string(), "verify-full".to_string()),
+            (
+                "sslrootcert".to_string(),
+                r"C:\certs\root CA.pem".to_string(),
+            ),
+        ]));
+
+        let url = c.to_url(None).unwrap();
+        let parsed = Url::parse(&url).unwrap();
+        assert_eq!(parsed.host_str(), Some("[::1]"));
+        assert_eq!(parsed.username(), "user%40example.com");
+        assert_eq!(parsed.password(), Some("p%40ss%3Fword%2342"));
+        assert_eq!(parsed.path(), "/sales%20data%2F2026");
+        assert_eq!(
+            parsed.path_segments().unwrap().collect::<Vec<_>>(),
+            vec!["sales%20data%2F2026"]
+        );
+        let sqlx_options = url.parse::<sqlx::postgres::PgConnectOptions>().unwrap();
+        assert_eq!(sqlx_options.get_username(), "user@example.com");
+        assert_eq!(sqlx_options.get_database(), Some("sales data/2026"));
+        let params: HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            params.get("sslmode").map(String::as_str),
+            Some("verify-full")
+        );
+        assert_eq!(
+            params.get("sslrootcert").map(String::as_str),
+            Some(r"C:\certs\root CA.pem")
+        );
+
+        // Raw values remain available for SessionInfo; only the URL is encoded.
+        assert_eq!(c.username, "user@example.com");
+        assert_eq!(c.password.as_deref(), Some("p@ss?word#42"));
+        assert_eq!(c.database.as_deref(), Some("sales data/2026"));
     }
 
     #[test]
