@@ -71,6 +71,10 @@ pub struct ScpConnectionConfig {
     pub use_agent: bool,
     #[serde(default)]
     pub known_hosts_policy: ScpKnownHostsPolicy,
+    /// Optional OpenSSH known_hosts file. When omitted, ~/.ssh/known_hosts is
+    /// used. The frontend key is `knownHostsPath`.
+    #[serde(default)]
+    pub known_hosts_path: Option<String>,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
     #[serde(default = "default_keepalive_secs")]
@@ -94,7 +98,7 @@ pub struct ScpConnectionConfig {
     pub preferred_kex: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ScpKnownHostsPolicy {
     #[default]

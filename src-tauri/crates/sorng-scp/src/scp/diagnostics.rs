@@ -1,10 +1,9 @@
 // ── Diagnostics – connection testing and bandwidth estimation ────────────────
 
-use crate::scp::service::ScpService;
+use crate::scp::service::{connect_tcp_with_timeout, verify_before_auth, ScpService};
 use crate::scp::types::*;
 use ssh2::Session;
 use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::time::Instant;
 
 impl ScpService {
@@ -75,21 +74,17 @@ impl ScpService {
         &self,
         config: ScpConnectionConfig,
     ) -> Result<ScpDiagnosticResult, String> {
-        let addr = format!("{}:{}", config.host, config.port);
         let mut warnings = Vec::new();
 
         // ── TCP connect timing ───────────────────────────────────────────────
         let tcp_start = Instant::now();
-        let tcp = TcpStream::connect_timeout(
-            &addr
-                .parse()
-                .map_err(|e| format!("Invalid address '{}': {}", addr, e))?,
+        let tcp = connect_tcp_with_timeout(
+            &config.host,
+            config.port,
             std::time::Duration::from_secs(config.timeout_secs),
         )
-        .map_err(|e| format!("TCP connection to {} failed: {}", addr, e))?;
+        .await?;
         let tcp_ms = tcp_start.elapsed().as_secs_f64() * 1000.0;
-
-        tcp.set_nonblocking(false).ok();
 
         // ── SSH handshake timing ─────────────────────────────────────────────
         let handshake_start = Instant::now();
@@ -105,6 +100,30 @@ impl ScpService {
             .map_err(|e| format!("Handshake failed: {}", e))?;
         let handshake_ms = handshake_start.elapsed().as_secs_f64() * 1000.0;
 
+        // Diagnostics is a real authentication path, so it obeys the same
+        // host-trust-before-credentials invariant as connect().
+        let auth_start = Instant::now();
+        let (_auth_method, auth_methods) = verify_before_auth(
+            &mut session,
+            |session| Self::verify_host_key(session, &config),
+            |session| {
+                // Keep the credential-free method query behind host trust but
+                // before actual agent/key/password authentication.
+                let auth_methods = session
+                    .auth_methods(&config.username)
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|method| method.trim().to_string())
+                    .filter(|method| !method.is_empty())
+                    .collect();
+                let method = self
+                    .authenticate(session, &config)
+                    .map_err(|e| format!("Authentication failed: {}", e))?;
+                Ok((method, auth_methods))
+            },
+        )?;
+        let auth_ms = auth_start.elapsed().as_secs_f64() * 1000.0;
+
         let banner = session.banner().map(|b| b.to_string());
         let fingerprint = session.host_key_hash(ssh2::HashType::Sha256).map(|bytes| {
             let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
@@ -112,18 +131,7 @@ impl ScpService {
         });
 
         // List available auth methods
-        let auth_methods_str = session.auth_methods(&config.username).unwrap_or("");
-        let auth_methods: Vec<String> = auth_methods_str
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
         // ── Authentication timing ────────────────────────────────────────────
-        let auth_start = Instant::now();
-        let _auth_method = self.authenticate(&mut session, &config);
-        let auth_ms = auth_start.elapsed().as_secs_f64() * 1000.0;
-
         // Negotiated algorithms
         let negotiated_kex = session
             .methods(ssh2::MethodType::Kex)
