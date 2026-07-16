@@ -240,20 +240,18 @@ impl SftpService {
     /// BEFORE authentication, mirroring core SSH's host-key trust model.
     ///
     /// Policies:
-    /// * `Strict`     — reject if the host is unknown OR the key mismatches.
-    ///                  Only an exact match in `known_hosts` is accepted.
-    /// * `AcceptNew`  — trust-on-first-use: a previously unknown host is
-    ///                  recorded in `known_hosts` and accepted; a *mismatch*
-    ///                  with a recorded key is always rejected.
-    /// * `Ask`        — (default) behaves like `AcceptNew` for unknown hosts
-    ///                  (records + accepts on first use) but rejects on
-    ///                  mismatch. The SFTP service has no interactive prompt
-    ///                  channel, so this is the safe non-interactive analogue
-    ///                  of core SSH's `Ask` — it never silently accepts a
-    ///                  changed key.
-    /// * `Ignore`     — explicit, dangerous opt-out: skip verification
-    ///                  entirely (e.g. throwaway/e2e hosts). Logged as a
-    ///                  warning.
+    /// - `Strict` — reject if the host is unknown OR the key mismatches.
+    ///   Only an exact match in `known_hosts` is accepted.
+    /// - `AcceptNew` — trust-on-first-use: a previously unknown host is
+    ///   recorded in `known_hosts` and accepted; a *mismatch* with a recorded
+    ///   key is always rejected.
+    /// - `Ask` — (default) behaves like `AcceptNew` for unknown hosts (records
+    ///   and accepts on first use) but rejects on mismatch. The SFTP service has
+    ///   no interactive prompt channel, so this is the safe non-interactive
+    ///   analogue of core SSH's `Ask` — it never silently accepts a changed
+    ///   key.
+    /// - `Ignore` — explicit, dangerous opt-out: skip verification entirely
+    ///   (e.g. throwaway/e2e hosts). Logged as a warning.
     ///
     /// On any rejection the connection is aborted with an actionable error
     /// before authenticate() runs, so no credential is sent to an unverified

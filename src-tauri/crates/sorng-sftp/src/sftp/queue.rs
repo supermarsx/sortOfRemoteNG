@@ -23,7 +23,8 @@ impl SftpService {
             progress: None,
         };
         self.queue.push(entry);
-        self.queue.sort_by(|a, b| b.priority.cmp(&a.priority)); // highest-priority first
+        self.queue
+            .sort_by_key(|entry| std::cmp::Reverse(entry.priority)); // highest-priority first
         info!("SFTP queue: added {}", id);
         Ok(id)
     }
@@ -117,7 +118,8 @@ impl SftpService {
             .find(|e| e.id == queue_id)
             .ok_or_else(|| format!("Queue item '{}' not found", queue_id))?;
         entry.priority = priority;
-        self.queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.queue
+            .sort_by_key(|entry| std::cmp::Reverse(entry.priority));
         Ok(())
     }
 
