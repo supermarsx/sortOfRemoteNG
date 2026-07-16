@@ -11,6 +11,7 @@ import type {
 } from "../../types/protocols/x2goNative";
 import type { X2goConfig, X2goSshAuth } from "../../types/x2go";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
+import { generateId } from "../../utils/core/id";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 
 export type X2goNativeStatus =
@@ -165,6 +166,9 @@ export function useX2goNativeSession(session: ConnectionSession) {
   sessionRef.current = session;
   const generationRef = useRef(0);
   const launchPromiseRef = useRef<Promise<void> | null>(null);
+  const invalidateLaunch = useCallback(() => {
+    ++generationRef.current;
+  }, []);
 
   const updateSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
@@ -179,8 +183,15 @@ export function useX2goNativeSession(session: ConnectionSession) {
   const refresh = useCallback(async (): Promise<boolean> => {
     const backendId = backendIdRef.current;
     if (!backendId) return false;
+    const generation = generationRef.current;
     try {
       const next = await x2goNativeApi.info(backendId);
+      if (
+        generation !== generationRef.current ||
+        backendIdRef.current !== backendId
+      ) {
+        return false;
+      }
       setInfo(next);
       if (next.state === "Running" && next.native_client_pid) {
         setStatus("native-client-running");
@@ -191,6 +202,12 @@ export function useX2goNativeSession(session: ConnectionSession) {
       updateSession({ status: "disconnected" });
       return false;
     } catch (value) {
+      if (
+        generation !== generationRef.current ||
+        backendIdRef.current !== backendId
+      ) {
+        return false;
+      }
       const message = x2goNativeErrorMessage(value, connection);
       setError(message);
       setStatus("error");
@@ -202,26 +219,48 @@ export function useX2goNativeSession(session: ConnectionSession) {
     if (launchPromiseRef.current) return launchPromiseRef.current;
     const operation = (async () => {
       const generation = ++generationRef.current;
+      let launchedBackendId: string | null = null;
+      const cleanupLaunchedBackend = async () => {
+        const backendId = launchedBackendId;
+        if (!backendId) return;
+        launchedBackendId = null;
+        if (backendIdRef.current === backendId) {
+          backendIdRef.current = null;
+        }
+        await x2goNativeApi.disconnect(backendId).catch(() => undefined);
+      };
       setStatus("launching");
       setError(null);
       try {
         if (!connection)
           throw new Error("X2Go connection settings were not found.");
         const existingId = backendIdRef.current;
-        if (existingId && (await refresh())) return;
+        if (existingId) {
+          if (await refresh()) return;
+          if (generation !== generationRef.current) return;
+          if (backendIdRef.current === existingId) {
+            backendIdRef.current = null;
+          }
+          await x2goNativeApi.disconnect(existingId).catch(() => undefined);
+          if (generation !== generationRef.current) return;
+        }
         const config = buildX2goNativeConfig(connection, sessionRef.current);
-        const backendId = sessionRef.current.id;
+        const backendId = `${sessionRef.current.id}:${generateId()}`;
         await x2goNativeApi.connect(backendId, config);
+        launchedBackendId = backendId;
         if (generation !== generationRef.current) {
-          await x2goNativeApi.disconnect(backendId).catch(() => undefined);
+          await cleanupLaunchedBackend();
           return;
         }
         backendIdRef.current = backendId;
         const next = await x2goNativeApi.info(backendId);
+        if (generation !== generationRef.current) {
+          await cleanupLaunchedBackend();
+          return;
+        }
         setInfo(next);
         if (next.state !== "Running" || !next.native_client_pid) {
-          backendIdRef.current = null;
-          await x2goNativeApi.disconnect(backendId).catch(() => undefined);
+          await cleanupLaunchedBackend();
           throw new Error(
             "X2Go Client exited before its process could be tracked.",
           );
@@ -232,7 +271,9 @@ export function useX2goNativeSession(session: ConnectionSession) {
           status: "connected",
           errorMessage: undefined,
         });
+        launchedBackendId = null;
       } catch (value) {
+        await cleanupLaunchedBackend();
         if (generation !== generationRef.current) return;
         const message = x2goNativeErrorMessage(value, connection);
         setError(message);
@@ -268,9 +309,9 @@ export function useX2goNativeSession(session: ConnectionSession) {
     return () => {
       // SessionManager owns final disconnect. A viewer remount must not kill a
       // native process or duplicate it.
-      ++generationRef.current;
+      invalidateLaunch();
     };
-  }, [launch, session.id]);
+  }, [invalidateLaunch, launch, session.id]);
 
   useEffect(() => {
     if (status !== "native-client-running") return;

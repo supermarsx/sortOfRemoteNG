@@ -8,7 +8,7 @@
 //! completed in NoMachine's own UI.
 
 use std::ffi::OsString;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use crate::nx::types::{
@@ -386,15 +386,27 @@ pub fn write_secure_temp_file(
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&path).map_err(|error| {
+    let file = options.open(&path).map_err(|error| {
         NxError::connection_failed(format!("Failed to stage NoMachine profile: {error}"))
     })?;
-    file.write_all(contents)
-        .and_then(|_| file.flush())
-        .map_err(|error| {
-            NxError::connection_failed(format!("Failed to write NoMachine profile: {error}"))
-        })?;
+    write_all_flush_or_cleanup(file, &path, contents).map_err(|error| {
+        NxError::connection_failed(format!("Failed to write NoMachine profile: {error}"))
+    })?;
     Ok(path)
+}
+
+fn write_all_flush_or_cleanup<W: Write>(
+    mut writer: W,
+    path: &Path,
+    contents: &[u8],
+) -> io::Result<()> {
+    let result = writer.write_all(contents).and_then(|_| writer.flush());
+    if let Err(error) = result {
+        drop(writer);
+        zeroize_and_remove(path);
+        return Err(error);
+    }
+    Ok(())
 }
 
 pub fn zeroize_and_remove(path: &Path) {
@@ -483,6 +495,27 @@ pub fn prepare_native_launch(config: &NxConfig) -> Result<PreparedNxLaunch, NxEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PartialWriteFailure {
+        file: std::fs::File,
+        remaining: usize,
+    }
+
+    impl Write for PartialWriteFailure {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(io::Error::other("injected partial write failure"));
+            }
+            let count = buffer.len().min(self.remaining);
+            let written = self.file.write(&buffer[..count])?;
+            self.remaining -= written;
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.file.flush()
+        }
+    }
 
     fn config() -> NxConfig {
         NxConfig {
@@ -644,6 +677,25 @@ mod tests {
         let path = write_secure_temp_file("sorng-nx-test", "tmp", b"secret").unwrap();
         assert!(path.is_file());
         zeroize_and_remove(&path);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn partial_secure_temp_write_is_zeroized_and_removed() {
+        let path = std::env::temp_dir().join(format!(
+            "sorng-nx-partial-write-{}.tmp",
+            uuid::Uuid::new_v4()
+        ));
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        let writer = PartialWriteFailure { file, remaining: 3 };
+
+        let result = write_all_flush_or_cleanup(writer, &path, b"secret material");
+
+        assert!(result.is_err());
         assert!(!path.exists());
     }
 }

@@ -164,6 +164,9 @@ export function useNxNativeSession(session: ConnectionSession) {
   sessionRef.current = session;
   const generationRef = useRef(0);
   const launchPromiseRef = useRef<Promise<void> | null>(null);
+  const invalidateLaunch = useCallback(() => {
+    ++generationRef.current;
+  }, []);
 
   const updateSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
@@ -178,8 +181,15 @@ export function useNxNativeSession(session: ConnectionSession) {
   const refresh = useCallback(async (): Promise<boolean> => {
     const backendId = backendIdRef.current;
     if (!backendId) return false;
+    const generation = generationRef.current;
     try {
       const next = await nxNativeApi.info(backendId);
+      if (
+        generation !== generationRef.current ||
+        backendIdRef.current !== backendId
+      ) {
+        return false;
+      }
       setInfo(next);
       if (next.state === "Running" && next.native_client_pid) {
         setStatus("native-client-running");
@@ -190,6 +200,12 @@ export function useNxNativeSession(session: ConnectionSession) {
       updateSession({ status: "disconnected" });
       return false;
     } catch (value) {
+      if (
+        generation !== generationRef.current ||
+        backendIdRef.current !== backendId
+      ) {
+        return false;
+      }
       const message = nxNativeErrorMessage(value, connection);
       setError(message);
       setStatus("error");
@@ -201,25 +217,48 @@ export function useNxNativeSession(session: ConnectionSession) {
     if (launchPromiseRef.current) return launchPromiseRef.current;
     const operation = (async () => {
       const generation = ++generationRef.current;
+      let launchedBackendId: string | null = null;
+      const cleanupLaunchedBackend = async () => {
+        const backendId = launchedBackendId;
+        if (!backendId) return;
+        launchedBackendId = null;
+        if (backendIdRef.current === backendId) {
+          backendIdRef.current = null;
+        }
+        await nxNativeApi.disconnect(backendId).catch(() => undefined);
+      };
       setStatus("launching");
       setError(null);
       try {
         if (!connection) {
           throw new Error("NoMachine connection settings were not found.");
         }
-        if (backendIdRef.current && (await refresh())) return;
+        const existingId = backendIdRef.current;
+        if (existingId) {
+          if (await refresh()) return;
+          if (generation !== generationRef.current) return;
+          if (backendIdRef.current === existingId) {
+            backendIdRef.current = null;
+          }
+          await nxNativeApi.disconnect(existingId).catch(() => undefined);
+          if (generation !== generationRef.current) return;
+        }
         const args = buildNxNativeConnectArgs(connection, sessionRef.current);
         const backendId = await nxNativeApi.connect(args);
+        launchedBackendId = backendId;
         if (generation !== generationRef.current) {
-          await nxNativeApi.disconnect(backendId).catch(() => undefined);
+          await cleanupLaunchedBackend();
           return;
         }
         backendIdRef.current = backendId;
         const next = await nxNativeApi.info(backendId);
+        if (generation !== generationRef.current) {
+          await cleanupLaunchedBackend();
+          return;
+        }
         setInfo(next);
         if (next.state !== "Running" || !next.native_client_pid) {
-          backendIdRef.current = null;
-          await nxNativeApi.disconnect(backendId).catch(() => undefined);
+          await cleanupLaunchedBackend();
           throw new Error(
             "NoMachine Client exited before its process could be tracked.",
           );
@@ -230,7 +269,9 @@ export function useNxNativeSession(session: ConnectionSession) {
           status: "connected",
           errorMessage: undefined,
         });
+        launchedBackendId = null;
       } catch (value) {
+        await cleanupLaunchedBackend();
         if (generation !== generationRef.current) return;
         const message = nxNativeErrorMessage(value, connection);
         setError(message);
@@ -264,9 +305,9 @@ export function useNxNativeSession(session: ConnectionSession) {
   useEffect(() => {
     void launch();
     return () => {
-      ++generationRef.current;
+      invalidateLaunch();
     };
-  }, [launch, session.id]);
+  }, [invalidateLaunch, launch, session.id]);
 
   useEffect(() => {
     if (status !== "native-client-running") return;

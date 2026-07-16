@@ -170,4 +170,58 @@ describe("useNxNativeSession", () => {
       '"status":"connected"',
     );
   });
+
+  it("disconnects the launched client when its info probe rejects", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_nx") return Promise.resolve(info.id);
+      if (command === "get_nx_session_info") {
+        return Promise.reject(new Error("info probe failed"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useNxNativeSession(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_nx", {
+      sessionId: info.id,
+    });
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      '"status":"connected"',
+    );
+  });
+
+  it("disconnects a launch that becomes stale while info is pending", async () => {
+    let resolveInfo!: (value: typeof info) => void;
+    const pendingInfo = new Promise<typeof info>((resolve) => {
+      resolveInfo = resolve;
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_nx") return Promise.resolve(info.id);
+      if (command === "get_nx_session_info") return pendingInfo;
+      return Promise.resolve(undefined);
+    });
+
+    const { unmount } = renderHook(() => useNxNativeSession(session));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "get_nx_session_info",
+        expect.any(Object),
+      ),
+    );
+    unmount();
+
+    await act(async () => {
+      resolveInfo(info);
+      await pendingInfo;
+    });
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("disconnect_nx", {
+        sessionId: info.id,
+      }),
+    );
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      '"status":"connected"',
+    );
+  });
 });

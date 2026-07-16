@@ -9,7 +9,7 @@
 //! client's authentication UI.
 
 use std::ffi::OsString;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use crate::x2go::types::{
@@ -365,15 +365,27 @@ pub fn write_secure_temp_file(
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&path).map_err(|error| {
+    let file = options.open(&path).map_err(|error| {
         X2goError::session_start(format!("Failed to stage X2Go profile: {error}"))
     })?;
-    file.write_all(contents)
-        .and_then(|_| file.flush())
-        .map_err(|error| {
-            X2goError::session_start(format!("Failed to write X2Go profile: {error}"))
-        })?;
+    write_all_flush_or_cleanup(file, &path, contents).map_err(|error| {
+        X2goError::session_start(format!("Failed to write X2Go profile: {error}"))
+    })?;
     Ok(path)
+}
+
+fn write_all_flush_or_cleanup<W: Write>(
+    mut writer: W,
+    path: &Path,
+    contents: &[u8],
+) -> io::Result<()> {
+    let result = writer.write_all(contents).and_then(|_| writer.flush());
+    if let Err(error) = result {
+        drop(writer);
+        zeroize_and_remove(path);
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Best-effort overwrite followed by removal. This is used for both the
@@ -468,6 +480,27 @@ pub fn prepare_native_launch(config: &X2goConfig) -> Result<PreparedX2goLaunch, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PartialWriteFailure {
+        file: std::fs::File,
+        remaining: usize,
+    }
+
+    impl Write for PartialWriteFailure {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(io::Error::other("injected partial write failure"));
+            }
+            let count = buffer.len().min(self.remaining);
+            let written = self.file.write(&buffer[..count])?;
+            self.remaining -= written;
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.file.flush()
+        }
+    }
 
     fn password_config() -> X2goConfig {
         X2goConfig {
@@ -610,6 +643,25 @@ mod tests {
         let path = write_secure_temp_file("sorng-x2go-test", "tmp", b"secret").unwrap();
         assert!(path.is_file());
         zeroize_and_remove(&path);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn partial_secure_temp_write_is_zeroized_and_removed() {
+        let path = std::env::temp_dir().join(format!(
+            "sorng-x2go-partial-write-{}.tmp",
+            uuid::Uuid::new_v4()
+        ));
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        let writer = PartialWriteFailure { file, remaining: 3 };
+
+        let result = write_all_flush_or_cleanup(writer, &path, b"secret material");
+
+        assert!(result.is_err());
         assert!(!path.exists());
     }
 }

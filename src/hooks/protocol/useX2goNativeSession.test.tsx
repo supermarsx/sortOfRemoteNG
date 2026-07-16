@@ -62,6 +62,14 @@ const info = {
   last_activity: "2026-01-01T00:00:00Z",
 };
 
+function connectedX2goBackendId(): string {
+  const call = mocks.invoke.mock.calls.find(
+    ([command]) => command === "connect_x2go",
+  );
+  expect(call).toBeDefined();
+  return (call?.[1] as { sessionId: string }).sessionId;
+}
+
 beforeEach(() => {
   mocks.invoke.mockReset();
   mocks.dispatch.mockReset();
@@ -70,10 +78,14 @@ beforeEach(() => {
     state: { connections: [connection], sessions: [] },
     dispatch: mocks.dispatch,
   });
-  mocks.invoke.mockImplementation((command: string) => {
-    if (command === "get_x2go_session_info") return Promise.resolve(info);
-    return Promise.resolve(undefined);
-  });
+  mocks.invoke.mockImplementation(
+    (command: string, args?: { sessionId?: string }) => {
+      if (command === "get_x2go_session_info") {
+        return Promise.resolve({ ...info, id: args?.sessionId ?? info.id });
+      }
+      return Promise.resolve(undefined);
+    },
+  );
 });
 
 describe("useX2goNativeSession", () => {
@@ -90,9 +102,11 @@ describe("useX2goNativeSession", () => {
       expect(result.current.status).toBe("native-client-running"),
     );
 
+    const backendId = connectedX2goBackendId();
+    expect(backendId).toMatch(/^x2go-session-1:/);
     expect(mocks.invoke).toHaveBeenCalledWith(
       "connect_x2go",
-      expect.objectContaining({ sessionId: session.id }),
+      expect.objectContaining({ sessionId: backendId }),
     );
     const calls = JSON.stringify(mocks.invoke.mock.calls);
     const dispatched = JSON.stringify(mocks.dispatch.mock.calls);
@@ -103,7 +117,7 @@ describe("useX2goNativeSession", () => {
     unmount();
     await act(async () => Promise.resolve());
     expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_x2go", {
-      sessionId: session.id,
+      sessionId: backendId,
     });
   });
 
@@ -133,9 +147,64 @@ describe("useX2goNativeSession", () => {
 
     const { result } = renderHook(() => useX2goNativeSession(session));
     await waitFor(() => expect(result.current.status).toBe("error"));
+    const backendId = connectedX2goBackendId();
     expect(mocks.invoke).toHaveBeenCalledWith("disconnect_x2go", {
-      sessionId: session.id,
+      sessionId: backendId,
     });
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      '"status":"connected"',
+    );
+  });
+
+  it("disconnects the launched client when its info probe rejects", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_x2go_session_info") {
+        return Promise.reject(new Error("info probe failed"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useX2goNativeSession(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    const backendId = connectedX2goBackendId();
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_x2go", {
+      sessionId: backendId,
+    });
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      '"status":"connected"',
+    );
+  });
+
+  it("disconnects a launch that becomes stale while info is pending", async () => {
+    let resolveInfo!: (value: typeof info) => void;
+    const pendingInfo = new Promise<typeof info>((resolve) => {
+      resolveInfo = resolve;
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_x2go_session_info") return pendingInfo;
+      return Promise.resolve(undefined);
+    });
+
+    const { unmount } = renderHook(() => useX2goNativeSession(session));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "get_x2go_session_info",
+        expect.any(Object),
+      ),
+    );
+    const backendId = connectedX2goBackendId();
+    unmount();
+
+    await act(async () => {
+      resolveInfo({ ...info, id: backendId });
+      await pendingInfo;
+    });
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("disconnect_x2go", {
+        sessionId: backendId,
+      }),
+    );
     expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
       '"status":"connected"',
     );
