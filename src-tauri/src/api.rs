@@ -65,6 +65,10 @@ pub struct ApiService {
 }
 
 impl ApiService {
+    // This is the application composition boundary: keeping one explicit
+    // argument per managed service makes accidental service substitution
+    // visible at every construction site.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         auth_service: Arc<Mutex<AuthService>>,
         ssh_service: Arc<Mutex<SshService>>,

@@ -114,7 +114,7 @@ pub fn write_private_endpoint(app_data_dir: &Path, url: Option<&str>) -> std::io
     }
 
     let body = serde_json::to_string_pretty(&root)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("serialize: {e}")))?;
+        .map_err(|e| std::io::Error::other(format!("serialize: {e}")))?;
     std::fs::write(&path, body)
 }
 
