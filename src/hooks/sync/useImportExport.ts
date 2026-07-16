@@ -1,11 +1,17 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Connection, ConnectionDatabase } from '../../types/connection/connection';
-import { useConnections } from '../../contexts/useConnections';
-import { useToastContext } from '../../contexts/ToastContext';
-import { DatabaseManager, type DatabaseExportSnapshot } from '../../utils/connection/databaseManager';
-import { SettingsManager } from '../../utils/settings/settingsManager';
-import { getInvoke } from '../../utils/tauri/invoke';
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  Connection,
+  ConnectionDatabase,
+} from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
+import { useToastContext } from "../../contexts/ToastContext";
+import {
+  DatabaseManager,
+  type DatabaseExportSnapshot,
+} from "../../utils/connection/databaseManager";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { getInvoke } from "../../utils/tauri/invoke";
 import {
   ExportDatabaseOption,
   ExportInclusionConfig,
@@ -19,12 +25,12 @@ import {
   ImportTargetMode,
   CloneResult,
   CloneSourceCatalogItem,
-} from '../../components/ImportExport/types';
+} from "../../components/ImportExport/types";
 import {
   decryptWithPassword,
   isWebCryptoPayload,
   normalizePbkdf2Iterations,
-} from '../../utils/crypto/webCryptoAes';
+} from "../../utils/crypto/webCryptoAes";
 import {
   encryptExport,
   decryptAesCbcEnvelope,
@@ -35,13 +41,13 @@ import {
   DECRYPT_ERROR_I18N_KEYS,
   DECRYPT_ERROR_DEFAULT_MESSAGES,
   type DecryptErrorKind,
-} from '../../utils/crypto/exportEncryption';
-import { analyzePasswordStrength } from '../security/usePasswordStrength';
+} from "../../utils/crypto/exportEncryption";
+import { analyzePasswordStrength } from "../security/usePasswordStrength";
 import {
   defaultExportSecuritySettings,
   type ExportFormat,
   type ExportSecuritySettings,
-} from '../../types/settings/settings';
+} from "../../types/settings/settings";
 import {
   importConnections,
   detectImportFormat,
@@ -52,15 +58,15 @@ import {
   verifyMRemoteNGPassword,
   MREMOTENG_DEFAULT_MASTER_PASSWORD,
   type ImportFormat,
-} from '../../components/ImportExport/utils';
-import { ProxyOpenVPNManager } from '../../utils/network/proxyOpenVPNManager';
-import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
-import { generateId } from '../../utils/core/id';
+} from "../../components/ImportExport/utils";
+import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
+import { generateId } from "../../utils/core/id";
 import {
   remapConnectionsForApply,
   buildApplyItems,
   type ApplyConnectionsItem,
-} from '../../components/ImportExport/applyConnections';
+} from "../../components/ImportExport/applyConnections";
 import {
   formatPortableProtocolLabel,
   hasAdvancedProtocolSettings,
@@ -69,15 +75,15 @@ import {
   prepareConnectionForExport,
   serializeConnectionsToNativeXml,
   serializeDatasetsToNativeCsv,
-} from '../../components/ImportExport/advancedProtocolPortability';
+} from "../../components/ImportExport/advancedProtocolPortability";
 
 const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
-  search: '',
-  protocol: 'all',
-  issueSeverity: 'all',
-  itemKind: 'all',
-  selection: 'all',
-  conflict: 'all',
+  search: "",
+  protocol: "all",
+  issueSeverity: "all",
+  itemKind: "all",
+  selection: "all",
+  conflict: "all",
   missingHostnameOnly: false,
   withCredentialsOnly: false,
 };
@@ -88,8 +94,8 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   includeVpnData: true,
   includeTunnelChains: true,
   includeSshTunnels: true,
-  conflictPolicy: 'duplicate',
-  addTags: '',
+  conflictPolicy: "duplicate",
+  addTags: "",
   switchToTargetDatabaseAfterImport: false,
 };
 
@@ -102,21 +108,27 @@ const chooseImportTargetDatabaseId = (
 ): string => {
   const exportableOptions = options.filter((option) => option.isExportable);
   const currentOption = exportableOptions.find((option) => option.isCurrent);
-  const selectedOption = exportableOptions.find((option) => option.id === currentSelection);
+  const selectedOption = exportableOptions.find(
+    (option) => option.id === currentSelection,
+  );
 
-  if (mode === 'current') {
-    return currentOption?.id ?? exportableOptions[0]?.id ?? '';
+  if (mode === "current") {
+    return currentOption?.id ?? exportableOptions[0]?.id ?? "";
   }
 
-  if (mode === 'selected') {
-    return selectedOption?.id
-      ?? exportableOptions.find((option) => !option.isCurrent)?.id
-      ?? currentOption?.id
-      ?? exportableOptions[0]?.id
-      ?? '';
+  if (mode === "selected") {
+    return (
+      selectedOption?.id ??
+      exportableOptions.find((option) => !option.isCurrent)?.id ??
+      currentOption?.id ??
+      exportableOptions[0]?.id ??
+      ""
+    );
   }
 
-  return selectedOption?.id ?? currentOption?.id ?? exportableOptions[0]?.id ?? '';
+  return (
+    selectedOption?.id ?? currentOption?.id ?? exportableOptions[0]?.id ?? ""
+  );
 };
 
 interface ExportInventoryRow {
@@ -155,19 +167,21 @@ interface ExportDatabaseDataset {
   isEncrypted: boolean;
   connections: Connection[];
   settings: Record<string, unknown>;
-  tabGroups: DatabaseExportSnapshot['tabGroups'];
-  colorTags: DatabaseExportSnapshot['colorTags'];
+  tabGroups: DatabaseExportSnapshot["tabGroups"];
+  colorTags: DatabaseExportSnapshot["colorTags"];
 }
 
 interface ExportSidecars {
   vpnConnections?: ImportVpnData;
-  tunnelChainTemplates?: ImportResult['tunnelChainTemplates'];
+  tunnelChainTemplates?: ImportResult["tunnelChainTemplates"];
   proxyProfiles?: ReturnType<typeof proxyCollectionManager.getProfiles>;
   proxyChains?: ReturnType<typeof proxyCollectionManager.getChains>;
 }
 
-type ExportProxyChain = NonNullable<ExportSidecars['proxyChains']>[number];
-type ExportTunnelChain = NonNullable<ExportSidecars['tunnelChainTemplates']>[number];
+type ExportProxyChain = NonNullable<ExportSidecars["proxyChains"]>[number];
+type ExportTunnelChain = NonNullable<
+  ExportSidecars["tunnelChainTemplates"]
+>[number];
 
 interface CloneSidecarCounts {
   total: number;
@@ -195,11 +209,11 @@ interface ExportBuildResult {
   effectiveDatabaseIds: string[];
 }
 
-const EXPORT_PACKAGE_SCHEMA = 'sortOfRemoteNG.database-export-package';
+const EXPORT_PACKAGE_SCHEMA = "sortOfRemoteNG.database-export-package";
 const EXPORT_PACKAGE_VERSION = 1;
-const EXPORT_SINGLE_DATABASE_SCHEMA = 'sortOfRemoteNG.database-export';
-const EXPORT_CLIENT_ID_STORAGE_KEY = 'mremote-export-client-id';
-const SECRET_PLACEHOLDER = '***ENCRYPTED***';
+const EXPORT_SINGLE_DATABASE_SCHEMA = "sortOfRemoteNG.database-export";
+const EXPORT_CLIENT_ID_STORAGE_KEY = "mremote-export-client-id";
+const SECRET_PLACEHOLDER = "***ENCRYPTED***";
 
 const createDefaultExportInclusion = (
   settings: ExportSecuritySettings,
@@ -229,27 +243,27 @@ const EXPORT_INVENTORY_COLUMNS: Array<{
   key: keyof ExportInventoryRow;
   label: string;
 }> = [
-  { key: 'name', label: 'Name' },
-  { key: 'kind', label: 'Kind' },
-  { key: 'protocol', label: 'Protocol' },
-  { key: 'hostname', label: 'Hostname' },
-  { key: 'port', label: 'Port' },
-  { key: 'username', label: 'Username' },
-  { key: 'domain', label: 'Domain' },
-  { key: 'path', label: 'Path' },
-  { key: 'tags', label: 'Tags' },
-  { key: 'hasCredentials', label: 'Has credentials' },
-  { key: 'description', label: 'Description' },
-  { key: 'createdAt', label: 'Created' },
-  { key: 'updatedAt', label: 'Updated' },
+  { key: "name", label: "Name" },
+  { key: "kind", label: "Kind" },
+  { key: "protocol", label: "Protocol" },
+  { key: "hostname", label: "Hostname" },
+  { key: "port", label: "Port" },
+  { key: "username", label: "Username" },
+  { key: "domain", label: "Domain" },
+  { key: "path", label: "Path" },
+  { key: "tags", label: "Tags" },
+  { key: "hasCredentials", label: "Has credentials" },
+  { key: "description", label: "Description" },
+  { key: "createdAt", label: "Created" },
+  { key: "updatedAt", label: "Updated" },
 ];
 
 const EXPORT_INVENTORY_DATABASE_COLUMNS: Array<{
   key: keyof ExportInventoryRow;
   label: string;
 }> = [
-  { key: 'databaseName', label: 'Database' },
-  { key: 'databaseId', label: 'Database ID' },
+  { key: "databaseName", label: "Database" },
+  { key: "databaseId", label: "Database ID" },
 ];
 
 const getExportInventoryColumns = (
@@ -264,7 +278,10 @@ const getExportSecuritySettings = (
 ): ExportSecuritySettings => {
   try {
     const managerWithOptionalGetter = settingsManager as SettingsManager & {
-      getSettings?: () => { exportSecurity?: Partial<ExportSecuritySettings>; exportEncryption?: boolean };
+      getSettings?: () => {
+        exportSecurity?: Partial<ExportSecuritySettings>;
+        exportEncryption?: boolean;
+      };
     };
     const settings = managerWithOptionalGetter.getSettings?.();
     return {
@@ -287,8 +304,8 @@ const getExportSecuritySettings = (
 const normalizeSearch = (value: string): string => value.trim().toLowerCase();
 
 const safeString = (value: unknown): string => {
-  if (typeof value === 'string') return value;
-  if (value === null || value === undefined) return '';
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
   return String(value);
 };
 
@@ -296,54 +313,59 @@ const safeTrimmedLower = (value: unknown): string =>
   safeString(value).trim().toLowerCase();
 
 const safeTags = (value: unknown): string[] =>
-  Array.isArray(value) ? value.map((tag) => safeString(tag)).filter(Boolean) : [];
+  Array.isArray(value)
+    ? value.map((tag) => safeString(tag)).filter(Boolean)
+    : [];
 
 const splitTags = (value: string): string[] =>
   value
-    .split(',')
+    .split(",")
     .map((tag) => tag.trim())
     .filter(Boolean);
 
 const SECRET_FIELD_NAMES = new Set([
-  'password',
-  'basicauthpassword',
-  'rustdeskpassword',
-  'proxypassword',
-  'privatekey',
-  'passphrase',
-  'totpsecret',
-  'apikey',
-  'accesstoken',
-  'clientsecret',
-  'serviceaccountkey',
-  'presharedkey',
-  'authkey',
-  'authtoken',
-  'seedphrase',
-  'answer',
-  'savedcredentialid',
-  'vaultref',
-  'clientcertificateref',
-  'credentialref',
-  'privatekeycredentialref',
+  "password",
+  "basicauthpassword",
+  "rustdeskpassword",
+  "proxypassword",
+  "privatekey",
+  "passphrase",
+  "totpsecret",
+  "apikey",
+  "accesstoken",
+  "clientsecret",
+  "serviceaccountkey",
+  "presharedkey",
+  "authkey",
+  "authtoken",
+  "seedphrase",
+  "answer",
+  "savedcredentialid",
+  "vaultref",
+  "clientcertificateref",
+  "credentialref",
+  "privatekeycredentialref",
 ]);
 
-const SECRET_HEADER_NAMES = /authorization|cookie|token|secret|password|api[-_ ]?key/i;
+const SECRET_HEADER_NAMES =
+  /authorization|cookie|token|secret|password|api[-_ ]?key/i;
 
 const normalizeSecretFieldName = (value: string): string =>
-  value.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  value.replace(/[^a-z0-9]/gi, "").toLowerCase();
 
 const hasSecretishValue = (value: unknown, fieldName?: string): boolean => {
-  const normalizedFieldName = fieldName ? normalizeSecretFieldName(fieldName) : '';
+  const normalizedFieldName = fieldName
+    ? normalizeSecretFieldName(fieldName)
+    : "";
   if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
-    return value !== undefined && value !== null && value !== '';
+    return value !== undefined && value !== null && value !== "";
   }
   if (Array.isArray(value)) {
     return value.some((item) => hasSecretishValue(item));
   }
-  if (value && typeof value === 'object') {
-    return Object.entries(value as Record<string, unknown>).some(([key, nestedValue]) =>
-      hasSecretishValue(nestedValue, key),
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).some(
+      ([key, nestedValue]) => hasSecretishValue(nestedValue, key),
     );
   }
   return false;
@@ -358,10 +380,10 @@ const connectionHasCredentials = (connection: Connection): boolean =>
 // must recognise BOTH so a jump-host layer (Rust-path output or an
 // ssh-target import) is not invisible to the "Import SSH tunnels" option,
 // the sshTunnel preview rows, or the strip logic.
-const SSH_TUNNEL_LAYER_TYPES = new Set<string>(['ssh-tunnel', 'ssh-jump']);
+const SSH_TUNNEL_LAYER_TYPES = new Set<string>(["ssh-tunnel", "ssh-jump"]);
 
 const isSshTunnelLayer = (layer: { type?: string }): boolean =>
-  SSH_TUNNEL_LAYER_TYPES.has(layer.type ?? '');
+  SSH_TUNNEL_LAYER_TYPES.has(layer.type ?? "");
 
 const getConnectionSshTunnelLayers = (connection: Connection) =>
   (connection.security?.tunnelChain ?? []).filter(isSshTunnelLayer);
@@ -375,7 +397,7 @@ const stripConnectionSshTunnels = (connection: Connection): Connection => {
     return connection;
   }
 
-  const nextSecurity: NonNullable<Connection['security']> = {
+  const nextSecurity: NonNullable<Connection["security"]> = {
     ...connection.security,
   };
   delete nextSecurity.sshTunnel;
@@ -403,10 +425,14 @@ const stripConnectionSshTunnels = (connection: Connection): Connection => {
   };
 };
 
-const redactSecretFields = <T,>(value: T, fieldName?: string): T | undefined => {
-  const normalizedFieldName = fieldName ? normalizeSecretFieldName(fieldName) : '';
+const redactSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
+  const normalizedFieldName = fieldName
+    ? normalizeSecretFieldName(fieldName)
+    : "";
   if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
-    return normalizedFieldName.includes('password') ? (SECRET_PLACEHOLDER as T) : undefined;
+    return normalizedFieldName.includes("password")
+      ? (SECRET_PLACEHOLDER as T)
+      : undefined;
   }
 
   if (Array.isArray(value)) {
@@ -415,35 +441,45 @@ const redactSecretFields = <T,>(value: T, fieldName?: string): T | undefined => 
       .filter((item) => item !== undefined) as T;
   }
 
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     const next: Record<string, unknown> = {};
-    Object.entries(value as Record<string, unknown>).forEach(([key, nestedValue]) => {
-      if (key === 'httpHeaders' && nestedValue && typeof nestedValue === 'object') {
-        next[key] = Object.fromEntries(
-          Object.entries(nestedValue as Record<string, unknown>).filter(
-            ([headerName]) => !SECRET_HEADER_NAMES.test(headerName),
-          ),
-        );
-        return;
-      }
+    Object.entries(value as Record<string, unknown>).forEach(
+      ([key, nestedValue]) => {
+        if (
+          key === "httpHeaders" &&
+          nestedValue &&
+          typeof nestedValue === "object"
+        ) {
+          next[key] = Object.fromEntries(
+            Object.entries(nestedValue as Record<string, unknown>).filter(
+              ([headerName]) => !SECRET_HEADER_NAMES.test(headerName),
+            ),
+          );
+          return;
+        }
 
-      const redactedValue = redactSecretFields(nestedValue, key);
-      if (redactedValue !== undefined) {
-        next[key] = redactedValue;
-      }
-    });
+        const redactedValue = redactSecretFields(nestedValue, key);
+        if (redactedValue !== undefined) {
+          next[key] = redactedValue;
+        }
+      },
+    );
     return next as T;
   }
 
   return value;
 };
 
-const redactConnectionSecretsForExport = (connection: Connection): Connection => {
+const redactConnectionSecretsForExport = (
+  connection: Connection,
+): Connection => {
   return redactSecretFields(connection) ?? { ...connection };
 };
 
-const stripSecretFields = <T,>(value: T, fieldName?: string): T | undefined => {
-  const normalizedFieldName = fieldName ? normalizeSecretFieldName(fieldName) : '';
+const stripSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
+  const normalizedFieldName = fieldName
+    ? normalizeSecretFieldName(fieldName)
+    : "";
   if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
     return undefined;
   }
@@ -454,23 +490,29 @@ const stripSecretFields = <T,>(value: T, fieldName?: string): T | undefined => {
       .filter((item) => item !== undefined) as T;
   }
 
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     const next: Record<string, unknown> = {};
-    Object.entries(value as Record<string, unknown>).forEach(([key, nestedValue]) => {
-      if (key === 'httpHeaders' && nestedValue && typeof nestedValue === 'object') {
-        next[key] = Object.fromEntries(
-          Object.entries(nestedValue as Record<string, unknown>).filter(
-            ([headerName]) => !SECRET_HEADER_NAMES.test(headerName),
-          ),
-        );
-        return;
-      }
+    Object.entries(value as Record<string, unknown>).forEach(
+      ([key, nestedValue]) => {
+        if (
+          key === "httpHeaders" &&
+          nestedValue &&
+          typeof nestedValue === "object"
+        ) {
+          next[key] = Object.fromEntries(
+            Object.entries(nestedValue as Record<string, unknown>).filter(
+              ([headerName]) => !SECRET_HEADER_NAMES.test(headerName),
+            ),
+          );
+          return;
+        }
 
-      const strippedValue = stripSecretFields(nestedValue, key);
-      if (strippedValue !== undefined) {
-        next[key] = strippedValue;
-      }
-    });
+        const strippedValue = stripSecretFields(nestedValue, key);
+        if (strippedValue !== undefined) {
+          next[key] = strippedValue;
+        }
+      },
+    );
     return next as T;
   }
 
@@ -486,9 +528,12 @@ const connectionEndpointKey = (connection: Connection): string =>
     safeTrimmedLower(connection.hostname),
     String(Number(connection.port) || 0),
     safeTrimmedLower(connection.username),
-  ].join('|');
+  ].join("|");
 
-const getParentNameById = (connections: Connection[], parentId?: string): string | undefined => {
+const getParentNameById = (
+  connections: Connection[],
+  parentId?: string,
+): string | undefined => {
   if (!parentId) return undefined;
   const parent = connections.find((connection) => connection.id === parentId);
   return parent ? safeString(parent.name) : undefined;
@@ -498,7 +543,7 @@ const getConnectionPath = (
   connection: Connection,
   connectionsById: Map<string, Connection>,
 ): string => {
-  const names = [safeString(connection.name) || 'Unnamed item'];
+  const names = [safeString(connection.name) || "Unnamed item"];
   let parentId = connection.parentId;
   const seen = new Set<string>();
 
@@ -506,11 +551,11 @@ const getConnectionPath = (
     seen.add(parentId);
     const parent = connectionsById.get(parentId);
     if (!parent) break;
-    names.unshift(safeString(parent.name) || 'Unnamed folder');
+    names.unshift(safeString(parent.name) || "Unnamed folder");
     parentId = parent.parentId;
   }
 
-  return names.join(' / ');
+  return names.join(" / ");
 };
 
 const getAncestorFolderIds = (
@@ -533,12 +578,12 @@ const getAncestorFolderIds = (
 };
 
 const normalizeIncludedProtocols = (
-  protocols: Connection['protocol'][] = [],
-): Connection['protocol'][] => Array.from(new Set(protocols)).sort();
+  protocols: Connection["protocol"][] = [],
+): Connection["protocol"][] => Array.from(new Set(protocols)).sort();
 
 const getIncludedProtocolSet = (
   inclusion: ExportInclusionConfig,
-): Set<Connection['protocol']> | null =>
+): Set<Connection["protocol"]> | null =>
   inclusion.includedProtocols.length > 0
     ? new Set(inclusion.includedProtocols)
     : null;
@@ -566,16 +611,20 @@ const filterConnectionsForExport = (
     (inclusion.includedColorTagIds ?? []).length > 0
       ? new Set(inclusion.includedColorTagIds)
       : null;
-  const connectionsById = new Map(connections.map((connection) => [connection.id, connection]));
+  const connectionsById = new Map(
+    connections.map((connection) => [connection.id, connection]),
+  );
   const leafConnections = connections.filter(
     (connection) =>
       !connection.isGroup &&
       (!includedProtocolSet || includedProtocolSet.has(connection.protocol)) &&
-      (!includedConnectionIdSet || includedConnectionIdSet.has(connection.id)) &&
+      (!includedConnectionIdSet ||
+        includedConnectionIdSet.has(connection.id)) &&
       (!includedTextTagSet ||
         (connection.tags ?? []).some((tag) => includedTextTagSet.has(tag))) &&
       (!includedColorTagIdSet ||
-        (connection.colorTag != null && includedColorTagIdSet.has(connection.colorTag))) &&
+        (connection.colorTag != null &&
+          includedColorTagIdSet.has(connection.colorTag))) &&
       (!includedFolderIdSet ||
         getAncestorFolderIds(connection, connectionsById).some((folderId) =>
           includedFolderIdSet.has(folderId),
@@ -648,7 +697,10 @@ const prepareConnectionsForExport = (
   connections: Connection[],
   inclusion: ExportInclusionConfig,
 ): Connection[] => {
-  const filteredConnections = filterConnectionsForExport(connections, inclusion);
+  const filteredConnections = filterConnectionsForExport(
+    connections,
+    inclusion,
+  );
   const portableConnections = filteredConnections.map((connection) =>
     prepareConnectionForExport(connection, true),
   );
@@ -745,10 +797,10 @@ const remapProxyChain = (
   layers: chain.layers.map((layer) => ({
     ...layer,
     proxyProfileId: layer.proxyProfileId
-      ? profileIds.get(layer.proxyProfileId) ?? layer.proxyProfileId
+      ? (profileIds.get(layer.proxyProfileId) ?? layer.proxyProfileId)
       : layer.proxyProfileId,
     vpnProfileId: layer.vpnProfileId
-      ? vpnConnectionIds.get(layer.vpnProfileId) ?? layer.vpnProfileId
+      ? (vpnConnectionIds.get(layer.vpnProfileId) ?? layer.vpnProfileId)
       : layer.vpnProfileId,
   })),
 });
@@ -771,7 +823,7 @@ const remapTunnelChain = (
 const getOrCreateExportClientId = (): string => {
   const fallback = () => `sorng-client-${generateId()}`;
   try {
-    if (typeof localStorage === 'undefined') return fallback();
+    if (typeof localStorage === "undefined") return fallback();
     const existing = localStorage.getItem(EXPORT_CLIENT_ID_STORAGE_KEY);
     if (existing) return existing;
     const next = fallback();
@@ -782,43 +834,49 @@ const getOrCreateExportClientId = (): string => {
   }
 };
 
-const detectJsonShape = (content: string): ImportSourceMetadata['json'] => {
+const detectJsonShape = (content: string): ImportSourceMetadata["json"] => {
   try {
     const parsed = JSON.parse(content);
     if (Array.isArray(parsed)) {
-      return { shape: 'array', topLevelKeys: [] };
+      return { shape: "array", topLevelKeys: [] };
     }
-    if (!parsed || typeof parsed !== 'object') {
-      return { shape: 'unknown', topLevelKeys: [] };
+    if (!parsed || typeof parsed !== "object") {
+      return { shape: "unknown", topLevelKeys: [] };
     }
     const keys = Object.keys(parsed);
     const shape = Array.isArray(parsed.databases)
-      ? 'database-package'
+      ? "database-package"
       : Array.isArray(parsed.connections)
-        ? keys.includes('version') || keys.includes('exportDate') || keys.includes('collection')
-          ? 'collection-export'
-          : 'connections-object'
-        : 'object';
+        ? keys.includes("version") ||
+          keys.includes("exportDate") ||
+          keys.includes("collection")
+          ? "collection-export"
+          : "connections-object"
+        : "object";
     return { shape, topLevelKeys: keys.slice(0, 20) };
   } catch {
-    return { shape: 'unknown', topLevelKeys: [] };
+    return { shape: "unknown", topLevelKeys: [] };
   }
 };
 
-const detectCsvMetadata = (content: string): ImportSourceMetadata['csv'] => {
+const detectCsvMetadata = (content: string): ImportSourceMetadata["csv"] => {
   const lines = content.split(/\r?\n/).filter((line) => line.trim());
   if (lines.length === 0) return { headers: [], dataRows: 0 };
-  const headers = lines[0].split(',').map((header) => header.trim().replace(/"/g, ''));
+  const headers = lines[0]
+    .split(",")
+    .map((header) => header.trim().replace(/"/g, ""));
   return { headers, dataRows: Math.max(0, lines.length - 1) };
 };
 
-const detectXmlMetadata = (content: string): ImportSourceMetadata['xml'] => {
+const detectXmlMetadata = (content: string): ImportSourceMetadata["xml"] => {
   try {
-    const doc = new DOMParser().parseFromString(content, 'text/xml');
+    const doc = new DOMParser().parseFromString(content, "text/xml");
     const root = doc.documentElement;
     return {
       rootElement: root?.tagName,
-      nodeCount: doc.querySelectorAll('Connection, Node, server, group, session').length,
+      nodeCount: doc.querySelectorAll(
+        "Connection, Node, server, group, session",
+      ).length,
     };
   } catch {
     return { nodeCount: 0 };
@@ -830,7 +888,7 @@ const buildImportPreviewItems = (
   existingConnections: Connection[],
   sidecars?: {
     vpnConnections?: ImportVpnData;
-    tunnelChainTemplates?: ImportResult['tunnelChainTemplates'];
+    tunnelChainTemplates?: ImportResult["tunnelChainTemplates"];
   },
 ): ImportPreviewItem[] => {
   const importedById = new Map(
@@ -839,110 +897,116 @@ const buildImportPreviewItems = (
       connection,
     ]),
   );
-  const existingById = new Map(existingConnections.map((connection) => [connection.id, connection]));
+  const existingById = new Map(
+    existingConnections.map((connection) => [connection.id, connection]),
+  );
   const existingNameKeys = new Map<string, Connection>();
   const existingEndpointKeys = new Map<string, Connection>();
 
   existingConnections.forEach((connection) => {
-    const nameKey = `${connection.parentId || ''}|${safeTrimmedLower(connection.name)}`;
+    const nameKey = `${connection.parentId || ""}|${safeTrimmedLower(connection.name)}`;
     existingNameKeys.set(nameKey, connection);
     if (!connection.isGroup && safeString(connection.hostname).trim()) {
       existingEndpointKeys.set(connectionEndpointKey(connection), connection);
     }
   });
 
-  const connectionItems: ImportPreviewItem[] = connections.map((connection, index) => {
-    const connectionId = safeString(connection.id) || `import-${index + 1}`;
-    const name = safeString(connection.name);
-    const hostname = safeString(connection.hostname);
-    const username = safeString(connection.username);
-    const port = Number(connection.port);
-    const tags = safeTags(connection.tags);
-    const issues: ImportPreviewItem['issues'] = [];
-    let conflictStatus: ImportPreviewItem['conflictStatus'] = 'none';
-    let duplicateOf: string | undefined;
+  const connectionItems: ImportPreviewItem[] = connections.map(
+    (connection, index) => {
+      const connectionId = safeString(connection.id) || `import-${index + 1}`;
+      const name = safeString(connection.name);
+      const hostname = safeString(connection.hostname);
+      const username = safeString(connection.username);
+      const port = Number(connection.port);
+      const tags = safeTags(connection.tags);
+      const issues: ImportPreviewItem["issues"] = [];
+      let conflictStatus: ImportPreviewItem["conflictStatus"] = "none";
+      let duplicateOf: string | undefined;
 
-    if (!name.trim()) {
-      issues.push({
-        severity: 'error',
-        code: 'missing_name',
-        field: 'name',
-        message: 'Name is required.',
-      });
-    }
+      if (!name.trim()) {
+        issues.push({
+          severity: "error",
+          code: "missing_name",
+          field: "name",
+          message: "Name is required.",
+        });
+      }
 
-    if (!connection.isGroup && !hostname.trim()) {
-      issues.push({
-        severity: 'warning',
-        code: 'missing_hostname',
-        field: 'hostname',
-        message: 'Hostname is empty.',
-      });
-    }
+      if (!connection.isGroup && !hostname.trim()) {
+        issues.push({
+          severity: "warning",
+          code: "missing_hostname",
+          field: "hostname",
+          message: "Hostname is empty.",
+        });
+      }
 
-    if (!connection.isGroup && (!Number.isFinite(port) || port <= 0)) {
-      issues.push({
-        severity: 'warning',
-        code: 'invalid_port',
-        field: 'port',
-        message: 'Port is missing or invalid.',
-      });
-    }
+      if (!connection.isGroup && (!Number.isFinite(port) || port <= 0)) {
+        issues.push({
+          severity: "warning",
+          code: "invalid_port",
+          field: "port",
+          message: "Port is missing or invalid.",
+        });
+      }
 
-    const sameId = existingById.get(connectionId);
-    if (sameId) {
-      conflictStatus = 'sameId';
-      duplicateOf = sameId.id;
-    } else {
-      const sameName = existingNameKeys.get(
-        `${connection.parentId || ''}|${safeTrimmedLower(name)}`,
-      );
-      if (sameName) {
-        conflictStatus = 'sameName';
-        duplicateOf = sameName.id;
-      } else if (!connection.isGroup && hostname.trim()) {
-        const sameEndpoint = existingEndpointKeys.get(connectionEndpointKey(connection));
-        if (sameEndpoint) {
-          conflictStatus = 'sameEndpoint';
-          duplicateOf = sameEndpoint.id;
+      const sameId = existingById.get(connectionId);
+      if (sameId) {
+        conflictStatus = "sameId";
+        duplicateOf = sameId.id;
+      } else {
+        const sameName = existingNameKeys.get(
+          `${connection.parentId || ""}|${safeTrimmedLower(name)}`,
+        );
+        if (sameName) {
+          conflictStatus = "sameName";
+          duplicateOf = sameName.id;
+        } else if (!connection.isGroup && hostname.trim()) {
+          const sameEndpoint = existingEndpointKeys.get(
+            connectionEndpointKey(connection),
+          );
+          if (sameEndpoint) {
+            conflictStatus = "sameEndpoint";
+            duplicateOf = sameEndpoint.id;
+          }
         }
       }
-    }
 
-    if (conflictStatus !== 'none') {
-      issues.push({
-        severity: 'warning',
-        code: `conflict_${conflictStatus}`,
-        message:
-          conflictStatus === 'sameEndpoint'
-            ? 'Existing connection uses the same protocol, host, port, and username.'
-            : conflictStatus === 'sameName'
-              ? 'Existing item has the same name in the same folder.'
-              : 'Existing item has the same id.',
-      });
-    }
+      if (conflictStatus !== "none") {
+        issues.push({
+          severity: "warning",
+          code: `conflict_${conflictStatus}`,
+          message:
+            conflictStatus === "sameEndpoint"
+              ? "Existing connection uses the same protocol, host, port, and username."
+              : conflictStatus === "sameName"
+                ? "Existing item has the same name in the same folder."
+                : "Existing item has the same id.",
+        });
+      }
 
-    const importable = !issues.some((issue) => issue.severity === 'error');
-    return {
-      id: `${connection.isGroup ? 'folder' : 'connection'}:${connectionId}:${index}`,
-      kind: connection.isGroup ? 'folder' : 'connection',
-      sourceIndex: index + 1,
-      sourcePath: getConnectionPath(connection, importedById),
-      name: name || 'Unnamed item',
-      protocol: connection.protocol,
-      hostname,
-      port: Number.isFinite(port) ? port : undefined,
-      username,
-      parentName: getParentNameById(connections, connection.parentId),
-      tags,
-      connection,
-      importable,
-      selectedByDefault: importable,
-      conflictStatus,
-      duplicateOf,
-      issues,
-    };
-  });
+      const importable = !issues.some((issue) => issue.severity === "error");
+      return {
+        id: `${connection.isGroup ? "folder" : "connection"}:${connectionId}:${index}`,
+        kind: connection.isGroup ? "folder" : "connection",
+        sourceIndex: index + 1,
+        sourcePath: getConnectionPath(connection, importedById),
+        name: name || "Unnamed item",
+        protocol: connection.protocol,
+        hostname,
+        port: Number.isFinite(port) ? port : undefined,
+        username,
+        parentName: getParentNameById(connections, connection.parentId),
+        tags,
+        connection,
+        importable,
+        selectedByDefault: importable,
+        conflictStatus,
+        duplicateOf,
+        issues,
+      };
+    },
+  );
 
   const sidecarItems: ImportPreviewItem[] = [];
   let sourceIndex = connectionItems.length + 1;
@@ -955,7 +1019,7 @@ const buildImportPreviewItems = (
     const firstLayer = sshTunnelLayers[0];
     const firstTunnel = firstLayer?.sshTunnel;
     const legacyTunnel = connection.security?.sshTunnel;
-    const issues: ImportPreviewItem['issues'] = [];
+    const issues: ImportPreviewItem["issues"] = [];
 
     if (
       sshTunnelLayers.length > 0 &&
@@ -963,18 +1027,18 @@ const buildImportPreviewItems = (
       !firstTunnel?.connectionId
     ) {
       issues.push({
-        severity: 'error',
-        code: 'unresolved_ssh_tunnel',
-        field: 'security.tunnelChain',
+        severity: "error",
+        code: "unresolved_ssh_tunnel",
+        field: "security.tunnelChain",
         message:
-          'The SSH tunnel server could not be resolved from the source file.',
+          "The SSH tunnel server could not be resolved from the source file.",
       });
     }
 
-    const importable = !issues.some((issue) => issue.severity === 'error');
+    const importable = !issues.some((issue) => issue.severity === "error");
     sidecarItems.push({
       id: `sshTunnel:${connectionId}:${index}:${sourceIndex}`,
-      kind: 'sshTunnel',
+      kind: "sshTunnel",
       sourceIndex,
       sourcePath: getConnectionPath(connection, importedById),
       // 'ssh-jump' (SSH target) and 'ssh-tunnel' (RDP/VNC/HTTP target) layers
@@ -982,13 +1046,13 @@ const buildImportPreviewItems = (
       // (carries "via <jump host>") so the jump host is visible in the row.
       name:
         safeString(firstLayer?.name) ||
-        `${safeString(connection.name) || 'Unnamed item'} SSH tunnel`,
-      protocol: 'ssh',
+        `${safeString(connection.name) || "Unnamed item"} SSH tunnel`,
+      protocol: "ssh",
       hostname:
         firstTunnel?.host ||
         firstTunnel?.connectionId ||
         legacyTunnel?.connectionId ||
-        '',
+        "",
       port: firstTunnel?.port || undefined,
       username: firstTunnel?.username,
       parentName: safeString(connection.name) || undefined,
@@ -998,7 +1062,7 @@ const buildImportPreviewItems = (
       sshTunnelLayers,
       importable,
       selectedByDefault: importable,
-      conflictStatus: 'none',
+      conflictStatus: "none",
       issues,
     });
     sourceIndex += 1;
@@ -1011,27 +1075,27 @@ const buildImportPreviewItems = (
   ) => {
     items.forEach((vpnConnection, index) => {
       const name = safeString(vpnConnection.name);
-      const issues: ImportPreviewItem['issues'] = [];
+      const issues: ImportPreviewItem["issues"] = [];
       if (!name.trim()) {
         issues.push({
-          severity: 'error',
-          code: 'missing_name',
-          field: 'name',
-          message: 'Name is required.',
+          severity: "error",
+          code: "missing_name",
+          field: "name",
+          message: "Name is required.",
         });
       }
       if (!vpnConnection.config) {
         issues.push({
-          severity: 'error',
-          code: 'missing_config',
-          field: 'config',
-          message: 'VPN configuration is required.',
+          severity: "error",
+          code: "missing_config",
+          field: "config",
+          message: "VPN configuration is required.",
         });
       }
-      const importable = !issues.some((issue) => issue.severity === 'error');
+      const importable = !issues.some((issue) => issue.severity === "error");
       sidecarItems.push({
         id: `vpn:${vpnType}:${safeString(vpnConnection.id) || index}:${sourceIndex}`,
-        kind: 'vpn',
+        kind: "vpn",
         sourceIndex,
         sourcePath: `VPN / ${label}`,
         name: name || `${label} connection`,
@@ -1041,7 +1105,7 @@ const buildImportPreviewItems = (
         vpnConnection,
         importable,
         selectedByDefault: importable,
-        conflictStatus: 'none',
+        conflictStatus: "none",
         issues,
       });
       sourceIndex += 1;
@@ -1049,44 +1113,44 @@ const buildImportPreviewItems = (
   };
 
   if (sidecars?.vpnConnections) {
-    appendVpnItems('openvpn', 'OpenVPN', sidecars.vpnConnections.openvpn);
-    appendVpnItems('wireguard', 'WireGuard', sidecars.vpnConnections.wireguard);
-    appendVpnItems('tailscale', 'Tailscale', sidecars.vpnConnections.tailscale);
-    appendVpnItems('zerotier', 'ZeroTier', sidecars.vpnConnections.zerotier);
+    appendVpnItems("openvpn", "OpenVPN", sidecars.vpnConnections.openvpn);
+    appendVpnItems("wireguard", "WireGuard", sidecars.vpnConnections.wireguard);
+    appendVpnItems("tailscale", "Tailscale", sidecars.vpnConnections.tailscale);
+    appendVpnItems("zerotier", "ZeroTier", sidecars.vpnConnections.zerotier);
   }
 
   sidecars?.tunnelChainTemplates?.forEach((chain, index) => {
     const name = safeString(chain.name);
-    const issues: ImportPreviewItem['issues'] = [];
+    const issues: ImportPreviewItem["issues"] = [];
     if (!name.trim()) {
       issues.push({
-        severity: 'error',
-        code: 'missing_name',
-        field: 'name',
-        message: 'Name is required.',
+        severity: "error",
+        code: "missing_name",
+        field: "name",
+        message: "Name is required.",
       });
     }
     if (!Array.isArray(chain.layers)) {
       issues.push({
-        severity: 'error',
-        code: 'missing_layers',
-        field: 'layers',
-        message: 'Tunnel chain layers are required.',
+        severity: "error",
+        code: "missing_layers",
+        field: "layers",
+        message: "Tunnel chain layers are required.",
       });
     }
-    const importable = !issues.some((issue) => issue.severity === 'error');
+    const importable = !issues.some((issue) => issue.severity === "error");
     sidecarItems.push({
       id: `tunnelChain:${safeString(chain.id) || index}:${sourceIndex}`,
-      kind: 'tunnelChain',
+      kind: "tunnelChain",
       sourceIndex,
-      sourcePath: 'Tunnel chains',
-      name: name || 'Tunnel chain',
-      parentName: 'Tunnel chain template',
+      sourcePath: "Tunnel chains",
+      name: name || "Tunnel chain",
+      parentName: "Tunnel chain template",
       tags: safeTags(chain.tags),
       tunnelChainTemplate: chain,
       importable,
       selectedByDefault: importable,
-      conflictStatus: 'none',
+      conflictStatus: "none",
       issues,
     });
     sourceIndex += 1;
@@ -1108,33 +1172,34 @@ const buildImportAnalysis = (params: {
   connections: Connection[];
   previewItems: ImportPreviewItem[];
   vpnConnections?: ImportVpnData;
-  tunnelChainTemplates?: ImportResult['tunnelChainTemplates'];
-  encryption?: ImportSourceMetadata['encryption'];
+  tunnelChainTemplates?: ImportResult["tunnelChainTemplates"];
+  encryption?: ImportSourceMetadata["encryption"];
 }): ImportSourceMetadata => {
   const extension = params.filename
-    .replace(/\.encrypted\./i, '.')
-    .split('.')
+    .replace(/\.encrypted\./i, ".")
+    .split(".")
     .pop()
     ?.toLowerCase();
   const warnings = params.previewItems.reduce(
     (count, item) =>
-      count + item.issues.filter((issue) => issue.severity === 'warning').length,
+      count +
+      item.issues.filter((issue) => issue.severity === "warning").length,
     0,
   );
   const errors = params.previewItems.reduce(
     (count, item) =>
-      count + item.issues.filter((issue) => issue.severity === 'error').length,
+      count + item.issues.filter((issue) => issue.severity === "error").length,
     0,
   );
   const conflicts = params.previewItems.filter(
-    (item) => item.conflictStatus !== 'none',
+    (item) => item.conflictStatus !== "none",
   ).length;
   const rootName = (() => {
-    if (!params.content.trim().startsWith('<')) return undefined;
+    if (!params.content.trim().startsWith("<")) return undefined;
     try {
-      const doc = new DOMParser().parseFromString(params.content, 'text/xml');
+      const doc = new DOMParser().parseFromString(params.content, "text/xml");
       return (
-        doc.documentElement?.getAttribute('Name') ||
+        doc.documentElement?.getAttribute("Name") ||
         doc.documentElement?.tagName ||
         undefined
       );
@@ -1155,14 +1220,23 @@ const buildImportAnalysis = (params: {
     formatWarning: params.formatWarning,
     detectedAt: new Date().toISOString(),
     confidence:
-      params.format === 'csv' && !extension ? 'medium' : params.format === 'json' ? 'high' : 'high',
-    encrypted: Boolean(params.encryption?.protected || params.encryption?.fullFileEncryption),
+      params.format === "csv" && !extension
+        ? "medium"
+        : params.format === "json"
+          ? "high"
+          : "high",
+    encrypted: Boolean(
+      params.encryption?.protected || params.encryption?.fullFileEncryption,
+    ),
     sourceApplication: params.formatName,
     rootName,
     counts: {
       totalItems: params.previewItems.length,
-      connections: params.connections.filter((connection) => !connection.isGroup).length,
-      folders: params.connections.filter((connection) => connection.isGroup).length,
+      connections: params.connections.filter(
+        (connection) => !connection.isGroup,
+      ).length,
+      folders: params.connections.filter((connection) => connection.isGroup)
+        .length,
       vpnConnections: params.vpnConnections
         ? params.vpnConnections.openvpn.length +
           params.vpnConnections.wireguard.length +
@@ -1170,16 +1244,21 @@ const buildImportAnalysis = (params: {
           params.vpnConnections.zerotier.length
         : 0,
       tunnelChains: params.tunnelChainTemplates?.length || 0,
-      sshTunnels: params.previewItems.filter((item) => item.kind === 'sshTunnel')
-        .length,
+      sshTunnels: params.previewItems.filter(
+        (item) => item.kind === "sshTunnel",
+      ).length,
       warnings,
       errors,
       conflicts,
     },
     encryption: params.encryption,
-    csv: params.format === 'csv' ? detectCsvMetadata(params.content) : undefined,
-    json: params.format === 'json' ? detectJsonShape(params.content) : undefined,
-    xml: params.content.trim().startsWith('<') ? detectXmlMetadata(params.content) : undefined,
+    csv:
+      params.format === "csv" ? detectCsvMetadata(params.content) : undefined,
+    json:
+      params.format === "json" ? detectJsonShape(params.content) : undefined,
+    xml: params.content.trim().startsWith("<")
+      ? detectXmlMetadata(params.content)
+      : undefined,
   };
 };
 
@@ -1190,18 +1269,27 @@ const filterImportPreviewItems = (
 ): ImportPreviewItem[] => {
   const query = normalizeSearch(filters.search);
   return items.filter((item) => {
-    if (filters.protocol !== 'all' && item.protocol !== filters.protocol) return false;
-    if (filters.issueSeverity !== 'all' && !item.issues.some((issue) => issue.severity === filters.issueSeverity)) {
+    if (filters.protocol !== "all" && item.protocol !== filters.protocol)
+      return false;
+    if (
+      filters.issueSeverity !== "all" &&
+      !item.issues.some((issue) => issue.severity === filters.issueSeverity)
+    ) {
       return false;
     }
-    if (filters.itemKind !== 'all' && item.kind !== filters.itemKind) return false;
-    if (filters.selection === 'selected' && !selectedIds.has(item.id)) return false;
-    if (filters.selection === 'unselected' && selectedIds.has(item.id)) return false;
-    if (filters.conflict === 'conflicts' && item.conflictStatus === 'none') return false;
-    if (filters.conflict === 'clean' && item.conflictStatus !== 'none') return false;
+    if (filters.itemKind !== "all" && item.kind !== filters.itemKind)
+      return false;
+    if (filters.selection === "selected" && !selectedIds.has(item.id))
+      return false;
+    if (filters.selection === "unselected" && selectedIds.has(item.id))
+      return false;
+    if (filters.conflict === "conflicts" && item.conflictStatus === "none")
+      return false;
+    if (filters.conflict === "clean" && item.conflictStatus !== "none")
+      return false;
     if (
       filters.missingHostnameOnly &&
-      !item.issues.some((issue) => issue.code === 'missing_hostname')
+      !item.issues.some((issue) => issue.code === "missing_hostname")
     ) {
       return false;
     }
@@ -1230,7 +1318,7 @@ const filterImportPreviewItems = (
   });
 };
 
-type ImportExportTab = 'export' | 'import' | 'clone';
+type ImportExportTab = "export" | "import" | "clone";
 
 interface UseImportExportParams {
   isOpen: boolean;
@@ -1241,7 +1329,7 @@ interface UseImportExportParams {
 export function useImportExport({
   isOpen,
   onClose,
-  initialTab = 'export',
+  initialTab = "export",
 }: UseImportExportParams) {
   const { state, dispatch, loadData } = useConnections();
   const { toast } = useToastContext();
@@ -1256,26 +1344,35 @@ export function useImportExport({
     exportSecuritySettings.defaultFormat,
   );
   const [exportScopeMode, setExportScopeMode] =
-    useState<ExportScopeMode>('current');
-  const [selectedExportDatabaseIds, setSelectedExportDatabaseIds] = useState<string[]>([]);
-  const [exportDatabaseOptions, setExportDatabaseOptions] = useState<ExportDatabaseOption[]>([]);
+    useState<ExportScopeMode>("current");
+  const [selectedExportDatabaseIds, setSelectedExportDatabaseIds] = useState<
+    string[]
+  >([]);
+  const [exportDatabaseOptions, setExportDatabaseOptions] = useState<
+    ExportDatabaseOption[]
+  >([]);
   const [exportEncrypted, setExportEncrypted] = useState(
     exportSecuritySettings.encryptByDefault,
   );
-  const [exportPassword, setExportPassword] = useState('');
-  const [exportInclusion, setExportInclusion] = useState<ExportInclusionConfig>(() =>
-    createDefaultExportInclusion(exportSecuritySettings),
+  const [exportPassword, setExportPassword] = useState("");
+  const [exportInclusion, setExportInclusion] = useState<ExportInclusionConfig>(
+    () => createDefaultExportInclusion(exportSecuritySettings),
   );
   const [exportKeyDerivationIterations, setExportKeyDerivationIterations] =
     useState(exportSecuritySettings.keyDerivationIterations);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [importFilename, setImportFilename] = useState<string>('');
-  const [importAnalysis, setImportAnalysis] = useState<ImportSourceMetadata | null>(null);
-  const [importFilters, setImportFilters] =
-    useState<ImportFilterState>(DEFAULT_IMPORT_FILTERS);
-  const [importOptions, setImportOptions] =
-    useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS);
-  const [importDatabaseOptions, setImportDatabaseOptions] = useState<ExportDatabaseOption[]>([]);
+  const [importFilename, setImportFilename] = useState<string>("");
+  const [importAnalysis, setImportAnalysis] =
+    useState<ImportSourceMetadata | null>(null);
+  const [importFilters, setImportFilters] = useState<ImportFilterState>(
+    DEFAULT_IMPORT_FILTERS,
+  );
+  const [importOptions, setImportOptions] = useState<ImportOptions>(
+    DEFAULT_IMPORT_OPTIONS,
+  );
+  const [importDatabaseOptions, setImportDatabaseOptions] = useState<
+    ExportDatabaseOption[]
+  >([]);
 
   // ─── Clone tab state ──────────────────────────────────────────────
   //
@@ -1286,18 +1383,20 @@ export function useImportExport({
   // `importDatabaseOptions` / `exportDatabaseOptions` so the picker
   // UI can be reused without translation.
   const [cloneSourceMode, setCloneSourceMode] =
-    useState<ExportScopeMode>('current');
+    useState<ExportScopeMode>("current");
   const [selectedCloneSourceDatabaseIds, setSelectedCloneSourceDatabaseIds] =
     useState<string[]>([]);
-  const [cloneInclusion, setCloneInclusion] = useState<ExportInclusionConfig>(() =>
-    createDefaultExportInclusion(exportSecuritySettings),
+  const [cloneInclusion, setCloneInclusion] = useState<ExportInclusionConfig>(
+    () => createDefaultExportInclusion(exportSecuritySettings),
   );
-  const [cloneTargetDatabaseIds, setCloneTargetDatabaseIds] = useState<string[]>([]);
-  const [cloneConflictPolicy, setCloneConflictPolicy] = useState<
-    ImportOptions['conflictPolicy']
-  >('duplicate');
-  const [cloneAddTags, setCloneAddTags] = useState<string>('');
-  const [clonePreserveFolders, setClonePreserveFolders] = useState<boolean>(true);
+  const [cloneTargetDatabaseIds, setCloneTargetDatabaseIds] = useState<
+    string[]
+  >([]);
+  const [cloneConflictPolicy, setCloneConflictPolicy] =
+    useState<ImportOptions["conflictPolicy"]>("duplicate");
+  const [cloneAddTags, setCloneAddTags] = useState<string>("");
+  const [clonePreserveFolders, setClonePreserveFolders] =
+    useState<boolean>(true);
   const [cloneIncludeCredentials, setCloneIncludeCredentials] =
     useState<boolean>(true);
   const [
@@ -1329,12 +1428,14 @@ export function useImportExport({
     [],
   );
   const [importTargetMode, setImportTargetModeState] =
-    useState<ImportTargetMode>('current');
-  const [selectedImportDatabaseId, setSelectedImportDatabaseId] = useState<string>('');
-  const importTargetModeRef = useRef<ImportTargetMode>('current');
-  const selectedImportDatabaseIdRef = useRef<string>('');
-  const [importFormatSelection, setImportFormatSelectionState] =
-    useState<'auto' | ImportFormat>('auto');
+    useState<ImportTargetMode>("current");
+  const [selectedImportDatabaseId, setSelectedImportDatabaseId] =
+    useState<string>("");
+  const importTargetModeRef = useRef<ImportTargetMode>("current");
+  const selectedImportDatabaseIdRef = useRef<string>("");
+  const [importFormatSelection, setImportFormatSelectionState] = useState<
+    "auto" | ImportFormat
+  >("auto");
   const [importSourceFile, setImportSourceFile] = useState<{
     filename: string;
     content: string;
@@ -1359,7 +1460,9 @@ export function useImportExport({
     description: string;
     error?: string;
   } | null>(null);
-  const pendingPasswordResolverRef = useRef<((value: string | null) => void) | null>(null);
+  const pendingPasswordResolverRef = useRef<
+    ((value: string | null) => void) | null
+  >(null);
 
   const updateExportInclusion = useCallback(
     (updates: Partial<ExportInclusionConfig>) => {
@@ -1434,38 +1537,51 @@ export function useImportExport({
 
   const refreshExportDatabaseOptions = useCallback(async () => {
     const managerWithExportability = databaseManager as DatabaseManager & {
-      getExportableDatabases?: () => ReturnType<DatabaseManager['getExportableDatabases']>;
+      getExportableDatabases?: () => ReturnType<
+        DatabaseManager["getExportableDatabases"]
+      >;
     };
     const currentDatabase = databaseManager.getCurrentDatabase();
     const exportableDatabases = managerWithExportability.getExportableDatabases
       ? await managerWithExportability.getExportableDatabases()
       : currentDatabase
-        ? [{
-            ...currentDatabase,
-            isCurrent: true,
-            isUnlocked: true,
-            isExportable: true,
-          }]
+        ? [
+            {
+              ...currentDatabase,
+              isCurrent: true,
+              isUnlocked: true,
+              isExportable: true,
+            },
+          ]
         : [];
-    const options: ExportDatabaseOption[] = exportableDatabases.map((database) => ({
-      id: database.id,
-      name: database.name,
-      description: database.description,
-      isCurrent: database.id === currentDatabase?.id || database.isCurrent,
-      isEncrypted: database.isEncrypted,
-      isUnlocked: database.isUnlocked,
-      isExportable: database.isExportable,
-      lockedReason: database.lockedReason,
-      connectionCount: database.id === currentDatabase?.id ? state.connections.length : undefined,
-      lastAccessed: database.lastAccessed,
-    }));
+    const options: ExportDatabaseOption[] = exportableDatabases.map(
+      (database) => ({
+        id: database.id,
+        name: database.name,
+        description: database.description,
+        isCurrent: database.id === currentDatabase?.id || database.isCurrent,
+        isEncrypted: database.isEncrypted,
+        isUnlocked: database.isUnlocked,
+        isExportable: database.isExportable,
+        lockedReason: database.lockedReason,
+        connectionCount:
+          database.id === currentDatabase?.id
+            ? state.connections.length
+            : undefined,
+        lastAccessed: database.lastAccessed,
+      }),
+    );
 
     setExportDatabaseOptions(options);
     setSelectedExportDatabaseIds((currentSelection) => {
       const exportableIds = new Set(
-        options.filter((option) => option.isExportable).map((option) => option.id),
+        options
+          .filter((option) => option.isExportable)
+          .map((option) => option.id),
       );
-      const retainedSelection = currentSelection.filter((id) => exportableIds.has(id));
+      const retainedSelection = currentSelection.filter((id) =>
+        exportableIds.has(id),
+      );
       if (retainedSelection.length > 0) {
         return retainedSelection;
       }
@@ -1479,18 +1595,22 @@ export function useImportExport({
 
   const refreshImportDatabaseOptions = useCallback(async () => {
     const managerWithExportability = databaseManager as DatabaseManager & {
-      getExportableDatabases?: () => ReturnType<DatabaseManager['getExportableDatabases']>;
+      getExportableDatabases?: () => ReturnType<
+        DatabaseManager["getExportableDatabases"]
+      >;
     };
     const currentDatabase = databaseManager.getCurrentDatabase();
     const databases = managerWithExportability.getExportableDatabases
       ? await managerWithExportability.getExportableDatabases()
       : currentDatabase
-        ? [{
-            ...currentDatabase,
-            isCurrent: true,
-            isUnlocked: true,
-            isExportable: true,
-          }]
+        ? [
+            {
+              ...currentDatabase,
+              isCurrent: true,
+              isUnlocked: true,
+              isExportable: true,
+            },
+          ]
         : [];
 
     const options: ExportDatabaseOption[] = databases.map((database) => ({
@@ -1503,8 +1623,11 @@ export function useImportExport({
       isExportable: database.isExportable,
       lockedReason: database.isExportable
         ? undefined
-        : 'Unlock this database before importing.',
-      connectionCount: database.id === currentDatabase?.id ? state.connections.length : undefined,
+        : "Unlock this database before importing.",
+      connectionCount:
+        database.id === currentDatabase?.id
+          ? state.connections.length
+          : undefined,
       lastAccessed: database.lastAccessed,
     }));
 
@@ -1533,18 +1656,22 @@ export function useImportExport({
     // non-exportable so the UI can still show them with an "unlock
     // to use" affordance.
     const managerWithExportability = databaseManager as DatabaseManager & {
-      getExportableDatabases?: () => ReturnType<DatabaseManager['getExportableDatabases']>;
+      getExportableDatabases?: () => ReturnType<
+        DatabaseManager["getExportableDatabases"]
+      >;
     };
     const currentDatabase = databaseManager.getCurrentDatabase();
     const databases = managerWithExportability.getExportableDatabases
       ? await managerWithExportability.getExportableDatabases()
       : currentDatabase
-        ? [{
-            ...currentDatabase,
-            isCurrent: true,
-            isUnlocked: true,
-            isExportable: true,
-          }]
+        ? [
+            {
+              ...currentDatabase,
+              isCurrent: true,
+              isUnlocked: true,
+              isExportable: true,
+            },
+          ]
         : [];
 
     const options: ExportDatabaseOption[] = databases.map((database) => ({
@@ -1557,9 +1684,11 @@ export function useImportExport({
       isExportable: database.isExportable,
       lockedReason: database.isExportable
         ? undefined
-        : 'Unlock this database before cloning to or from it.',
+        : "Unlock this database before cloning to or from it.",
       connectionCount:
-        database.id === currentDatabase?.id ? state.connections.length : undefined,
+        database.id === currentDatabase?.id
+          ? state.connections.length
+          : undefined,
       lastAccessed: database.lastAccessed,
     }));
 
@@ -1572,18 +1701,22 @@ export function useImportExport({
       mode: ExportScopeMode = cloneSourceMode,
     ): string[] => {
       const exportableIds = new Set(
-        options.filter((option) => option.isExportable).map((option) => option.id),
+        options
+          .filter((option) => option.isExportable)
+          .map((option) => option.id),
       );
-      if (mode === 'current') {
+      if (mode === "current") {
         const current = options.find(
           (option) => option.isCurrent && option.isExportable,
         );
         return current ? [current.id] : [];
       }
-      if (mode === 'all') {
+      if (mode === "all") {
         return Array.from(exportableIds);
       }
-      return selectedCloneSourceDatabaseIds.filter((id) => exportableIds.has(id));
+      return selectedCloneSourceDatabaseIds.filter((id) =>
+        exportableIds.has(id),
+      );
     },
     [cloneDatabaseOptions, cloneSourceMode, selectedCloneSourceDatabaseIds],
   );
@@ -1628,7 +1761,7 @@ export function useImportExport({
             sourceDatabaseId: databaseId,
             sourceDatabaseName: databaseName,
             connectionId: connection.id,
-            name: safeString(connection.name) || 'Unnamed item',
+            name: safeString(connection.name) || "Unnamed item",
             path: getConnectionPath(connection, byId),
             protocol: connection.protocol,
             protocolLabel: formatPortableProtocolLabel(connection),
@@ -1704,7 +1837,7 @@ export function useImportExport({
         const password = await requestPassword({
           title: `Unlock "${option.name}"`,
           description:
-            'Enter the password for this encrypted database. The unlock lasts for this session only.',
+            "Enter the password for this encrypted database. The unlock lasts for this session only.",
           error: attemptError,
         });
         if (password === null) {
@@ -1718,8 +1851,8 @@ export function useImportExport({
           // — surface to the user and re-prompt. Any other error
           // (e.g. corrupted data) is fatal: stop the loop and toast.
           const message = e instanceof Error ? e.message : String(e);
-          if (e instanceof Error && e.name === 'InvalidPasswordError') {
-            attemptError = 'Wrong password — try again.';
+          if (e instanceof Error && e.name === "InvalidPasswordError") {
+            attemptError = "Wrong password — try again.";
             continue;
           }
           toast.error(`Failed to unlock "${option.name}": ${message}`);
@@ -1770,27 +1903,33 @@ export function useImportExport({
 
   const escapeXml = (str: string): string =>
     str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
   const escapeHtml = (str: string): string =>
     str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
   const escapeMarkdownCell = (str: string): string =>
-    escapeHtml(str).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+    escapeHtml(str).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 
-  const buildExportSummary = (connections: Connection[]): ExportInventorySummary => {
-    const folders = connections.filter((connection) => connection.isGroup).length;
+  const buildExportSummary = (
+    connections: Connection[],
+  ): ExportInventorySummary => {
+    const folders = connections.filter(
+      (connection) => connection.isGroup,
+    ).length;
     const leafConnections = connections.length - folders;
-    const credentialConnections = connections.filter(connectionHasCredentials).length;
+    const credentialConnections = connections.filter(
+      connectionHasCredentials,
+    ).length;
     const protocolCount = new Set(
       connections
         .filter((connection) => !connection.isGroup)
@@ -1817,17 +1956,19 @@ export function useImportExport({
       databaseName: dataset.databaseName,
       id: safeString(connection.id),
       name: safeString(connection.name),
-      kind: connection.isGroup ? 'Folder' : 'Connection',
-      protocol: connection.isGroup ? '' : formatPortableProtocolLabel(connection),
+      kind: connection.isGroup ? "Folder" : "Connection",
+      protocol: connection.isGroup
+        ? ""
+        : formatPortableProtocolLabel(connection),
       hostname: safeString(connection.hostname),
-      port: connection.isGroup ? '' : safeString(connection.port),
+      port: connection.isGroup ? "" : safeString(connection.port),
       username: safeString(connection.username),
       domain: safeString(connection.domain),
       description: safeString(connection.description),
       path: getConnectionPath(connection, connectionsById),
       parentId: safeString(connection.parentId),
-      tags: (connection.tags || []).map((tag) => safeString(tag)).join('; '),
-      hasCredentials: connectionHasCredentials(connection) ? 'Yes' : 'No',
+      tags: (connection.tags || []).map((tag) => safeString(tag)).join("; "),
+      hasCredentials: connectionHasCredentials(connection) ? "Yes" : "No",
       createdAt: safeString(connection.createdAt),
       updatedAt: safeString(connection.updatedAt),
     }));
@@ -1851,34 +1992,34 @@ export function useImportExport({
     return { roots, childrenByParent };
   };
 
-  const mapToMRemoteNGProtocol = (protocol: Connection['protocol']): string => {
+  const mapToMRemoteNGProtocol = (protocol: Connection["protocol"]): string => {
     switch (protocol) {
-      case 'rdp':
-        return 'RDP';
-      case 'ssh':
-      case 'sftp':
-      case 'scp':
-        return 'SSH2';
-      case 'vnc':
-        return 'VNC';
-      case 'telnet':
-        return 'Telnet';
-      case 'rlogin':
-        return 'Rlogin';
-      case 'http':
-        return 'HTTP';
-      case 'https':
-        return 'HTTPS';
-      case 'winrm':
-        return 'PowerShell';
+      case "rdp":
+        return "RDP";
+      case "ssh":
+      case "sftp":
+      case "scp":
+        return "SSH2";
+      case "vnc":
+        return "VNC";
+      case "telnet":
+        return "Telnet";
+      case "rlogin":
+        return "Rlogin";
+      case "http":
+        return "HTTP";
+      case "https":
+        return "HTTPS";
+      case "winrm":
+        return "PowerShell";
       default:
-        return 'RAW';
+        return "RAW";
     }
   };
 
   const generateExportFilename = (format: string): string => {
     const now = new Date();
-    const datetime = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const datetime = now.toISOString().replace(/[:.]/g, "-").slice(0, -5);
     const randomHex = Math.random().toString(16).substring(2, 8);
     return `sortofremoteng-exports-${datetime}-${randomHex}.${format}`;
   };
@@ -1890,7 +2031,7 @@ export function useImportExport({
   ) => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);
@@ -1903,13 +2044,15 @@ export function useImportExport({
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onerror = () => reject(new Error("Failed to read file"));
       reader.readAsText(file);
     });
   };
 
-  const normalizeVpnImportData = (value: unknown): ImportVpnData | undefined => {
-    if (!value || typeof value !== 'object') return undefined;
+  const normalizeVpnImportData = (
+    value: unknown,
+  ): ImportVpnData | undefined => {
+    if (!value || typeof value !== "object") return undefined;
 
     const candidate = value as Partial<Record<keyof ImportVpnData, unknown>>;
 
@@ -1921,7 +2064,8 @@ export function useImportExport({
     };
   };
 
-  const importPreviewItems = importResult?.previewItems ?? EMPTY_IMPORT_PREVIEW_ITEMS;
+  const importPreviewItems =
+    importResult?.previewItems ?? EMPTY_IMPORT_PREVIEW_ITEMS;
   const visiblePreviewItems = useMemo(
     () =>
       filterImportPreviewItems(
@@ -1937,7 +2081,7 @@ export function useImportExport({
         new Set(
           importPreviewItems
             .map((item) => item.protocol)
-            .filter(Boolean) as Connection['protocol'][],
+            .filter(Boolean) as Connection["protocol"][],
         ),
       ).sort(),
     [importPreviewItems],
@@ -1960,12 +2104,9 @@ export function useImportExport({
     setImportFilters(DEFAULT_IMPORT_FILTERS);
   }, []);
 
-  const updateImportOptions = useCallback(
-    (updates: Partial<ImportOptions>) => {
-      setImportOptions((current) => ({ ...current, ...updates }));
-    },
-    [],
-  );
+  const updateImportOptions = useCallback((updates: Partial<ImportOptions>) => {
+    setImportOptions((current) => ({ ...current, ...updates }));
+  }, []);
 
   const togglePreviewSelection = useCallback((itemId: string) => {
     setSelectedPreviewIds((current) => {
@@ -1997,7 +2138,9 @@ export function useImportExport({
 
   const selectAllVisiblePreviewItems = useCallback(() => {
     selectPreviewItems(
-      visiblePreviewItems.filter((item) => item.importable).map((item) => item.id),
+      visiblePreviewItems
+        .filter((item) => item.importable)
+        .map((item) => item.id),
     );
   }, [selectPreviewItems, visiblePreviewItems]);
 
@@ -2023,16 +2166,20 @@ export function useImportExport({
       mode: ExportScopeMode = exportScopeMode,
     ): string[] => {
       const exportableOptions = options.filter((option) => option.isExportable);
-      if (mode === 'current') {
-        const currentOption = exportableOptions.find((option) => option.isCurrent);
+      if (mode === "current") {
+        const currentOption = exportableOptions.find(
+          (option) => option.isCurrent,
+        );
         return currentOption ? [currentOption.id] : [];
       }
 
-      if (mode === 'all') {
+      if (mode === "all") {
         return exportableOptions.map((option) => option.id);
       }
 
-      const exportableIds = new Set(exportableOptions.map((option) => option.id));
+      const exportableIds = new Set(
+        exportableOptions.map((option) => option.id),
+      );
       return selectedExportDatabaseIds.filter((id) => exportableIds.has(id));
     },
     [exportDatabaseOptions, exportScopeMode, selectedExportDatabaseIds],
@@ -2045,16 +2192,19 @@ export function useImportExport({
     const settings = (rawSettings ?? {}) as unknown as Record<string, unknown>;
     const colorTags = (
       includeColorTags && rawSettings?.colorTags ? rawSettings.colorTags : {}
-    ) as DatabaseExportSnapshot['colorTags'];
+    ) as DatabaseExportSnapshot["colorTags"];
     return {
       databaseId: currentDatabase.id,
       databaseName: currentDatabase.name,
       databaseDescription: currentDatabase.description,
       isCurrent: true,
       isEncrypted: currentDatabase.isEncrypted,
-      connections: prepareConnectionsForExport(state.connections, exportInclusion),
+      connections: prepareConnectionsForExport(
+        state.connections,
+        exportInclusion,
+      ),
       settings: exportInclusion.includeSettings ? settings : {},
-      tabGroups: includeTabGroups ? state.tabGroups ?? [] : [],
+      tabGroups: includeTabGroups ? (state.tabGroups ?? []) : [],
       colorTags,
     };
   };
@@ -2067,29 +2217,37 @@ export function useImportExport({
     databaseDescription: snapshot.collection.description,
     isCurrent: false,
     isEncrypted: snapshot.collection.isEncrypted,
-    connections: prepareConnectionsForExport(snapshot.connections, exportInclusion),
-    settings: exportInclusion.includeSettings ? snapshot.settings ?? {} : {},
-    tabGroups: includeTabGroups ? snapshot.tabGroups ?? [] : [],
-    colorTags: includeColorTags ? snapshot.colorTags ?? {} : {},
+    connections: prepareConnectionsForExport(
+      snapshot.connections,
+      exportInclusion,
+    ),
+    settings: exportInclusion.includeSettings ? (snapshot.settings ?? {}) : {},
+    tabGroups: includeTabGroups ? (snapshot.tabGroups ?? []) : [],
+    colorTags: includeColorTags ? (snapshot.colorTags ?? {}) : {},
   });
 
   const buildExportDatasets = async (): Promise<ExportBuildResult> => {
     const currentDatabase = databaseManager.getCurrentDatabase();
-    if (!currentDatabase) throw new Error('No collection selected');
+    if (!currentDatabase) throw new Error("No collection selected");
 
     const exportableDatabases = await databaseManager.getExportableDatabases();
-    const options: ExportDatabaseOption[] = exportableDatabases.map((database) => ({
-      id: database.id,
-      name: database.name,
-      description: database.description,
-      isCurrent: database.id === currentDatabase.id || database.isCurrent,
-      isEncrypted: database.isEncrypted,
-      isUnlocked: database.isUnlocked,
-      isExportable: database.isExportable,
-      lockedReason: database.lockedReason,
-      connectionCount: database.id === currentDatabase.id ? state.connections.length : undefined,
-      lastAccessed: database.lastAccessed,
-    }));
+    const options: ExportDatabaseOption[] = exportableDatabases.map(
+      (database) => ({
+        id: database.id,
+        name: database.name,
+        description: database.description,
+        isCurrent: database.id === currentDatabase.id || database.isCurrent,
+        isEncrypted: database.isEncrypted,
+        isUnlocked: database.isUnlocked,
+        isExportable: database.isExportable,
+        lockedReason: database.lockedReason,
+        connectionCount:
+          database.id === currentDatabase.id
+            ? state.connections.length
+            : undefined,
+        lastAccessed: database.lastAccessed,
+      }),
+    );
     setExportDatabaseOptions(options);
 
     const selectedIds = getEffectiveExportDatabaseIds(options);
@@ -2106,7 +2264,8 @@ export function useImportExport({
 
       const snapshot = await databaseManager.readExportableDatabaseSnapshot(
         databaseId,
-        exportInclusion.includeConnections && exportInclusion.includeCredentials,
+        exportInclusion.includeConnections &&
+          exportInclusion.includeCredentials,
       );
       datasets.push(snapshotToDataset(snapshot));
     }
@@ -2137,13 +2296,23 @@ export function useImportExport({
       const keepVpn = <T extends { id?: string | null }>(items: T[]): T[] =>
         includedVpnIds == null
           ? items
-          : items.filter((item) => item.id != null && includedVpnIds.has(item.id));
+          : items.filter(
+              (item) => item.id != null && includedVpnIds.has(item.id),
+            );
 
       sidecars.vpnConnections = {
-        openvpn: keepVpn(vpnOpenVPN.status === 'fulfilled' ? vpnOpenVPN.value : []),
-        wireguard: keepVpn(vpnWireGuard.status === 'fulfilled' ? vpnWireGuard.value : []),
-        tailscale: keepVpn(vpnTailscale.status === 'fulfilled' ? vpnTailscale.value : []),
-        zerotier: keepVpn(vpnZeroTier.status === 'fulfilled' ? vpnZeroTier.value : []),
+        openvpn: keepVpn(
+          vpnOpenVPN.status === "fulfilled" ? vpnOpenVPN.value : [],
+        ),
+        wireguard: keepVpn(
+          vpnWireGuard.status === "fulfilled" ? vpnWireGuard.value : [],
+        ),
+        tailscale: keepVpn(
+          vpnTailscale.status === "fulfilled" ? vpnTailscale.value : [],
+        ),
+        zerotier: keepVpn(
+          vpnZeroTier.status === "fulfilled" ? vpnZeroTier.value : [],
+        ),
       };
     }
 
@@ -2234,48 +2403,59 @@ export function useImportExport({
     proxyChainById.forEach((chain) => {
       chain.layers.forEach((layer) => {
         if (layer.proxyProfileId && !profileById.has(layer.proxyProfileId)) {
-          const profile = proxyCollectionManager.getProfile(layer.proxyProfileId);
+          const profile = proxyCollectionManager.getProfile(
+            layer.proxyProfileId,
+          );
           if (profile) profileById.set(layer.proxyProfileId, profile);
         }
-        if (layer.vpnProfileId) references.vpnConnectionIds.add(layer.vpnProfileId);
+        if (layer.vpnProfileId)
+          references.vpnConnectionIds.add(layer.vpnProfileId);
       });
     });
     tunnelChainById.forEach((chain) => {
       chain.layers.forEach((layer) => {
-        if (layer.vpn?.configId) references.vpnConnectionIds.add(layer.vpn.configId);
+        if (layer.vpn?.configId)
+          references.vpnConnectionIds.add(layer.vpn.configId);
       });
     });
 
     const selectedVpnById = new Map<
       string,
-      { type: keyof ImportVpnData; connection: ImportVpnData[keyof ImportVpnData][number] }
+      {
+        type: keyof ImportVpnData;
+        connection: ImportVpnData[keyof ImportVpnData][number];
+      }
     >();
     const addVpnItems = <T extends ImportVpnData[keyof ImportVpnData][number]>(
       type: keyof ImportVpnData,
       items: T[] | undefined,
     ) => {
       (items ?? []).forEach((connection) => {
-        if (connection.id) selectedVpnById.set(connection.id, { type, connection });
+        if (connection.id)
+          selectedVpnById.set(connection.id, { type, connection });
       });
     };
-    addVpnItems('openvpn', sidecars.vpnConnections?.openvpn);
-    addVpnItems('wireguard', sidecars.vpnConnections?.wireguard);
-    addVpnItems('tailscale', sidecars.vpnConnections?.tailscale);
-    addVpnItems('zerotier', sidecars.vpnConnections?.zerotier);
+    addVpnItems("openvpn", sidecars.vpnConnections?.openvpn);
+    addVpnItems("wireguard", sidecars.vpnConnections?.wireguard);
+    addVpnItems("tailscale", sidecars.vpnConnections?.tailscale);
+    addVpnItems("zerotier", sidecars.vpnConnections?.zerotier);
 
     if (inclusion.includeVpnData) {
       const proxyMgr = ProxyOpenVPNManager.getInstance();
-      const [openvpn, wireguard, tailscale, zerotier] = await Promise.allSettled([
-        proxyMgr.listOpenVPNConnections(),
-        proxyMgr.listWireGuardConnections(),
-        proxyMgr.listTailscaleConnections(),
-        proxyMgr.listZeroTierConnections(),
-      ]);
-      const addReferenced = <T extends ImportVpnData[keyof ImportVpnData][number]>(
+      const [openvpn, wireguard, tailscale, zerotier] =
+        await Promise.allSettled([
+          proxyMgr.listOpenVPNConnections(),
+          proxyMgr.listWireGuardConnections(),
+          proxyMgr.listTailscaleConnections(),
+          proxyMgr.listZeroTierConnections(),
+        ]);
+      const addReferenced = <
+        T extends ImportVpnData[keyof ImportVpnData][number],
+      >(
         type: keyof ImportVpnData,
         response: PromiseSettledResult<T[]>,
       ) => {
-        if (response.status !== 'fulfilled') return;
+        if (response.status !== "fulfilled") return;
         response.value.forEach((connection) => {
           if (
             connection.id &&
@@ -2286,10 +2466,10 @@ export function useImportExport({
           }
         });
       };
-      addReferenced('openvpn', openvpn);
-      addReferenced('wireguard', wireguard);
-      addReferenced('tailscale', tailscale);
-      addReferenced('zerotier', zerotier);
+      addReferenced("openvpn", openvpn);
+      addReferenced("wireguard", wireguard);
+      addReferenced("tailscale", tailscale);
+      addReferenced("zerotier", zerotier);
     }
 
     for (const profile of profileById.values()) {
@@ -2316,18 +2496,30 @@ export function useImportExport({
     for (const { type, connection } of selectedVpnById.values()) {
       try {
         let createdId: string;
-        if (type === 'openvpn') {
-          const typed = connection as ImportVpnData['openvpn'][number];
-          createdId = await proxyMgr.createOpenVPNConnection(typed.name, typed.config);
-        } else if (type === 'wireguard') {
-          const typed = connection as ImportVpnData['wireguard'][number];
-          createdId = await proxyMgr.createWireGuardConnection(typed.name, typed.config);
-        } else if (type === 'tailscale') {
-          const typed = connection as ImportVpnData['tailscale'][number];
-          createdId = await proxyMgr.createTailscaleConnection(typed.name, typed.config);
+        if (type === "openvpn") {
+          const typed = connection as ImportVpnData["openvpn"][number];
+          createdId = await proxyMgr.createOpenVPNConnection(
+            typed.name,
+            typed.config,
+          );
+        } else if (type === "wireguard") {
+          const typed = connection as ImportVpnData["wireguard"][number];
+          createdId = await proxyMgr.createWireGuardConnection(
+            typed.name,
+            typed.config,
+          );
+        } else if (type === "tailscale") {
+          const typed = connection as ImportVpnData["tailscale"][number];
+          createdId = await proxyMgr.createTailscaleConnection(
+            typed.name,
+            typed.config,
+          );
         } else {
-          const typed = connection as ImportVpnData['zerotier'][number];
-          createdId = await proxyMgr.createZeroTierConnection(typed.name, typed.config);
+          const typed = connection as ImportVpnData["zerotier"][number];
+          createdId = await proxyMgr.createZeroTierConnection(
+            typed.name,
+            typed.config,
+          );
         }
         result.idMaps.vpnConnectionIds.set(connection.id, createdId);
         result.counts.vpnConnections++;
@@ -2364,7 +2556,10 @@ export function useImportExport({
 
     for (const chain of tunnelChainById.values()) {
       try {
-        const remapped = remapTunnelChain(chain, result.idMaps.vpnConnectionIds);
+        const remapped = remapTunnelChain(
+          chain,
+          result.idMaps.vpnConnectionIds,
+        );
         const created = await proxyCollectionManager.createTunnelChain(
           remapped.name,
           remapped.layers.map((layer) => ({ ...layer })),
@@ -2413,40 +2608,57 @@ export function useImportExport({
     ).length;
 
     if (lockedSkippedCount > 0) {
-      warnings.push(`${lockedSkippedCount} locked encrypted database(s) were skipped.`);
+      warnings.push(
+        `${lockedSkippedCount} locked encrypted database(s) were skipped.`,
+      );
     }
     if (!exportInclusion.includeConnections) {
-      warnings.push('Connections are excluded by the export inclusion settings.');
-    }
-    if (exportInclusion.includeConnections && !exportInclusion.includeCredentials) {
-      warnings.push('Credentials and private secret fields were redacted.');
-    }
-    if (!exportInclusion.includeSettings) {
-      warnings.push('Database settings are excluded by the export inclusion settings.');
-    }
-    if (!exportInclusion.includeFolderItems) {
-      warnings.push('Folder/group records are excluded and exported connections are moved to the root.');
-    } else if (!exportInclusion.includeEmptyFolders) {
-      warnings.push('Empty folders/groups are excluded.');
-    }
-    if (exportInclusion.includedProtocols.length > 0) {
-      warnings.push(`Protocol filter active: ${exportInclusion.includedProtocols.join(', ')}.`);
-    }
-    if (!['json', 'xml', 'csv'].includes(exportFormat)) {
-      warnings.push('Selected non-JSON format is an inventory export and may not preserve every app-specific inclusion.');
+      warnings.push(
+        "Connections are excluded by the export inclusion settings.",
+      );
     }
     if (
-      exportFormat === 'mremoteng' &&
+      exportInclusion.includeConnections &&
+      !exportInclusion.includeCredentials
+    ) {
+      warnings.push("Credentials and private secret fields were redacted.");
+    }
+    if (!exportInclusion.includeSettings) {
+      warnings.push(
+        "Database settings are excluded by the export inclusion settings.",
+      );
+    }
+    if (!exportInclusion.includeFolderItems) {
+      warnings.push(
+        "Folder/group records are excluded and exported connections are moved to the root.",
+      );
+    } else if (!exportInclusion.includeEmptyFolders) {
+      warnings.push("Empty folders/groups are excluded.");
+    }
+    if (exportInclusion.includedProtocols.length > 0) {
+      warnings.push(
+        `Protocol filter active: ${exportInclusion.includedProtocols.join(", ")}.`,
+      );
+    }
+    if (!["json", "xml", "csv"].includes(exportFormat)) {
+      warnings.push(
+        "Selected non-JSON format is an inventory export and may not preserve every app-specific inclusion.",
+      );
+    }
+    if (
+      exportFormat === "mremoteng" &&
       datasets.some((dataset) =>
         dataset.connections.some(hasAdvancedProtocolSettings),
       )
     ) {
       warnings.push(
-        'mRemoteNG cannot preserve every advanced Raw Socket, RLogin, or PowerShell Remoting setting; review the imported connections after transfer.',
+        "mRemoteNG cannot preserve every advanced Raw Socket, RLogin, or PowerShell Remoting setting; review the imported connections after transfer.",
       );
     }
     if (datasets.some((dataset) => !dataset.isCurrent)) {
-      warnings.push('Counts for non-current databases were calculated when the export ran.');
+      warnings.push(
+        "Counts for non-current databases were calculated when the export ran.",
+      );
     }
 
     return warnings;
@@ -2461,7 +2673,9 @@ export function useImportExport({
     keyDerivationIterations: number;
   }) => {
     const exportedAt = new Date().toISOString();
-    const aggregateConnections = params.datasets.flatMap((dataset) => dataset.connections);
+    const aggregateConnections = params.datasets.flatMap(
+      (dataset) => dataset.connections,
+    );
     const aggregateSummary = buildExportSummary(aggregateConnections);
     const protocols = Array.from(
       new Set(
@@ -2486,7 +2700,7 @@ export function useImportExport({
         return undefined;
       }
     })();
-    const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+    const nav = typeof navigator !== "undefined" ? navigator : undefined;
     const clientId = getOrCreateExportClientId();
     const exportId = generateId();
 
@@ -2496,30 +2710,42 @@ export function useImportExport({
       createdAt: exportedAt,
       exportedAt,
       app: {
-        name: 'sortOfRemoteNG',
-        version: '0.0.0',
+        name: "sortOfRemoteNG",
+        version: "0.0.0",
       },
       schema: {
-        name: params.datasets.length > 1 ? EXPORT_PACKAGE_SCHEMA : EXPORT_SINGLE_DATABASE_SCHEMA,
+        name:
+          params.datasets.length > 1
+            ? EXPORT_PACKAGE_SCHEMA
+            : EXPORT_SINGLE_DATABASE_SCHEMA,
         version: EXPORT_PACKAGE_VERSION,
       },
       format: exportFormat,
       scope: {
         mode: exportScopeMode,
-        requestedDatabaseIds: exportScopeMode === 'selected' ? selectedExportDatabaseIds : undefined,
-        effectiveDatabaseIds: params.datasets.map((dataset) => dataset.databaseId),
+        requestedDatabaseIds:
+          exportScopeMode === "selected"
+            ? selectedExportDatabaseIds
+            : undefined,
+        effectiveDatabaseIds: params.datasets.map(
+          (dataset) => dataset.databaseId,
+        ),
         selectedDatabases: params.datasets.map((dataset) => ({
           id: dataset.databaseId,
           name: dataset.databaseName,
           wasCurrentAtExport: dataset.isCurrent,
         })),
-        exportableDatabaseCount: params.options.filter((option) => option.isExportable).length,
+        exportableDatabaseCount: params.options.filter(
+          (option) => option.isExportable,
+        ).length,
         lockedSkippedCount,
       },
       encrypted: params.encrypted,
       encryption: {
         encrypted: params.encrypted,
-        keyDerivationIterations: params.encrypted ? params.keyDerivationIterations : undefined,
+        keyDerivationIterations: params.encrypted
+          ? params.keyDerivationIterations
+          : undefined,
       },
       inclusion: exportInclusion,
       warnings: params.warnings,
@@ -2533,7 +2759,9 @@ export function useImportExport({
         protocols,
         vpnDefinitions,
         tunnelChains: params.sidecars.tunnelChainTemplates?.length ?? 0,
-        settingsObjects: exportInclusion.includeSettings ? params.datasets.length : 0,
+        settingsObjects: exportInclusion.includeSettings
+          ? params.datasets.length
+          : 0,
       },
       sourceClient: {
         clientId,
@@ -2566,7 +2794,9 @@ export function useImportExport({
       ? { databaseMetadata: buildDatabaseExportMetadata(dataset) }
       : {}),
     ...(exportMetadata ? { exportMetadata } : {}),
-    ...(sidecars.vpnConnections ? { vpnConnections: sidecars.vpnConnections } : {}),
+    ...(sidecars.vpnConnections
+      ? { vpnConnections: sidecars.vpnConnections }
+      : {}),
     ...(sidecars.tunnelChainTemplates
       ? { tunnelChainTemplates: sidecars.tunnelChainTemplates }
       : {}),
@@ -2590,14 +2820,18 @@ export function useImportExport({
         wasCurrentAtExport: dataset.isCurrent,
       },
       connections: dataset.connections,
-      ...(exportInclusion.includeSettings ? { settings: dataset.settings } : {}),
+      ...(exportInclusion.includeSettings
+        ? { settings: dataset.settings }
+        : {}),
       ...(includeTabGroups ? { tabGroups: dataset.tabGroups ?? [] } : {}),
       ...(includeColorTags ? { colorTags: dataset.colorTags ?? {} } : {}),
       ...(exportInclusion.includeDatabaseMetadata
         ? { databaseMetadata: buildDatabaseExportMetadata(dataset) }
         : {}),
     })),
-    ...(sidecars.vpnConnections ? { vpnConnections: sidecars.vpnConnections } : {}),
+    ...(sidecars.vpnConnections
+      ? { vpnConnections: sidecars.vpnConnections }
+      : {}),
     ...(sidecars.tunnelChainTemplates
       ? { tunnelChainTemplates: sidecars.tunnelChainTemplates }
       : {}),
@@ -2611,9 +2845,9 @@ export function useImportExport({
 
   const exportToText = (datasets: ExportDatabaseDataset[]): string => {
     const lines = [
-      'sortOfRemoteNG connection inventory',
+      "sortOfRemoteNG connection inventory",
       `Generated: ${new Date().toISOString()}`,
-      '',
+      "",
       `Databases: ${datasets.length}`,
     ];
 
@@ -2625,18 +2859,35 @@ export function useImportExport({
     ) => {
       if (visited.has(connection.id)) return;
       visited.add(connection.id);
-      const indent = '  '.repeat(depth);
+      const indent = "  ".repeat(depth);
       const childIndent = `${indent}  `;
-      lines.push(`${indent}- [${connection.isGroup ? 'Folder' : 'Connection'}] ${safeString(connection.name) || 'Unnamed item'}`);
+      lines.push(
+        `${indent}- [${connection.isGroup ? "Folder" : "Connection"}] ${safeString(connection.name) || "Unnamed item"}`,
+      );
       if (!connection.isGroup) {
-        lines.push(`${childIndent}Protocol: ${formatPortableProtocolLabel(connection)}`);
-        lines.push(`${childIndent}Host: ${safeString(connection.hostname)}${connection.port ? `:${connection.port}` : ''}`);
-        if (connection.username) lines.push(`${childIndent}Username: ${safeString(connection.username)}`);
-        if (connection.domain) lines.push(`${childIndent}Domain: ${safeString(connection.domain)}`);
-        if (connectionHasCredentials(connection)) lines.push(`${childIndent}Credentials: present (not included)`);
+        lines.push(
+          `${childIndent}Protocol: ${formatPortableProtocolLabel(connection)}`,
+        );
+        lines.push(
+          `${childIndent}Host: ${safeString(connection.hostname)}${connection.port ? `:${connection.port}` : ""}`,
+        );
+        if (connection.username)
+          lines.push(
+            `${childIndent}Username: ${safeString(connection.username)}`,
+          );
+        if (connection.domain)
+          lines.push(`${childIndent}Domain: ${safeString(connection.domain)}`);
+        if (connectionHasCredentials(connection))
+          lines.push(`${childIndent}Credentials: present (not included)`);
       }
-      if (connection.tags?.length) lines.push(`${childIndent}Tags: ${connection.tags.map((tag) => safeString(tag)).join(', ')}`);
-      if (connection.description) lines.push(`${childIndent}Description: ${safeString(connection.description)}`);
+      if (connection.tags?.length)
+        lines.push(
+          `${childIndent}Tags: ${connection.tags.map((tag) => safeString(tag)).join(", ")}`,
+        );
+      if (connection.description)
+        lines.push(
+          `${childIndent}Description: ${safeString(connection.description)}`,
+        );
       (childrenByParent.get(connection.id) || []).forEach((child) =>
         renderConnection(child, depth + 1, childrenByParent, visited),
       );
@@ -2644,64 +2895,69 @@ export function useImportExport({
 
     datasets.forEach((dataset, index) => {
       const summary = buildExportSummary(dataset.connections);
-      const { roots, childrenByParent } = buildConnectionTree(dataset.connections);
+      const { roots, childrenByParent } = buildConnectionTree(
+        dataset.connections,
+      );
       const visited = new Set<string>();
-      if (index > 0) lines.push('');
+      if (index > 0) lines.push("");
       lines.push(`Database: ${dataset.databaseName}`);
       lines.push(`Database ID: ${dataset.databaseId}`);
       lines.push(`Total items: ${summary.totalItems}`);
       lines.push(`Folders/groups: ${summary.folders}`);
       lines.push(`Leaf connections: ${summary.leafConnections}`);
-      lines.push(`Credential-bearing connections: ${summary.credentialConnections}`);
+      lines.push(
+        `Credential-bearing connections: ${summary.credentialConnections}`,
+      );
       lines.push(`Protocols: ${summary.protocolCount}`);
-      lines.push('');
-      lines.push('Inventory');
+      lines.push("");
+      lines.push("Inventory");
       roots.forEach((connection) =>
         renderConnection(connection, 0, childrenByParent, visited),
       );
     });
 
-    return `${lines.join('\n')}\n`;
+    return `${lines.join("\n")}\n`;
   };
 
   const exportToMarkdown = (datasets: ExportDatabaseDataset[]): string => {
     const includeDatabaseColumns = datasets.length > 1;
     const columns = getExportInventoryColumns(includeDatabaseColumns);
-    const header = `| ${columns.map((column) => column.label).join(' | ')} |`;
-    const separator = `| ${columns.map(() => '---').join(' | ')} |`;
+    const header = `| ${columns.map((column) => column.label).join(" | ")} |`;
+    const separator = `| ${columns.map(() => "---").join(" | ")} |`;
     const lines = [
-      '# sortOfRemoteNG Connection Inventory',
-      '',
+      "# sortOfRemoteNG Connection Inventory",
+      "",
       `Generated: ${new Date().toISOString()}`,
-      '',
+      "",
       `- Databases: ${datasets.length}`,
     ];
 
     datasets.forEach((dataset) => {
       const summary = buildExportSummary(dataset.connections);
       const rows = buildExportInventoryRows(dataset);
-      const tableRows = rows.map((row) =>
-        `| ${columns.map((column) => escapeMarkdownCell(row[column.key])).join(' | ')} |`,
+      const tableRows = rows.map(
+        (row) =>
+          `| ${columns.map((column) => escapeMarkdownCell(row[column.key])).join(" | ")} |`,
       );
 
       lines.push(
-        '',
+        "",
         `## Database: ${dataset.databaseName}`,
-        '',
+        "",
         `- Database ID: ${dataset.databaseId}`,
         `- Total items: ${summary.totalItems}`,
         `- Folders/groups: ${summary.folders}`,
         `- Leaf connections: ${summary.leafConnections}`,
         `- Credential-bearing connections: ${summary.credentialConnections}`,
         `- Protocols: ${summary.protocolCount}`,
-        '',
+        "",
         header,
         separator,
         ...tableRows,
       );
     });
 
-    return `${lines.join('\n')}\n`;
+    return `${lines.join("\n")}\n`;
   };
 
   const buildHtmlTableDocument = (
@@ -2712,26 +2968,31 @@ export function useImportExport({
     const includeDatabaseColumns = datasets.length > 1;
     const columns = getExportInventoryColumns(includeDatabaseColumns);
     const rows = datasets.flatMap(buildExportInventoryRows);
-    const aggregateConnections = datasets.flatMap((dataset) => dataset.connections);
+    const aggregateConnections = datasets.flatMap(
+      (dataset) => dataset.connections,
+    );
     const summary = buildExportSummary(aggregateConnections);
     const htmlAttrs = excelCompatible
       ? ' xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"'
-      : '';
+      : "";
     const generatedAt = new Date().toISOString();
     const summaryRows = [
-      ['Databases', datasets.length],
-      ['Total items', summary.totalItems],
-      ['Folders/groups', summary.folders],
-      ['Leaf connections', summary.leafConnections],
-      ['Credential-bearing connections', summary.credentialConnections],
-      ['Protocols', summary.protocolCount],
+      ["Databases", datasets.length],
+      ["Total items", summary.totalItems],
+      ["Folders/groups", summary.folders],
+      ["Leaf connections", summary.leafConnections],
+      ["Credential-bearing connections", summary.credentialConnections],
+      ["Protocols", summary.protocolCount],
     ];
-    const tableHeader = columns.map(
-      (column) => `<th scope="col">${escapeHtml(column.label)}</th>`,
-    ).join('');
-    const tableRows = rows.map((row) =>
-      `<tr>${columns.map((column) => `<td>${escapeHtml(row[column.key])}</td>`).join('')}</tr>`,
-    ).join('\n');
+    const tableHeader = columns
+      .map((column) => `<th scope="col">${escapeHtml(column.label)}</th>`)
+      .join("");
+    const tableRows = rows
+      .map(
+        (row) =>
+          `<tr>${columns.map((column) => `<td>${escapeHtml(row[column.key])}</td>`).join("")}</tr>`,
+      )
+      .join("\n");
 
     return `<!DOCTYPE html>
 <html${htmlAttrs}>
@@ -2755,7 +3016,7 @@ export function useImportExport({
   <p class="meta">Generated ${escapeHtml(generatedAt)}</p>
   <table class="summary" aria-label="Export summary">
     <tbody>
-      ${summaryRows.map(([label, value]) => `<tr><th scope="row">${escapeHtml(String(label))}</th><td>${escapeHtml(String(value))}</td></tr>`).join('\n      ')}
+      ${summaryRows.map(([label, value]) => `<tr><th scope="row">${escapeHtml(String(label))}</th><td>${escapeHtml(String(value))}</td></tr>`).join("\n      ")}
     </tbody>
   </table>
   <table aria-label="Connection inventory">
@@ -2769,23 +3030,25 @@ ${tableRows}
   };
 
   const exportToMRemoteNG = (dataset: ExportDatabaseDataset): string => {
-    const { roots, childrenByParent } = buildConnectionTree(dataset.connections);
+    const { roots, childrenByParent } = buildConnectionTree(
+      dataset.connections,
+    );
     const visited = new Set<string>();
     const renderNode = (connection: Connection, depth: number): string => {
-      if (visited.has(connection.id)) return '';
+      if (visited.has(connection.id)) return "";
       visited.add(connection.id);
-      const indent = '  '.repeat(depth);
+      const indent = "  ".repeat(depth);
       const children = childrenByParent.get(connection.id) || [];
       const attributes = connection.isGroup
         ? [
-            `Name="${escapeXml(safeString(connection.name) || 'Unnamed folder')}"`,
+            `Name="${escapeXml(safeString(connection.name) || "Unnamed folder")}"`,
             'Type="Container"',
             `Descr="${escapeXml(safeString(connection.description))}"`,
-            `Expanded="${connection.expanded === false ? 'False' : 'True'}"`,
+            `Expanded="${connection.expanded === false ? "False" : "True"}"`,
             `Id="${escapeXml(safeString(connection.id))}"`,
           ]
         : [
-            `Name="${escapeXml(safeString(connection.name) || 'Unnamed connection')}"`,
+            `Name="${escapeXml(safeString(connection.name) || "Unnamed connection")}"`,
             'Type="Connection"',
             `Descr="${escapeXml(safeString(connection.description))}"`,
             `Protocol="${mapToMRemoteNGProtocol(connection.protocol)}"`,
@@ -2799,20 +3062,20 @@ ${tableRows}
           ];
 
       if (children.length === 0) {
-        return `${indent}<Node ${attributes.join(' ')} />`;
+        return `${indent}<Node ${attributes.join(" ")} />`;
       }
 
       const childXml = children
         .map((child) => renderNode(child, depth + 1))
         .filter(Boolean)
-        .join('\n');
-      return `${indent}<Node ${attributes.join(' ')}>\n${childXml}\n${indent}</Node>`;
+        .join("\n");
+      return `${indent}<Node ${attributes.join(" ")}>\n${childXml}\n${indent}</Node>`;
     };
 
     const nodes = roots
       .map((connection) => renderNode(connection, 1))
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
 
     return `<?xml version="1.0" encoding="utf-8"?>\n<Connections Name="Connections" Export="False" Protected="" ConfVersion="2.6">\n${nodes}\n</Connections>`;
   };
@@ -2823,16 +3086,22 @@ ${tableRows}
       let content: string;
       let filename: string;
       let mimeType: string;
-      const shouldUsePasswordEncryption = exportEncrypted && Boolean(exportPassword);
+      const shouldUsePasswordEncryption =
+        exportEncrypted && Boolean(exportPassword);
       const normalizedExportIterations = normalizePbkdf2Iterations(
         exportKeyDerivationIterations,
       );
 
-      if (shouldUsePasswordEncryption && exportSecuritySettings.enforceMinimumPasswordScore) {
+      if (
+        shouldUsePasswordEncryption &&
+        exportSecuritySettings.enforceMinimumPasswordScore
+      ) {
         const strength = analyzePasswordStrength(exportPassword, {
           detectCommonPasswords: exportSecuritySettings.detectCommonPasswords,
-          detectRepeatedCharacters: exportSecuritySettings.detectRepeatedCharacters,
-          detectSequentialPatterns: exportSecuritySettings.detectSequentialPatterns,
+          detectRepeatedCharacters:
+            exportSecuritySettings.detectRepeatedCharacters,
+          detectSequentialPatterns:
+            exportSecuritySettings.detectSequentialPatterns,
           rewardUncommonSymbols: exportSecuritySettings.rewardUncommonSymbols,
           customCommonPasswords: exportSecuritySettings.customCommonPasswords,
         });
@@ -2847,20 +3116,24 @@ ${tableRows}
       const exportBuild = await buildExportDatasets();
       const { datasets, options } = exportBuild;
       if (datasets.length === 0) {
-        toast.error('No exportable databases are selected. Unlock encrypted databases or choose a different scope.');
+        toast.error(
+          "No exportable databases are selected. Unlock encrypted databases or choose a different scope.",
+        );
         return;
       }
 
       if (
         datasets.length > 1 &&
-        (exportFormat === 'xml' || exportFormat === 'mremoteng')
+        (exportFormat === "xml" || exportFormat === "mremoteng")
       ) {
-        toast.error('XML and mRemoteNG exports support one database at a time. Choose JSON or an inventory format for a database package.');
+        toast.error(
+          "XML and mRemoteNG exports support one database at a time. Choose JSON or an inventory format for a database package.",
+        );
         return;
       }
 
       switch (exportFormat) {
-        case 'json': {
+        case "json": {
           const sidecars = await loadExportSidecars();
           const warnings = buildExportWarnings(datasets, options);
           const exportMetadata = exportInclusion.includeExportMetadata
@@ -2873,63 +3146,72 @@ ${tableRows}
                 keyDerivationIterations: normalizedExportIterations,
               })
             : undefined;
-          const payload = datasets.length === 1
-            ? buildSingleDatabaseJsonPayload(datasets[0], sidecars, exportMetadata)
-            : buildMultiDatabaseJsonPackage(datasets, sidecars, exportMetadata);
+          const payload =
+            datasets.length === 1
+              ? buildSingleDatabaseJsonPayload(
+                  datasets[0],
+                  sidecars,
+                  exportMetadata,
+                )
+              : buildMultiDatabaseJsonPackage(
+                  datasets,
+                  sidecars,
+                  exportMetadata,
+                );
           content = JSON.stringify(payload, null, 2);
 
-          filename = generateExportFilename('json');
-          mimeType = 'application/json';
+          filename = generateExportFilename("json");
+          mimeType = "application/json";
           break;
         }
-        case 'xml':
+        case "xml":
           content = exportToXML(datasets[0]);
-          filename = generateExportFilename('xml');
-          mimeType = 'application/xml';
+          filename = generateExportFilename("xml");
+          mimeType = "application/xml";
           break;
-        case 'csv':
+        case "csv":
           content = exportToCSV(datasets);
-          filename = generateExportFilename('csv');
-          mimeType = 'text/csv';
+          filename = generateExportFilename("csv");
+          mimeType = "text/csv";
           break;
-        case 'txt':
+        case "txt":
           content = exportToText(datasets);
-          filename = generateExportFilename('txt');
-          mimeType = 'text/plain';
+          filename = generateExportFilename("txt");
+          mimeType = "text/plain";
           break;
-        case 'markdown':
+        case "markdown":
           content = exportToMarkdown(datasets);
-          filename = generateExportFilename('md');
-          mimeType = 'text/markdown';
+          filename = generateExportFilename("md");
+          mimeType = "text/markdown";
           break;
-        case 'html':
+        case "html":
           content = buildHtmlTableDocument(
             datasets.length > 1
-              ? 'sortOfRemoteNG Database Package Inventory'
-              : 'sortOfRemoteNG Connection Inventory',
+              ? "sortOfRemoteNG Database Package Inventory"
+              : "sortOfRemoteNG Connection Inventory",
             datasets,
           );
-          filename = generateExportFilename('html');
-          mimeType = 'text/html';
+          filename = generateExportFilename("html");
+          mimeType = "text/html";
           break;
-        case 'excel':
+        case "excel":
           content = buildHtmlTableDocument(
             datasets.length > 1
-              ? 'sortOfRemoteNG Database Package Inventory'
-              : 'sortOfRemoteNG Connection Inventory',
+              ? "sortOfRemoteNG Database Package Inventory"
+              : "sortOfRemoteNG Connection Inventory",
             datasets,
             true,
           );
-          filename = generateExportFilename('xls');
-          mimeType = 'application/vnd.ms-excel';
+          filename = generateExportFilename("xls");
+          mimeType = "application/vnd.ms-excel";
           break;
-        case 'mremoteng':
+        case "mremoteng":
           content = exportToMRemoteNG(datasets[0]);
-          filename = generateExportFilename('mremoteng.xml');
-          mimeType = 'application/xml';
+          filename = generateExportFilename("mremoteng.xml");
+          mimeType = "application/xml";
           break;
         default:
-          throw new Error('Unsupported export format');
+          throw new Error("Unsupported export format");
       }
 
       if (shouldUsePasswordEncryption) {
@@ -2945,13 +3227,15 @@ ${tableRows}
         // native filename (e.g. mRemoteNG returns the XML envelope).
         if (result.mimeType) mimeType = result.mimeType;
         if (result.extension) {
-          filename = filename.replace(/\.[^.]+$/, '') + result.extension;
+          filename = filename.replace(/\.[^.]+$/, "") + result.extension;
         } else {
-          filename = filename.replace(/\.[^.]+$/, '.encrypted$&');
+          filename = filename.replace(/\.[^.]+$/, ".encrypted$&");
         }
         if (result.warning || result.warningKey) {
           const translated = result.warningKey
-            ? (t(result.warningKey, { defaultValue: result.warning ?? '' }) as string)
+            ? (t(result.warningKey, {
+                defaultValue: result.warning ?? "",
+              }) as string)
             : (result.warning as string);
           if (translated) toast.warning(translated);
         }
@@ -2959,7 +3243,7 @@ ${tableRows}
           type: mimeType,
         });
         const url = URL.createObjectURL(encryptedBlob);
-        const link = document.createElement('a');
+        const link = document.createElement("a");
         link.href = url;
         link.download = filename;
         document.body.appendChild(link);
@@ -2968,8 +3252,8 @@ ${tableRows}
         URL.revokeObjectURL(url);
         toast.success(`Exported successfully: ${filename}`);
         settingsManager.logAction(
-          'info',
-          'Data exported',
+          "info",
+          "Data exported",
           undefined,
           `Exported ${datasets.reduce((count, dataset) => count + dataset.connections.length, 0)} connections from ${datasets.length} database(s) to ${exportFormat.toUpperCase()} (encrypted, ${normalizedExportIterations} PBKDF2 iterations) [scheme=${result.scheme}]`,
         );
@@ -2980,14 +3264,14 @@ ${tableRows}
       downloadFile(content, filename, mimeType);
       toast.success(`Exported successfully: ${filename}`);
       settingsManager.logAction(
-        'info',
-        'Data exported',
+        "info",
+        "Data exported",
         undefined,
-        `Exported ${datasets.reduce((count, dataset) => count + dataset.connections.length, 0)} connections from ${datasets.length} database(s) to ${exportFormat.toUpperCase()}${shouldUsePasswordEncryption ? ` (encrypted, ${normalizedExportIterations} PBKDF2 iterations)` : ''}`,
+        `Exported ${datasets.reduce((count, dataset) => count + dataset.connections.length, 0)} connections from ${datasets.length} database(s) to ${exportFormat.toUpperCase()}${shouldUsePasswordEncryption ? ` (encrypted, ${normalizedExportIterations} PBKDF2 iterations)` : ""}`,
       );
     } catch (error) {
-      console.error('Export failed:', error);
-      toast.error('Export failed. Check the console for details.');
+      console.error("Export failed:", error);
+      toast.error("Export failed. Check the console for details.");
     } finally {
       setIsProcessing(false);
     }
@@ -2999,16 +3283,20 @@ ${tableRows}
     mode: ImportTargetMode = importTargetModeRef.current,
     selectedDatabaseId: string = selectedImportDatabaseIdRef.current,
   ): ExportDatabaseOption[] => {
-    const exportableOptions = importDatabaseOptions.filter((option) => option.isExportable);
+    const exportableOptions = importDatabaseOptions.filter(
+      (option) => option.isExportable,
+    );
     const currentOption = exportableOptions.find((option) => option.isCurrent);
-    const selectedOption = exportableOptions.find((option) => option.id === selectedDatabaseId);
-    if (mode === 'current') {
+    const selectedOption = exportableOptions.find(
+      (option) => option.id === selectedDatabaseId,
+    );
+    if (mode === "current") {
       if (selectedOption && !selectedOption.isCurrent) {
         return [selectedOption];
       }
       return currentOption ? [currentOption] : exportableOptions.slice(0, 1);
     }
-    if (mode === 'all') {
+    if (mode === "all") {
       return exportableOptions;
     }
     return selectedOption ? [selectedOption] : [];
@@ -3021,7 +3309,7 @@ ${tableRows}
     const currentDatabase = databaseManager.getCurrentDatabase();
     const targets = getImportTargetDatabases(mode, targetDatabaseId);
     if (targets.length === 0) {
-      return mode === 'current' ? state.connections : [];
+      return mode === "current" ? state.connections : [];
     }
 
     const targetConnections = await Promise.all(
@@ -3044,7 +3332,7 @@ ${tableRows}
     filename: string,
     content: string,
     sizeBytes?: number,
-    formatSelection: 'auto' | ImportFormat = importFormatSelection,
+    formatSelection: "auto" | ImportFormat = importFormatSelection,
     targetMode: ImportTargetMode = importTargetModeRef.current,
     targetDatabaseId: string = selectedImportDatabaseIdRef.current,
   ): Promise<ImportResult> => {
@@ -3054,19 +3342,18 @@ ${tableRows}
       const isAesCbc = isAesCbcEnvelope(processedContent);
       const isMremoteng = isMremotengEncryptedXml(processedContent);
       const encryptedWrapper =
-        filename.includes('.encrypted.') ||
-        filename.split('.').pop()?.toLowerCase() === 'encrypted' ||
+        filename.includes(".encrypted.") ||
+        filename.split(".").pop()?.toLowerCase() === "encrypted" ||
         isWebCryptoPayload(processedContent) ||
         isAesCbc ||
         isMremoteng;
-      if (
-        encryptedWrapper
-      ) {
+      if (encryptedWrapper) {
         const password = await requestPassword({
-          title: 'Decrypt import file',
-          description: 'This file is encrypted. Enter the password used during export to decrypt it.',
+          title: "Decrypt import file",
+          description:
+            "This file is encrypted. Enter the password used during export to decrypt it.",
         });
-        if (!password) throw new Error('Password required for encrypted file');
+        if (!password) throw new Error("Password required for encrypted file");
         let decrypted: string | null = null;
         // Track the most informative failure across all attempted decoders
         // so the final error message can pick a targeted category.
@@ -3079,13 +3366,16 @@ ${tableRows}
             // OperationError on wrong key. Treat as wrong-password by
             // default; the corrupted/unsupported buckets are reserved for
             // cases we can detect structurally.
-            failureKinds.push('wrong-password');
+            failureKinds.push("wrong-password");
           }
         };
         // Try the AES-CBC text envelope first when the content matches.
         if (!decrypted && isAesCbc) {
           try {
-            const bytes = await decryptAesCbcEnvelope(processedContent, password);
+            const bytes = await decryptAesCbcEnvelope(
+              processedContent,
+              password,
+            );
             decrypted = new TextDecoder().decode(bytes);
           } catch (e) {
             recordFailure(e);
@@ -3094,7 +3384,10 @@ ${tableRows}
         // Try the mRemoteNG-native scheme via Tauri IPC.
         if (!decrypted && isMremoteng) {
           try {
-            decrypted = await decryptMremotengDocument(processedContent, password);
+            decrypted = await decryptMremotengDocument(
+              processedContent,
+              password,
+            );
           } catch (e) {
             recordFailure(e);
           }
@@ -3112,17 +3405,17 @@ ${tableRows}
           const invoke = await getInvoke();
           if (invoke) {
             try {
-              decrypted = (await invoke(
-                'crypto_legacy_decrypt_cryptojs',
-                { ciphertext: processedContent, password },
-              )) as string;
+              decrypted = (await invoke("crypto_legacy_decrypt_cryptojs", {
+                ciphertext: processedContent,
+                password,
+              })) as string;
             } catch (e) {
               recordFailure(e);
             }
           } else if (failureKinds.length === 0) {
             // No detector matched and no legacy backend available —
             // we have nothing to try.
-            failureKinds.push('unsupported');
+            failureKinds.push("unsupported");
           }
         }
         if (!decrypted) {
@@ -3132,14 +3425,15 @@ ${tableRows}
           // itself is the problem, while "wrong-password" hints at a
           // recoverable user action.
           const pickKind = (): DecryptErrorKind => {
-            if (failureKinds.includes('corrupted')) return 'corrupted';
-            if (failureKinds.includes('unsupported')) return 'unsupported';
-            if (failureKinds.includes('wrong-password')) return 'wrong-password';
+            if (failureKinds.includes("corrupted")) return "corrupted";
+            if (failureKinds.includes("unsupported")) return "unsupported";
+            if (failureKinds.includes("wrong-password"))
+              return "wrong-password";
             // No decoder threw but none produced plaintext either — a
             // decoder must have silently returned a falsy value. Mirror
             // the legacy "wrong password" framing since that's the most
             // recoverable user action.
-            return 'wrong-password';
+            return "wrong-password";
           };
           const kind = pickKind();
           const message = t(DECRYPT_ERROR_I18N_KEYS[kind], {
@@ -3152,18 +3446,21 @@ ${tableRows}
 
       const autoDetectedFormat = detectImportFormat(processedContent, filename);
       const detectedFormat =
-        formatSelection === 'auto' ? autoDetectedFormat : formatSelection;
+        formatSelection === "auto" ? autoDetectedFormat : formatSelection;
       const detectedFormatName = getFormatName(detectedFormat);
       const autoDetectedFormatName = getFormatName(autoDetectedFormat);
-      const formatForced = formatSelection !== 'auto';
-      const forcedFormatCompatibility = getImportFormatCompatibility(detectedFormat);
+      const formatForced = formatSelection !== "auto";
+      const forcedFormatCompatibility =
+        getImportFormatCompatibility(detectedFormat);
       const formatWarning = [
         formatForced && detectedFormat !== autoDetectedFormat
           ? `Forced ${detectedFormatName}; auto-detect suggested ${autoDetectedFormatName}.`
-          : '',
-        forcedFormatCompatibility.warning ?? '',
-      ].filter(Boolean).join(' ');
-      let encryptionAnalysis: ImportSourceMetadata['encryption'] | undefined =
+          : "",
+        forcedFormatCompatibility.warning ?? "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      let encryptionAnalysis: ImportSourceMetadata["encryption"] | undefined =
         encryptedWrapper
           ? {
               protected: true,
@@ -3172,8 +3469,8 @@ ${tableRows}
             }
           : undefined;
       let vpnConnections: ImportVpnData | undefined;
-      let tunnelChainTemplates: ImportResult['tunnelChainTemplates'];
-      if (detectedFormat === 'json') {
+      let tunnelChainTemplates: ImportResult["tunnelChainTemplates"];
+      if (detectedFormat === "json") {
         try {
           const parsed = JSON.parse(processedContent);
           vpnConnections = normalizeVpnImportData(parsed.vpnConnections);
@@ -3188,14 +3485,14 @@ ${tableRows}
       const hasJsonSidecarData =
         Boolean(
           vpnConnections &&
-            (vpnConnections.openvpn.length > 0 ||
-              vpnConnections.wireguard.length > 0 ||
-              vpnConnections.tailscale.length > 0 ||
-              vpnConnections.zerotier.length > 0),
+          (vpnConnections.openvpn.length > 0 ||
+            vpnConnections.wireguard.length > 0 ||
+            vpnConnections.tailscale.length > 0 ||
+            vpnConnections.zerotier.length > 0),
         ) || Boolean(tunnelChainTemplates?.length);
 
       let connections: Connection[] = [];
-      if (detectedFormat === 'mremoteng') {
+      if (detectedFormat === "mremoteng") {
         const enc = detectMRemoteNGEncryption(processedContent);
         encryptionAnalysis = {
           protected: enc.isEncrypted,
@@ -3221,9 +3518,9 @@ ${tableRows}
             let attemptError: string | undefined;
             for (let attempt = 0; attempt < 3; attempt++) {
               const candidate = await requestPassword({
-                title: 'Encrypted mRemoteNG file',
+                title: "Encrypted mRemoteNG file",
                 description:
-                  'Enter the mRemoteNG master password used to encrypt this export.',
+                  "Enter the mRemoteNG master password used to encrypt this export.",
                 error: attemptError,
               });
               if (!candidate) break;
@@ -3236,12 +3533,12 @@ ${tableRows}
                 encryptionAnalysis.defaultMasterPasswordAccepted = false;
                 break;
               }
-              attemptError = 'Incorrect master password — try again.';
+              attemptError = "Incorrect master password — try again.";
             }
           }
 
           if (!masterPassword) {
-            throw new Error('Password required for encrypted mRemoteNG file');
+            throw new Error("Password required for encrypted mRemoteNG file");
           }
 
           // Step 2: actual decryption. With the password validated this can
@@ -3264,7 +3561,7 @@ ${tableRows}
             detectedFormat,
           );
           console.log(
-            `[mRemoteNG] decrypted import returned ${connections.length} connections (master=${defaultCheck.valid ? 'default mR3m' : 'user-supplied'})`,
+            `[mRemoteNG] decrypted import returned ${connections.length} connections (master=${defaultCheck.valid ? "default mR3m" : "user-supplied"})`,
           );
         } else {
           connections = await importConnections(
@@ -3290,8 +3587,8 @@ ${tableRows}
       console.log(`Import format detected: ${detectedFormatName}`);
 
       const actualExtension = filename
-        .replace('.encrypted', '')
-        .split('.')
+        .replace(".encrypted", "")
+        .split(".")
         .pop()
         ?.toLowerCase();
 
@@ -3313,7 +3610,10 @@ ${tableRows}
           `No connections found in ${actualExtension?.toUpperCase()} file`,
         );
       }
-      const targetConnections = await loadImportTargetConnections(targetMode, targetDatabaseId);
+      const targetConnections = await loadImportTargetConnections(
+        targetMode,
+        targetDatabaseId,
+      );
       const previewItems = buildImportPreviewItems(
         connections,
         targetConnections,
@@ -3355,7 +3655,7 @@ ${tableRows}
       return {
         success: false,
         imported: 0,
-        errors: [error instanceof Error ? error.message : 'Import failed'],
+        errors: [error instanceof Error ? error.message : "Import failed"],
         connections: [],
       };
     }
@@ -3367,11 +3667,11 @@ ${tableRows}
 
   const processSelectedImportFile = async (
     file: File,
-    formatSelection: 'auto' | ImportFormat = importFormatSelection,
+    formatSelection: "auto" | ImportFormat = importFormatSelection,
   ) => {
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
     if (file.size > MAX_FILE_SIZE) {
-      toast.error('File is too large. Maximum allowed size is 50 MB.');
+      toast.error("File is too large. Maximum allowed size is 50 MB.");
       return;
     }
     setIsProcessing(true);
@@ -3382,7 +3682,11 @@ ${tableRows}
     setImportFilename(file.name);
     try {
       const content = await readFileContent(file);
-      setImportSourceFile({ filename: file.name, content, sizeBytes: file.size });
+      setImportSourceFile({
+        filename: file.name,
+        content,
+        sizeBytes: file.size,
+      });
       const result = await processImportFile(
         file.name,
         content,
@@ -3395,13 +3699,13 @@ ${tableRows}
       setImportAnalysis(result.analysis ?? null);
       setSelectedPreviewIds(new Set(result.selectedIds ?? []));
       if (!result.success) {
-        console.error('Import failed:', result.errors);
-        toast.error('Import failed. Check the file format and try again.');
+        console.error("Import failed:", result.errors);
+        toast.error("Import failed. Check the file format and try again.");
       }
     } catch (error) {
-      console.error('Import failed:', error);
+      console.error("Import failed:", error);
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
+        error instanceof Error ? error.message : "Unknown error";
       setImportResult({
         success: false,
         imported: 0,
@@ -3410,7 +3714,7 @@ ${tableRows}
       });
       setImportAnalysis(null);
       setSelectedPreviewIds(new Set());
-      toast.error('Import failed. Check the console for details.');
+      toast.error("Import failed. Check the console for details.");
     } finally {
       setIsProcessing(false);
     }
@@ -3418,7 +3722,7 @@ ${tableRows}
 
   const reprocessImportSource = async (
     source: { filename: string; content: string; sizeBytes?: number },
-    formatSelection: 'auto' | ImportFormat = importFormatSelection,
+    formatSelection: "auto" | ImportFormat = importFormatSelection,
     targetMode: ImportTargetMode = importTargetModeRef.current,
     targetDatabaseId: string = selectedImportDatabaseIdRef.current,
   ) => {
@@ -3440,13 +3744,13 @@ ${tableRows}
       setImportAnalysis(result.analysis ?? null);
       setSelectedPreviewIds(new Set(result.selectedIds ?? []));
       if (!result.success) {
-        console.error('Import failed:', result.errors);
-        toast.error('Import failed. Check the file format and try again.');
+        console.error("Import failed:", result.errors);
+        toast.error("Import failed. Check the file format and try again.");
       }
     } catch (error) {
-      console.error('Import failed:', error);
+      console.error("Import failed:", error);
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
+        error instanceof Error ? error.message : "Unknown error";
       setImportResult({
         success: false,
         imported: 0,
@@ -3455,7 +3759,7 @@ ${tableRows}
       });
       setImportAnalysis(null);
       setSelectedPreviewIds(new Set());
-      toast.error('Import failed. Check the console for details.');
+      toast.error("Import failed. Check the console for details.");
     } finally {
       setIsProcessing(false);
     }
@@ -3475,7 +3779,7 @@ ${tableRows}
       // otherwise see nothing happen).
       if (event.target) {
         try {
-          (event.target as HTMLInputElement).value = '';
+          (event.target as HTMLInputElement).value = "";
         } catch {
           // ignored — some test harnesses make .value read-only
         }
@@ -3487,7 +3791,9 @@ ${tableRows}
     await processSelectedImportFile(file);
   };
 
-  const updateImportFormatSelection = async (selection: 'auto' | ImportFormat) => {
+  const updateImportFormatSelection = async (
+    selection: "auto" | ImportFormat,
+  ) => {
     setImportFormatSelectionState(selection);
     if (importSourceFile) {
       await reprocessImportSource(importSourceFile, selection);
@@ -3496,11 +3802,16 @@ ${tableRows}
 
   const updateSelectedImportDatabaseId = async (databaseId: string) => {
     selectedImportDatabaseIdRef.current = databaseId;
-    importTargetModeRef.current = 'selected';
+    importTargetModeRef.current = "selected";
     setSelectedImportDatabaseId(databaseId);
-    setImportTargetModeState('selected');
+    setImportTargetModeState("selected");
     if (importSourceFile) {
-      await reprocessImportSource(importSourceFile, importFormatSelection, 'selected', databaseId);
+      await reprocessImportSource(
+        importSourceFile,
+        importFormatSelection,
+        "selected",
+        databaseId,
+      );
     }
   };
 
@@ -3536,22 +3847,22 @@ ${tableRows}
       const selectedItems = selectedPreviewItems
         ? selectedPreviewItems.filter(
             (item) =>
-              (item.kind === 'connection' || item.kind === 'folder') &&
+              (item.kind === "connection" || item.kind === "folder") &&
               item.connection,
           )
         : importResult.connections.map((connection, index) => ({
             id: `legacy:${connection.id}:${index}`,
             connection,
-            conflictStatus: 'none' as const,
+            conflictStatus: "none" as const,
           }));
       const hasSshTunnelPreviewRows = Boolean(
-        importResult.previewItems?.some((item) => item.kind === 'sshTunnel'),
+        importResult.previewItems?.some((item) => item.kind === "sshTunnel"),
       );
       const selectedSshTunnelConnectionIds = new Set<string>(
-        (selectedPreviewItems
-          ?.filter((item) => item.kind === 'sshTunnel')
+        selectedPreviewItems
+          ?.filter((item) => item.kind === "sshTunnel")
           .map((item) => item.sshTunnelConnectionId || item.connection?.id)
-          .filter((id): id is string => Boolean(id))) ?? [],
+          .filter((id): id is string => Boolean(id)) ?? [],
       );
 
       const addTags = splitTags(importOptions.addTags);
@@ -3599,21 +3910,23 @@ ${tableRows}
       const currentDatabase = databaseManager.getCurrentDatabase();
       const targetDatabases = getImportTargetDatabases();
       const lockedSelectedTarget = importDatabaseOptions.find(
-        (option) => option.id === selectedImportDatabaseIdRef.current && !option.isExportable,
+        (option) =>
+          option.id === selectedImportDatabaseIdRef.current &&
+          !option.isExportable,
       );
-      if (importTargetModeRef.current === 'selected' && lockedSelectedTarget) {
-        toast.error('Unlock the selected database before importing.');
+      if (importTargetModeRef.current === "selected" && lockedSelectedTarget) {
+        toast.error("Unlock the selected database before importing.");
         return;
       }
       if (targetDatabases.length === 0) {
-        toast.error('Choose a database before importing.');
+        toast.error("Choose a database before importing.");
         return;
       }
 
       for (const targetDatabase of targetDatabases) {
         if (targetDatabase.id === currentDatabase?.id) {
           connectionsToImport.forEach((conn) => {
-            dispatch({ type: 'ADD_CONNECTION', payload: conn });
+            dispatch({ type: "ADD_CONNECTION", payload: conn });
           });
         } else {
           await databaseManager.appendConnectionsToDatabase(
@@ -3625,11 +3938,11 @@ ${tableRows}
 
       const selectedVpnItems =
         selectedPreviewItems?.filter(
-          (item) => item.kind === 'vpn' && item.vpnType && item.vpnConnection,
+          (item) => item.kind === "vpn" && item.vpnType && item.vpnConnection,
         ) ?? [];
       const selectedTunnelChainItems =
         selectedPreviewItems?.filter(
-          (item) => item.kind === 'tunnelChain' && item.tunnelChainTemplate,
+          (item) => item.kind === "tunnelChain" && item.tunnelChainTemplate,
         ) ?? [];
 
       // Restore selected VPN connections
@@ -3641,23 +3954,26 @@ ${tableRows}
           const conn = item.vpnConnection;
           if (!conn || !item.vpnType) continue;
           try {
-            if (item.vpnType === 'openvpn') {
-              const openvpn = conn as ImportVpnData['openvpn'][number];
-              await proxyMgr.createOpenVPNConnection(openvpn.name, openvpn.config);
-            } else if (item.vpnType === 'wireguard') {
-              const wireguard = conn as ImportVpnData['wireguard'][number];
+            if (item.vpnType === "openvpn") {
+              const openvpn = conn as ImportVpnData["openvpn"][number];
+              await proxyMgr.createOpenVPNConnection(
+                openvpn.name,
+                openvpn.config,
+              );
+            } else if (item.vpnType === "wireguard") {
+              const wireguard = conn as ImportVpnData["wireguard"][number];
               await proxyMgr.createWireGuardConnection(
                 wireguard.name,
                 wireguard.config,
               );
-            } else if (item.vpnType === 'tailscale') {
-              const tailscale = conn as ImportVpnData['tailscale'][number];
+            } else if (item.vpnType === "tailscale") {
+              const tailscale = conn as ImportVpnData["tailscale"][number];
               await proxyMgr.createTailscaleConnection(
                 tailscale.name,
                 tailscale.config,
               );
-            } else if (item.vpnType === 'zerotier') {
-              const zerotier = conn as ImportVpnData['zerotier'][number];
+            } else if (item.vpnType === "zerotier") {
+              const zerotier = conn as ImportVpnData["zerotier"][number];
               await proxyMgr.createZeroTierConnection(
                 zerotier.name,
                 zerotier.config,
@@ -3687,7 +4003,7 @@ ${tableRows}
             );
             tunnelChainsImportedCount++;
           } catch (e) {
-            console.warn('Tunnel chain import skip:', e);
+            console.warn("Tunnel chain import skip:", e);
           }
         }
       }
@@ -3706,11 +4022,12 @@ ${tableRows}
       if (sshTunnelsImportedCount > 0) {
         parts.push(`${sshTunnelsImportedCount} SSH tunnel(s)`);
       }
-      const summary = parts.join(', ') || '0 items';
-      const singleTarget = targetDatabases.length === 1 ? targetDatabases[0] : null;
+      const summary = parts.join(", ") || "0 items";
+      const singleTarget =
+        targetDatabases.length === 1 ? targetDatabases[0] : null;
       const targetSuffix = singleTarget
         ? singleTarget.isCurrent
-          ? ''
+          ? ""
           : ` into ${singleTarget.name}`
         : ` into ${targetDatabases.length} databases`;
 
@@ -3720,10 +4037,10 @@ ${tableRows}
           : `Imported ${summary}${targetSuffix} successfully`,
       );
       settingsManager.logAction(
-        'info',
-        'Data imported',
+        "info",
+        "Data imported",
         undefined,
-        `Imported ${summary}${targetSuffix}${filename ? ` from ${filename}` : ''}`,
+        `Imported ${summary}${targetSuffix}${filename ? ` from ${filename}` : ""}`,
       );
 
       if (
@@ -3745,7 +4062,7 @@ ${tableRows}
 
   const cancelImport = () => {
     setImportResult(null);
-    setImportFilename('');
+    setImportFilename("");
     setImportAnalysis(null);
     setImportSourceFile(null);
     setSelectedPreviewIds(new Set());
@@ -3766,7 +4083,7 @@ ${tableRows}
     // ── Resolve sources ─────────────────────────────────────────
     const sourceIds = getEffectiveCloneSourceIds();
     if (sourceIds.length === 0) {
-      toast.error('Pick at least one source database before cloning.');
+      toast.error("Pick at least one source database before cloning.");
       return null;
     }
 
@@ -3778,8 +4095,8 @@ ${tableRows}
     if (targetIds.length === 0) {
       toast.error(
         cloneTargetDatabaseIds.length === 0
-          ? 'Pick at least one target database before cloning.'
-          : 'Targets cannot overlap with sources — pick a different database.',
+          ? "Pick at least one target database before cloning."
+          : "Targets cannot overlap with sources — pick a different database.",
       );
       return null;
     }
@@ -3791,10 +4108,10 @@ ${tableRows}
     );
     if (lockedTargets.length > 0) {
       toast.error(
-        'Unlock the target database(s) before cloning: ' +
+        "Unlock the target database(s) before cloning: " +
           lockedTargets
             .map((id) => targetOptionsById.get(id)?.name ?? id)
-            .join(', '),
+            .join(", "),
       );
       return null;
     }
@@ -3810,10 +4127,14 @@ ${tableRows}
       }> = [];
       for (const id of sourceIds) {
         if (id === currentDatabase?.id) {
-          sourceDatasets.push({ databaseId: id, connections: state.connections });
+          sourceDatasets.push({
+            databaseId: id,
+            connections: state.connections,
+          });
         } else {
           try {
-            const snapshot = await databaseManager.readExportableDatabaseSnapshot(id);
+            const snapshot =
+              await databaseManager.readExportableDatabaseSnapshot(id);
             sourceDatasets.push({
               databaseId: id,
               connections: snapshot?.connections ?? [],
@@ -3829,30 +4150,37 @@ ${tableRows}
 
       const selectedConnectionIds = cloneInclusion.includedConnectionIds ?? [];
       const usesQualifiedConnectionIds = selectedConnectionIds.some((id) =>
-        id.includes(':'),
+        id.includes(":"),
       );
       const selectedConnectionIdSet = new Set(selectedConnectionIds);
       const selectedFolderIds = cloneInclusion.includedFolderIds ?? [];
       const usesQualifiedFolderIds = selectedFolderIds.some((id) =>
-        id.includes(':'),
+        id.includes(":"),
       );
       const selectedFolderIdSet = new Set(selectedFolderIds);
       const filtered = sourceDatasets.flatMap((dataset) => {
         if (!usesQualifiedConnectionIds && !usesQualifiedFolderIds) {
-          return filterConnectionsForExport(dataset.connections, cloneInclusion);
+          return filterConnectionsForExport(
+            dataset.connections,
+            cloneInclusion,
+          );
         }
 
         const sourceSelectedIds = usesQualifiedConnectionIds
           ? dataset.connections
               .filter((connection) =>
-                selectedConnectionIdSet.has(`${dataset.databaseId}:${connection.id}`),
+                selectedConnectionIdSet.has(
+                  `${dataset.databaseId}:${connection.id}`,
+                ),
               )
               .map((connection) => connection.id)
           : selectedConnectionIds;
         const sourceSelectedFolderIds = usesQualifiedFolderIds
           ? dataset.connections
               .filter((connection) =>
-                selectedFolderIdSet.has(`${dataset.databaseId}:${connection.id}`),
+                selectedFolderIdSet.has(
+                  `${dataset.databaseId}:${connection.id}`,
+                ),
               )
               .map((connection) => connection.id)
           : selectedFolderIds;
@@ -3878,13 +4206,13 @@ ${tableRows}
       );
       const filteredForApply = sidecarClone.connections;
       if (filteredForApply.length === 0 && sidecarClone.counts.total === 0) {
-        toast.error('Nothing to clone with the current filter.');
+        toast.error("Nothing to clone with the current filter.");
         return null;
       }
 
       // ── Fan out to every target ──────────────────────────────
       const addTags = splitTags(cloneAddTags);
-      const perTarget: CloneResult['perTarget'] = [];
+      const perTarget: CloneResult["perTarget"] = [];
       let totalCloned = 0;
       let totalRenamed = 0;
       let totalSkipped = 0;
@@ -3927,7 +4255,7 @@ ${tableRows}
 
           if (targetId === currentDatabase?.id) {
             applied.remapped.forEach((conn) => {
-              dispatch({ type: 'ADD_CONNECTION', payload: conn });
+              dispatch({ type: "ADD_CONNECTION", payload: conn });
             });
           } else {
             await databaseManager.appendConnectionsToDatabase(
@@ -3959,12 +4287,15 @@ ${tableRows}
       // ── Optionally switch to the (first successful) target ──
       if (cloneSwitchToTargetDatabaseAfterClone) {
         const firstSuccessful = perTarget.find((row) => !row.error);
-        if (firstSuccessful && firstSuccessful.databaseId !== currentDatabase?.id) {
+        if (
+          firstSuccessful &&
+          firstSuccessful.databaseId !== currentDatabase?.id
+        ) {
           try {
             await databaseManager.selectDatabase(firstSuccessful.databaseId);
             await loadData();
           } catch (e) {
-            console.warn('[clone] Failed to switch active database:', e);
+            console.warn("[clone] Failed to switch active database:", e);
           }
         }
       }
@@ -3989,28 +4320,28 @@ ${tableRows}
           targetIds.length === 1
             ? ` to ${perTarget[0].databaseName}`
             : ` to ${targetIds.length} databases`;
-        const renameNote = totalRenamed > 0 ? `, renamed ${totalRenamed}` : '';
-        const skipNote = totalSkipped > 0 ? `, skipped ${totalSkipped}` : '';
+        const renameNote = totalRenamed > 0 ? `, renamed ${totalRenamed}` : "";
+        const skipNote = totalSkipped > 0 ? `, skipped ${totalSkipped}` : "";
         const sidecarNote =
           sidecarClone.counts.total > 0
             ? `, cloned ${sidecarClone.counts.total} sidecar definition(s)`
-            : '';
+            : "";
         toast.success(
           totalCloned > 0
             ? `Cloned ${totalCloned} connection(s)${targetSummary}${renameNote}${skipNote}${sidecarNote}.`
             : `Cloned ${sidecarClone.counts.total} sidecar definition(s).`,
         );
       } else if (errors.length > 0) {
-        toast.error(`Clone partially failed: ${errors.join('; ')}`);
+        toast.error(`Clone partially failed: ${errors.join("; ")}`);
       }
       return result;
     } finally {
       setIsCloning(false);
     }
-  // cloneSidecarsForConnections closes over the same manager singletons and
-  // current operation state consumed here; listing the inline helper would
-  // recreate this action on every render without making the inputs safer.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // cloneSidecarsForConnections closes over the same manager singletons and
+    // current operation state consumed here; listing the inline helper would
+    // recreate this action on every render without making the inputs safer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isCloning,
     getEffectiveCloneSourceIds,

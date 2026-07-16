@@ -150,10 +150,15 @@ vi.mock("../../src/components/ImportExport/utils", () => ({
   importConnections: (...args: unknown[]) => mockImportConnections(...args),
   detectImportFormat: (...args: unknown[]) => mockDetectImportFormat(...args),
   getFormatName: (...args: unknown[]) => mockGetFormatName(...args),
-  getImportFormatCompatibility: (format: string) => ({ value: format, label: format.toUpperCase() }),
-  detectMRemoteNGEncryption: (...args: unknown[]) => mockDetectMRemoteNGEncryption(...args),
+  getImportFormatCompatibility: (format: string) => ({
+    value: format,
+    label: format.toUpperCase(),
+  }),
+  detectMRemoteNGEncryption: (...args: unknown[]) =>
+    mockDetectMRemoteNGEncryption(...args),
   decryptMRemoteNGXml: (...args: unknown[]) => mockDecryptMRemoteNGXml(...args),
-  verifyMRemoteNGPassword: (...args: unknown[]) => mockVerifyMRemoteNGPassword(...args),
+  verifyMRemoteNGPassword: (...args: unknown[]) =>
+    mockVerifyMRemoteNGPassword(...args),
   MREMOTENG_DEFAULT_MASTER_PASSWORD: "mR3m",
 }));
 
@@ -310,7 +315,11 @@ beforeEach(() => {
   mockGetSettings.mockReset();
   mockGetSettings.mockReturnValue({});
   mockGetCurrentCollection.mockReset();
-  mockGetCurrentCollection.mockReturnValue({ id: "col-1", name: "Default", isEncrypted: false });
+  mockGetCurrentCollection.mockReturnValue({
+    id: "col-1",
+    name: "Default",
+    isEncrypted: false,
+  });
   mockGetExportableDatabases.mockReset();
   mockGetExportableDatabases.mockResolvedValue([
     {
@@ -384,16 +393,16 @@ beforeEach(() => {
     download: "",
     click: vi.fn(),
   } as unknown as HTMLAnchorElement;
-  vi.spyOn(document, "createElement").mockImplementation(function(this: Document, tag: string, options?: any) {
+  vi.spyOn(document, "createElement").mockImplementation(function (
+    this: Document,
+    tag: string,
+    options?: any,
+  ) {
     if (tag === "a") return mockLink;
     return origCreate.call(this, tag, options);
   });
-  vi.spyOn(document.body, "appendChild").mockImplementation(
-    (node) => node,
-  );
-  vi.spyOn(document.body, "removeChild").mockImplementation(
-    (node) => node,
-  );
+  vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+  vi.spyOn(document.body, "removeChild").mockImplementation((node) => node);
 });
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -537,7 +546,9 @@ describe("useImportExport", () => {
     const click = vi.fn();
 
     act(() => {
-      (result.current.fileInputRef as { current: HTMLInputElement | null }).current = {
+      (
+        result.current.fileInputRef as { current: HTMLInputElement | null }
+      ).current = {
         click,
       } as unknown as HTMLInputElement;
       result.current.handleImport();
@@ -608,7 +619,9 @@ describe("useImportExport", () => {
     });
     expect(parsed.exportMetadata.exportId).toEqual(expect.any(String));
     expect(parsed.exportMetadata.exportedAt).toEqual(expect.any(String));
-    expect(parsed.exportMetadata.sourceClient.machineId).toEqual(expect.any(String));
+    expect(parsed.exportMetadata.sourceClient.machineId).toEqual(
+      expect.any(String),
+    );
     expect(parsed.databaseMetadata).toMatchObject({
       collectionId: "col-1",
       name: "Default",
@@ -641,7 +654,8 @@ describe("useImportExport", () => {
       "json-secret",
       { iterations: 310000 },
     );
-    const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[0][0] as string;
+    const plaintextBeforeEncryption = mockEncryptWithPassword.mock
+      .calls[0][0] as string;
     expect(JSON.parse(plaintextBeforeEncryption).exportMetadata).toMatchObject({
       encrypted: true,
       encryption: {
@@ -678,12 +692,22 @@ describe("useImportExport", () => {
     );
 
     mockExportCollection.mockResolvedValueOnce('{"connections":[]}');
-    mockListOpenVPN.mockResolvedValueOnce([{ name: "OpenVPN A", config: "ovpn-config" }]);
+    mockListOpenVPN.mockResolvedValueOnce([
+      { name: "OpenVPN A", config: "ovpn-config" },
+    ]);
     mockListWireGuard.mockRejectedValueOnce(new Error("wireguard unavailable"));
-    mockListTailscale.mockResolvedValueOnce([{ name: "Tailnet A", config: "tail-config" }]);
+    mockListTailscale.mockResolvedValueOnce([
+      { name: "Tailnet A", config: "tail-config" },
+    ]);
     mockListZeroTier.mockRejectedValueOnce(new Error("zerotier unavailable"));
     mockGetTunnelChains.mockReturnValueOnce([
-      { id: "chain-1", name: "Chain A", layers: [], description: "desc", tags: ["prod"] },
+      {
+        id: "chain-1",
+        name: "Chain A",
+        layers: [],
+        description: "desc",
+        tags: ["prod"],
+      },
     ]);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { result } = renderImportExport();
@@ -692,7 +716,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls[0][0] as Blob;
+    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock
+      .calls[0][0] as Blob;
     const exportedJson = JSON.parse(await exportedBlob.text());
 
     expect(exportedJson.vpnConnections).toEqual({
@@ -702,7 +727,13 @@ describe("useImportExport", () => {
       zerotier: [],
     });
     expect(exportedJson.tunnelChainTemplates).toEqual([
-      { id: "chain-1", name: "Chain A", layers: [], description: "desc", tags: ["prod"] },
+      {
+        id: "chain-1",
+        name: "Chain A",
+        layers: [],
+        description: "desc",
+        tags: ["prod"],
+      },
     ]);
 
     expect(warnSpy).not.toHaveBeenCalledWith(
@@ -715,9 +746,17 @@ describe("useImportExport", () => {
 
   it("handleExport JSON encrypts sidecars after enrichment", async () => {
     mockExportCollection.mockResolvedValueOnce('{"connections":[]}');
-    mockListOpenVPN.mockResolvedValueOnce([{ name: "OpenVPN Secure", config: "ovpn" }]);
+    mockListOpenVPN.mockResolvedValueOnce([
+      { name: "OpenVPN Secure", config: "ovpn" },
+    ]);
     mockGetTunnelChains.mockReturnValueOnce([
-      { id: "chain-secure", name: "Secure Chain", layers: [], description: "", tags: [] },
+      {
+        id: "chain-secure",
+        name: "Secure Chain",
+        layers: [],
+        description: "",
+        tags: [],
+      },
     ]);
     const { result } = renderImportExport();
 
@@ -731,13 +770,20 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[0][0] as string;
+    const plaintextBeforeEncryption = mockEncryptWithPassword.mock
+      .calls[0][0] as string;
     const parsed = JSON.parse(plaintextBeforeEncryption);
     expect(parsed.vpnConnections.openvpn).toEqual([
       { name: "OpenVPN Secure", config: "ovpn" },
     ]);
     expect(parsed.tunnelChainTemplates).toEqual([
-      { id: "chain-secure", name: "Secure Chain", layers: [], description: "", tags: [] },
+      {
+        id: "chain-secure",
+        name: "Secure Chain",
+        layers: [],
+        description: "",
+        tags: [],
+      },
     ]);
     expect(mockEncryptWithPassword).toHaveBeenCalledWith(
       expect.any(String),
@@ -789,7 +835,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[0][0] as string;
+    const plaintextBeforeEncryption = mockEncryptWithPassword.mock
+      .calls[0][0] as string;
     const parsed = JSON.parse(plaintextBeforeEncryption);
     expect(parsed.schema).toBe("sortOfRemoteNG.database-export-package");
     expect(parsed.databases).toHaveLength(2);
@@ -818,7 +865,11 @@ describe("useImportExport", () => {
     );
 
     mockExportCollection.mockResolvedValueOnce(
-      JSON.stringify({ connections: [], tabGroups: [{ id: "tabs" }], colorTags: { red: "#f00" } }),
+      JSON.stringify({
+        connections: [],
+        tabGroups: [{ id: "tabs" }],
+        colorTags: { red: "#f00" },
+      }),
     );
     const { result } = renderImportExport();
 
@@ -833,7 +884,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls[0][0] as Blob;
+    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock
+      .calls[0][0] as Blob;
     const exportedJson = JSON.parse(await exportedBlob.text());
     expect(exportedJson).not.toHaveProperty("vpnConnections");
     expect(exportedJson).not.toHaveProperty("tunnelChainTemplates");
@@ -893,7 +945,10 @@ describe("useImportExport", () => {
         serviceAccountKey: "service-account",
       },
       securityQuestions: [{ question: "Pet?", answer: "secret-answer" }],
-      recoveryInfo: { alternativeEmail: "ops@example.com", seedPhrase: "seed words" },
+      recoveryInfo: {
+        alternativeEmail: "ops@example.com",
+        seedPhrase: "seed words",
+      },
       rdpSettings: {
         gateway: {
           enabled: true,
@@ -918,14 +973,23 @@ describe("useImportExport", () => {
     expect(exportedConnection).not.toHaveProperty("passphrase");
     expect(exportedConnection).not.toHaveProperty("totpSecret");
     expect(exportedConnection.httpHeaders).toEqual({ "X-Trace": "keep-me" });
-    expect(exportedConnection.cloudProvider).toEqual({ provider: "gcp", projectId: "project-1" });
-    expect(exportedConnection.securityQuestions).toEqual([{ question: "Pet?" }]);
-    expect(exportedConnection.recoveryInfo).toEqual({ alternativeEmail: "ops@example.com" });
+    expect(exportedConnection.cloudProvider).toEqual({
+      provider: "gcp",
+      projectId: "project-1",
+    });
+    expect(exportedConnection.securityQuestions).toEqual([
+      { question: "Pet?" },
+    ]);
+    expect(exportedConnection.recoveryInfo).toEqual({
+      alternativeEmail: "ops@example.com",
+    });
     expect(exportedConnection.rdpSettings.gateway).toMatchObject({
       hostname: "gateway.example.com",
       password: "***ENCRYPTED***",
     });
-    expect(exportedConnection.rdpSettings.gateway).not.toHaveProperty("accessToken");
+    expect(exportedConnection.rdpSettings.gateway).not.toHaveProperty(
+      "accessToken",
+    );
 
     mockConnections.splice(0, 1, originalConnection);
     restoreBlob();
@@ -933,7 +997,9 @@ describe("useImportExport", () => {
 
   it("handleExport JSON filters protocols and keeps only needed folder ancestors", async () => {
     const restoreBlob = stubReadableBlob();
-    const originalConnections = mockConnections.map((connection) => ({ ...connection }));
+    const originalConnections = mockConnections.map((connection) => ({
+      ...connection,
+    }));
     mockConnections.splice(
       0,
       mockConnections.length,
@@ -999,11 +1065,14 @@ describe("useImportExport", () => {
 
     const { text } = await getLastDownloadedText();
     const exportedConnections = JSON.parse(text).connections;
-    expect(exportedConnections.map((connection: Connection) => connection.id)).toEqual([
-      "folder-root",
-      "ssh-child",
-    ]);
-    expect(exportedConnections.find((connection: Connection) => connection.id === "ssh-child").parentId).toBe("folder-root");
+    expect(
+      exportedConnections.map((connection: Connection) => connection.id),
+    ).toEqual(["folder-root", "ssh-child"]);
+    expect(
+      exportedConnections.find(
+        (connection: Connection) => connection.id === "ssh-child",
+      ).parentId,
+    ).toBe("folder-root");
 
     mockConnections.splice(0, mockConnections.length, ...originalConnections);
     restoreBlob();
@@ -1011,7 +1080,9 @@ describe("useImportExport", () => {
 
   it("handleExport JSON drops folder records and normalizes parents when folders are excluded", async () => {
     const restoreBlob = stubReadableBlob();
-    const originalConnections = mockConnections.map((connection) => ({ ...connection }));
+    const originalConnections = mockConnections.map((connection) => ({
+      ...connection,
+    }));
     mockConnections.splice(
       0,
       mockConnections.length,
@@ -1052,7 +1123,10 @@ describe("useImportExport", () => {
     const { text } = await getLastDownloadedText();
     const exportedConnections = JSON.parse(text).connections;
     expect(exportedConnections).toHaveLength(1);
-    expect(exportedConnections[0]).toMatchObject({ id: "ssh-child", isGroup: false });
+    expect(exportedConnections[0]).toMatchObject({
+      id: "ssh-child",
+      isGroup: false,
+    });
     expect(exportedConnections[0]).not.toHaveProperty("parentId");
 
     mockConnections.splice(0, mockConnections.length, ...originalConnections);
@@ -1128,13 +1202,15 @@ describe("useImportExport", () => {
       schema: "sortOfRemoteNG.database-export-package",
       version: 1,
     });
-    expect(exportedJson.databases.map((entry: any) => entry.collection.id)).toEqual([
-      "col-1",
-      "col-2",
-    ]);
+    expect(
+      exportedJson.databases.map((entry: any) => entry.collection.id),
+    ).toEqual(["col-1", "col-2"]);
     expect(JSON.stringify(exportedJson)).not.toContain("col-locked");
     expect(mockReadExportableSnapshot).toHaveBeenCalledWith("col-2", false);
-    expect(mockReadExportableSnapshot).not.toHaveBeenCalledWith("col-locked", expect.anything());
+    expect(mockReadExportableSnapshot).not.toHaveBeenCalledWith(
+      "col-locked",
+      expect.anything(),
+    );
 
     restoreBlob();
   });
@@ -1158,9 +1234,13 @@ describe("useImportExport", () => {
 
     mockExportCollection.mockResolvedValueOnce('{"connections":[]}');
     mockListOpenVPN.mockRejectedValueOnce(new Error("openvpn unavailable"));
-    mockListWireGuard.mockResolvedValueOnce([{ name: "WireGuard A", config: "wg-config" }]);
+    mockListWireGuard.mockResolvedValueOnce([
+      { name: "WireGuard A", config: "wg-config" },
+    ]);
     mockListTailscale.mockRejectedValueOnce(new Error("tailscale unavailable"));
-    mockListZeroTier.mockResolvedValueOnce([{ name: "ZeroTier A", config: "zt-config" }]);
+    mockListZeroTier.mockResolvedValueOnce([
+      { name: "ZeroTier A", config: "zt-config" },
+    ]);
 
     const { result } = renderImportExport();
 
@@ -1282,10 +1362,13 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls[0][0] as Blob;
+    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock
+      .calls[0][0] as Blob;
     const exportedCsv = await exportedBlob.text();
 
-    expect(exportedCsv).toContain("Server A,rdp,10.0.0.1,3389,admin,CORP,Primary server");
+    expect(exportedCsv).toContain(
+      "Server A,rdp,10.0.0.1,3389,admin,CORP,Primary server",
+    );
     expect(exportedCsv).not.toContain('"Server A"');
 
     vi.stubGlobal("Blob", OriginalBlob);
@@ -1311,7 +1394,7 @@ describe("useImportExport", () => {
 
     Object.assign(mockConnections[0], {
       name: 'Server, "Prod"\nA',
-      description: 'Line 1\nLine 2',
+      description: "Line 1\nLine 2",
     });
 
     const { result } = renderImportExport();
@@ -1321,7 +1404,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock.calls[0][0] as Blob;
+    const exportedBlob = vi.mocked(globalThis.URL.createObjectURL).mock
+      .calls[0][0] as Blob;
     const exportedCsv = await exportedBlob.text();
 
     expect(exportedCsv).toContain('"Server, ""Prod""\nA"');
@@ -1361,7 +1445,8 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const xmlObjectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock.calls;
+    const xmlObjectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock
+      .calls;
     const xmlBlob = xmlObjectUrlCalls[xmlObjectUrlCalls.length - 1][0] as Blob;
     const exportedXml = await xmlBlob.text();
     expect(exportedXml).toContain('Username=""');
@@ -1372,10 +1457,13 @@ describe("useImportExport", () => {
       await result.current.handleExport();
     });
 
-    const csvObjectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock.calls;
+    const csvObjectUrlCalls = vi.mocked(globalThis.URL.createObjectURL).mock
+      .calls;
     const csvBlob = csvObjectUrlCalls[csvObjectUrlCalls.length - 1][0] as Blob;
     const exportedCsv = await csvBlob.text();
-    expect(exportedCsv).toContain("conn-1,Server A,rdp,10.0.0.1,3389,,CORP,Primary server,,false,");
+    expect(exportedCsv).toContain(
+      "conn-1,Server A,rdp,10.0.0.1,3389,,CORP,Primary server,,false,",
+    );
 
     Object.assign(mockConnections[0], originalConnection);
     vi.stubGlobal("Blob", OriginalBlob);
@@ -1474,7 +1562,7 @@ describe("useImportExport", () => {
     const { blob, text } = await getLastDownloadedText();
     expect(blob.type).toBe("application/vnd.ms-excel");
     expect(text).toContain("urn:schemas-microsoft-com:office:excel");
-    expect(text).toContain("<table aria-label=\"Connection inventory\">");
+    expect(text).toContain('<table aria-label="Connection inventory">');
     expect(mockToast.success).toHaveBeenCalledWith(
       expect.stringContaining(".xls"),
     );
@@ -1484,7 +1572,9 @@ describe("useImportExport", () => {
 
   it("handleExport mRemoteNG writes Connections and nested Node XML without native encryption", async () => {
     const restoreBlob = stubReadableBlob();
-    const originalConnections = mockConnections.map((connection) => ({ ...connection }));
+    const originalConnections = mockConnections.map((connection) => ({
+      ...connection,
+    }));
     mockConnections.splice(
       0,
       mockConnections.length,
@@ -1529,11 +1619,13 @@ describe("useImportExport", () => {
 
     const { blob, text } = await getLastDownloadedText();
     expect(blob.type).toBe("application/xml");
-    expect(text).toContain("<Connections Name=\"Connections\" Export=\"False\" Protected=\"\" ConfVersion=\"2.6\">");
-    expect(text).toContain("<Node Name=\"Ops\" Type=\"Container\"");
-    expect(text).toContain("<Node Name=\"Shell &lt;Prod&gt;\" Type=\"Connection\"");
-    expect(text).toContain("Protocol=\"SSH2\"");
-    expect(text).toContain("Password=\"\"");
+    expect(text).toContain(
+      '<Connections Name="Connections" Export="False" Protected="" ConfVersion="2.6">',
+    );
+    expect(text).toContain('<Node Name="Ops" Type="Container"');
+    expect(text).toContain('<Node Name="Shell &lt;Prod&gt;" Type="Connection"');
+    expect(text).toContain('Protocol="SSH2"');
+    expect(text).toContain('Password=""');
     expect(mockToast.success).toHaveBeenCalledWith(
       expect.stringContaining(".mremoteng.xml"),
     );
@@ -1626,9 +1718,7 @@ describe("useImportExport", () => {
   // ── Import file processing ──────────────────────────────────
 
   it("handleFileSelect sets importResult on success", async () => {
-    const importedConns = [
-      { id: "imp-1", name: "Imported", protocol: "ssh" },
-    ];
+    const importedConns = [{ id: "imp-1", name: "Imported", protocol: "ssh" }];
     mockImportConnections.mockResolvedValueOnce(importedConns);
     mockDetectImportFormat.mockReturnValueOnce("json");
 
@@ -1721,8 +1811,12 @@ describe("useImportExport", () => {
       "FileReader",
       class MockFileReader {
         result: string | ArrayBuffer | null = null;
-        onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
-        onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
+        onload:
+          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
+          | null = null;
+        onerror:
+          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
+          | null = null;
 
         readAsText() {
           this.result = '{"connections":[]}';
@@ -1769,8 +1863,12 @@ describe("useImportExport", () => {
 
   it("handleFileSelect falls back to legacy Tauri decryption for .encrypted files", async () => {
     mockIsWebCryptoPayload.mockReturnValueOnce(true);
-    mockDecryptWithPassword.mockRejectedValueOnce(new Error("bad webcrypto payload"));
-    mockTauriInvoke.mockResolvedValueOnce('{"connections":[{"id":"legacy-1"}]}');
+    mockDecryptWithPassword.mockRejectedValueOnce(
+      new Error("bad webcrypto payload"),
+    );
+    mockTauriInvoke.mockResolvedValueOnce(
+      '{"connections":[{"id":"legacy-1"}]}',
+    );
     mockDetectImportFormat.mockReturnValueOnce("json");
     mockImportConnections.mockResolvedValueOnce([
       { id: "legacy-1", name: "Legacy Import", protocol: "ssh" },
@@ -1807,7 +1905,9 @@ describe("useImportExport", () => {
 
   it("handleFileSelect uses legacy invoke directly when encrypted data is not WebCrypto", async () => {
     mockIsWebCryptoPayload.mockReturnValueOnce(false);
-    mockTauriInvoke.mockResolvedValueOnce('{"connections":[{"id":"legacy-2"}]}');
+    mockTauriInvoke.mockResolvedValueOnce(
+      '{"connections":[{"id":"legacy-2"}]}',
+    );
     mockDetectImportFormat.mockReturnValueOnce("json");
     mockImportConnections.mockResolvedValueOnce([
       { id: "legacy-2", name: "Legacy Only", protocol: "ssh" },
@@ -1840,7 +1940,9 @@ describe("useImportExport", () => {
 
   it("handleFileSelect prompts for WebCrypto payloads even when the filename is plain JSON", async () => {
     mockIsWebCryptoPayload.mockReturnValue(true);
-    mockDecryptWithPassword.mockResolvedValueOnce('{"connections":[{"id":"secure-1"}]}');
+    mockDecryptWithPassword.mockResolvedValueOnce(
+      '{"connections":[{"id":"secure-1"}]}',
+    );
     mockDetectImportFormat.mockReturnValueOnce("json");
     mockImportConnections.mockResolvedValueOnce([
       { id: "secure-1", name: "Secure Import", protocol: "ssh" },
@@ -2036,8 +2138,18 @@ describe("useImportExport", () => {
             zerotier: [],
           },
           tunnelChainTemplates: [
-            { name: "Chain Selected", layers: [], description: "keep", tags: [] },
-            { name: "Chain Skipped", layers: [], description: "drop", tags: [] },
+            {
+              name: "Chain Selected",
+              layers: [],
+              description: "keep",
+              tags: [],
+            },
+            {
+              name: "Chain Skipped",
+              layers: [],
+              description: "drop",
+              tags: [],
+            },
           ],
         }),
       ],
@@ -2097,7 +2209,12 @@ describe("useImportExport", () => {
             zerotier: [],
           },
           tunnelChainTemplates: [
-            { name: "Chain Blocked", layers: [], description: "blocked", tags: [] },
+            {
+              name: "Chain Blocked",
+              layers: [],
+              description: "blocked",
+              tags: [],
+            },
           ],
         }),
       ],
@@ -2477,7 +2594,9 @@ describe("useImportExport", () => {
 
     await act(async () => {
       await result.current.setSelectedImportDatabaseId("col-2");
-      result.current.updateImportOptions({ switchToTargetDatabaseAfterImport: true });
+      result.current.updateImportOptions({
+        switchToTargetDatabaseAfterImport: true,
+      });
     });
 
     const file = new File(["data"], "archive.json", {
@@ -2499,7 +2618,10 @@ describe("useImportExport", () => {
       type: "ADD_CONNECTION",
       payload: importedConns[0],
     });
-    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith("col-2", importedConns);
+    expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
+      "col-2",
+      importedConns,
+    );
     expect(mockSelectDatabase).toHaveBeenCalledWith("col-2");
     expect(mockLoadData).toHaveBeenCalled();
   });
@@ -2535,7 +2657,9 @@ describe("useImportExport", () => {
     mockImportConnections.mockResolvedValueOnce([
       { id: "conn-import-1", name: "Imported SSH", protocol: "ssh" },
     ]);
-    mockCreateWireGuard.mockRejectedValueOnce(new Error("duplicate WG profile"));
+    mockCreateWireGuard.mockRejectedValueOnce(
+      new Error("duplicate WG profile"),
+    );
     mockCreateZeroTier.mockRejectedValueOnce(new Error("duplicate ZT profile"));
     mockCreateTunnelChain
       .mockResolvedValueOnce({ id: "tc-1" })
@@ -2574,8 +2698,14 @@ describe("useImportExport", () => {
       payload: { id: "conn-import-1", name: "Imported SSH", protocol: "ssh" },
     });
     expect(mockCreateOpenVPN).toHaveBeenCalledWith("OpenVPN A", "ovpn-config");
-    expect(mockCreateWireGuard).toHaveBeenCalledWith("WireGuard A", "wg-config");
-    expect(mockCreateTailscale).toHaveBeenCalledWith("Tailscale A", "tail-config");
+    expect(mockCreateWireGuard).toHaveBeenCalledWith(
+      "WireGuard A",
+      "wg-config",
+    );
+    expect(mockCreateTailscale).toHaveBeenCalledWith(
+      "Tailscale A",
+      "tail-config",
+    );
     expect(mockCreateZeroTier).toHaveBeenCalledWith("ZeroTier A", "zt-config");
     expect(mockCreateTunnelChain).toHaveBeenCalledWith("Chain A", [], {
       description: "First chain",
@@ -2656,7 +2786,9 @@ describe("useImportExport", () => {
     mockDetectImportFormat.mockReturnValueOnce("json");
     mockCreateOpenVPN.mockRejectedValueOnce(new Error("duplicate ovpn"));
     mockCreateTailscale.mockRejectedValueOnce(new Error("duplicate tailnet"));
-    mockCreateTunnelChain.mockRejectedValueOnce(new Error("duplicate tunnel chain"));
+    mockCreateTunnelChain.mockRejectedValueOnce(
+      new Error("duplicate tunnel chain"),
+    );
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { result } = renderImportExport();
@@ -2780,17 +2912,19 @@ describe("useImportExport", () => {
       },
     ];
     mockGetExportableDatabases.mockResolvedValue(databases);
-    mockReadExportableSnapshot.mockImplementation(async (databaseId: string) => ({
-      collection: {
-        id: databaseId,
-        name: databaseId === "col-2" ? "Archive" : "Target",
-        isEncrypted: false,
-      },
-      connections: databaseId === "col-2" ? archiveConnections : [],
-      settings: {},
-      tabGroups: [],
-      colorTags: {},
-    }));
+    mockReadExportableSnapshot.mockImplementation(
+      async (databaseId: string) => ({
+        collection: {
+          id: databaseId,
+          name: databaseId === "col-2" ? "Archive" : "Target",
+          isEncrypted: false,
+        },
+        connections: databaseId === "col-2" ? archiveConnections : [],
+        settings: {},
+        tabGroups: [],
+        colorTags: {},
+      }),
+    );
 
     const { result } = renderImportExport({ initialTab: "clone" });
     await waitFor(() => {
@@ -2886,17 +3020,19 @@ describe("useImportExport", () => {
       },
     ];
     mockGetExportableDatabases.mockResolvedValue(databases);
-    mockReadExportableSnapshot.mockImplementation(async (databaseId: string) => ({
-      collection: {
-        id: databaseId,
-        name: databaseId === "col-2" ? "Archive" : "Target",
-        isEncrypted: false,
-      },
-      connections: databaseId === "col-2" ? archiveConnections : [],
-      settings: {},
-      tabGroups: [],
-      colorTags: {},
-    }));
+    mockReadExportableSnapshot.mockImplementation(
+      async (databaseId: string) => ({
+        collection: {
+          id: databaseId,
+          name: databaseId === "col-2" ? "Archive" : "Target",
+          isEncrypted: false,
+        },
+        connections: databaseId === "col-2" ? archiveConnections : [],
+        settings: {},
+        tabGroups: [],
+        colorTags: {},
+      }),
+    );
 
     const { result } = renderImportExport({ initialTab: "clone" });
     await waitFor(() => {
@@ -2917,13 +3053,16 @@ describe("useImportExport", () => {
       await result.current.handleClone();
     });
 
-    const cloned = mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[];
+    const cloned = mockAppendConnectionsToDatabase.mock
+      .calls[0][1] as Connection[];
     expect(cloned.map((connection) => connection.name)).toEqual([
       "Production",
       "Production SSH",
     ]);
-    expect(cloned.find((connection) => connection.name === "Production SSH")?.parentId)
-      .toBe("folder-prod");
+    expect(
+      cloned.find((connection) => connection.name === "Production SSH")
+        ?.parentId,
+    ).toBe("folder-prod");
   });
 
   it("handleClone clones selected sidecars and remaps cloned connection references", async () => {
@@ -3000,17 +3139,19 @@ describe("useImportExport", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
     mockGetExportableDatabases.mockResolvedValue(databases);
-    mockReadExportableSnapshot.mockImplementation(async (databaseId: string) => ({
-      collection: {
-        id: databaseId,
-        name: databaseId === "col-2" ? "Source" : "Target",
-        isEncrypted: false,
-      },
-      connections: databaseId === "col-2" ? sourceConnections : [],
-      settings: {},
-      tabGroups: [],
-      colorTags: {},
-    }));
+    mockReadExportableSnapshot.mockImplementation(
+      async (databaseId: string) => ({
+        collection: {
+          id: databaseId,
+          name: databaseId === "col-2" ? "Source" : "Target",
+          isEncrypted: false,
+        },
+        connections: databaseId === "col-2" ? sourceConnections : [],
+        settings: {},
+        tabGroups: [],
+        colorTags: {},
+      }),
+    );
     mockGetProfiles.mockReturnValue([proxyProfile]);
     mockGetProfile.mockReturnValue(proxyProfile);
     mockGetChains.mockReturnValue([proxyChain]);
@@ -3165,8 +3306,12 @@ describe("useImportExport", () => {
       "FileReader",
       class MockFileReader {
         result: string | ArrayBuffer | null = null;
-        onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
-        onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
+        onload:
+          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
+          | null = null;
+        onerror:
+          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
+          | null = null;
 
         readAsText() {
           this.onerror?.call(
@@ -3207,8 +3352,12 @@ describe("useImportExport", () => {
       "FileReader",
       class MockFileReader {
         result: string | ArrayBuffer | null = null;
-        onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
-        onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => any) | null = null;
+        onload:
+          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
+          | null = null;
+        onerror:
+          | ((this: FileReader, ev: ProgressEvent<FileReader>) => any)
+          | null = null;
 
         readAsText() {
           throw "plain reader failure";
@@ -3282,10 +3431,7 @@ describe("useImportExport", () => {
 
     const success = await unlockPromise!;
     expect(success).toBe(true);
-    expect(mockUnlockDatabase).toHaveBeenCalledWith(
-      "locked-1",
-      "right-secret",
-    );
+    expect(mockUnlockDatabase).toHaveBeenCalledWith("locked-1", "right-secret");
     // All three option lists were refreshed — getExportableDatabases
     // is called at least once per refresh × 3 lists, plus the
     // initial mount fetch.
