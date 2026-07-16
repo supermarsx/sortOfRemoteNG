@@ -83,7 +83,7 @@ describe("PowerShell Remoting settings schema", () => {
     expect(twice.warnings).toEqual([]);
   });
 
-  it("blocks Basic authentication over HTTP", () => {
+  it("blocks WSMan authentication over HTTP", () => {
     const settings = createDefaultPowerShellRemotingSettings();
     settings.wsman.scheme = "http";
     settings.wsman.port = 5985;

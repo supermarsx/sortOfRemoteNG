@@ -49,10 +49,8 @@ export function AuthenticationSection({
     value.transport === "ssh"
       ? (sshCapability?.status ?? "unsupported")
       : (selected?.status ?? "unsupported");
-  const basicOverHttp =
-    value.transport === "wsman" &&
-    value.wsman.scheme === "http" &&
-    value.wsman.authMethod === "basic";
+  const wsmanOverHttp =
+    value.transport === "wsman" && value.wsman.scheme === "http";
 
   return (
     <PowerShellEditorSection
@@ -92,8 +90,8 @@ export function AuthenticationSection({
           <FormField
             label="Authentication method"
             error={
-              basicOverHttp
-                ? "Basic authentication is blocked over HTTP. Select HTTPS first."
+              wsmanOverHttp
+                ? "WSMan authentication is blocked over HTTP. Select HTTPS first."
                 : undefined
             }
           >
@@ -226,10 +224,11 @@ export function AuthenticationSection({
         )}
       </div>
 
-      {basicOverHttp && (
+      {wsmanOverHttp && (
         <CapabilityNotice tone="error">
-          Basic authentication is blocked over HTTP because credentials would
-          not have transport confidentiality. Change the endpoint to HTTPS.
+          WSMan authentication is blocked over HTTP because NTLM and Basic
+          traffic require transport confidentiality. Change the endpoint to
+          HTTPS.
         </CapabilityNotice>
       )}
       {value.transport === "ssh" ? (
