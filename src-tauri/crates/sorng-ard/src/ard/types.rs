@@ -51,6 +51,34 @@ pub struct ArdRuntimeCapabilities {
     pub apple_account_native: ArdAppleAccountNativeCapabilities,
 }
 
+/// Truthful result of handing an Apple Account connection to Screen Sharing.
+///
+/// Opening the external application is not evidence that the user completed
+/// Apple Account authentication, two-factor approval, or a remote connection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArdNativeHandoffResult {
+    pub application_opened: bool,
+    pub application: String,
+    pub platform: String,
+    pub connection_established: bool,
+    pub accepts_password: bool,
+    pub target_prefilled: bool,
+}
+
+impl ArdNativeHandoffResult {
+    pub fn screen_sharing_opened() -> Self {
+        Self {
+            application_opened: true,
+            application: "Screen Sharing".into(),
+            platform: "macos".into(),
+            connection_established: false,
+            accepts_password: false,
+            target_prefilled: false,
+        }
+    }
+}
+
 impl ArdRuntimeCapabilities {
     pub fn current() -> Self {
         let native_available = cfg!(target_os = "macos");
@@ -357,5 +385,22 @@ mod tests {
             serde_json::to_string(&ArdAuthenticationMode::AppleAccountNative).unwrap(),
             "\"appleAccountNative\""
         );
+    }
+
+    #[test]
+    fn native_handoff_result_never_claims_authentication_or_connection() {
+        let result = ArdNativeHandoffResult::screen_sharing_opened();
+        assert!(result.application_opened);
+        assert_eq!(result.application, "Screen Sharing");
+        assert_eq!(result.platform, "macos");
+        assert!(!result.connection_established);
+        assert!(!result.accepts_password);
+        assert!(!result.target_prefilled);
+
+        let json = serde_json::to_value(result).unwrap();
+        assert_eq!(json["applicationOpened"], true);
+        assert_eq!(json["connectionEstablished"], false);
+        assert_eq!(json["acceptsPassword"], false);
+        assert_eq!(json["targetPrefilled"], false);
     }
 }

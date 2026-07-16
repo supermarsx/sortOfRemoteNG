@@ -37,6 +37,7 @@ dependencies = [
  "cfg-if 1.0.4",
  "cipher 0.4.4",
  "cpufeatures 0.2.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -9429,12 +9430,14 @@ dependencies = [
  "num_enum",
  "pbkdf2 0.12.2",
  "rand 0.8.6",
+ "secrecy",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

@@ -2,7 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArdClientModel } from "../../hooks/protocol/useArdClient";
 import type { ConnectionSession } from "../../types/connection/connection";
-import { DEFAULT_ARD_SETTINGS } from "../../types/protocols/ard";
+import {
+  DEFAULT_ARD_SETTINGS,
+  type ArdRuntimeCapabilities,
+} from "../../types/protocols/ard";
 
 const { hookMock } = vi.hoisted(() => ({ hookMock: vi.fn() }));
 
@@ -22,6 +25,23 @@ const session = {
   hostname: "mac.example.test",
 } as ConnectionSession;
 
+const nativeCapabilities: ArdRuntimeCapabilities = {
+  embeddedRfb: {
+    available: true,
+    authenticationModes: ["macOsAccount", "vncPassword"],
+    acceptsAppleAccountCredentials: false,
+    supportsNetworkPath: false,
+    networkPathReason: "direct only",
+  },
+  appleAccountNative: {
+    available: true,
+    requiresMacOs: true,
+    acceptsPassword: false,
+    targetPrefillSupported: false,
+    reason: "Authentication remains in Screen Sharing.",
+  },
+};
+
 const createModel = (): ArdClientModel => ({
   canvasRef: { current: null },
   status: "connected",
@@ -30,6 +50,7 @@ const createModel = (): ArdClientModel => ({
   backendSessionId: "backend-ard-1",
   settings: { ...DEFAULT_ARD_SETTINGS },
   capabilities: null,
+  nativeHandoffResult: null,
   stats: {
     bytesSent: 10,
     bytesReceived: 20,
@@ -43,7 +64,14 @@ const createModel = (): ArdClientModel => ({
   setClipboard: vi.fn().mockResolvedValue(undefined),
   setCurtainMode: vi.fn().mockResolvedValue(undefined),
   disconnect: vi.fn().mockResolvedValue(undefined),
-  launchNativeScreenSharing: vi.fn().mockResolvedValue(undefined),
+  launchNativeScreenSharing: vi.fn().mockResolvedValue({
+    applicationOpened: true,
+    application: "Screen Sharing",
+    platform: "macos",
+    connectionEstablished: false,
+    acceptsPassword: false,
+    targetPrefilled: false,
+  }),
 });
 
 beforeEach(() => {
@@ -71,6 +99,7 @@ describe("ArdClient", () => {
       ...model.settings,
       authMode: "appleAccountNative",
     };
+    model.capabilities = nativeCapabilities;
     model.launchNativeScreenSharing = vi
       .fn()
       .mockRejectedValue(new Error("Apple Screen Sharing requires macOS"));
@@ -78,15 +107,106 @@ describe("ArdClient", () => {
 
     render(<ArdClient session={session} />);
     expect(
-      screen.getByText(/neither asks for nor forwards/),
+      screen.getByText(/password, two-factor approval/),
     ).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Apple Screen Sharing" }),
+      screen.getByRole("button", { name: "Open / focus Screen Sharing" }),
     );
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent(
         "Apple Screen Sharing requires macOS",
       ),
     );
+  });
+
+  it("copies the saved account and invokes every explicit open or focus request", async () => {
+    const model = createModel();
+    model.status = "nativeHandoff";
+    model.settings = {
+      ...model.settings,
+      authMode: "appleAccountNative",
+      appleAccountIdentifier: "person@example.test",
+    };
+    model.nativeHandoffResult = {
+      applicationOpened: true,
+      application: "Screen Sharing",
+      platform: "macos",
+      connectionEstablished: false,
+      acceptsPassword: false,
+      targetPrefilled: false,
+    };
+    model.capabilities = nativeCapabilities;
+    hookMock.mockReturnValue(model);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: vi.fn(), writeText },
+    });
+
+    render(<ArdClient session={session} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy Apple Account" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("person@example.test"),
+    );
+
+    const open = screen.getByRole("button", {
+      name: "Open / focus Screen Sharing",
+    });
+    fireEvent.click(open);
+    fireEvent.click(open);
+    await waitFor(() =>
+      expect(model.launchNativeScreenSharing).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      screen.getByText(/confirms only the application handoff/i),
+    ).toBeInTheDocument();
+  });
+
+  it("disables the native action when runtime capabilities reject the platform", () => {
+    const model = createModel();
+    model.status = "error";
+    model.settings = {
+      ...model.settings,
+      authMode: "appleAccountNative",
+    };
+    model.capabilities = {
+      ...nativeCapabilities,
+      appleAccountNative: {
+        ...nativeCapabilities.appleAccountNative,
+        available: false,
+        reason: "Screen Sharing requires macOS.",
+      },
+    };
+    hookMock.mockReturnValue(model);
+
+    render(<ArdClient session={session} />);
+    const open = screen.getByRole("button", {
+      name: "Open / focus Screen Sharing",
+    });
+    expect(open).toBeDisabled();
+    fireEvent.click(open);
+    expect(model.launchNativeScreenSharing).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Screen Sharing requires macOS."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the native action disabled while capabilities are loading", () => {
+    const model = createModel();
+    model.status = "nativeHandoff";
+    model.settings = {
+      ...model.settings,
+      authMode: "appleAccountNative",
+    };
+    model.capabilities = null;
+    hookMock.mockReturnValue(model);
+
+    render(<ArdClient session={session} />);
+    const open = screen.getByRole("button", {
+      name: "Open / focus Screen Sharing",
+    });
+    expect(open).toBeDisabled();
+    fireEvent.click(open);
+    expect(model.launchNativeScreenSharing).not.toHaveBeenCalled();
   });
 });

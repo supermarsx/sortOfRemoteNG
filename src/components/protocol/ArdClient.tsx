@@ -37,6 +37,7 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
 }) => {
   const model = useArdClient(session);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const pendingPointerRef = useRef<{ x: number; y: number } | null>(null);
   const pointerFrameRef = useRef<number | null>(null);
   const connected = model.status === "connected";
@@ -109,8 +110,25 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
   const openNativeScreenSharing = async () => {
     try {
       setActionError(null);
+      setActionNotice(null);
       await model.launchNativeScreenSharing();
     } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const appleAccountIdentifier =
+    model.settings.appleAccountIdentifier?.trim() ?? "";
+  const copyAppleAccountIdentifier = async () => {
+    if (!appleAccountIdentifier) return;
+    try {
+      setActionError(null);
+      await navigator.clipboard.writeText(appleAccountIdentifier);
+      setActionNotice(
+        "Apple Account copied. Paste it into Screen Sharing's New Connection field.",
+      );
+    } catch (cause) {
+      setActionNotice(null);
       setActionError(cause instanceof Error ? cause.message : String(cause));
     }
   };
@@ -175,6 +193,15 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
         </div>
       )}
 
+      {actionNotice && (
+        <div
+          className="border-b border-success/30 bg-success/10 px-3 py-2 text-xs text-success"
+          role="status"
+        >
+          {actionNotice}
+        </div>
+      )}
+
       {nativeHandoff || model.settings.authMode === "appleAccountNative" ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-8">
           <div className="max-w-xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
@@ -186,17 +213,52 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
               Apple Account Screen Sharing
             </h2>
             <p className="mb-4 text-sm text-[var(--color-textSecondary)]">
-              Apple Account identity is handled only by Apple&apos;s Screen
-              Sharing app on macOS. SortOfRemoteNG neither asks for nor forwards
-              your Apple Account password as an ARD credential.
+              SortOfRemoteNG can open or focus Apple&apos;s Screen Sharing app,
+              but it cannot prefill or authenticate an Apple Account. Your
+              password, two-factor approval, and connection approval stay
+              entirely inside Apple&apos;s app.
             </p>
-            <button
-              type="button"
-              className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground"
-              onClick={() => void openNativeScreenSharing()}
-            >
-              Open Apple Screen Sharing
-            </button>
+            {appleAccountIdentifier ? (
+              <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-left">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-textMuted)]">
+                  Saved Apple Account reference
+                </div>
+                <code className="mt-1 block break-all text-sm text-[var(--color-text)]">
+                  {appleAccountIdentifier}
+                </code>
+              </div>
+            ) : (
+              <p className="mb-4 text-xs text-[var(--color-textMuted)]">
+                No Apple Account reference is saved. Add one in the connection
+                editor or enter it directly in Screen Sharing.
+              </p>
+            )}
+            <div className="flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] px-4 py-2 text-sm disabled:opacity-50"
+                disabled={!appleAccountIdentifier}
+                onClick={() => void copyAppleAccountIdentifier()}
+              >
+                <Clipboard size={14} aria-hidden /> Copy Apple Account
+              </button>
+              <button
+                type="button"
+                className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={
+                  model.capabilities?.appleAccountNative.available !== true
+                }
+                onClick={() => void openNativeScreenSharing()}
+              >
+                Open / focus Screen Sharing
+              </button>
+            </div>
+            {model.nativeHandoffResult?.applicationOpened ? (
+              <p className="mt-3 text-xs text-[var(--color-textMuted)]">
+                Screen Sharing opened. This confirms only the application
+                handoff, not authentication or a remote connection.
+              </p>
+            ) : null}
             {model.capabilities &&
             !model.capabilities.appleAccountNative.available ? (
               <p className="mt-3 text-xs text-[var(--color-warning)]">

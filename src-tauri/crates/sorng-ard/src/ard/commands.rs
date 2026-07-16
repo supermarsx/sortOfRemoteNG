@@ -47,7 +47,7 @@ pub async fn connect_ard(
         host: host.clone(),
         port: ard_port,
         username: username.clone(),
-        password,
+        password: secrecy::SecretString::new(password),
         connection_id: conn_id.clone(),
         authentication_mode: auth_mode,
         auto_reconnect: auto_reconnect.unwrap_or(true),
@@ -502,24 +502,32 @@ pub async fn get_ard_runtime_capabilities() -> Result<ArdRuntimeCapabilities, St
 /// Hand Apple Account Screen Sharing off to Apple's native macOS app.
 ///
 /// No Apple Account identifier or password is accepted by this command. The
-/// user completes identity selection, authentication, and approval inside
-/// Screen Sharing.app.
+/// user completes identity selection, authentication, two-factor approval,
+/// and the connection itself inside Screen Sharing.app.
 #[tauri::command]
-pub async fn launch_apple_account_screen_sharing() -> Result<(), String> {
-    launch_native_screen_sharing()
+pub async fn launch_apple_account_screen_sharing() -> Result<ArdNativeHandoffResult, String> {
+    launch_native_screen_sharing().await
 }
 
 #[cfg(target_os = "macos")]
-fn launch_native_screen_sharing() -> Result<(), String> {
-    std::process::Command::new("open")
+async fn launch_native_screen_sharing() -> Result<ArdNativeHandoffResult, String> {
+    let status = tokio::process::Command::new("/usr/bin/open")
         .args(["-a", "Screen Sharing"])
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Could not open Apple's Screen Sharing app: {error}"))
+        .status()
+        .await
+        .map_err(|error| format!("Could not open Apple's Screen Sharing app: {error}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "Apple's Screen Sharing launcher exited unsuccessfully ({status})"
+        ));
+    }
+
+    Ok(ArdNativeHandoffResult::screen_sharing_opened())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn launch_native_screen_sharing() -> Result<(), String> {
+async fn launch_native_screen_sharing() -> Result<ArdNativeHandoffResult, String> {
     Err("Apple Account Screen Sharing is available only through Apple's Screen Sharing app on macOS. Use remote macOS account or dedicated VNC-password authentication for the embedded ARD viewer on this platform.".into())
 }
 
@@ -583,9 +591,9 @@ mod tests {
     }
 
     #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn native_apple_account_handoff_fails_explicitly_off_macos() {
-        let error = launch_native_screen_sharing().unwrap_err();
+    #[tokio::test]
+    async fn native_apple_account_handoff_fails_explicitly_off_macos() {
+        let error = launch_native_screen_sharing().await.unwrap_err();
         assert!(error.contains("only"));
         assert!(error.contains("macOS"));
     }

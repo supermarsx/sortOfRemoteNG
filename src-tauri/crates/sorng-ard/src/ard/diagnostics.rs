@@ -2,7 +2,7 @@
 //!
 //! Performs a multi-step probe against a remote ARD/VNC server, reporting
 //! the status of each phase: DNS resolution, TCP connect, RFB version
-//! handshake, security type negotiation, and ARD authentication.
+//! handshake, security type negotiation, and authentication availability.
 //!
 //! Uses the shared `sorng_core::diagnostics` infrastructure.
 
@@ -10,8 +10,10 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
+use secrecy::SecretString;
 use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
+use super::auth;
 use super::rfb;
 
 // Re-export for convenience.
@@ -22,6 +24,11 @@ const DIAG_TCP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Default RFB read timeout during diagnostics.
 const DIAG_RFB_TIMEOUT: Duration = Duration::from_secs(5);
+
+const AUTH_PROBE_STEP_NAME: &str = "Authentication Availability";
+const AUTH_PROBE_PASS_MESSAGE: &str =
+    "Authentication mechanism is available; credentials were not submitted";
+const AUTH_PROBE_FAIL_MESSAGE: &str = "Authentication availability probe failed";
 
 /// Run a deep diagnostic probe against an ARD / VNC server.
 ///
@@ -36,15 +43,17 @@ pub async fn diagnose_ard_connection(
 ) -> Result<DiagnosticReport, String> {
     let h = host.clone();
     let p = port.unwrap_or(5900);
-    let u = username.unwrap_or_default();
-    let pw = password.unwrap_or_default();
+    // Preserve the existing command contract, but never submit credentials in
+    // a probe that only inspects the server's challenge or DH parameters.
+    drop(username);
+    drop(SecretString::new(password.unwrap_or_default()));
 
-    tokio::task::spawn_blocking(move || run_diagnostics(&h, p, &u, &pw))
+    tokio::task::spawn_blocking(move || run_diagnostics(&h, p))
         .await
         .map_err(|e| format!("Diagnostic task panicked: {e}"))
 }
 
-fn run_diagnostics(host: &str, port: u16, username: &str, password: &str) -> DiagnosticReport {
+fn run_diagnostics(host: &str, port: u16) -> DiagnosticReport {
     let run_start = Instant::now();
     let mut steps: Vec<DiagnosticStep> = Vec::new();
     let mut resolved_ip: Option<String> = None;
@@ -144,38 +153,27 @@ fn run_diagnostics(host: &str, port: u16, username: &str, password: &str) -> Dia
         }
     };
 
-    // ── Step 5: Authentication Probe ─────────────────────────────────
+    // ── Step 5: Authentication Availability Probe ────────────────────
     let t = Instant::now();
-    if !username.is_empty() && !password.is_empty() {
-        let auth_result = probe_authentication(&mut stream, security_type, username, password);
-        match auth_result {
-            Ok(detail) => {
-                steps.push(DiagnosticStep {
-                    name: "ARD Authentication".into(),
-                    status: "pass".into(),
-                    message: "Authentication succeeded".into(),
-                    duration_ms: t.elapsed().as_millis() as u64,
-                    detail: Some(detail),
-                });
-            }
-            Err(e) => {
-                steps.push(DiagnosticStep {
-                    name: "ARD Authentication".into(),
-                    status: "fail".into(),
-                    message: e.to_string(),
-                    duration_ms: t.elapsed().as_millis() as u64,
-                    detail: None,
-                });
-            }
+    match probe_authentication_availability(&mut stream, security_type) {
+        Ok(detail) => {
+            steps.push(DiagnosticStep {
+                name: AUTH_PROBE_STEP_NAME.into(),
+                status: "pass".into(),
+                message: AUTH_PROBE_PASS_MESSAGE.into(),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: Some(detail),
+            });
         }
-    } else {
-        steps.push(DiagnosticStep {
-            name: "ARD Authentication".into(),
-            status: "skip".into(),
-            message: "Skipped (no credentials provided)".into(),
-            duration_ms: 0,
-            detail: None,
-        });
+        Err(error) => {
+            steps.push(DiagnosticStep {
+                name: AUTH_PROBE_STEP_NAME.into(),
+                status: "fail".into(),
+                message: AUTH_PROBE_FAIL_MESSAGE.into(),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: Some(error),
+            });
+        }
     }
 
     // ── Step 6: Server capabilities check ────────────────────────────
@@ -286,15 +284,16 @@ fn probe_security_types(
     }
 }
 
-/// Probe authentication.
-fn probe_authentication(
+/// Probe whether the selected authentication mechanism is available.
+///
+/// This deliberately does not submit a username or password and therefore
+/// must never report that authentication itself succeeded.
+fn probe_authentication_availability(
     stream: &mut TcpStream,
     security_type: u8,
-    _username: &str,
-    _password: &str,
 ) -> Result<String, String> {
     match security_type {
-        rfb::security::NONE => Ok("No authentication required".into()),
+        rfb::security::NONE => Ok("Server selected no authentication".into()),
 
         rfb::security::VNC_AUTH => {
             // Read 16-byte challenge.
@@ -303,9 +302,10 @@ fn probe_authentication(
                 .read_exact(&mut challenge)
                 .map_err(|e| format!("Read VNC challenge: {e}"))?;
 
-            // The actual encryption would use DES — for diagnostics
-            // we just check the server accepted the VNC auth type.
-            Ok("VNC authentication available (challenge received)".into())
+            Ok(
+                "VNC authentication challenge received; credentials were not submitted"
+                    .into(),
+            )
         }
 
         rfb::security::ARD_AUTH => {
@@ -320,7 +320,10 @@ fn probe_authentication(
             stream
                 .read_exact(&mut key_len_buf)
                 .map_err(|e| format!("Read ARD key length: {e}"))?;
-            let key_len = u16::from_be_bytes(key_len_buf) as usize;
+            let key_len = auth::validate_ard_key_length(
+                u16::from_be_bytes(key_len_buf) as usize,
+            )
+            .map_err(|error| error.to_string())?;
 
             let mut prime = vec![0u8; key_len];
             stream
@@ -333,7 +336,7 @@ fn probe_authentication(
                 .map_err(|e| format!("Read ARD peer key: {e}"))?;
 
             Ok(format!(
-                "ARD DH+AES authentication available (generator={gen}, key_len={key_len})"
+                "ARD DH+AES parameters received (generator={gen}, key_len={key_len}); credentials were not submitted"
             ))
         }
 
@@ -452,5 +455,14 @@ mod tests {
         let summary = diagnostics_summary(&report);
         assert!(summary.contains("1/2 passed"));
         assert!(summary.contains("TCP"));
+    }
+
+    #[test]
+    fn authentication_probe_copy_never_claims_a_successful_login() {
+        assert_eq!(AUTH_PROBE_STEP_NAME, "Authentication Availability");
+        assert!(AUTH_PROBE_PASS_MESSAGE.contains("credentials were not submitted"));
+        assert!(!AUTH_PROBE_PASS_MESSAGE.to_lowercase().contains("succeeded"));
+        assert!(!AUTH_PROBE_PASS_MESSAGE.to_lowercase().contains("successful"));
+        assert!(!AUTH_PROBE_FAIL_MESSAGE.to_lowercase().contains("succeeded"));
     }
 }

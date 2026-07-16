@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -47,13 +48,16 @@ const FRAME_CHANNEL_SIZE: usize = 8;
 /// Framebuffer update request interval.
 const FB_REQUEST_INTERVAL: Duration = Duration::from_millis(33); // ~30 fps
 
+/// Refuse attacker-controlled failure strings large enough to exhaust memory.
+const MAX_FAILURE_REASON_BYTES: u32 = 16 * 1024;
+
 /// Configuration for a new ARD session.
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub connection_id: String,
     pub authentication_mode: ArdAuthenticationMode,
     /// Preferred pixel format (or None to use server default).
@@ -72,7 +76,7 @@ impl Default for SessionConfig {
             host: String::new(),
             port: DEFAULT_ARD_PORT,
             username: String::new(),
-            password: String::new(),
+            password: SecretString::new(String::new()),
             connection_id: String::new(),
             authentication_mode: ArdAuthenticationMode::MacOsAccount,
             pixel_format: None,
@@ -100,14 +104,14 @@ pub fn validate_session_config(config: &SessionConfig) -> Result<(), ArdError> {
                     "macOS account authentication requires the username of an account on the remote Mac".into(),
                 ));
             }
-            if config.password.is_empty() {
+            if config.password.expose_secret().is_empty() {
                 return Err(ArdError::Auth(
                     "macOS account authentication requires the remote Mac account password".into(),
                 ));
             }
         }
         ArdAuthenticationMode::VncPassword => {
-            if config.password.is_empty() {
+            if config.password.expose_secret().is_empty() {
                 return Err(ArdError::Auth(
                     "VNC authentication requires the dedicated Screen Sharing VNC password".into(),
                 ));
@@ -284,11 +288,7 @@ async fn run_session(
 
     // ── RFB handshake ────────────────────────────────────────────────
     let server_version = conn.read_version()?;
-    let client_version = match server_version {
-        RfbVersion::V3_3 => RfbVersion::V3_3,
-        RfbVersion::V3_7 => RfbVersion::V3_7,
-        RfbVersion::V3_8 => RfbVersion::V3_8,
-    };
+    let client_version = server_version;
     conn.write_version(&client_version)?;
 
     log::info!(
@@ -296,16 +296,21 @@ async fn run_session(
     );
 
     // ── Security negotiation ─────────────────────────────────────────
-    let security_type = negotiate_security(&mut conn, &client_version, config.authentication_mode)?;
+    let security_type = negotiate_security(
+        &mut conn,
+        &client_version,
+        config.authentication_mode,
+        config.password.expose_secret(),
+    )?;
     log::info!("[ARD {session_id}] Security type: {security_type}");
 
     // ── Authentication ───────────────────────────────────────────────
     match security_type {
         rfb::security::VNC_AUTH => {
-            auth::auth_vnc(&mut conn, &config.password)?;
+            auth::auth_vnc(&mut conn, config.password.expose_secret())?;
         }
         rfb::security::ARD_AUTH => {
-            auth::auth_ard(&mut conn, &config.username, &config.password)?;
+            auth::auth_ard(&mut conn, &config.username, config.password.expose_secret())?;
         }
         other => {
             return Err(ArdError::UnsupportedSecurity(other));
@@ -316,12 +321,12 @@ async fn run_session(
     // SecurityResult. Only 3.8 guarantees a length-prefixed failure reason.
     let result = conn.read_u32()?;
     if result != 0 {
-        let reason = if matches!(client_version, RfbVersion::V3_8) {
-            let reason = read_failure_reason(&mut conn);
-            reason
+        let raw_reason = if matches!(client_version, RfbVersion::V3_8) {
+            read_failure_reason(&mut conn)
         } else {
             format!("server returned security result {result}")
         };
+        let reason = sanitize_server_failure_reason(&raw_reason, config.password.expose_secret());
         return Err(ArdError::Auth(format!("Authentication failed: {reason}")));
     }
 
@@ -393,6 +398,7 @@ fn negotiate_security(
     conn: &mut RfbConnection,
     version: &RfbVersion,
     authentication_mode: ArdAuthenticationMode,
+    password: &str,
 ) -> Result<u8, ArdError> {
     match version {
         RfbVersion::V3_3 => {
@@ -405,7 +411,7 @@ fn negotiate_security(
             // Read list of supported types.
             let n = conn.read_u8()?;
             if n == 0 {
-                let reason = read_failure_reason(conn);
+                let reason = sanitize_server_failure_reason(&read_failure_reason(conn), password);
                 return Err(ArdError::Protocol(format!(
                     "Server rejected connection: {reason}"
                 )));
@@ -474,15 +480,53 @@ fn authentication_mode_label(authentication_mode: ArdAuthenticationMode) -> &'st
 /// Read a failure reason string (u32 length-prefixed).
 fn read_failure_reason(conn: &mut RfbConnection) -> String {
     match conn.read_u32() {
-        Ok(len) => {
-            let mut buf = vec![0u8; len as usize];
-            if conn.read_exact(&mut buf).is_ok() {
-                String::from_utf8_lossy(&buf).into_owned()
-            } else {
-                "(could not read reason)".into()
+        Ok(declared_len) => match checked_failure_reason_length(declared_len) {
+            Some(len) => {
+                let mut buf = vec![0u8; len];
+                if conn.read_exact(&mut buf).is_ok() {
+                    String::from_utf8_lossy(&buf).into_owned()
+                } else {
+                    "(could not read reason)".into()
+                }
             }
-        }
+            None => format!(
+                "(reason omitted: declared length {declared_len} exceeds {MAX_FAILURE_REASON_BYTES} bytes)"
+            ),
+        },
         Err(_) => "(no reason provided)".into(),
+    }
+}
+
+fn checked_failure_reason_length(len: u32) -> Option<usize> {
+    (len <= MAX_FAILURE_REASON_BYTES).then_some(len as usize)
+}
+
+/// Redact the configured credential and collapse control characters before an
+/// untrusted server reason reaches logs or frontend status events.
+fn sanitize_server_failure_reason(reason: &str, password: &str) -> String {
+    let redacted = if password.is_empty() {
+        reason.to_owned()
+    } else {
+        reason.replace(password, "[redacted password]")
+    };
+    let without_controls: String = redacted
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect();
+    let normalized = without_controls
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalized.is_empty() {
+        "(empty reason)".into()
+    } else {
+        normalized
     }
 }
 
@@ -949,7 +993,7 @@ mod tests {
 
     #[test]
     fn max_reconnect_attempts_value() {
-        assert!(MAX_RECONNECT_ATTEMPTS >= 3);
+        const { assert!(MAX_RECONNECT_ATTEMPTS >= 3) };
     }
 
     #[test]
@@ -964,7 +1008,7 @@ mod tests {
             host: "10.0.0.1".into(),
             port: 5900,
             username: "admin".into(),
-            password: "secret".into(),
+            password: SecretString::new("secret".into()),
             connection_id: "conn-1".into(),
             ..Default::default()
         };
@@ -1020,13 +1064,14 @@ mod tests {
         let config = SessionConfig {
             host: "mac.example".into(),
             username: "person@example.com".into(),
-            password: "must-not-be-forwarded".into(),
+            password: SecretString::new("must-not-be-forwarded".into()),
             authentication_mode: ArdAuthenticationMode::AppleAccountNative,
             ..Default::default()
         };
         let error = validate_session_config(&config).unwrap_err().to_string();
         assert!(error.contains("not an ARD/RFB credential"));
         assert!(error.contains("never collects or forwards"));
+        assert!(!error.contains("must-not-be-forwarded"));
     }
 
     #[test]
@@ -1034,7 +1079,7 @@ mod tests {
         let mac_os = SessionConfig {
             host: "mac.example".into(),
             username: "alice".into(),
-            password: "secret".into(),
+            password: SecretString::new("secret".into()),
             authentication_mode: ArdAuthenticationMode::MacOsAccount,
             ..Default::default()
         };
@@ -1042,10 +1087,47 @@ mod tests {
 
         let vnc = SessionConfig {
             host: "mac.example".into(),
-            password: "vnc-secret".into(),
+            password: SecretString::new("vnc-secret".into()),
             authentication_mode: ArdAuthenticationMode::VncPassword,
             ..Default::default()
         };
         assert!(validate_session_config(&vnc).is_ok());
+    }
+
+    #[test]
+    fn session_config_debug_redacts_embedded_password() {
+        let secret = "debug-must-never-contain-this-password";
+        let config = SessionConfig {
+            host: "mac.example".into(),
+            username: "alice".into(),
+            password: SecretString::new(secret.into()),
+            ..Default::default()
+        };
+
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains(secret));
+        assert!(rendered.contains("Secret"));
+    }
+
+    #[test]
+    fn server_failure_reason_is_bounded_control_safe_and_password_redacted() {
+        assert_eq!(
+            checked_failure_reason_length(MAX_FAILURE_REASON_BYTES),
+            Some(MAX_FAILURE_REASON_BYTES as usize)
+        );
+        assert_eq!(
+            checked_failure_reason_length(MAX_FAILURE_REASON_BYTES + 1),
+            None
+        );
+        assert_eq!(checked_failure_reason_length(u32::MAX), None);
+
+        let password = "server-must-not-echo-this-password";
+        let reason = sanitize_server_failure_reason(
+            &format!("Rejected\r\n{password}\0\ttry again"),
+            password,
+        );
+        assert_eq!(reason, "Rejected [redacted password] try again");
+        assert!(!reason.contains(password));
+        assert!(!reason.chars().any(char::is_control));
     }
 }

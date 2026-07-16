@@ -7,9 +7,24 @@
 
 use md5::{Digest as Md5Digest, Md5};
 use rand::RngCore;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::errors::ArdError;
 use super::rfb::RfbConnection;
+
+/// Apple ARD commonly uses 128-byte DH parameters. Allow up to 2048-bit
+/// variants while bounding the cost of the bespoke big-integer operations.
+pub(crate) const MAX_ARD_DH_KEY_BYTES: usize = 256;
+
+pub(crate) fn validate_ard_key_length(key_len: usize) -> Result<usize, ArdError> {
+    if (1..=MAX_ARD_DH_KEY_BYTES).contains(&key_len) {
+        Ok(key_len)
+    } else {
+        Err(ArdError::DiffieHellman(format!(
+            "server declared invalid DH key length {key_len} bytes (expected 1..={MAX_ARD_DH_KEY_BYTES})"
+        )))
+    }
+}
 
 /// VNC DES challenge-response authentication.
 pub fn auth_vnc(conn: &mut RfbConnection, password: &str) -> Result<(), ArdError> {
@@ -18,18 +33,20 @@ pub fn auth_vnc(conn: &mut RfbConnection, password: &str) -> Result<(), ArdError
     conn.read_exact(&mut challenge)?;
 
     // VNC passwords are truncated/padded to 8 bytes and bit-reversed.
-    let mut key = [0u8; 8];
+    let mut key = Zeroizing::new([0u8; 8]);
     let pw_bytes = password.as_bytes();
     for i in 0..8.min(pw_bytes.len()) {
         key[i] = reverse_bits(pw_bytes[i]);
     }
 
     // Encrypt both 8-byte halves with DES.
-    let mut response = [0u8; 16];
-    response[..8].copy_from_slice(&des_encrypt_block(&key, &challenge[..8]));
-    response[8..].copy_from_slice(&des_encrypt_block(&key, &challenge[8..]));
+    let mut response = Zeroizing::new([0u8; 16]);
+    let first_half = des_encrypt_block(&key, &challenge[..8]);
+    let second_half = des_encrypt_block(&key, &challenge[8..]);
+    response[..8].copy_from_slice(&first_half[..]);
+    response[8..].copy_from_slice(&second_half[..]);
 
-    conn.write_all(&response)
+    conn.write_all(&response[..])
 }
 
 /// ARD Diffie-Hellman + AES-128-CBC authentication (security type 30).
@@ -41,7 +58,7 @@ pub fn auth_ard(conn: &mut RfbConnection, username: &str, password: &str) -> Res
 
     let mut key_len_buf = [0u8; 2];
     conn.read_exact(&mut key_len_buf)?;
-    let key_len = u16::from_be_bytes(key_len_buf) as usize;
+    let key_len = validate_ard_key_length(u16::from_be_bytes(key_len_buf) as usize)?;
 
     let mut prime_bytes = vec![0u8; key_len];
     conn.read_exact(&mut prime_bytes)?;
@@ -55,20 +72,22 @@ pub fn auth_ard(conn: &mut RfbConnection, username: &str, password: &str) -> Res
 
     // 2) Generate our DH key pair.
     let mut rng = rand::thread_rng();
-    let mut private_bytes = vec![0u8; key_len];
-    rng.fill_bytes(&mut private_bytes);
-    let private_key = BigUint::from_bytes_be(&private_bytes);
+    let mut private_bytes = Zeroizing::new(vec![0u8; key_len]);
+    rng.fill_bytes(private_bytes.as_mut_slice());
+    let private_key = BigUint::from_bytes_be(private_bytes.as_slice());
 
     let public_key = mod_pow(&gen, &private_key, &prime);
     let shared_secret = mod_pow(&peer_key, &private_key, &prime);
 
     // 3) Derive AES key from MD5(shared_secret).
-    let secret_bytes = shared_secret.to_bytes_be(key_len);
-    let md5_hash = Md5::digest(&secret_bytes);
-    let aes_key: [u8; 16] = md5_hash.into();
+    let secret_bytes = Zeroizing::new(shared_secret.to_bytes_be(key_len));
+    let mut md5_hash = Md5::digest(secret_bytes.as_slice());
+    let mut aes_key = Zeroizing::new([0u8; 16]);
+    aes_key.copy_from_slice(&md5_hash);
+    md5_hash.as_mut_slice().zeroize();
 
     // 4) Encrypt credentials: 64 bytes username + 64 bytes password.
-    let mut credentials = [0u8; 128];
+    let mut credentials = Zeroizing::new([0u8; 128]);
     let user_bytes = username.as_bytes();
     let pass_bytes = password.as_bytes();
     credentials[..user_bytes.len().min(64)]
@@ -78,32 +97,36 @@ pub fn auth_ard(conn: &mut RfbConnection, username: &str, password: &str) -> Res
 
     // AES-128-CBC with zero IV.
     let iv = [0u8; 16];
-    let encrypted = aes_cbc_encrypt(&aes_key, &iv, &credentials)?;
+    let encrypted = aes_cbc_encrypt(&aes_key, &iv, &credentials[..])?;
 
     // 5) Send: client public key + encrypted credentials.
     let pub_key_bytes = public_key.to_bytes_be(key_len);
     conn.write_all(&pub_key_bytes)?;
-    conn.write_all(&encrypted)?;
+    conn.write_all(encrypted.as_slice())?;
 
     Ok(())
 }
 
 /// AES-128-CBC encryption.
-fn aes_cbc_encrypt(key: &[u8; 16], iv: &[u8; 16], data: &[u8]) -> Result<Vec<u8>, ArdError> {
+fn aes_cbc_encrypt(
+    key: &[u8; 16],
+    iv: &[u8; 16],
+    data: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, ArdError> {
     use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
     type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 
     // Data must be a multiple of 16 bytes.
     let padded_len = data.len().div_ceil(16) * 16;
-    let mut buf = vec![0u8; padded_len];
+    let mut buf = Zeroizing::new(vec![0u8; padded_len]);
     buf[..data.len()].copy_from_slice(data);
 
     let cipher = Aes128CbcEnc::new(key.into(), iv.into());
-    let encrypted = cipher
-        .encrypt_padded_mut::<NoPadding>(&mut buf, padded_len)
+    cipher
+        .encrypt_padded_mut::<NoPadding>(buf.as_mut_slice(), padded_len)
         .map_err(|e| ArdError::Auth(format!("AES encrypt: {e}")))?;
 
-    Ok(encrypted.to_vec())
+    Ok(buf)
 }
 
 // ── VNC DES implementation ───────────────────────────────────────────────
@@ -120,14 +143,14 @@ fn reverse_bits(b: u8) -> u8 {
 }
 
 /// Single DES block encryption (VNC uses only ECB, two 8-byte blocks).
-fn des_encrypt_block(key: &[u8; 8], block: &[u8]) -> [u8; 8] {
+fn des_encrypt_block(key: &[u8; 8], block: &[u8]) -> Zeroizing<[u8; 8]> {
     let subkeys = des_key_schedule(key);
-    let mut data = [0u8; 8];
+    let mut data = Zeroizing::new([0u8; 8]);
     data.copy_from_slice(&block[..8]);
     des_encrypt_with_subkeys(&data, &subkeys)
 }
 
-fn des_key_schedule(key: &[u8; 8]) -> [[u8; 6]; 16] {
+fn des_key_schedule(key: &[u8; 8]) -> Zeroizing<[[u8; 6]; 16]> {
     // PC-1 permutation: 56 bits from 64-bit key
     const PC1: [u8; 56] = [
         57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35, 27, 19, 11, 3,
@@ -141,17 +164,18 @@ fn des_key_schedule(key: &[u8; 8]) -> [[u8; 6]; 16] {
     ];
     const LEFT_SHIFTS: [u8; 16] = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
 
-    let key_bits = bytes_to_bits(key);
-    let mut permuted = [0u8; 56];
+    let key_bits = Zeroizing::new(bytes_to_bits(key));
+    let mut permuted = Zeroizing::new([0u8; 56]);
     for (i, &p) in PC1.iter().enumerate() {
         permuted[i] = key_bits[(p - 1) as usize];
     }
 
-    let (mut c, mut d) = ([0u8; 28], [0u8; 28]);
+    let mut c = Zeroizing::new([0u8; 28]);
+    let mut d = Zeroizing::new([0u8; 28]);
     c.copy_from_slice(&permuted[..28]);
     d.copy_from_slice(&permuted[28..]);
 
-    let mut subkeys = [[0u8; 6]; 16];
+    let mut subkeys = Zeroizing::new([[0u8; 6]; 16]);
     for round in 0..16 {
         for _ in 0..LEFT_SHIFTS[round] {
             let tc = c[0];
@@ -161,21 +185,22 @@ fn des_key_schedule(key: &[u8; 8]) -> [[u8; 6]; 16] {
             d.rotate_left(1);
             d[27] = td;
         }
-        let mut cd = [0u8; 56];
-        cd[..28].copy_from_slice(&c);
-        cd[28..].copy_from_slice(&d);
+        let mut cd = Zeroizing::new([0u8; 56]);
+        cd[..28].copy_from_slice(&c[..]);
+        cd[28..].copy_from_slice(&d[..]);
 
-        let mut key48 = [0u8; 48];
+        let mut key48 = Zeroizing::new([0u8; 48]);
         for (i, &p) in PC2.iter().enumerate() {
             key48[i] = cd[(p - 1) as usize];
         }
-        subkeys[round] = bits_to_6bytes(&key48);
+        let round_key = bits_to_6bytes(&key48[..]);
+        subkeys[round].copy_from_slice(&round_key[..]);
     }
 
     subkeys
 }
 
-fn des_encrypt_with_subkeys(block: &[u8; 8], subkeys: &[[u8; 6]; 16]) -> [u8; 8] {
+fn des_encrypt_with_subkeys(block: &[u8; 8], subkeys: &[[u8; 6]; 16]) -> Zeroizing<[u8; 8]> {
     const IP: [u8; 64] = [
         58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4, 62, 54, 46, 38, 30, 22, 14,
         6, 64, 56, 48, 40, 32, 24, 16, 8, 57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11,
@@ -245,30 +270,31 @@ fn des_encrypt_with_subkeys(block: &[u8; 8], subkeys: &[[u8; 6]; 16]) -> [u8; 8]
         ],
     ];
 
-    let bits = bytes_to_bits(block);
-    let mut permuted = [0u8; 64];
+    let bits = Zeroizing::new(bytes_to_bits(block));
+    let mut permuted = Zeroizing::new([0u8; 64]);
     for (i, &p) in IP.iter().enumerate() {
         permuted[i] = bits[(p - 1) as usize];
     }
 
-    let (mut l, mut r) = ([0u8; 32], [0u8; 32]);
+    let mut l = Zeroizing::new([0u8; 32]);
+    let mut r = Zeroizing::new([0u8; 32]);
     l.copy_from_slice(&permuted[..32]);
     r.copy_from_slice(&permuted[32..]);
 
     for subkey in subkeys.iter().take(16) {
-        let mut expanded = [0u8; 48];
+        let mut expanded = Zeroizing::new([0u8; 48]);
         for (i, &p) in E.iter().enumerate() {
             expanded[i] = r[(p - 1) as usize];
         }
 
         // XOR with subkey
-        let sk_bits = bytes6_to_bits(subkey);
+        let sk_bits = Zeroizing::new(bytes6_to_bits(subkey));
         for i in 0..48 {
             expanded[i] ^= sk_bits[i];
         }
 
         // S-box substitution
-        let mut sbox_out = [0u8; 32];
+        let mut sbox_out = Zeroizing::new([0u8; 32]);
         for s in 0..8 {
             let offset = s * 6;
             let row = (expanded[offset] << 1) | expanded[offset + 5];
@@ -283,28 +309,33 @@ fn des_encrypt_with_subkeys(block: &[u8; 8], subkeys: &[[u8; 6]; 16]) -> [u8; 8]
         }
 
         // P permutation
-        let mut p_out = [0u8; 32];
+        let mut p_out = Zeroizing::new([0u8; 32]);
         for (i, &p) in P.iter().enumerate() {
             p_out[i] = sbox_out[(p - 1) as usize];
         }
 
         // XOR with L, swap
-        let new_r: Vec<u8> = l.iter().zip(p_out.iter()).map(|(a, b)| a ^ b).collect();
-        l.copy_from_slice(&r);
+        let new_r = Zeroizing::new(
+            l.iter()
+                .zip(p_out.iter())
+                .map(|(a, b)| a ^ b)
+                .collect::<Vec<u8>>(),
+        );
+        l.copy_from_slice(&r[..]);
         r.copy_from_slice(&new_r);
     }
 
     // Final permutation (R + L, note swap)
-    let mut combined = [0u8; 64];
-    combined[..32].copy_from_slice(&r);
-    combined[32..].copy_from_slice(&l);
+    let mut combined = Zeroizing::new([0u8; 64]);
+    combined[..32].copy_from_slice(&r[..]);
+    combined[32..].copy_from_slice(&l[..]);
 
-    let mut result_bits = [0u8; 64];
+    let mut result_bits = Zeroizing::new([0u8; 64]);
     for (i, &p) in FP.iter().enumerate() {
         result_bits[i] = combined[(p - 1) as usize];
     }
 
-    bits_to_bytes(&result_bits)
+    bits_to_bytes(&result_bits[..])
 }
 
 fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
@@ -317,8 +348,8 @@ fn bytes_to_bits(bytes: &[u8]) -> Vec<u8> {
     bits
 }
 
-fn bits_to_bytes(bits: &[u8]) -> [u8; 8] {
-    let mut bytes = [0u8; 8];
+fn bits_to_bytes(bits: &[u8]) -> Zeroizing<[u8; 8]> {
+    let mut bytes = Zeroizing::new([0u8; 8]);
     for i in 0..8 {
         for j in 0..8 {
             bytes[i] |= bits[i * 8 + j] << (7 - j);
@@ -327,8 +358,8 @@ fn bits_to_bytes(bits: &[u8]) -> [u8; 8] {
     bytes
 }
 
-fn bits_to_6bytes(bits: &[u8]) -> [u8; 6] {
-    let mut bytes = [0u8; 6];
+fn bits_to_6bytes(bits: &[u8]) -> Zeroizing<[u8; 6]> {
+    let mut bytes = Zeroizing::new([0u8; 6]);
     for (i, byte) in bytes.iter_mut().enumerate() {
         for j in 0..8 {
             let idx = i * 8 + j;
@@ -347,17 +378,29 @@ fn bytes6_to_bits(bytes: &[u8; 6]) -> Vec<u8> {
 // ── Minimal Big Integer ──────────────────────────────────────────────────
 
 /// Minimal unsigned big-integer type (big-endian limbs) for DH math.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct BigUint {
     /// Limbs stored in big-endian order (most significant first).
     limbs: Vec<u32>,
+}
+
+impl std::fmt::Debug for BigUint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("BigUint([REDACTED])")
+    }
+}
+
+impl Drop for BigUint {
+    fn drop(&mut self) {
+        self.limbs.zeroize();
+    }
 }
 
 impl BigUint {
     pub fn from_bytes_be(bytes: &[u8]) -> Self {
         // Pad to 4-byte alignment.
         let padded_len = bytes.len().div_ceil(4) * 4;
-        let mut padded = vec![0u8; padded_len];
+        let mut padded = Zeroizing::new(vec![0u8; padded_len]);
         padded[padded_len - bytes.len()..].copy_from_slice(bytes);
 
         let mut limbs = Vec::with_capacity(padded.len() / 4);
@@ -434,7 +477,7 @@ impl BigUint {
     fn mul(&self, other: &Self) -> Self {
         let n = self.limbs.len();
         let m = other.limbs.len();
-        let mut result = vec![0u64; n + m];
+        let mut result = Zeroizing::new(vec![0u64; n + m]);
 
         for i in (0..n).rev() {
             for j in (0..m).rev() {
@@ -492,8 +535,8 @@ impl BigUint {
 
     fn sub(&self, other: &Self) -> Self {
         let n = self.limbs.len().max(other.limbs.len());
-        let mut a = vec![0u32; n];
-        let mut b = vec![0u32; n];
+        let mut a = Zeroizing::new(vec![0u32; n]);
+        let mut b = Zeroizing::new(vec![0u32; n]);
         for (i, &l) in self.limbs.iter().rev().enumerate() {
             a[i] = l;
         }
@@ -501,7 +544,7 @@ impl BigUint {
             b[i] = l;
         }
 
-        let mut result = vec![0u32; n];
+        let mut result = Zeroizing::new(vec![0u32; n]);
         let mut borrow = 0i64;
         for i in 0..n {
             let diff = a[i] as i64 - b[i] as i64 - borrow;
@@ -514,7 +557,7 @@ impl BigUint {
             }
         }
 
-        let mut limbs: Vec<u32> = result.into_iter().rev().collect();
+        let mut limbs: Vec<u32> = result.iter().rev().copied().collect();
         while limbs.len() > 1 && limbs[0] == 0 {
             limbs.remove(0);
         }
@@ -583,6 +626,25 @@ mod tests {
     fn biguint_zero() {
         let z = BigUint::from_bytes_be(&[0]);
         assert!(z.is_zero());
+    }
+
+    #[test]
+    fn biguint_debug_redacts_key_material() {
+        let value = BigUint::from_bytes_be(&[0xde, 0xad, 0xbe, 0xef]);
+        let rendered = format!("{value:?}");
+        assert_eq!(rendered, "BigUint([REDACTED])");
+        assert!(!rendered.contains("3735928559"));
+    }
+
+    #[test]
+    fn ard_dh_key_length_is_bounded_before_allocation_or_math() {
+        assert!(validate_ard_key_length(0).is_err());
+        assert_eq!(
+            validate_ard_key_length(MAX_ARD_DH_KEY_BYTES).unwrap(),
+            MAX_ARD_DH_KEY_BYTES
+        );
+        assert!(validate_ard_key_length(MAX_ARD_DH_KEY_BYTES + 1).is_err());
+        assert!(validate_ard_key_length(u16::MAX as usize).is_err());
     }
 
     #[test]

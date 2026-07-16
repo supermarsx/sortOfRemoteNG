@@ -14,6 +14,7 @@ import {
   type ArdFrameMetadata,
   type ArdFrontendStatus,
   type ArdInputAction,
+  type ArdNativeHandoffResult,
   type ArdRuntimeCapabilities,
   type ArdSessionInfo,
   type ArdSessionStats,
@@ -36,6 +37,7 @@ export interface ArdClientModel {
   backendSessionId: string | null;
   settings: ArdSettings;
   capabilities: ArdRuntimeCapabilities | null;
+  nativeHandoffResult: ArdNativeHandoffResult | null;
   stats: ArdSessionStats | null;
   desktopWidth: number;
   desktopHeight: number;
@@ -43,7 +45,7 @@ export interface ArdClientModel {
   setClipboard(text: string): Promise<void>;
   setCurtainMode(enabled: boolean): Promise<void>;
   disconnect(): Promise<void>;
-  launchNativeScreenSharing(): Promise<void>;
+  launchNativeScreenSharing(): Promise<ArdNativeHandoffResult>;
 }
 
 const resizeCanvasPreservingContents = (
@@ -61,8 +63,13 @@ const resizeCanvasPreservingContents = (
   canvas.getContext("2d")?.drawImage(snapshot, 0, 0);
 };
 
-const safeError = (value: unknown): string =>
-  sanitizeBehaviorText(value instanceof Error ? value.message : String(value));
+export const ardDisplayError = (value: unknown, password?: string): string => {
+  const raw = value instanceof Error ? value.message : String(value);
+  const withoutSavedPassword = password
+    ? raw.split(password).join("[redacted password]")
+    : raw;
+  return sanitizeBehaviorText(withoutSavedPassword);
+};
 
 export function useArdClient(session: ConnectionSession): ArdClientModel {
   const { state, dispatch } = useConnections();
@@ -82,12 +89,15 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
   );
   const [capabilities, setCapabilities] =
     useState<ArdRuntimeCapabilities | null>(null);
+  const [nativeHandoffResult, setNativeHandoffResult] =
+    useState<ArdNativeHandoffResult | null>(null);
   const [stats, setStats] = useState<ArdSessionStats | null>(null);
   const [desktopSize, setDesktopSize] = useState({ width: 0, height: 0 });
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const backendRef = useRef(session.backendSessionId ?? null);
-  const nativeHandoffStartedRef = useRef(false);
+  const capabilitiesRef = useRef<ArdRuntimeCapabilities | null>(null);
+  const nativeAutoLaunchAttemptedRef = useRef(false);
   const mountedRef = useRef(true);
   const preserveOnUnmountRef = useRef(false);
 
@@ -174,7 +184,10 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
   const handleStatus = useCallback(
     (event: ArdStatusEvent) => {
       if (!mountedRef.current) return;
-      setMessage(event.message ?? null);
+      const safeMessage = event.message
+        ? ardDisplayError(event.message, connection?.password)
+        : null;
+      setMessage(safeMessage);
       if (event.status === "desktop_resize" && event.message) {
         const match = /^(\d+)x(\d+)$/.exec(event.message);
         if (match) {
@@ -202,34 +215,52 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
         setStatus("disconnected");
         updateFrontendSession({ status: "disconnected" });
       } else if (event.status === "error") {
-        const detail = sanitizeBehaviorText(
+        const detail = ardDisplayError(
           event.message ?? "ARD session failed",
+          connection?.password,
         );
         setStatus("error");
         setError(detail);
         updateFrontendSession({ status: "error", errorMessage: detail });
       }
     },
-    [updateFrontendSession],
+    [connection?.password, updateFrontendSession],
   );
 
   const launchNativeScreenSharing = useCallback(async () => {
-    if (!nativeHandoffStartedRef.current) {
-      nativeHandoffStartedRef.current = true;
-      try {
-        await invoke("launch_apple_account_screen_sharing");
-      } catch (cause) {
-        nativeHandoffStartedRef.current = false;
-        throw cause;
-      }
+    const nativeCapability = capabilitiesRef.current?.appleAccountNative;
+    if (!nativeCapability) {
+      throw new Error(
+        "Screen Sharing availability is still being checked. Try again in a moment.",
+      );
     }
-    if (!mountedRef.current) return;
+    if (!nativeCapability.available) {
+      throw new Error(
+        ardDisplayError(
+          nativeCapability.reason ||
+            "Apple Account Screen Sharing is unavailable on this platform.",
+          connection?.password,
+        ),
+      );
+    }
+
+    let handoff: ArdNativeHandoffResult;
+    try {
+      handoff = await invoke<ArdNativeHandoffResult>(
+        "launch_apple_account_screen_sharing",
+      );
+    } catch (cause) {
+      throw new Error(ardDisplayError(cause, connection?.password));
+    }
+    if (!mountedRef.current) return handoff;
+    setNativeHandoffResult(handoff);
     setStatus("nativeHandoff");
+    setError(null);
     setMessage(
-      "Apple Screen Sharing opened. Complete Apple Account selection and approval in macOS; SortOfRemoteNG never receives that password.",
+      "Screen Sharing opened, but no remote connection is claimed. Copy the saved Apple Account into its New Connection field; password entry and two-factor approval stay in Apple's app.",
     );
-    updateFrontendSession({ status: "connected", errorMessage: undefined });
-  }, [updateFrontendSession]);
+    return handoff;
+  }, [connection?.password]);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,11 +270,15 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
           "get_ard_runtime_capabilities",
         );
         if (cancelled || !mountedRef.current) return;
+        capabilitiesRef.current = runtimeCapabilities;
         setCapabilities(runtimeCapabilities);
         if (!connection)
           throw new Error("ARD connection settings are unavailable.");
         if (settings.authMode === "appleAccountNative") {
-          await launchNativeScreenSharing();
+          if (!nativeAutoLaunchAttemptedRef.current) {
+            nativeAutoLaunchAttemptedRef.current = true;
+            await launchNativeScreenSharing();
+          }
           return;
         }
         const routeError = ardUnsupportedNetworkPath(connection);
@@ -281,10 +316,12 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
         updateFrontendSession({ backendSessionId: id });
       } catch (cause) {
         if (cancelled || !mountedRef.current) return;
-        const detail = safeError(cause);
+        const detail = ardDisplayError(cause, connection?.password);
         setStatus("error");
         setError(detail);
-        updateFrontendSession({ status: "error", errorMessage: detail });
+        if (settings.authMode !== "appleAccountNative") {
+          updateFrontendSession({ status: "error", errorMessage: detail });
+        }
       }
     };
     void initialize();
@@ -381,6 +418,7 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
     backendSessionId,
     settings,
     capabilities,
+    nativeHandoffResult,
     stats,
     desktopWidth: desktopSize.width,
     desktopHeight: desktopSize.height,
