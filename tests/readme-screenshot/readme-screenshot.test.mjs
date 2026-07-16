@@ -109,18 +109,23 @@ test("capture config uses an isolated fixed-size Tauri application", async () =>
   assert.equal(window.decorations, false);
 });
 
-test("capture SSH fixture is pinned and enables the application's key exchange", async () => {
+test("shared SSH fixture is interoperable and the capture image is pinned", async () => {
+  const baseCompose = await readFile(
+    path.resolve("e2e/docker-compose.yml"),
+    "utf8",
+  );
   const composeOverride = await readFile(
     path.resolve("e2e/docker-compose.readme-screenshot.yml"),
     "utf8",
   );
   const fixtureInit = await readFile(
-    path.resolve("e2e/fixtures/readme-ssh-server-init.sh"),
+    path.resolve("e2e/fixtures/ssh-server-init.sh"),
     "utf8",
   );
 
   assert.match(composeOverride, /openssh-server@sha256:[a-f0-9]{64}/);
-  assert.match(composeOverride, /readme-ssh-server-init\.sh/);
+  assert.match(baseCompose, /ssh-server-init\.sh/);
+  assert.match(baseCompose, /\/custom-cont-init\.d\/10-ssh-server:ro/);
   assert.match(fixtureInit, /diffie-hellman-group16-sha512/);
   assert.match(fixtureInit, /sshd\.pam -t/);
 });

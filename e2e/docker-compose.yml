@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   test-ssh:
     image: lscr.io/linuxserver/openssh-server
@@ -14,6 +12,7 @@ services:
       - SUDO_ACCESS=true
     volumes:
       - ./fixtures:/fixtures:ro
+      - ./fixtures/ssh-server-init.sh:/custom-cont-init.d/10-ssh-server:ro
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2222"]
       interval: 5s

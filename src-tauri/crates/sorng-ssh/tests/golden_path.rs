@@ -21,6 +21,7 @@
 use secrecy::SecretString;
 use sorng_ssh::ssh::service::SshService;
 use sorng_ssh::ssh::types::{SshCompressionConfig, SshConnectionConfig};
+use ssh2::{MethodType, Session};
 use std::collections::HashMap;
 
 fn env_or(key: &str, default: &str) -> String {
@@ -68,6 +69,19 @@ fn test_config() -> SshConnectionConfig {
         sk_pin: None,
         sk_application: None,
     }
+}
+
+#[test]
+fn fixture_fallback_kex_is_supported_by_linked_libssh2() {
+    let session = Session::new().expect("create libssh2 session");
+    let algorithms = session
+        .supported_algs(MethodType::Kex)
+        .expect("enumerate linked libssh2 KEX algorithms");
+
+    assert!(
+        algorithms.contains(&"diffie-hellman-group16-sha512"),
+        "the Docker SSH fixture fallback must overlap with linked libssh2; supported: {algorithms:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
