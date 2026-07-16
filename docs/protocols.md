@@ -55,7 +55,7 @@ ARD presents three distinct authentication paths, not three interchangeable pass
 
 Sign in with Apple identity tokens are scoped to the application or web service requesting them; they are not ARD/RFB credentials. Apple app-specific passwords likewise do not authenticate ARD/RFB. Apple documents entering an Apple Account in Screen Sharing.app, but does not document a public URL scheme or API for pre-filling an Apple Account connection, so the handoff does not attempt to automate Apple's authentication UI.
 
-Credential-bearing/full exports preserve the saved identifier, fallback selection, and embedded credentials according to the selected storage/export policy. Credential-free exports retain the non-secret fallback selection but omit the Apple Account identifier and generic username/password, so setup may be required after import. Neither export path can contain an Apple Account password or two-factor authentication code because sortOfRemoteNG never receives those values.
+Credential-bearing, full-fidelity JSON exports preserve the saved identifier, fallback selection, and embedded credentials according to the selected storage/export policy. Credential-free JSON exports retain the non-secret fallback selection but omit the Apple Account identifier and generic username/password, so setup may be required after import. Neither JSON export path can contain an Apple Account password or two-factor authentication code because sortOfRemoteNG never receives those values.
 
 Embedded ARD connects directly to the saved host and port. A system VPN can supply reachability, but the protocol does not manage that VPN and rejects app proxy, SSH-hop, and tunnel-chain routing rather than silently bypassing it.
 

@@ -607,25 +607,74 @@ describe("useArdClient cross-platform Apple Account fallback", () => {
     ).toBe(false);
   });
 
-  it("rejects saved application routes before starting the fallback", async () => {
-    useConnection({
-      ...createFallbackConnection(),
-      proxyChainId: "must-not-be-bypassed",
-    });
-    mocks.invoke.mockImplementation((command: string) => {
-      if (command === "get_ard_runtime_capabilities") {
-        return Promise.resolve(unavailableNativeCapabilities("Linux"));
-      }
-      return Promise.resolve(undefined);
-    });
+  it.each([
+    ["saved proxy chain", { proxyChainId: "must-not-be-bypassed" }],
+    ["saved connection chain", { connectionChainId: "must-not-be-bypassed" }],
+    ["saved tunnel chain", { tunnelChainId: "must-not-be-bypassed" }],
+    [
+      "legacy proxy",
+      {
+        security: {
+          proxy: {
+            type: "socks5",
+            host: "proxy.example.test",
+            port: 1080,
+            enabled: true,
+          },
+        },
+      },
+    ],
+    [
+      "legacy OpenVPN route",
+      {
+        security: {
+          openvpn: { enabled: true, configId: "must-not-be-bypassed" },
+        },
+      },
+    ],
+    [
+      "legacy SSH tunnel",
+      {
+        security: {
+          sshTunnel: {
+            enabled: true,
+            connectionId: "must-not-be-bypassed",
+            localPort: 5901,
+            remoteHost: "family-mac.local",
+            remotePort: 5900,
+          },
+        },
+      },
+    ],
+    [
+      "inline tunnel chain",
+      {
+        security: {
+          tunnelChain: [
+            { id: "must-not-be-bypassed", type: "proxy", enabled: true },
+          ],
+        },
+      },
+    ],
+  ] satisfies Array<[string, Partial<Connection>]>)(
+    "rejects the %s before starting the fallback",
+    async (_name, route) => {
+      useConnection({ ...createFallbackConnection(), ...route });
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === "get_ard_runtime_capabilities") {
+          return Promise.resolve(unavailableNativeCapabilities("Linux"));
+        }
+        return Promise.resolve(undefined);
+      });
 
-    const { result } = renderHook(() => useArdClient(session));
-    await waitFor(() => expect(result.current.status).toBe("error"));
-    expect(result.current.error).toContain("direct TCP connections only");
-    expect(
-      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
-    ).toBe(false);
-  });
+      const { result } = renderHook(() => useArdClient(session));
+      await waitFor(() => expect(result.current.status).toBe("error"));
+      expect(result.current.error).toContain("direct TCP connections only");
+      expect(
+        mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+      ).toBe(false);
+    },
+  );
 
   it("reports an embedded fallback connection failure on the frontend session", async () => {
     useConnection(createFallbackConnection());

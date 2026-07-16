@@ -108,12 +108,12 @@ Using an app-specific password in the ARD password field would therefore be both
 
 The portable profile keeps its native identity reference and embedded fallback separate:
 
-- Normal and full exports preserve the Apple Account identifier, fallback mode, host, and the data allowed by the selected export/storage policy so the profile can be restored deliberately.
-- Credential-free exports omit the Apple Account identifier and generic embedded credentials while retaining the non-secret enabled state and fallback mode. The imported profile may therefore require both identity and fallback credential setup before it can connect.
+- Full-fidelity JSON exports with credentials enabled preserve the Apple Account identifier, fallback mode, host, and the data allowed by the selected export/storage policy so the profile can be restored deliberately.
+- Credential-free JSON exports omit the Apple Account identifier and generic embedded credentials while retaining the non-secret enabled state and fallback mode. The imported profile may therefore require both identity and fallback credential setup before it can connect.
 - Apple Account passwords, verification codes, approval responses, and Sign in with Apple tokens cannot appear in any export because sortOfRemoteNG never receives or stores them for ARD.
 - Switching platforms does not copy, transform, or reuse a credential between the Apple and embedded paths.
 
-Inspect full exports before sharing them, just as you would inspect hostnames and usernames. Apple recommends that users never share their Apple Account password, verification codes, recovery key, or other account-security details in its [Apple Account security guidance](https://support.apple.com/102614).
+Inspect credential-bearing JSON exports before sharing them, just as you would inspect hostnames and usernames. Apple recommends that users never share their Apple Account password, verification codes, recovery key, or other account-security details in its [Apple Account security guidance](https://support.apple.com/102614).
 
 ## Troubleshooting
 
