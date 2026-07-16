@@ -100,8 +100,10 @@ export interface SMBFile {
  * SMB connections work without a separate setup flow.
  */
 export function useSMBClient(session: ConnectionSession) {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
   const connection = state.connections.find(item => item.id === session.connectionId);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const [currentPath, setCurrentPath] = useState<string>('/');
   const [files, setFiles] = useState<SmbDirEntry[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -114,6 +116,15 @@ export function useSMBClient(session: ConnectionSession) {
   // Guard against double-connect in dev/StrictMode.
   const connectingRef = useRef(false);
   const connectedSessionRef = useRef<string | null>(null);
+  const updateSession = useCallback(
+    (patch: Partial<ConnectionSession>) => {
+      dispatch?.({
+        type: 'UPDATE_SESSION',
+        payload: { ...sessionRef.current, ...patch },
+      });
+    },
+    [dispatch],
+  );
 
   // ── Connection ─────────────────────────────────────────────────────
 
@@ -141,17 +152,24 @@ export function useSMBClient(session: ConnectionSession) {
         const info = await invoke<SmbSessionInfo>('smb_connect', { config });
         setSessionId(info.id);
         connectedSessionRef.current = info.id;
+        updateSession({
+          backendSessionId: info.id,
+          status: 'connected',
+          errorMessage: undefined,
+        });
         return info.id;
       } catch (e) {
         const msg = typeof e === 'string' ? e : (e as Error)?.message ?? String(e);
-        setError(`SMB connect failed: ${msg}`);
+        const message = `SMB connect failed: ${msg}`;
+        setError(message);
+        updateSession({ status: 'error', errorMessage: message });
         throw e;
       } finally {
         connectingRef.current = false;
         setIsLoading(false);
       }
     },
-    [connection, session.hostname, session.name],
+    [connection, session.hostname, session.name, updateSession],
   );
 
   const disconnect = useCallback(async () => {
@@ -167,8 +185,13 @@ export function useSMBClient(session: ConnectionSession) {
       setShares([]);
       setCurrentShare('');
       setFiles([]);
+      updateSession({
+        backendSessionId: undefined,
+        status: 'disconnected',
+        errorMessage: undefined,
+      });
     }
-  }, [sessionId]);
+  }, [sessionId, updateSession]);
 
   // ── Share enumeration ──────────────────────────────────────────────
 

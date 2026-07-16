@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
+import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import {
@@ -78,7 +79,7 @@ export function useWebTerminal(
   const { toast } = useToastContext();
 
   const connection = useMemo(
-    () => state.connections.find((c) => c.id === session.connectionId),
+    () => resolveRuntimeConnection(state.connections, session.connectionId),
     [state.connections, session.connectionId],
   );
 

@@ -16,6 +16,15 @@ import { ScriptEngine } from "../../utils/recording/scriptEngine";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import { raceWithTimeout } from "../../utils/core/raceWithTimeout";
 import { generateId } from "../../utils/core/id";
+import {
+  getDirectSessionUnavailableMessage,
+  usesLegacyGenericTimer,
+} from "../../utils/session/protocolAvailability";
+import {
+  registerRuntimeConnection,
+  releaseRuntimeConnection,
+  resolveRuntimeConnection,
+} from "../../utils/session/runtimeConnectionRegistry";
 import { ConfirmDialog } from "../../components/ui/dialogs/ConfirmDialog";
 import { recordRdpSessionHistory } from "../../utils/rdp/rdpSessionHistory";
 import {
@@ -31,32 +40,14 @@ import {
   type SessionReconnectRequest,
 } from "./useSessionLifecycleEvents";
 
-const CLIENT_OWNED_CONNECT_PROTOCOLS = new Set<string>([
-  "ssh",
-  "rdp",
-  "http",
-  "https",
-  "anydesk",
-  "raw",
-  "rlogin",
-  "winrm",
-]);
-
-const UNSUPPORTED_DIRECT_SESSION_PROTOCOLS = new Set<string>(["ftp", "scp"]);
-
 export function usesGenericSessionTimer(protocol: string): boolean {
-  return (
-    !CLIENT_OWNED_CONNECT_PROTOCOLS.has(protocol) &&
-    !isIntegrationConnectionProtocol(protocol)
-  );
+  return usesLegacyGenericTimer(protocol);
 }
 
 export function getUnsupportedDirectSessionMessage(
   protocol: string,
 ): string | null {
-  const normalized = protocol.toLowerCase();
-  if (!UNSUPPORTED_DIRECT_SESSION_PROTOCOLS.has(normalized)) return null;
-  return `${normalized.toUpperCase()} sessions are not wired to a frontend runtime yet. Use SFTP for file-transfer sessions until the ${normalized.toUpperCase()} client is implemented.`;
+  return getDirectSessionUnavailableMessage(protocol);
 }
 
 /**
@@ -380,6 +371,7 @@ export const useSessionManager = () => {
       // the user doesn't lose unsaved tool state when "switching".
       realSessions.forEach((session) => {
         dispatch({ type: "REMOVE_SESSION", payload: session.id });
+        releaseRuntimeConnection(session.connectionId);
       });
     }
 
@@ -601,7 +593,8 @@ export const useSessionManager = () => {
       tempConnection.password = payload.password;
     }
 
-    handleConnect(tempConnection);
+    registerRuntimeConnection(tempConnection);
+    void handleConnect(tempConnection);
   };
 
   /**
@@ -622,8 +615,9 @@ export const useSessionManager = () => {
       return true;
     }
 
-    const connection = currentState.connections.find(
-      (c) => c.id === session.connectionId,
+    const connection = resolveRuntimeConnection(
+      currentState.connections,
+      session.connectionId,
     );
     const settings = settingsManager.getSettings();
 
@@ -746,6 +740,16 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "ard" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_ard", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect ARD session:", error);
+      }
+    }
+
     if (session.protocol === "rlogin" && session.backendSessionId) {
       try {
         await invoke("disconnect_rlogin", {
@@ -763,6 +767,54 @@ export const useSessionManager = () => {
         });
       } catch (error) {
         console.error("Failed to close PowerShell session:", error);
+      }
+    }
+
+    if (session.protocol === "telnet" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_telnet", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect Telnet session:", error);
+      }
+    }
+
+    if (session.protocol === "sftp" && session.backendSessionId) {
+      try {
+        await invoke("sftp_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect SFTP session:", error);
+      }
+    }
+
+    if (session.protocol === "rustdesk" && session.backendSessionId) {
+      try {
+        await invoke("rustdesk_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect RustDesk session:", error);
+      }
+    }
+
+    if (session.protocol === "smb" && session.backendSessionId) {
+      try {
+        await invoke("smb_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect SMB session:", error);
+      }
+    }
+
+    if (session.protocol === "mysql") {
+      try {
+        await invoke("disconnect_db");
+      } catch (error) {
+        console.error("Failed to disconnect MySQL session:", error);
       }
     }
 
@@ -804,6 +856,7 @@ export const useSessionManager = () => {
     }
 
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+    releaseRuntimeConnection(session.connectionId);
 
     if (connection) {
       statusChecker.stopChecking(connection.id);

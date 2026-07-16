@@ -1,13 +1,6 @@
 import React from "react";
 import dynamic from "next/dynamic";
-import {
-  Monitor,
-  Terminal,
-  AlertCircle,
-  ExternalLink,
-  Shield,
-  RefreshCw,
-} from "lucide-react";
+import { Monitor, AlertCircle } from "lucide-react";
 import { LoadingElement } from "../ui/display/loadingElement";
 import {
   ConnectionSession,
@@ -17,6 +10,7 @@ import {
 import { isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol } from "../windows/WindowsToolPanel.helpers";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
+import { getDirectSessionUnavailableMessage } from "../../utils/session/protocolAvailability";
 
 const ToolTabViewer = dynamic(
   () => import("../app/ToolPanel").then((module) => module.ToolTabViewer),
@@ -39,6 +33,10 @@ const RawSocketClient = dynamic(() => import("../protocol/RawSocketClient"), {
 const RloginClient = dynamic(() => import("../protocol/RloginClient"), {
   ssr: false,
 });
+const ArdClient = dynamic(
+  () => import("../protocol/ArdClient").then((module) => module.ArdClient),
+  { ssr: false },
+);
 const PowerShellSessionViewer = dynamic(
   () => import("../protocol/PowerShellSessionViewer"),
   { ssr: false },
@@ -49,6 +47,19 @@ const WebBrowser = dynamic(
 );
 const SFTPClient = dynamic(
   () => import("../protocol/SFTPClient").then((module) => module.SFTPClient),
+  { ssr: false },
+);
+const TelnetClient = dynamic(
+  () =>
+    import("../protocol/TelnetClient").then((module) => module.TelnetClient),
+  { ssr: false },
+);
+const MySQLClient = dynamic(
+  () => import("../protocol/MySQLClient").then((module) => module.MySQLClient),
+  { ssr: false },
+);
+const SMBClient = dynamic(
+  () => import("../protocol/SMBClient").then((module) => module.SMBClient),
   { ssr: false },
 );
 const RDPClient = dynamic(() => import("../rdp/RDPClient"), { ssr: false });
@@ -190,7 +201,9 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
     // single stable component instance (no unmount/remount on status change).
     if (
       session.protocol === "rdp" &&
-      (session.status === "connecting" || session.status === "connected")
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
     ) {
       return (
         <RDPClient session={session} onActivateSession={onActivateSession} />
@@ -199,9 +212,20 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
 
     if (
       session.protocol === "ssh" &&
-      (session.status === "connecting" || session.status === "connected")
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
     ) {
       return <WebTerminal session={session} />;
+    }
+
+    if (
+      session.protocol === "ard" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <ArdClient session={session} />;
     }
 
     if (
@@ -233,23 +257,74 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
 
     if (
       (session.protocol === "http" || session.protocol === "https") &&
-      (session.status === "connecting" || session.status === "connected")
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
     ) {
       return <WebBrowser session={session} />;
     }
 
     if (
       session.protocol === "anydesk" &&
-      (session.status === "connecting" || session.status === "connected")
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
     ) {
       return <AnyDeskClient session={session} />;
     }
 
     if (
       session.protocol === "sftp" &&
-      (session.status === "connecting" || session.status === "connected")
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
     ) {
       return <SFTPClient session={session} />;
+    }
+
+    if (
+      session.protocol === "telnet" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <TelnetClient session={session} />;
+    }
+
+    if (
+      session.protocol === "vnc" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <VNCClient session={session} />;
+    }
+
+    if (
+      session.protocol === "rustdesk" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <RustDeskClient session={session} />;
+    }
+
+    if (
+      session.protocol === "mysql" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <MySQLClient session={session} />;
+    }
+
+    if (
+      session.protocol === "smb" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <SMBClient session={session} />;
     }
 
     // Debug/mock RDP error sessions — render the rich RDP error screen directly
@@ -283,165 +358,16 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         );
 
       case "connected":
-        // Route to appropriate viewer based on protocol
-        switch (session.protocol) {
-          case "ssh":
-          case "telnet":
-            return <WebTerminal session={session} />;
-
-          case "http":
-          case "https":
-            return <WebBrowser session={session} />;
-
-          case "anydesk":
-            return <AnyDeskClient session={session} />;
-
-          case "ilo":
-            return (
-              <div className="flex flex-col items-center justify-center h-full text-primary">
-                <Shield size={48} className="mb-4" />
-                <h3 className="text-lg font-medium mb-2">HP iLO Connected</h3>
-                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
-                  iLO connection to {session.hostname} is active
-                </p>
-                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
-                  <p className="text-xs text-[var(--color-textMuted)] mb-2">
-                    Connection Details:
-                  </p>
-                  <div className="space-y-1 text-sm">
-                    <div>
-                      Host:{" "}
-                      <span className="text-[var(--color-text)]">
-                        {session.hostname}
-                      </span>
-                    </div>
-                    <div>
-                      Protocol:{" "}
-                      <span className="text-[var(--color-text)]">HP iLO</span>
-                    </div>
-                    <div>
-                      Started:{" "}
-                      <span className="text-[var(--color-text)]">
-                        {session.startTime.toLocaleTimeString()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-3 p-2 bg-primary/20 border border-primary rounded text-xs text-primary">
-                    <p>
-                      Use the iLO panel to manage server power, health, virtual
-                      media, and more.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-
-          case "lenovo":
-            return (
-              <div className="flex flex-col items-center justify-center h-full text-warning">
-                <Shield size={48} className="mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  Lenovo XCC Connected
-                </h3>
-                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
-                  XCC/IMM connection to {session.hostname} is active
-                </p>
-                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
-                  <p className="text-xs text-[var(--color-textMuted)] mb-2">
-                    Connection Details:
-                  </p>
-                  <div className="space-y-1 text-sm">
-                    <div>
-                      Host:{" "}
-                      <span className="text-[var(--color-text)]">
-                        {session.hostname}
-                      </span>
-                    </div>
-                    <div>
-                      Protocol:{" "}
-                      <span className="text-[var(--color-text)]">
-                        Lenovo XCC
-                      </span>
-                    </div>
-                    <div>
-                      Started:{" "}
-                      <span className="text-[var(--color-text)]">
-                        {session.startTime.toLocaleTimeString()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-3 p-2 bg-warning/20 border border-warning rounded text-xs text-warning">
-                    <p>
-                      Use the Lenovo panel to manage server power, health,
-                      virtual media, and more.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-
-          case "supermicro":
-            return (
-              <div className="flex flex-col items-center justify-center h-full text-success">
-                <Shield size={48} className="mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  Supermicro BMC Connected
-                </h3>
-                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
-                  BMC connection to {session.hostname} is active
-                </p>
-                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
-                  <p className="text-xs text-[var(--color-textMuted)] mb-2">
-                    Connection Details:
-                  </p>
-                  <div className="space-y-1 text-sm">
-                    <div>
-                      Host:{" "}
-                      <span className="text-[var(--color-text)]">
-                        {session.hostname}
-                      </span>
-                    </div>
-                    <div>
-                      Protocol:{" "}
-                      <span className="text-[var(--color-text)]">
-                        Supermicro IPMI/Redfish
-                      </span>
-                    </div>
-                    <div>
-                      Started:{" "}
-                      <span className="text-[var(--color-text)]">
-                        {session.startTime.toLocaleTimeString()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-3 p-2 bg-success/20 border border-success rounded text-xs text-success">
-                    <p>
-                      Use the Supermicro panel to manage server power, health,
-                      virtual media, and more.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-
-          case "vnc":
-            return <VNCClient session={session} />;
-
-          case "rustdesk":
-            return <RustDeskClient session={session} />;
-
-          default:
-            return (
-              <div className="flex flex-col items-center justify-center h-full text-success">
-                <Monitor size={48} className="mb-4" />
-                <h3 className="text-lg font-medium mb-2">Connected</h3>
-                <p className="text-sm text-center text-[var(--color-textSecondary)]">
-                  {session.protocol.toUpperCase()} connection to{" "}
-                  {session.hostname} is active
-                </p>
-              </div>
-            );
-        }
+        return (
+          <GenericErrorView
+            session={{
+              ...session,
+              errorMessage:
+                getDirectSessionUnavailableMessage(session.protocol) ??
+                `${session.protocol.toUpperCase()} is marked connected, but no frontend session viewer is registered.`,
+            }}
+          />
+        );
 
       case "error":
         return <GenericErrorView session={session} />;

@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ConnectionSession } from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 
 // ─── Types mirroring the Rust backend (see sorng-rustdesk/src/rustdesk/types.rs) ──
 
@@ -78,22 +82,24 @@ const UNCONFIRMED_RUSTDESK_SESSION_MESSAGE =
  * Pull the RustDesk remote ID from the session's connection record.
  * Falls back to hostname if no explicit ID was configured.
  */
-function resolveRemoteId(session: ConnectionSession): string {
-  const conn = (session as unknown as { connection?: { rustdeskId?: string } })
-    .connection;
-  return conn?.rustdeskId || session.hostname;
+function resolveRemoteId(
+  session: ConnectionSession,
+  connection?: Connection,
+): string {
+  return connection?.rustdeskId || connection?.hostname || session.hostname;
 }
 
-function resolveRemotePassword(session: ConnectionSession): string | undefined {
-  const conn = (
-    session as unknown as {
-      connection?: { rustdeskPassword?: string; password?: string };
-    }
-  ).connection;
-  return conn?.rustdeskPassword || conn?.password || undefined;
+function resolveRemotePassword(connection?: Connection): string | undefined {
+  return connection?.rustdeskPassword || connection?.password || undefined;
 }
 
 export function useRustDeskClient(session: ConnectionSession) {
+  const { state, dispatch } = useConnections();
+  const connection = state.connections.find(
+    candidate => candidate.id === session.connectionId,
+  );
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<
     "connecting" | "connected" | "disconnected" | "error"
@@ -108,6 +114,15 @@ export function useRustDeskClient(session: ConnectionSession) {
   // Lifecycle guard — prevents state updates after unmount and gates parallel
   // connect/disconnect invocations triggered by React StrictMode double-effect.
   const activeRef = useRef(true);
+  const updateSession = useCallback(
+    (patch: Partial<ConnectionSession>) => {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: { ...sessionRef.current, ...patch },
+      });
+    },
+    [dispatch],
+  );
 
   // Keep a stable settings updater so downstream callers can dispatch partial
   // updates. When a session is live, push each change to the backend.
@@ -154,8 +169,8 @@ export function useRustDeskClient(session: ConnectionSession) {
 
       // 2) Build the connect request from the current session + defaults.
       const request: RustDeskConnectRequest = {
-        remote_id: resolveRemoteId(session),
-        password: resolveRemotePassword(session) ?? null,
+        remote_id: resolveRemoteId(session, connection),
+        password: resolveRemotePassword(connection) ?? null,
         connection_type: "remote_desktop",
         quality: settings.quality,
         view_only: settings.viewOnly,
@@ -196,6 +211,11 @@ export function useRustDeskClient(session: ConnectionSession) {
       sessionIdRef.current = sessionId;
       setIsConnected(true);
       setConnectionStatus("connected");
+      updateSession({
+        backendSessionId: sessionId,
+        status: "connected",
+        errorMessage: undefined,
+      });
     } catch (err) {
       if (!activeRef.current) return;
       const msg = err instanceof Error ? err.message : String(err);
@@ -203,14 +223,22 @@ export function useRustDeskClient(session: ConnectionSession) {
       setErrorMessage(msg);
       setConnectionStatus("error");
       setIsConnected(false);
+      updateSession({ status: "error", errorMessage: msg });
     }
-  }, [session, settings]);
+  }, [connection, session, settings, updateSession]);
 
-  const cleanup = useCallback(async () => {
+  const cleanup = useCallback(async (updateFrontend = true) => {
     const sid = sessionIdRef.current;
     sessionIdRef.current = null;
     setIsConnected(false);
     setConnectionStatus("disconnected");
+    if (updateFrontend) {
+      updateSession({
+        backendSessionId: undefined,
+        status: "disconnected",
+        errorMessage: undefined,
+      });
+    }
     if (sid) {
       try {
         await invoke("rustdesk_disconnect", { sessionId: sid });
@@ -218,7 +246,7 @@ export function useRustDeskClient(session: ConnectionSession) {
         console.warn("[RustDesk] disconnect failed:", err);
       }
     }
-  }, []);
+  }, [updateSession]);
 
   useEffect(() => {
     activeRef.current = true;
@@ -229,7 +257,7 @@ export function useRustDeskClient(session: ConnectionSession) {
     }
     return () => {
       activeRef.current = false;
-      void cleanup();
+      void cleanup(false);
     };
     // We intentionally exclude `initializeRustDeskConnection` from the dep
     // array: it closes over `settings`, and we do not want mid-session

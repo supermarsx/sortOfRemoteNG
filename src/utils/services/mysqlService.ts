@@ -110,6 +110,15 @@ export class MySQLService {
     }
   }
 
+  async disconnect(connectionId: string): Promise<void> {
+    if (!this.connections.has(connectionId)) return;
+    try {
+      await invoke('disconnect_db');
+    } finally {
+      this.connections.delete(connectionId);
+    }
+  }
+
   async getDatabases(): Promise<string[]> {
     const result = await invoke<QueryResult>('get_databases');
     return result.rows.map(row => row[0] as string);

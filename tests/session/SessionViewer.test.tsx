@@ -15,6 +15,13 @@ const mockState = vi.hoisted(() => ({
   integrationPanelHostProps: vi.fn(),
   rawSocketClientProps: vi.fn(),
   rloginClientProps: vi.fn(),
+  ardClientProps: vi.fn(),
+  telnetClientProps: vi.fn(),
+  vncClientProps: vi.fn(),
+  sftpClientProps: vi.fn(),
+  rustDeskClientProps: vi.fn(),
+  mySqlClientProps: vi.fn(),
+  smbClientProps: vi.fn(),
 }));
 
 vi.mock("../../src/components/app/ToolPanel", () => ({
@@ -83,6 +90,55 @@ vi.mock("../../src/components/protocol/RloginClient", () => ({
   default: (props: any) => {
     mockState.rloginClientProps(props);
     return <div data-testid="mock-rlogin-client">RLogin Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/ArdClient", () => ({
+  ArdClient: (props: any) => {
+    mockState.ardClientProps(props);
+    return <div data-testid="mock-ard-client">ARD Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/TelnetClient", () => ({
+  TelnetClient: (props: any) => {
+    mockState.telnetClientProps(props);
+    return <div data-testid="mock-telnet-client">Telnet Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/VNCClient", () => ({
+  VNCClient: (props: any) => {
+    mockState.vncClientProps(props);
+    return <div data-testid="mock-vnc-client">VNC Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/SFTPClient", () => ({
+  SFTPClient: (props: any) => {
+    mockState.sftpClientProps(props);
+    return <div data-testid="mock-sftp-client">SFTP Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/RustDeskClient", () => ({
+  RustDeskClient: (props: any) => {
+    mockState.rustDeskClientProps(props);
+    return <div data-testid="mock-rustdesk-client">RustDesk Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/MySQLClient", () => ({
+  MySQLClient: (props: any) => {
+    mockState.mySqlClientProps(props);
+    return <div data-testid="mock-mysql-client">MySQL Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/SMBClient", () => ({
+  SMBClient: (props: any) => {
+    mockState.smbClientProps(props);
+    return <div data-testid="mock-smb-client">SMB Client</div>;
   },
 }));
 
@@ -269,6 +325,49 @@ describe("SessionViewer", () => {
       expect(screen.queryByTestId("mock-web-terminal")).not.toBeInTheDocument();
     },
   );
+
+  it.each([
+    ["ard", "mock-ard-client"],
+    ["telnet", "mock-telnet-client"],
+    ["vnc", "mock-vnc-client"],
+    ["sftp", "mock-sftp-client"],
+    ["rustdesk", "mock-rustdesk-client"],
+    ["mysql", "mock-mysql-client"],
+    ["smb", "mock-smb-client"],
+  ])(
+    "mounts the %s protocol client while the real connection is pending",
+    async (protocol, testId) => {
+      const { rerender } = render(
+        <SessionViewer
+          session={createSession({ protocol, status: "connecting" })}
+        />,
+      );
+
+      expect(await screen.findByTestId(testId)).toBeInTheDocument();
+
+      rerender(
+        <SessionViewer
+          session={createSession({ protocol, status: "reconnecting" })}
+        />,
+      );
+      expect(await screen.findByTestId(testId)).toBeInTheDocument();
+      expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not claim that an unrouted protocol is connected", () => {
+    render(
+      <SessionViewer
+        session={createSession({ protocol: "ftp", status: "connected" })}
+      />,
+    );
+
+    expect(screen.getByText("Connection Failed")).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not have a wired direct session runtime/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
+  });
 
   it("renders generic error view for non-RDP error sessions", () => {
     render(

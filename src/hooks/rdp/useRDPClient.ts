@@ -9,6 +9,7 @@ import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import * as macroService from '../../utils/recording/macroService';
 import { useConnections } from '../../contexts/useConnections';
+import { resolveRuntimeConnection } from '../../utils/session/runtimeConnectionRegistry';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useToastContext } from '../../contexts/ToastContext';
 import {
@@ -52,7 +53,7 @@ export function useRDPClient(session: ConnectionSession) {
 
   // ─── Derived values (needed before pipeline init) ─────────────────
 
-  const connection = state.connections.find(c => c.id === session.connectionId);
+  const connection = resolveRuntimeConnection(state.connections, session.connectionId);
 
   const rdpSettings: RDPConnectionSettings = useMemo(
     () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),

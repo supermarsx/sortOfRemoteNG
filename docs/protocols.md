@@ -1,60 +1,91 @@
 ---
 title: Protocols
 eyebrow: Use the app
-description: A source-backed map of integrated session clients, context-dependent tools, partial implementations, and protocol scaffolding.
+description: A source-backed matrix of interactive clients, external handoffs, management APIs, and intentionally unavailable direct sessions.
 permalink: /protocols/
 ---
 
-## How to read this matrix
+## What “supported” means
 
-<p>
-  <span class="pill pill--ready">Integrated</span>
-  means the saved connection reaches a dedicated frontend/runtime path.
-  <span class="pill pill--partial">Partial</span>
-  means useful implementation exists but the complete product flow is not wired or proven.
-  <span class="pill pill--scaffold">Scaffold</span>
-  means types or backend modules exist without a complete registered, interactive session path.
-</p>
+sortOfRemoteNG distinguishes four kinds of protocol surface. This matters because a backend crate, an importer mapping, or a settings form does not by itself make a usable connection tab.
 
-The matrix is intentionally conservative. Repository breadth includes protocol crates, management tools, import mappings, and integration panels; those are not all equivalent to a finished connection client.
+| Classification                 | Meaning                                                                                                                                                                                   |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Interactive client**         | A saved connection mounts a dedicated view while it is connecting. That view owns the real transport lifecycle and reports success or failure from the runtime.                           |
+| **External handoff**           | sortOfRemoteNG validates and launches an installed native client. The remote desktop is not rendered inside the app.                                                                      |
+| **Management surface**         | Commands or hooks manage a provider, appliance, or operating-system feature. Opening it as a generic connection tab is intentionally rejected.                                            |
+| **Unavailable direct session** | Some types, import mappings, or backend code may exist, but there is no honest end-to-end saved-session path yet. The app fails closed instead of showing a simulated “Connected” screen. |
 
-## Primary session paths
+The executable contract is `src/utils/session/protocolAvailability.ts`. The session manager consults it before creating a direct session, and the regression test `tests/session/protocolAvailability.test.ts` checks every persisted protocol and every protocol advertised by the primary editor.
 
-| Surface               | Status                                           | Current product path                                                                                                                          |
-| --------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| RDP                   | <span class="pill pill--ready">Integrated</span> | Dedicated RDP client, connection lifecycle, rendering/input pipeline, diagnostics, gateway/TCP options, and optional SSH-bastion Network Path |
-| SSH                   | <span class="pill pill--ready">Integrated</span> | Web terminal backed by the SSH runtime, authentication/trust controls, terminal overrides, and the full supported Network Path matrix         |
-| HTTP / HTTPS          | <span class="pill pill--ready">Integrated</span> | Embedded web session with navigation, TLS/trust handling, basic/custom-header authentication, bookmarks, and optional auto-login selectors    |
-| VNC                   | <span class="pill pill--ready">Integrated</span> | Dedicated VNC client component and backend command surface                                                                                    |
-| SFTP                  | <span class="pill pill--ready">Integrated</span> | Dedicated file-transfer session component; use this instead of assuming FTP/SCP direct tabs are complete                                      |
-| AnyDesk / RustDesk    | <span class="pill pill--partial">Partial</span>  | Dedicated viewer components exist, but availability and external-runtime requirements vary by platform and setup                              |
-| Telnet                | <span class="pill pill--partial">Partial</span>  | Telnet backend and terminal presentation exist; validate the current connection lifecycle against the target before depending on it           |
-| FTP / SCP direct tabs | <span class="pill pill--partial">Partial</span>  | The session manager explicitly blocks direct frontend sessions and points users to SFTP until clients are wired                               |
+## Saved connection protocols
 
-## Explicit scaffolds and partial management surfaces
+| Protocol                      | Product classification                    | Direct-session path and limits                                                                                                                                                                                      | Primary evidence                                                                                                                               |
+| ----------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| RDP                           | Interactive client                        | Embedded RDP session with native lifecycle, rendering/input, diagnostics, detach/reattach, gateway options, and supported Network Paths.                                                                            | `src/components/rdp/RDPClient.tsx`, `src-tauri/crates/sorng-rdp`                                                                               |
+| SSH                           | Interactive client                        | Embedded terminal backed by the native SSH runtime, including authentication, host trust, terminal overrides, detach/reattach, and Network Paths.                                                                   | `src/components/ssh/WebTerminal.tsx`, `src-tauri/crates/sorng-ssh`                                                                             |
+| Apple Remote Desktop (ARD)    | Interactive client                        | Native ARD/RFB framebuffer, keyboard/pointer/clipboard input, reconnect status, and Apple Screen Sharing handoff when Apple-account authentication requires the native client.                                      | `src/components/protocol/ArdClient.tsx`, `src/hooks/protocol/useArdClient.ts`, `src-tauri/crates/sorng-ard`                                    |
+| Serial                        | Unavailable direct session                | Persisted serial settings and native commands exist, but there is no frontend viewer, invoke hook, or event consumer. Opening a saved Serial entry fails closed.                                                    | `src/types/protocols/serial.ts`, `src-tauri/crates/sorng-serial`                                                                               |
+| VNC                           | Interactive client, constrained transport | noVNC renders and controls a WebSocket-capable VNC endpoint. There is currently no native TCP-to-WebSocket bridge, so a conventional TCP-only VNC server needs a compatible WebSocket proxy.                        | `src/components/protocol/VNCClient.tsx`, `src/hooks/protocol/useVNCClient.ts`                                                                  |
+| AnyDesk                       | External handoff                          | Launches and monitors the locally installed AnyDesk application. It does not embed AnyDesk’s framebuffer.                                                                                                           | `src/components/protocol/AnyDeskClient.tsx`, `src-tauri/crates/sorng-remote-mgmt/src/anydesk.rs`                                               |
+| HTTP / HTTPS                  | Interactive client                        | Embedded browser session with navigation, TLS/trust handling, configured authentication, bookmarks, and optional same-origin auto-login.                                                                            | `src/components/protocol/WebBrowser.tsx`, `src-tauri/crates/sorng-protocols/src/http.rs`                                                       |
+| Telnet                        | Interactive client                        | Native Telnet negotiation and terminal I/O, including resize, BREAK, AYT, reconnect configuration, and backend event streaming. Telnet is plaintext; use it only on a trusted network.                              | `src/components/protocol/TelnetClient.tsx`, `src/hooks/protocol/useTelnetSession.ts`, `src-tauri/crates/sorng-telnet`                          |
+| Raw Socket                    | Interactive client                        | Binary-safe TCP/UDP payload client with exact byte send/receive, transcript handling, replay, stats, and native close. It is not a terminal protocol and provides no encryption by itself.                          | `src/components/protocol/RawSocketClient.tsx`, `src/hooks/protocol/useRawSocketSession.tsx`, `src-tauri/crates/sorng-protocols/src/raw_socket` |
+| RLogin                        | Interactive client                        | RFC 1282 handshake, terminal I/O, resize, replay, diagnostics, and native lifecycle. RLogin is plaintext and requires explicit acknowledgement in its saved settings.                                               | `src/components/protocol/RloginClient.tsx`, `src/hooks/protocol/useRloginSession.tsx`, `src-tauri/crates/sorng-protocols/src/rlogin`           |
+| MySQL / MariaDB               | Interactive client                        | Saved credentials are connected before the schema/query workbench loads. The current backend database service is process-wide, so concurrent independent MySQL tabs are not yet isolated.                           | `src/components/protocol/MySQLClient.tsx`, `src/hooks/protocol/useMySQLClient.ts`, `src-tauri/crates/sorng-protocols/src/db.rs`                |
+| FTP                           | Unavailable direct session                | There is no wired FTP connection tab. Use SFTP when the server supports it.                                                                                                                                         | `src-tauri/crates/sorng-ftp`                                                                                                                   |
+| SFTP                          | Interactive client                        | Native SFTP file browser and operations. Direct sessions pass the saved host, port, username, password or private-key data, passphrase, host policy, timeout, initial path, and label.                              | `src/components/protocol/SFTPClient.tsx`, `src/hooks/protocol/useSFTPClient.ts`, `src-tauri/crates/sorng-sftp`                                 |
+| SCP                           | Unavailable direct session                | There is no wired SCP connection tab. Use SFTP for the interactive file-transfer surface.                                                                                                                           | `src-tauri/crates/sorng-scp`                                                                                                                   |
+| PowerShell Remoting (`winrm`) | Interactive client                        | Persistent PSRP session over WSMan/WinRM or SSH, with a dedicated terminal-like viewer, truthful capability checks, reconnect/reattach, and native close. This is separate from the Windows management tool panels. | `src/components/protocol/PowerShellSessionViewer.tsx`, `src/hooks/protocol/usePowerShellSession.ts`, `src-tauri/crates/sorng-powershell`       |
+| RustDesk                      | External handoff                          | Uses the saved RustDesk ID and credential, launches the installed RustDesk process, and verifies the backend session before reporting success. It does not embed RustDesk’s framebuffer.                            | `src/components/protocol/RustDeskClient.tsx`, `src/hooks/protocol/useRustDeskClient.ts`, `src-tauri/crates/sorng-rustdesk`                     |
+| SMB                           | Interactive client                        | Connects with the saved host, port, domain/workgroup, share, and credentials, then exposes share and directory browsing plus file operations.                                                                       | `src/components/protocol/SMBClient.tsx`, `src/hooks/protocol/useSMBClient.ts`, `src-tauri/crates/sorng-smb`                                    |
 
-| Surface               | Status                                               | What is actually present                                                                                                                                       |
-| --------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RLogin                | <span class="pill pill--scaffold">Scaffold</span>    | Saved type, import mappings, terminal presentation, and a basic backend service exist; command registration is disabled and command sending is not implemented |
-| RAW socket            | <span class="pill pill--scaffold">Scaffold</span>    | A basic backend module exists, but commands are unregistered, data sending is not implemented, and RAW is not a normal saved connection protocol               |
-| PowerShell Remoting   | <span class="pill pill--partial">Partial</span>      | A substantial Rust WinRM/PowerShell command surface and typed frontend hook exist, but there is no complete end-user remoting session UI consuming that hook   |
-| WinRM / Windows tools | <span class="pill pill--partial">Context tool</span> | Connection-scoped Windows management panels use WinRM/WMI settings; this is not the same as a full interactive PowerShell Remoting terminal                    |
+## Provider and hardware entries
 
-<div class="callout callout--danger">
-  <strong>Do not infer support from import compatibility.</strong>
-  <p>Importers preserve recognizable protocol identity where possible. Vendor RAW entries may map to Telnet metadata. PowerShell conversion is currently path-dependent: the frontend import path maps PowerShell entries to SSH, while the Rust mRemoteNG converter maps PowerShell entries to WinRM. These compatibility conversions do not create a native RAW client, and neither PowerShell mapping creates a complete end-user PowerShell Remoting session.</p>
-</div>
+The following persisted values are management identities, not interchangeable terminal or desktop protocols. Direct connection tabs are rejected with a message that points to a management surface; they never pass through the old timer-based simulated connection path.
 
-## Cloud and integration entries
+| Entry                                                       | Classification                                           | Repository surface                                                         |
+| ----------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| GCP, Azure                                                  | Provider management APIs                                 | `src-tauri/crates/sorng-gcp`, `src-tauri/crates/sorng-azure`               |
+| IBM Cloud, DigitalOcean, Heroku, Scaleway, Linode, OVHcloud | Management identities without a registered direct viewer | Persisted protocol identities only; no generic session runtime is claimed  |
+| HP iLO                                                      | Hardware management API                                  | `src/hooks/hardware/useIlo.ts`, `src-tauri/crates/sorng-ilo`               |
+| Lenovo XCC / IMM                                            | Hardware management API                                  | `src/hooks/hardware/useLenovo.ts`, `src-tauri/crates/sorng-lenovo`         |
+| Supermicro BMC                                              | Hardware management API                                  | `src/hooks/hardware/useSupermicro.ts`, `src-tauri/crates/sorng-supermicro` |
 
-Cloud connection types and `integration:*` descriptors open provider- or service-specific panels. They may use SSH, HTTPS, vendor APIs, or connection-scoped tools underneath, but they should be evaluated by their panel contract rather than counted as interchangeable terminal protocols.
+Service integrations use the separate `integration:*` descriptor contract and route through `src/components/integrations/IntegrationPanelHost.tsx`. Their support level belongs to each integration panel and is not inferred from this direct-session matrix.
+
+## Audited implementations not exposed as saved direct sessions
+
+These implementations are included in the audit because their hooks, backend crates, or templates can otherwise look like finished protocols.
+
+| Surface            | Current truth                                                                                         |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| SPICE              | A frontend hook and `sorng-spice` exist; no saved-session viewer is registered.                       |
+| X2Go               | A frontend hook and `sorng-x2go` exist; no saved-session viewer is registered.                        |
+| NX / NoMachine     | A frontend hook and `sorng-nx` exist; no saved-session viewer is registered.                          |
+| XDMCP              | A frontend hook and `sorng-xdmcp` exist; no saved-session viewer is registered.                       |
+| Linux MAC controls | `useMacClient` and `sorng-mac` expose SELinux/AppArmor management operations, not a remote terminal.  |
+| IPMI               | `useIPMIClient` and `sorng-ipmi` expose BMC management operations, not a generic interactive session. |
+| PostgreSQL         | A backend crate and templates exist, but no saved PostgreSQL query viewer is routed.                  |
+| Kubernetes         | Backend management commands exist in `sorng-k8s`; Kubernetes is not a generic connection tab.         |
+
+## Verification boundaries
+
+The protocol matrix is checked at three layers:
+
+1. `BuiltInConnectionProtocol` is exhaustively mapped at compile time. Adding a persisted protocol without declaring its runtime truth fails TypeScript compilation.
+2. `tests/session/protocolAvailability.test.ts` verifies that every primary editor option is client-owned and that no audited protocol still uses the simulated connection timer.
+3. `tests/session/SessionViewer.test.tsx` verifies that dedicated clients mount during connecting and reconnecting states, before any runtime can honestly report success.
+
+Focused protocol tests cover the transport-specific behavior. Raw Socket and RLogin have native Rust end-to-end tests; Telnet verifies native connect/events/exact input; ARD verifies framebuffer/input and command parity; PowerShell verifies PSRP over SSH and WSMan. Live WinRM and SSH fixtures remain opt-in because they require reachable external servers and credentials—an ignored live fixture is not counted as a passing network connection.
 
 ## Choosing a path
 
-- Use **RDP** for interactive desktop sessions and review the final SSH-bastion requirement when adding socket hops.
-- Use **SSH** for terminal sessions and the broadest supported per-connection Network Path combinations.
-- Use **SFTP** for the supported direct file-transfer session surface.
-- Use **HTTPS** for managed web interfaces where trust and auto-login behavior are understood.
-- Treat **RLogin**, **RAW**, and **PowerShell Remoting** according to the limitations above until their full product paths are registered and tested.
+- Prefer **SSH**, **RDP**, **ARD**, or **PowerShell Remoting** for their intended interactive workloads.
+- Prefer **SFTP** over FTP/SCP when you need an in-app file browser.
+- Use **VNC** only when the endpoint is WebSocket-capable or a trusted WebSocket proxy is available.
+- Treat **AnyDesk** and **RustDesk** as native application handoffs and install their clients first.
+- Use **Telnet** and **RLogin** only when a legacy system requires them; both expose credentials and traffic unless the surrounding network supplies protection.
+- Use **Raw Socket** only when you understand the target framing and security model.
 
 For routing compatibility, continue to [Network Paths]({{ '/network-paths/' | relative_url }}). For source boundaries and backend layering, see [Architecture]({{ '/architecture/' | relative_url }}).

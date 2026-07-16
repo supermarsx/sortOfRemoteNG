@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getUnsupportedDirectSessionMessage,
   useSessionManager,
   usesGenericSessionTimer,
 } from "../../src/hooks/session/useSessionManager";
@@ -9,6 +10,10 @@ import type {
   ConnectionSession,
 } from "../../src/types/connection/connection";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
+import {
+  clearRuntimeConnectionsForTests,
+  resolveRuntimeConnection,
+} from "../../src/utils/session/runtimeConnectionRegistry";
 
 const connectionMocks = vi.hoisted(() => ({
   state: {
@@ -82,6 +87,7 @@ function makeSession(
 describe("useSessionManager settings effects", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearRuntimeConnectionsForTests();
     SettingsManager.resetInstance();
     connectionMocks.state = { sessions: [], connections: [] };
     connectionMocks.executeScriptsForTrigger.mockResolvedValue(undefined);
@@ -100,10 +106,56 @@ describe("useSessionManager settings effects", () => {
     });
   });
 
-  it("keeps Raw Socket and RLogin out of the simulated timer/metrics path", () => {
+  it("keeps real protocol clients out of the simulated timer/metrics path", () => {
     expect(usesGenericSessionTimer("raw")).toBe(false);
     expect(usesGenericSessionTimer("rlogin")).toBe(false);
-    expect(usesGenericSessionTimer("telnet")).toBe(true);
+    expect(usesGenericSessionTimer("telnet")).toBe(false);
+    expect(usesGenericSessionTimer("vnc")).toBe(false);
+    expect(usesGenericSessionTimer("sftp")).toBe(false);
+    expect(usesGenericSessionTimer("mysql")).toBe(false);
+    expect(usesGenericSessionTimer("smb")).toBe(false);
+    expect(usesGenericSessionTimer("rustdesk")).toBe(false);
+  });
+
+  it("fails closed for unsupported and management-only protocols", () => {
+    expect(getUnsupportedDirectSessionMessage("ftp")).toMatch(
+      /does not have a wired direct session runtime/i,
+    );
+    expect(getUnsupportedDirectSessionMessage("ilo")).toMatch(
+      /management panel/i,
+    );
+    expect(getUnsupportedDirectSessionMessage("unknown-protocol")).toMatch(
+      /no registered frontend session runtime/i,
+    );
+    expect(getUnsupportedDirectSessionMessage("ssh")).toBeNull();
+  });
+
+  it("keeps Quick Connect credentials in volatile runtime memory", async () => {
+    const { result } = renderHook(() => useSessionManager());
+
+    act(() => {
+      result.current.handleQuickConnect({
+        hostname: "quick.example.test",
+        protocol: "telnet",
+        username: "operator",
+        password: "volatile-secret",
+      });
+    });
+
+    const added = connectionMocks.dispatch.mock.calls.find(
+      ([action]) => action.type === "ADD_SESSION",
+    )?.[0].payload as ConnectionSession;
+    const runtime = resolveRuntimeConnection([], added.connectionId);
+    expect(runtime).toEqual(
+      expect.objectContaining({
+        hostname: "quick.example.test",
+        protocol: "telnet",
+        username: "operator",
+        password: "volatile-secret",
+      }),
+    );
+    expect(added).not.toHaveProperty("password");
+    expect(added).not.toHaveProperty("username");
   });
 
   it("openConnectionInBackground controls whether a new connection becomes active", async () => {
@@ -378,71 +430,6 @@ describe("useSessionManager settings effects", () => {
     expect(connectionMocks.dispatch.mock.invocationCallOrder[0]).toBeLessThan(
       notificationCtor.mock.invocationCallOrder[0],
     );
-  });
-
-  it("starts an automatic retry after exactly the configured delay", async () => {
-    vi.useFakeTimers();
-    try {
-      SettingsManager.getInstance().applyInMemory({
-        retryAttempts: 1,
-        retryDelay: 100,
-        connectionTimeout: 1,
-      });
-      const connection = makeConnection({
-        protocol: "telnet",
-        port: 23,
-        timeout: 0.001,
-        retryAttempts: 1,
-        retryDelay: 100,
-      });
-      const { result, rerender, unmount } = renderHook(() =>
-        useSessionManager(),
-      );
-
-      let connectPromise!: Promise<void>;
-      act(() => {
-        connectPromise = result.current.handleConnect(connection);
-      });
-      const addedSession = connectionMocks.dispatch.mock.calls.find(
-        ([action]) => action.type === "ADD_SESSION",
-      )?.[0].payload as ConnectionSession;
-      connectionMocks.state = {
-        sessions: [addedSession],
-        connections: [connection],
-      };
-      rerender();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
-        await connectPromise;
-      });
-      connectionMocks.dispatch.mockClear();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(99);
-      });
-      expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "UPDATE_SESSION",
-          payload: expect.objectContaining({ status: "reconnecting" }),
-        }),
-      );
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
-      });
-      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
-        type: "UPDATE_SESSION",
-        payload: expect.objectContaining({
-          id: addedSession.id,
-          status: "reconnecting",
-          reconnectAttempts: 1,
-        }),
-      });
-      unmount();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("coalesces duplicate manual reconnect requests through one pending primitive", async () => {

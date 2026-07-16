@@ -1,8 +1,15 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useConnections } from '../../contexts/useConnections';
 import { ConnectionSession } from '../../types/connection/connection';
 import { MySQLService, QueryResult, MySQLValue } from '../../utils/services/mysqlService';
 
 export function useMySQLClient(session: ConnectionSession) {
+  const { state, dispatch } = useConnections();
+  const connection = state.connections.find(
+    candidate => candidate.id === session.connectionId,
+  );
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const [query, setQuery] = useState('SELECT * FROM information_schema.tables LIMIT 10;');
   const [results, setResults] = useState<QueryResult | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -11,8 +18,18 @@ export function useMySQLClient(session: ConnectionSession) {
   const [tables, setTables] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'query' | 'tables' | 'structure'>('query');
   const [error, setError] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
 
   const mysqlService = useMemo(() => new MySQLService(), []);
+  const updateSession = useCallback(
+    (patch: Partial<ConnectionSession>) => {
+      dispatch({
+        type: 'UPDATE_SESSION',
+        payload: { ...sessionRef.current, ...patch },
+      });
+    },
+    [dispatch],
+  );
 
   const loadDatabases = useCallback(async () => {
     try {
@@ -42,8 +59,59 @@ export function useMySQLClient(session: ConnectionSession) {
   }, [mysqlService]);
 
   useEffect(() => {
-    loadDatabases();
-  }, [loadDatabases]);
+    let active = true;
+
+    const initialize = async () => {
+      if (!connection) {
+        const message = 'The saved MySQL connection could not be found.';
+        if (active) {
+          setError(message);
+          updateSession({ status: 'error', errorMessage: message });
+        }
+        return;
+      }
+
+      try {
+        await mysqlService.connect(session.connectionId, {
+          host: connection.hostname || session.hostname,
+          port: connection.port || 3306,
+          user: connection.username || '',
+          password: connection.password || '',
+          database: connection.database,
+          proxy: connection.security?.proxy,
+          openvpn: connection.security?.openvpn,
+        });
+        if (!active) {
+          await mysqlService.disconnect(session.connectionId).catch(() => {});
+          return;
+        }
+        setConnected(true);
+        setError(null);
+        updateSession({ status: 'connected', errorMessage: undefined });
+        await loadDatabases();
+      } catch (err) {
+        if (!active) return;
+        const message =
+          err instanceof Error ? err.message : 'Failed to connect to MySQL';
+        setConnected(false);
+        setError(message);
+        updateSession({ status: 'error', errorMessage: message });
+      }
+    };
+
+    void initialize();
+    return () => {
+      active = false;
+      void mysqlService.disconnect(session.connectionId).catch(() => {});
+    };
+  }, [
+    connection,
+    loadDatabases,
+    mysqlService,
+    session.connectionId,
+    session.hostname,
+    updateSession,
+  ]);
 
   useEffect(() => {
     if (selectedDatabase) {
@@ -104,6 +172,7 @@ export function useMySQLClient(session: ConnectionSession) {
     activeTab,
     setActiveTab,
     error,
+    connected,
     loadDatabases,
     executeQuery,
     insertSampleQuery,

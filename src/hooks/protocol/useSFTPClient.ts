@@ -10,6 +10,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { useConnections } from '../../contexts/useConnections';
 import type { ConnectionSession } from '../../types/connection/connection';
 import type {
   BatchTransferResult,
@@ -240,9 +241,21 @@ export function useSFTPClient(
   options: UseSFTPClientOptions = {},
 ) {
   const { autoConnect = false, existingSessionId } = options;
+  const { state, dispatch } = useConnections();
+  const connection = state.connections.find(
+    candidate => candidate.id === session.connectionId,
+  );
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  const initialSessionIdRef = useRef(
+    existingSessionId ?? session.backendSessionId ?? null,
+  );
+  const ownsSessionRef = useRef(initialSessionIdRef.current === null);
 
   const [sessionId, setSessionId] = useState<string | null>(
-    existingSessionId ?? null,
+    initialSessionIdRef.current,
   );
   const [sessionInfo, setSessionInfo] = useState<SftpSessionInfo | null>(null);
   const [currentPath, setCurrentPath] = useState<string>('/');
@@ -251,7 +264,19 @@ export function useSFTPClient(
   const [transfers, setTransfers] = useState<TransferProgress[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connected, setConnected] = useState<boolean>(Boolean(existingSessionId));
+  const [connected, setConnected] = useState<boolean>(
+    Boolean(initialSessionIdRef.current),
+  );
+
+  const updateSession = useCallback(
+    (patch: Partial<ConnectionSession>) => {
+      dispatch({
+        type: 'UPDATE_SESSION',
+        payload: { ...sessionRef.current, ...patch },
+      });
+    },
+    [dispatch],
+  );
 
   // Keep the latest session id available to effect cleanups.
   const sessionIdRef = useRef<string | null>(sessionId);
@@ -271,17 +296,24 @@ export function useSFTPClient(
         setSessionInfo(info);
         setCurrentPath(info.currentDirectory || '/');
         setConnected(true);
+        ownsSessionRef.current = true;
+        updateSession({
+          backendSessionId: info.id,
+          status: 'connected',
+          errorMessage: undefined,
+        });
         return info;
       } catch (e) {
         const msg = typeof e === 'string' ? e : (e as Error).message;
         setError(msg);
         setConnected(false);
+        updateSession({ status: 'error', errorMessage: msg });
         throw e;
       } finally {
         setIsLoading(false);
       }
     },
-    [],
+    [updateSession],
   );
 
   const disconnect = useCallback(async () => {
@@ -295,8 +327,13 @@ export function useSFTPClient(
       setConnected(false);
       setEntries([]);
       setSelected(new Set());
+      updateSession({
+        backendSessionId: undefined,
+        status: 'disconnected',
+        errorMessage: undefined,
+      });
     }
-  }, []);
+  }, [updateSession]);
 
   // ── Directory navigation ─────────────────────────────────────────────────
 
@@ -484,32 +521,44 @@ export function useSFTPClient(
 
   useEffect(() => {
     if (!autoConnect) return;
-    if (existingSessionId) return;
-    // autoConnect assumes `session.hostname` + a username is available somewhere;
-    // actual credential prompting is e20's job. We seed a minimal config so the
-    // invocation surface is exercised at dev time without hard-coding secrets.
+    if (initialSessionIdRef.current) return;
+    const saved = connectionRef.current;
+    if (!saved) {
+      const message = 'The saved SFTP connection could not be found.';
+      setError(message);
+      updateSession({ status: 'error', errorMessage: message });
+      return;
+    }
     connect({
-      host: session.hostname,
-      port: 22,
-      username: '',
-      knownHostsPolicy: 'ask',
+      host: saved.hostname || sessionRef.current.hostname,
+      port: saved.port || 22,
+      username: saved.username || '',
+      password: saved.password || null,
+      privateKeyData: saved.privateKey || null,
+      privateKeyPassphrase: saved.passphrase || null,
+      knownHostsPolicy: saved.ignoreSshSecurityErrors ? 'ignore' : 'ask',
+      timeoutSecs: saved.sshConnectTimeout ?? saved.timeout,
+      keepaliveIntervalSecs: saved.sshKeepAliveInterval,
+      initialDirectory: saved.remotePath || null,
+      label: saved.name,
+      colorTag: saved.colorTag || null,
     }).catch(() => {
       /* surfaced via `error` state */
     });
-  }, [autoConnect, existingSessionId, session.hostname, connect]);
+  }, [autoConnect, connect, session.id, updateSession]);
 
   // ── Disconnect on unmount if we own the session ──────────────────────────
 
   useEffect(() => {
     return () => {
-      if (!existingSessionId && sessionIdRef.current) {
+      if (ownsSessionRef.current && sessionIdRef.current) {
         // Fire-and-forget; cleanup on unmount should not block React.
         sftpApi
           .disconnect(sessionIdRef.current)
           .catch(() => undefined);
       }
     };
-  }, [existingSessionId]);
+  }, []);
 
   // ── Formatting helper (parity with useSMBClient) ─────────────────────────
 

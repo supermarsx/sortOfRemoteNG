@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { debugLog } from "../../utils/core/debugLogger";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
+import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 
 export interface VNCSettings {
   viewOnly: boolean;
@@ -38,10 +39,15 @@ export type VNCConnectionStatus =
   | "error";
 
 export function useVNCClient(session: ConnectionSession) {
-  const { state } = useConnections();
-  const connection = state.connections.find(
-    (c) => c.id === session.connectionId,
+  const { state, dispatch } = useConnections();
+  const connection = resolveRuntimeConnection(
+    state.connections,
+    session.connectionId,
   );
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -55,19 +61,30 @@ export function useVNCClient(session: ConnectionSession) {
   const disconnectHandlerRef = useRef<EventListener | null>(null);
   const credentialsHandlerRef = useRef<EventListener | null>(null);
   const securityFailureHandlerRef = useRef<EventListener | null>(null);
+  const updateSession = useCallback(
+    (patch: Partial<ConnectionSession>) => {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: { ...sessionRef.current, ...patch },
+      });
+    },
+    [dispatch],
+  );
 
   const handleConnect = useCallback(() => {
     setErrorMessage(null);
     setIsConnected(true);
     setConnectionStatus("connected");
+    updateSession({ status: "connected", errorMessage: undefined });
     debugLog("VNC connection established");
-  }, []);
+  }, [updateSession]);
 
   const handleDisconnect = useCallback(() => {
     setIsConnected(false);
     setConnectionStatus("disconnected");
+    updateSession({ status: "disconnected" });
     debugLog("VNC connection disconnected");
-  }, []);
+  }, [updateSession]);
 
   const handleCredentialsRequired = useCallback(() => {
     debugLog("VNC credentials required");
@@ -81,8 +98,12 @@ export function useVNCClient(session: ConnectionSession) {
   const handleSecurityFailure = useCallback(() => {
     setErrorMessage("VNC security negotiation failed.");
     setConnectionStatus("error");
+    updateSession({
+      status: "error",
+      errorMessage: "VNC security negotiation failed.",
+    });
     debugLog("VNC security failure");
-  }, []);
+  }, [updateSession]);
 
   const initializeVNCConnection = useCallback(async () => {
     if (!canvasRef.current) return;
@@ -90,10 +111,12 @@ export function useVNCClient(session: ConnectionSession) {
       setConnectionStatus("connecting");
       setErrorMessage(null);
       const { default: RFB } = await import("novnc/core/rfb" as any);
-      const url = `ws://${session.hostname}:${connection?.port || 5900}`;
+      const currentSession = sessionRef.current;
+      const currentConnection = connectionRef.current;
+      const url = `ws://${currentSession.hostname}:${currentConnection?.port || 5900}`;
       debugLog(`Connecting to VNC server at ${url}`);
       const rfbConnection = new RFB(canvasRef.current, url, {
-        credentials: { password: connection?.password || "" },
+        credentials: { password: currentConnection?.password || "" },
       });
 
       connectHandlerRef.current = handleConnect.bind(null);
@@ -127,17 +150,17 @@ export function useVNCClient(session: ConnectionSession) {
       setIsConnected(false);
       setConnectionStatus("error");
       setErrorMessage(message);
+      updateSession({ status: "error", errorMessage: message });
       debugLog("VNC connection failed:", error);
       console.error("VNC connection failed:", error);
     }
   }, [
-    session,
-    connection,
     settings,
     handleConnect,
     handleDisconnect,
     handleCredentialsRequired,
     handleSecurityFailure,
+    updateSession,
   ]);
 
   const cleanup = useCallback(() => {
@@ -172,7 +195,7 @@ export function useVNCClient(session: ConnectionSession) {
     return () => {
       cleanup();
     };
-  }, [session, initializeVNCConnection, cleanup]);
+  }, [session.id, initializeVNCConnection, cleanup]);
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected || settings.viewOnly) return;

@@ -22,6 +22,7 @@ import {
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
 import { stripSchemePrefix } from "../../utils/connection/sanitizeHostname";
+import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -41,8 +42,9 @@ export function useWebBrowser(session: ConnectionSession) {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { toast } = useToastContext();
-  const connection = state.connections.find(
-    (c) => c.id === session.connectionId,
+  const connection = resolveRuntimeConnection(
+    state.connections,
+    session.connectionId,
   );
   const normalizedHostname = useMemo(
     () => stripSchemePrefix(session.hostname),

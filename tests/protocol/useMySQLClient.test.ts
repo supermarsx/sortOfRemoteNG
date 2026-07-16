@@ -5,6 +5,33 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 const mockGetDatabases = vi.fn();
 const mockGetTables = vi.fn();
 const mockExecuteQuery = vi.fn();
+const mockConnect = vi.fn();
+const mockDisconnect = vi.fn();
+const { connectionContext } = vi.hoisted(() => ({
+  connectionContext: {
+    state: {
+      connections: [
+        {
+          id: 'conn-1',
+          name: 'Test MySQL',
+          protocol: 'mysql',
+          hostname: '192.168.1.100',
+          port: 3306,
+          username: 'db-user',
+          password: 'db-password',
+          isGroup: false,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    },
+    dispatch: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/contexts/useConnections', () => ({
+  useConnections: () => connectionContext,
+}));
 
 vi.mock('../../src/utils/services/mysqlService', () => ({
   MySQLService: vi.fn(function() {
@@ -12,7 +39,8 @@ vi.mock('../../src/utils/services/mysqlService', () => ({
       getDatabases: mockGetDatabases,
       getTables: mockGetTables,
       executeQuery: mockExecuteQuery,
-      connect: vi.fn(),
+      connect: mockConnect,
+      disconnect: mockDisconnect,
     };
   }),
 }));
@@ -37,6 +65,8 @@ describe('useMySQLClient', () => {
     mockGetDatabases.mockResolvedValue([]);
     mockGetTables.mockResolvedValue([]);
     mockExecuteQuery.mockResolvedValue({ columns: [], rows: [], row_count: 0 });
+    mockConnect.mockResolvedValue(undefined);
+    mockDisconnect.mockResolvedValue(undefined);
   });
 
   // ── Initial state ───────────────────────────────────────────────────────
@@ -122,6 +152,7 @@ describe('useMySQLClient', () => {
     mockExecuteQuery.mockResolvedValue(mockResult);
 
     const { result } = renderHook(() => useMySQLClient(makeSession()));
+    await waitFor(() => expect(result.current.connected).toBe(true));
 
     await act(async () => { await result.current.executeQuery(); });
 
@@ -135,6 +166,7 @@ describe('useMySQLClient', () => {
     mockExecuteQuery.mockRejectedValue(new Error('Syntax error'));
 
     const { result } = renderHook(() => useMySQLClient(makeSession()));
+    await waitFor(() => expect(result.current.connected).toBe(true));
 
     await act(async () => { await result.current.executeQuery(); });
 
