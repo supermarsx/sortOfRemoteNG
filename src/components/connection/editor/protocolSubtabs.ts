@@ -172,6 +172,16 @@ export function getProtocolSubtabs(
     return selectSubtabs(["authentication", "recovery"]);
   }
 
+  if (protocol === "ftp" || protocol === "scp") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+      "recovery",
+    ]);
+  }
+
   if (["telnet", "mysql", "smb", "rustdesk"].includes(protocol)) {
     return selectSubtabs(["connection", "recovery"]);
   }

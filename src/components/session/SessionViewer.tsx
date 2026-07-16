@@ -49,6 +49,14 @@ const SFTPClient = dynamic(
   () => import("../protocol/SFTPClient").then((module) => module.SFTPClient),
   { ssr: false },
 );
+const FTPClient = dynamic(
+  () => import("../protocol/FTPClient").then((module) => module.FTPClient),
+  { ssr: false },
+);
+const ScpClient = dynamic(
+  () => import("../protocol/ScpClient").then((module) => module.ScpClient),
+  { ssr: false },
+);
 const TelnetClient = dynamic(
   () =>
     import("../protocol/TelnetClient").then((module) => module.TelnetClient),
@@ -294,6 +302,24 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return <SFTPClient session={session} />;
+    }
+
+    if (
+      session.protocol === "ftp" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <FTPClient session={session} />;
+    }
+
+    if (
+      session.protocol === "scp" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <ScpClient session={session} />;
     }
 
     if (

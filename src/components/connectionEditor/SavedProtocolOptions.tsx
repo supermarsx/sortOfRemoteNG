@@ -5,11 +5,22 @@ import {
   FolderOpen,
   KeyRound,
   Monitor,
+  ShieldCheck,
 } from "lucide-react";
 import type { Connection } from "../../types/connection/connection";
-import { PasswordInput, Select, Textarea } from "../ui/forms";
+import {
+  CheckboxField,
+  NumberInput,
+  PasswordInput,
+  Select,
+  Textarea,
+} from "../ui/forms";
 
-export type SavedProtocolOptionsSection = "connection" | "authentication";
+export type SavedProtocolOptionsSection =
+  | "connection"
+  | "authentication"
+  | "security"
+  | "advanced";
 
 interface SavedProtocolOptionsProps {
   formData: Partial<Connection>;
@@ -26,6 +37,245 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
   section,
 }) => {
   const protocol = formData.protocol;
+
+  if (protocol === "ftp" && section === "connection") {
+    return (
+      <section data-editor-search-section="ftp-options" className={cardClass}>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="ftp-remote-path"
+        >
+          <span className="sor-form-label">Initial remote directory</span>
+          <input
+            id="ftp-remote-path"
+            type="text"
+            value={formData.remotePath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                remotePath: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="/"
+          />
+        </label>
+        <div data-editor-search-field="ftp-data-channel-mode">
+          <Select
+            id="ftp-data-channel-mode"
+            label="Data connection mode"
+            value={formData.ftpDataChannelMode ?? "passive"}
+            onChange={(ftpDataChannelMode) =>
+              setFormData((previous) => ({
+                ...previous,
+                ftpDataChannelMode: ftpDataChannelMode as
+                  | "passive"
+                  | "extendedPassive",
+              }))
+            }
+            options={[
+              { value: "passive", label: "Passive (PASV)" },
+              { value: "extendedPassive", label: "Extended passive (EPSV)" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </div>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          Active PORT/EPRT transfers are intentionally unavailable until the
+          native backend can complete them without deadlocking.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "ftp" && section === "authentication") {
+    return (
+      <section data-editor-search-section="ftp-options" className={cardClass}>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="ftp-username"
+        >
+          <span className="sor-form-label">Username</span>
+          <input
+            id="ftp-username"
+            type="text"
+            value={formData.username ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                username: event.target.value,
+              }))
+            }
+            autoComplete="username"
+            className="sor-form-input-sm w-full min-w-0"
+            placeholder="anonymous"
+          />
+        </label>
+        <label className="block min-w-0">
+          <span className="sor-form-label">Password</span>
+          <PasswordInput
+            id="ftp-password"
+            data-editor-search-field="ftp-password"
+            value={formData.password ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                password: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0"
+            autoComplete="current-password"
+          />
+        </label>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          Leave both fields empty for conventional anonymous FTP credentials.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "ftp" && section === "security") {
+    const security = formData.ftpSecurity ?? "none";
+    return (
+      <section data-editor-search-section="ftp-options" className={cardClass}>
+        <div data-editor-search-field="ftp-security-mode">
+          <Select
+            id="ftp-security-mode"
+            label="Transport security"
+            value={security}
+            onChange={(ftpSecurity) =>
+              setFormData((previous) => ({
+                ...previous,
+                ftpSecurity: ftpSecurity as "none" | "explicit" | "implicit",
+              }))
+            }
+            options={[
+              { value: "none", label: "FTP (unencrypted)" },
+              { value: "explicit", label: "Explicit FTPS (AUTH TLS)" },
+              { value: "implicit", label: "Implicit FTPS" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </div>
+        <div data-editor-search-field="ftp-invalid-certificates">
+          <CheckboxField
+            id="ftp-accept-invalid-certificates"
+            label="Accept invalid TLS certificates"
+            description="Unsafe: disables certificate validation for FTPS."
+            checked={formData.ftpAcceptInvalidCerts ?? false}
+            onChange={(ftpAcceptInvalidCerts) =>
+              setFormData((previous) => ({
+                ...previous,
+                ftpAcceptInvalidCerts,
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        {(security === "none" || formData.ftpAcceptInvalidCerts) && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/35 bg-warning/5 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" />
+            {security === "none"
+              ? "Plain FTP sends credentials and file contents without transport encryption."
+              : "Certificate validation is disabled; a machine-in-the-middle can impersonate this server."}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  if (protocol === "ftp" && section === "advanced") {
+    return (
+      <section data-editor-search-section="ftp-options" className={cardClass}>
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+          <label
+            className="min-w-0"
+            data-editor-search-field="ftp-connect-timeout"
+          >
+            <span className="sor-form-label">Connect timeout (seconds)</span>
+            <NumberInput
+              id="ftp-connect-timeout"
+              value={formData.ftpConnectTimeoutSec ?? formData.timeout ?? 15}
+              onChange={(ftpConnectTimeoutSec) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  ftpConnectTimeoutSec,
+                }))
+              }
+              min={1}
+              max={600}
+              variant="form-sm"
+              className="w-full min-w-0"
+            />
+          </label>
+          <label
+            className="min-w-0"
+            data-editor-search-field="ftp-data-timeout"
+          >
+            <span className="sor-form-label">Data timeout (seconds)</span>
+            <NumberInput
+              id="ftp-data-timeout"
+              value={formData.ftpDataTimeoutSec ?? 30}
+              onChange={(ftpDataTimeoutSec) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  ftpDataTimeoutSec,
+                }))
+              }
+              min={1}
+              max={3600}
+              variant="form-sm"
+              className="w-full min-w-0"
+            />
+          </label>
+        </div>
+        <div data-editor-search-field="ftp-utf8">
+          <CheckboxField
+            id="ftp-utf8"
+            label="Request UTF-8 file names"
+            description="Uses UTF-8 unless the server rejects the negotiation."
+            checked={formData.ftpUtf8 ?? true}
+            onChange={(ftpUtf8) =>
+              setFormData((previous) => ({ ...previous, ftpUtf8 }))
+            }
+            variant="form"
+          />
+        </div>
+      </section>
+    );
+  }
+
+  if (protocol === "scp" && section === "connection") {
+    return (
+      <section data-editor-search-section="scp-options" className={cardClass}>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="scp-remote-path"
+        >
+          <span className="sor-form-label">Initial remote directory</span>
+          <input
+            id="scp-remote-path"
+            type="text"
+            value={formData.remotePath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                remotePath: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="/"
+          />
+        </label>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          SCP currently opens a direct SSH connection. Configured proxies, VPNs,
+          and tunnel chains fail closed instead of being bypassed.
+        </p>
+      </section>
+    );
+  }
 
   if (protocol === "telnet" && section === "connection") {
     return (
@@ -50,14 +300,22 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
     );
   }
 
-  if (protocol === "sftp" && section === "authentication") {
+  if (
+    (protocol === "sftp" || protocol === "scp") &&
+    section === "authentication"
+  ) {
     const usesKey = formData.authType === "key";
+    const prefix = protocol;
+    const label = protocol.toUpperCase();
     return (
-      <section data-editor-search-section="sftp-options" className={cardClass}>
-        <div data-editor-search-field="sftp-auth-type">
+      <section
+        data-editor-search-section={`${prefix}-options`}
+        className={cardClass}
+      >
+        <div data-editor-search-field={`${prefix}-auth-type`}>
           <Select
-            id="sftp-auth-type"
-            label="SFTP authentication"
+            id={`${prefix}-auth-type`}
+            label={`${label} authentication`}
             value={usesKey ? "key" : "password"}
             onChange={(authType) =>
               setFormData((previous) => ({
@@ -76,8 +334,8 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
         <label className="block min-w-0">
           <span className="sor-form-label">Username</span>
           <input
-            id="sftp-username"
-            data-editor-search-field="sftp-username"
+            id={`${prefix}-username`}
+            data-editor-search-field={`${prefix}-username`}
             type="text"
             value={formData.username ?? ""}
             onChange={(event) =>
@@ -95,22 +353,22 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
             <label className="block min-w-0">
               <span className="sor-form-label">Private key</span>
               <Textarea
-                id="sftp-private-key"
-                data-editor-search-field="sftp-private-key"
+                id={`${prefix}-private-key`}
+                data-editor-search-field={`${prefix}-private-key`}
                 value={formData.privateKey ?? ""}
                 onChange={(privateKey) =>
                   setFormData((previous) => ({ ...previous, privateKey }))
                 }
                 rows={4}
                 className="w-full min-w-0 resize-y font-mono text-xs"
-                placeholder="Paste the private key used by the SFTP server"
+                placeholder={`Paste the private key used by the ${label} server`}
               />
             </label>
             <label className="block min-w-0">
               <span className="sor-form-label">Key passphrase (optional)</span>
               <PasswordInput
-                id="sftp-passphrase"
-                data-editor-search-field="sftp-passphrase"
+                id={`${prefix}-passphrase`}
+                data-editor-search-field={`${prefix}-passphrase`}
                 value={formData.passphrase ?? ""}
                 onChange={(event) =>
                   setFormData((previous) => ({
@@ -127,8 +385,8 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
           <label className="block min-w-0">
             <span className="sor-form-label">Password</span>
             <PasswordInput
-              id="sftp-password"
-              data-editor-search-field="sftp-password"
+              id={`${prefix}-password`}
+              data-editor-search-field={`${prefix}-password`}
               value={formData.password ?? ""}
               onChange={(event) =>
                 setFormData((previous) => ({
@@ -141,6 +399,139 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
             />
           </label>
         )}
+      </section>
+    );
+  }
+
+  if (protocol === "scp" && section === "security") {
+    return (
+      <section data-editor-search-section="scp-options" className={cardClass}>
+        <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text)]">
+          <ShieldCheck size={15} className="text-primary" />
+          SSH host identity
+        </div>
+        <div data-editor-search-field="scp-host-key-policy">
+          <Select
+            id="scp-host-key-policy"
+            label="Host-key policy"
+            value={formData.sshTrustPolicy ?? ""}
+            onChange={(sshTrustPolicy) =>
+              setFormData((previous) => ({
+                ...previous,
+                sshTrustPolicy:
+                  sshTrustPolicy === ""
+                    ? undefined
+                    : (sshTrustPolicy as "tofu" | "always-ask" | "strict"),
+              }))
+            }
+            options={[
+              {
+                value: "",
+                label: "Fail closed for unknown hosts (safe default)",
+              },
+              { value: "tofu", label: "Trust on first use (accept new)" },
+              {
+                value: "always-ask",
+                label: "Ask policy (fails closed without a prompt)",
+              },
+              { value: "strict", label: "Strict (known hosts only)" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+            disabled={formData.ignoreSshSecurityErrors === true}
+          />
+        </div>
+        <div data-editor-search-field="scp-ignore-host-key-errors">
+          <CheckboxField
+            id="scp-ignore-host-key-errors"
+            label="Ignore SSH host-key errors"
+            description="Unsafe: sends credentials even when the server identity cannot be verified."
+            checked={formData.ignoreSshSecurityErrors === true}
+            onChange={(ignoreSshSecurityErrors) =>
+              setFormData((previous) => ({
+                ...previous,
+                ignoreSshSecurityErrors,
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="scp-known-hosts-path"
+        >
+          <span className="sor-form-label">Known hosts file (optional)</span>
+          <input
+            id="scp-known-hosts-path"
+            type="text"
+            value={formData.sshKnownHostsPath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                sshKnownHostsPath: event.target.value || undefined,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="Defaults to ~/.ssh/known_hosts"
+          />
+        </label>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          Unknown hosts fail closed under the default Ask policy because this
+          viewer does not yet provide an interactive fingerprint prompt.
+        </p>
+        {formData.ignoreSshSecurityErrors === true && (
+          <div className="flex items-start gap-2 rounded-md border border-error/35 bg-error/5 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-error" />
+            Host-key verification is disabled for this connection.
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  if (protocol === "scp" && section === "advanced") {
+    return (
+      <section data-editor-search-section="scp-options" className={cardClass}>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="scp-connect-timeout"
+        >
+          <span className="sor-form-label">Connect timeout (seconds)</span>
+          <NumberInput
+            id="scp-connect-timeout"
+            value={formData.sshConnectTimeout ?? formData.timeout ?? 30}
+            onChange={(sshConnectTimeout) =>
+              setFormData((previous) => ({
+                ...previous,
+                sshConnectTimeout,
+              }))
+            }
+            min={1}
+            max={600}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </label>
+        <div data-editor-search-field="scp-compression">
+          <CheckboxField
+            id="scp-compression"
+            label="Enable SSH compression"
+            description="Can help on slow links; may waste CPU on already compressed files."
+            checked={
+              formData.sshConnectionConfigOverride?.enableCompression ?? false
+            }
+            onChange={(enableCompression) =>
+              setFormData((previous) => ({
+                ...previous,
+                sshConnectionConfigOverride: {
+                  ...previous.sshConnectionConfigOverride,
+                  enableCompression,
+                },
+              }))
+            }
+            variant="form"
+          />
+        </div>
       </section>
     );
   }

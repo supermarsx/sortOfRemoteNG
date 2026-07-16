@@ -298,8 +298,8 @@ async function checkProtocolSupportDocumentation() {
     ["VNC", "◐"],
     ["AnyDesk", "◐"],
     ["RustDesk", "◐"],
-    ["FTP / FTPS", "○"],
-    ["SCP", "○"],
+    ["FTP / FTPS", "●"],
+    ["SCP", "●"],
     ["Spice / NX / x2go / XDMCP", "○"],
   ];
   for (const [label, status] of architectureStatuses) {
@@ -325,8 +325,8 @@ async function checkProtocolSupportDocumentation() {
     ["VNC", "Interactive client, constrained transport"],
     ["AnyDesk", "External handoff"],
     ["RustDesk", "External handoff"],
-    ["FTP", "Unavailable direct session"],
-    ["SCP", "Unavailable direct session"],
+    ["FTP / FTPS", "Interactive client, direct-route only"],
+    ["SCP", "Interactive client, direct-route only"],
   ];
   for (const [label, status] of protocolStatuses) {
     const row = markdownTableRow(protocols, label);
@@ -348,8 +348,8 @@ async function checkProtocolSupportDocumentation() {
     ["vnc", "fully-interactive"],
     ["anydesk", "external-native-handoff"],
     ["rustdesk", "external-native-handoff"],
-    ["ftp", "genuinely-unsupported"],
-    ["scp", "genuinely-unsupported"],
+    ["ftp", "fully-interactive"],
+    ["scp", "fully-interactive"],
   ];
   for (const [protocol, classification] of capabilityContracts) {
     const marker = `  ${protocol}: capability({`;
@@ -376,7 +376,10 @@ async function checkProtocolSupportDocumentation() {
     normalizedProtocols.includes("rlogin maps to rlogin") &&
     normalizedProtocols.includes("powershell-like entries map to winrm") &&
     normalizedProtocols.includes(
-      "recognizing ftp or scp does not create a direct session viewer",
+      "imported ftp remains passive/epsv and direct-route only",
+    ) &&
+    normalizedProtocols.includes(
+      "imported scp retains its explicit host-key policy and direct-route boundary",
     );
   if (!importerMappingsCurrent || !importerDocsCurrent) {
     errors.push(

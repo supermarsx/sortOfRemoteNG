@@ -119,6 +119,113 @@ describe("SavedProtocolOptions", () => {
     );
   });
 
+  it("persists only supported passive FTP connection settings", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "ftp", isGroup: false }}
+        section="connection"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Initial remote directory"), {
+      target: { value: "/incoming" },
+    });
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Data connection mode" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Extended passive (EPSV)" }),
+    );
+
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"remotePath":"/incoming"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"ftpDataChannelMode":"extendedPassive"',
+    );
+    expect(screen.queryByText(/active \(port/i)).not.toBeInTheDocument();
+  });
+
+  it("persists FTPS trust controls without hiding the unsafe state", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "ftp", isGroup: false }}
+        section="security"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Transport security" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Explicit FTPS (AUTH TLS)" }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /accept invalid tls certificates/i,
+      }),
+    );
+
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"ftpSecurity":"explicit"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"ftpAcceptInvalidCerts":true',
+    );
+    expect(
+      screen.getByText(/machine-in-the-middle can impersonate/i),
+    ).toBeInTheDocument();
+  });
+
+  it("configures SCP key authentication with distinct saved fields", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "scp", authType: "password", isGroup: false }}
+        section="authentication"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "SCP authentication" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Username and private key" }),
+    );
+
+    expect(document.querySelector("#scp-password")).not.toBeInTheDocument();
+    expect(document.querySelector("#scp-private-key")).toBeInTheDocument();
+    expect(document.querySelector("#scp-passphrase")).toBeInTheDocument();
+  });
+
+  it("persists SCP host-key policy and the honored known_hosts path", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "scp", isGroup: false }}
+        section="security"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Host-key policy" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Strict (known hosts only)" }),
+    );
+    fireEvent.change(screen.getByLabelText("Known hosts file (optional)"), {
+      target: { value: "C:\\keys\\scp_known_hosts" },
+    });
+
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"sshTrustPolicy":"strict"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"sshKnownHostsPath":"C:\\\\keys\\\\scp_known_hosts"',
+    );
+    expect(
+      screen.getByText(
+        /does not yet provide an interactive fingerprint prompt/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the RustDesk device ID as the launch target", () => {
     render(
       <SavedHarness

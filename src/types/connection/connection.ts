@@ -14,6 +14,7 @@ import type { RawSocketSettingsV1 } from "../protocols/rawSocket";
 import type { ArdSettings } from "../protocols/ard";
 import type { SerialSettingsV1 } from "../protocols/serial";
 import type { PowerShellRemotingSettings } from "../powershellRemoting";
+import type { FtpSavedConnectionOptions } from "../ftp";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -104,7 +105,7 @@ export interface IntegrationConnectionSettings {
   providerFields?: IntegrationProviderFields;
 }
 
-export interface Connection {
+export interface Connection extends FtpSavedConnectionOptions {
   id: string;
   name: string;
   protocol: ConnectionProtocol;

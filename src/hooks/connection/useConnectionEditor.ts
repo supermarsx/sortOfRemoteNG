@@ -154,6 +154,20 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     color: "green",
   },
   {
+    value: "ftp",
+    label: "FTP / FTPS",
+    desc: "Direct FTP file transfer",
+    icon: Files,
+    color: "amber",
+  },
+  {
+    value: "scp",
+    label: "SCP",
+    desc: "SSH Secure Copy",
+    icon: Files,
+    color: "green",
+  },
+  {
     value: "mysql",
     label: "MySQL",
     desc: "MySQL / MariaDB database",

@@ -19,7 +19,9 @@ export const DEFAULT_PORTS: Record<string, number> = {
   https: 443,
   winrm: 5985,
   telnet: 23,
+  ftp: 21,
   sftp: 22,
+  scp: 22,
   mysql: 3306,
   smb: 445,
   // RustDesk saved connections primarily address a remote ID; 21116 is the

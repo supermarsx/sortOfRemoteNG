@@ -86,13 +86,19 @@ const ProtocolSubtabContent: React.FC<{
     );
   }
 
-  if (["telnet", "sftp", "mysql", "smb", "rustdesk"].includes(protocol)) {
+  if (
+    ["telnet", "ftp", "sftp", "scp", "mysql", "smb", "rustdesk"].includes(
+      protocol,
+    )
+  ) {
     return (
       <SavedProtocolOptions
         formData={mgr.formData}
         setFormData={mgr.setFormData}
         section={
-          subtabId === "authentication" ? "authentication" : "connection"
+          ["authentication", "security", "advanced"].includes(subtabId)
+            ? (subtabId as "authentication" | "security" | "advanced")
+            : "connection"
         }
       />
     );

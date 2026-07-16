@@ -274,6 +274,15 @@ describe("ProtocolSections", () => {
       "authentication",
       "recovery",
     ]);
+    for (const protocol of ["ftp", "scp"] as const) {
+      expect(idsFor({ protocol })).toEqual([
+        "connection",
+        "authentication",
+        "security",
+        "advanced",
+        "recovery",
+      ]);
+    }
     for (const protocol of ["telnet", "mysql", "smb", "rustdesk"] as const) {
       expect(idsFor({ protocol })).toEqual(["connection", "recovery"]);
     }
@@ -461,6 +470,30 @@ describe("ProtocolSections", () => {
       "authentication",
     );
   });
+
+  it.each(["ftp", "scp"] as const)(
+    "routes every populated %s subtab to its matching saved-protocol section",
+    (protocol) => {
+      render(<Harness initial={{ protocol, isGroup: false }} />);
+
+      for (const [tabLabel, expectedSection] of [
+        ["Connection", "connection"],
+        ["Authentication", "authentication"],
+        ["Security", "security"],
+        ["Advanced", "advanced"],
+      ] as const) {
+        fireEvent.click(screen.getByRole("tab", { name: tabLabel }));
+        expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+          "data-protocol",
+          protocol,
+        );
+        expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+          "data-section",
+          expectedSection,
+        );
+      }
+    },
+  );
 
   it("uses roving focus with Arrow, Home, and End navigation", async () => {
     render(<Harness initial={{ protocol: "https", isGroup: false }} />);

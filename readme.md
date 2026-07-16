@@ -40,7 +40,7 @@ The project is under active development. Features that depend on an external ser
 | Area            | Current capability                                                                                                                                                                       |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk and RustDesk |
-| Files           | Native SFTP sessions with saved authentication, directory browsing, and file operations. FTP and SCP do not yet have direct session tabs                                                 |
+| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                |
 | Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                |
 | Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                  |
 | Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                      |
@@ -53,10 +53,10 @@ The saved-session matrix is source-backed and tested, but “supported” still 
 
 - **Raw Socket**, **RLogin**, **PowerShell Remoting**, **ARD**, **Telnet**, and **Serial** now have dedicated interactive clients. Raw Socket supplies exact binary TCP/UDP payload I/O rather than a shell; Telnet and RLogin are plaintext; and Serial depends on a local device, its driver, and operating-system permissions.
 - Embedded **ARD** uses a remote Mac account or dedicated VNC password. Apple Account mode is a macOS-only handoff to Screen Sharing.app; sortOfRemoteNG does not collect or send the Apple Account password.
-- **SFTP**, **MySQL/MariaDB**, and **SMB** connect from saved settings before their file or query surfaces load. The current MySQL backend is process-wide, so independent concurrent MySQL tabs are not yet isolated.
+- **FTP/FTPS**, **SFTP**, **SCP**, **MySQL/MariaDB**, and **SMB** connect from saved settings before their file or query surfaces load. FTP and SCP currently support direct targets only; the current MySQL backend is process-wide, so independent concurrent MySQL tabs are not yet isolated.
 - **VNC** requires a WebSocket-capable endpoint or trusted WebSocket proxy because the app does not provide a raw-TCP RFB bridge.
 - **AnyDesk** and **RustDesk** are installed-client handoffs. The app launches and monitors the native client; it does not embed either product's framebuffer.
-- **FTP** and **SCP** remain unavailable as direct session tabs even though backend or import code exists. Use SFTP when the server supports it.
+- **FTP/FTPS** supports passive PASV/EPSV sessions; active mode, routes, queue execution, resume, and live progress are not exposed. **SCP** enforces its host-key policy and known_hosts path, while routes, interactive host-key prompts, cancellation/progress, resume, and agent authentication remain unavailable. Both fail closed for configured proxy/VPN/tunnel routes.
 - Automated tests verify application contracts and local simulated transports. A real connection still requires a reachable target, valid credentials, and any applicable native client, driver, or server configuration.
 - An entry in an import format, backend crate, or settings screen does not by itself prove a complete session path. The maintained [protocol matrix](docs/protocols.md) is the authority.
 

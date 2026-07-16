@@ -800,6 +800,26 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "ftp" && session.backendSessionId) {
+      try {
+        await invoke("ftp_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect FTP session:", error);
+      }
+    }
+
+    if (session.protocol === "scp" && session.backendSessionId) {
+      try {
+        await invoke("scp_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect SCP session:", error);
+      }
+    }
+
     if (session.protocol === "rustdesk" && session.backendSessionId) {
       try {
         await invoke("rustdesk_disconnect", {

@@ -77,7 +77,7 @@ describe("protocol availability contract", () => {
   });
 
   it("fails closed for unsupported, management-only, and unknown sessions", () => {
-    for (const protocol of ["ftp", "scp", "spice", "x2go"]) {
+    for (const protocol of ["spice", "x2go"]) {
       expect(getDirectSessionUnavailableMessage(protocol), protocol).toMatch(
         /does not have a wired direct session runtime/i,
       );
@@ -90,6 +90,17 @@ describe("protocol availability contract", () => {
     expect(getDirectSessionUnavailableMessage("future-protocol")).toMatch(
       /no registered frontend session runtime/i,
     );
+  });
+
+  it("records the bounded direct FTP and SCP file-transfer runtimes", () => {
+    for (const protocol of ["ftp", "scp"]) {
+      const availability = getProtocolAvailability(protocol);
+      expect(availability?.classification, protocol).toBe("fully-interactive");
+      expect(availability?.sessionEntry, protocol).toBe("client-owned");
+      expect(availability?.frontendPath, protocol).toMatch(/Client\.tsx$/);
+      expect(availability?.testPath, protocol).toMatch(/\.test\.tsx$/);
+      expect(getDirectSessionUnavailableMessage(protocol), protocol).toBeNull();
+    }
   });
 
   it("keeps the non-persisted client audit list represented", () => {

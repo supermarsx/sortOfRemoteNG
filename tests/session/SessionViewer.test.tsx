@@ -20,6 +20,8 @@ const mockState = vi.hoisted(() => ({
   telnetClientProps: vi.fn(),
   vncClientProps: vi.fn(),
   sftpClientProps: vi.fn(),
+  ftpClientProps: vi.fn(),
+  scpClientProps: vi.fn(),
   rustDeskClientProps: vi.fn(),
   mySqlClientProps: vi.fn(),
   smbClientProps: vi.fn(),
@@ -126,6 +128,20 @@ vi.mock("../../src/components/protocol/SFTPClient", () => ({
   SFTPClient: (props: any) => {
     mockState.sftpClientProps(props);
     return <div data-testid="mock-sftp-client">SFTP Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/FTPClient", () => ({
+  FTPClient: (props: any) => {
+    mockState.ftpClientProps(props);
+    return <div data-testid="mock-ftp-client">FTP Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/ScpClient", () => ({
+  ScpClient: (props: any) => {
+    mockState.scpClientProps(props);
+    return <div data-testid="mock-scp-client">SCP Client</div>;
   },
 }));
 
@@ -339,7 +355,9 @@ describe("SessionViewer", () => {
     ["serial", "mock-serial-client"],
     ["telnet", "mock-telnet-client"],
     ["vnc", "mock-vnc-client"],
+    ["ftp", "mock-ftp-client"],
     ["sftp", "mock-sftp-client"],
+    ["scp", "mock-scp-client"],
     ["rustdesk", "mock-rustdesk-client"],
     ["mysql", "mock-mysql-client"],
     ["smb", "mock-smb-client"],
@@ -367,13 +385,13 @@ describe("SessionViewer", () => {
   it("does not claim that an unrouted protocol is connected", () => {
     render(
       <SessionViewer
-        session={createSession({ protocol: "ftp", status: "connected" })}
+        session={createSession({ protocol: "gcp", status: "connected" })}
       />,
     );
 
     expect(screen.getByText("Connection Failed")).toBeInTheDocument();
     expect(
-      screen.getByText(/does not have a wired direct session runtime/i),
+      screen.getByText(/available through its management panel/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
   });

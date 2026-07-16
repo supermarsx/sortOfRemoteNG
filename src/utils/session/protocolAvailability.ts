@@ -166,12 +166,13 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   ftp: capability({
     label: "FTP",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/FTPClient.tsx",
     backendPath: "src-tauri/crates/sorng-ftp",
-    testPath: "tests/session/useSessionManagerSettings.test.tsx",
-    detail: "There is no direct interactive FTP tab; use SFTP.",
+    testPath: "src/hooks/protocol/useFTPSession.test.tsx",
+    detail:
+      "The native file browser owns a direct passive/EPSV FTP or FTPS session. Routed connections, active mode, queues, resume, and live transfer progress fail closed or remain unavailable.",
   }),
   sftp: capability({
     label: "SFTP",
@@ -185,12 +186,13 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   scp: capability({
     label: "SCP",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/ScpClient.tsx",
     backendPath: "src-tauri/crates/sorng-scp",
-    testPath: "tests/session/useSessionManagerSettings.test.tsx",
-    detail: "There is no direct interactive SCP tab; use SFTP.",
+    testPath: "src/hooks/protocol/useScpClient.test.tsx",
+    detail:
+      "The native file browser owns a direct SCP session with explicit host-key policy. Proxy/VPN/tunnel routes, agent auth, cancellation, live progress, resume, and remote mutation beyond mkdir/delete remain unavailable.",
   }),
   winrm: capability({
     label: "PowerShell Remoting",

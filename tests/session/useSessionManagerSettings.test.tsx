@@ -24,6 +24,11 @@ const connectionMocks = vi.hoisted(() => ({
   executeScriptsForTrigger: vi.fn(),
   startChecking: vi.fn(),
   stopChecking: vi.fn(),
+  invoke: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => connectionMocks.invoke(...args),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -91,6 +96,7 @@ describe("useSessionManager settings effects", () => {
     SettingsManager.resetInstance();
     connectionMocks.state = { sessions: [], connections: [] };
     connectionMocks.executeScriptsForTrigger.mockResolvedValue(undefined);
+    connectionMocks.invoke.mockResolvedValue(undefined);
     SettingsManager.getInstance().applyInMemory({
       maxConcurrentConnections: 10,
       retryAttempts: 0,
@@ -112,13 +118,15 @@ describe("useSessionManager settings effects", () => {
     expect(usesGenericSessionTimer("telnet")).toBe(false);
     expect(usesGenericSessionTimer("vnc")).toBe(false);
     expect(usesGenericSessionTimer("sftp")).toBe(false);
+    expect(usesGenericSessionTimer("ftp")).toBe(false);
+    expect(usesGenericSessionTimer("scp")).toBe(false);
     expect(usesGenericSessionTimer("mysql")).toBe(false);
     expect(usesGenericSessionTimer("smb")).toBe(false);
     expect(usesGenericSessionTimer("rustdesk")).toBe(false);
   });
 
   it("fails closed for unsupported and management-only protocols", () => {
-    expect(getUnsupportedDirectSessionMessage("ftp")).toMatch(
+    expect(getUnsupportedDirectSessionMessage("spice")).toMatch(
       /does not have a wired direct session runtime/i,
     );
     expect(getUnsupportedDirectSessionMessage("ilo")).toMatch(
@@ -129,6 +137,46 @@ describe("useSessionManager settings effects", () => {
     );
     expect(getUnsupportedDirectSessionMessage("ssh")).toBeNull();
   });
+
+  it.each([
+    ["ftp", "ftp_disconnect"],
+    ["scp", "scp_disconnect"],
+  ] as const)(
+    "final-close owns the native %s disconnect and then removes the session",
+    async (protocol, command) => {
+      const connection = makeConnection({
+        id: "conn-existing",
+        protocol,
+        warnOnClose: false,
+      });
+      const session = makeSession({
+        protocol,
+        backendSessionId: `backend-${protocol}-1`,
+      });
+      connectionMocks.state = {
+        sessions: [session],
+        connections: [connection],
+      };
+      const { result } = renderHook(() => useSessionManager());
+
+      await act(async () => {
+        await result.current.handleSessionClose(session.id);
+      });
+
+      expect(connectionMocks.invoke).toHaveBeenCalledWith(command, {
+        sessionId: `backend-${protocol}-1`,
+      });
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "REMOVE_SESSION",
+        payload: session.id,
+      });
+      const dispatchCallOrder =
+        connectionMocks.dispatch.mock.invocationCallOrder;
+      expect(connectionMocks.invoke.mock.invocationCallOrder[0]).toBeLessThan(
+        dispatchCallOrder[dispatchCallOrder.length - 1] ?? Infinity,
+      );
+    },
+  );
 
   it("keeps Quick Connect credentials in volatile runtime memory", async () => {
     const { result } = renderHook(() => useSessionManager());
