@@ -145,7 +145,7 @@ fn remove_ts_inline_syntax(code: &str) -> String {
 
         // Return type annotation: ): SomeType { or ): SomeType =>
         static ref RE_RETURN_TYPE: Regex =
-            Regex::new(r"\)\s*:\s*[\w<>\[\]|&\s,\.]+(?=\s*(?:\{|=>))").expect("valid regex literal");
+            Regex::new(r"\)\s*:\s*[\w<>\[\]|&\s,\.]+(\s*(?:\{|=>))").expect("valid regex literal");
 
         // Variable type annotation: let/const/var x: Type =
         static ref RE_VAR_TYPE: Regex =
@@ -153,11 +153,11 @@ fn remove_ts_inline_syntax(code: &str) -> String {
 
         // Optional param: foo?: Type  →  foo
         static ref RE_OPTIONAL_PARAM: Regex =
-            Regex::new(r"(\w+)\s*\?\s*:\s*[\w<>\[\]|&\s\.]+(?=[,\)])").expect("valid regex literal");
+            Regex::new(r"(\w+)\s*\?\s*:\s*[\w<>\[\]|&\s\.]+([,\)])").expect("valid regex literal");
 
         // Param type annotation: foo: Type  →  foo
         static ref RE_PARAM_TYPE: Regex =
-            Regex::new(r"(\w+)\s*:\s*[\w<>\[\]|&\s\.]+(?=[,\)])").expect("valid regex literal");
+            Regex::new(r"(\w+)\s*:\s*[\w<>\[\]|&\s\.]+([,\)])").expect("valid regex literal");
 
         // 'as Type' assertions
         static ref RE_AS_CAST: Regex =
@@ -179,15 +179,40 @@ fn remove_ts_inline_syntax(code: &str) -> String {
     let mut r = code.to_string();
     r = RE_FUNC_GENERIC.replace_all(&r, "$1").to_string();
     r = RE_CLASS_GENERIC.replace_all(&r, "$1").to_string();
-    r = RE_RETURN_TYPE.replace_all(&r, ")").to_string();
+    r = RE_RETURN_TYPE.replace_all(&r, ")$1").to_string();
     r = RE_VAR_TYPE.replace_all(&r, "$1$2").to_string();
-    r = RE_OPTIONAL_PARAM.replace_all(&r, "$1").to_string();
-    r = RE_PARAM_TYPE.replace_all(&r, "$1").to_string();
+    r = RE_OPTIONAL_PARAM.replace_all(&r, "$1$2").to_string();
+    r = RE_PARAM_TYPE.replace_all(&r, "$1$2").to_string();
     r = RE_AS_CAST.replace_all(&r, "").to_string();
     r = RE_MODIFIERS.replace_all(&r, "").to_string();
     r = RE_NON_NULL.replace_all(&r, "$1.$2").to_string();
     r = RE_VOID_RETURN.replace_all(&r, ");").to_string();
     r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_ts_inline_syntax;
+
+    #[test]
+    fn strips_return_types_without_dropping_javascript_delimiters() {
+        assert_eq!(
+            remove_ts_inline_syntax("function render(value: string): string { return value; }"),
+            "function render(value){ return value; }"
+        );
+        assert_eq!(
+            remove_ts_inline_syntax("const double = (value: number): number => value * 2;"),
+            "const double = (value)=> value * 2;"
+        );
+    }
+
+    #[test]
+    fn strips_parameter_types_without_dropping_parameter_delimiters() {
+        assert_eq!(
+            remove_ts_inline_syntax("function greet(name?: string, count: number) {}"),
+            "function greet(name, count) {}"
+        );
+    }
 }
 
 impl ScriptService {
