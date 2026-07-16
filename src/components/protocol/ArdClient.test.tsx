@@ -45,6 +45,7 @@ const nativeCapabilities: ArdRuntimeCapabilities = {
 const createModel = (): ArdClientModel => ({
   canvasRef: { current: null },
   status: "connected",
+  runtimePath: "embedded",
   error: null,
   message: "Connected",
   backendSessionId: "backend-ard-1",
@@ -95,6 +96,7 @@ describe("ArdClient", () => {
   it("keeps Apple Account passwords out of the app and reports handoff failure", async () => {
     const model = createModel();
     model.status = "error";
+    model.runtimePath = "nativeAppleAccount";
     model.settings = {
       ...model.settings,
       authMode: "appleAccountNative",
@@ -122,6 +124,7 @@ describe("ArdClient", () => {
   it("copies the saved account and invokes every explicit open or focus request", async () => {
     const model = createModel();
     model.status = "nativeHandoff";
+    model.runtimePath = "nativeAppleAccount";
     model.settings = {
       ...model.settings,
       authMode: "appleAccountNative",
@@ -165,6 +168,7 @@ describe("ArdClient", () => {
   it("disables the native action when runtime capabilities reject the platform", () => {
     const model = createModel();
     model.status = "error";
+    model.runtimePath = "unavailable";
     model.settings = {
       ...model.settings,
       authMode: "appleAccountNative",
@@ -194,6 +198,7 @@ describe("ArdClient", () => {
   it("keeps the native action disabled while capabilities are loading", () => {
     const model = createModel();
     model.status = "nativeHandoff";
+    model.runtimePath = "resolving";
     model.settings = {
       ...model.settings,
       authMode: "appleAccountNative",
@@ -209,4 +214,52 @@ describe("ArdClient", () => {
     fireEvent.click(open);
     expect(model.launchNativeScreenSharing).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      "macOsAccount" as const,
+      "This session uses the remote Mac account username and password.",
+    ],
+    [
+      "vncPassword" as const,
+      "This session uses the dedicated Screen Sharing VNC password; the username is ignored.",
+    ],
+  ])(
+    "renders the embedded canvas and truthful %s fallback guidance",
+    (authMode, guidance) => {
+      const model = createModel();
+      model.status = "connecting";
+      model.runtimePath = "embeddedFallback";
+      model.settings = {
+        ...model.settings,
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "person@example.test",
+        crossPlatformFallback: { enabled: true, authMode },
+      };
+      hookMock.mockReturnValue(model);
+
+      render(<ArdClient session={session} />);
+
+      expect(
+        screen.getByRole("application", {
+          name: "Apple Remote Desktop framebuffer",
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Cross-platform fallback")).toBeInTheDocument();
+      const fallbackNotice = screen
+        .getByText(/Embedded cross-platform fallback selected/)
+        .closest("div");
+      expect(fallbackNotice).toHaveTextContent(
+        "Embedded cross-platform fallback selected.",
+      );
+      expect(fallbackNotice).toHaveTextContent(guidance);
+      expect(fallbackNotice).toHaveTextContent(
+        "These are not Apple Account credentials",
+      );
+      expect(
+        screen.queryByRole("button", { name: "Open / focus Screen Sharing" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText("person@example.test")).not.toBeInTheDocument();
+    },
+  );
 });

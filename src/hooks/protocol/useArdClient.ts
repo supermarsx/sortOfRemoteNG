@@ -11,6 +11,7 @@ import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
   normalizeArdSettings,
+  type ArdEmbeddedAuthMode,
   type ArdFrameMetadata,
   type ArdFrontendStatus,
   type ArdInputAction,
@@ -32,6 +33,7 @@ import {
 export interface ArdClientModel {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: ArdFrontendStatus | "nativeHandoff";
+  runtimePath: ArdRuntimePath;
   error: string | null;
   message: string | null;
   backendSessionId: string | null;
@@ -47,6 +49,13 @@ export interface ArdClientModel {
   disconnect(): Promise<void>;
   launchNativeScreenSharing(): Promise<ArdNativeHandoffResult>;
 }
+
+export type ArdRuntimePath =
+  | "resolving"
+  | "nativeAppleAccount"
+  | "embeddedFallback"
+  | "embedded"
+  | "unavailable";
 
 const resizeCanvasPreservingContents = (
   canvas: HTMLCanvasElement,
@@ -82,6 +91,9 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
   );
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<ArdClientModel["status"]>("connecting");
+  const [runtimePath, setRuntimePathState] = useState<ArdRuntimePath>(() =>
+    settings.authMode === "appleAccountNative" ? "resolving" : "embedded",
+  );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [backendSessionId, setBackendSessionId] = useState<string | null>(
@@ -97,9 +109,15 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
   sessionRef.current = session;
   const backendRef = useRef(session.backendSessionId ?? null);
   const capabilitiesRef = useRef<ArdRuntimeCapabilities | null>(null);
+  const runtimePathRef = useRef<ArdRuntimePath>(runtimePath);
   const nativeAutoLaunchAttemptedRef = useRef(false);
   const mountedRef = useRef(true);
   const preserveOnUnmountRef = useRef(false);
+
+  const setRuntimePath = useCallback((path: ArdRuntimePath) => {
+    runtimePathRef.current = path;
+    setRuntimePathState(path);
+  }, []);
 
   const updateFrontendSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
@@ -243,6 +261,14 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
         ),
       );
     }
+    if (
+      runtimePathRef.current !== "resolving" &&
+      runtimePathRef.current !== "nativeAppleAccount"
+    ) {
+      throw new Error(
+        "Native Screen Sharing is not active while the embedded ARD fallback is in use.",
+      );
+    }
 
     let handoff: ArdNativeHandoffResult;
     try {
@@ -274,15 +300,89 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
         setCapabilities(runtimeCapabilities);
         if (!connection)
           throw new Error("ARD connection settings are unavailable.");
-        if (settings.authMode === "appleAccountNative") {
-          if (!nativeAutoLaunchAttemptedRef.current) {
-            nativeAutoLaunchAttemptedRef.current = true;
-            await launchNativeScreenSharing();
+
+        const nativeRequested = settings.authMode === "appleAccountNative";
+        const fallbackEnabled =
+          nativeRequested && settings.crossPlatformFallback.enabled;
+        const embeddedAuthMode: ArdEmbeddedAuthMode =
+          settings.authMode === "appleAccountNative"
+            ? settings.crossPlatformFallback.authMode
+            : settings.authMode;
+        let fallbackReason: string | null = null;
+
+        if (nativeRequested) {
+          if (runtimeCapabilities.appleAccountNative.available) {
+            setRuntimePath("nativeAppleAccount");
+            if (!nativeAutoLaunchAttemptedRef.current) {
+              nativeAutoLaunchAttemptedRef.current = true;
+              try {
+                await launchNativeScreenSharing();
+                return;
+              } catch (cause) {
+                if (!fallbackEnabled) throw cause;
+                fallbackReason = `Apple Screen Sharing could not be opened (${ardDisplayError(
+                  cause,
+                  connection.password,
+                )}); using the explicitly configured embedded fallback.`;
+              }
+            } else {
+              return;
+            }
+          } else if (fallbackEnabled) {
+            const unavailableReason =
+              runtimeCapabilities.appleAccountNative.reason ||
+              "Apple Account Screen Sharing is unavailable on this platform.";
+            fallbackReason = `${ardDisplayError(
+              unavailableReason,
+              connection.password,
+            )} Using the explicitly configured embedded fallback.`;
+          } else {
+            setRuntimePath("unavailable");
+            throw new Error(
+              runtimeCapabilities.appleAccountNative.reason ||
+                "Apple Account Screen Sharing is unavailable on this platform.",
+            );
           }
-          return;
+        }
+
+        if (nativeRequested) {
+          setRuntimePath("embeddedFallback");
+        } else {
+          setRuntimePath("embedded");
+        }
+
+        if (!runtimeCapabilities.embeddedRfb.available) {
+          throw new Error(
+            `The embedded ARD/RFB runtime is unavailable, so the ${
+              nativeRequested
+                ? "configured cross-platform fallback"
+                : "embedded ARD session"
+            } cannot start.`,
+          );
+        }
+        if (
+          !runtimeCapabilities.embeddedRfb.authenticationModes.includes(
+            embeddedAuthMode,
+          )
+        ) {
+          throw new Error(
+            `The embedded ARD/RFB runtime does not support the configured ${embeddedAuthMode} authentication ${
+              nativeRequested ? "fallback" : "mode"
+            }.`,
+          );
         }
         const routeError = ardUnsupportedNetworkPath(connection);
         if (routeError) throw new Error(routeError);
+
+        if (nativeRequested) {
+          const credentialDescription =
+            embeddedAuthMode === "macOsAccount"
+              ? "the remote Mac account username and password"
+              : "the dedicated Screen Sharing VNC password (the username is ignored)";
+          setMessage(
+            `${fallbackReason ?? "Native Apple Account Screen Sharing is unavailable."} The fallback uses ${credentialDescription}, never Apple Account credentials.`,
+          );
+        }
 
         const frameDataChannel = new Channel<ArdBinaryPayload>((data) =>
           assembler.acceptData(data),
@@ -294,10 +394,13 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
         const id = await invoke<string>("connect_ard", {
           host: session.hostname,
           port: connection.port || 5900,
-          username: connection.username ?? "",
+          username:
+            embeddedAuthMode === "macOsAccount"
+              ? (connection.username ?? "")
+              : "",
           password: connection.password ?? "",
           connectionId: connection.id,
-          authenticationMode: settings.authMode,
+          authenticationMode: embeddedAuthMode,
           autoReconnect: settings.autoReconnect,
           curtainOnConnect: settings.curtainOnConnect,
           localCursor: settings.localCursor,
@@ -317,9 +420,18 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
       } catch (cause) {
         if (cancelled || !mountedRef.current) return;
         const detail = ardDisplayError(cause, connection?.password);
+        if (
+          settings.authMode === "appleAccountNative" &&
+          runtimePathRef.current === "resolving"
+        ) {
+          setRuntimePath("unavailable");
+        }
         setStatus("error");
         setError(detail);
-        if (settings.authMode !== "appleAccountNative") {
+        if (
+          settings.authMode !== "appleAccountNative" ||
+          runtimePathRef.current === "embeddedFallback"
+        ) {
           updateFrontendSession({ status: "error", errorMessage: detail });
         }
       }
@@ -334,6 +446,7 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
     handleStatus,
     launchNativeScreenSharing,
     session.hostname,
+    setRuntimePath,
     settings,
     updateFrontendSession,
   ]);
@@ -413,6 +526,7 @@ export function useArdClient(session: ConnectionSession): ArdClientModel {
   return {
     canvasRef,
     status,
+    runtimePath,
     error,
     message,
     backendSessionId,

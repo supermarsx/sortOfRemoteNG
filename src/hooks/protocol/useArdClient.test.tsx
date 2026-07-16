@@ -5,8 +5,10 @@ import type {
   ConnectionSession,
 } from "../../types/connection/connection";
 import type {
+  ArdEmbeddedAuthMode,
   ArdNativeHandoffResult,
   ArdRuntimeCapabilities,
+  ArdStatusEvent,
 } from "../../types/protocols/ard";
 import { ardDisplayError, useArdClient } from "./useArdClient";
 
@@ -86,6 +88,58 @@ const handoff: ArdNativeHandoffResult = {
   connectionEstablished: false,
   acceptsPassword: false,
   targetPrefilled: false,
+};
+
+const createFallbackConnection = (
+  authMode: ArdEmbeddedAuthMode = "macOsAccount",
+  enabled = true,
+): Connection =>
+  ({
+    ...connection,
+    username: "remote-mac-user",
+    ardSettings: {
+      version: 3,
+      authMode: "appleAccountNative",
+      appleAccountIdentifier,
+      crossPlatformFallback: { enabled, authMode },
+      autoReconnect: true,
+      curtainOnConnect: false,
+      localCursor: true,
+      viewOnly: false,
+    },
+  }) as unknown as Connection;
+
+const createEmbeddedConnection = (authMode: ArdEmbeddedAuthMode): Connection =>
+  ({
+    ...connection,
+    username: "remote-mac-user",
+    ardSettings: {
+      version: 3,
+      authMode,
+      crossPlatformFallback: { enabled: false, authMode: "macOsAccount" },
+      autoReconnect: true,
+      curtainOnConnect: false,
+      localCursor: true,
+      viewOnly: false,
+    },
+  }) as unknown as Connection;
+
+const unavailableNativeCapabilities = (
+  platform: "Windows" | "Linux" = "Windows",
+): ArdRuntimeCapabilities => ({
+  ...capabilities,
+  appleAccountNative: {
+    ...capabilities.appleAccountNative,
+    available: false,
+    reason: `Apple Screen Sharing requires macOS and is unavailable on ${platform}.`,
+  },
+});
+
+const useConnection = (selected: Connection) => {
+  mocks.useConnections.mockReturnValue({
+    state: { connections: [selected], sessions: [] },
+    dispatch: mocks.dispatch,
+  });
 };
 
 beforeEach(() => {
@@ -215,6 +269,7 @@ describe("useArdClient native Apple Account handoff", () => {
     });
 
     const { result, unmount } = renderHook(() => useArdClient(session));
+    expect(result.current.runtimePath).toBe("resolving");
     await expect(result.current.launchNativeScreenSharing()).rejects.toThrow(
       "availability is still being checked",
     );
@@ -273,6 +328,26 @@ describe("useArdClient native Apple Account handoff", () => {
     ).toHaveLength(0);
   });
 
+  it("marks a failed capability check unavailable instead of leaving it resolving", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.reject(new Error("capability discovery failed"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    expect(result.current.runtimePath).toBe("resolving");
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.runtimePath).toBe("unavailable");
+    expect(result.current.error).toBe("capability discovery failed");
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([command]) => command === "launch_apple_account_screen_sharing",
+      ),
+    ).toBe(false);
+  });
+
   it("ignores a pending native handoff after unmount", async () => {
     let resolveLaunch!: (value: ArdNativeHandoffResult) => void;
     const pendingLaunch = new Promise<ArdNativeHandoffResult>((resolve) => {
@@ -304,6 +379,330 @@ describe("useArdClient native Apple Account handoff", () => {
       await pendingLaunch;
     });
     expect(mocks.dispatch).toHaveBeenCalledTimes(dispatchCountAtUnmount);
+  });
+});
+
+describe("useArdClient cross-platform Apple Account fallback", () => {
+  it.each([
+    ["Windows" as const, "macOsAccount" as const, "remote-mac-user"],
+    ["Windows" as const, "vncPassword" as const, ""],
+    ["Linux" as const, "macOsAccount" as const, "remote-mac-user"],
+    ["Linux" as const, "vncPassword" as const, ""],
+  ])(
+    "selects the explicit %s %s fallback and reports connected only from the backend",
+    async (platform, authMode, expectedUsername) => {
+      const selected = createFallbackConnection(authMode);
+      useConnection(selected);
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === "get_ard_runtime_capabilities") {
+          return Promise.resolve(unavailableNativeCapabilities(platform));
+        }
+        if (command === "connect_ard") {
+          return Promise.resolve("fallback-backend-session");
+        }
+        return Promise.resolve(undefined);
+      });
+
+      const { result } = renderHook(() => useArdClient(session));
+      await waitFor(() =>
+        expect(result.current.backendSessionId).toBe(
+          "fallback-backend-session",
+        ),
+      );
+
+      expect(result.current.runtimePath).toBe("embeddedFallback");
+      expect(result.current.status).toBe("connecting");
+      expect(result.current.message).toContain(
+        "explicitly configured embedded fallback",
+      );
+      expect(result.current.message).toContain(
+        "never Apple Account credentials",
+      );
+
+      const connectCall = mocks.invoke.mock.calls.find(
+        ([command]) => command === "connect_ard",
+      );
+      expect(connectCall).toBeDefined();
+      const args = connectCall?.[1] as Record<string, unknown>;
+      expect(Object.keys(args).sort()).toEqual(
+        [
+          "authenticationMode",
+          "autoReconnect",
+          "connectionId",
+          "curtainOnConnect",
+          "frameDataChannel",
+          "frameMetadataChannel",
+          "host",
+          "localCursor",
+          "password",
+          "port",
+          "statusChannel",
+          "username",
+        ].sort(),
+      );
+      expect(args).toEqual(
+        expect.objectContaining({
+          host: session.hostname,
+          port: 5900,
+          username: expectedUsername,
+          password: savedPassword,
+          connectionId: selected.id,
+          authenticationMode: authMode,
+        }),
+      );
+      expect(JSON.stringify(args)).not.toContain(appleAccountIdentifier);
+      expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+        '"status":"connected"',
+      );
+
+      const statusChannel = args.statusChannel as {
+        onmessage(event: ArdStatusEvent): void;
+      };
+      act(() => {
+        statusChannel.onmessage({
+          sessionId: "fallback-backend-session",
+          status: "connected",
+          message: "Connected by embedded ARD",
+          timestamp: "2026-01-01T00:00:01Z",
+        });
+      });
+      expect(result.current.status).toBe("connected");
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({ status: "connected" }),
+        }),
+      );
+    },
+  );
+
+  it("keeps a non-macOS native profile fail-closed without explicit opt-in", async () => {
+    useConnection(createFallbackConnection("macOsAccount", false));
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve(unavailableNativeCapabilities("Windows"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    expect(result.current.runtimePath).toBe("unavailable");
+    expect(result.current.error).toContain("unavailable on Windows");
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+    ).toBe(false);
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([command]) => command === "launch_apple_account_screen_sharing",
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+      '"status":"error"',
+    );
+  });
+
+  it("gives native macOS handoff precedence over an enabled fallback", async () => {
+    useConnection(createFallbackConnection());
+    const { result } = renderHook(() => useArdClient(session));
+
+    await waitFor(() => expect(result.current.status).toBe("nativeHandoff"));
+    expect(result.current.runtimePath).toBe("nativeAppleAccount");
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "launch_apple_account_screen_sharing",
+      ),
+    ).toEqual([["launch_apple_account_screen_sharing"]]);
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+    ).toBe(false);
+    const invocations = JSON.stringify(mocks.invoke.mock.calls);
+    expect(invocations).not.toContain(appleAccountIdentifier);
+    expect(invocations).not.toContain(savedPassword);
+  });
+
+  it("uses the enabled fallback when macOS cannot open Screen Sharing", async () => {
+    useConnection(createFallbackConnection("macOsAccount"));
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve(capabilities);
+      }
+      if (command === "launch_apple_account_screen_sharing") {
+        return Promise.reject(new Error("open command failed"));
+      }
+      if (command === "connect_ard") {
+        return Promise.resolve("launcher-fallback-session");
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() =>
+      expect(result.current.backendSessionId).toBe("launcher-fallback-session"),
+    );
+
+    expect(result.current.runtimePath).toBe("embeddedFallback");
+    expect(result.current.message).toContain(
+      "Apple Screen Sharing could not be opened",
+    );
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "launch_apple_account_screen_sharing",
+      ),
+    ).toEqual([["launch_apple_account_screen_sharing"]]);
+    await expect(result.current.launchNativeScreenSharing()).rejects.toThrow(
+      "embedded ARD fallback is in use",
+    );
+  });
+
+  it("fails truthfully when the embedded runtime is unavailable", async () => {
+    useConnection(createFallbackConnection());
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve({
+          ...unavailableNativeCapabilities("Linux"),
+          embeddedRfb: { ...capabilities.embeddedRfb, available: false },
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.runtimePath).toBe("embeddedFallback");
+    expect(result.current.error).toContain(
+      "embedded ARD/RFB runtime is unavailable",
+    );
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+    ).toBe(false);
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).toContain(
+      '"status":"error"',
+    );
+  });
+
+  it("rejects an unsupported fallback authentication mode", async () => {
+    useConnection(createFallbackConnection("macOsAccount"));
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve({
+          ...unavailableNativeCapabilities("Windows"),
+          embeddedRfb: {
+            ...capabilities.embeddedRfb,
+            authenticationModes: ["vncPassword"],
+          },
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toContain(
+      "does not support the configured macOsAccount authentication fallback",
+    );
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+    ).toBe(false);
+  });
+
+  it("rejects saved application routes before starting the fallback", async () => {
+    useConnection({
+      ...createFallbackConnection(),
+      proxyChainId: "must-not-be-bypassed",
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve(unavailableNativeCapabilities("Linux"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toContain("direct TCP connections only");
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+    ).toBe(false);
+  });
+
+  it("reports an embedded fallback connection failure on the frontend session", async () => {
+    useConnection(createFallbackConnection());
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve(unavailableNativeCapabilities("Windows"));
+      }
+      if (command === "connect_ard") {
+        return Promise.reject(new Error(`backend rejected ${savedPassword}`));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toBe("backend rejected [redacted password]");
+    expect(result.current.runtimePath).toBe("embeddedFallback");
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          status: "error",
+          errorMessage: "backend rejected [redacted password]",
+        }),
+      }),
+    );
+  });
+});
+
+describe("useArdClient direct embedded capability errors", () => {
+  it("describes an unavailable runtime as an embedded session failure", async () => {
+    useConnection(createEmbeddedConnection("macOsAccount"));
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve({
+          ...capabilities,
+          embeddedRfb: { ...capabilities.embeddedRfb, available: false },
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.runtimePath).toBe("embedded");
+    expect(result.current.error).toContain("embedded ARD session cannot start");
+    expect(result.current.error).not.toContain("cross-platform fallback");
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).toContain(
+      '"status":"error"',
+    );
+  });
+
+  it("describes unsupported direct authentication as a mode, not a fallback", async () => {
+    useConnection(createEmbeddedConnection("macOsAccount"));
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_ard_runtime_capabilities") {
+        return Promise.resolve({
+          ...capabilities,
+          embeddedRfb: {
+            ...capabilities.embeddedRfb,
+            authenticationModes: ["vncPassword"],
+          },
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useArdClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.runtimePath).toBe("embedded");
+    expect(result.current.error).toContain(
+      "configured macOsAccount authentication mode",
+    );
+    expect(result.current.error).not.toContain("authentication fallback");
+    expect(
+      mocks.invoke.mock.calls.some(([command]) => command === "connect_ard"),
+    ).toBe(false);
   });
 });
 

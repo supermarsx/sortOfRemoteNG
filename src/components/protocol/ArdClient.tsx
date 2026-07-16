@@ -41,7 +41,10 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
   const pendingPointerRef = useRef<{ x: number; y: number } | null>(null);
   const pointerFrameRef = useRef<number | null>(null);
   const connected = model.status === "connected";
-  const nativeHandoff = model.status === "nativeHandoff";
+  const embeddedRuntime =
+    model.runtimePath === "embedded" ||
+    model.runtimePath === "embeddedFallback";
+  const embeddedFallback = model.runtimePath === "embeddedFallback";
 
   useEffect(
     () => () => {
@@ -149,6 +152,11 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
         >
           {model.status.replace(/([A-Z])/g, " $1")}
         </span>
+        {embeddedFallback ? (
+          <span className="rounded-full border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2 py-1 text-[var(--color-warning)]">
+            Cross-platform fallback
+          </span>
+        ) : null}
         {model.desktopWidth > 0 ? (
           <span className="text-[var(--color-textMuted)]">
             {model.desktopWidth} × {model.desktopHeight}
@@ -202,7 +210,7 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
         </div>
       )}
 
-      {nativeHandoff || model.settings.authMode === "appleAccountNative" ? (
+      {!embeddedRuntime ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-8">
           <div className="max-w-xl rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
             <ShieldAlert
@@ -246,6 +254,7 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
                 type="button"
                 className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={
+                  model.runtimePath !== "nativeAppleAccount" ||
                   model.capabilities?.appleAccountNative.available !== true
                 }
                 onClick={() => void openNativeScreenSharing()}
@@ -268,48 +277,81 @@ export const ArdClient: React.FC<{ session: ConnectionSession }> = ({
           </div>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto bg-black p-2">
-          <canvas
-            ref={model.canvasRef}
-            className="mx-auto block max-h-full max-w-full bg-black outline-none"
-            width={1024}
-            height={768}
-            role="application"
-            aria-label="Apple Remote Desktop framebuffer"
-            tabIndex={0}
-            onContextMenu={(event) => event.preventDefault()}
-            onPointerMove={sendPointerMove}
-            onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              sendPointerButton(event, true);
-            }}
-            onPointerUp={(event) => sendPointerButton(event, false)}
-            onKeyDown={(event) => sendKey(event, true)}
-            onKeyUp={(event) => sendKey(event, false)}
-            onWheel={(event) => {
-              if (!connected || model.settings.viewOnly) return;
-              event.preventDefault();
-              const point = pointerCoordinates(
-                event.currentTarget,
-                event.clientX,
-                event.clientY,
-              );
-              void model.sendInput({
-                type: "scroll",
-                dx: Math.sign(event.deltaX),
-                dy: Math.sign(event.deltaY),
-                ...point,
-              });
-            }}
-          />
-        </div>
+        <>
+          {embeddedFallback ? (
+            <div
+              className="border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2 text-xs text-[var(--color-textSecondary)]"
+              role="status"
+            >
+              <strong className="text-[var(--color-text)]">
+                Embedded cross-platform fallback{" "}
+                {connected ? "active" : "selected"}.
+              </strong>{" "}
+              {model.settings.crossPlatformFallback.authMode === "macOsAccount"
+                ? "This session uses the remote Mac account username and password."
+                : "This session uses the dedicated Screen Sharing VNC password; the username is ignored."}{" "}
+              These are not Apple Account credentials, and the saved Apple
+              Account reference is never sent to the remote host.
+            </div>
+          ) : null}
+          <div className="min-h-0 flex-1 overflow-auto bg-black p-2">
+            <canvas
+              ref={model.canvasRef}
+              className="mx-auto block max-h-full max-w-full bg-black outline-none"
+              width={1024}
+              height={768}
+              role="application"
+              aria-label="Apple Remote Desktop framebuffer"
+              tabIndex={0}
+              onContextMenu={(event) => event.preventDefault()}
+              onPointerMove={sendPointerMove}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId);
+                sendPointerButton(event, true);
+              }}
+              onPointerUp={(event) => sendPointerButton(event, false)}
+              onKeyDown={(event) => sendKey(event, true)}
+              onKeyUp={(event) => sendKey(event, false)}
+              onWheel={(event) => {
+                if (!connected || model.settings.viewOnly) return;
+                event.preventDefault();
+                const point = pointerCoordinates(
+                  event.currentTarget,
+                  event.clientX,
+                  event.clientY,
+                );
+                void model.sendInput({
+                  type: "scroll",
+                  dx: Math.sign(event.deltaX),
+                  dy: Math.sign(event.deltaY),
+                  ...point,
+                });
+              }}
+            />
+          </div>
+        </>
       )}
 
       <footer className="border-t border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-textMuted)]">
-        Embedded ARD uses direct TCP only. macOS-account mode is RFB security
-        type 30; VNC-password mode uses the dedicated Screen Sharing VNC
-        password.
-        {model.settings.viewOnly ? " View-only input blocking is active." : ""}
+        {embeddedRuntime ? (
+          <>
+            Embedded ARD uses direct TCP only.{" "}
+            {(embeddedFallback
+              ? model.settings.crossPlatformFallback.authMode
+              : model.settings.authMode) === "macOsAccount"
+              ? "macOS-account mode is RFB security type 30."
+              : "VNC-password mode uses the dedicated Screen Sharing VNC password."}
+            {model.settings.viewOnly
+              ? " View-only input blocking is active."
+              : ""}
+          </>
+        ) : (
+          <>
+            Apple Account authentication, password entry, two-factor approval,
+            and connection approval remain inside Apple&apos;s Screen Sharing
+            app.
+          </>
+        )}
       </footer>
     </section>
   );
