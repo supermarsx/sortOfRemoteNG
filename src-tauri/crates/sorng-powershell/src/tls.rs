@@ -19,9 +19,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use sorng_tls_trust::{build_tofu_client, skip_flag_to_override, TofuTlsContext};
+use sorng_tls_trust::{
+    build_tofu_client, skip_flag_to_override, BlockingTrustStore, TofuTlsContext,
+};
 
+use crate::test_support::WinRmTestTrust;
 use crate::types::PsRemotingConfig;
+use sorng_storage::trust_store::TrustPolicy;
 
 /// The Tauri bundle identifier (`tauri.conf.json`). Tauri v2's
 /// `PathResolver::app_data_dir()` resolves to `dirs::data_dir()/<identifier>`,
@@ -45,20 +49,31 @@ fn default_trust_store_path() -> PathBuf {
 /// `host:port` the connection dials (so the Trust Center record is keyed
 /// `tls:host:port`) plus the legacy skip flags mapped to an explicit
 /// `AlwaysTrust` override.
-fn tofu_context(config: &PsRemotingConfig) -> TofuTlsContext {
-    let store = Arc::new(sorng_storage::trust_store::SyncTrustStore::new(
-        default_trust_store_path(),
-    ));
-    // The legacy escape hatch was "skip if the user disabled CA *or* CN
-    // checking". Preserve that exact opt-out as an explicit AlwaysTrust
-    // override; otherwise defer to the store's effective/global policy (TOFU).
-    let skip = config.skip_ca_check || config.skip_cn_check;
+fn tofu_context_with_store(
+    config: &PsRemotingConfig,
+    store: Arc<dyn BlockingTrustStore>,
+    policy_override: Option<TrustPolicy>,
+) -> TofuTlsContext {
     TofuTlsContext {
         store,
         host: config.computer_name.clone(),
         port: config.effective_port(),
-        policy_override: skip_flag_to_override(skip),
+        policy_override,
     }
+}
+
+fn tofu_context(config: &PsRemotingConfig) -> TofuTlsContext {
+    // The legacy escape hatch was "skip if the user disabled CA *or* CN
+    // checking". Preserve that exact opt-out as an explicit AlwaysTrust
+    // override; otherwise defer to the store's effective/global policy (TOFU).
+    let skip = config.skip_ca_check || config.skip_cn_check;
+    tofu_context_with_store(
+        config,
+        Arc::new(sorng_storage::trust_store::SyncTrustStore::new(
+            default_trust_store_path(),
+        )),
+        skip_flag_to_override(skip),
+    )
 }
 
 /// Finish a `reqwest::ClientBuilder` by installing the shared TOFU verifier in
@@ -69,4 +84,20 @@ pub fn build_winrm_client(
     config: &PsRemotingConfig,
 ) -> Result<reqwest::Client, String> {
     build_tofu_client(builder, tofu_context(config))
+}
+
+/// Build the same strict WinRM client against an explicitly supplied test
+/// store. The injected path is forced to Strict so only an exact pre-pinned
+/// certificate is accepted; no skip override is introduced.
+#[doc(hidden)]
+pub(crate) fn build_winrm_client_with_test_trust(
+    builder: reqwest::ClientBuilder,
+    config: &PsRemotingConfig,
+    trust: &WinRmTestTrust,
+) -> Result<reqwest::Client, String> {
+    let store: Arc<dyn BlockingTrustStore> = trust.store.clone();
+    build_tofu_client(
+        builder,
+        tofu_context_with_store(config, store, Some(TrustPolicy::Strict)),
+    )
 }

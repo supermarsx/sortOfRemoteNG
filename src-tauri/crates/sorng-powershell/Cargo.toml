@@ -50,4 +50,7 @@ sorng-storage = { path = "../sorng-storage" }
 sspi = { version = "0.18", default-features = false }
 
 [dev-dependencies]
+rcgen = "0.12"
+tempfile = { workspace = true }
+tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }

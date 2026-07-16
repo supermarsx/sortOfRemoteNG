@@ -22,6 +22,7 @@ use crate::strict_ssh::{
     SshHostKeyPolicy, StrictSshAuth, StrictSshPsrpConfig, StrictSshPsrpTransport,
     STRICT_SSH_PSRP_LIMITATIONS,
 };
+use crate::test_support::WinRmTestTrust;
 use crate::types::{
     PsAuthMethod, PsCredential, PsRemotingConfig, PsSessionOption, PsTransportProtocol,
 };
@@ -44,6 +45,7 @@ pub type PowerShellSessionServiceState = Arc<PowerShellSessionService>;
 
 pub struct PowerShellSessionService {
     shared: Arc<ServiceShared>,
+    wsman_test_trust: Option<WinRmTestTrust>,
 }
 
 struct ServiceShared {
@@ -149,6 +151,22 @@ impl PowerShellSessionService {
                 active: AsyncRwLock::new(HashMap::new()),
                 completed: Mutex::new(VecDeque::new()),
             }),
+            wsman_test_trust: None,
+        })
+    }
+
+    /// Construct a session service whose WSMan transport reads certificate
+    /// pins from an isolated test Trust Center. Production callers should use
+    /// [`Self::new`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn new_with_test_trust(trust: WinRmTestTrust) -> PowerShellSessionServiceState {
+        Arc::new(Self {
+            shared: Arc::new(ServiceShared {
+                active: AsyncRwLock::new(HashMap::new()),
+                completed: Mutex::new(VecDeque::new()),
+            }),
+            wsman_test_trust: Some(trust),
         })
     }
 
@@ -193,8 +211,12 @@ impl PowerShellSessionService {
                 let canonical_endpoint = canonical_wsman_endpoint(&config)
                     .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
                 let registration = wsman_registration(&options, &canonical_endpoint)?;
-                let transport = WsmanPsrpTransport::new(&config, wsman_limits(&options))
-                    .map_err(|_| PowerShellSessionError::invalid("wsman"))?;
+                let limits = wsman_limits(&options);
+                let transport = match &self.wsman_test_trust {
+                    Some(trust) => WsmanPsrpTransport::new_with_test_trust(&config, limits, trust),
+                    None => WsmanPsrpTransport::new(&config, limits),
+                }
+                .map_err(|_| PowerShellSessionError::invalid("wsman"))?;
                 let pool = RunspacePool::open_with_transport(transport)
                     .await
                     .map_err(|_| PowerShellSessionError::RunspaceOpenFailed)?;

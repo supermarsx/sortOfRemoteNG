@@ -27,7 +27,8 @@ use tokio::sync::Mutex;
 use url::Url;
 
 use crate::auth::{create_auth_provider, AuthProvider};
-use crate::tls::build_winrm_client;
+use crate::test_support::WinRmTestTrust;
+use crate::tls::{build_winrm_client, build_winrm_client_with_test_trust};
 use crate::types::{PsAuthMethod, PsRemotingConfig, PsTransportProtocol};
 
 const ACTION_CREATE: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create";
@@ -146,6 +147,25 @@ impl WsmanPsrpTransport {
     /// Construct a transport without opening the remote shell. The PSRP core
     /// opens it when it sends SessionCapability + InitRunspacePool.
     pub fn new(config: &PsRemotingConfig, limits: WsmanPsrpLimits) -> Result<Self, PsrpError> {
+        Self::new_inner(config, limits, None)
+    }
+
+    /// Construct a transport using an isolated, explicitly pre-pinned test
+    /// Trust Center. Production callers should use [`Self::new`].
+    #[doc(hidden)]
+    pub fn new_with_test_trust(
+        config: &PsRemotingConfig,
+        limits: WsmanPsrpLimits,
+        trust: &WinRmTestTrust,
+    ) -> Result<Self, PsrpError> {
+        Self::new_inner(config, limits, Some(trust))
+    }
+
+    fn new_inner(
+        config: &PsRemotingConfig,
+        limits: WsmanPsrpLimits,
+        test_trust: Option<&WinRmTestTrust>,
+    ) -> Result<Self, PsrpError> {
         let limits = limits.validate()?;
         let endpoint = canonical_wsman_endpoint(config)?;
         let auth_kind = validate_auth_and_trust(config)?;
@@ -162,8 +182,11 @@ impl WsmanPsrpTransport {
         }
         let client = if endpoint.starts_with("https://") {
             let trust_config = trust_config_for_endpoint(config, &endpoint)?;
-            build_winrm_client(builder, &trust_config)
-                .map_err(|error| protocol(format!("WSMan TLS client setup failed: {error}")))?
+            let client = match test_trust {
+                Some(trust) => build_winrm_client_with_test_trust(builder, &trust_config, trust),
+                None => build_winrm_client(builder, &trust_config),
+            };
+            client.map_err(|error| protocol(format!("WSMan TLS client setup failed: {error}")))?
         } else {
             builder
                 .build()

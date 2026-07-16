@@ -2,20 +2,28 @@
 //!
 //! The development host used for this milestone had no HTTPS WinRM listener,
 //! so the live row remains ignored and unclaimed. These tests exercise the
-//! real reqwest/auth adapter against a bounded in-process HTTP/SOAP peer.
+//! real reqwest/auth adapter against a bounded in-process HTTPS/SOAP peer.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use base64::Engine as _;
+use chrono::Utc;
 use psrp_rs::clixml::{to_clixml, PsObject, PsValue};
 use psrp_rs::fragment::{encode_message, Reassembler};
 use psrp_rs::message::{Destination, MessageType, PsrpMessage};
 use psrp_rs::{Pipeline, PipelineState, PsrpError, RunspacePool};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use sha2::{Digest, Sha256};
+use sorng_storage::trust_store::{CertIdentity, Identity, SyncTrustStore};
+use sorng_tls_trust::TLS_RECORD_TYPE;
+use tempfile::TempDir;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::sync::oneshot;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 
 use sorng_powershell::psrp_wsman::{
@@ -27,6 +35,7 @@ use sorng_powershell::runspace_session::{
     PowerShellStreamKind, PowerShellWsmanAuth, PowerShellWsmanSessionOptions,
     PowerShellWsmanTrustPolicy,
 };
+use sorng_powershell::test_support::WinRmTestTrust;
 use sorng_powershell::types::{PsAuthMethod, PsRemotingConfig, PsTransportProtocol};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,14 +74,57 @@ impl FixtureState {
 struct SoapFixture {
     endpoint: String,
     state: Arc<Mutex<FixtureState>>,
+    trust: WinRmTestTrust,
+    _trust_directory: TempDir,
     shutdown: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl SoapFixture {
     async fn start(mode: FixtureMode) -> Self {
+        let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+        let certificate =
+            rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
+        let certificate_der = certificate.serialize_der().unwrap();
+        let private_key_der = certificate.serialize_private_key_der();
+        let server_config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![CertificateDer::from(certificate_der.clone())],
+                PrivateKeyDer::Pkcs8(private_key_der.into()),
+            )
+            .unwrap();
+        let acceptor = TlsAcceptor::from(Arc::new(server_config));
+
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
+        let trust_directory = tempfile::tempdir().unwrap();
+        let trust_store = Arc::new(SyncTrustStore::new(
+            trust_directory.path().join("trust_store.json"),
+        ));
+        let now = Utc::now().to_rfc3339();
+        trust_store
+            .trust_identity_blocking(
+                format!("127.0.0.1:{}", address.port()),
+                TLS_RECORD_TYPE.to_string(),
+                Identity::Tls(CertIdentity {
+                    fingerprint: hex::encode(Sha256::digest(&certificate_der)),
+                    subject: Some("127.0.0.1".to_string()),
+                    issuer: Some("127.0.0.1".to_string()),
+                    first_seen: now.clone(),
+                    last_seen: now,
+                    valid_from: None,
+                    valid_to: None,
+                    pem: None,
+                    serial: None,
+                    signature_algorithm: None,
+                    san: Some(vec!["127.0.0.1".to_string()]),
+                    chain_fingerprints: Vec::new(),
+                }),
+                true,
+            )
+            .unwrap();
+        let trust = WinRmTestTrust::new(trust_store);
         let state = Arc::new(Mutex::new(FixtureState::new()));
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let task_state = state.clone();
@@ -83,19 +135,28 @@ impl SoapFixture {
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { break };
                         let connection_state = task_state.clone();
+                        let acceptor = acceptor.clone();
                         tokio::spawn(async move {
-                            serve_connection(stream, mode, connection_state).await;
+                            if let Ok(stream) = acceptor.accept(stream).await {
+                                serve_connection(stream, mode, connection_state).await;
+                            }
                         });
                     }
                 }
             }
         });
         Self {
-            endpoint: format!("http://{address}/custom/wsman/wsman"),
+            endpoint: format!("https://{address}/custom/wsman/wsman"),
             state,
+            trust,
+            _trust_directory: trust_directory,
             shutdown: Some(shutdown_tx),
             task,
         }
+    }
+
+    fn trust(&self) -> &WinRmTestTrust {
+        &self.trust
     }
 
     fn snapshot(&self) -> FixtureSnapshot {
@@ -175,11 +236,10 @@ impl HttpResponse {
     }
 }
 
-async fn serve_connection(
-    mut stream: TcpStream,
-    mode: FixtureMode,
-    state: Arc<Mutex<FixtureState>>,
-) {
+async fn serve_connection<S>(mut stream: S, mode: FixtureMode, state: Arc<Mutex<FixtureState>>)
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut buffer = Vec::new();
     while let Some(request) = read_request(&mut stream, &mut buffer).await {
         let response = handle_request(mode, &state, request);
@@ -189,7 +249,10 @@ async fn serve_connection(
     }
 }
 
-async fn read_request(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> Option<HttpRequest> {
+async fn read_request<S>(stream: &mut S, buffer: &mut Vec<u8>) -> Option<HttpRequest>
+where
+    S: AsyncRead + Unpin,
+{
     let header_end = loop {
         if let Some(position) = find_subslice(buffer, b"\r\n\r\n") {
             break position + 4;
@@ -238,7 +301,10 @@ async fn read_request(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> Option<Ht
     })
 }
 
-async fn write_response(stream: &mut TcpStream, response: HttpResponse) -> std::io::Result<()> {
+async fn write_response<S>(stream: &mut S, response: HttpResponse) -> std::io::Result<()>
+where
+    S: AsyncWrite + Unpin,
+{
     let mut head = format!(
         "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: keep-alive\r\n",
         response.status,
@@ -505,9 +571,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn remoting_config(endpoint: String, auth_method: PsAuthMethod) -> PsRemotingConfig {
+    let uses_tls = endpoint.starts_with("https://");
     let mut config: PsRemotingConfig = serde_json::from_value(serde_json::json!({
         "computerName": "127.0.0.1",
-        "transport": "http",
+        "transport": if uses_tls { "https" } else { "http" },
         "authMethod": auth_method,
         "credential": {
             "username": "alice",
@@ -517,7 +584,12 @@ fn remoting_config(endpoint: String, auth_method: PsAuthMethod) -> PsRemotingCon
     }))
     .unwrap();
     config.connection_uri = Some(endpoint);
-    config.transport = PsTransportProtocol::Http;
+    config.transport = if uses_tls {
+        PsTransportProtocol::Https
+    } else {
+        PsTransportProtocol::Http
+    };
+    config.use_ssl = uses_tls;
     config
 }
 
@@ -558,7 +630,7 @@ fn service_options(endpoint: String) -> PowerShellSessionOptions {
 async fn live_session_service_registers_wsman_actor_replay_and_diagnostics() {
     let fixture = SoapFixture::start(FixtureMode::Flow).await;
     let sink = Arc::new(RecordingSink::default());
-    let service = PowerShellSessionService::new();
+    let service = PowerShellSessionService::new_with_test_trust(fixture.trust().clone());
     let session_id = service
         .open_session(service_options(fixture.endpoint.clone()), sink.clone())
         .await
@@ -628,7 +700,8 @@ async fn live_session_service_registers_wsman_actor_replay_and_diagnostics() {
 async fn persistent_wsman_runspace_carries_all_streams_cancels_and_reuses() {
     let fixture = SoapFixture::start(FixtureMode::Flow).await;
     let config = remoting_config(fixture.endpoint.clone(), PsAuthMethod::Ntlm);
-    let transport = WsmanPsrpTransport::new(&config, test_limits()).unwrap();
+    let transport =
+        WsmanPsrpTransport::new_with_test_trust(&config, test_limits(), fixture.trust()).unwrap();
     let mut pool = RunspacePool::open_with_transport(transport).await.unwrap();
 
     let first = Pipeline::new("Write-Output first")
@@ -733,7 +806,8 @@ fn unsupported_auth_modes_are_explicit_and_never_aliased() {
 async fn faults_are_sanitized_without_echoing_unrelated_detail_or_credentials() {
     let fixture = SoapFixture::start(FixtureMode::Fault).await;
     let config = remoting_config(fixture.endpoint.clone(), PsAuthMethod::Ntlm);
-    let transport = WsmanPsrpTransport::new(&config, test_limits()).unwrap();
+    let transport =
+        WsmanPsrpTransport::new_with_test_trust(&config, test_limits(), fixture.trust()).unwrap();
     let error = RunspacePool::open_with_transport(transport)
         .await
         .unwrap_err()
@@ -753,7 +827,8 @@ async fn response_and_auth_round_limits_fail_closed() {
         max_response_bytes: 1024,
         ..test_limits()
     };
-    let transport = WsmanPsrpTransport::new(&config, limits).unwrap();
+    let transport =
+        WsmanPsrpTransport::new_with_test_trust(&config, limits, oversized.trust()).unwrap();
     let error = RunspacePool::open_with_transport(transport)
         .await
         .unwrap_err()
@@ -763,7 +838,8 @@ async fn response_and_auth_round_limits_fail_closed() {
 
     let rejecting = SoapFixture::start(FixtureMode::RejectAuth).await;
     let config = remoting_config(rejecting.endpoint.clone(), PsAuthMethod::Ntlm);
-    let transport = WsmanPsrpTransport::new(&config, test_limits()).unwrap();
+    let transport =
+        WsmanPsrpTransport::new_with_test_trust(&config, test_limits(), rejecting.trust()).unwrap();
     let error = RunspacePool::open_with_transport(transport)
         .await
         .unwrap_err()

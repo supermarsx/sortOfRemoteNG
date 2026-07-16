@@ -16,6 +16,8 @@ pub mod serialization;
 pub mod service;
 pub mod session;
 pub mod strict_ssh;
+#[doc(hidden)]
+pub mod test_support;
 pub mod tls;
 pub mod transport;
 pub mod types;
