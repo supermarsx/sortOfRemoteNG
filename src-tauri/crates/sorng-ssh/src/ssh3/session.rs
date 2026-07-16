@@ -17,7 +17,7 @@
 //! ## Seams for later executors
 //! - `t23-e4` fills [`Ssh3Service::start_shell`] / [`Ssh3Service::send_shell_input`]
 //!   / [`Ssh3Service::resize_shell`] / [`Ssh3Service::close_channel`] (PTY alloc
-//!   + bidi read/write loop on a tokio task, emitting `Ssh3ShellOutput` /
+//!   \+ bidi read/write loop on a tokio task, emitting `Ssh3ShellOutput` /
 //!   `Ssh3ShellError` / `Ssh3ShellClosed` through the real `DynEventEmitter`).
 //!   The exec path below is kept cohesive and self-contained so e4's interactive
 //!   shell can be added alongside without disturbing it.
